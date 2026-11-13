@@ -579,7 +579,8 @@ struct ProviderRequestContractTests {
         #expect((override?["message_notifications"] as? NSNumber)?.intValue == 1)
         #expect(override?["muted"] == nil)
 
-        try await provider.updateDirectMessagePin(
+        try await provider.updateChannelPin(
+            guildID: nil,
             channelID: channelID,
             flags: (1 << 11) | (1 << 5)
         )
@@ -594,6 +595,17 @@ struct ProviderRequestContractTests {
         override = overrides?["200"] as? [String: Any]
         #expect((override?["flags"] as? NSNumber)?.uint64Value == (1 << 11) | (1 << 5))
         #expect(override?["message_notifications"] == nil)
+
+        // A server channel pin uses the bulk route, as the first-party client does.
+        try await provider.updateChannelPin(
+            guildID: guildID,
+            channelID: channelID,
+            flags: (1 << 11) | (1 << 12)
+        )
+        #expect(RateLimitURLProtocol.guildNotificationRequestCount == 1)
+        #expect(RateLimitURLProtocol.guildNotificationMethod == "PATCH")
+        let pinBody = RateLimitURLProtocol.guildNotificationBody as NSDictionary?
+        #expect(pinBody == ["guilds": ["100": ["channel_overrides": ["200": ["flags": 6144]]]]] as NSDictionary)
 
         let endTime = Date(timeIntervalSince1970: 1_785_420_000)
         try await provider.updateChannelMute(

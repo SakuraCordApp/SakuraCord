@@ -12,6 +12,7 @@
 | Group DM name, icon, leaving and 1:1 DM closing | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Status | [DiscordProfileSettingsProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileSettingsProto.swift); [DiscordRESTProfileCustomStatus.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileCustomStatus.swift) | [StatusPickContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/StatusPickContractTests.swift) |
 | Server folders | [DiscordSettingsProtoMerging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoMerging.swift) | [GuildFolderSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GuildFolderSettingsContractTests.swift) |
+| Channel pins | [DiscordRESTNotificationsAndMessaging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTNotificationsAndMessaging.swift); [AppModelChannelPins.swift](../../App/Sources/SakuraCord/Models/AppModelChannelPins.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [ChannelPinTests.swift](../../App/Tests/SakuraCordAppTests/ChannelPinTests.swift) |
 | Favorites server | [DiscordFavoritesProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordFavoritesProto.swift); [DiscordRESTFavorites.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTFavorites.swift); [FavoritesSettings.swift](../../Packages/SakuraCordModels/Sources/SakuraCordModels/FavoritesSettings.swift) | [FavoritesSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/FavoritesSettingsContractTests.swift) |
 | Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [QuickReactionPolicyTests.swift](../../App/Tests/SakuraCordAppTests/QuickReactionPolicyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
 | Favourites/frecency | [DiscordSettingsProtoStickers.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoStickers.swift); [DiscordSettingsProtoSoundboard.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoSoundboard.swift); [DiscordSettingsProtoCommandFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoCommandFrecency.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift); [ApplicationCommandFrecencyCodecTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ApplicationCommandFrecencyCodecTests.swift) |
@@ -303,7 +304,7 @@ picks are not implemented; custom-status expiry is supported. Custom-status save
 preserve surrounding settings and start relative expiry at submission. A failed
 profile-stage status write keeps its draft without replaying prior profile stages.
 
-## Server folders and DM pins
+## Server folders and channel pins
 
 Rail edits PATCH type-1 settings field 14 (`GuildFolders`). Encode one top-level
 entry per server or folder, drop emptied folders, and preserve untouched/unknown
@@ -316,6 +317,29 @@ DM pins use flags in the account's `@me` channel notification overrides, preserv
 unrelated flags/settings. The app projects pinned ordering without mutating the
 provider's channel catalogue or persisting a workspace snapshot. See
 [pin contracts](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessagePinSettingsTests.swift).
+
+Server channels pin with the same FAVORITED bit (`1 << 11`) in that server's
+channel override. **Pin Channel to Top** / **Unpin Channel** is offered for any
+listed channel, never a thread or category, with no limit or permission check.
+Pinning also sets OPT_IN_ENABLED (`1 << 12`); unpinning clears only FAVORITED.
+The write is one `PATCH /users/@me/guilds/settings` with
+`{"guilds":{"<guild>":{"channel_overrides":{"<channel>":{"flags":N}}}}}`, where
+`N` is the current override's flags with that change, and
+`USER_GUILD_SETTINGS_UPDATE` reconciles it. Discord saves each toggle at once;
+SakuraCord applies the toggle immediately, saves the settled state one second
+after the last toggle (nothing when it ends unchanged), serializes saves per
+channel, and restores the confirmed state on failure.
+
+The non-collapsible **Pinned Channels** section leads the server's channel
+list, above uncategorized channels, and removes its channels from their
+categories; an emptied category is not shown. It lists pinned channels the
+user can view, regardless of mute, collapsed categories, Browse Channels or
+Server Guide filtering, with their threads. Channels are ordered by their own
+`position`, voice and stage channels after the rest (`position + 10000`), and
+equal positions keep the order of the server's `channel_overrides` array,
+which is not sorted by ID. A pinned channel that is deleted or no longer
+visible disappears without changing the stored flag. The default channel for
+a server without a remembered channel still follows server order.
 
 ## Favorites server
 

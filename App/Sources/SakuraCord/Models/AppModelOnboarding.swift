@@ -328,6 +328,8 @@ extension AppModel {
             ?? sidebarThreadLayout(guildID: guildID, channelGroups: groups, now: .now).threadsByParentID
         let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
         return groups.compactMap { group -> ChannelGroup? in
+            // Discord lists pinned channels even when muted.
+            guard !group.isPinnedSection else { return group }
             var group = group
             group.channels.removeAll { channel in
                 let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
@@ -347,6 +349,7 @@ extension AppModel {
         guildID: GuildID?
     ) -> [ChannelGroup] {
         guard let guildID else { return groups }
+        let groups = pinnedChannelGroups(groups, guildID: guildID)
         let guide = onboarding.guides[guildID]?.configuration
         let resources = guide?.enabled == true ? Set(guide?.resourceChannels.map(\.channelID) ?? []) : []
         let settings = presentedGuildChannelSettings(in: guildID)
@@ -354,6 +357,9 @@ extension AppModel {
         let hasGuide = filtersSelection && hasGuildGuide(in: guildID)
         let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
         return groups.compactMap { group -> ChannelGroup? in
+            // Pinning opts a channel in, and Discord lists pinned channels
+            // without the Browse Channels or Server Guide filters.
+            guard !group.isPinnedSection else { return group }
             var group = group
             group.channels.removeAll { channel in
                 let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id

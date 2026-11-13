@@ -807,10 +807,35 @@ signing out or switching accounts drops them. A thread still being created store
 its files at Send. With metadata removal off, files also wait for Send, since
 turning it on before then must still strip them.
 
-Files not stored early share one reservation at Send, then every storage PUT
-starts at once. Each file reports its own progress and can be stopped alone:
-its PUT is cancelled and the message is posted without it. Stopping every file
-posts nothing. The official client resumes a failed PUT by itself every few
+Files not stored early are reserved and stored at Send, all at once.
+
+Every upload path (messages, replies, threads, forum posts, interactions and
+voice messages) uses one request shape, matched field by field against the
+official client (web build 670026, observed 11 November 2026):
+
+- **Reservation.** One `POST /channels/{id}/attachments` per file, with
+  `files: [{filename, file_size, id, is_clip: false, original_content_type}]`.
+  `id` is only echoed back: Discord uses a session counter, SakuraCord the
+  file's index. `filename` is the name at reservation; a later rename only
+  changes the message.
+- **Storage.** `PUT` to the returned URL with `Content-Type:
+  application/octet-stream` and no Discord credentials.
+- **Attachment entry.** `id` is the file's index in the message, then
+  `filename`, `uploaded_filename` and `original_content_type`, plus
+  `description` when alt text is set and `is_spoiler: true` for a spoiler. A
+  spoiler keeps its filename; Discord adds no `SPOILER_` prefix.
+- **Content type.** `original_content_type` is Chromium's `File.type` for the
+  attached file's extension: Chromium's built-in table (for example `wav` →
+  `audio/wav`, `xml` → `text/xml`, `mkv` → `video/matroska`) wins over the
+  platform's UTType, and an unknown type is sent as `""`. It does not follow a
+  rename. The official client can convert HEIC to JPEG first, adding
+  `X-Discord-Original-MD5` to the reservation; it uploaded HEIC unchanged in
+  this observation, as SakuraCord does.
+
+Each file reports its own progress and can be stopped alone: its pending
+reservation and its PUT are cancelled, so the message is posted without it
+and never waits for it, as with the official client's cancel. Stopping every
+file posts nothing. The official client resumes a failed PUT by itself every few
 seconds; SakuraCord does not replay storage PUTs. A file whose early upload
 failed is stored again when the user sends. A failed send keeps its files stored
 on attach: the explicit Retry posts them again as they are, like the official
@@ -837,9 +862,10 @@ code, not in the transport-wide baseline.
 
 ## Voice messages
 
-Discord's desktop client has no recorder. The send contract was observed on
-9 October 2026 (web build `web.ae482d0492df0fb9.js`) through Equicord's
-VoiceMessages plugin, which reuses Discord's uploader, and cross-checked against
+The send contract was first observed on 9 October 2026 (web build
+`web.ae482d0492df0fb9.js`) through Equicord's VoiceMessages plugin, and
+re-observed on 11 November 2026 from the desktop client's own recorder
+(**+ › Record Voice Message**, web build 670026). It is cross-checked against
 [Discord's message documentation](https://docs.discord.com/developers/resources/message#voice-messages).
 
 - **Recording.** Mono 48 kHz Ogg Opus. Apple frameworks encode Opus but write it
@@ -853,15 +879,16 @@ VoiceMessages plugin, which reuses Discord's uploader, and cross-checked against
   the plugin's eased peak normalization, base64-encoded as raw bytes. Follow
   upstream Vencord's contiguous windows; the installed Equicord copy contains an
   indexing bug.
-- **Upload.** The reservation names `voice-message.ogg` and adds
-  `original_content_type: "audio/ogg; codecs=opus"`. Storage receives the raw
-  bytes as `application/octet-stream`. The message POST sets `flags: 8192` and
-  empty `content`, plus one attachment with `filename`, `uploaded_filename`,
-  `duration_secs` and `waveform`. The attachment's `content_type` is omitted.
+- **Upload.** The shared [attachment](#attachments) path, with the recorder's
+  numbered filename (`0recording.ogg`, `1recording.ogg`, … per session) and
+  `original_content_type: "audio/ogg"`. The message POST sets `flags: 8192`,
+  empty `content` and `X-Context-Properties` `{"location":"voice_message"}`;
+  its one attachment entry adds `duration_secs`, in whole milliseconds as the
+  recorder reports it, and `waveform`.
 - **Rules.** Guild channels require Send Voice Messages (`1 << 46`). A voice
   message carries no text, stickers or poll, and Discord does not allow it to be
   edited.
-- **Delivery.** Unlike the plugin's direct POST, SakuraCord sends through the
+- **Delivery.** Like the desktop recorder, SakuraCord sends through the
   ordinary [outbox](#sends-and-history). It keeps the nonce, idempotency field,
   send budget and reply reference.
 - **Receipt.** `MESSAGE_CREATE` and history carry `flags: 8192`, plus an

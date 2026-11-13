@@ -831,8 +831,10 @@ extension AppModel {
     /// sidebar lists, so channels the user hid stay out of view.
     func defaultChannelID(among channels: [Channel], guildID: GuildID?) -> ChannelID? {
         guard guildID != nil else { return Self.preferredInitialChannelID(in: channels) }
-        let listedChannels = selectedChannelGroups(ChannelGroup.make(from: channels), guildID: guildID)
-            .flatMap(\.channels)
+        let groups = ChannelGroup.make(from: channels)
+        let listedIDs = Set(selectedChannelGroups(groups, guildID: guildID).flatMap(\.channels).map(\.id))
+        // Discord's default channel follows server order, not the user's pins.
+        let listedChannels = groups.flatMap(\.channels).filter { listedIDs.contains($0.id) }
         return Self.preferredInitialChannelID(in: listedChannels)
             ?? Self.preferredInitialChannelID(in: channels)
     }

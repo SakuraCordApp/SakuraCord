@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import SakuraCordModels
+import UniformTypeIdentifiers
 
 let gatewayLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "Gateway")
 let discordPerformanceSignposter = OSSignposter(
@@ -9,18 +10,40 @@ let discordPerformanceSignposter = OSSignposter(
 )
 
 nonisolated struct AttachmentUploadFile: Equatable, Sendable {
-    let url: URL
+    var url: URL
     let name: String
     let description: String?
+    let isSpoiler: Bool
+    /// The attached file's type, kept when a prepared copy replaces `url`.
+    let contentType: String
     /// The draft attachment this file came from, which lets the user stop it alone.
     let id: UUID?
 
-    init(url: URL, name: String, description: String? = nil, id: UUID? = nil) {
+    init(url: URL, name: String, description: String? = nil, isSpoiler: Bool = false, id: UUID? = nil) {
         self.url = url
         self.name = name
         self.description = description
+        self.isSpoiler = isSpoiler
+        contentType = Self.contentType(forPathExtension: url.pathExtension)
         self.id = id
     }
+
+    /// The desktop client's `original_content_type` is Chromium's `File.type`:
+    /// Chromium's own table wins over the platform's, and an unknown type is
+    /// empty rather than omitted.
+    static func contentType(forPathExtension pathExtension: String) -> String {
+        let pathExtension = pathExtension.lowercased()
+        return chromiumContentTypes[pathExtension]
+            ?? UTType(filenameExtension: pathExtension)?.preferredMIMEType ?? ""
+    }
+
+    /// Chromium's hard-coded types where macOS reports another or none,
+    /// as observed from the desktop client (web build 670026).
+    private static let chromiumContentTypes = [
+        "apng": "image/apng", "jfif": "image/jpeg", "m4v": "video/mp4",
+        "mka": "audio/matroska", "mkv": "video/matroska", "wasm": "application/wasm",
+        "wav": "audio/wav", "weba": "audio/webm", "xml": "text/xml",
+    ]
 }
 
 public actor DiscordRESTProvider: PendingCredentialChatProvider {
@@ -124,6 +147,8 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var attachmentUploadDelegates: [UUID: AttachmentUploadTaskDelegate] = [:]
     var cancelledAttachmentUploads: Set<UUID> = []
     var postingAttachmentUploads: Set<UUID> = []
+    /// Numbers voice-message files as Discord's recorder does: `0recording.ogg`, `1recording.ogg`, …
+    var voiceMessageCount = 0
     /// Staged files storing ahead of their message, by draft attachment ID; each yields its stored name.
     var attachmentPreuploads: [UUID: Task<String, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]

@@ -420,6 +420,13 @@ private struct GuildChannelList: View, Equatable {
                         input.unreadCategoryIDs.contains
                     ) ?? false
                 )
+                // Discord divides its pinned section from the channels below.
+                if group.isPinnedSection, group.id != input.channelGroups.last?.id {
+                    Divider()
+                        .listRowInsets(EdgeInsets())
+                        .selectionDisabled()
+                        .accessibilityHidden(true)
+                }
             }
 
         }
@@ -531,6 +538,49 @@ nonisolated struct ChannelGroup: Identifiable, Equatable, Sendable {
             }
             return lhs.position < rhs.position
         }
+    }
+
+    static let pinnedSectionID = "pinned"
+
+    var isPinnedSection: Bool { id == Self.pinnedSectionID }
+
+    /// Discord's Pinned Channels section leads the list and takes its channels
+    /// out of their categories. It orders them by their own position, voice
+    /// channels after the rest, with equal positions in `pinnedIDs` order.
+    static func pinning(
+        _ pinnedIDs: [ChannelID],
+        in groups: [ChannelGroup],
+        guildID: GuildID,
+        excluding hiddenIDs: Set<ChannelID>
+    ) -> [ChannelGroup] {
+        guard !pinnedIDs.isEmpty else { return groups }
+        let order = Dictionary(
+            pinnedIDs.enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var pinned: [(key: (Int, Int), channel: Channel)] = []
+        func isListedPin(_ channel: Channel) -> Bool {
+            order[channel.id] != nil && !hiddenIDs.contains(channel.id)
+        }
+        let remaining = groups.compactMap { group -> ChannelGroup? in
+            guard group.channels.contains(where: isListedPin) else { return group }
+            var group = group
+            group.channels.removeAll { channel in
+                guard isListedPin(channel), let rank = order[channel.id] else { return false }
+                pinned.append(((channel.position + (channel.kind == .voice ? 10_000 : 0), rank), channel))
+                return true
+            }
+            return group.channels.isEmpty ? nil : group
+        }
+        guard !pinned.isEmpty else { return groups }
+        return [ChannelGroup(
+            id: pinnedSectionID,
+            categoryID: nil,
+            guildID: guildID,
+            name: "Pinned Channels",
+            position: -1,
+            channels: pinned.sorted { $0.key < $1.key }.map(\.channel)
+        )] + remaining
     }
 
     private static func channelOrder(_ lhs: Channel, _ rhs: Channel) -> Bool {
@@ -688,7 +738,8 @@ private struct ChannelGroupRows: View {
                         rulesChannelID: rulesChannelID,
                         isVoiceConnected: activeVoiceChannelID == channel.id,
                         isHidden: hiddenChannelIDs.contains(channel.id),
-                        isChecking: checkingChannelIDs.contains(channel.id)
+                        isChecking: checkingChannelIDs.contains(channel.id),
+                        isPinned: group.isPinnedSection
                     )
                     .tag(GuildSidebarSelection.channel(channel.id))
                     ForEach(
@@ -704,7 +755,8 @@ private struct ChannelGroupRows: View {
                         isSelected: sidebarSelection == .channel(channel.id),
                         rulesChannelID: rulesChannelID,
                         isHidden: hiddenChannelIDs.contains(channel.id),
-                        isChecking: checkingChannelIDs.contains(channel.id)
+                        isChecking: checkingChannelIDs.contains(channel.id),
+                        isPinned: group.isPinnedSection
                     )
                     .tag(GuildSidebarSelection.channel(channel.id))
                     let threads = threadsByParentID[channel.id] ?? []
@@ -727,7 +779,12 @@ private struct ChannelGroupRows: View {
 
     private var categoryHeader: some View {
             VStack(spacing: 0) {
-                if let name = group.name,
+                if group.isPinnedSection, let name = group.name {
+                    // Discord's Pinned Channels header neither collapses nor has a menu.
+                    Text(name)
+                        .foregroundStyle(Color.primary.opacity(0.5))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let name = group.name,
                    let categoryID = group.categoryID,
                    let guildID = group.guildID
                 {
@@ -1400,6 +1457,7 @@ private struct ChannelRow: View {
     var isVoiceConnected = false
     var isHidden = false
     var isChecking = false
+    var isPinned = false
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {
@@ -1490,6 +1548,11 @@ private struct ChannelRow: View {
                         )
                     )
                 },
+                pinAction: isHidden ? .unavailable : .available(
+                    isPinned: isPinned,
+                    isServerChannel: true,
+                    toggle: { model.toggleChannelPin(channel) }
+                ),
                 favoriteItems: {
                     FavoritesMenu.toggleItems(for: channel.id, channelType: channel.favoriteChannelType, model: model)
                 }

@@ -2,10 +2,11 @@ import Foundation
 import Synchronization
 
 /// Reports one storage PUT's sent bytes and lets that file alone be stopped,
-/// independently of the other files of the same message.
+/// with its pending reservation, independently of the other files of the same message.
 nonisolated final class AttachmentUploadTaskDelegate: NSObject, URLSessionTaskDelegate, Sendable {
     private struct State {
         var task: URLSessionTask?
+        var reservation: Task<AttachmentSlotDTO, any Error>?
         var isCancelled = false
         var reportedPercent = -1
     }
@@ -22,10 +23,29 @@ nonisolated final class AttachmentUploadTaskDelegate: NSObject, URLSessionTaskDe
     }
 
     func cancel() {
-        state.withLock {
+        let (task, reservation) = state.withLock {
             $0.isCancelled = true
-            return $0.task
-        }?.cancel()
+            return ($0.task, $0.reservation)
+        }
+        task?.cancel()
+        reservation?.cancel()
+    }
+
+    /// Reserves this file's slot. Stopping the file abandons the reservation,
+    /// as the first-party upload's cancel does, so the message never waits for it.
+    func reserve(_ operation: @escaping @Sendable () async throws -> AttachmentSlotDTO) async throws -> AttachmentSlotDTO {
+        let reservation = Task(operation: operation)
+        let isCancelled = state.withLock {
+            $0.reservation = reservation
+            return $0.isCancelled
+        }
+        if isCancelled { reservation.cancel() }
+        // The send being cancelled, or a sibling file failing, still ends it.
+        return try await withTaskCancellationHandler {
+            try await reservation.value
+        } onCancel: {
+            reservation.cancel()
+        }
     }
 
     func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
