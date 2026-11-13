@@ -44,7 +44,6 @@ extension AppModel {
     func openFriends() {
         // Friends and Message Requests replace an application's status page, as every other destination does.
         leaveGuildJoinRequestPage()
-        setFavoritesPresented(false)
         lastDirectMessageSelection = .friends
         friends.messageRequestsTab = nil
         cancelConversationNavigation()
@@ -53,6 +52,7 @@ extension AppModel {
             selectGuild(nil)
             return
         }
+        setFavoritesPresented(false)
         suspendSelectedConversationPresentation()
         closeThread()
         friends.isPresented = true
@@ -249,8 +249,7 @@ extension AppModel {
             navigate(to: channel.id)
             return
         }
-        setFavoritesPresented(false)
-        startConversationNavigation { model, session in
+        startConversationNavigation(presentsFavorites: false) { model, session in
             do {
                 let channel = try await session.provider.ensurePrivateChannel(for: user.id)
                 guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }

@@ -12,7 +12,7 @@ enum FavoritesMenu {
         let isFavorite = model.isFavorite(channelID)
         guard model.favorites.settings != nil, isFavorite || model.canAddFavorite(channelID) else { return [] }
         let toggle = item(isFavorite ? "Remove from Favorites" : "Add to Favorites",
-                          systemImage: isFavorite ? "star.slash" : "star") {
+                          systemImage: isFavorite ? "star.slash.fill" : "star.fill") {
             model.toggleFavorite(channelID, channelType: channelType)
         }
         toggle.isEnabled = isFavorite || !isChecking
@@ -25,11 +25,10 @@ enum FavoritesMenu {
         if let guildID = favorite.channel.guildID {
             items.append(item("Go to Server", systemImage: "arrow.uturn.right") {
                 // Leaves Favorites even though the destination is a favourite.
-                model.setFavoritesPresented(false)
-                model.navigate(to: guildID, linkedChannelID: favorite.id)
+                model.navigate(to: guildID, linkedChannelID: favorite.id, presentsFavorites: false)
             })
         }
-        let move = item("Move To", systemImage: "folder", action: nil)
+        let move = item("Move To", systemImage: "folder.fill", action: nil)
         move.submenu = NSMenu(title: "Move To")
         move.submenu?.autoenablesItems = false
         let destinations = [(nil, "Uncategorized")] + (model.favorites.settings?.categories ?? []).map {
@@ -47,10 +46,10 @@ enum FavoritesMenu {
         items.append(move)
         if favorite.channel.guildID != nil {
             items.append(item("Change Nickname…", systemImage: "pencil") {
-                model.favorites.renaming = favorite.entry
+                model.favorites.nameEditor = .rename(favorite.entry)
             })
         }
-        items.append(item("Remove from Favorites", systemImage: "star.slash", isDestructive: true) {
+        items.append(item("Remove from Favorites", systemImage: "star.slash.fill", isDestructive: true) {
             model.updateFavorites(.remove(favorite.id))
         })
         return items

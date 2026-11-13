@@ -13,8 +13,7 @@ final class FavoritesStore {
     var isPresented = false
     /// The channel limit an addition just hit, shown as Discord's upsell notice.
     var limitReached: Int?
-    var renaming: FavoritesSettings.Entry?
-    var isCreatingCategory = false
+    var nameEditor: FavoritesNameEditor?
     @ObservationIgnored var lastChannelID: ChannelID?
     /// Favourited threads the session's active-thread lists don't carry, such
     /// as archived ones, fetched when Favorites opens.
@@ -30,14 +29,27 @@ final class FavoritesStore {
         settings = nil
         isPresented = false
         limitReached = nil
-        renaming = nil
-        isCreatingCategory = false
+        nameEditor = nil
         lastChannelID = nil
         threads = [:]
         requestedThreadIDs = []
         localEntries = []
         localScope = nil
         settingsAreConfirmed = false
+    }
+}
+
+/// The open Favorites name dialog.
+enum FavoritesNameEditor: Identifiable, Equatable {
+    case createCategory
+    /// A category's name or a favourite's nickname.
+    case rename(FavoritesSettings.Entry)
+
+    var id: String {
+        switch self {
+        case .createCategory: "create"
+        case .rename(let entry): "rename-\(entry.id)"
+        }
     }
 }
 
@@ -91,6 +103,7 @@ extension AppModel {
             selectFavorite(conversation)
         } else {
             cancelConversationNavigation()
+            setFavoritesPresented(true)
             closeThread()
             selectedChannelID = nil
         }
@@ -132,7 +145,6 @@ extension AppModel {
     func openFavorites() {
         guard showsFavoritesRailItem else { return }
         leaveGuildJoinRequestPage()
-        setFavoritesPresented(true)
         loadFavoriteThreads()
         openRememberedFavorite()
     }
@@ -182,14 +194,16 @@ extension AppModel {
         }
     }
 
+    /// Favorites opens with its conversation, as a server opens with its channel.
     func selectFavorite(_ conversation: FavoriteConversation) {
-        setFavoritesPresented(true)
         favorites.lastChannelID = conversation.id
+        // A navigation already heading to this conversation would not open Favorites.
+        if !favorites.isPresented { cancelConversationNavigation() }
         if let thread = conversation.thread {
             // Full width, as the server channel list opens a thread.
-            openSidebarThread(thread)
+            openSidebarThread(thread, presentsFavorites: true)
         } else {
-            navigate(to: conversation.channel.guildID, linkedChannelID: conversation.id)
+            navigate(to: conversation.channel.guildID, linkedChannelID: conversation.id, presentsFavorites: true)
         }
     }
 

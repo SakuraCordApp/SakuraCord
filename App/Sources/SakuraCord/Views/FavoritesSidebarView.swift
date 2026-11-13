@@ -12,22 +12,11 @@ struct FavoritesSidebarView: View {
     var body: some View {
         if let settings = model.displayedFavorites {
             List(selection: selection) {
-                Button {
-                    model.favorites.isCreatingCategory = true
-                } label: {
-                    HStack(spacing: InterfaceScale.metric(8)) {
-                        Image(systemName: "folder.badge.plus")
-                            .fontWeight(.medium)
-                            .frame(width: ChannelSidebarLayoutMetrics.iconWidth)
-                        Text("Create Category")
-                            .font(.interfaceSystem(size: 14, weight: .regular))
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(Color.primary.opacity(0.7))
-                    .contentShape(Rectangle())
+                Button { model.favorites.nameEditor = .createCategory } label: {
+                    ChannelSidebarPageRow(title: "Create Category", symbol: "folder.fill.badge.plus")
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
                 .selectionDisabled()
                 ForEach(settings.sections) { section in
                     if let category = section.category {
@@ -86,7 +75,7 @@ struct FavoritesSidebarView: View {
         .interfaceFontOverride(.interface(.subheadline).weight(.bold))
         .help(isCollapsed ? "Expand \(category.nickname)" : "Collapse \(category.nickname)")
         .contextMenu {
-            Button("Rename Category…", systemImage: "pencil") { model.favorites.renaming = category }
+            Button("Rename Category…", systemImage: "pencil") { model.favorites.nameEditor = .rename(category) }
             Button("Delete Category", systemImage: "trash", role: .destructive) {
                 model.updateFavorites(.remove(category.id))
             }

@@ -37,10 +37,9 @@ nonisolated enum ConversationNavigationTarget: Hashable, Sendable {
 
 extension AppModel {
     func selectGuild(_ guildID: GuildID?) {
-        setFavoritesPresented(false)
         // Direct Messages may rest on Friends, which selects neither a server nor a conversation.
         if guildID == nil { leaveGuildJoinRequestPage() }
-        startConversationNavigation { model, account in
+        startConversationNavigation(presentsFavorites: false) { model, account in
             await model.activateGuild(guildID, account: account)
         }
     }
@@ -90,14 +89,17 @@ extension AppModel {
         sideConversationRevision &+= 1
     }
 
+    /// `presentsFavorites` opens or closes the Favorites server in the same
+    /// update that selects the destination, as a server switch selects its
+    /// server and channel together. A target outside Favorites closes it.
     func startConversationNavigation(
         target: ConversationNavigationTarget? = nil,
         to destination: ConversationNavigationHistory.Destination? = nil,
+        presentsFavorites: Bool? = nil,
         operation: @escaping @MainActor (AppModel, AppModelAccountSession) async -> Void
     ) {
         cancelConversationNavigation()
-        // Following a link out of Favorites opens the conversation where it lives.
-        if let channelID = target?.channelID, !isFavorite(channelID) { setFavoritesPresented(false) }
+        let presentsFavorites = presentsFavorites ?? target.flatMap { isFavorite($0.channelID) ? nil : false }
         let account = accountSession()
         let task = startAccountChildTask(account: account) { model, account in
             // A task cancelled before it starts never opens a history transaction.
@@ -107,6 +109,7 @@ extension AppModel {
                     ? model.navigationChannel : nil
                 model.conversationNavigationHistory.finishNavigation(navigation, at: channel)
             }
+            if let presentsFavorites { model.setFavoritesPresented(presentsFavorites) }
             await ConversationNavigationContext.$isActive.withValue(true) {
                 await operation(model, account)
             }
@@ -298,11 +301,12 @@ extension AppModel {
 
     func navigate(
         to channelID: ChannelID,
-        historyDestination: ConversationNavigationHistory.Destination? = nil
+        historyDestination: ConversationNavigationHistory.Destination? = nil,
+        presentsFavorites: Bool? = nil
     ) {
         onboarding.presentedGuildID = nil
         if let thread = sidebarThread(channelID) {
-            openSidebarThread(thread, historyDestination: historyDestination)
+            openSidebarThread(thread, historyDestination: historyDestination, presentsFavorites: presentsFavorites)
             return
         }
         guard let channel = knownRootChannel(channelID) else {
@@ -312,13 +316,14 @@ extension AppModel {
                 to: selectedGuildID,
                 linkedChannelID: channelID,
                 fullWidthThread: true,
-                historyDestination: historyDestination
+                historyDestination: historyDestination,
+                presentsFavorites: presentsFavorites
             )
             return
         }
         let target = ConversationNavigationTarget.channel(channel.id)
         if historyDestination == nil, isNavigating(to: target) { return }
-        startConversationNavigation(target: target, to: historyDestination) { model, account in
+        startConversationNavigation(target: target, to: historyDestination, presentsFavorites: presentsFavorites) { model, account in
             if model.selectedGuildID != channel.guildID {
                 await model.activateGuild(channel.guildID, account: account)
             }
@@ -337,17 +342,18 @@ extension AppModel {
         messageID: MessageID? = nil,
         initialMessages: [Message] = [],
         fullWidthThread: Bool = false,
-        historyDestination: ConversationNavigationHistory.Destination? = nil
+        historyDestination: ConversationNavigationHistory.Destination? = nil,
+        presentsFavorites: Bool? = nil
     ) {
         if messageID == nil, knownRootChannel(channelID) != nil {
-            navigate(to: channelID, historyDestination: historyDestination)
+            navigate(to: channelID, historyDestination: historyDestination, presentsFavorites: presentsFavorites)
             return
         }
         let target: ConversationNavigationTarget = messageID.map {
             .message(channelID, $0, fullWidthThread: fullWidthThread)
         } ?? .thread(channelID, fullWidth: fullWidthThread)
         if historyDestination == nil, isNavigating(to: target) { return }
-        startConversationNavigation(target: target, to: historyDestination) { model, session in
+        startConversationNavigation(target: target, to: historyDestination, presentsFavorites: presentsFavorites) { model, session in
             if model.selectedGuildID != guildID {
                 await model.activateGuild(guildID, account: session)
             }

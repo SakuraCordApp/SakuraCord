@@ -29,7 +29,7 @@ struct FavoritesRailButton: View {
         }
         .buttonStyle(ServerRailButtonStyle())
         .contextMenu {
-            Button("Hide Favorites", systemImage: "eye.slash") { model.setFavoritesEnabled(false) }
+            Button("Hide Favorites", systemImage: "eye.slash.fill") { model.setFavoritesEnabled(false) }
         }
         .accessibilityLabel("Favorites")
         .accessibilityValue(unread.mentions > 0 ? "\(unread.mentions) unread mentions" : unread.isUnread ? "Unread" : "")
@@ -44,7 +44,6 @@ struct FavoritesRailButton: View {
 /// Favorites dialogs, hosted by the rail so channel menus anywhere can open them.
 struct FavoritesDialogs: ViewModifier {
     let model: AppModel
-    @State private var name = ""
 
     func body(content: Content) -> some View {
         @Bindable var favorites = model.favorites
@@ -58,25 +57,57 @@ struct FavoritesDialogs: ViewModifier {
                     ? "Favorites are limited to \(limit) channels and DMs."
                     : "Free Favorites are limited to \(limit). Get Nitro to add up to \(FavoritesSettings.maximumEntries) channels and DMs.")
             }
-            .alert(favorites.renaming?.isCategory == true ? "Rename Category" : "Change Nickname",
-                   isPresented: Binding(get: { favorites.renaming != nil }, set: { if !$0 { favorites.renaming = nil } }),
-                   presenting: favorites.renaming) { entry in
-                TextField(entry.isCategory ? "Category Name" : "Nickname", text: $name)
-                Button("Save") {
-                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    // A category needs a name; a cleared nickname restores the channel's own.
-                    if !entry.isCategory || !trimmed.isEmpty { model.updateFavorites(.rename(entry.id, nickname: trimmed)) }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: { entry in
-                if !entry.isCategory { Text("This name only appears in your Favorites.") }
+            .windowModal(item: $favorites.nameEditor, cornerRadius: 32, cornerStyle: .circular) {
+                FavoritesNameEditorView(model: model, editor: $0)
             }
-            .alert("Create Category", isPresented: $favorites.isCreatingCategory) {
-                TextField("New Category", text: $name)
-                Button("Create Category") { model.createFavoriteCategory(named: name) }
-                Button("Cancel", role: .cancel) {}
+    }
+}
+
+/// Create Category, Rename Category and a favourite's Change Nickname, in
+/// the server Change Nickname dialog. Edits apply on the action.
+private struct FavoritesNameEditorView: View {
+    let model: AppModel
+    let editor: FavoritesNameEditor
+    @State private var draft: String
+
+    init(model: AppModel, editor: FavoritesNameEditor) {
+        self.model = model
+        self.editor = editor
+        if case .rename(let entry) = editor { _draft = State(initialValue: entry.nickname) } else { _draft = State(initialValue: "") }
+    }
+
+    var body: some View {
+        let nicknamed: FavoritesSettings.Entry? = if case .rename(let entry) = editor, !entry.isCategory { entry } else { nil }
+        NameEditorPanel(
+            title: nicknamed != nil ? "Change Nickname" : editor == .createCategory ? "Create Category" : "Rename Category",
+            fieldTitle: nicknamed != nil ? "Nickname" : "Category Name",
+            placeholder: nicknamed.flatMap { model.favoriteConversation($0)?.channel.name } ?? "New Category",
+            draft: $draft,
+            actionTitle: editor == .createCategory ? "Create Category" : "Save",
+            save: save
+        ) {
+            if nicknamed != nil {
+                Text("This name only appears in your Favorites.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .onChange(of: favorites.renaming?.id) { name = favorites.renaming?.nickname ?? "" }
-            .onChange(of: favorites.isCreatingCategory) { name = "" }
+        } accessory: {
+            if let nicknamed, !nicknamed.nickname.isEmpty {
+                Button("Reset Nickname") { draft = "" }
+                    .buttonStyle(.link)
+            }
+        }
+    }
+
+    private func save() {
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch editor {
+        case .createCategory:
+            model.createFavoriteCategory(named: name)
+        case .rename(let entry):
+            // A category needs a name; a cleared nickname restores the channel's own.
+            if !entry.isCategory || !name.isEmpty { model.updateFavorites(.rename(entry.id, nickname: name)) }
+        }
+        model.favorites.nameEditor = nil
     }
 }

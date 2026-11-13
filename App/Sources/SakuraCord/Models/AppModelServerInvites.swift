@@ -209,8 +209,7 @@ extension AppModel {
     }
 
     private func navigateToInvite(_ invite: ServerInvite) {
-        setFavoritesPresented(false)
-        startConversationNavigation { model, account in
+        startConversationNavigation(presentsFavorites: false) { model, account in
             await model.activateGuild(invite.guildID, account: account)
             guard model.isCurrentAccountSession(account), !Task.isCancelled else { return }
             if let channelID = invite.channelID,

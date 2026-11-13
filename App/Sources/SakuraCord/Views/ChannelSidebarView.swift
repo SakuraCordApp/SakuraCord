@@ -461,8 +461,20 @@ private struct GuildChannelList: View, Equatable {
         }
     }
     private func guildPageRow(_ title: String, symbol: String, page: GuildWorkspacePage) -> some View {
-        let isSelected = input.sidebarSelection == .page(page)
-        return HStack(spacing: InterfaceScale.metric(8)) {
+        ChannelSidebarPageRow(title: title, symbol: symbol, isSelected: input.sidebarSelection == .page(page))
+            .tag(GuildSidebarSelection.page(page))
+    }
+
+}
+
+/// A page or action row above a sidebar's channels, such as Server Guide.
+struct ChannelSidebarPageRow: View {
+    let title: String
+    let symbol: String
+    var isSelected = false
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(8)) {
             Image(systemName: symbol)
                 .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
                 .fontWeight(.medium)
@@ -477,10 +489,8 @@ private struct GuildChannelList: View, Equatable {
         .frame(minHeight: ChannelSidebarLayoutMetrics.minimumRowHeight)
         .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .accessibilityElement(children: .combine)
-        .tag(GuildSidebarSelection.page(page))
         .overlay { ChannelRowHoverBridge(isSelected: isSelected) }
     }
-
 }
 
 struct SidebarBottomScrollSpacer: View {
