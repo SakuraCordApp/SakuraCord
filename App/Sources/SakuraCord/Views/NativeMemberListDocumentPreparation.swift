@@ -630,9 +630,7 @@ extension NativeMemberListCanvasView {
                     $0.map { Self.color(hex: $0).withAlphaComponent(alpha) }
                 }
             }
-            let activityColor = labelColor.withAlphaComponent(
-                alpha * (presentation.activityTextPrimaryOpacity ?? 0.5)
-            )
+            let activityColor = labelColor.withAlphaComponent(alpha * 0.5)
             let name = Self.line(
                 member.user.displayName,
                 font: nameFont,

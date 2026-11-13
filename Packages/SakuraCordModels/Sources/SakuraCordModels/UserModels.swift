@@ -127,4 +127,9 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
     public var usesHTTPInteractions: Bool {
         isBot && publicFlags & (1 << 19) != 0
     }
+
+    /// Discord's VERIFIED_BOT flag marks an app Discord has verified.
+    public var isVerifiedBot: Bool {
+        isBot && publicFlags & (1 << 16) != 0
+    }
 }

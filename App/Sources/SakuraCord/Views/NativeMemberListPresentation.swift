@@ -26,10 +26,6 @@ extension Member {
         return .init(text: customStatus, separatesMusicIcon: true)
     }
 
-    nonisolated var memberListActivityText: String? {
-        memberListActivityContent.displayText
-    }
-
     /// Keeps the full activity, such as the track a custom status replaces
     /// in the row, with custom emoji named rather than as raw tokens.
     nonisolated var memberListTooltip: String {
@@ -64,8 +60,6 @@ nonisolated struct NativeMemberListPresentation: Equatable, Sendable {
     var presenceHiddenUserIDs: Set<UserID> = []
     /// Space reserved for hover controls on wider people lists.
     var trailingAccessoryWidth: CGFloat = 0
-    /// Overrides the default primary-label opacity for secondary text.
-    var activityTextPrimaryOpacity: CGFloat?
 
     func opacity(for member: Member) -> CGFloat {
         dimsOfflineMembers && !member.isListedOnline ? 0.55 : 1

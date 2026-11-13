@@ -12,13 +12,6 @@ nonisolated enum ServerTagAppearance {
     static let highlightedBackgroundOpacity = 0.15
 }
 
-extension User {
-    /// Discord's VERIFIED_BOT flag is included in the user object's public flags.
-    nonisolated var isVerifiedBot: Bool {
-        isBot && publicFlags & (1 << 16) != 0
-    }
-}
-
 struct AppIdentityBadge: View {
     var isVerified = false
 
