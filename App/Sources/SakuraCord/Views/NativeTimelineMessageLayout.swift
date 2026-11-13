@@ -477,9 +477,13 @@ extension NativeTimelineRowLayout {
         ) {
             let maxHeaderX = contentX + ordinaryContentWidth
             headerX += InterfaceScale.metric(7)
+            let silentBadgeSide: CGFloat? = message.flags.contains(.suppressNotifications)
+                ? NativeTimelineSilentBadge.side(for: metrics.timestampFont) : nil
+            // A shortened timestamp leaves the badge its room in a narrow header.
+            let badgeReserve = silentBadgeSide.map { $0 + NativeTimelineSilentBadge.spacing } ?? 0
             let timestampText = NativeIdentityTextPresentation(
                 timestamp, font: metrics.timestampFont,
-                maximumWidth: max(0, maxHeaderX - headerX)
+                maximumWidth: max(0, maxHeaderX - headerX - badgeReserve)
             )
             result.timestampText = timestampText
             result.timestampFrame = CGRect(
@@ -487,8 +491,7 @@ extension NativeTimelineRowLayout {
                 width: timestampText.width, height: headerHeight
             )
             headerX += timestampText.width
-            if message.flags.contains(.suppressNotifications) {
-                let side = NativeTimelineSilentBadge.side(for: metrics.timestampFont)
+            if let side = silentBadgeSide {
                 headerX += NativeTimelineSilentBadge.spacing
                 // Centred on the timestamp's capitals, as Discord centres its badges.
                 result.silentBadgeFrame = CGRect(

@@ -230,8 +230,9 @@ extension NativeTimelineCanvasView {
         else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions stop being hovered.
+            // The capsule covers the row's text, so its mentions and badge stop being hovered.
             setHoveredMention(nil)
+            setHoveredSilentBadgeMessageID(nil)
             return
         }
         guard !hoversEditingOverlay(at: point) else { return }
@@ -278,8 +279,9 @@ extension NativeTimelineCanvasView {
         guard tracksHover, !overlayBlocksInteractions else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions stop being hovered.
+            // The capsule covers the row's text, so its mentions and badge stop being hovered.
             setHoveredMention(nil)
+            setHoveredSilentBadgeMessageID(nil)
             return
         }
         guard !hoversEditingOverlay(at: point) else { return }
@@ -1231,8 +1233,9 @@ extension NativeTimelineCanvasView {
         else { return }
         let point = currentMouseLocationInCanvas()
         guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions stop being hovered.
+            // The capsule covers the row's text, so its mentions and badge stop being hovered.
             setHoveredMention(nil)
+            setHoveredSilentBadgeMessageID(nil)
             return
         }
         guard !hoversEditingOverlay(at: point) else { return }

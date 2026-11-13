@@ -377,7 +377,8 @@ public extension MockChatProvider {
             attachments: forwardedSnapshot.attachments,
             nonce: draft.nonce,
             type: forwardedSnapshot.type,
-            flags: forwardedSnapshot.flags,
+            flags: draft.suppressesNotifications
+                ? forwardedSnapshot.flags.union(.suppressNotifications) : forwardedSnapshot.flags,
             guildID: snapshot.channels.first(where: {
                 $0.id == draft.destinationChannelID
             })?.guildID,
