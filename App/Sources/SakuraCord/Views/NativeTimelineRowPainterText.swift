@@ -331,13 +331,22 @@ extension NativeTimelineRowPainter {
         guard frame.width > 0, frame.height > 0,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
-        let (drawingValue, drawingFramesetter) = preparedDrawingText(
+        var (drawingValue, drawingFramesetter) = preparedDrawingText(
             value,
             framesetter: framesetter,
             hoveredLinkCharacterIndex: hoveredLinkCharacterIndex,
             underlinesLinks: model?.accessibilitySettings.underlinesLinks == true,
             revealedSpoilerLocations: revealedSpoilerLocations
         )
+        if isOutgoingBubble, let selectionRange, selectionRange.length > 0 {
+            // As in an NSTextView, selected text takes the selected-text colour;
+            // the light label on an accent fill vanishes on the light selection.
+            let selected = NSMutableAttributedString(attributedString: drawingValue)
+            let range = NSIntersectionRange(selectionRange, NSRange(location: 0, length: selected.length))
+            selected.addAttribute(.foregroundColor, value: NSColor.selectedTextColor, range: range)
+            drawingValue = selected
+            drawingFramesetter = CTFramesetterCreateWithAttributedString(selected)
+        }
         let path = CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil)
         let textFrame = CTFramesetterCreateFrame(
             drawingFramesetter,
