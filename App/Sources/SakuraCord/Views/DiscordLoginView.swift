@@ -827,7 +827,6 @@ private struct DiscordCredentialForm: View {
             .buttonStyle(.glassProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
-            .tint(SakuraCordAccentColor.color)
             .disabled(!canSubmit)
             .authenticationLoading(isWorking, in: Capsule(), intensity: 1.8)
         }

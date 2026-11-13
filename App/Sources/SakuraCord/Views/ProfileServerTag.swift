@@ -18,18 +18,15 @@ struct AppIdentityBadge: View {
     var body: some View {
         HStack(spacing: ServerTagAppearance.spacing) {
             if isVerified {
-                Image(systemName: "checkmark").accessibilityHidden(true)
+                Image(systemName: "checkmark")
+                    .fontWeight(.bold)
+                    .frame(width: ServerTagAppearance.badgeSize, height: ServerTagAppearance.badgeSize)
+                    .accessibilityHidden(true)
             }
             Text("APP")
         }
-        .font(.interfaceSystem(size: ServerTagAppearance.fontSize, weight: .bold))
-        .padding(.horizontal, ServerTagAppearance.horizontalPadding)
-        .frame(height: ServerTagAppearance.height)
+        .modifier(IdentityTagStyle(background: SakuraCordAccentColor.color))
         .foregroundStyle(.white)
-        .background(
-            isVerified ? Color(hex: DiscordBuiltInCommands.clydeAccent) : .indigo,
-            in: .rect(cornerRadius: ServerTagAppearance.cornerRadius)
-        )
         .accessibilityLabel(isVerified ? "Verified App" : "App")
     }
 }
@@ -58,13 +55,22 @@ struct ProfileServerTag: View {
                 Image(systemName: "chevron.down").font(.interface(.caption2))
             }
         }
-        .font(.interfaceSystem(size: ServerTagAppearance.fontSize, weight: .medium)).lineLimit(1)
-        .padding(.horizontal, ServerTagAppearance.horizontalPadding)
-        .frame(height: ServerTagAppearance.height)
-        .background(
-            .primary.opacity(isHighlighted ? ServerTagAppearance.highlightedBackgroundOpacity : ServerTagAppearance.backgroundOpacity),
-            in: .rect(cornerRadius: ServerTagAppearance.cornerRadius)
-        )
-        .contentShape(.rect(cornerRadius: ServerTagAppearance.cornerRadius))
+        .modifier(IdentityTagStyle(
+            background: .primary.opacity(isHighlighted ? ServerTagAppearance.highlightedBackgroundOpacity : ServerTagAppearance.backgroundOpacity)
+        ))
+    }
+}
+
+private struct IdentityTagStyle: ViewModifier {
+    let background: Color
+
+    func body(content: Content) -> some View {
+        content
+            .font(.interfaceSystem(size: ServerTagAppearance.fontSize, weight: .medium))
+            .lineLimit(1)
+            .padding(.horizontal, ServerTagAppearance.horizontalPadding)
+            .frame(height: ServerTagAppearance.height)
+            .background(background, in: .rect(cornerRadius: ServerTagAppearance.cornerRadius))
+            .contentShape(.rect(cornerRadius: ServerTagAppearance.cornerRadius))
     }
 }

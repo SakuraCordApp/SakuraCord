@@ -331,13 +331,27 @@ extension NativeTimelineRowPainter {
         guard frame.width > 0, frame.height > 0,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
-        let (drawingValue, drawingFramesetter) = preparedDrawingText(
+        var (drawingValue, drawingFramesetter) = preparedDrawingText(
             value,
             framesetter: framesetter,
             hoveredLinkCharacterIndex: hoveredLinkCharacterIndex,
             underlinesLinks: model?.accessibilitySettings.underlinesLinks == true,
             revealedSpoilerLocations: revealedSpoilerLocations
         )
+        if isOutgoingBubble, let selectionRange, selectionRange.length > 0 {
+            // As in an NSTextView, selected text takes the selected-text colour;
+            // the light label on an accent fill vanishes on the light selection.
+            let selected = NSMutableAttributedString(attributedString: drawingValue)
+            let range = NSIntersectionRange(selectionRange, NSRange(location: 0, length: selected.length))
+            let textColor: NSColor = drawsEmphasizedSelection ? .selectedTextColor : .unemphasizedSelectedTextColor
+            selected.addAttribute(.foregroundColor, value: textColor, range: range)
+            for spoiler in NativeTimelineTextSpoilers.ranges(in: value)
+                where !revealedSpoilerLocations.contains(spoiler.location) {
+                NativeTimelineSpoilerAppearance.concealText(in: selected, range: spoiler)
+            }
+            drawingValue = selected
+            drawingFramesetter = CTFramesetterCreateWithAttributedString(selected)
+        }
         let path = CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil)
         let textFrame = CTFramesetterCreateFrame(
             drawingFramesetter,
@@ -874,11 +888,11 @@ extension NativeTimelineRowPainter {
     }
 
     static var textSelectionHighlightColor: NSColor {
-        NSColor.sakuraCordTextSelectionBackgroundColor
+        drawsEmphasizedSelection ? .selectedTextBackgroundColor : .unemphasizedSelectedTextBackgroundColor
     }
 
     static var attachmentSelectionHighlightColor: NSColor {
-        NSColor.sakuraCordTextSelectionBackgroundColor.withAlphaComponent(0.5)
+        textSelectionHighlightColor.withAlphaComponent(0.5)
     }
 
     static func drawMention(

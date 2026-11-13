@@ -1,6 +1,5 @@
 import Foundation
 import SakuraCordModels
-import UniformTypeIdentifiers
 
 /// Where an outbound interaction was invoked. Gateway modal events omit the
 /// guild, so the opener's context is retained per nonce.
@@ -166,7 +165,7 @@ extension DiscordRESTProvider {
         let sessionID = try await interactionSessionID()
         var attachments: [JSONValue] = []
         if !payload.attachmentURLs.isEmpty {
-            attachments = try await uploadInteractionAttachments(
+            attachments = try await uploadAttachments(
                 payload.attachmentURLs,
                 channelID: invocation.channelID
             ) { state in
@@ -265,7 +264,7 @@ extension DiscordRESTProvider {
         let plan = ModalSubmissionPayloadBuilder.plan(submission)
         var descriptors: [JSONValue] = []
         if !plan.fileURLs.isEmpty {
-            descriptors = try await uploadInteractionAttachments(
+            descriptors = try await uploadAttachments(
                 plan.fileURLs, channelID: modal.channelID, progress: { _ in }
             )
         }
@@ -417,24 +416,6 @@ extension DiscordRESTProvider {
         response.statusCode == 401
             ? apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
             : unexplainedFailure(data, response)
-    }
-
-    /// Uploads interaction files through the shared privacy and reservation
-    /// path and returns the user-client descriptor table: string index IDs plus
-    /// the original content type.
-    func uploadInteractionAttachments(
-        _ urls: [URL], channelID: ChannelID,
-        progress: @escaping @Sendable (MessageSendProgress) -> Void
-    ) async throws -> [JSONValue] {
-        let descriptors = try await uploadAttachments(urls, channelID: channelID, progress: progress)
-        return zip(urls, descriptors).map { url, descriptor in
-            guard case var .object(fields) = descriptor else { return descriptor }
-            fields["original_content_type"] = .string(
-                UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
-                    ?? "application/octet-stream"
-            )
-            return .object(fields)
-        }
     }
 }
 

@@ -100,7 +100,7 @@ struct SakuraCordColorSlider: View {
         guard step != lastHapticStep else { return }
         defer { lastHapticStep = step }
         guard lastHapticStep != nil else { return }
-        ColorPickerHaptics.performStep()
+        StepHaptics.performStep()
     }
 }
 
@@ -174,15 +174,5 @@ private nonisolated struct ColorSliderWaveShape: Shape {
             )
         }
         return path
-    }
-}
-
-@MainActor
-enum ColorPickerHaptics {
-    static func performStep() {
-        NSHapticFeedbackManager.defaultPerformer.perform(
-            .alignment,
-            performanceTime: .now
-        )
     }
 }

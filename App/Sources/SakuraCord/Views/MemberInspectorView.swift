@@ -130,7 +130,9 @@ struct MemberListLoadingSkeleton: View {
     var body: some View {
         SkeletonShimmerTimeline {
             ZStack {
+                // The list scrolls beneath the toolbar; its rows start below it.
                 Color(nsColor: .controlBackgroundColor).opacity(0.45)
+                    .ignoresSafeArea(.container, edges: .top)
                 GeometryReader { geometry in
                     let items = MemberListSkeletonLayout.itemsFitting(
                         height: geometry.size.height,
@@ -465,32 +467,32 @@ struct MemberRow: View {
                             HStack(spacing: InterfaceScale.metric(5)) {
                                 NameRoleColorIndicator(colorHex: MessageAuthorPresentation.topRoleColor(in: member.roles))
                                 if let style = member.user.displayNameStyle {
-                                    ProfileDisplayName(name: member.user.displayName, style: style, size: 13,
+                                    ProfileDisplayName(name: member.user.displayName, style: style, size: NSFont.authorNameSize,
                                                        showsEffects: false, plainColor: nameColor)
                                         .allowsHitTesting(false)
                                 } else {
                                     Text(member.user.displayName)
-                                        .font(.interface(.body).weight(.semibold))
+                                        .font(.interfaceSystem(size: NSFont.authorNameSize, weight: .medium))
                                         .foregroundStyle(nameColor)
                                         .lineLimit(1)
                                 }
                                 if member.user.isBot {
-                                    AppIdentityBadge()
+                                    AppIdentityBadge(isVerified: member.user.isVerifiedBot)
                                 }
                                 if !cosmeticPolicy.disables(.serverTag, for: member.id),
                                    let identity = member.user.primaryGuild, identity.tag != nil {
                                     PrimaryGuildTag(identity: identity)
                                 }
                             }
-                            if let activity = member.memberListActivityText, !activity.isEmpty {
+                            let activityContent = member.memberListActivityContent
+                            if let activity = activityContent.text, !activity.isEmpty {
                                 HStack(spacing: InterfaceScale.metric(4)) {
                                     if member.isListeningToMusic {
                                         Image(systemName: "music.note")
-                                            .foregroundStyle(Color(hex: 0x1DB954))
-                                        if member.memberListShowsMusicSeparator {
-                                            Text("·")
-                                                .foregroundStyle(.secondary)
-                                        }
+                                            .foregroundStyle(Color(nsColor: NativeMemberActivityPresentation.iconColor))
+                                    }
+                                    if activityContent.separatesMusicIcon {
+                                        activitySeparator
                                     }
                                     ProfileStatusTextView(
                                         source: activity,
@@ -498,6 +500,10 @@ struct MemberRow: View {
                                         fontSize: 12,
                                         usesSecondaryColor: true
                                     )
+                                    if let emoji = activityContent.trailingEmoji {
+                                        activitySeparator
+                                        ProfileStatusTextView(source: emoji, isExpanded: false, fontSize: 12, usesSecondaryColor: true)
+                                    }
                                 }
                                 .font(.interfaceSystem(size: 12))
                                 .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(14), maxHeight: InterfaceScale.metric(16), alignment: .leading)
@@ -517,7 +523,11 @@ struct MemberRow: View {
         }
         .buttonStyle(.plain)
         .onModalHover { isHovered = $0 }
-        .help(member.user.username)
+        .help(member.memberListTooltip)
+    }
+
+    private var activitySeparator: some View {
+        Text("·").fontWeight(.bold).foregroundStyle(.primary.opacity(0.5))
     }
 
     private var nameColor: Color {

@@ -14,10 +14,11 @@ struct GuildChannelSelectionMutation {
             value.flags = enabled ? value.flags | GuildChannelSelection.enabledFlag : value.flags & ~GuildChannelSelection.enabledFlag
         }
         for (channelID, selected) in channels {
-            var override = value.channelOverrides.first { $0.channelID == channelID } ?? ChannelNotificationOverride(channelID: channelID)
-            override.flags = selected ? override.flags | GuildChannelSelection.selectedFlag : override.flags & ~(GuildChannelSelection.selectedFlag | GuildChannelSelection.favoriteFlag)
-            value.channelOverrides.removeAll { $0.channelID == channelID }
-            value.channelOverrides.append(override)
+            value.updateChannelOverride(channelID) {
+                $0.flags = selected
+                    ? $0.flags | GuildChannelSelection.selectedFlag
+                    : $0.flags & ~(GuildChannelSelection.selectedFlag | ChannelNotificationOverride.pinnedFlag)
+            }
         }
         return value
     }

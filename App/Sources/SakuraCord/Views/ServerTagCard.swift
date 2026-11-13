@@ -121,7 +121,6 @@ struct ServerTagCard: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(SakuraCordAccentColor.color)
                     .controlSize(.large)
                     .disabled(isJoining)
                     .padding(.top, InterfaceScale.metric(4))

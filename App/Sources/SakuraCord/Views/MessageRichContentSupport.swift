@@ -243,8 +243,7 @@ nonisolated enum SystemMessagePresentation {
         currentUserID: UserID? = nil,
         recipient: User? = nil,
         baseFontSize: CGFloat,
-        actorColor: NSColor? = nil,
-        linkColor: NSColor? = nil
+        actorColor: NSColor? = nil
     ) -> NSAttributedString {
         let value = NSMutableAttributedString()
         for run in textRuns(for: message, currentUserID: currentUserID, recipient: recipient) {
@@ -256,7 +255,7 @@ nonisolated enum SystemMessagePresentation {
                         .foregroundColor: run.action == .profile(message.author.id)
                             ? actorColor ?? NSColor.labelColor
                             : run.isLink
-                                ? linkColor ?? NSColor.linkColor
+                                ? NSColor.linkColor
                                 : run.isEmphasized
                                 ? NSColor.labelColor
                                 : NSColor.secondaryLabelColor,

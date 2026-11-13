@@ -20,7 +20,10 @@ extension NativeTimelineRowLayout {
         private var translationPresentation: NativeTimelineTranslationPresentation?
         private var usesBubbles = false
         private var isOutgoingBubble = false
-        private var horizontalInset: CGFloat = 0
+        // The narrow search sidebar keeps less of its width as margin.
+        private var horizontalInset: CGFloat {
+            searchContext == nil ? MessageRowLayoutMetrics.horizontalInset : InterfaceScale.metric(12)
+        }
         private var contentX: CGFloat = 0
         private var contentWidth: CGFloat = 0
         private var ordinaryContentWidth: CGFloat = 0
@@ -137,9 +140,6 @@ extension NativeTimelineRowLayout {
         private mutating func prepareColumns() {
             usesBubbles = bubbleContext.isEnabled && !row.isResource
             isOutgoingBubble = bubbleContext.isOutgoing && !row.isResource
-            horizontalInset = searchContext == nil
-                ? MessageRowLayoutMetrics.horizontalInset
-                : 22
             let columnGap = MessageRowLayoutMetrics.columnGap(timestampGutterWidth: metrics.timestampGutterWidth)
             if isOutgoingBubble {
                 contentPresentation = NativeTimelineTextPresentation.outgoingBubble(contentPresentation)
@@ -399,11 +399,14 @@ extension NativeTimelineRowLayout {
             // never take more than a third of a narrow header.
             let timestampReserve = min(timestampWidth + silentBadgeWidth + editedWidth, availableWidth / 3)
                 + InterfaceScale.metric(7)
-            let badge = author.isSystem ? "OFFICIAL" : author.isBot ? "APP" : nil
-            let botText = badge.map { NativeIdentityTextPresentation(
-                $0, font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
-            ) }
-            let naturalBotWidth = botText.map { $0.width + ServerTagAppearance.horizontalPadding * 2 } ?? 0
+            let botText = author.isSystem
+                ? NativeIdentityTextPresentation(
+                    "OFFICIAL", font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize, weight: .medium)
+                )
+                : author.isBot ? NativeAppBadgePresentation.text : nil
+            let naturalBotWidth = botText.map {
+                NativeAppBadgePresentation.width(isVerified: author.isVerifiedBot, text: $0)
+            } ?? 0
             let botWidth = availableWidth >= naturalBotWidth + 7 + 12 ? naturalBotWidth : 0
             let botReserve = botWidth > 0 ? botWidth + 7 : 0
             let role = presentation?.topRoleWithIcon
@@ -416,7 +419,7 @@ extension NativeTimelineRowLayout {
                 author.displayName, font: authorFont,
                 maximumWidth: max(0, availableWidth - botReserve - tagReserve - roleIconReserve - timestampReserve)
             )
-            let badgeHeight = ServerTagAppearance.height + InterfaceScale.metric(1)
+            let badgeHeight = ServerTagAppearance.height
             let botBaseline = botText?.baselineOffset(inHeight: badgeHeight) ?? 0
             let headerHeight = ceil(max(
                 authorFont.ascender - authorFont.descender,
@@ -455,8 +458,9 @@ extension NativeTimelineRowLayout {
             if botWidth > 0 {
                 headerX += InterfaceScale.metric(7)
                 result.botBadgeText = botText
+                result.botBadgeIsVerified = author.isVerifiedBot
                 result.botBadgeFrame = CGRect(
-                    x: headerX, y: baselineY - botBaseline,
+                    x: headerX, y: baselineY - botBaseline - InterfaceScale.metric(1),
                     width: botWidth, height: badgeHeight
                 )
                 headerX += botWidth

@@ -20,9 +20,13 @@ private final class NativeTimelineInputShieldScrollView: NSScrollView {
 
     /// Called when the window toolbar starts covering a different height.
     var onToolbarObscuredHeightChange: (() -> Void)?
+    /// A bar below the toolbar that content also scrolls beneath.
+    var topBarHeight: CGFloat = 0 {
+        didSet { if topBarHeight != oldValue { tile() } }
+    }
 
     override func tile() {
-        if keepScrollerBelowWindowToolbar() {
+        if keepScrollerBelowWindowToolbar(barHeight: topBarHeight) {
             // Content insets follow on the next turn, outside AppKit's tiling.
             Task { @MainActor [weak self] in self?.onToolbarObscuredHeightChange?() }
         }
@@ -70,6 +74,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     let earlierHistoryLoadFailed: Bool
     let laterHistoryLoadFailed: Bool
     let bottomContentInset: CGFloat
+    let topBarHeight: CGFloat
     let unreadMessageID: MessageID?
     let highlightedMessageID: MessageID?
     let selectedMessageID: MessageID?
@@ -99,6 +104,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         earlierHistoryLoadFailed: Bool = false,
         laterHistoryLoadFailed: Bool = false,
         bottomContentInset: CGFloat,
+        topBarHeight: CGFloat = 0,
         unreadMessageID: MessageID?,
         highlightedMessageID: MessageID?,
         selectedMessageID: MessageID? = nil,
@@ -129,6 +135,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         self.earlierHistoryLoadFailed = earlierHistoryLoadFailed
         self.laterHistoryLoadFailed = laterHistoryLoadFailed
         self.bottomContentInset = bottomContentInset
+        self.topBarHeight = topBarHeight
         self.unreadMessageID = unreadMessageID
         self.highlightedMessageID = highlightedMessageID
         self.selectedMessageID = selectedMessageID
@@ -177,6 +184,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         // notifications too.
         context.coordinator.isLeavingWorkspace = context.environment.isLeavingWorkspace
         guard !context.environment.isLeavingWorkspace else { return }
+        (scrollView as? NativeTimelineInputShieldScrollView)?.topBarHeight = topBarHeight
         context.coordinator.update(parent: self, scrollView: scrollView)
     }
 

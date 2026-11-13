@@ -106,7 +106,6 @@ struct NativeTimelineRowLayout {
         let frame: CGRect
         let iconFrame: CGRect
         let titleFrame: CGRect
-        let subtitleFrame: CGRect?
     }
 
     struct ForwardedSourceRegion {
@@ -183,6 +182,7 @@ struct NativeTimelineRowLayout {
     var editedText: NativeIdentityTextPresentation?
     var botBadgeFrame: CGRect?
     var botBadgeText: NativeIdentityTextPresentation?
+    var botBadgeIsVerified = false
     var timestampFrame: CGRect?
     /// Discord's @silent badge beside the timestamp.
     var silentBadgeFrame: CGRect?
@@ -523,10 +523,10 @@ struct NativeTimelineSearchPrefixLayout {
             return Self(region: nil, height: 0)
         }
         let sectionFrame = CGRect(
-            x: InterfaceScale.metric(14),
+            x: InterfaceScale.metric(10),
             y: InterfaceScale.metric(8),
-            width: max(1, width - InterfaceScale.metric(28)),
-            height: context.sectionSubtitle == nil ? InterfaceScale.metric(24) : InterfaceScale.metric(34)
+            width: max(1, width - InterfaceScale.metric(20)),
+            height: InterfaceScale.metric(24)
         )
         let iconFrame = CGRect(
             x: sectionFrame.minX,
@@ -536,24 +536,15 @@ struct NativeTimelineSearchPrefixLayout {
         )
         let titleFrame = CGRect(
             x: iconFrame.maxX + InterfaceScale.metric(7),
-            y: sectionFrame.minY,
+            y: iconFrame.minY,
             width: max(1, sectionFrame.maxX - iconFrame.maxX - InterfaceScale.metric(7)),
-            height: InterfaceScale.metric(18)
+            height: iconFrame.height
         )
-        let subtitleFrame = context.sectionSubtitle.map { _ in
-            CGRect(
-                x: titleFrame.minX,
-                y: titleFrame.maxY,
-                width: titleFrame.width,
-                height: InterfaceScale.metric(14)
-            )
-        }
         return Self(
             region: NativeTimelineRowLayout.SearchSectionRegion(
                 frame: sectionFrame,
                 iconFrame: iconFrame,
-                titleFrame: titleFrame,
-                subtitleFrame: subtitleFrame
+                titleFrame: titleFrame
             ),
             height: sectionFrame.maxY + 4
         )

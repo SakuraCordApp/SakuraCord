@@ -125,11 +125,9 @@ private struct NotificationDeliverySettingsSection: View {
                     }
                 }
             ))
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationEnabled, state: state)
 
             Toggle("Notification sound", isOn: $preferences.playsSound)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationSound, state: state)
 
             Picker("Notification previews", selection: $preferences.previewStyle) {
@@ -221,7 +219,6 @@ private struct NotificationEventSettingsSection: View {
                 }
             }
             .toggleStyle(.checkbox)
-            .tint(SakuraCordAccentColor.color)
         } header: {
             Text("Notify About", bundle: #bundle)
         }
@@ -242,7 +239,6 @@ private struct NotificationEventSettingsSection: View {
                     .settingsControlAnchor(.notificationClearWhenRead, state: state)
 
             }
-            .tint(SakuraCordAccentColor.color)
         } header: {
             Text("Delivery", bundle: #bundle)
         }

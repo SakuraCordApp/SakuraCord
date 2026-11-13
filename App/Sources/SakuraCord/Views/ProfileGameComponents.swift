@@ -83,7 +83,7 @@ private struct ProfileGameActionFill: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .foregroundStyle(style == .prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .foregroundStyle(style == .prominent ? AnyShapeStyle(SakuraCordAccentColor.labelOnFill) : AnyShapeStyle(.primary))
             .background { Capsule().fill(fill) }
             .opacity(isEnabled ? 1 : 0.5)
             .animation(.easeOut(duration: 0.12), value: isHovered)
@@ -94,7 +94,8 @@ private struct ProfileGameActionFill: ViewModifier {
     private var fill: AnyShapeStyle {
         let hovered = isHovered && isEnabled
         switch style {
-        case .prominent: return AnyShapeStyle(SakuraCordAccentColor.color.opacity(hovered ? 0.85 : 1))
+        case .prominent:
+            return AnyShapeStyle(hovered ? Color(nsColor: SakuraCordAccentColor.nsColor.withSystemEffect(.rollover)) : SakuraCordAccentColor.color)
         case .secondary: return AnyShapeStyle(.primary.opacity(hovered ? 0.14 : 0.08))
         }
     }

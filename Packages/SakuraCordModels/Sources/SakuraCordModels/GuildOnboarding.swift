@@ -96,7 +96,6 @@ public struct GuildOnboardingOption: Decodable, Identifiable, Equatable, Sendabl
 public enum GuildChannelSelection {
     public static let enabledFlag: UInt64 = 1 << 14
     public static let selectedFlag: UInt64 = 1 << 12
-    public static let favoriteFlag: UInt64 = 1 << 11
 
     public static func isSelected(_ channelID: ChannelID, settings: GuildNotificationSettings) -> Bool {
         settings.channelOverrides.first { $0.channelID == channelID }.map { $0.flags & selectedFlag != 0 } ?? false
