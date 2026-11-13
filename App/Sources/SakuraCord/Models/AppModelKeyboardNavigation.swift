@@ -185,13 +185,13 @@ extension AppModel {
         }
         let channelsByGuild = Dictionary(grouping: snapshot?.channels ?? [], by: \.guildID)
         let scopes: [GuildID?] = [nil] + orderedNavigationGuildIDs.map { $0 }
-        return scopes.flatMap { guildID in
-            if guildID == nil {
+        return scopes.flatMap { scope in
+            guard let guildID = scope else {
                 return DirectMessageInboxPolicy.conversations(in: channelsByGuild[nil] ?? [], pinnedChannelIDs: pinnedDirectMessageIDs)
             }
-            return shortcutChannelsWithThreads(
-                groups: ChannelGroup.make(from: channelsByGuild[guildID] ?? []), guildID: guildID
-            )
+            // Walk each server in its sidebar order, pinned channels first.
+            let groups = pinnedChannelGroups(ChannelGroup.make(from: channelsByGuild[guildID] ?? []), guildID: guildID)
+            return shortcutChannelsWithThreads(groups: groups, guildID: guildID)
         }
     }
 }

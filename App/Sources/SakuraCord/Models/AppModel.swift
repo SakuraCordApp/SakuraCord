@@ -138,6 +138,13 @@ final class AppModel {
         var desiredCollapsed: Bool
     }
 
+    struct ChannelPinMutationState {
+        var guildID: GuildID
+        var confirmedPinned: Bool
+        var desiredPinned: Bool
+        var editedAt: ContinuousClock.Instant
+    }
+
     @ObservationIgnored var snapshotStorage: BootstrapSnapshot?
     // Keep workspace chrome independent of unrelated channel and member changes.
     private(set) var currentUser: User?
@@ -218,7 +225,7 @@ final class AppModel {
     var pinnedDirectMessageIDs: Set<ChannelID> {
         guard let settings = readState.settingsByGuild[nil]
         else { return [] }
-        return Set(settings.channelOverrides.filter(\.isPinnedDirectMessage).map(\.channelID))
+        return Set(settings.channelOverrides.filter(\.isPinned).map(\.channelID))
     }
     var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>] = [:]
     var hiddenChannelIDs: Set<ChannelID> = [] {
@@ -1056,6 +1063,9 @@ final class AppModel {
     @ObservationIgnored var categoryCollapseMutationStates:
         [ChannelID: CategoryCollapseMutationState] = [:]
     var optimisticCategoryCollapsedByID: [ChannelID: Bool] = [:]
+    @ObservationIgnored var channelPinMutationTasks: [ChannelID: Task<Void, Never>] = [:]
+    @ObservationIgnored var channelPinMutationStates: [ChannelID: ChannelPinMutationState] = [:]
+    var optimisticChannelPinnedByID: [ChannelID: Bool] = [:]
     @ObservationIgnored var channelNotificationMutationGeneration = 0
     @ObservationIgnored var forumNotificationMutationTasks:
         [ChannelID: Task<Void, Never>] = [:]

@@ -149,7 +149,7 @@ private extension DiscordRESTProvider {
         cachedGuildNotificationSettings[.init(rawValue: 100)] = GuildNotificationSettings(
             guildID: .init(rawValue: 100), flags: GuildChannelSelection.enabledFlag | 4,
             channelOverrides: [.init(channelID: .init(rawValue: 200), flags: 4),
-                               .init(channelID: .init(rawValue: 201), flags: GuildChannelSelection.selectedFlag | GuildChannelSelection.favoriteFlag)]
+                               .init(channelID: .init(rawValue: 201), flags: GuildChannelSelection.selectedFlag | ChannelNotificationOverride.pinnedFlag)]
         )
     }
     func seedOnboardingContract() {
