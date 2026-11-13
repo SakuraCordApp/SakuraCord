@@ -401,13 +401,18 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     override var acceptsFirstResponder: Bool { true }
 
     override func becomeFirstResponder() -> Bool {
-        defer { selectionEmphasisDidChange() }
+        scheduleSelectionEmphasisRefresh()
         return super.becomeFirstResponder()
     }
 
     override func resignFirstResponder() -> Bool {
-        defer { selectionEmphasisDidChange() }
+        scheduleSelectionEmphasisRefresh()
         return super.resignFirstResponder()
+    }
+
+    /// The window records its new first responder only after these calls return.
+    private func scheduleSelectionEmphasisRefresh() {
+        Task { @MainActor [weak self] in self?.selectionEmphasisDidChange() }
     }
 
     @objc func selectionEmphasisDidChange(_ notification: Notification? = nil) {

@@ -322,7 +322,7 @@ private struct ScreenSharePreviewFooter: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(canStartSharing ? Color.white : Color.secondary)
+            .foregroundStyle(canStartSharing ? SakuraCordAccentColor.labelOnFill : Color.secondary)
             .glassEffect(
                 canStartSharing
                     ? .regular.tint(SakuraCordAccentColor.color).interactive()

@@ -197,7 +197,7 @@ private struct MediaViewerAudioSeekBar: View {
                 if let pointer = scrubFraction.map({ $0 * width }) ?? hoverX, duration > 0 {
                     Text(Self.time(Double(pointer / max(width, 1)) * duration))
                         .font(.interface(.caption).monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                         .padding(.horizontal, InterfaceScale.metric(7))
                         .padding(.vertical, InterfaceScale.metric(3))
                         .background(SakuraCordAccentColor.color, in: Capsule())

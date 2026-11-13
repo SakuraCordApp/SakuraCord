@@ -63,7 +63,8 @@ extension NSColor {
         SakuraCordAccentColor.nsColor
     }
 
-    static var sakuraCordLabelOnAccentColor: NSColor {
-        SakuraCordAccentColor.labelOnFillNSColor
+    /// Resolved when drawn, so cached text layouts follow accent changes.
+    static let sakuraCordLabelOnAccentColor = NSColor(name: nil) { _ in
+        MainActor.assumeIsolated { SakuraCordAccentColor.labelOnFillNSColor }
     }
 }
