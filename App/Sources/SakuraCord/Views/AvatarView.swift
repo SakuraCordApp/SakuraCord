@@ -35,7 +35,7 @@ struct AvatarView: View {
                     .scaledToFill()
             } else if showsFallback {
                 Circle().fill(SakuraCordAccentColor.color.gradient)
-                fallback
+                fallback.foregroundStyle(.white)
             }
             if let url {
                 if animates,
@@ -66,7 +66,7 @@ struct AvatarView: View {
     }
 
     private var fallback: some View {
-        Text(name.prefix(1).uppercased()).font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(.white)
+        Text(name.prefix(1).uppercased()).font(.system(size: size * 0.42, weight: .semibold))
     }
 
     var requestedPixelDimension: Int {
