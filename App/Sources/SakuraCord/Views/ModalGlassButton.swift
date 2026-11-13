@@ -21,7 +21,7 @@ struct ModalGlassButton: View {
     private var looksEnabled: Bool { isEnabled || isLoading }
 
     private var tint: Color? {
-        primary && looksEnabled ? destructive ? .red : SakuraCordAccentColor.color : nil
+        primary && looksEnabled ? (destructive ? .red : SakuraCordAccentColor.color) : nil
     }
 
     var body: some View {
