@@ -344,6 +344,10 @@ extension NativeTimelineRowPainter {
             let selected = NSMutableAttributedString(attributedString: drawingValue)
             let range = NSIntersectionRange(selectionRange, NSRange(location: 0, length: selected.length))
             selected.addAttribute(.foregroundColor, value: NSColor.selectedTextColor, range: range)
+            for spoiler in NativeTimelineTextSpoilers.ranges(in: value)
+                where !revealedSpoilerLocations.contains(spoiler.location) {
+                NativeTimelineSpoilerAppearance.concealText(in: selected, range: spoiler)
+            }
             drawingValue = selected
             drawingFramesetter = CTFramesetterCreateWithAttributedString(selected)
         }
