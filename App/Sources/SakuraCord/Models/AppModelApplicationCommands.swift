@@ -508,7 +508,8 @@ extension AppModel {
             }
             return false
         }
-        let message = string("message")
+        // Discord trims string options, so a leading `@silent` is found.
+        let message = string("message").trimmingCharacters(in: .whitespacesAndNewlines)
         if let text = Self.builtInMessageText(command: invocation.command.name, message: message) {
             _ = enqueueChannelMessage(
                 channelID: channelID, content: text, replyTo: nil, replyPreview: nil,
@@ -555,10 +556,10 @@ extension AppModel {
         }
     }
 
-    /// `/msg` and `/thread` post outside the outbox. Discord trims string
-    /// options, and its send action sends nothing for a bare `@silent`.
+    /// `/msg` and `/thread` post outside the outbox. Like Discord's send
+    /// action, a bare `@silent` sends nothing.
     private func sendBuiltInMessage(_ message: String, to channelID: ChannelID, session: AppModelAccountSession) async throws {
-        let draft = SendMessageDraft(channelID: channelID, content: message.trimmingCharacters(in: .whitespacesAndNewlines))
+        let draft = SendMessageDraft(channelID: channelID, content: message)
         guard !draft.content.isEmpty else { return }
         _ = try await session.provider.send(draft)
         recordMessageEmojiUsage(message, session: session)
