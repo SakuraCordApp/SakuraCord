@@ -1020,12 +1020,7 @@ extension AppModel {
                 guildID: guildID,
                 messageNotifications: .inherit
             )
-        var override =
-            settings.channelOverrides.last { $0.channelID == channelID }
-            ?? ChannelNotificationOverride(channelID: channelID)
-        mutation(&override)
-        settings.channelOverrides.removeAll { $0.channelID == channelID }
-        settings.channelOverrides.append(override)
+        settings.updateChannelOverride(channelID, mutation)
         applyNotificationSettings(settings)
         refreshUnreadPresentation()
     }

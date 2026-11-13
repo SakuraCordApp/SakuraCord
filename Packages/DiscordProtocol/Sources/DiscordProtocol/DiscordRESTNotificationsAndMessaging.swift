@@ -2,14 +2,25 @@ import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
-    public func updateDirectMessagePin(
+    public func updateChannelPin(
+        guildID: GuildID?,
         channelID: ChannelID,
         flags: UInt64
     ) async throws {
-        try await updateChannelNotificationSettings(
-            guildID: nil,
-            channelID: channelID,
-            override: ["flags": .number(Double(flags))]
+        let override: [String: JSONValue] = ["flags": .number(Double(flags))]
+        guard let guildID else {
+            try await updateChannelNotificationSettings(
+                guildID: nil,
+                channelID: channelID,
+                override: override
+            )
+            return
+        }
+        // The first-party channel pin saves a server override through the bulk
+        // route, unlike its per-guild route for DMs.
+        try await updateGuildNotificationSettings(
+            guildID: guildID,
+            settings: ["channel_overrides": .object([channelID.description: .object(override)])]
         )
     }
 
