@@ -98,7 +98,6 @@ enum MentionAttachmentRenderer {
         let size = NSSize(width: width, height: height)
         let usesRoleAccentFallback = usesRoleAccentFallback(for: presentation)
         let image = NSImage(size: size, flipped: false) { bounds in
-            // The image outlives appearance changes, so its colour is resolved when drawn.
             let color = MainActor.assumeIsolated { NativeTimelineMentionAppearance.color(for: presentation) }
             let background = color.withAlphaComponent(
                 NativeTimelineMentionAppearance.backgroundAlpha(isHovered: hovered, isTimestamp: presentation.isTimestamp)
@@ -171,6 +170,9 @@ enum MentionAttachmentRenderer {
             label.draw(at: NSPoint(x: textX, y: textY), withAttributes: textAttributes)
             return true
         }
+        // Composer attachments outlive theme and appearance changes, so the
+        // pill redraws with its colour resolved each time instead of caching.
+        image.cacheMode = .never
         image.accessibilityDescription = presentation.label
         return image
     }
