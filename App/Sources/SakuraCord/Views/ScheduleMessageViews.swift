@@ -145,9 +145,10 @@ enum ScheduleTimeText {
         InterfaceTimestampFormatter.text(for: date, format: format, includesSeconds: false)
     }
 
-    /// "16 Nov at 03:00", with the year where a list can span one.
-    static func dayAndTime(_ date: Date, format: InterfaceTimestampFormat, includesYear: Bool = false) -> String {
-        let day = date.formatted(includesYear ? .dateTime.day().month(.abbreviated).year() : .dateTime.day().month(.abbreviated))
-        return String(localized: "\(day) at \(time(date, format: format))")
+    /// "16 Nov at 03:00", or the day in another style.
+    static func dayAndTime(
+        _ date: Date, format: InterfaceTimestampFormat, day: Date.FormatStyle = .dateTime.day().month(.abbreviated)
+    ) -> String {
+        String(localized: "\(date.formatted(day)) at \(time(date, format: format))")
     }
 }

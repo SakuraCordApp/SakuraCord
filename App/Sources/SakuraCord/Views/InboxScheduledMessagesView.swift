@@ -14,9 +14,9 @@ struct InboxScheduledMessagesView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if state.messages.isEmpty {
                 ContentUnavailableView {
-                    Label("No Scheduled Messages", systemImage: "calendar.badge.clock")
+                    Label("Send it at the perfect moment", systemImage: "calendar.badge.clock")
                 } description: {
-                    Text("Choose Schedule Message from the + menu to send a message later.")
+                    Text("Draft your message, then choose Schedule Message from the + menu to pick when it sends.")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -61,6 +61,8 @@ struct InboxScheduledMessagesView: View {
     }
 }
 
+/// One scheduled message as the official list draws it: its send time, where
+/// it goes with the row's actions, and the message as it will appear.
 private struct ScheduledMessageCard: View {
     let model: AppModel
     let message: ScheduledMessage
@@ -72,36 +74,128 @@ private struct ScheduledMessageCard: View {
     var body: some View {
         let channel = model.knownRootChannel(message.channelID)
             ?? model.sidebarThread(message.channelID).map(model.threadNavigationChannel)
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
-            HStack(spacing: InterfaceScale.metric(8)) {
-                status(channel: channel)
-                Spacer(minLength: InterfaceScale.metric(8))
-                if isPending {
-                    ProgressView().controlSize(.small)
-                } else {
-                    actions(channel: channel)
-                }
-            }
+        VStack(alignment: .leading, spacing: 0) {
             // Like the official list, a message whose channel is gone shows only its error and Cancel.
             if let channel {
-                Button {
-                    model.dismissInbox()
-                    model.navigate(to: channel.id)
-                } label: {
-                    Label(channelTitle(channel), systemImage: channel.guildID == nil ? "bubble.left" : "number")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                header
+                destination(channel)
+                Divider().padding(.horizontal, InterfaceScale.metric(12))
+                body(channel)
+            } else {
+                HStack(spacing: InterfaceScale.metric(8)) {
+                    Label("Scheduled message's channel not found.", systemImage: "exclamationmark.circle.fill")
+                        .font(.interface(.headline))
+                        .foregroundStyle(.red)
+                    Spacer(minLength: InterfaceScale.metric(8))
+                    actions(channel: nil)
                 }
-                .buttonStyle(.plain)
-                .help("Open Conversation")
-                content
+                .padding(InterfaceScale.metric(12))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.primary.opacity(0.05))
+        .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(16)))
+        .opacity(isPending ? 0.6 : 1)
+    }
+
+    private var header: some View {
+        Group {
+            if let failure {
+                Label(failure, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
+            } else {
+                Label(
+                    "Message scheduled for \(ScheduleTimeText.dayAndTime(message.sendAt, format: timeFormat, day: .dateTime.day().month(.wide).year()))",
+                    systemImage: "clock.fill"
+                )
+                .foregroundStyle(.secondary)
+            }
+        }
+        .font(.interface(.callout))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, InterfaceScale.metric(8))
+        .background(.primary.opacity(0.04))
+    }
+
+    private func destination(_ channel: Channel) -> some View {
+        let destination = InboxDestinationPresentation(channelID: channel.id, guildID: channel.guildID, model: model)
+        return HStack(spacing: InterfaceScale.metric(8)) {
+            Button {
+                model.dismissInbox()
+                model.navigate(to: channel.id)
+            } label: {
+                HStack(spacing: InterfaceScale.metric(8)) {
+                    destinationIcon(channel, destination: destination)
+                    Image(systemName: "chevron.right")
+                        .font(.interface(.caption2).weight(.bold))
+                        .foregroundStyle(.tertiary)
+                    VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
+                        HStack(spacing: InterfaceScale.metric(5)) {
+                            if channel.guildID != nil {
+                                SakuraCordSystemSymbol.swiftUIImage(named: destination.systemImage)
+                                    .font(.interface(.subheadline)).foregroundStyle(.secondary)
+                            }
+                            Text(channel.name).font(.interface(.headline)).lineLimit(1)
+                        }
+                        if !destination.subtitle.isEmpty {
+                            Text(destination.subtitle).font(.interface(.caption)).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open Conversation")
+            Spacer(minLength: InterfaceScale.metric(8))
+            if isPending {
+                ProgressView().controlSize(.small)
+            } else {
+                actions(channel: channel)
+            }
+        }
+        .padding(.horizontal, InterfaceScale.metric(12))
+        .padding(.vertical, InterfaceScale.metric(8))
+    }
+
+    @ViewBuilder private func destinationIcon(_ channel: Channel, destination: InboxDestinationPresentation) -> some View {
+        let size = InterfaceScale.metric(32)
+        if let guildName = destination.guildName {
+            GuildIconView(name: guildName, iconURL: destination.guildIconURL, size: size,
+                          cornerRadius: InterfaceScale.metric(9), animates: false)
+        } else {
+            let recipient = channel.recipients.first
+            AvatarView(name: recipient?.displayName ?? channel.name, url: channel.iconURL ?? recipient?.avatarURL, size: size)
+        }
+    }
+
+    private func body(_ channel: Channel) -> some View {
+        let author = message.preview.map(model.authorPresentation(for:))
+        let user = author?.user ?? model.currentUser
+        return VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
+            if let replyTo = message.replyTo {
+                ScheduledReplyContext(model: model, channelID: message.channelID, messageID: replyTo)
+            }
+            HStack(alignment: .top, spacing: InterfaceScale.metric(12)) {
+                AvatarView(name: user?.displayName ?? "", url: user?.avatarURL, size: InterfaceScale.metric(40))
+                VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
+                    HStack(spacing: InterfaceScale.metric(6)) {
+                        Text(user?.displayName ?? "")
+                            .font(.interface(.headline))
+                            .foregroundStyle(author?.roleColorHex.map { Color(hex: $0) } ?? .primary)
+                        Text(ScheduleTimeText.time(message.sendAt, format: timeFormat))
+                            .font(.interface(.caption))
+                            .foregroundStyle(.secondary)
+                        if message.flags.contains(.suppressNotifications) {
+                            Image(systemName: "bell.slash.fill")
+                                .font(.interface(.caption))
+                                .foregroundStyle(.secondary)
+                                .help("Silent")
+                        }
+                    }
+                    content
+                }
             }
         }
         .padding(InterfaceScale.metric(12))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.primary.opacity(0.05), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(16)))
-        .opacity(isPending ? 0.6 : 1)
     }
 
     @ViewBuilder private var content: some View {
@@ -122,70 +216,69 @@ private struct ScheduledMessageCard: View {
             Text("Escape to cancel · Return to save")
                 .font(.interface(.caption2))
                 .foregroundStyle(.tertiary)
-        } else if !message.content.isEmpty {
-            Text(message.content)
-                .font(.interface(.body))
-                .lineLimit(4)
-                .textSelection(.enabled)
+        } else if !visibleContent.isEmpty {
+            CustomEmojiRichText(
+                model: model,
+                message: message.preview,
+                content: visibleContent,
+                emojiSize: InterfaceScale.metric(22),
+                baseFontSize: InterfaceScale.fontSize(15),
+                mentionPresentation: MessageMentionResolver(model: model, message: message.preview).presentation
+            )
         }
-        if !message.stickers.isEmpty {
-            HStack(spacing: InterfaceScale.metric(8)) {
-                ForEach(message.stickers) { sticker in
-                    StickerPreview(sticker: sticker)
-                        .frame(width: InterfaceScale.metric(80), height: InterfaceScale.metric(80))
+        if let preview = message.preview {
+            ForEach(preview.stickers) { sticker in
+                StickerPreview(sticker: sticker)
+                    .frame(width: InterfaceScale.metric(160), height: InterfaceScale.metric(160))
+            }
+            if let media = ForwardMessagePreviewPlan.make(message: preview).media, let url = media.url {
+                // A GIF link's embed plays its looping video over the still, as in the timeline.
+                let video = media.isSpoiler ? nil : preview.embeds.first { $0.type?.lowercased() == "gifv" }?.video
+                ZStack {
+                    AnimatedRemoteImage(url: url, animates: !media.isSpoiler, maximumPixelDimension: 400, contentMode: .fit)
+                    if let videoURL = video.flatMap({ $0.proxyURL ?? $0.url }) {
+                        ScheduledGIFVideo(url: videoURL)
+                    }
                 }
-            }
-        }
-        if !details.isEmpty {
-            HStack(spacing: InterfaceScale.metric(10)) {
-                ForEach(details, id: \.text) { detail in
-                    Label(detail.text, systemImage: detail.systemImage)
+                .aspectRatio(video.flatMap { video in
+                    video.width.flatMap { width in video.height.flatMap { $0 > 0 ? CGFloat(width) / CGFloat($0) : nil } }
+                }, contentMode: .fit)
+                .frame(maxWidth: InterfaceScale.metric(240), maxHeight: InterfaceScale.metric(180), alignment: .leading)
+                .blur(radius: media.isSpoiler ? 24 : 0)
+                .overlay {
+                    if media.isSpoiler {
+                        Text("Spoiler").font(.interface(.caption).weight(.bold)).padding(.horizontal, InterfaceScale.metric(8))
+                            .padding(.vertical, InterfaceScale.metric(4)).glassEffect(.regular, in: Capsule())
+                    }
                 }
+                .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(8)))
             }
-            .font(.interface(.caption))
-            .foregroundStyle(.secondary)
+        }
+        if message.attachmentCount > 0 {
+            let count = message.attachmentCount
+            Label(count == 1 ? String(localized: "1 attachment") : String(localized: "\(count) attachments"), systemImage: "paperclip")
+                .font(.interface(.callout))
+                .foregroundStyle(.secondary)
         }
     }
 
-    private func channelTitle(_ channel: Channel) -> String {
-        guard let guildID = channel.guildID,
-              let guild = model.snapshot?.guilds.first(where: { $0.id == guildID })
-        else { return channel.name }
-        return "\(channel.name) · \(guild.name)"
+    /// The text as the timeline shows it, without a link its media replaces.
+    private var visibleContent: String {
+        guard let preview = message.preview else { return message.content }
+        var shown = preview
+        shown.content = message.content
+        return MessageEmbedPresentation.visibleMessageContent(for: shown)
     }
 
-    @ViewBuilder private func status(channel: Channel?) -> some View {
-        if let failure = failure(channel: channel) {
-            Label(failure, systemImage: "exclamationmark.circle.fill")
-                .foregroundStyle(.red)
-        } else {
-            Label {
-                Text(ScheduleTimeText.dayAndTime(message.sendAt, format: model.interfaceSettings.timestampFormat, includesYear: true))
-            } icon: {
-                Image(systemName: "clock").foregroundStyle(SakuraCordAccentColor.color)
-            }
-        }
-    }
+    private var timeFormat: InterfaceTimestampFormat { model.interfaceSettings.timestampFormat }
 
-    /// The official list's wording: an unknown channel wins over the state Discord reports.
-    private func failure(channel: Channel?) -> LocalizedStringResource? {
-        if channel == nil, model.snapshot != nil { return "Scheduled message's channel not found." }
-        return switch message.state {
+    /// The official list's wording for a message Discord will not send.
+    private var failure: LocalizedStringResource? {
+        switch message.state {
         case .scheduled: nil
         case .userCannotSchedule: "Message could not be sent, permission was denied"
         case .disabled, .userNotFound, .channelNotFound, .sendFailed: "Message could not be sent"
         }
-    }
-
-    private var details: [(text: String, systemImage: String)] {
-        var details: [(String, String)] = []
-        if message.replyTo != nil { details.append((String(localized: "Reply"), "arrowshape.turn.up.left")) }
-        if message.attachmentCount > 0 {
-            let count = message.attachmentCount
-            details.append((count == 1 ? String(localized: "1 attachment") : String(localized: "\(count) attachments"), "paperclip"))
-        }
-        if message.flags.contains(.suppressNotifications) { details.append((String(localized: "Silent"), "bell.slash")) }
-        return details
     }
 
     private func actions(channel: Channel?) -> some View {
@@ -202,5 +295,46 @@ private struct ScheduledMessageCard: View {
                 model.cancelScheduledMessage(message)
             }
         }
+    }
+}
+
+/// The message a scheduled reply answers, as the timeline shows it above a reply.
+private struct ScheduledReplyContext: View {
+    let model: AppModel
+    let channelID: ChannelID
+    let messageID: MessageID
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(6)) {
+            Image(systemName: "arrow.turn.up.right")
+                .font(.interface(.caption).weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .frame(width: InterfaceScale.metric(40))
+            if let replied = model.retainedMessage(channelID: channelID, messageID: messageID) {
+                AvatarView(name: replied.author.displayName, url: replied.author.avatarURL, size: InterfaceScale.metric(16))
+                Text(replied.author.displayName).fontWeight(.semibold).foregroundStyle(.secondary)
+                Text(replied.content).foregroundStyle(.secondary).lineLimit(1)
+            } else {
+                Text("Replying to a message").foregroundStyle(.secondary)
+            }
+        }
+        .font(.interface(.caption))
+        .lineLimit(1)
+    }
+}
+
+/// A scheduled GIF's looping video, played as the GIF picker plays it.
+private struct ScheduledGIFVideo: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> GIFPickerVideoCanvas {
+        let canvas = GIFPickerVideoCanvas()
+        canvas.setViewportVisible(true)
+        return canvas
+    }
+
+    // A video that fails to load leaves the still beneath it.
+    func updateNSView(_ canvas: GIFPickerVideoCanvas, context: Context) {
+        canvas.display(url) {}
     }
 }

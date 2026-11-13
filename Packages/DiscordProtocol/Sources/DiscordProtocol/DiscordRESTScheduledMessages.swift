@@ -106,18 +106,13 @@ private struct ScheduledMessageDTO: Decodable {
 
     struct Upload: Decodable {}
 
-    /// The message as it will be posted; only its stickers are read.
-    struct Preview: Decodable {
-        var stickerItems: LossyList<MessageStickerDTO>?
-        enum CodingKeys: String, CodingKey { case stickerItems = "sticker_items" }
-    }
-
     var id: ScheduledMessageID
     var createArgs: CreateArguments
     var sendAtTimestamp: DiscordTimestampDTO
     var state: Int?
     var attachmentUploads: [Upload]?
-    var messagePreview: Preview?
+    /// The message as it will be posted, as Discord's list draws it.
+    var messagePreview: MessageDTO?
 
     var domain: ScheduledMessage {
         ScheduledMessage(
@@ -129,7 +124,7 @@ private struct ScheduledMessageDTO: Decodable {
             replyTo: createArgs.messageReference?.messageID,
             state: state.flatMap(ScheduledMessage.State.init(rawValue:)) ?? .sendFailed,
             attachmentCount: attachmentUploads?.count ?? 0,
-            stickers: messagePreview?.stickerItems?.elements.map(\.domain) ?? []
+            preview: try? messagePreview?.domain()
         )
     }
 
