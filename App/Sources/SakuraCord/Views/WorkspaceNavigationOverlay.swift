@@ -757,7 +757,7 @@ private struct QuickSwitcherResultList: View {
     let reportFrame: @MainActor () -> Void
     let focus: (QuickSwitcherResultID) -> Void
     let activate: (QuickSwitcherResult) -> Void
-    @State private var pointerLocationAtContentChange: CGPoint?
+    @State private var contentChangePointer = ContentChangePointer()
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -771,7 +771,7 @@ private struct QuickSwitcherResultList: View {
                                 row: row,
                                 isSelected: row.id == selectedResultID,
                                 isPointerFocusEnabled: !keyboardNavigationActive,
-                                hover: pointerHovered,
+                                hover: hover,
                                 activate: activate
                             )
                             .equatable()
@@ -782,10 +782,10 @@ private struct QuickSwitcherResultList: View {
             }
             .scrollIndicators(.hidden)
             .onScrollGeometryChange(for: CGFloat.self, of: \.contentOffset.y) { _, _ in
-                pointerLocationAtContentChange = NSEvent.mouseLocation
+                contentChangePointer.location = NSEvent.mouseLocation
             }
             .onChange(of: presentationID) {
-                pointerLocationAtContentChange = NSEvent.mouseLocation
+                contentChangePointer.location = NSEvent.mouseLocation
             }
             .accessibilityIdentifier("quick-switch-results")
             .onChange(of: selectedResultID) { _, selectedResultID in
@@ -800,10 +800,18 @@ private struct QuickSwitcherResultList: View {
 
     /// Rows scrolling or re-ranking under a resting pointer report hover
     /// too; only a pointer that moved since then may take the selection.
-    private func pointerHovered(over id: QuickSwitcherResultID) {
-        guard NSEvent.mouseLocation != pointerLocationAtContentChange else { return }
-        focus(id)
+    private var hover: (QuickSwitcherResultID) -> Void {
+        { [contentChangePointer, focus] id in
+            guard NSEvent.mouseLocation != contentChangePointer.location else { return }
+            focus(id)
+        }
     }
+}
+
+/// A reference, so recording the pointer on every scroll frame does not
+/// invalidate the list.
+private final class ContentChangePointer {
+    var location: CGPoint?
 }
 
 private struct QuickSwitcherHeadingRow: View {
@@ -855,7 +863,7 @@ private struct QuickSwitcherResultRow: View, Equatable {
                             .foregroundStyle(.white)
                             .padding(.horizontal, InterfaceScale.metric(6))
                             .frame(minWidth: InterfaceScale.metric(20), minHeight: InterfaceScale.metric(20))
-                            .background(.red, in: .rect(cornerRadius: InterfaceScale.metric(5)))
+                            .background(Color(hex: MentionRed.hex), in: .rect(cornerRadius: InterfaceScale.metric(5)))
                             .layoutPriority(2)
                     }
                 }
@@ -907,11 +915,23 @@ private struct QuickSwitcherRowIcon: View {
                     cornerRadius: cornerRadius,
                     animates: false
                 )
-                .background(.secondary.opacity(0.16), in: .rect(cornerRadius: cornerRadius, style: .continuous))
+                // Shown while the icon loads; GuildIconView draws its own tile without one.
+                .background(
+                    guild.iconURL == nil ? Color.clear : Color.secondary.opacity(0.16),
+                    in: .rect(cornerRadius: cornerRadius, style: .continuous)
+                )
             } else if let imageURL = row.imageURL {
-                // The initial shows until the image loads, or if it fails.
                 AvatarView(name: row.title, url: imageURL, size: size, animates: false, isHovered: false)
-                    .background { AvatarView(name: row.title, url: nil, size: size, isHovered: false) }
+                    .background {
+                        // The initial shows until the image loads, or if it fails.
+                        Circle()
+                            .fill(SakuraCordAccentColor.color.gradient)
+                            .overlay {
+                                Text(row.title.prefix(1).uppercased())
+                                    .font(.system(size: size * 0.42, weight: .semibold))
+                                    .foregroundStyle(.white)
+                            }
+                    }
             } else {
                 Image(systemName: row.systemImage)
                     .font(.interfaceSystem(size: 15, weight: .medium))
