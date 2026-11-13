@@ -64,9 +64,9 @@ enum NativeTimelineMentionAppearance {
     /// appearance. Role and accent colours keep their hue, but their OKLab
     /// lightness moves until the text has WCAG AA contrast (4.5:1) on its
     /// resting pill over `surface`, or over every sample of the theme
-    /// background when there is none. Row highlights tint rows by at most
-    /// 14%, so a 14% black or white overlay bounds them, and the colour stays
-    /// the same whether or not a row is highlighted.
+    /// background when there is none. Row highlights and bubble section
+    /// tints shade a surface by at most 14%, so 14% black and white overlays
+    /// bound them, and the colour stays the same in every row state.
     static func color(for presentation: MentionPresentation, on surface: NSColor? = nil) -> NSColor {
         if presentation.isTimestamp { return .labelColor }
         let key = ColorKey(
@@ -77,10 +77,12 @@ enum NativeTimelineMentionAppearance {
         )
         if let color = colors[key] { return color }
         let surfaces = key.surface.map { [$0] } ?? key.theme.backgroundSamples(for: key.isDark ? .dark : .light)
-        let highlight: SakuraCordThemeRGB = key.isDark ? .white : .black
+        let shaded = [SakuraCordThemeRGB.black, .white].flatMap { overlay in
+            surfaces.map { overlay.composited(over: $0, opacity: 0.14) }
+        }
         let color = NSColor(key.source.withLightness(
             reaching: 4.5,
-            against: surfaces + surfaces.map { highlight.composited(over: $0, opacity: 0.14) },
+            against: surfaces + shaded,
             tintOpacity: backgroundAlpha(isHovered: false)
         ))
         // One search takes up to 0.4 ms in a debug build, too long to repeat

@@ -279,6 +279,7 @@ extension NativeTimelineRowPainter {
         _ box: NativeTimelineAttributedTextBox,
         in frame: CGRect,
         model: AppModel?,
+        isOutgoingBubble: Bool = false,
         surface: NSColor? = nil,
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
@@ -293,6 +294,7 @@ extension NativeTimelineRowPainter {
             framesetter: box.framesetter,
             in: drawingFrame,
             model: model,
+            isOutgoingBubble: isOutgoingBubble,
             surface: surface,
             selectionRange: selectionRange,
             hoveredMentionCharacterIndex:

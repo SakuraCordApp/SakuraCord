@@ -161,23 +161,21 @@ nonisolated struct SakuraCordThemeRGB: Hashable, Sendable {
 
     /// The same hue at the OKLab lightness nearest this colour's own that has
     /// `ratio` contrast against every background, also where this colour
-    /// tints that background at `tintOpacity`. Lightness moves away from the
-    /// backgrounds; chroma drops only as far as sRGB requires, so the hue
-    /// stays put instead of clipping toward another one.
+    /// tints that background at `tintOpacity`. Lightness moves toward
+    /// whichever end reads better; chroma drops only as far as sRGB
+    /// requires, so the hue stays put instead of clipping toward another
+    /// one. When no lightness reaches `ratio`, that end is the best there is.
     func withLightness(reaching ratio: Double, against backgrounds: [Self], tintOpacity: Double = 0) -> Self {
-        func isReadable(_ color: Self) -> Bool {
-            backgrounds.allSatisfy {
-                color.contrastRatio(with: color.composited(over: $0, opacity: tintOpacity)) >= ratio
-            }
+        func contrast(_ color: Self) -> Double {
+            backgrounds.map { color.contrastRatio(with: color.composited(over: $0, opacity: tintOpacity)) }.min() ?? ratio
         }
-        guard !isReadable(self) else { return self }
+        guard contrast(self) < ratio else { return self }
         let lab = oklab
-        let darkens = backgrounds.allSatisfy { $0.contrastRatio(with: .black) >= $0.contrastRatio(with: .white) }
-        var readable = darkens ? 0.0 : 1.0
+        var readable = contrast(Self(lightness: 0, hueOf: lab)) >= contrast(Self(lightness: 1, hueOf: lab)) ? 0.0 : 1.0
         var unreadable = lab.x
         for _ in 0 ..< 16 {
             let middle = (readable + unreadable) / 2
-            if isReadable(Self(lightness: middle, hueOf: lab)) {
+            if contrast(Self(lightness: middle, hueOf: lab)) >= ratio {
                 readable = middle
             } else {
                 unreadable = middle

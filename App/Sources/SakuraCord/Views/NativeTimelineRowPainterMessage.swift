@@ -636,6 +636,7 @@ extension NativeTimelineRowPainter {
                 textRegion.text,
                 in: textRegion.frame,
                 model: input.model,
+                isOutgoingBubble: region.kind == .bubbleIntegratedCard && input.layout.bubbleRegion?.isOutgoing == true,
                 surface: region.kind == .bubbleIntegratedCard
                     ? input.layout.bubbleRegion.map(NativeTimelineBubbleDrawing.fillColor(for:)) : nil,
                 selectionRange: input.textSelection?.itemIdentifier == itemIdentifier
