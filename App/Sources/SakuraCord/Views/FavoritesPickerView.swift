@@ -55,7 +55,10 @@ struct FavoritesPickerView: View {
         // follows the destination sources as Forward's does.
         .task(id: model.forwardSearchSourceRevision) {
             if !model.hasLoadedDiscordEmojiSettings { Task { await model.loadDiscordEmojiSettings() } }
-            index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: model)
+            let built = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: model)
+            // A newer source revision's task owns the index now.
+            guard !Task.isCancelled else { return }
+            index = built
             await refreshResults()
             isSearchFocused = true
         }
