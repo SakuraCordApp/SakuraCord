@@ -261,8 +261,7 @@ enum SideChatMotionBenchmark {
             Step(name: "members-open", variant: "before-pane", movingProbe: "members", edge: "minX") {
                 $0.toggleMemberInspector()
             },
-            // Takes the member list's place at once, as one side chat takes another's.
-            Step(name: "pane-open", variant: "over-members", movingProbe: nil, edge: nil) { $0.open(thread) },
+            Step(name: "pane-open", variant: "over-members", movingProbe: "pane", edge: "minX") { $0.open(thread) },
             Step(name: "full-width", variant: "with-members", movingProbe: "pane", edge: "minX") {
                 $0.presentOpenThreadFullWidth()
             },

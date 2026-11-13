@@ -80,7 +80,7 @@ enum WorkspaceLayoutMotion {
         slideTrailingColumns(from: leaving, to: arriving, animation)
     }
 
-    /// Slides the column that leaves out or the one that arrives in.
+    /// Slides the column that leaves out and the one that arrives in.
     private static func slideTrailingColumns(
         from leaving: WorkspaceTrailingColumn?,
         to arriving: WorkspaceTrailingColumn?,
@@ -88,15 +88,6 @@ enum WorkspaceLayoutMotion {
     ) {
         let phase = WorkspaceMotionPhase.shared
         guard leaving?.id != arriving?.id else { return }
-        // Only opening or closing the column slides: one that takes
-        // another's place replaces it at once.
-        if let leaving, let arriving {
-            phase.reveal[leaving.id] = 0
-            phase.reveal[arriving.id] = 1
-            NotificationCenter.default.post(name: revealDidChange, object: nil, userInfo: [animatesKey: false])
-            afterCommit(nil) {}
-            return
-        }
         if let arriving, phase.reveal[arriving.id] == nil {
             phase.reveal[arriving.id] = 0
             NotificationCenter.default.post(name: revealDidChange, object: nil, userInfo: [animatesKey: false])
@@ -137,12 +128,12 @@ enum WorkspaceLayoutMotion {
 
     /// Animates `change` once the frame that commits the layout has been
     /// laid out, which can take a while; the motion settles a spring's
-    /// duration after that, or at once without an animation.
-    private static func afterCommit(_ animation: Animation?, _ change: @escaping () -> Void) {
+    /// duration after that.
+    private static func afterCommit(_ animation: Animation, _ change: @escaping () -> Void) {
         pendingStarts += 1
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                settlesAt = .now + (animation == nil ? .zero : settling)
+                settlesAt = .now + settling
                 withAnimation(animation, change)
                 pendingStarts -= 1
                 if pendingStarts == 0 {
