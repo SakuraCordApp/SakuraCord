@@ -83,7 +83,6 @@ struct DiscordMFAForm: View {
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .tint(SakuraCordAccentColor.color)
             }
         }
         .disabled(isWorking)

@@ -60,7 +60,6 @@ struct SoftwareUpdatesSettingsPage: View {
                             set: { updateController.setAutomaticallyChecksForUpdates($0) }
                         )
                     )
-                    .tint(SakuraCordAccentColor.color)
                     .disabled(!updateController.isEnabled)
                     .settingsControlAnchor(.updateAutomaticChecks, state: state)
 
@@ -71,7 +70,6 @@ struct SoftwareUpdatesSettingsPage: View {
                             set: { updateController.setAutomaticallyDownloadsUpdates($0) }
                         )
                     )
-                    .tint(SakuraCordAccentColor.color)
                     .disabled(
                         !updateController.isEnabled
                             || !updateController.allowsAutomaticUpdates

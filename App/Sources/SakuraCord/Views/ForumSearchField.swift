@@ -107,11 +107,6 @@ private struct ForumSearchInput: NSViewRepresentable {
             parent.text = field.stringValue
         }
 
-        func controlTextDidBeginEditing(_ notification: Notification) {
-            ((notification.object as? NSTextField)?.currentEditor() as? NSTextView)?
-                .applySakuraCordTextSelectionAppearance()
-        }
-
         /// Escape clears the search and leaves the field, as the toolbar
         /// search field's Escape returns focus to the window.
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

@@ -114,8 +114,7 @@ enum NativeTimelineTextPresentation {
                 for: message,
                 currentUserID: source?.currentUserID,
                 systemRecipient: source?.systemMessageRecipient(for: message),
-                systemActorColor: systemActorColor,
-                systemLinkColor: SakuraCordAccentColor.nsColor
+                systemActorColor: systemActorColor
             )
         } else {
             row.textPlan

@@ -874,11 +874,11 @@ extension NativeTimelineRowPainter {
     }
 
     static var textSelectionHighlightColor: NSColor {
-        NSColor.sakuraCordTextSelectionBackgroundColor
+        drawsEmphasizedSelection ? .selectedTextBackgroundColor : .unemphasizedSelectedTextBackgroundColor
     }
 
     static var attachmentSelectionHighlightColor: NSColor {
-        NSColor.sakuraCordTextSelectionBackgroundColor.withAlphaComponent(0.5)
+        textSelectionHighlightColor.withAlphaComponent(0.5)
     }
 
     static func drawMention(

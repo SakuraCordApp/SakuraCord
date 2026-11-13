@@ -1345,12 +1345,6 @@ private struct QuickSwitcherSearchField: NSViewRepresentable {
             text = field.stringValue
         }
 
-        func controlTextDidBeginEditing(_ notification: Notification) {
-            guard let field = notification.object as? NSTextField else { return }
-            (field.currentEditor() as? NSTextView)?
-                .applySakuraCordTextSelectionAppearance()
-        }
-
         func control(
             _ control: NSControl,
             textView: NSTextView,

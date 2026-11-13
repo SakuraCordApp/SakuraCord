@@ -262,7 +262,6 @@ private struct MediaViewerAudioVolume: View {
         .labelsHidden()
         .font(.interface(.body))
         .foregroundStyle(.secondary)
-        .tint(SakuraCordAccentColor.color)
         .frame(width: InterfaceScale.metric(260))
     }
 }

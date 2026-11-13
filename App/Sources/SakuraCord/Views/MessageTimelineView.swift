@@ -443,7 +443,6 @@ struct UnreadMessagesBanner: View {
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.regular)
-                .tint(SakuraCordAccentColor.color)
                 .fixedSize()
                 .pointerStyle(.link)
                 .accessibilityHint("Marks this conversation read")
@@ -868,13 +867,11 @@ struct ChannelBeginningView: View {
             Text(title)
                 .font(.interface(.largeTitle).weight(.bold))
                 .textSelection(.enabled)
-                .tint(SakuraCordAccentColor.color)
 
             Text(description)
                 .font(.interface(.body))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
-                .tint(SakuraCordAccentColor.color)
         }
         .padding(.horizontal, InterfaceScale.metric(16))
         .padding(.top, InterfaceScale.metric(28))

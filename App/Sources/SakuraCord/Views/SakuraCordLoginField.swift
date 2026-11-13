@@ -21,7 +21,7 @@ extension View {
             .background(.background.opacity(0.72), in: Capsule())
             .overlay {
                 Capsule()
-                    .stroke(isEditorActive ? SakuraCordAccentColor.color.opacity(0.6) : .primary.opacity(0.12), lineWidth: 1)
+                    .stroke(isEditorActive ? Color(nsColor: .keyboardFocusIndicatorColor) : .primary.opacity(0.12), lineWidth: 1)
             }
             .background {
                 LoginTextEditorBridge(isActive: isEditorActive, onDismiss: onDismiss)
@@ -30,7 +30,6 @@ extension View {
             .contentShape(Capsule())
             .simultaneousGesture(TapGesture().onEnded(onActivate))
             .pointerStyle(.horizontalText)
-            .tint(SakuraCordAccentColor.color)
     }
 }
 
@@ -50,16 +49,6 @@ struct LoginTextEditorBridge: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.update(view: nsView, isActive: isActive, onDismiss: onDismiss)
-        guard isActive else { return }
-        Task { @MainActor [weak nsView] in
-            await Task.yield()
-            guard let editor = nsView?.window?.firstResponder as? NSTextView else { return }
-            editor.insertionPointColor = .sakuraCordAccentColor
-            editor.selectedTextAttributes = [
-                .backgroundColor: NSColor.sakuraCordTextSelectionBackgroundColor,
-                .foregroundColor: NSColor.selectedTextColor,
-            ]
-        }
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {

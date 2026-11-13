@@ -1,14 +1,24 @@
 import AppKit
+import QuartzCore
 
-/// Applies the theme accent to native controls, selections and focus rings.
+/// Installs the theme colour as the app's real system accent. AppKit and
+/// SwiftUI then derive every accent colour from it (control fills, selections,
+/// focus rings, system effects, inactive states) exactly as for a macOS accent.
 @MainActor
+@Observable
 final class AppAccentColorController {
     static let shared = AppAccentColorController()
 
-    private var hasStarted = false
-    private var bundledAccentColor: NSColor?
+    /// The colour installed as the system accent, which
+    /// `NSColor.controlAccentColor` resolves to once `start()` has run.
+    private(set) var accent: NSColor
+    @ObservationIgnored private var installed: SakuraCordThemeRGB?
+    @ObservationIgnored private var hasStarted = false
+    @ObservationIgnored private var frameLink: CADisplayLink?
 
-    private init() {}
+    private init() {
+        accent = NSColor(SakuraCordThemeStore.shared.activeTheme.accentRGB)
+    }
 
     /// The theme accent always wins over a specific macOS accent. AppKit reads
     /// this undocumented preference once, before NSApplication exists, so it
@@ -23,22 +33,45 @@ final class AppAccentColorController {
 
     func start() {
         guard !hasStarted else { return }
-        let getter = NSSelectorFromString("_accentColor")
-        guard NSApp.responds(to: getter) else { return }
-        // Capture the dynamic bundled asset before applying the saved theme.
-        bundledAccentColor = NSApp.perform(getter)?.takeUnretainedValue() as? NSColor
         hasStarted = true
         apply()
     }
 
-    /// Applies the committed theme; theme commits call this before their
-    /// observers invalidate cached presentation.
+    /// Installs the active theme's accent now. Theme commits call this before
+    /// their observers invalidate cached presentation; live edits in between
+    /// are coalesced to one install per display frame.
     func apply() {
-        guard hasStarted else { return }
+        frameLink?.invalidate()
+        frameLink = nil
+        let themeStore = SakuraCordThemeStore.shared
+        let rgb = withObservationTracking {
+            themeStore.activeTheme.accentRGB
+        } onChange: {
+            Task { @MainActor in AppAccentColorController.shared.scheduleApply() }
+        }
+        guard rgb != installed else { return }
         let setter = NSSelectorFromString("_setAccentColor:")
         guard NSApp.responds(to: setter) else { return }
-        let themeStore = SakuraCordThemeStore.shared
-        let color = themeStore.committedTheme == .defaultTheme ? bundledAccentColor : themeStore.accentNSColor()
+        let color = NSColor(rgb)
         NSApp.perform(setter, with: color)
+        installed = rgb
+        accent = color
+    }
+
+    private func scheduleApply() {
+        guard frameLink == nil,
+              let screen = NSApp.keyWindow?.screen ?? NSScreen.main
+        else { return }
+        let link = screen.displayLink(target: FrameTarget.shared, selector: #selector(FrameTarget.fire))
+        link.add(to: .main, forMode: .common)
+        frameLink = link
+    }
+
+    private final class FrameTarget: NSObject {
+        static let shared = FrameTarget()
+
+        @objc func fire(_ link: CADisplayLink) {
+            MainActor.assumeIsolated { AppAccentColorController.shared.apply() }
+        }
     }
 }

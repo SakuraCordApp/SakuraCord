@@ -89,7 +89,6 @@ struct IssueReportTextArea<Focus: Hashable>: View {
                     .textEditorStyle(.plain)
                     .scrollContentBackground(.hidden)
                     .focused(focus, equals: focusValue)
-                    .tint(SakuraCordAccentColor.color)
                     .frame(minHeight: field.kind == .paragraph ? 66 : 20, maxHeight: InterfaceScale.metric(180))
                     .fixedSize(horizontal: false, vertical: true)
                     // Aligns typed text with the label despite the text view's line padding.
@@ -374,7 +373,6 @@ struct IssueReportToggleRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .tint(SakuraCordAccentColor.color)
                 .disabled(!isAvailable)
         }
         .padding(.horizontal, InterfaceScale.metric(8))

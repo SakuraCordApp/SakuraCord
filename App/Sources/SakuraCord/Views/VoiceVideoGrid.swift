@@ -1011,7 +1011,6 @@ private struct ParticipantVolumeControl: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 18)
                 Slider(value: $volume, in: 0 ... 2)
-                    .tint(SakuraCordAccentColor.color)
                     .frame(width: 180)
                 Text("\(Int(volume * 100))%")
                     .font(.interface(.caption).monospacedDigit())

@@ -92,7 +92,6 @@ private struct ThreadCreationView: View {
                     .font(.interface(.headline))
                 ZStack(alignment: .leading) {
                     TextField("", text: $creation.name)
-                        .tint(SakuraCordAccentColor.color)
                         .textFieldStyle(.plain)
                         .font(.interfaceSystem(size: 15))
                         .focused($isNameFocused)
@@ -130,7 +129,6 @@ private struct ThreadCreationView: View {
                         .font(.interface(.headline))
                     Toggle("Only people you invite and moderators can see", isOn: $creation.isPrivate)
                         .toggleStyle(.checkbox)
-                        .tint(SakuraCordAccentColor.color)
                         .disabled(!creation.permissions.canCreatePublic)
                 }
             }

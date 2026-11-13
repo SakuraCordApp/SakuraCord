@@ -39,7 +39,6 @@ struct AccessibilitySettingsPage: View {
     private var motionSection: some View {
         Section {
             Toggle("Disable all animations", isOn: $value.disablesAllAnimations)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.accessibilityDisableAllAnimations, state: state)
             Group {
                 Toggle("Disable sidebar and member list animations", isOn: animationBinding(\.disablesSidebarAnimations))
@@ -51,7 +50,6 @@ struct AccessibilitySettingsPage: View {
                 Toggle("Disable message sending animations", isOn: animationBinding(\.disablesMessageSendingAnimations))
                     .settingsControlAnchor(.accessibilityDisableSendAnimations, state: state)
             }
-            .tint(SakuraCordAccentColor.color)
             .disabled(value.disablesAllAnimations)
         } header: {
             Text("Motion", bundle: #bundle)
@@ -103,9 +101,7 @@ struct AccessibilitySettingsPage: View {
                 }
             }
             .toggleStyle(.checkbox)
-            .tint(SakuraCordAccentColor.color)
             Toggle("Disable own", isOn: $value.disablesOwnCosmetics)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.accessibilityDisableOwnCosmetics, state: state)
         } header: {
             Text("Disable Cosmetics", bundle: #bundle)
@@ -115,7 +111,6 @@ struct AccessibilitySettingsPage: View {
     private var readabilitySection: some View {
         Section {
             Toggle("Underline links", isOn: $value.underlinesLinks)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.underlineLinks, state: state)
             Picker("Role colours", selection: $value.roleColorDisplay) {
                 ForEach(RoleColorDisplay.allCases) { option in
@@ -152,7 +147,6 @@ struct AccessibilitySettingsPage: View {
                 }
             }
             .toggleStyle(.checkbox)
-            .tint(SakuraCordAccentColor.color)
         } header: {
             Text("VoiceOver", bundle: #bundle)
         }

@@ -436,7 +436,6 @@ struct ComposerTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.font = font
         textView.textColor = textStyle.attributes[.foregroundColor] as? NSColor ?? .labelColor
-        textView.applySakuraCordTextSelectionAppearance()
         if let insertionPointColor { textView.insertionPointColor = insertionPointColor }
         textView.plainTextStyle = textStyle
         textView.restorePlainTypingAttributes()
@@ -551,7 +550,6 @@ struct ComposerTextView: NSViewRepresentable {
             return
         }
 
-        textView.applySakuraCordTextSelectionAppearance()
         if let insertionPointColor { textView.insertionPointColor = insertionPointColor }
         textView.textContainerInset = NSSize(width: 0, height: verticalContentInset)
         ComposerTextCheckingConfiguration.apply(generalInputSettings, to: textView)

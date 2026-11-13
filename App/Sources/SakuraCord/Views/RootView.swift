@@ -345,9 +345,6 @@ private struct ChatRootView: View {
         .environment(\.composerDropInteraction, composerDropInteraction)
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                SakuraCordTextInputAccentBridge()
-                .frame(width: 0, height: 0)
-
                 if columnVisibility != .detailOnly {
                     if model.isSwitchingAccounts {
                         SkeletonShimmerTimeline {

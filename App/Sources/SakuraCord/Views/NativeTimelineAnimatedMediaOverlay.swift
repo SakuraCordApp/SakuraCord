@@ -75,8 +75,7 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
     private func updateSelectionColor() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             selectionView.layer?.backgroundColor =
-                NSColor.sakuraCordTextSelectionBackgroundColor
-                    .withAlphaComponent(0.5)
+                NativeTimelineRowPainter.attachmentSelectionHighlightColor
                     .cgColor
         }
     }

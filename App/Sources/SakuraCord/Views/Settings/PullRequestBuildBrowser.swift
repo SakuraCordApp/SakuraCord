@@ -104,7 +104,6 @@ struct PullRequestBuildBrowser: View {
             PickerSearchHeader(text: $store.search, focus: { searchIsFocused = true }, input: {
                 TextField("Search builds", text: $store.search)
                     .textFieldStyle(.plain)
-                    .tint(SakuraCordAccentColor.color)
                     .focused($searchIsFocused)
                     .accessibilityIdentifier("pr-builds-search")
             })

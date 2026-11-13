@@ -62,7 +62,6 @@ struct IssueReportDescribeStep: View {
             .textFieldStyle(.plain)
             .font(.interfaceSystem(size: 18, weight: .medium))
             .lineLimit(1 ... 3)
-            .tint(SakuraCordAccentColor.color)
             .focused($focus, equals: .title)
             .onSubmit { focus = store.primaryField.map { .field($0.id) } }
             .accessibilityLabel("Title")

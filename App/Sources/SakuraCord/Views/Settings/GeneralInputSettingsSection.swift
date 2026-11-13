@@ -17,19 +17,15 @@ struct GeneralInputSettingsSection: View {
             }
             .settingsControlAnchor(.sendWithReturn, state: state)
             Toggle("Check spelling while typing", isOn: $value.checksSpelling)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.spellCheck, state: state)
             Toggle(
                 "Correct spelling automatically",
                 isOn: $value.correctsSpellingAutomatically
             )
-            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.automaticCorrection, state: state)
             Toggle("Smart quotes", isOn: $value.usesSmartQuotes)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.smartQuotes, state: state)
             Toggle("Smart dashes", isOn: $value.usesSmartDashes)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.smartDashes, state: state)
         } header: {
             Text("Text Input", bundle: #bundle)

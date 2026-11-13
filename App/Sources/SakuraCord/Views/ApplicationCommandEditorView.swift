@@ -71,7 +71,6 @@ struct ApplicationCommandEditorView: NSViewRepresentable {
         textView.writingToolsBehavior = .none
         textView.unregisterDraggedTypes()
         textView.registerForDraggedTypes([.fileURL])
-        textView.applySakuraCordTextSelectionAppearance()
         textView.setAccessibilityLabel("Command \(draft.command.displayName)")
 
         let scrollView = NSScrollView()
@@ -93,7 +92,6 @@ struct ApplicationCommandEditorView: NSViewRepresentable {
         coordinator.parent = self
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
         ComposerTextCheckingConfiguration.apply(generalInputSettings, to: textView)
-        textView.applySakuraCordTextSelectionAppearance()
         guard !textView.isComposing else {
             coordinator.applyFocus(to: textView)
             return

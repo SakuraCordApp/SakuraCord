@@ -69,9 +69,6 @@ struct SelectionFieldSearchInput: NSViewRepresentable {
         init(_ parent: SelectionFieldSearchInput) { self.parent = parent }
 
         func controlTextDidBeginEditing(_ notification: Notification) {
-            if let field = notification.object as? NSTextField, let editor = field.currentEditor() as? NSTextView {
-                editor.applySakuraCordTextSelectionAppearance()
-            }
             parent.activate()
         }
 

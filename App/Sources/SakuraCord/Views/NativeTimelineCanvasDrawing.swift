@@ -1093,6 +1093,8 @@ extension NativeTimelineCanvasView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        NativeTimelineRowPainter.drawsEmphasizedSelection =
+            window?.isKeyWindow == true && window?.firstResponder === self
         AppPerformanceSignposts.measureSync("TimelineCanvasDraw") {
             drawTimeline(in: dirtyRect)
         }

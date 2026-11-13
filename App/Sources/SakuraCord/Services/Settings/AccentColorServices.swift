@@ -3,16 +3,26 @@ import SwiftUI
 
 @MainActor
 enum SakuraCordAccentColor {
+    /// The system accent, so custom accent drawing matches native controls.
     static var color: Color {
         Color(nsColor: nsColor)
     }
 
     static var nsColor: NSColor {
-        SakuraCordThemeStore.shared.accentNSColor()
+        AppAccentColorController.shared.accent
     }
 
-    static var textSelectionNSColor: NSColor {
-        SakuraCordThemeStore.shared.textSelectionNSColor()
+    /// Text and symbols drawn on an accent fill. Like Tahoe's own controls,
+    /// labels stay white until the fill is light enough (relative luminance
+    /// above 0.5) that black reads better.
+    static var labelOnFillNSColor: NSColor {
+        let fill = nsColor.usingColorSpace(.sRGB) ?? nsColor
+        let rgb = SakuraCordThemeRGB(red: fill.redComponent, green: fill.greenComponent, blue: fill.blueComponent)
+        return rgb.relativeLuminance > 0.5 ? .black : .white
+    }
+
+    static var labelOnFill: Color {
+        Color(nsColor: labelOnFillNSColor)
     }
 
     static func color(forRoleColorHex colorHex: UInt32?) -> Color {
@@ -49,7 +59,7 @@ extension NSColor {
         SakuraCordAccentColor.nsColor
     }
 
-    static var sakuraCordTextSelectionBackgroundColor: NSColor {
-        SakuraCordAccentColor.textSelectionNSColor
+    static var sakuraCordLabelOnAccentColor: NSColor {
+        SakuraCordAccentColor.labelOnFillNSColor
     }
 }
