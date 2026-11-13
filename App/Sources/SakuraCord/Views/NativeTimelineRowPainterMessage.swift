@@ -965,7 +965,7 @@ extension NativeTimelineRowPainter {
                 ofSize: frame.height * 0.42,
                 weight: .semibold
             ),
-            color: SakuraCordAccentColor.labelNSColor(on: darker.blended(withFraction: 0.5, of: lighter) ?? accent),
+            color: .sakuraCordLabelOnAccentColor,
             alignment: .center
         )
     }

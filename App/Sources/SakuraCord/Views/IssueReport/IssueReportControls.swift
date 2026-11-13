@@ -195,7 +195,7 @@ struct IssueReportAreaPicker: View {
                 Text(label).lineLimit(1).minimumScaleFactor(0.85)
             }
             .font(.interface(.callout))
-            .foregroundStyle(isSelected ? SakuraCordAccentColor.label(on: SakuraCordAccentColor.color.opacity(0.7)) : .primary)
+            .foregroundStyle(isSelected ? SakuraCordAccentColor.labelOnFill : .primary)
             .padding(.horizontal, InterfaceScale.metric(12))
             .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(32), alignment: .leading)
             .contentShape(Capsule())

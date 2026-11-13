@@ -19,9 +19,9 @@ final class AppAccentColorController {
     @ObservationIgnored private var frameLink: CADisplayLink?
 
     private init() {
-        let rgb = SakuraCordThemeStore.shared.activeTheme.accentRGB
-        accent = NSColor(rgb)
-        labelOnAccent = SakuraCordAccentColor.labelNSColor(on: rgb)
+        let accent = NSColor(SakuraCordThemeStore.shared.activeTheme.accentRGB)
+        self.accent = accent
+        labelOnAccent = SakuraCordAccentColor.labelNSColor(on: accent)
     }
 
     /// The theme accent always wins over a specific macOS accent. AppKit reads
@@ -61,7 +61,7 @@ final class AppAccentColorController {
         NSApp.perform(setter, with: color)
         installed = rgb
         accent = color
-        let label = SakuraCordAccentColor.labelNSColor(on: rgb)
+        let label = SakuraCordAccentColor.labelNSColor(on: color)
         guard label != labelOnAccent else { return }
         labelOnAccent = label
         NotificationCenter.default.post(name: .sakuraCordAccentLabelDidChange, object: nil)

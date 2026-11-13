@@ -12,37 +12,23 @@ enum SakuraCordAccentColor {
         AppAccentColorController.shared.accent
     }
 
-    /// Text and symbols drawn on the accent itself.
+    /// Text and symbols drawn on an accent fill, chosen as macOS chooses them
+    /// for its own accent-filled controls: white unless the flat fill
+    /// colour's relative luminance is above 0.5, then black. The same in
+    /// light, dark and Increase Contrast; the material over the fill doesn't
+    /// count.
     static var labelOnFillNSColor: NSColor {
         AppAccentColorController.shared.labelOnAccent
     }
 
+    static func labelNSColor(on fill: NSColor) -> NSColor {
+        let fill = fill.usingColorSpace(.sRGB) ?? fill
+        let rgb = SakuraCordThemeRGB(red: fill.redComponent, green: fill.greenComponent, blue: fill.blueComponent)
+        return rgb.relativeLuminance > 0.5 ? .black : .white
+    }
+
     static var labelOnFill: Color {
         Color(nsColor: labelOnFillNSColor)
-    }
-
-    /// Labels on a fill are white, as on macOS's own accent controls, unless
-    /// white would fall below 3:1 against it (WCAG's minimum for UI
-    /// components and large text); then they're black.
-    nonisolated static func labelNSColor(on fill: SakuraCordThemeRGB) -> NSColor {
-        fill.contrastRatio(with: .white) < 3 ? .black : .white
-    }
-
-    /// The label for `fill` as it's drawn in each appearance: a translucent
-    /// fill, such as a faint glass tint, is measured over the window background.
-    static func labelNSColor(on fill: NSColor) -> NSColor {
-        NSColor(name: nil) { appearance in
-            var label = NSColor.white
-            appearance.performAsCurrentDrawingAppearance {
-                func rgb(_ color: NSColor) -> SakuraCordThemeRGB {
-                    let color = color.usingColorSpace(.sRGB) ?? color
-                    return SakuraCordThemeRGB(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent)
-                }
-                let drawn = rgb(fill).composited(over: rgb(.windowBackgroundColor), opacity: fill.alphaComponent)
-                label = labelNSColor(on: drawn)
-            }
-            return label
-        }
     }
 
     static func label(on fill: Color) -> Color {
