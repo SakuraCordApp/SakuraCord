@@ -108,17 +108,13 @@ private struct MessageSearchResultsHeader: View {
             .help("Filters")
 
             Menu {
-                ForEach(MessageSearchSort.allCases, id: \.self) { sort in
-                    Button {
-                        model.updateMessageSearchSort(sort)
-                    } label: {
-                        if search.sort == sort {
-                            Label(sort.title, systemImage: "checkmark")
-                        } else {
-                            Text(sort.title)
-                        }
+                Picker("Sort", selection: Binding(get: { search.sort }, set: model.updateMessageSearchSort)) {
+                    ForEach(MessageSearchSort.allCases, id: \.self) { sort in
+                        Text(sort.title).tag(sort)
                     }
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
             } label: {
                 MessageSearchFloatingControl.circle("Sort", systemImage: "arrow.up.arrow.down")
             }
