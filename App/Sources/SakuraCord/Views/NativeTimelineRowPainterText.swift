@@ -279,6 +279,7 @@ extension NativeTimelineRowPainter {
         _ box: NativeTimelineAttributedTextBox,
         in frame: CGRect,
         model: AppModel?,
+        surface: NSColor? = nil,
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
         hoveredLinkCharacterIndex: Int? = nil,
@@ -292,6 +293,7 @@ extension NativeTimelineRowPainter {
             framesetter: box.framesetter,
             in: drawingFrame,
             model: model,
+            surface: surface,
             selectionRange: selectionRange,
             hoveredMentionCharacterIndex:
                 hoveredMentionCharacterIndex,
@@ -322,6 +324,7 @@ extension NativeTimelineRowPainter {
         in frame: CGRect,
         model: AppModel?,
         isOutgoingBubble: Bool = false,
+        surface: NSColor? = nil,
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
         hoveredLinkCharacterIndex: Int? = nil,
@@ -389,6 +392,7 @@ extension NativeTimelineRowPainter {
             attributedText: drawingValue,
             model: model,
             isOutgoingBubble: isOutgoingBubble,
+            surface: surface,
             selectionRange: selectionRange,
             hoveredMentionCharacterIndex: hoveredMentionCharacterIndex
         )
@@ -716,6 +720,7 @@ extension NativeTimelineRowPainter {
         attributedText: NSAttributedString,
         model: AppModel?,
         isOutgoingBubble: Bool = false,
+        surface: NSColor? = nil,
         selectionRange: NSRange?,
         hoveredMentionCharacterIndex: Int?
     ) {
@@ -730,6 +735,7 @@ extension NativeTimelineRowPainter {
             renderInlineAttachment(
                 draw,
                 isOutgoingBubble: isOutgoingBubble,
+                surface: surface,
                 hoveredMentionCharacterIndex: hoveredMentionCharacterIndex
             )
         }
@@ -859,6 +865,7 @@ extension NativeTimelineRowPainter {
     private static func renderInlineAttachment(
         _ draw: InlineAttachmentDraw,
         isOutgoingBubble: Bool,
+        surface: NSColor?,
         hoveredMentionCharacterIndex: Int?
     ) {
         switch draw {
@@ -870,7 +877,8 @@ extension NativeTimelineRowPainter {
                 fontSize: mention.fontSize,
                 in: frame,
                 isHovered: hoveredMentionCharacterIndex == characterIndex,
-                isOutgoingBubble: isOutgoingBubble
+                isOutgoingBubble: isOutgoingBubble,
+                surface: surface
             )
         case let .emojiFallback(frame, _):
             text(
@@ -900,10 +908,11 @@ extension NativeTimelineRowPainter {
         fontSize: CGFloat,
         in frame: CGRect,
         isHovered: Bool,
-        isOutgoingBubble: Bool = false
+        isOutgoingBubble: Bool = false,
+        surface: NSColor? = nil
     ) {
-        let color: NSColor = isOutgoingBubble
-            ? .white : presentation.isTimestamp ? .labelColor : roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
+        let color = isOutgoingBubble
+            ? .white : NativeTimelineMentionAppearance.color(for: presentation, on: surface)
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: InterfaceScale.metric(5.5)

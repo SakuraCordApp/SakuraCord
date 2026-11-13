@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import QuartzCore
 import SakuraCordModels
 
@@ -58,6 +58,50 @@ enum NativeTimelineMentionAppearance {
     /// A timestamp's neutral pill is fainter than a coloured mention's.
     static func backgroundAlpha(isHovered: Bool, isTimestamp: Bool = false) -> CGFloat {
         isTimestamp ? (isHovered ? 0.18 : 0.12) : (isHovered ? 0.34 : 0.18)
+    }
+
+    /// The colour of a mention's text, icon and pill in the current drawing
+    /// appearance. Role and accent colours keep their hue, but their OKLab
+    /// lightness moves until the text has WCAG AA contrast (4.5:1) on its
+    /// resting pill over `surface`, or over every sample of the theme
+    /// background when there is none. Row highlights tint rows by at most
+    /// 14%, so a 14% black or white overlay bounds them, and the colour stays
+    /// the same whether or not a row is highlighted.
+    static func color(for presentation: MentionPresentation, on surface: NSColor? = nil) -> NSColor {
+        if presentation.isTimestamp { return .labelColor }
+        let key = ColorKey(
+            source: rgb(NativeTimelineRowPainter.roleColor(presentation.colorHex) ?? .sakuraCordAccentColor),
+            surface: surface.map(rgb),
+            isDark: NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua,
+            theme: SakuraCordThemeStore.shared.committedTheme
+        )
+        if let color = colors[key] { return color }
+        let surfaces = key.surface.map { [$0] } ?? key.theme.backgroundSamples(for: key.isDark ? .dark : .light)
+        let highlight: SakuraCordThemeRGB = key.isDark ? .white : .black
+        let color = NSColor(key.source.withLightness(
+            reaching: 4.5,
+            against: surfaces + surfaces.map { highlight.composited(over: $0, opacity: 0.14) },
+            tintOpacity: backgroundAlpha(isHovered: false)
+        ))
+        // One search takes up to 0.4 ms in a debug build, too long to repeat
+        // for every mention on every draw.
+        if colors.count >= 512 { colors.removeAll() }
+        colors[key] = color
+        return color
+    }
+
+    private struct ColorKey: Hashable {
+        let source: SakuraCordThemeRGB
+        let surface: SakuraCordThemeRGB?
+        let isDark: Bool
+        let theme: SakuraCordGradientTheme
+    }
+
+    private static var colors: [ColorKey: NSColor] = [:]
+
+    private static func rgb(_ color: NSColor) -> SakuraCordThemeRGB {
+        let color = color.usingColorSpace(.sRGB) ?? color
+        return SakuraCordThemeRGB(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent)
     }
 }
 

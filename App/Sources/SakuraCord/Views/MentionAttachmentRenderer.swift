@@ -96,9 +96,10 @@ enum MentionAttachmentRenderer {
                 + (showsLeadingIcon ? iconSize + iconGap : 0)
         )
         let size = NSSize(width: width, height: height)
-        let color = labelColor(for: presentation)
         let usesRoleAccentFallback = usesRoleAccentFallback(for: presentation)
         let image = NSImage(size: size, flipped: false) { bounds in
+            // Resolved per draw, in the appearance it is drawn in.
+            let color = MainActor.assumeIsolated { NativeTimelineMentionAppearance.color(for: presentation) }
             let background = color.withAlphaComponent(
                 NativeTimelineMentionAppearance.backgroundAlpha(isHovered: hovered, isTimestamp: presentation.isTimestamp)
             )
@@ -172,20 +173,6 @@ enum MentionAttachmentRenderer {
         }
         image.accessibilityDescription = presentation.label
         return image
-    }
-
-    private static func mentionColor(hex: UInt32?) -> NSColor {
-        guard let hex, hex != 0 else { return .sakuraCordAccentColor }
-        return NSColor(
-            calibratedRed: CGFloat((hex >> 16) & 0xff) / 255,
-            green: CGFloat((hex >> 8) & 0xff) / 255,
-            blue: CGFloat(hex & 0xff) / 255,
-            alpha: 1
-        )
-    }
-
-    private static func labelColor(for presentation: MentionPresentation) -> NSColor {
-        presentation.isTimestamp ? .labelColor : mentionColor(hex: presentation.colorHex)
     }
 
     private static func usesRoleAccentFallback(for presentation: MentionPresentation) -> Bool {
