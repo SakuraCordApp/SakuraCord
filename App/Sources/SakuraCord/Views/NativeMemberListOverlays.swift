@@ -189,14 +189,13 @@ extension NativeMemberListCanvasView {
                   let activity = prepared.activity,
                   let truncationToken = prepared.activityTruncationToken
             else { continue }
-            let row = paintedRowRect(at: index)
-            let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+            let activityFrame = activityTextFrame(at: index)
             let visibleActivity = Self.truncatedLine(
                 activity,
                 token: truncationToken,
-                maximumWidth: max(0, row.maxX - textX - 4)
+                maximumWidth: activityFrame.width
             )
-            let origin = CGPoint(x: textX, y: row.minY + InterfaceScale.metric(24))
+            let origin = activityFrame.origin
             for (ordinal, region) in NativeMemberActivityPresentation.emojiRegions(
                 in: visibleActivity,
                 origin: origin
@@ -305,9 +304,6 @@ extension NativeMemberListCanvasView {
                 proxy.member = member
                 if presentation.presenceHiddenUserIDs.contains(member.id) {
                     proxy.setAccessibilityValue(member.activityText ?? "")
-                }
-                if rowMenu != nil {
-                    proxy.toolTip = [member.user.username, member.activityText].compactMap { $0 }.joined(separator: "\n")
                 }
             }
             // Resolve the current relationship and channel when VoiceOver asks,
@@ -538,7 +534,7 @@ extension NativeMemberListCanvasView {
                     requests.append((url, 32))
                 }
                 requests.append(contentsOf: NativeMemberActivityPresentation.references(
-                    in: member.memberListActivityText
+                    in: member.memberListActivityContent.displayText
                 ).compactMap(activityEmojiURL).map {
                     (url: $0, maximumPixelDimension: 64)
                 })

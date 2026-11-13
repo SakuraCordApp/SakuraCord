@@ -631,16 +631,6 @@ enum NativeTimelineRowPainter {
         transform.translateX(by: rowFrame.minX, yBy: rowFrame.minY)
         transform.concat()
 
-        if let cardFrame = layout.searchCardFrame {
-            NSColor.separatorColor.withAlphaComponent(0.42).setStroke()
-            let border = NSBezierPath(
-                concentricRoundedRect: cardFrame.insetBy(dx: 0.5, dy: 0.5),
-                cornerRadius: InterfaceScale.metric(8.5)
-            )
-            border.lineWidth = 1
-            border.stroke()
-        }
-
         if drawsBubbleBackground, let bubble = layout.bubbleRegion {
             NativeTimelineBubbleDrawing.fill(bubble)
         }

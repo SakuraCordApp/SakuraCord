@@ -5,11 +5,13 @@ extension NSScrollView {
     /// scroller starts below it. Call from `tile()`; the inset follows the
     /// scroll view's position, the window's toolbar and full-screen changes.
     /// Returns whether the obscured height changed.
+    /// - Parameter barHeight: A bar below the toolbar that content also
+    ///   scrolls beneath.
     @discardableResult
-    func keepScrollerBelowWindowToolbar() -> Bool {
+    func keepScrollerBelowWindowToolbar(barHeight: CGFloat = 0) -> Bool {
         guard let window else { return false }
         let frameInWindow = convert(bounds, to: nil)
-        let obscuredHeight = max(0, frameInWindow.maxY - window.contentLayoutRect.maxY)
+        let obscuredHeight = max(0, frameInWindow.maxY - window.contentLayoutRect.maxY) + barHeight
         guard abs(scrollerInsets.top - obscuredHeight) > 0.25 else { return false }
         var insets = scrollerInsets
         insets.top = obscuredHeight

@@ -255,7 +255,7 @@ struct SakuraCordSessionLoadingView: View {
         HStack(spacing: 0) {
             messageTimeline
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
+            InspectorDivider()
             memberList
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -270,6 +270,25 @@ struct SakuraCordSessionLoadingView: View {
                 .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
                 .padding(.bottom, ChatChromeMetrics.composerWindowInset)
         }
+        .overlay(alignment: .topTrailing) {
+            // Embedded, the workspace's own toolbar is already in place.
+            if !isEmbeddedInWorkspace { conversationActionSkeleton }
+        }
+    }
+
+    /// The conversation's actions, placed as the workspace titlebar places
+    /// them: in the toolbar band, ending just before the member list. A
+    /// toolbar item would follow the toolbar's own layout instead.
+    private var conversationActionSkeleton: some View {
+        let diameter = InterfaceScale.metric(36)
+        return SkeletonShape(cornerRadius: InterfaceScale.metric(6))
+            .frame(width: InterfaceScale.metric(20), height: InterfaceScale.metric(20))
+            .frame(width: diameter, height: diameter)
+            .glassEffect(.regular, in: Circle())
+            .padding(.trailing, ChatChromeMetrics.toolbarItemEdgeInset)
+            .offset(y: ChatChromeMetrics.sidebarTitleTopOffset(height: diameter))
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
     }
 
     @ViewBuilder
@@ -307,6 +326,10 @@ struct SakuraCordSessionLoadingView: View {
         MemberListLoadingSkeleton()
         .frame(width: ChatChromeMetrics.memberListWidth)
         .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            InspectorGlassBackground()
+                .ignoresSafeArea(.container, edges: .top)
+        }
     }
 
     @ToolbarContentBuilder
@@ -327,16 +350,6 @@ struct SakuraCordSessionLoadingView: View {
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
         ToolbarSpacer(.flexible)
-        ToolbarItem {
-            HStack(spacing: 0) {
-                SkeletonShape(cornerRadius: 6)
-                    .frame(width: 20, height: 20)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .fixedSize()
-        }
-        .visibilityPriority(.high)
     }
 
     private var detail: String {
@@ -349,6 +362,15 @@ struct SakuraCordSessionLoadingView: View {
         case .signedOut, .workspace: return "Getting things ready…"
         }
     }
+}
+
+/// The glass the workspace gives its inspector column (`WorkspaceColumnsHost`).
+private struct InspectorGlassBackground: NSViewRepresentable {
+    func makeNSView(context _: Context) -> NSView {
+        NSGlassEffectView.inspector() ?? NSView()
+    }
+
+    func updateNSView(_: NSView, context _: Context) {}
 }
 
 struct SkeletonShape: View {
