@@ -63,21 +63,29 @@ enum NativeTimelineMentionAppearance {
     /// The colour of a mention's text, icon and pill in the current drawing
     /// appearance. Role and accent colours keep their hue, but their OKLab
     /// lightness moves until the text has WCAG AA contrast (4.5:1) on its
-    /// resting pill over every sample of the theme background, or over a
-    /// bubble's `surface` both plain and under its section tint. Persistent
-    /// row highlights tint by at most 14%, so 14% black and white overlays
-    /// bound them, and the colour stays the same in every row state.
-    static func color(for presentation: MentionPresentation, on surface: NSColor? = nil) -> NSColor {
+    /// resting pill over every sample of the theme background, or over an
+    /// incoming bubble both plain and under its section tint. Persistent row
+    /// highlights tint by at most 14%, so 14% black and white overlays bound
+    /// them, and the colour stays the same in every row state.
+    static func color(for presentation: MentionPresentation, inBubble: Bool = false) -> NSColor {
         if presentation.isTimestamp { return .labelColor }
         let key = ColorKey(
-            source: rgb(NativeTimelineRowPainter.roleColor(presentation.colorHex) ?? .sakuraCordAccentColor),
-            surface: surface.map(rgb),
+            // Resolved here because the accent fallback can change with no theme commit.
+            source: SakuraCordThemeRGB(NativeTimelineRowPainter.roleColor(presentation.colorHex) ?? .sakuraCordAccentColor),
+            inBubble: inBubble,
             isDark: NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua,
             theme: SakuraCordThemeStore.shared.committedTheme
         )
         if let color = colors[key] { return color }
-        let surfaces = key.surface.map { [$0, sectionTinted($0)] }
-            ?? key.theme.backgroundSamples(for: key.isDark ? .dark : .light)
+        let surfaces: [SakuraCordThemeRGB]
+        if inBubble {
+            let fill = SakuraCordThemeRGB(NativeTimelineBubbleDrawing.incomingFillColor)
+            let tint = NativeTimelineRowPainter.bubbleIntegratedSectionTintColor.usingColorSpace(.sRGB)
+                ?? NativeTimelineRowPainter.bubbleIntegratedSectionTintColor
+            surfaces = [fill, SakuraCordThemeRGB(tint).composited(over: fill, opacity: tint.alphaComponent)]
+        } else {
+            surfaces = key.theme.backgroundSamples(for: key.isDark ? .dark : .light)
+        }
         let shaded = [SakuraCordThemeRGB.black, .white].flatMap { overlay in
             surfaces.map { overlay.composited(over: $0, opacity: 0.14) }
         }
@@ -95,23 +103,12 @@ enum NativeTimelineMentionAppearance {
 
     private struct ColorKey: Hashable {
         let source: SakuraCordThemeRGB
-        let surface: SakuraCordThemeRGB?
+        let inBubble: Bool
         let isDark: Bool
         let theme: SakuraCordGradientTheme
     }
 
     private static var colors: [ColorKey: NSColor] = [:]
-
-    private static func sectionTinted(_ surface: SakuraCordThemeRGB) -> SakuraCordThemeRGB {
-        let tint = NativeTimelineRowPainter.bubbleIntegratedSectionTintColor.usingColorSpace(.sRGB)
-            ?? NativeTimelineRowPainter.bubbleIntegratedSectionTintColor
-        return rgb(tint).composited(over: surface, opacity: tint.alphaComponent)
-    }
-
-    private static func rgb(_ color: NSColor) -> SakuraCordThemeRGB {
-        let color = color.usingColorSpace(.sRGB) ?? color
-        return SakuraCordThemeRGB(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent)
-    }
 }
 
 nonisolated struct NativeTimelineComponentButtonTarget: Hashable {

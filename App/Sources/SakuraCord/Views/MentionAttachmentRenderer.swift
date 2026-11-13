@@ -98,7 +98,7 @@ enum MentionAttachmentRenderer {
         let size = NSSize(width: width, height: height)
         let usesRoleAccentFallback = usesRoleAccentFallback(for: presentation)
         let image = NSImage(size: size, flipped: false) { bounds in
-            // Resolved per draw, in the appearance it is drawn in.
+            // The image outlives appearance changes, so its colour is resolved when drawn.
             let color = MainActor.assumeIsolated { NativeTimelineMentionAppearance.color(for: presentation) }
             let background = color.withAlphaComponent(
                 NativeTimelineMentionAppearance.backgroundAlpha(isHovered: hovered, isTimestamp: presentation.isTimestamp)
