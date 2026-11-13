@@ -245,15 +245,21 @@ extension AppModel {
         }
     }
 
-    func editScheduledMessage(_ message: ScheduledMessage, content: String) {
+    /// Whether a change was started; an unchanged text needs none.
+    @discardableResult
+    func editScheduledMessage(_ message: ScheduledMessage, content: String) -> Bool {
         let content = content.trimmingCharacters(in: .whitespacesAndNewlines)
         // The official editor cancels a message saved without text, files or not:
         // its preview lists no attachments.
-        guard !content.isEmpty else { return cancelScheduledMessage(message) }
-        guard content != message.content else { return }
+        guard !content.isEmpty else {
+            cancelScheduledMessage(message)
+            return true
+        }
+        guard content != message.content else { return false }
         changeScheduledMessage(message, failure: "Failed to update scheduled message.") {
             try await $0.editScheduledMessage(message.id, content: content, flags: message.flags)
         }
+        return true
     }
 
     func sendScheduledMessageNow(_ message: ScheduledMessage) {

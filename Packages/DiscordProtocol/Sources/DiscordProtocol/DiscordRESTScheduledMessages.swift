@@ -39,6 +39,9 @@ public extension DiscordRESTProvider {
         body["attachments"] = try await .array(
             uploadForumAttachments(draft.attachments, channelID: draft.channelID, progress: { _ in })
         )
+        // As for a send, a stored file the post refers to can no longer be stopped.
+        postingAttachmentUploads.formUnion(draft.attachments.map(\.id))
+        defer { postingAttachmentUploads.subtract(draft.attachments.map(\.id)) }
         let path = "/users/@me/scheduled-messages"
         let dto: ScheduledMessageDTO
         do {

@@ -96,6 +96,7 @@ private struct ScheduledMessageCard: View {
         .background(.primary.opacity(0.05))
         .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(16)))
         .opacity(isPending ? 0.6 : 1)
+        .onChange(of: message.content) { editedContent = nil }
     }
 
     private var header: some View {
@@ -203,14 +204,14 @@ private struct ScheduledMessageCard: View {
             TextField("Message", text: Binding(get: { editedContent }, set: { self.editedContent = $0 }), axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1 ... 8)
+                // Locked while any change to the row is answered, so a save can't drop later typing.
+                .disabled(isPending)
                 .focused($isEditorFocused)
                 .padding(InterfaceScale.metric(8))
                 .background(.primary.opacity(0.06), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(10)))
                 .onSubmit {
-                    // The editor stays open until the row's other change is answered.
-                    guard !isPending else { return }
-                    model.editScheduledMessage(message, content: editedContent)
-                    self.editedContent = nil
+                    // The editor stays open until Discord saves the edit, so a refused one keeps its text.
+                    if !model.editScheduledMessage(message, content: editedContent) { self.editedContent = nil }
                 }
                 .onExitCommand { self.editedContent = nil }
             Text("Escape to cancel · Return to save")
@@ -313,13 +314,27 @@ private struct ScheduledReplyContext: View {
             if let replied = model.retainedMessage(channelID: channelID, messageID: messageID) {
                 AvatarView(name: replied.author.displayName, url: replied.author.avatarURL, size: InterfaceScale.metric(16))
                 Text(replied.author.displayName).fontWeight(.semibold).foregroundStyle(.secondary)
-                Text(replied.content).foregroundStyle(.secondary).lineLimit(1)
+                Text(summary(of: replied)).foregroundStyle(.secondary).lineLimit(1)
             } else {
-                Text("Replying to a message").foregroundStyle(.secondary)
+                // The official list's words for a reply whose message isn't loaded.
+                Text("Message could not be loaded").italic().foregroundStyle(.secondary)
             }
         }
         .font(.interface(.caption))
         .lineLimit(1)
+    }
+
+    /// One line as the timeline's reply line reads, its spoilers kept covered.
+    private func summary(of replied: Message) -> AttributedString {
+        let prepared = MessageReplySummary.summary(
+            content: replied.content, mentionLabel: MessageMentionResolver(model: model, message: replied).label
+        )
+        let text = NSMutableAttributedString(string: prepared.text)
+        for range in prepared.spoilerRanges {
+            text.addAttribute(.backgroundColor, value: NativeTimelineSpoilerAppearance.textBackgroundColor(hover: 0), range: range)
+            NativeTimelineSpoilerAppearance.concealText(in: text, range: range)
+        }
+        return AttributedString(text)
     }
 }
 
@@ -328,13 +343,13 @@ private struct ScheduledGIFVideo: NSViewRepresentable {
     let url: URL
 
     func makeNSView(context: Context) -> GIFPickerVideoCanvas {
-        let canvas = GIFPickerVideoCanvas()
-        canvas.setViewportVisible(true)
-        return canvas
+        GIFPickerVideoCanvas()
     }
 
-    // A video that fails to load leaves the still beneath it.
+    // A video that fails to load leaves the still beneath it. `display` clears
+    // the canvas, visibility included, so visibility is set after it.
     func updateNSView(_ canvas: GIFPickerVideoCanvas, context: Context) {
         canvas.display(url) {}
+        canvas.setViewportVisible(true)
     }
 }
