@@ -632,7 +632,7 @@ struct TimelineNewestButton: View {
                     .symbolEffectsRemoved(reduceMotion)
             }
             .font(.interface(.callout).weight(.semibold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(hasUnread ? SakuraCordAccentColor.labelOnFill : .primary)
             .environment(\.colorScheme, hasUnread ? .dark : colorScheme)
             .padding(.horizontal, InterfaceScale.metric(15))
             .padding(.vertical, InterfaceScale.metric(8))

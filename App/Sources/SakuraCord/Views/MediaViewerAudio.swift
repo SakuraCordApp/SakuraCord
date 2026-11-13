@@ -91,7 +91,7 @@ struct MediaViewerAudio: View {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .contentTransition(.symbolEffect(.replace, options: .speed(2)))
                 .font(.interfaceSystem(size: 30, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                 .frame(width: InterfaceScale.metric(60), height: InterfaceScale.metric(60))
                 // The whole circle, not just the glyph, takes the pointer, so
                 // the glass responds anywhere on the button.
