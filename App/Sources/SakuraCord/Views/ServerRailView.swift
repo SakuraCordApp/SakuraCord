@@ -1017,6 +1017,7 @@ private struct HomeRailButton: View {
                 )
                 Image(systemName: "message.fill")
                     .font(.interface(.title2))
+                    .foregroundStyle(home.isSelected ? .white : .primary)
                     .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
                     .background(
                         home.isSelected
