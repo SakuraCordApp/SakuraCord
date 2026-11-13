@@ -185,9 +185,8 @@ struct ChannelDTO: Decodable {
         }
     }
 
-    /// Discord keeps only guild channel types it knows, then lists them except
-    /// categories, threads, directories (14) and Server Hub spaces (20), which
-    /// open as separate guild surfaces. Types added later stay out until supported.
+    /// Channel types Discord shows in the guild channel list. Directories (14)
+    /// and Server Hub spaces (20) are separate surfaces, and unknown types stay out.
     var isGuildChannelListEntry: Bool {
         switch type {
         case 0, 2, 5, 6, 13, 15, 16, 21: true

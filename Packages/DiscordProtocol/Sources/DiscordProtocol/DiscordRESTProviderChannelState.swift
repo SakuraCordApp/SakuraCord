@@ -248,9 +248,9 @@ extension DiscordRESTProvider {
     }
 
     func publishGuildChannelUpdate(_ dto: ChannelDTO, guildID: GuildID) {
-        // Category changes affect their children, and a rebuild also keeps
-        // non-list channels out. Ordinary updates only need to convert the
-        // changed channel, not every channel in the server.
+        // Category changes affect their children, and other non-list types may
+        // need an existing row removed. Ordinary updates only need to convert
+        // the changed channel, not every channel in the server.
         guard dto.isGuildChannelListEntry, var channels = cachedChannels[guildID] else {
             publishGuildChannels(guildID)
             return
