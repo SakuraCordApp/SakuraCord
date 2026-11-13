@@ -377,8 +377,9 @@ public extension MockChatProvider {
             attachments: forwardedSnapshot.attachments,
             nonce: draft.nonce,
             type: forwardedSnapshot.type,
-            flags: draft.suppressesNotifications
-                ? forwardedSnapshot.flags.union(.suppressNotifications) : forwardedSnapshot.flags,
+            // A silent source does not make its forward silent; only the request does.
+            flags: forwardedSnapshot.flags.subtracting(.suppressNotifications)
+                .union(draft.suppressesNotifications ? .suppressNotifications : []),
             guildID: snapshot.channels.first(where: {
                 $0.id == draft.destinationChannelID
             })?.guildID,
