@@ -104,7 +104,7 @@ nonisolated enum SakuraCordThemeAppearance: Sendable {
     case dark
 }
 
-nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
+nonisolated struct SakuraCordThemeRGB: Hashable, Sendable {
     let red: Double
     let green: Double
     let blue: Double
@@ -155,26 +155,39 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
         self.blue = blue
     }
 
+    /// The colour's sRGB components, resolved in the current appearance.
+    init(_ color: NSColor) {
+        let color = color.usingColorSpace(.sRGB) ?? color
+        self.init(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent)
+    }
+
     func blended(toward target: Self, fraction: Double) -> Self {
         target.composited(over: self, opacity: fraction)
     }
 
-    /// The same hue and chroma at the highest OKLab lightness that still has
-    /// `ratio` contrast against `background`.
-    func withLightness(reaching ratio: Double, against background: Self) -> Self {
-        guard contrastRatio(with: background) < ratio else { return self }
+    /// The same hue at the OKLab lightness nearest this colour's own that has
+    /// `ratio` contrast against every background, also where this colour
+    /// tints that background at `tintOpacity`. Lightness moves toward
+    /// whichever end reads better; chroma drops only as far as sRGB
+    /// requires, so the hue stays put instead of clipping toward another
+    /// one. When no lightness reaches `ratio`, that end is the best there is.
+    func withLightness(reaching ratio: Double, against backgrounds: [Self], tintOpacity: Double = 0) -> Self {
+        func contrast(_ color: Self) -> Double {
+            backgrounds.map { color.contrastRatio(with: color.composited(over: $0, opacity: tintOpacity)) }.min() ?? ratio
+        }
+        guard contrast(self) < ratio else { return self }
         let lab = oklab
-        var lower = 0.0
-        var upper = lab.x
+        var readable = contrast(Self(lightness: 0, hueOf: lab)) >= contrast(Self(lightness: 1, hueOf: lab)) ? 0.0 : 1.0
+        var unreadable = lab.x
         for _ in 0 ..< 16 {
-            let middle = (lower + upper) / 2
-            if Self(oklab: SIMD3(middle, lab.y, lab.z)).contrastRatio(with: background) >= ratio {
-                lower = middle
+            let middle = (readable + unreadable) / 2
+            if contrast(Self(lightness: middle, hueOf: lab)) >= ratio {
+                readable = middle
             } else {
-                upper = middle
+                unreadable = middle
             }
         }
-        return Self(oklab: SIMD3(lower, lab.y, lab.z))
+        return Self(lightness: readable, hueOf: lab)
     }
 
     /// Interpolates the way CSS `color-mix(in oklab, …)` does.
@@ -198,16 +211,41 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
     }
 
     private init(oklab: SIMD3<Double>) {
+        let linear = Self.linearRGB(oklab: oklab)
+        self.init(red: Self.encoded(linear.x), green: Self.encoded(linear.y), blue: Self.encoded(linear.z))
+    }
+
+    /// OKLab `lightness` with the hue of `lab` and as much of its chroma as
+    /// sRGB can show at that lightness, as in CSS Color 4 gamut mapping.
+    private init(lightness: Double, hueOf lab: SIMD3<Double>) {
+        func scaled(_ chroma: Double) -> SIMD3<Double> { SIMD3(lightness, lab.y * chroma, lab.z * chroma) }
+        func fits(_ chroma: Double) -> Bool {
+            let linear = Self.linearRGB(oklab: scaled(chroma))
+            return linear.min() >= -0.0001 && linear.max() <= 1.0001
+        }
+        var inside = 1.0
+        if !fits(inside) {
+            inside = 0
+            var outside = 1.0
+            for _ in 0 ..< 12 {
+                let middle = (inside + outside) / 2
+                if fits(middle) { inside = middle } else { outside = middle }
+            }
+        }
+        self.init(oklab: scaled(inside))
+    }
+
+    private static func linearRGB(oklab: SIMD3<Double>) -> SIMD3<Double> {
         let roots = SIMD3(
             (SIMD3(1, 0.3963377774, 0.2158037573) * oklab).sum(),
             (SIMD3(1, -0.1055613458, -0.0638541728) * oklab).sum(),
             (SIMD3(1, -0.0894841775, -1.2914855480) * oklab).sum()
         )
         let cones = roots * roots * roots
-        self.init(
-            red: Self.encoded((SIMD3(4.0767416621, -3.3077115913, 0.2309699292) * cones).sum()),
-            green: Self.encoded((SIMD3(-1.2684380046, 2.6097574011, -0.3413193965) * cones).sum()),
-            blue: Self.encoded((SIMD3(-0.0041960863, -0.7034186147, 1.7076147010) * cones).sum())
+        return SIMD3(
+            (SIMD3(4.0767416621, -3.3077115913, 0.2309699292) * cones).sum(),
+            (SIMD3(-1.2684380046, 2.6097574011, -0.3413193965) * cones).sum(),
+            (SIMD3(-0.0041960863, -0.7034186147, 1.7076147010) * cones).sum()
         )
     }
 
@@ -515,7 +553,7 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Hashable, Sendab
         let accent = color == .sakuraPink
             ? SakuraCordThemeRGB(red: 0xF7 / 255, green: 0x4F / 255, blue: 0x9E / 255)
             : SakuraCordThemeRGB(hue: color.hue, saturation: color.saturation, brightness: 1)
-        return accent.withLightness(reaching: 1.56, against: .white)
+        return accent.withLightness(reaching: 1.56, against: [.white])
     }
 
     var intensityProgress: Double {
