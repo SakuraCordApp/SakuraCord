@@ -929,7 +929,7 @@ private struct QuickSwitcherRowIcon: View {
                             .overlay {
                                 Text(row.title.prefix(1).uppercased())
                                     .font(.system(size: size * 0.42, weight: .semibold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                             }
                     }
             } else {

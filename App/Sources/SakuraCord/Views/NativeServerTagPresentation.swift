@@ -31,11 +31,12 @@ nonisolated enum NativeAppBadgePresentation {
             cornerHeight: ServerTagAppearance.cornerRadius, transform: nil
         ))
         context.fillPath()
+        let label = SakuraCordAccentColor.labelNSColor(on: color)
         let iconInset = isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0
         // Drawing the symbol image renders it again for every badge drawn;
         // the timeline's cache rasterizes it once per scale.
         if isVerified, let checkmark = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
-            named: "checkmark", pointSize: ServerTagAppearance.fontSize, weight: .bold, color: .white,
+            named: "checkmark", pointSize: ServerTagAppearance.fontSize, weight: .bold, color: label,
             scale: abs(context.convertToDeviceSpace(CGSize(width: 1, height: 1)).width)
         ) {
             let slot = CGRect(
@@ -53,7 +54,7 @@ nonisolated enum NativeAppBadgePresentation {
                 x: frame.minX + ServerTagAppearance.horizontalPadding + iconInset, y: frame.minY,
                 width: max(0, frame.width - ServerTagAppearance.horizontalPadding * 2 - iconInset), height: frame.height
             ),
-            color: .white, context: context
+            color: label, context: context
         )
         context.restoreGState()
     }

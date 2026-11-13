@@ -966,7 +966,7 @@ extension NativeTimelineRowPainter {
                 ofSize: frame.height * 0.42,
                 weight: .semibold
             ),
-            color: .labelColor,
+            color: .sakuraCordLabelOnAccentColor,
             alignment: .center
         )
     }

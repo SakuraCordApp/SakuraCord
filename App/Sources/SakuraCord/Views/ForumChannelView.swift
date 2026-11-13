@@ -572,6 +572,7 @@ struct ForumTagButton: View {
                     .lineLimit(1)
             }
             .font(.interface(.callout).weight(.semibold))
+            .foregroundStyle(isSelected ? SakuraCordAccentColor.labelOnFill : .primary)
             .padding(.horizontal, ForumTagChipMetrics.horizontalPadding)
             .frame(height: ForumTagChipMetrics.height)
             .glassEffect(.forumChip(isOn: isSelected), in: Capsule())

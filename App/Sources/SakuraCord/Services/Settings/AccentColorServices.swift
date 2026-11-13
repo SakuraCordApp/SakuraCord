@@ -12,9 +12,11 @@ enum SakuraCordAccentColor {
         AppAccentColorController.shared.accent
     }
 
-    /// Text and symbols drawn on an accent fill. Like Tahoe's own controls,
-    /// labels stay white until the fill is light enough (relative luminance
-    /// above 0.5) that black reads better.
+    /// Text and symbols drawn on an accent fill, chosen as macOS chooses them
+    /// for its own accent-filled controls: white unless the flat fill
+    /// colour's relative luminance is above 0.5, then black. The same in
+    /// light, dark and Increase Contrast; the material over the fill doesn't
+    /// count.
     static var labelOnFillNSColor: NSColor {
         AppAccentColorController.shared.labelOnAccent
     }
@@ -27,6 +29,10 @@ enum SakuraCordAccentColor {
 
     static var labelOnFill: Color {
         Color(nsColor: labelOnFillNSColor)
+    }
+
+    static func label(on fill: Color) -> Color {
+        Color(nsColor: labelNSColor(on: NSColor(fill)))
     }
 
     /// Custom focus outlines, drawn in the colour of AppKit's focus ring.
