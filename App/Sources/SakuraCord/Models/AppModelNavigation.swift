@@ -77,11 +77,13 @@ extension AppModel {
     }
 
     /// A repeated destination is a duplicate only while nothing else replaced
-    /// the side conversation or guild page since its navigation started.
-    func isNavigating(to target: ConversationNavigationTarget) -> Bool {
+    /// the side conversation or guild page since its navigation started, and
+    /// only when it would not open or close Favorites.
+    func isNavigating(to target: ConversationNavigationTarget, presentsFavorites: Bool? = nil) -> Bool {
         guard let pending = conversationNavigationTarget else { return false }
         return pending.target == target
             && pending.sideConversationRevision == sideConversationRevision
+            && presentsFavorites.map { $0 == favorites.isPresented } ?? true
     }
 
     func noteSideConversationChange() {
@@ -322,7 +324,7 @@ extension AppModel {
             return
         }
         let target = ConversationNavigationTarget.channel(channel.id)
-        if historyDestination == nil, isNavigating(to: target) { return }
+        if historyDestination == nil, isNavigating(to: target, presentsFavorites: presentsFavorites) { return }
         startConversationNavigation(target: target, to: historyDestination, presentsFavorites: presentsFavorites) { model, account in
             if model.selectedGuildID != channel.guildID {
                 await model.activateGuild(channel.guildID, account: account)
@@ -352,7 +354,7 @@ extension AppModel {
         let target: ConversationNavigationTarget = messageID.map {
             .message(channelID, $0, fullWidthThread: fullWidthThread)
         } ?? .thread(channelID, fullWidth: fullWidthThread)
-        if historyDestination == nil, isNavigating(to: target) { return }
+        if historyDestination == nil, isNavigating(to: target, presentsFavorites: presentsFavorites) { return }
         startConversationNavigation(target: target, to: historyDestination, presentsFavorites: presentsFavorites) { model, session in
             if model.selectedGuildID != guildID {
                 await model.activateGuild(guildID, account: session)

@@ -198,7 +198,7 @@ extension AppModel {
     ) {
         onboarding.presentedGuildID = nil
         let target = ConversationNavigationTarget.thread(thread.id, fullWidth: true)
-        if historyDestination == nil, isNavigating(to: target) { return }
+        if historyDestination == nil, isNavigating(to: target, presentsFavorites: presentsFavorites) { return }
         startConversationNavigation(target: target, to: historyDestination, presentsFavorites: presentsFavorites) { model, account in
             let guildID = thread.guildID ?? model.selectedGuildID
             if model.selectedGuildID != guildID {

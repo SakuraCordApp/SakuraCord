@@ -197,8 +197,6 @@ extension AppModel {
     /// Favorites opens with its conversation, as a server opens with its channel.
     func selectFavorite(_ conversation: FavoriteConversation) {
         favorites.lastChannelID = conversation.id
-        // A navigation already heading to this conversation would not open Favorites.
-        if !favorites.isPresented { cancelConversationNavigation() }
         if let thread = conversation.thread {
             // Full width, as the server channel list opens a thread.
             openSidebarThread(thread, presentsFavorites: true)
