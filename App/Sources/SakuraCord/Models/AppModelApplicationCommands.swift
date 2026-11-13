@@ -528,8 +528,7 @@ extension AppModel {
                 do {
                     let channel = try await session.provider.ensurePrivateChannel(for: recipient)
                     guard let self, !Task.isCancelled, isCurrentAccountSession(session) else { return }
-                    _ = try await session.provider.send(SendMessageDraft(channelID: channel.id, content: message))
-                    recordMessageEmojiUsage(message, session: session)
+                    try await sendBuiltInMessage(message, to: channel.id, session: session)
                 } catch {
                     guard let self, isCurrentAccountSession(session) else { return }
                     appendBuiltInNotice("Your message could not be delivered.", in: channelID)
@@ -541,8 +540,7 @@ extension AppModel {
                 do {
                     let thread = try await session.provider.createThread(CreateThreadDraft(channelID: channelID, name: name))
                     guard let self, !Task.isCancelled, isCurrentAccountSession(session) else { return }
-                    _ = try await session.provider.send(SendMessageDraft(channelID: thread.id, content: message))
-                    recordMessageEmojiUsage(message, session: session)
+                    try await sendBuiltInMessage(message, to: thread.id, session: session)
                 } catch {
                     guard let self, isCurrentAccountSession(session) else { return }
                     appendBuiltInNotice("The thread could not be created.", in: channelID)
@@ -555,6 +553,15 @@ extension AppModel {
         default:
             appendBuiltInNotice("/\(invocation.command.name) isn’t available in SakuraCord yet.", in: channelID)
         }
+    }
+
+    /// `/msg` and `/thread` post outside the outbox. Like Discord's send
+    /// action, a bare `@silent` sends nothing.
+    private func sendBuiltInMessage(_ message: String, to channelID: ChannelID, session: AppModelAccountSession) async throws {
+        let draft = SendMessageDraft(channelID: channelID, content: message)
+        guard !draft.content.isEmpty else { return }
+        _ = try await session.provider.send(draft)
+        recordMessageEmojiUsage(message, session: session)
     }
 
     private func runNicknameCommand(_ nickname: String, invocation: ApplicationCommandInvocation) {

@@ -1696,7 +1696,8 @@ private extension ComposerView {
               conversation == .thread ? !model.isThreadWindowAwayFromNewest : !model.hasMoreLaterMessages,
               let source = sendTransitionAnchor.source(
                   channelID: channelID,
-                  content: draft.trimmingCharacters(in: .whitespacesAndNewlines),
+                  // The optimistic row it lands on has no `@silent` prefix.
+                  content: SilentMessagePrefix.split(draft.trimmingCharacters(in: .whitespacesAndNewlines)).content,
                   attachments: attachments,
                   uploads: model.attachmentUploads
               )
