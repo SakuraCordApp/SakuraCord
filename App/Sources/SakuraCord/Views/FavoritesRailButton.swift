@@ -12,9 +12,7 @@ struct FavoritesRailButton: View {
             title: "Favorites", systemImage: "star.fill", isSelected: model.favorites.isPresented,
             hasNotification: unread.isUnread, mentionCount: unread.mentions, action: model.openFavorites
         )
-        .contextMenu {
-            Button("Hide Favorites", systemImage: "eye.slash.fill") { model.setFavoritesEnabled(false) }
-        }
+        .overlay { ServerRailContextMenuBridge { FavoritesMenu.railMenu(model: model) } }
         .accessibilityValue(unread.mentions > 0 ? "\(unread.mentions) unread mentions" : unread.isUnread ? "Unread" : "")
     }
 }
@@ -39,6 +37,12 @@ struct FavoritesDialogs: ViewModifier {
             }
             .windowModal(item: $favorites.nameEditor, cornerRadius: 32, cornerStyle: .circular) {
                 FavoritesNameEditorView(model: model, editor: $0)
+            }
+            .windowModal(isPresented: $favorites.isPickerPresented, cornerRadius: 32, cornerStyle: .circular) {
+                FavoritesPickerView(model: model)
+            }
+            .windowModal(isPresented: $favorites.isEditingThreadSettings, cornerRadius: 32, cornerStyle: .circular) {
+                FavoritesThreadSettingsView(model: model)
             }
     }
 }

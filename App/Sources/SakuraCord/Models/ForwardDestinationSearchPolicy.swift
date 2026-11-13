@@ -39,6 +39,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         let includesChannelRecipientsAsUsers: Bool
         let relationshipNicknamesByUserID: [UserID: String]
         let currentUserID: UserID?
+        let excludedUserIDs: Set<UserID>
         let guilds: [GuildID: Guild]
         let searchableChannelIDs: Set<ChannelID>?
     }
@@ -346,6 +347,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         relationshipNicknamesByUserID: [UserID: String] = [:],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
         currentUserID: UserID? = nil,
+        excludedUserIDs: Set<UserID> = [],
         guilds: [GuildID: Guild],
         usageScores: [String: Int],
         maximumUsageScore: Int? = nil,
@@ -362,6 +364,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             includesChannelRecipientsAsUsers: includesChannelRecipientsAsUsers,
             relationshipNicknamesByUserID: relationshipNicknamesByUserID,
             currentUserID: currentUserID,
+            excludedUserIDs: excludedUserIDs,
             guilds: guilds,
             searchableChannelIDs: searchableChannelIDs
         ))
@@ -519,6 +522,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
             : []
         return (source.users + channelRecipients).compactMap { user in
             guard user.id != source.currentUserID,
+                  !source.excludedUserIDs.contains(user.id),
                   seenUserIDs.insert(user.id).inserted
             else { return nil }
             return ForwardDestination(

@@ -93,6 +93,58 @@ struct FavoritesSettingsContractTests {
         await provider.disconnect()
     }
 
+    /// Bodies captured from the official client (web build 672800) on 13 November 2026.
+    @Test func `suggestions, Thread Settings and Reset encode as the official client writes them`() throws {
+        func encoded(_ edits: [FavoritesSettings.Edit], from stored: String) throws -> String {
+            let storedSettings = try #require(Data(base64Encoded: stored))
+            let storedMessage = try #require(DiscordFavoritesProto.message(inSettings: storedSettings))
+            var settings = DiscordFavoritesProto.settings(from: storedMessage)
+            edits.forEach { settings.apply($0) }
+            return DiscordSettingsProto.protoLengthDelimitedField(
+                DiscordFavoritesProto.settingsField, DiscordFavoritesProto.message(for: settings, preserving: storedMessage)
+            ).base64EncodedString()
+        }
+        let channels = ChannelID(rawValue: 1_570_907_657_680_715_776)
+        // Adding a suggestion files it under a new Channels category.
+        #expect(try encoded([
+            .createCategory(channels, name: "Channels"),
+            .add(ChannelID(rawValue: 1_505_739_981_711_478_784), channelType: 0, categoryID: channels),
+        ], from: "egQaAggB") == "ejsKGQkAAAAPMfzMFRIOCghDaGFubmVscxACGAEKGgkAEAQeiXblFBIPEAEYAiEAAAAPMfzMFSoAGgIIAQ==")
+        // Own-category auto-add creates Auto-Added Threads in the same save.
+        let threadSettings = FavoritesSettings.ThreadSettings(
+            autoAddsJoinedThreads: true, removesReadThreads: true, removalDays: 7, removesFromAllThreads: true
+        )
+        let favorites = "emEKGgkAEAQeiXblFBIPEAEYAiEAAAAPMfzMFSoAChkJAAAADzH8zBUSDgoIQ2hhbm5lbHMQAhgBChEJHiCCaW2tsBUSBhAB"
+            + "GAMqAAoRCT8QgDP5UqoVEgYQARgEKgAaAggB"
+        let withThreadSettings = "epABChoJABAEHol25RQSDxABGAIhAAAADzH8zBUqAAoZCQAAAA8x/MwVEg4KCENoYW5uZWxzEAIYAQoRCR4ggmltrbAVEgYQ"
+            + "ARgDKgAKEQk/EIAz+VKqFRIGEAEYBCoACiMJAABA+sT8zBUSGAoSQXV0by1BZGRlZCBUaHJlYWRzEAIYBRoCCAEgASoCCAEwBzgB"
+        #expect(try encoded([
+            .createCategory(ChannelID(rawValue: 1_570_908_292_987_748_352), name: "Auto-Added Threads"),
+            .setThreadSettings(threadSettings),
+        ], from: favorites) == withThreadSettings)
+        #expect(try encoded([.reset], from: withThreadSettings) == "egA=")
+    }
+
+    /// Dismissing Suggested Channels sets DismissibleContent 807 and keeps the
+    /// rest of UserContentSettings, re-encoded with its recurring states by key.
+    @Test func `dismissing suggestions writes bit 807 into the complete user content`() {
+        let recurring = { (key: UInt64) in
+            DiscordSettingsProto.protoLengthDelimitedField(7, DiscordSettingsProto.protoVarintField(1, key))
+        }
+        let stored = DiscordSettingsProto.protoLengthDelimitedField(1, Data([0x01]))
+            + DiscordSettingsProto.protoVarintField(6, 9) + recurring(30) + recurring(5)
+        let dismissed = DiscordUserContentProto.setting(807, dismissed: true, in: stored)
+        var bits = [UInt8](repeating: 0, count: 101)
+        bits[0] = 0x01
+        bits[100] = 0x80
+        #expect(dismissed == DiscordSettingsProto.protoLengthDelimitedField(1, Data(bits))
+            + DiscordSettingsProto.protoVarintField(6, 9) + recurring(5) + recurring(30))
+        #expect(DiscordUserContentProto.isDismissed(807, in: dismissed))
+        let restored = DiscordUserContentProto.setting(807, dismissed: false, in: dismissed)
+        #expect(!DiscordUserContentProto.isDismissed(807, in: restored))
+        #expect(restored.count == dismissed.count)
+    }
+
     @Test func `moving a favourite renumbers display order like the official client`() {
         var settings = FavoritesSettings(entries: [
             .init(id: ChannelID(rawValue: 1), position: 3, channelType: 15),

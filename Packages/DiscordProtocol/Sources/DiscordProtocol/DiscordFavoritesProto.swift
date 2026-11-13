@@ -2,10 +2,13 @@ import Foundation
 import SakuraCordModels
 
 /// settings-proto/1 field 15 (`Favorites`). Every favourites write sends the
-/// complete message: the `favorite_channels` map (1), then the remaining
-/// top-level fields in number order, with `guild_visible` (3) as a BoolValue.
-/// Fields SakuraCord does not model, such as category collapse and the thread
-/// automation settings, are carried over from the stored copy.
+/// complete message in field order: the `favorite_channels` map (1), `muted`
+/// (2), `guild_visible` (3, a BoolValue), then Thread Settings:
+/// `auto_add_joined_threads` (4), `prune_inactive_threads` (5, a BoolValue),
+/// `prune_inactive_threads_days` (6), `prune_all_favorited_threads` (7) and
+/// `auto_add_joined_threads_per_guild` (8). Defaults are omitted, as the
+/// official encoder omits them; fields SakuraCord does not model, such as
+/// category collapse, are carried over from the stored copy.
 enum DiscordFavoritesProto {
     static let settingsField = 15
 
@@ -25,8 +28,13 @@ enum DiscordFavoritesProto {
             switch field.field {
             case 1:
                 if let entry = entry(from: field.payload ?? Data()) { settings.entries.append(entry.entry) }
-            case 3:
-                settings.storedVisibility = ProtoReader.fields(field.payload ?? Data()).last { $0.field == 1 }?.varint.map { $0 != 0 } ?? false
+            case 2: settings.isMuted = field.varint.map { $0 != 0 } ?? false
+            case 3: settings.storedVisibility = boolValue(field)
+            case 4: settings.threadSettings.autoAddsJoinedThreads = field.varint.map { $0 != 0 } ?? false
+            case 5: settings.threadSettings.removesReadThreads = boolValue(field)
+            case 6: settings.threadSettings.removalDays = UInt32(truncatingIfNeeded: field.varint ?? 0)
+            case 7: settings.threadSettings.removesFromAllThreads = field.varint.map { $0 != 0 } ?? false
+            case 8: settings.threadSettings.autoAddsPerServer = field.varint.map { $0 != 0 } ?? false
             default:
                 break
             }
@@ -42,7 +50,7 @@ enum DiscordFavoritesProto {
         for field in ProtoReader.fields(stored) {
             if field.field == 1, let decoded = entry(from: field.payload ?? Data()) {
                 storedValues[decoded.entry.id] = decoded.unmodelled
-            } else if field.field != 1, field.field != 3 {
+            } else if !(1 ... 8).contains(field.field) {
                 otherFields.append(field)
             }
         }
@@ -52,14 +60,25 @@ enum DiscordFavoritesProto {
             let value = entryValue(entry, unmodelled: storedValues[entry.id] ?? [])
             result.append(DiscordSettingsProto.protoLengthDelimitedField(1, key + DiscordSettingsProto.protoLengthDelimitedField(2, value)))
         }
-        for field in otherFields where field.field < 3 { result.append(field.raw) }
-        if let isVisible = settings.storedVisibility {
-            result.append(DiscordSettingsProto.protoLengthDelimitedField(
-                3, isVisible ? DiscordSettingsProto.protoVarintField(1, 1) : Data()
-            ))
-        }
-        for field in otherFields where field.field > 3 { result.append(field.raw) }
+        let thread = settings.threadSettings
+        if settings.isMuted { result.append(DiscordSettingsProto.protoVarintField(2, 1)) }
+        if let isVisible = settings.storedVisibility { result.append(boolValueField(3, isVisible)) }
+        if thread.autoAddsJoinedThreads { result.append(DiscordSettingsProto.protoVarintField(4, 1)) }
+        if let removes = thread.removesReadThreads { result.append(boolValueField(5, removes)) }
+        if thread.removalDays > 0 { result.append(DiscordSettingsProto.protoVarintField(6, UInt64(thread.removalDays))) }
+        if thread.removesFromAllThreads { result.append(DiscordSettingsProto.protoVarintField(7, 1)) }
+        if thread.autoAddsPerServer { result.append(DiscordSettingsProto.protoVarintField(8, 1)) }
+        for field in otherFields { result.append(field.raw) }
         return result
+    }
+
+    /// A google.protobuf.BoolValue; false is its empty message.
+    private static func boolValueField(_ number: Int, _ value: Bool) -> Data {
+        DiscordSettingsProto.protoLengthDelimitedField(number, value ? DiscordSettingsProto.protoVarintField(1, 1) : Data())
+    }
+
+    private static func boolValue(_ field: RawProtoField) -> Bool {
+        ProtoReader.fields(field.payload ?? Data()).last { $0.field == 1 }?.varint.map { $0 != 0 } ?? false
     }
 
     /// FavoriteChannel fields 1–5, omitting defaults like the official

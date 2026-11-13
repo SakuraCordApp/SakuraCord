@@ -49,11 +49,17 @@ extension AppModel {
         if favorites.localEntries.count != count { saveLocalFavorites() }
     }
 
-    func addLocalFavorite(_ id: ChannelID, channelType: Int) {
+    func addLocalFavorite(_ id: ChannelID, channelType: Int, parentID: ChannelID? = nil) {
         // As with a synced addition, a favourite reveals a hidden Favorites server.
         if !favoritesAreEnabled { updateFavorites(.setVisible(true)) }
-        let entry = FavoritesSettings.Entry(id: id, position: nextLocalFavoritePosition, channelType: channelType)
+        let entry = FavoritesSettings.Entry(
+            id: id, position: nextLocalFavoritePosition, parentID: parentID, channelType: channelType
+        )
         changeLocalFavorites { $0.append(entry) }
+    }
+
+    func clearLocalFavorites() {
+        changeLocalFavorites { $0.removeAll() }
     }
 
     /// Applies a remove, rename or move of a shown local favourite; false

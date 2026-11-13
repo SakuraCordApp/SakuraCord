@@ -286,10 +286,7 @@ private struct ChatRootView: View {
                     GuildOnboardingView(model: model, guildID: guildID)
                         .id(guildID)
                 } else if model.favorites.isPresented, model.selectedChannelID == nil {
-                    ContentUnavailableView(
-                        "No Favorites Yet", systemImage: "star",
-                        description: Text("Right-click any channel, thread or DM and choose Add to Favorites.")
-                    )
+                    FavoritesEmptyState(model: model)
                 } else {
                     ChatWorkspaceView(
                         model: model,

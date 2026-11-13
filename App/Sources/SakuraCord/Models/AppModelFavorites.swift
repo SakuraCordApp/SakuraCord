@@ -14,6 +14,15 @@ final class FavoritesStore {
     /// The addition Discord's limit just blocked, shown as its upsell notice.
     var limitReached: FavoritesLimitNotice?
     var nameEditor: FavoritesNameEditor?
+    /// nil until the account's settings load.
+    var suggestionsDismissed: Bool?
+    /// Suggested Channels, most suggested first.
+    var suggestions: [ForwardDestination] = []
+    @ObservationIgnored var suggestionsTask: Task<Void, Never>?
+    var isPickerPresented = false
+    var isEditingThreadSettings = false
+    /// Discord prunes read threads at most once a day per account.
+    @ObservationIgnored var lastThreadPrune: (scope: String?, date: Date)?
     @ObservationIgnored var lastChannelID: ChannelID?
     /// Favourited threads the session's active-thread lists don't carry, such
     /// as archived ones, fetched when Favorites opens.
@@ -30,6 +39,13 @@ final class FavoritesStore {
         isPresented = false
         limitReached = nil
         nameEditor = nil
+        suggestionsDismissed = nil
+        suggestions = []
+        suggestionsTask?.cancel()
+        suggestionsTask = nil
+        isPickerPresented = false
+        isEditingThreadSettings = false
+        lastThreadPrune = nil
         lastChannelID = nil
         threads = [:]
         requestedThreadIDs = []
@@ -39,12 +55,17 @@ final class FavoritesStore {
     }
 }
 
+/// A conversation to favourite, with the Discord channel type it records.
+struct FavoriteAddition: Equatable {
+    let id: ChannelID
+    let channelType: Int
+}
+
 /// A favourite Discord's limit kept from being added.
 struct FavoritesLimitNotice: Identifiable, Equatable {
     let limit: Int
-    let channelID: ChannelID
-    let channelType: Int
-    var id: ChannelID { channelID }
+    let addition: FavoriteAddition
+    var id: ChannelID { addition.id }
 }
 
 /// The open Favorites name dialog.
@@ -78,6 +99,10 @@ extension AppModel {
         switch event {
         case let .favoritesChanged(settings, isConfirmed): presentFavorites(settings, isConfirmed: isConfirmed)
         case .favoritesSaveFailed(let reason): errorMessage = "Discord did not save your Favorites. \(reason)"
+        case .favoritesSuggestionsDismissed(let isDismissed):
+            favorites.suggestionsDismissed = isDismissed
+            refreshFavoriteSuggestions()
+        case let .currentUserThreadMembershipChanged(threadID, isJoined): followThreadMembership(threadID, isJoined: isJoined)
         default: return false
         }
         return true
@@ -89,6 +114,7 @@ extension AppModel {
             favorites.settingsAreConfirmed = isConfirmed
             dropSyncedLocalFavorites()
         }
+        refreshFavoriteSuggestions()
     }
 
     /// Hidden elsewhere, an open Favorites server stays until it is left, as
@@ -173,7 +199,8 @@ extension AppModel {
             (10 ... 12).contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
                 && sidebarThread($0.id) == nil && favorites.requestedThreadIDs.insert($0.id).inserted
         }
-        guard !missing.isEmpty else { return }
+        // Discord loads favourited threads before its daily prune of read ones.
+        guard !missing.isEmpty else { return pruneReadFavoriteThreads() }
         startAccountChildTask(account: accountSession()) { model, account in
             for entry in missing {
                 // A private thread (type 12) always asks Discord, whose answer
@@ -195,6 +222,7 @@ extension AppModel {
                 }
                 model.favorites.threads[entry.id] = post.thread
             }
+            model.pruneReadFavoriteThreads()
             // Threads that load after Favorites opened empty open like any favourite.
             if model.favorites.isPresented, model.presentedFavoriteChannelID == nil,
                !model.favoriteConversations().isEmpty {
@@ -218,6 +246,7 @@ extension AppModel {
         guard favorites.isPresented != isPresented else { return }
         favorites.isPresented = isPresented
         refreshServerRailSelection()
+        refreshFavoriteSuggestions()
     }
 
     func isFavorite(_ channelID: ChannelID) -> Bool {
@@ -232,32 +261,70 @@ extension AppModel {
         return effectiveMessagePermissions(in: channel).map { $0 & DiscordPermissionBits.viewChannel != 0 } ?? true
     }
 
-    /// Adds or removes a channel, DM or thread. Like Discord, an addition over
-    /// the account's limit shows the notice and sends nothing, unless
-    /// Unlimited favorites keeps it on this device instead.
+    /// Adds or removes a channel, DM or thread.
     func toggleFavorite(_ channelID: ChannelID, channelType: Int) {
-        guard let settings = favorites.settings else { return }
-        // Discord prunes favourites the account can no longer see before it
-        // counts, so a deleted or hidden channel never blocks an addition.
-        var counted = settings
-        counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
-        let premiumType = currentUser?.premiumType ?? 0
-        let limit = counted.limitBlockingAddition(premiumType: premiumType)
         if isFavorite(channelID) {
             updateFavorites(.remove(channelID))
-        } else if limit == nil {
+        } else {
+            addFavorites([FavoriteAddition(id: channelID, channelType: channelType)])
+        }
+    }
+
+    /// Adds conversations in one save as Discord's add action does: each in
+    /// turn until one meets the account's limit, under `parentID` or under a
+    /// category found, or else created, by name. The limit shows the notice
+    /// unless the addition is silent, and a blocked first addition sends
+    /// nothing; Unlimited favorites keeps it on this device instead.
+    func addFavorites(
+        _ additions: [FavoriteAddition], parentID: ChannelID? = nil, categoryName: String? = nil, isSilent: Bool = false
+    ) {
+        guard var settings = favorites.settings else { return }
+        let premiumType = currentUser?.premiumType ?? 0
+        var edits: [FavoritesSettings.Edit] = []
+        var parentID = parentID
+        var resolvesCategory = categoryName != nil
+        func apply(_ edit: FavoritesSettings.Edit) {
+            settings.apply(edit)
+            edits.append(edit)
+        }
+        for addition in additions where !isFavorite(addition.id) && !settings.contains(addition.id) {
+            // Discord prunes favourites the account can no longer see before it
+            // counts, so a deleted or hidden channel never blocks an addition.
+            var counted = settings
+            counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
+            if let limit = counted.limitBlockingAddition(premiumType: premiumType) {
+                if featuresSettings.unlimitedFavorites {
+                    addLocalFavorite(addition.id, channelType: addition.channelType, parentID: parentID)
+                    continue
+                }
+                if !isSilent { favorites.limitReached = FavoritesLimitNotice(limit: limit, addition: addition) }
+                break
+            }
+            if let categoryName, resolvesCategory {
+                resolvesCategory = false
+                if let category = settings.category(named: categoryName) {
+                    parentID = category.id
+                } else if counted.entries.count + 1 < FavoritesSettings.maximumEntries {
+                    // Discord names a new category with a snowflake for the current time.
+                    let id = ChannelID(timestamp: .now)
+                    apply(.createCategory(id, name: categoryName))
+                    parentID = id
+                } else {
+                    if !isSilent { favorites.limitReached = FavoritesLimitNotice(limit: FavoritesSettings.maximumEntries, addition: addition) }
+                    return
+                }
+            }
             // Unseen favourites stay stored until keeping them would push the
             // save past Discord's limit; then they go in the same save, as
             // Discord prunes them, so Discord never receives more.
-            let pruned = settings.limitBlockingAddition(premiumType: premiumType) == nil ? [] : settings.entries
-                .filter { !$0.isCategory && !counted.entries.contains($0) }
-                .map { FavoritesSettings.Edit.remove($0.id) }
-            updateFavorites(pruned + [.add(channelID, channelType: channelType)])
-        } else if featuresSettings.unlimitedFavorites {
-            addLocalFavorite(channelID, channelType: channelType)
-        } else if let limit {
-            favorites.limitReached = FavoritesLimitNotice(limit: limit, channelID: channelID, channelType: channelType)
+            if settings.limitBlockingAddition(premiumType: premiumType) != nil {
+                for entry in settings.entries where !entry.isCategory && !counted.entries.contains(entry) {
+                    apply(.remove(entry.id))
+                }
+            }
+            apply(.add(addition.id, channelType: addition.channelType, categoryID: parentID))
         }
+        if !edits.isEmpty { updateFavorites(edits) }
     }
 
     /// Turns on Unlimited favorites, then adds the favourite the limit blocked.
@@ -266,9 +333,7 @@ extension AppModel {
         settings.unlimitedFavorites = true
         applyFeaturesSettings(settings)
         favorites.limitReached = nil
-        // It may have become a favourite while the notice was open.
-        guard !isFavorite(notice.channelID) else { return }
-        toggleFavorite(notice.channelID, channelType: notice.channelType)
+        addFavorites([notice.addition])
     }
 
     func createFavoriteCategory(named name: String) {
@@ -281,7 +346,7 @@ extension AppModel {
     func setFavoritesEnabled(_ isEnabled: Bool) {
         updateFavorites(.setVisible(isEnabled))
         // Hiding it here leaves it, as Discord's settings toggle does.
-        if !isEnabled, favorites.isPresented { selectGuild(nil) }
+        if !isEnabled, favorites.isPresented { openFriends() }
     }
 
     func updateFavorites(_ edit: FavoritesSettings.Edit) {

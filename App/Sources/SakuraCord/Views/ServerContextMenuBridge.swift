@@ -300,6 +300,21 @@ private extension GuildNotificationToggle {
     }
 }
 
+/// A rail tile's native context menu, built when it opens.
+struct ServerRailContextMenuBridge: NSViewRepresentable {
+    let menu: () -> NSMenu
+
+    func makeNSView(context: Context) -> ServerContextMenuHitView {
+        let view = ServerContextMenuHitView()
+        view.menuProvider = menu
+        return view
+    }
+
+    func updateNSView(_ nsView: ServerContextMenuHitView, context: Context) {
+        nsView.menuProvider = menu
+    }
+}
+
 final class ServerContextMenuHitView: NSView {
     var menuProvider: (() -> NSMenu?)?
 

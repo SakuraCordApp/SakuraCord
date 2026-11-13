@@ -200,6 +200,14 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var pendingFavorites: FavoritesSettings?
     var favoritesSaveTask: Task<Void, Never>?
     var favoritesGeneration: UInt64 = 0
+    /// The confirmed settings-proto/1 UserContentSettings message.
+    var userContentMessage: Data?
+    /// UserContentSettings a pending Favorites save carries, as Reset brings
+    /// Suggested Channels back in the same write.
+    var pendingUserContent: Data?
+    var personalizationConsented = false
+    var channelAffinities: (ids: [ChannelID], fetchedAt: Date)?
+    var userAffinities: (ids: [UserID], fetchedAt: Date)?
     var lastSentPresenceStatus: PresenceStatus?
     var presenceSendWindowEnds: [Date] = []
     var deferredPresenceTask: Task<Void, Never>?

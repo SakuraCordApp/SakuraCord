@@ -375,6 +375,56 @@ keeping them would push an addition past the limit: that save drops them, so
 Discord never receives more favourites than the account allows. Category collapse
 stays local: the captured collapse save did not carry it.
 
+**Thread Settings** (the rail tile's menu) are Favorites fields 4–8:
+`auto_add_joined_threads` (4) and `auto_add_joined_threads_per_guild` (8)
+choose per-server categories, the Auto-Added Threads category, or never;
+`prune_inactive_threads` (5, a BoolValue that Discord treats as on when unset),
+`prune_inactive_threads_days` (6: 0, 7 or 14) and `prune_all_favorited_threads`
+(7) choose when read threads go and from where. While Favorites is hidden every
+choice reads as off. Saving writes both groups and, for the own-category choice,
+creates Auto-Added Threads in the same PATCH (official web build 672800,
+13 November 2026). The client performs the automation: a thread the account
+joins (a THREAD_MEMBERS_UPDATE adding it, or a THREAD_CREATE or
+THREAD_MEMBER_UPDATE whose `join_timestamp` is under a minute old) is added
+silently under a category named after its server, or Auto-Added Threads,
+created when missing; leaving a thread removes its favourite whatever the
+settings. Once a day per account, opening Favorites loads its favourited
+threads and removes read ones in scope (the categories named Auto-Added Threads
+or, per server, after one of the account's servers; or every favourited
+thread) that are archived or, with a day limit, inactive that long. Activity is
+the latest of the last message, the last non-message activity and the archive
+time; threads with unread messages or mentions and the open one stay.
+
+**Reset Favorites** asks nothing: it writes an empty Favorites message (every
+favourite, category, visibility and thread setting back to its default),
+clears Suggested Channels' dismissal in the same PATCH, and leaves for Friends.
+**Hide Favorites** also leaves for Friends. Discord offers Reset only in
+Developer Mode; SakuraCord has no Developer Mode and always offers it.
+
+**Suggested Channels** show while DismissibleContent 807
+(`FAVORITES_GUILD_SUGGESTIONS`) is not dismissed: bit 807 of
+`UserContentSettings.dismissed_contents` (type-1 field 4, field 1; bit `n` is
+byte `n / 8`, `1 << n % 8`). Dismissing sets the bit by PATCHing the complete
+UserContentSettings, re-encoded with fields in number order and
+`recurring_dismissible_content_states` by ascending key. Up to four are picked
+afresh whenever an input changes, alternating the most affine channel
+(`GET /users/@me/affinities/v2/channels`, by `score`) and DM partner
+(`GET /users/@me/affinities/v2/users`, by `dm_probability`, blocked and
+ignored users left out, an existing DM only), falling back on the other kind
+and then the picker's default order. A candidate must not be a favourite, and
+a server channel or thread must be viewable. Affinities are read only with
+READY's `consents.personalization`, and kept 12 hours (channels) and 8 hours
+(users). An added suggestion is filed under a category named Channels,
+created when missing.
+
+**Add to Favorites** is Discord's destination search (the Forward picker's,
+from `ForwardDestinationSearchPolicy`) without the account's favourites:
+searchable conversations, people without a DM included (one is opened before
+favouriting), picks listed first as of the last query change, at most 20. The
+default order is the recent channels, then the frecency list; a client's
+frecency includes its own unsaved uses, so two clients can differ until those
+uses sync. The list itself is computed exactly as Discord computes it.
+
 **Unlimited favorites** (Features › FakeNitro, app-wide, off by default) keeps
 additions past the account's limit on this device only, per account, in user
 defaults. Discord's limit is enforced by its client alone (the official add

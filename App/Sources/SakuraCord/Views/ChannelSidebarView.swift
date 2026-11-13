@@ -430,11 +430,7 @@ private struct GuildChannelList: View, Equatable {
             }
 
         }
-        .listStyle(.sidebar)
-        .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
-        .environment(\.defaultMinListRowHeight, ChannelSidebarLayoutMetrics.minimumRowHeight)
-        .scrollContentBackground(.hidden)
-        .scrollClipDisabled()
+        .modifier(ChannelSidebarListStyle())
         .overlayPreferenceValue(SidebarUnreadRowAnchors.self) { anchors in
             GeometryReader { geometry in
                 let width = InterfaceScale.metric(4)
@@ -465,6 +461,18 @@ private struct GuildChannelList: View, Equatable {
             .tag(GuildSidebarSelection.page(page))
     }
 
+}
+
+/// The server channel list's presentation, which Favorites shares.
+struct ChannelSidebarListStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .listStyle(.sidebar)
+            .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
+            .environment(\.defaultMinListRowHeight, ChannelSidebarLayoutMetrics.minimumRowHeight)
+            .scrollContentBackground(.hidden)
+            .scrollClipDisabled()
+    }
 }
 
 /// A collapsible category header in a sidebar channel list. `menu` is the

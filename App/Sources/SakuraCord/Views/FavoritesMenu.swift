@@ -55,6 +55,18 @@ enum FavoritesMenu {
         return items
     }
 
+    /// The rail tile's menu, Discord's items with Hide neither set apart nor red.
+    static func railMenu(model: AppModel) -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(item("Thread Settings", systemImage: SakuraCordSystemSymbol.thread) {
+            model.favorites.isEditingThreadSettings = true
+        })
+        menu.addItem(item("Hide Favorites", systemImage: "eye.slash.fill") { model.setFavoritesEnabled(false) })
+        menu.addItem(.separator())
+        menu.addItem(item("Reset Favorites", systemImage: "trash.fill", isDestructive: true, action: model.resetFavorites))
+        return menu
+    }
+
     /// A Favorites category's menu: Mark as Read, then Rename and Delete.
     static func categoryMenu(for category: FavoritesSettings.Entry, model: AppModel) -> NSMenu {
         let menu = NSMenu()

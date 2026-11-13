@@ -11,6 +11,8 @@ struct FavoritesSidebarView: View {
 
     var body: some View {
         if let settings = model.displayedFavorites {
+            // Discord's first-run sidebar: no favourite shown and no category.
+            let isEmpty = settings.categories.isEmpty && model.favoriteConversations().isEmpty
             List(selection: selection) {
                 Button { model.favorites.nameEditor = .createCategory } label: {
                     ChannelSidebarPageRow(title: "Create Category", symbol: "folder.fill.badge.plus")
@@ -18,6 +20,12 @@ struct FavoritesSidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .selectionDisabled()
+                Divider()
+                    .listRowInsets(EdgeInsets())
+                    .selectionDisabled()
+                    .accessibilityHidden(true)
+                FavoriteSuggestionsSection(model: model)
+                if isEmpty { FavoritesEmptySidebarHint(model: model) }
                 ForEach(settings.sections) { section in
                     if let category = section.category {
                         Section {
@@ -31,6 +39,9 @@ struct FavoritesSidebarView: View {
                 }
                 SidebarBottomScrollSpacer(height: bottomContentInset)
             }
+            .modifier(ChannelSidebarListStyle())
+            .padding(.top, ChatChromeMetrics.channelListTopPadding)
+            .clipped()
         }
     }
 
@@ -136,7 +147,10 @@ private struct FavoriteRow: View {
         } else {
             Image(systemName: favorite.thread != nil ? "text.bubble.fill"
                 : favorite.entry.channelType == 13 ? "person.wave.2.fill"
-                : ChannelIconPresentation.systemImage(for: channel, isHidden: false, rulesChannelID: nil))
+                : ChannelIconPresentation.systemImage(
+                    for: channel, isHidden: false,
+                    rulesChannelID: channel.guildID.flatMap { model.serverRailGuildsByID[$0]?.rulesChannelID }
+                ))
                 .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
                 .fontWeight(.medium)
         }

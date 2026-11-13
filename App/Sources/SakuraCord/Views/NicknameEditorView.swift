@@ -88,6 +88,7 @@ struct ModalDialogPanel<Notice: View, Content: View>: View {
     var actionSymbol = "checkmark"
     /// Disables the dialog and shows the primary action's progress.
     var isWorking = false
+    var isActionDisabled = false
     let action: () -> Void
     @ViewBuilder let notice: Notice
     @ViewBuilder let content: Content
@@ -112,7 +113,7 @@ struct ModalDialogPanel<Notice: View, Content: View>: View {
                     .disabled(isWorking)
                 Spacer(minLength: 16)
                 ModalGlassButton(symbol: actionSymbol, label: actionTitle, primary: true, isLoading: isWorking, action: action)
-                    .disabled(isWorking)
+                    .disabled(isWorking || isActionDisabled)
                     .keyboardShortcut(.defaultAction)
             }
             .padding(.top, 4)

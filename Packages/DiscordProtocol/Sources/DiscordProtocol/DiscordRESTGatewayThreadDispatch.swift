@@ -37,7 +37,11 @@ extension DiscordRESTProvider {
             fallbackGuildID: dto.guildID.flatMap(GuildID.init),
             advancesParentLatestThreadID: true
         )
-        if let threadID = ChannelID(dto.id) { attachStartedThreadToCachedStarter(threadID) }
+        guard let threadID = ChannelID(dto.id) else { return }
+        attachStartedThreadToCachedStarter(threadID)
+        if Self.isRecentJoin(dto.member?.joinTimestamp) {
+            continuation?.yield(.currentUserThreadMembershipChanged(threadID: threadID, isJoined: true))
+        }
     }
 
     func handleThreadUpdateDispatch(
@@ -96,6 +100,9 @@ extension DiscordRESTProvider {
             publishForumPosts(parentID: parentID)
         }
         publishActiveJoinedThreads()
+        if member.userID != nil, Self.isRecentJoin(member.joinTimestamp) {
+            continuation?.yield(.currentUserThreadMembershipChanged(threadID: threadID, isJoined: true))
+        }
     }
 
     func handleThreadMembersUpdateDispatch(
@@ -125,11 +132,13 @@ extension DiscordRESTProvider {
         let isJoinedThread = cachedJoinedThreads[threadID] != nil
         cachedJoinedThreads[threadID]?.memberCount = update.memberCount
         var membershipChanged = false
+        var ownMembershipChange: Bool?
         if let currentUserID = currentUser?.id {
             if let ownMember = update.addedMembers?.first(where: {
                 $0.userID.flatMap(UserID.init) == currentUserID
             }) {
                 advanceThreadMembershipRevision(threadID)
+                ownMembershipChange = true
                 membershipChanged = applyCurrentUserThreadMembership(
                     ownMember.domain,
                     threadID: threadID,
@@ -137,6 +146,7 @@ extension DiscordRESTProvider {
                 )
             } else if update.removedMemberIDs?.contains(currentUserID.description) == true {
                 advanceThreadMembershipRevision(threadID)
+                ownMembershipChange = false
                 membershipChanged = applyCurrentUserThreadMembership(
                     nil,
                     threadID: threadID,
@@ -150,6 +160,15 @@ extension DiscordRESTProvider {
         if membershipChanged || isJoinedThread || !changedParentIDs.isEmpty {
             publishActiveJoinedThreads()
         }
+        if let ownMembershipChange {
+            continuation?.yield(.currentUserThreadMembershipChanged(threadID: threadID, isJoined: ownMembershipChange))
+        }
+    }
+
+    /// The official client treats a thread member joined within the last
+    /// minute as a join that just happened.
+    private static func isRecentJoin(_ joinTimestamp: String?) -> Bool {
+        joinTimestamp.flatMap(DiscordDate.parse).map { Date.now.timeIntervalSince($0) < 60 } ?? false
     }
 
     func cachedForumPostParentID(threadID: ChannelID) -> ChannelID? {

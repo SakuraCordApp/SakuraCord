@@ -1,5 +1,17 @@
 import Foundation
 
+/// Discord's affinity rankings, most affine first: channels by score and DM
+/// partners by the probability of messaging them.
+public struct ConversationAffinities: Equatable, Sendable {
+    public var channelIDs: [ChannelID]
+    public var userIDs: [UserID]
+
+    public init(channelIDs: [ChannelID] = [], userIDs: [UserID] = []) {
+        self.channelIDs = channelIDs
+        self.userIDs = userIDs
+    }
+}
+
 /// Discord's Favorites server: the account's favourited channels and DMs,
 /// their categories, and whether the server is shown. Entries keep the stored
 /// map order; new entries are appended, as the first-party client writes them.
@@ -47,16 +59,58 @@ public struct FavoritesSettings: Equatable, Sendable {
         public var id: ChannelID? { category?.id }
     }
 
+    /// Thread Settings: whether joined threads are added automatically and
+    /// when read ones are removed, stored as Discord stores them.
+    public struct ThreadSettings: Equatable, Sendable {
+        public var autoAddsJoinedThreads = false
+        /// Auto-added threads go to a category named after their server
+        /// instead of Auto-Added Threads.
+        public var autoAddsPerServer = false
+        /// nil when never chosen, which Discord treats as on.
+        public var removesReadThreads: Bool?
+        /// 0 removes threads when archived; otherwise also after this many
+        /// days without activity.
+        public var removalDays: UInt32 = 0
+        /// Removal applies to every favourited thread, not only auto-add categories.
+        public var removesFromAllThreads = false
+
+        public init(
+            autoAddsJoinedThreads: Bool = false,
+            autoAddsPerServer: Bool = false,
+            removesReadThreads: Bool? = nil,
+            removalDays: UInt32 = 0,
+            removesFromAllThreads: Bool = false
+        ) {
+            self.autoAddsJoinedThreads = autoAddsJoinedThreads
+            self.autoAddsPerServer = autoAddsPerServer
+            self.removesReadThreads = removesReadThreads
+            self.removalDays = removalDays
+            self.removesFromAllThreads = removesFromAllThreads
+        }
+    }
+
     /// Every entry, categories included, may not exceed this.
     public static let maximumEntries = 200
+    /// Auto-added threads' category when they don't go per server.
+    public static let autoAddedThreadsCategoryName = "Auto-Added Threads"
 
     public var entries: [Entry]
     /// The stored `guild_visible` choice, nil when the account never made one.
     public var storedVisibility: Bool?
+    /// Discord's `muted`, kept for the write and cleared by a reset.
+    public var isMuted = false
+    public var threadSettings = ThreadSettings()
 
-    public init(entries: [Entry] = [], storedVisibility: Bool? = nil) {
+    public init(
+        entries: [Entry] = [],
+        storedVisibility: Bool? = nil,
+        isMuted: Bool = false,
+        threadSettings: ThreadSettings = ThreadSettings()
+    ) {
         self.entries = entries
         self.storedVisibility = storedVisibility
+        self.isMuted = isMuted
+        self.threadSettings = threadSettings
     }
 
     /// Without an explicit choice the server shows once anything is favourited.
@@ -97,13 +151,23 @@ public struct FavoritesSettings: Equatable, Sendable {
 
     private var nextPosition: UInt32 { (entries.map(\.position).max() ?? 0) + 1 }
 
+    /// The category Discord files an addition under by name: the first whose
+    /// trimmed name matches regardless of case.
+    public func category(named name: String) -> Entry? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return entries.first { $0.isCategory && $0.nickname.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == name }
+    }
+
     public enum Edit: Equatable, Sendable {
         case setVisible(Bool)
-        case add(ChannelID, channelType: Int)
+        case add(ChannelID, channelType: Int, categoryID: ChannelID? = nil)
         case remove(ChannelID)
         case rename(ChannelID, nickname: String)
         case createCategory(ChannelID, name: String)
         case move(ChannelID, categoryID: ChannelID?)
+        case setThreadSettings(ThreadSettings)
+        /// Reset Favorites: every favourite, category and setting back to its default.
+        case reset
     }
 
     /// Applies an edit the way the first-party favourites actions do.
@@ -111,11 +175,12 @@ public struct FavoritesSettings: Equatable, Sendable {
         switch edit {
         case .setVisible(let isVisible):
             storedVisibility = isVisible
-        case .add(let id, let channelType):
+        case .add(let id, let channelType, let categoryID):
             guard !contains(id) else { return }
             // The first favourite reveals a hidden Favorites server.
             if !isEnabled { storedVisibility = true }
-            entries.append(Entry(id: id, position: nextPosition, channelType: channelType))
+            let parentID = categoryID.flatMap { id in categories.contains { $0.id == id } ? id : nil }
+            entries.append(Entry(id: id, position: nextPosition, parentID: parentID, channelType: channelType))
         case .remove(let id):
             guard let removed = entries.first(where: { $0.id == id }) else { return }
             entries.removeAll { $0.id == id }
@@ -128,17 +193,25 @@ public struct FavoritesSettings: Equatable, Sendable {
         case .createCategory(let id, let name):
             entries.append(Entry(id: id, isCategory: true, nickname: name, position: nextPosition))
         case .move(let id, let categoryID):
-            guard let index = entries.firstIndex(where: { $0.id == id && !$0.isCategory }),
-                  categoryID.map({ category in categories.contains { $0.id == category } }) ?? true
-            else { return }
-            // The moved favourite ends its new section, then every favourite is
-            // renumbered in display order; categories keep their positions.
-            entries[index].parentID = categoryID
-            entries[index].position = .max
-            for (position, entryID) in sections.flatMap({ $0.entries.map(\.id) }).enumerated() {
-                if let entryIndex = entries.firstIndex(where: { $0.id == entryID }) {
-                    entries[entryIndex].position = UInt32(position)
-                }
+            move(id, to: categoryID)
+        case .setThreadSettings(let settings):
+            threadSettings = settings
+        case .reset:
+            self = FavoritesSettings()
+        }
+    }
+
+    /// The moved favourite ends its new section, then every favourite is
+    /// renumbered in display order; categories keep their positions.
+    private mutating func move(_ id: ChannelID, to categoryID: ChannelID?) {
+        guard let index = entries.firstIndex(where: { $0.id == id && !$0.isCategory }),
+              categoryID.map({ category in categories.contains { $0.id == category } }) ?? true
+        else { return }
+        entries[index].parentID = categoryID
+        entries[index].position = .max
+        for (position, entryID) in sections.flatMap({ $0.entries.map(\.id) }).enumerated() {
+            if let entryIndex = entries.firstIndex(where: { $0.id == entryID }) {
+                entries[entryIndex].position = UInt32(position)
             }
         }
     }

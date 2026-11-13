@@ -30,7 +30,33 @@ final class ForwardDestinationSearchIndexCache {
         let usageScores: [String: Int]
         let usageOrder: [String]
         let searchableChannelIDs: Set<ChannelID>
-        let eligibleChannelIDs: Set<ChannelID>
+        let eligibleChannelIDs: Set<ChannelID>?
+        var excludedUserIDs: Set<UserID> = []
+
+        /// The Add to Favorites corpus: Discord's favourites channel filter
+        /// replaces the forward permission check, so every searchable
+        /// conversation that isn't already a favourite is eligible, and a DM
+        /// partner whose DM is a favourite is left out.
+        func excludingFavorites(_ favoriteIDs: Set<ChannelID>) -> Input {
+            Input(
+                channels: channels.filter { $0.kind == .directMessage || !favoriteIDs.contains($0.id) },
+                threads: threads.filter { !favoriteIDs.contains($0.id) },
+                channelStoreOrder: channelStoreOrder,
+                users: users,
+                friendUserIDs: friendUserIDs,
+                relationshipNicknamesByUserID: relationshipNicknamesByUserID,
+                userSearchAliasesByUserID: userSearchAliasesByUserID,
+                currentUserID: currentUserID,
+                guilds: guilds,
+                usageScores: usageScores,
+                usageOrder: usageOrder,
+                searchableChannelIDs: searchableChannelIDs,
+                eligibleChannelIDs: nil,
+                excludedUserIDs: Set(channels.lazy
+                    .filter { $0.kind == .directMessage && favoriteIDs.contains($0.id) }
+                    .compactMap { $0.recipients.first?.id })
+            )
+        }
 
         func makeIndex() -> ForwardDestinationSearchPolicy.Index {
             ForwardDestinationSearchPolicy.makeIndex(
@@ -42,6 +68,7 @@ final class ForwardDestinationSearchIndexCache {
                 relationshipNicknamesByUserID: relationshipNicknamesByUserID,
                 userSearchAliasesByUserID: userSearchAliasesByUserID,
                 currentUserID: currentUserID,
+                excludedUserIDs: excludedUserIDs,
                 guilds: guilds,
                 usageScores: usageScores,
                 usageOrder: usageOrder,
@@ -401,6 +428,16 @@ final class ForwardDestinationSearchIndexCache {
         }
         guard !Task.isCancelled else { return nil }
         return prepared
+    }
+
+    /// The Add to Favorites picker and Suggested Channels search the forward
+    /// corpus without the account's favourites; see `Input.excludingFavorites`.
+    func favoritesIndex(for model: AppModel, excluding favoriteIDs: Set<ChannelID>) async -> ForwardDestinationSearchPolicy.Index {
+        let source = makeSource(for: model)
+        let currentUserID = model.snapshot?.currentUser.id
+        return await Task.detached(priority: .userInitiated) {
+            source.makeInput(currentUserID: currentUserID).excludingFavorites(favoriteIDs).makeIndex()
+        }.value
     }
 
     private func makeSource(for model: AppModel) -> Source {

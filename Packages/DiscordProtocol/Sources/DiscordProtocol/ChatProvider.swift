@@ -160,6 +160,11 @@ public protocol ChatProvider: Sendable {
     func favoritesSettings() async -> FavoritesSettings?
     /// Applies the edits together and saves them as one change.
     func updateFavorites(_ edits: [FavoritesSettings.Edit]) async throws
+    /// Dismisses or restores the Favorites server's Suggested Channels.
+    func setFavoritesSuggestionsDismissed(_ dismissed: Bool) async throws
+    /// The account's most-used channels and DM partners, empty without
+    /// personalization consent.
+    func conversationAffinities() async -> ConversationAffinities
     func pinnedMessages(
         in channelID: ChannelID,
         before: Date?,
@@ -414,6 +419,8 @@ public extension ChatProvider {
     func updateFavorites(_ edits: [FavoritesSettings.Edit]) async throws {
         throw ChatProviderError.invalidRequest("Favorites are unavailable for this session.")
     }
+    func setFavoritesSuggestionsDismissed(_ dismissed: Bool) async throws {}
+    func conversationAffinities() async -> ConversationAffinities { ConversationAffinities() }
     func guildGuide(in guildID: GuildID) async throws -> GuildGuide { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func guildProfile(in guildID: GuildID) async throws -> GuildProfile { throw ChatProviderError.invalidRequest("Server profile is unavailable.") }
     func messageInteractionData(channelID: ChannelID, messageID: MessageID) async throws -> MessageInteractionData {

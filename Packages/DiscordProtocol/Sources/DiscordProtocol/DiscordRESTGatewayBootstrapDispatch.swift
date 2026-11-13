@@ -411,6 +411,8 @@ extension DiscordRESTProvider {
         }
         applyGuildSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
         applyFavoritesSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
+        applyUserContentSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
+        personalizationConsented = ready.personalizationConsented ?? false
         publishProfileCustomStatus()
         applyInboxSettingsProto(ready.userSettingsProto, isPartial: false)
         finishInitialGatewaySnapshot(
@@ -450,6 +452,7 @@ extension DiscordRESTProvider {
         if applyProfileSettingsProto(encoded, isPartial: isPartial) { publishProfileCustomStatus() }
         applyGuildSettingsProto(encoded, replacesAllSettings: !isPartial)
         applyFavoritesSettingsProto(encoded, replacesAllSettings: !isPartial)
+        applyUserContentSettingsProto(encoded, replacesAllSettings: !isPartial)
         await sendPresenceIfChanged()
     }
 

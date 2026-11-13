@@ -17,14 +17,20 @@ extension DiscordRESTProvider {
         }
         var next = pendingFavorites ?? DiscordFavoritesProto.settings(from: favoritesMessage)
         for edit in edits {
-            if case let .add(id, channelType) = edit {
-                next.apply(.add(id, channelType: storedChannelType(id) ?? channelType))
+            if case let .add(id, channelType, categoryID) = edit {
+                next.apply(.add(id, channelType: storedChannelType(id) ?? channelType, categoryID: categoryID))
             } else {
                 next.apply(edit)
             }
         }
         pendingFavorites = next
         continuation?.yield(.favoritesChanged(next, isConfirmed: false))
+        // Reset also restores Suggested Channels, in the same write.
+        if edits.contains(.reset), let content = userContentMessage,
+           DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: content) {
+            pendingUserContent = DiscordUserContentProto.setting(DiscordUserContentProto.favoritesSuggestions, dismissed: false, in: content)
+            continuation?.yield(.favoritesSuggestionsDismissed(false))
+        }
         guard favoritesSaveTask == nil else { return }
         let generation = favoritesGeneration
         favoritesSaveTask = Task { await saveFavorites(generation: generation) }
@@ -61,28 +67,38 @@ extension DiscordRESTProvider {
         favoritesMessage = nil
         favoritesDataVersion = nil
         pendingFavorites = nil
+        pendingUserContent = nil
+        userContentMessage = nil
+        personalizationConsented = false
+        channelAffinities = nil
+        userAffinities = nil
     }
 
     private func saveFavorites(generation: UInt64) async {
         defer { if generation == favoritesGeneration { favoritesSaveTask = nil } }
         while generation == favoritesGeneration, let target = pendingFavorites, let stored = favoritesMessage {
             let message = DiscordFavoritesProto.message(for: target, preserving: stored)
+            let userContent = pendingUserContent
+            pendingUserContent = nil
             do {
                 let response = try await patchUserSettings(
                     ["settings": .string(
-                        DiscordSettingsProto.protoLengthDelimitedField(DiscordFavoritesProto.settingsField, message)
+                        ((userContent.map { DiscordSettingsProto.protoLengthDelimitedField(DiscordUserContentProto.settingsField, $0) } ?? Data())
+                            + DiscordSettingsProto.protoLengthDelimitedField(DiscordFavoritesProto.settingsField, message))
                             .base64EncodedString()
                     )],
                     retriesRateLimit: true
                 )
                 guard generation == favoritesGeneration else { return }
                 applyFavoritesSettingsProto(response.settings, replacesAllSettings: true)
+                if userContent != nil { applyUserContentSettingsProto(response.settings, replacesAllSettings: true) }
             } catch {
                 guard generation == favoritesGeneration else { return }
                 if error is UserSettingsRejection { await reloadUserSettings() }
                 gatewayLogger.error("Could not save Favorites: \(error.localizedDescription, privacy: .public)")
                 pendingFavorites = nil
                 publishStoredFavorites()
+                if userContent != nil { continuation?.yield(.favoritesSuggestionsDismissed(true)) }
                 continuation?.yield(.favoritesSaveFailed(reason: error.localizedDescription))
                 return
             }
