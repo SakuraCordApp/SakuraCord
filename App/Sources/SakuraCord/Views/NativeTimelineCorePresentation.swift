@@ -120,7 +120,7 @@ enum NativeTimelineReplyMetrics {
     static var horizontalSpacing: CGFloat { InterfaceScale.metric(5) }
 
     static var authorFont: NSFont {
-        .interfaceSystemFont(
+        .messageSystemFont(
             ofSize: NSFont.preferredFont(
                 forTextStyle: .caption2
             ).pointSize + 2,
@@ -129,7 +129,7 @@ enum NativeTimelineReplyMetrics {
     }
 
     static var summaryFont: NSFont {
-        .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 2)
+        .messageSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 2)
     }
 
     nonisolated static var avatarDiameter: CGFloat { InterfaceScale.metric(15) }

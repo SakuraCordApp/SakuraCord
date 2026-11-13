@@ -228,7 +228,7 @@ struct ComposerView: View {
                             if draft.isEmpty, !isComposing, !isVoiceMessageActive {
                                 Text(composerPlaceholder)
                                     .foregroundStyle(.tertiary)
-                                    .font(.interfaceSystem(size: 15))
+                                    .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                                     .allowsHitTesting(false)

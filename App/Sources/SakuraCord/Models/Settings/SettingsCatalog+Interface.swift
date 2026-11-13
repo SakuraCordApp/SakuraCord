@@ -37,6 +37,15 @@ nonisolated extension SettingsCatalog {
             keywords: ["group DM", "bubbles", "default", "layout"], scope: .appWideLocal
         ),
         control(
+            .messageFontSize,
+            page: .interface,
+            section: .interfaceMessages,
+            label: "Font size",
+            help: "Make message text smaller or larger without changing the rest of the interface.",
+            keywords: ["messages", "font size", "text", "larger", "smaller", "readability"],
+            scope: .appWideLocal
+        ),
+        control(
             .messageDensity,
             page: .interface,
             section: .interfaceMessages,
@@ -59,8 +68,8 @@ nonisolated extension SettingsCatalog {
             page: .interface,
             section: .interfaceMessages,
             label: "Reset to Defaults",
-            help: "Restore the default message layout and density without changing other Appearance settings.",
-            keywords: ["messages", "defaults", "restore", "reset", "density"],
+            help: "Restore the default message layout, font size, and density without changing other Appearance settings.",
+            keywords: ["messages", "defaults", "restore", "reset", "font size", "density"],
             scope: .appWideLocal,
             reset: .categoryAction
         ),

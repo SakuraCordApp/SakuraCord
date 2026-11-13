@@ -37,7 +37,7 @@ struct NativeTimelineTranslationPresentation {
                 preparedText: visibleText.isEmpty ? nil : RichMessageAttributedText.prepare(source: visibleText),
                 linkedImages: [],
                 attributedText: nil,
-                baseFontSize: 15
+                baseFontSize: InterfaceTypographyMetrics.messageTextSize
             )
             let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, source: model)
             return Self(

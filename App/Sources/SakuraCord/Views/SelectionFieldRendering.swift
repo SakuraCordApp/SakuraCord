@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 enum SelectionFieldLayoutMetrics {
-    static var font: NSFont { .interfaceSystemFont(ofSize: 13, weight: .medium) }
+    static var font: NSFont { .messageSystemFont(ofSize: 13, weight: .medium) }
     /// Discord's 16-pixel placeholder, at the message text's size.
     static var placeholderFont: NSFont {
         .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize, weight: .medium)

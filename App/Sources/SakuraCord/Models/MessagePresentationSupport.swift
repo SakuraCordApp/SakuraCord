@@ -77,9 +77,9 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
     ) -> Self {
         let baseFontSize: CGFloat =
             if message.type.hasGeneratedContent {
-                13
+                InterfaceTypographyMetrics.message(13)
             } else {
-                15
+                InterfaceTypographyMetrics.messageTextSize
             }
         let visibleContent =
             if message.type.hasGeneratedContent {
@@ -130,7 +130,7 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                 DiscordMarkdown.appKitAttributed(
                     prepared.markdownPlan,
                     baseFontSize: prepared.isEmojiOnly
-                        ? 48
+                        ? InterfaceTypographyMetrics.message(48)
                         : baseFontSize,
                     usesMessageLineHeight: !prepared.isEmojiOnly,
                     reservesCodeCopyButton: true

@@ -40,6 +40,7 @@ struct InterfaceSettingsPage: View {
         appearanceValue.groupMessageAppearance = .defaultStyle
         appearanceValue.messageSpacing =
             AppearanceSettingsSnapshot.defaultMessageSpacing
+        appearanceValue.messageTextSize = InterfaceTypographyMetrics.defaultMessageTextSize
     }
 }
 
@@ -131,6 +132,7 @@ private struct InterfaceMessagesSection: View {
             && value.groupMessageAppearance == .defaultStyle
             && value.messageSpacing
                 == AppearanceSettingsSnapshot.defaults.messageSpacing
+            && value.messageTextSize == InterfaceTypographyMetrics.defaultMessageTextSize
     }
 
     var body: some View {
@@ -146,13 +148,45 @@ private struct InterfaceMessagesSection: View {
             appearancePicker(LocalizedStringResource("Server channels", bundle: #bundle), selection: $value.serverMessageAppearance)
                 .settingsControlAnchor(.messageAppearance, state: state)
 
+            LabeledContent("Font size") {
+                HStack {
+                    Slider(
+                        value: $value.messageTextSize,
+                        in: InterfaceTypographyMetrics.messageTextSizeRange,
+                        step: 1,
+                        neutralValue: InterfaceTypographyMetrics.defaultMessageTextSize
+                    ) {
+                        Text("Font size", bundle: #bundle)
+                    } tick: { stop in
+                        stop == InterfaceTypographyMetrics.defaultMessageTextSize
+                            ? SliderTick(stop) { Text("Default", bundle: #bundle) }
+                            : SliderTick(stop)
+                    }
+                    .labelsHidden()
+                    .frame(minWidth: InterfaceScale.metric(220))
+                    Text("\(Int(value.messageTextSize)) pt")
+                        .monospacedDigit()
+                        .frame(width: InterfaceScale.metric(42), alignment: .trailing)
+                }
+            }
+            .accessibilityValue("\(Int(value.messageTextSize)) points")
+            .settingsControlAnchor(.messageFontSize, state: state)
+
             LabeledContent("Density") {
                 HStack {
                     Slider(
                         value: $value.messageSpacing,
                         in: AppearanceSettingsSnapshot.messageSpacingRange,
-                        step: 1
-                    )
+                        step: 1,
+                        neutralValue: AppearanceSettingsSnapshot.defaultMessageSpacing
+                    ) {
+                        Text("Density", bundle: #bundle)
+                    } tick: { stop in
+                        stop == AppearanceSettingsSnapshot.defaultMessageSpacing
+                            ? SliderTick(stop) { Text("Default", bundle: #bundle) }
+                            : SliderTick(stop)
+                    }
+                    .labelsHidden()
                     .frame(minWidth: InterfaceScale.metric(220))
                     Text("\(Int(value.messageSpacing)) pt")
                         .monospacedDigit()

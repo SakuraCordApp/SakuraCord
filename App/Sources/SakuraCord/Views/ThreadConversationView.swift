@@ -93,20 +93,20 @@ private struct ThreadCreationView: View {
                 ZStack(alignment: .leading) {
                     TextField("", text: $creation.name)
                         .textFieldStyle(.plain)
-                        .font(.interfaceSystem(size: 15))
+                        .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                         .focused($isNameFocused)
                         .accessibilityLabel("Thread Name")
                         .onSubmit { model.validateThreadCreation() }
                     if creation.name.isEmpty {
                         Text(creation.starterMessage == nil ? "New Thread" : creation.defaultName)
                             .lineLimit(1)
-                            .font(.interfaceSystem(size: 15))
+                            .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                             .foregroundStyle(.tertiary)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                     }
                 }
-                .padding(.horizontal, InterfaceScale.metric(11))
+                .padding(.horizontal, ChatChromeMetrics.composerTextLeadingInset)
                 .frame(
                     maxWidth: .infinity,
                     minHeight: usesDefaultStyle

@@ -55,7 +55,7 @@ struct ComposerActionButton: View {
     let help: String
     var iconSize: CGFloat = 18
     var iconWeight: Font.Weight = .medium
-    var size = ChatChromeMetrics.composerControlHeight
+    var size = ChatChromeMetrics.composerButtonSize
     var showsHoverBackground = true
     var appearance: ComposerBarAppearance = .defaultStyle
     var cornerRadius: CGFloat?
