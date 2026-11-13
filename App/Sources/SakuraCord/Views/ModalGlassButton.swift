@@ -25,6 +25,7 @@ struct ModalGlassButton: View {
             Label(label, systemImage: symbol)
                 .font(.interface(.body).weight(.semibold))
                 .lineLimit(1)
+                .foregroundStyle(primary && looksEnabled ? .white : .primary)
                 .opacity(isLoading ? 0 : looksEnabled ? 1 : 0.4)
                 .overlay { if isLoading { InteractionLoadingDotsView(tone: primary ? .onFill : .content) } }
                 .padding(.horizontal, InterfaceScale.metric(16))

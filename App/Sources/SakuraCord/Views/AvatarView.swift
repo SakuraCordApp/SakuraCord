@@ -66,7 +66,7 @@ struct AvatarView: View {
     }
 
     private var fallback: some View {
-        Text(name.prefix(1).uppercased()).font(.system(size: size * 0.42, weight: .semibold))
+        Text(name.prefix(1).uppercased()).font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(.white)
     }
 
     var requestedPixelDimension: Int {

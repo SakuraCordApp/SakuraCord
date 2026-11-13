@@ -130,8 +130,8 @@ extension NativeTimelineRowPainter {
         let outgoing = bubbleRegion?.isOutgoing == true
         sakuraCordButton(title: title, frame: frame, isHovered: isEnabled && state.hoveredControl == control,
                         pressProgress: state.pressedControl == control ? 1 : 0,
-                        colors: [outgoing ? .sakuraCordLabelOnAccentColor.withAlphaComponent(isProminent ? 1 : 0.16) : isProminent ? .sakuraCordAccentColor : .controlColor],
-                        foreground: outgoing ? (isProminent ? .sakuraCordAccentColor : .sakuraCordLabelOnAccentColor) : isProminent ? .sakuraCordLabelOnAccentColor : .labelColor, isEnabled: isEnabled)
+                        colors: [outgoing ? .white.withAlphaComponent(isProminent ? 1 : 0.16) : isProminent ? .sakuraCordAccentColor : .controlColor],
+                        foreground: outgoing ? (isProminent ? .sakuraCordAccentColor : .white) : isProminent ? .white : .labelColor, isEnabled: isEnabled)
     }
 
     static func drawPoll(_ input: NativeTimelineMessageDrawInput) {
@@ -166,7 +166,7 @@ extension NativeTimelineRowPainter {
         let hovered = state.hoveredControl == .answer(answer.id)
         let outgoing = bubbleRegion?.isOutgoing == true
         let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion)
-        let accent = outgoing ? NSColor.sakuraCordLabelOnAccentColor : .sakuraCordAccentColor
+        let accent = outgoing ? NSColor.white : .sakuraCordAccentColor
         let path = NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: NativeTimelinePollLayout.answerCornerRadius)
         foreground.withAlphaComponent(outgoing ? (hovered ? 0.18 : 0.10) : (hovered ? 0.08 : 0.045)).setFill()
         path.fill()
@@ -199,7 +199,7 @@ extension NativeTimelineRowPainter {
                 accent.setFill()
                 if poll.allowsMultipleAnswers {
                     indicator.fill()
-                    text("✓", in: box, font: .interfaceSystemFont(ofSize: 14, weight: .semibold), color: outgoing ? .sakuraCordAccentColor : .sakuraCordLabelOnAccentColor, alignment: .center)
+                    text("✓", in: box, font: .interfaceSystemFont(ofSize: 14, weight: .semibold), color: outgoing ? .sakuraCordAccentColor : .white, alignment: .center)
                 } else {
                     NSBezierPath(ovalIn: box.insetBy(dx: InterfaceScale.metric(4), dy: InterfaceScale.metric(4))).fill()
                 }
@@ -239,10 +239,10 @@ extension NativeTimelineRowPainter {
              font: .interfaceSystemFont(ofSize: 11, weight: .medium), color: NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion), alignment: .right)
         if selected {
             let box = CGRect(x: region.frame.maxX - InterfaceScale.metric(32), y: region.frame.midY - InterfaceScale.metric(10), width: InterfaceScale.metric(20), height: InterfaceScale.metric(20))
-            (bubbleRegion?.isOutgoing == true ? NSColor.sakuraCordLabelOnAccentColor : .sakuraCordAccentColor).setFill()
+            (bubbleRegion?.isOutgoing == true ? NSColor.white : .sakuraCordAccentColor).setFill()
             NSBezierPath(ovalIn: box).fill()
             text("✓", in: box, font: .interfaceSystemFont(ofSize: 14, weight: .semibold),
-                 color: bubbleRegion?.isOutgoing == true ? .sakuraCordAccentColor : .sakuraCordLabelOnAccentColor, alignment: .center)
+                 color: bubbleRegion?.isOutgoing == true ? .sakuraCordAccentColor : .white, alignment: .center)
         }
     }
 

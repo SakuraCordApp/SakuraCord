@@ -76,8 +76,8 @@ extension NativeTimelineRowPainter {
                 title: card.buttonTitle, frame: card.buttonFrame,
                 isHovered: isHovered && !card.isDisabled,
                 pressProgress: card.isDisabled ? 0 : pressProgress,
-                colors: [outgoing ? .sakuraCordLabelOnAccentColor : .sakuraCordAccentColor],
-                foreground: outgoing ? .sakuraCordAccentColor : .sakuraCordLabelOnAccentColor, isEnabled: !card.isDisabled
+                colors: [outgoing ? .white : .sakuraCordAccentColor],
+                foreground: outgoing ? .sakuraCordAccentColor : .white, isEnabled: !card.isDisabled
             )
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -120,11 +120,11 @@ extension NativeTimelineRowPainter {
                 )
             }
         } else if card.isUnavailable || bubble != nil {
-            (outgoing ? NSColor.sakuraCordLabelOnAccentColor.withAlphaComponent(0.14) : NSColor.systemRed.withAlphaComponent(card.isUnavailable ? 0.12 : 0.04)).setFill()
+            (outgoing ? NSColor.white.withAlphaComponent(0.14) : NSColor.systemRed.withAlphaComponent(card.isUnavailable ? 0.12 : 0.04)).setFill()
             NSBezierPath(concentricRoundedRect: card.iconFrame, cornerRadius: InterfaceScale.metric(12)).fill()
             if bubble != nil {
                 systemSymbol(card.isUnavailable ? "envelope.badge.fill" : card.error == nil ? "clock" : "exclamationmark.circle",
-                    in: card.iconFrame, color: outgoing ? .sakuraCordLabelOnAccentColor : card.isUnavailable ? .systemRed : .secondaryLabelColor,
+                    in: card.iconFrame, color: outgoing ? .white : card.isUnavailable ? .systemRed : .secondaryLabelColor,
                     inset: InterfaceScale.metric(7))
             } else if let image = unavailableInviteSymbol {
                 drawImage(image, in: card.iconFrame.insetBy(dx: InterfaceScale.metric(11), dy: InterfaceScale.metric(11)), cornerRadius: 0, fillsFrame: false)

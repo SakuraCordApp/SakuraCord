@@ -80,7 +80,7 @@ struct PullRequestBuildBrowser: View {
             HStack(spacing: InterfaceScale.metric(12)) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.interface(.title3).weight(.semibold))
-                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
+                    .foregroundStyle(.white)
                     .frame(width: InterfaceScale.metric(40), height: InterfaceScale.metric(40))
                     .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Circle())
                     .accessibilityHidden(true)
@@ -188,7 +188,7 @@ struct PullRequestBuildBrowser: View {
             Link(destination: build.pullRequestURL) {
                 Label("PR #\(build.pullRequest)", systemImage: "arrow.triangle.pull")
                     .font(.interface(.callout).weight(.semibold))
-                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, InterfaceScale.metric(10))
                     .frame(height: InterfaceScale.metric(26))
                     // Glass inside a scroll view escapes its clip as it scrolls.
@@ -274,7 +274,7 @@ private struct PullRequestRow: View {
             HStack(alignment: .top, spacing: InterfaceScale.metric(10)) {
                 Text("#\(String(build.pullRequest))")
                     .font(.interface(.caption, design: .monospaced).weight(.semibold))
-                    .foregroundStyle(isSelected ? SakuraCordAccentColor.labelOnFill : .secondary)
+                    .foregroundStyle(isSelected ? .white : .secondary)
                     .padding(.horizontal, InterfaceScale.metric(7))
                     .frame(height: InterfaceScale.metric(22))
                     .background(isSelected ? AnyShapeStyle(SakuraCordAccentColor.color) : AnyShapeStyle(.quaternary), in: Capsule())

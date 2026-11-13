@@ -144,7 +144,7 @@ private struct CurrentPullRequestBuildRow: View {
             HStack(spacing: InterfaceScale.metric(12)) {
                 Image(systemName: "arrow.triangle.pull")
                     .font(.interface(.body).weight(.semibold))
-                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
+                    .foregroundStyle(.white)
                     .frame(width: InterfaceScale.metric(36), height: InterfaceScale.metric(36))
                     .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Circle())
                     .accessibilityHidden(true)

@@ -146,8 +146,8 @@ extension NativeTimelineRowPainter {
     static func drawMessageTranslation(_ input: NativeTimelineMessageDrawInput) {
         guard let region = input.layout.translationRegion else { return }
         let font = NativeTimelineRowLayout.translationCaptionFont
-        let secondary: NSColor = region.isOutgoingBubble ? .sakuraCordLabelOnAccentColor.withAlphaComponent(0.8) : .secondaryLabelColor
-        let accent: NSColor = region.isOutgoingBubble ? .sakuraCordLabelOnAccentColor : .sakuraCordAccentColor
+        let secondary: NSColor = region.isOutgoingBubble ? .white.withAlphaComponent(0.8) : .secondaryLabelColor
+        let accent: NSColor = region.isOutgoingBubble ? .white : .sakuraCordAccentColor
         let symbol = region.kind == .failed ? "exclamationmark.triangle" : "translate"
         systemSymbol(symbol, in: region.iconFrame, color: region.kind == .failed ? .systemRed : secondary, inset: 0)
         text(region.caption, in: region.captionFrame, font: font, color: secondary)

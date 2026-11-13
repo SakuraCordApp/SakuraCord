@@ -127,6 +127,7 @@ private struct ServerInviteLinkRow: View {
             Button(action: copy) {
                 Label(isCopied ? "Copied" : "Copy", systemImage: isCopied ? "checkmark" : "doc.on.doc")
                     .font(.interface(.callout).weight(.semibold))
+                    .foregroundStyle(.white)
                     .contentTransition(.symbolEffect(.replace))
                     .padding(.horizontal, InterfaceScale.metric(12))
                     .frame(height: InterfaceScale.metric(32))

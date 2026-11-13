@@ -388,7 +388,7 @@ struct DirectMessageAvatar: View {
         } else {
             Image(systemName: "person.2.fill")
                 .font(.system(size: size * 0.38, weight: .semibold))
-                .foregroundStyle(SakuraCordAccentColor.labelOnFill)
+                .foregroundStyle(.white)
                 .frame(width: size, height: size)
                 .background(SakuraCordAccentColor.color.gradient, in: Circle())
                 .accessibilityLabel("\(channel.name) group avatar")

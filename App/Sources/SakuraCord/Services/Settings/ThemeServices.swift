@@ -924,10 +924,6 @@ extension Notification.Name {
     static let sakuraCordThemeDidCommit = Notification.Name(
         "dev.sakuracord.theme-did-commit"
     )
-    /// The label colour for accent fills flipped during a live theme edit.
-    static let sakuraCordAccentLabelDidChange = Notification.Name(
-        "dev.sakuracord.accent-label-did-change"
-    )
 }
 
 extension SakuraCordGradientTheme {

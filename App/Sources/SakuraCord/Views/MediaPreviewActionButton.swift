@@ -14,7 +14,7 @@ struct MediaPreviewActionButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(SakuraCordAccentColor.labelOnFill)
+        .foregroundStyle(.white)
         .glassEffect(
             .regular.tint(SakuraCordAccentColor.color).interactive(),
             in: Capsule()

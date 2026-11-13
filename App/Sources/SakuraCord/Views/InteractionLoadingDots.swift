@@ -84,7 +84,7 @@ final class InteractionLoadingDots: NSView {
 
     private func updateColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let color = (tone == .content ? NSColor.labelColor : NSColor.sakuraCordLabelOnAccentColor).cgColor
+            let color = (tone == .content ? NSColor.labelColor : NSColor.white).cgColor
             dots.forEach { $0.backgroundColor = color }
         }
     }

@@ -1206,13 +1206,16 @@ extension NativeMessageTimelineCoordinator {
                         self?.scheduleModelRowsUpdate()
                     }
                 },
+                center.addObserver(
+                    forName: .sakuraCordThemeDidCommit,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.canvas?.invalidatePresentationCaches()
+                    }
+                },
             ] + workspaceMotionObservations(center)
-            // Cached rows bake in theme colours, including the label on outgoing bubbles.
-            observations += [.sakuraCordThemeDidCommit, .sakuraCordAccentLabelDidChange].map { name in
-                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.canvas?.invalidatePresentationCaches() }
-                }
-            }
             observations += [.NSCalendarDayChanged, NSApplication.didBecomeActiveNotification].map { name in
                 center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated {

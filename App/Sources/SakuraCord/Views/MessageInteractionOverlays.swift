@@ -826,9 +826,9 @@ enum MessageEditLayoutMetrics {
     static func textStyle(isOnOutgoingBubble: Bool) -> ComposerTextStyle {
         let style = messageTextStyle
         guard isOnOutgoingBubble else { return style }
-        // The timeline sets an outgoing bubble's text in the label colour for the accent fill.
+        // The timeline sets an outgoing bubble's text in white.
         var attributes = style.attributes
-        attributes[.foregroundColor] = NSColor.sakuraCordLabelOnAccentColor
+        attributes[.foregroundColor] = NSColor.white
         return ComposerTextStyle(font: style.font, attributes: attributes, usesMessageLineHeight: true)
     }
 
@@ -914,7 +914,7 @@ private struct InlineMessageEditor: View {
                 onAutocompleteCommand: handleAutocomplete,
                 capturesUnfocusedTyping: true,
                 maximumHeight: .greatestFiniteMagnitude,
-                insertionPointColor: isOnOutgoingBubble ? .sakuraCordLabelOnAccentColor : nil,
+                insertionPointColor: isOnOutgoingBubble ? .white : nil,
                 textStyle: MessageEditLayoutMetrics.textStyle(isOnOutgoingBubble: isOnOutgoingBubble),
                 scrolls: false,
                 accessibilityHint: "Press Return to save, Shift-Return for a new line, or Escape to cancel.",

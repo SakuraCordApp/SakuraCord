@@ -83,7 +83,7 @@ private struct ProfileGameActionFill: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .foregroundStyle(style == .prominent ? AnyShapeStyle(SakuraCordAccentColor.labelOnFill) : AnyShapeStyle(.primary))
+            .foregroundStyle(style == .prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             .background { Capsule().fill(fill) }
             .opacity(isEnabled ? 1 : 0.5)
             .animation(.easeOut(duration: 0.12), value: isHovered)

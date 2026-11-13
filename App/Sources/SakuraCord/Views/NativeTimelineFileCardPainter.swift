@@ -216,16 +216,15 @@ extension NativeTimelineRowPainter {
         init(bubble: NativeTimelineBubbleRegion?, isFailed: Bool) {
             self.isFailed = isFailed
             let accent = NSColor.sakuraCordAccentColor
-            let label = NSColor.sakuraCordLabelOnAccentColor
             if bubble?.isOutgoing == true {
-                button = label
+                button = .white
                 glyph = isFailed ? .systemRed : accent
-                link = label
-                failure = label
-                highlight = label
+                link = .white
+                failure = .white
+                highlight = .white
             } else {
                 button = isFailed ? .systemRed : accent
-                glyph = SakuraCordAccentColor.labelNSColor(on: button)
+                glyph = .white
                 link = accent
                 failure = .systemRed
                 highlight = .labelColor

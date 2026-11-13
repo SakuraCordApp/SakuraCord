@@ -28,10 +28,9 @@ enum NativeTimelineTextPresentation {
             attributedString: attributedContent
         )
         let range = NSRange(location: 0, length: resolved.length)
-        let label = NSColor.sakuraCordLabelOnAccentColor
-        resolved.addAttribute(.foregroundColor, value: label, range: range)
-        resolved.addAttribute(.underlineColor, value: label, range: range)
-        resolved.addAttribute(.strikethroughColor, value: label, range: range)
+        resolved.addAttribute(.foregroundColor, value: NSColor.white, range: range)
+        resolved.addAttribute(.underlineColor, value: NSColor.white, range: range)
+        resolved.addAttribute(.strikethroughColor, value: NSColor.white, range: range)
         resolved.enumerateAttribute(.link, in: range) { link, linkRange, _ in
             guard link != nil else { return }
             resolved.addAttribute(

@@ -275,21 +275,20 @@ enum NativeTimelineVoiceMessagePainter {
 
         init(style: NativeTimelineVoiceMessageRegion.Style) {
             let accent = NSColor.sakuraCordAccentColor
-            let label = NSColor.sakuraCordLabelOnAccentColor
             switch style {
             case .outgoingBubble:
-                buttonFill = label
+                buttonFill = .white
                 glyph = accent
-                played = label
-                unplayed = label.withAlphaComponent(0.42)
-                text = label.withAlphaComponent(0.88)
-                chipFill = label.withAlphaComponent(0.2)
-                chipHoverFill = label.withAlphaComponent(0.32)
-                chipText = label
-                symbol = label
+                played = .white
+                unplayed = NSColor.white.withAlphaComponent(0.42)
+                text = NSColor.white.withAlphaComponent(0.88)
+                chipFill = NSColor.white.withAlphaComponent(0.2)
+                chipHoverFill = NSColor.white.withAlphaComponent(0.32)
+                chipText = .white
+                symbol = .white
             case .plain, .incomingBubble, .audioFile:
                 buttonFill = accent
-                glyph = label
+                glyph = .white
                 played = accent
                 unplayed = NSColor.labelColor.withAlphaComponent(0.3)
                 text = .secondaryLabelColor

@@ -270,8 +270,8 @@ private struct AddFriendView: View {
             }
             .buttonStyle(.plain)
             // The accent fill stays while sending so the loading dots remain visible;
-            // a light label on untinted glass would vanish in light mode.
-            .foregroundStyle(hasUsername ? SakuraCordAccentColor.labelOnFill : Color.secondary)
+            // white text on untinted glass would vanish in light mode.
+            .foregroundStyle(hasUsername ? Color.white : Color.secondary)
             .glassEffect(
                 hasUsername ? .regular.tint(SakuraCordAccentColor.color).interactive() : .regular,
                 in: Capsule()
