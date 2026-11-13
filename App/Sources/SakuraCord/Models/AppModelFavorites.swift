@@ -103,6 +103,7 @@ extension AppModel {
             selectFavorite(conversation)
         } else {
             cancelConversationNavigation()
+            onboarding.presentedGuildID = nil
             setFavoritesPresented(true)
             closeThread()
             selectedChannelID = nil

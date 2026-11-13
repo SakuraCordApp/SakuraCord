@@ -19,6 +19,7 @@ nonisolated struct PendingConversationNavigation: Sendable {
     let id: UUID
     let target: ConversationNavigationTarget
     let sideConversationRevision: UInt64
+    let presentsFavorites: Bool?
 }
 
 /// The destination of an asynchronous conversation navigation. Repeating the
@@ -78,12 +79,12 @@ extension AppModel {
 
     /// A repeated destination is a duplicate only while nothing else replaced
     /// the side conversation or guild page since its navigation started, and
-    /// only when it would not open or close Favorites.
+    /// only when it leaves Favorites as the pending navigation will.
     func isNavigating(to target: ConversationNavigationTarget, presentsFavorites: Bool? = nil) -> Bool {
         guard let pending = conversationNavigationTarget else { return false }
         return pending.target == target
             && pending.sideConversationRevision == sideConversationRevision
-            && presentsFavorites.map { $0 == favorites.isPresented } ?? true
+            && presentsFavorites.map { $0 == (pending.presentsFavorites ?? favorites.isPresented) } ?? true
     }
 
     func noteSideConversationChange() {
@@ -120,7 +121,8 @@ extension AppModel {
         guard let target else { return }
         let navigationID = UUID()
         conversationNavigationTarget = PendingConversationNavigation(
-            id: navigationID, target: target, sideConversationRevision: sideConversationRevision
+            id: navigationID, target: target, sideConversationRevision: sideConversationRevision,
+            presentsFavorites: presentsFavorites
         )
         // The operation may never run after an account change, so completion
         // of the task itself retires its destination.

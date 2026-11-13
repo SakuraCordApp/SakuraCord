@@ -50,16 +50,16 @@ struct FavoritesSettingsContractTests {
 
     @Test func `edits during an in-flight save coalesce into one save of the newest state`() async throws {
         FavoritesURLProtocol.reset()
-        FavoritesURLProtocol.responseDelay = .milliseconds(300)
-        defer { FavoritesURLProtocol.responseDelay = nil }
+        FavoritesURLProtocol.holdsResponses = true
         let provider = makeProvider()
         try await receiveReady(provider, settings: "CgMYnzA=")
         try await provider.updateFavorites([.setVisible(true)])
-        try await Task.sleep(for: .milliseconds(100))
+        #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
         // The official client would discard these with the first response.
         try await provider.updateFavorites([.setVisible(false)])
         try await provider.updateFavorites([.setVisible(true)])
         try await provider.updateFavorites([.setVisible(false)])
+        FavoritesURLProtocol.releaseHeldResponses()
         await provider.favoritesSaveTask?.value
 
         #expect(FavoritesURLProtocol.requests.map { $0.body["settings"] as? String } == ["egQaAggB", "egIaAA=="])
@@ -69,8 +69,6 @@ struct FavoritesSettingsContractTests {
 
     @Test func `pruning and adding at the limit send one save that never exceeds it`() async throws {
         FavoritesURLProtocol.reset()
-        FavoritesURLProtocol.responseDelay = .milliseconds(200)
-        defer { FavoritesURLProtocol.responseDelay = nil }
         let provider = makeProvider()
         let stored = FavoritesSettings(entries: (1 ... 3).map {
             FavoritesSettings.Entry(id: ChannelID(rawValue: UInt64($0)), position: UInt32($0), channelType: 0)
@@ -139,9 +137,23 @@ private struct CapturedFavoritesRequest: @unchecked Sendable {
 /// Records every request and echoes a settings save back, as Discord does.
 private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requests: [CapturedFavoritesRequest] = []
-    nonisolated(unsafe) static var responseDelay: DispatchTimeInterval?
+    /// Holds responses until released, so later edits arrive while a save is in flight.
+    nonisolated(unsafe) static var holdsResponses = false
+    nonisolated(unsafe) private static var heldResponse: (() -> Void)?
 
-    static func reset() { requests = [] }
+    static func reset() {
+        requests = []
+        holdsResponses = false
+        heldResponse = nil
+    }
+
+    static var hasHeldResponse: Bool { heldResponse != nil }
+
+    static func releaseHeldResponses() {
+        holdsResponses = false
+        heldResponse?()
+        heldResponse = nil
+    }
 
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -163,8 +175,8 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: payload ?? Data())
             client?.urlProtocolDidFinishLoading(self)
         }
-        if let delay = Self.responseDelay {
-            DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: finish)
+        if Self.holdsResponses {
+            Self.heldResponse = finish
         } else {
             finish()
         }

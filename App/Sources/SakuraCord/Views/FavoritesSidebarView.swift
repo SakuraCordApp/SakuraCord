@@ -38,9 +38,10 @@ struct FavoritesSidebarView: View {
         Binding(
             get: { model.presentedFavoriteChannelID },
             set: { id in
-                guard let id, id != model.presentedFavoriteChannelID,
-                      let favorite = model.favoriteConversations().first(where: { $0.id == id })
-                else { return }
+                guard let id else { return }
+                // Choosing the shown favourite again supersedes a navigation in flight, as in a server's channel list.
+                guard id != model.presentedFavoriteChannelID else { return model.cancelConversationNavigation() }
+                guard let favorite = model.favoriteConversations().first(where: { $0.id == id }) else { return }
                 model.selectFavorite(favorite)
             }
         )
@@ -91,7 +92,8 @@ private struct FavoriteRow: View {
     var body: some View {
         let mentions = model.readState.mentions(channelID: favorite.id)
         let isMuted = model.isFavoriteMuted(favorite)
-        let showsUnread = model.readState.unread(channelID: favorite.id) && !isMuted
+        let isUnread = model.readState.unread(channelID: favorite.id)
+        let showsUnread = isUnread && !isMuted
         HStack(spacing: InterfaceScale.metric(8)) {
             icon
                 .frame(width: ChannelSidebarLayoutMetrics.iconWidth)
@@ -106,7 +108,8 @@ private struct FavoriteRow: View {
         .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .accessibilityElement(children: .combine)
         .accessibilityValue(mentions > 0 ? "\(mentions) unread mentions" : showsUnread ? "Unread" : "")
-        .overlay { contextMenu(isUnread: showsUnread || mentions > 0, mentions: mentions, isMuted: isMuted) }
+        // A muted favourite still offers Mark as Read, as a muted channel does.
+        .overlay { contextMenu(isUnread: isUnread || mentions > 0, mentions: mentions, isMuted: isMuted) }
     }
 
     /// A thread keeps its own thread menu, whose notification actions write
