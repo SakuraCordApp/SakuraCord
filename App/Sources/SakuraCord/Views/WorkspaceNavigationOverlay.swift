@@ -757,7 +757,7 @@ private struct QuickSwitcherResultList: View {
     let reportFrame: @MainActor () -> Void
     let focus: (QuickSwitcherResultID) -> Void
     let activate: (QuickSwitcherResult) -> Void
-    @State private var pointerLocationAtScroll: CGPoint?
+    @State private var pointerLocationAtContentChange: CGPoint?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -782,7 +782,10 @@ private struct QuickSwitcherResultList: View {
             }
             .scrollIndicators(.hidden)
             .onScrollGeometryChange(for: CGFloat.self, of: \.contentOffset.y) { _, _ in
-                pointerLocationAtScroll = NSEvent.mouseLocation
+                pointerLocationAtContentChange = NSEvent.mouseLocation
+            }
+            .onChange(of: presentationID) {
+                pointerLocationAtContentChange = NSEvent.mouseLocation
             }
             .accessibilityIdentifier("quick-switch-results")
             .onChange(of: selectedResultID) { _, selectedResultID in
@@ -795,10 +798,10 @@ private struct QuickSwitcherResultList: View {
         }
     }
 
-    /// Rows scrolling under a resting pointer report hover too; only a
-    /// pointer that moved since the last scroll may take the selection.
+    /// Rows scrolling or re-ranking under a resting pointer report hover
+    /// too; only a pointer that moved since then may take the selection.
     private func pointerHovered(over id: QuickSwitcherResultID) {
-        guard NSEvent.mouseLocation != pointerLocationAtScroll else { return }
+        guard NSEvent.mouseLocation != pointerLocationAtContentChange else { return }
         focus(id)
     }
 }
