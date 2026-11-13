@@ -14,7 +14,6 @@ struct ScheduleMessageDialog: View {
     /// Today through the last day Discord accepts; an old message's 30-day
     /// bound may leave only today, which then reads as too far away.
     private let days: [Day]
-    /// A time set elsewhere may fall between steps.
     @State private var date: Date
     /// Steps already taken by the drag under way.
     @State private var draggedSteps = 0
@@ -97,9 +96,10 @@ struct ScheduleMessageDialog: View {
     }
 
     private var dayPicker: some View {
-        HStack(spacing: 6) {
+        let selectedDay = day
+        return HStack(spacing: 6) {
             ForEach(days, id: \.date) { candidate in
-                let isSelected = candidate.date == day
+                let isSelected = candidate.date == selectedDay
                 Button { select(candidate.date) } label: {
                     VStack(spacing: 2) {
                         Text(candidate.weekday)
@@ -165,9 +165,6 @@ struct ScheduleMessageDialog: View {
 
     private var day: Date { Calendar.current.startOfDay(for: date) }
 
-    /// Minutes after midnight.
-    private var minute: Int { Self.minutes(of: date) }
-
     private func issue(now: Date) -> LocalizedStringResource? {
         if date < ScheduledMessagePolicy.earliestSendDate(now: now) { return "Scheduled time is too soon" }
         if date > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID, now: now) { return "Scheduled time is too far away" }
@@ -183,10 +180,12 @@ struct ScheduleMessageDialog: View {
 
     /// The neighbouring quarter hour in elapsed time, so steps pass through both
     /// runs of a repeated daylight-saving hour. Every time zone's offset is a
-    /// multiple of 15 minutes, so it is a quarter hour on the clock too.
+    /// multiple of 15 minutes, so it is a quarter hour on the clock too; a time
+    /// set elsewhere may fall between them.
     private func quarterHour(_ direction: Int) -> Date {
         let quarters = date.timeIntervalSinceReferenceDate / 900
-        return Date(timeIntervalSinceReferenceDate: (direction > 0 ? quarters.rounded(.down) + 1 : quarters.rounded(.up) - 1) * 900)
+        let target = direction > 0 ? quarters.rounded(.down) + 1 : quarters.rounded(.up) - 1
+        return Date(timeIntervalSinceReferenceDate: target * 900)
     }
 
     /// Scrolling and dragging run through the allowed days in 15-minute steps
@@ -201,20 +200,18 @@ struct ScheduleMessageDialog: View {
     }
 
     private func moveDay(by offset: Int) -> KeyPress.Result {
-        guard let index = days.firstIndex(where: { $0.date == day }) else { return .ignored }
+        let current = day
+        guard let index = days.firstIndex(where: { $0.date == current }) else { return .ignored }
         select(days[min(max(index + offset, 0), days.count - 1)].date)
         return .handled
     }
 
-    /// Keeps the clock time on another day; the current day keeps the exact
-    /// time, which rebuilding could move to a repeated hour's other run.
+    /// Moves by whole days, which keeps the clock time and, for the current
+    /// day, the exact time.
     private func select(_ newDay: Date) {
-        guard newDay != day else { return }
-        date = Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: newDay) ?? newDay
-    }
-
-    private static func minutes(of date: Date) -> Int {
-        Calendar.current.component(.hour, from: date) * 60 + Calendar.current.component(.minute, from: date)
+        let calendar = Calendar.current
+        let offset = calendar.dateComponents([.day], from: day, to: newDay).day ?? 0
+        if let moved = calendar.date(byAdding: .day, value: offset, to: date) { date = moved }
     }
 
     /// The next whole hour, or the one after when that is under ten minutes away.
