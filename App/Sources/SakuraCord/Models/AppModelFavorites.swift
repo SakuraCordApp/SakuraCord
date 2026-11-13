@@ -266,6 +266,8 @@ extension AppModel {
         settings.unlimitedFavorites = true
         applyFeaturesSettings(settings)
         favorites.limitReached = nil
+        // It may have become a favourite while the notice was open.
+        guard !isFavorite(notice.channelID) else { return }
         toggleFavorite(notice.channelID, channelType: notice.channelType)
     }
 
