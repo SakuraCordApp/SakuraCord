@@ -50,7 +50,7 @@ struct FavoritesSettingsContractTests {
 
     @Test func `edits during an in-flight save coalesce into one save of the newest state`() async throws {
         FavoritesURLProtocol.reset()
-        FavoritesURLProtocol.holdsResponses = true
+        FavoritesURLProtocol.holdResponses()
         let provider = makeProvider()
         try await receiveReady(provider, settings: "CgMYnzA=")
         try await provider.updateFavorites([.setVisible(true)])
@@ -137,22 +137,35 @@ private struct CapturedFavoritesRequest: @unchecked Sendable {
 /// Records every request and echoes a settings save back, as Discord does.
 private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requests: [CapturedFavoritesRequest] = []
-    /// Holds responses until released, so later edits arrive while a save is in flight.
-    nonisolated(unsafe) static var holdsResponses = false
+    /// Guards the held-response state, which URLSession's loading thread and the test share.
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var holdsResponses = false
     nonisolated(unsafe) private static var heldResponse: (() -> Void)?
 
     static func reset() {
         requests = []
-        holdsResponses = false
-        heldResponse = nil
+        lock.withLock {
+            holdsResponses = false
+            heldResponse = nil
+        }
     }
 
-    static var hasHeldResponse: Bool { heldResponse != nil }
+    /// Holds responses until released, so later edits arrive while a save is in flight.
+    static func holdResponses() {
+        lock.withLock { holdsResponses = true }
+    }
+
+    static var hasHeldResponse: Bool {
+        lock.withLock { heldResponse != nil }
+    }
 
     static func releaseHeldResponses() {
-        holdsResponses = false
-        heldResponse?()
-        heldResponse = nil
+        let held = lock.withLock {
+            holdsResponses = false
+            defer { heldResponse = nil }
+            return heldResponse
+        }
+        held?()
     }
 
     override static func canInit(with request: URLRequest) -> Bool { true }
@@ -175,11 +188,11 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: payload ?? Data())
             client?.urlProtocolDidFinishLoading(self)
         }
-        if Self.holdsResponses {
-            Self.heldResponse = finish
-        } else {
-            finish()
+        let isHeld = Self.lock.withLock {
+            if Self.holdsResponses { Self.heldResponse = finish }
+            return Self.holdsResponses
         }
+        if !isHeld { finish() }
     }
 
     private static func requestBody(_ request: URLRequest) -> Data? {
