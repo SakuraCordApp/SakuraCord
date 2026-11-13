@@ -757,6 +757,7 @@ private struct QuickSwitcherResultList: View {
     let reportFrame: @MainActor () -> Void
     let focus: (QuickSwitcherResultID) -> Void
     let activate: (QuickSwitcherResult) -> Void
+    @State private var pointerLocationAtFocus: CGPoint?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -770,7 +771,7 @@ private struct QuickSwitcherResultList: View {
                                 row: row,
                                 isSelected: row.id == selectedResultID,
                                 isPointerFocusEnabled: !keyboardNavigationActive,
-                                focus: focus,
+                                focus: focusUnderMovedPointer,
                                 activate: activate
                             )
                             .equatable()
@@ -785,10 +786,19 @@ private struct QuickSwitcherResultList: View {
                 guard keyboardNavigationActive, let selectedResultID else { return }
                 proxy.scrollTo(selectedResultID)
             }
-            .onChange(of: presentationID, initial: true) {
-                reportFrame()
+            .background {
+                DisplayCompleteFrameReporter(presentationID: presentationID, report: reportFrame)
             }
         }
+    }
+
+    /// Rows scrolling under a resting pointer also report hover; only a
+    /// pointer that actually moved may take the selection.
+    private func focusUnderMovedPointer(_ id: QuickSwitcherResultID) {
+        let location = NSEvent.mouseLocation
+        guard location != pointerLocationAtFocus else { return }
+        pointerLocationAtFocus = location
+        focus(id)
     }
 }
 
@@ -830,7 +840,6 @@ private struct QuickSwitcherResultRow: View, Equatable {
                 HStack(spacing: InterfaceScale.metric(6)) {
                     Text(row.title)
                         .font(.interfaceSystem(size: 15, weight: .medium))
-                        .layoutPriority(1)
                     if let inlineDetail = row.inlineDetail {
                         Text(inlineDetail)
                             .font(.interfaceSystem(size: 12, weight: .medium))
@@ -865,8 +874,7 @@ private struct QuickSwitcherResultRow: View, Equatable {
         }
         .buttonStyle(.plain)
         .onContinuousHover { phase in
-            // Rows scrolling under a resting pointer must not take keyboard
-            // selection; the panel enables pointer focus on real movement.
+            // The panel enables pointer focus only after real movement.
             if case .active = phase, inputAllowed, isPointerFocusEnabled, !isSelected {
                 focus(row.id)
             }
@@ -887,15 +895,19 @@ private struct QuickSwitcherRowIcon: View {
     var body: some View {
         Group {
             if case .guild(let guild) = row.result {
+                let cornerRadius = QuickSwitcherIconGeometry.serverCornerRadius(iconSize: size)
                 GuildIconView(
                     name: guild.name,
                     iconURL: guild.iconURL,
                     size: size,
-                    cornerRadius: QuickSwitcherIconGeometry.serverCornerRadius(iconSize: size),
+                    cornerRadius: cornerRadius,
                     animates: false
                 )
+                .background(.secondary.opacity(0.16), in: .rect(cornerRadius: cornerRadius, style: .continuous))
             } else if let imageURL = row.imageURL {
+                // The initial shows until the image loads, or if it fails.
                 AvatarView(name: row.title, url: imageURL, size: size, animates: false, isHovered: false)
+                    .background { AvatarView(name: row.title, url: nil, size: size, isHovered: false) }
             } else {
                 Image(systemName: row.systemImage)
                     .font(.interfaceSystem(size: 15, weight: .medium))
