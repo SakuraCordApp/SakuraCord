@@ -144,6 +144,9 @@ nonisolated extension Font {
 }
 
 nonisolated extension NSFont {
+    /// Message authors and member list names share this size.
+    static var authorNameSize: CGFloat { preferredFont(forTextStyle: .headline).pointSize + 1 }
+
     static func interfaceSystemFont(
         ofSize size: CGFloat,
         weight: NSFont.Weight = .regular

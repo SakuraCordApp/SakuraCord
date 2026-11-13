@@ -16,26 +16,46 @@ nonisolated struct InboxGroupHeaderPresentation: Equatable {
 
     @MainActor
     init(_ group: InboxUnreadGroup, model: AppModel) {
-        let channel = model.messagePresentationChannelsByID[group.channelID]
-        let thread = model.inbox.threads[group.channelID]
-            ?? model.activeJoinedThreads.first { $0.id == group.channelID }
-        let parent = thread.flatMap { thread in
-            thread.parentID.flatMap { model.messagePresentationChannelsByID[$0] }
-        }
-        let guild = group.guildID.flatMap { model.serverRailGuildsByID[$0] }
-        guildName = guild?.name ?? group.subtitle
-        guildIconURL = guild?.iconURL
-        systemImage = group.isEvents ? "calendar" : parent?.kind == .forum ? "bubble.left.and.bubble.right"
-            : thread != nil ? SakuraCordSystemSymbol.thread
-            : ChannelIconPresentation.systemImage(for: channel?.kind ?? .text, isHidden: false)
+        let destination = InboxDestinationPresentation(
+            channelID: group.channelID, guildID: group.guildID, model: model,
+            fallbackGuildName: group.subtitle, isEvents: group.isEvents
+        )
+        guildName = destination.guildName
+        guildIconURL = destination.guildIconURL
+        systemImage = destination.systemImage
         channelID = group.channelID
         title = group.title
-        subtitle = [guildName, thread != nil ? parent?.name : channel?.category]
-            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " › ")
+        subtitle = destination.subtitle
         mentionCount = group.mentionCount
         isCollapsed = group.isCollapsed
         isLoading = !group.isCollapsed && (!group.isLoaded || group.needsRevalidation)
         isAgeRestricted = group.isAgeRestricted
+    }
+}
+
+/// Where an Inbox row's conversation lives: its server, then a thread's
+/// parent or a channel's category, as the official Inbox labels its rows.
+nonisolated struct InboxDestinationPresentation: Equatable {
+    let subtitle: String
+    let guildName: String?
+    let guildIconURL: URL?
+    let systemImage: String
+
+    @MainActor
+    init(channelID: ChannelID, guildID: GuildID?, model: AppModel, fallbackGuildName: String? = nil, isEvents: Bool = false) {
+        let channel = model.messagePresentationChannelsByID[channelID]
+        let thread = model.inbox.threads[channelID] ?? model.sidebarThread(channelID)
+        let parent = thread.flatMap { thread in
+            thread.parentID.flatMap { model.messagePresentationChannelsByID[$0] }
+        }
+        let guild = guildID.flatMap { model.serverRailGuildsByID[$0] }
+        guildName = guild?.name ?? fallbackGuildName
+        guildIconURL = guild?.iconURL
+        systemImage = isEvents ? "calendar" : parent?.kind == .forum ? "bubble.left.and.bubble.right"
+            : thread != nil ? SakuraCordSystemSymbol.thread
+            : ChannelIconPresentation.systemImage(for: channel?.kind ?? .text, isHidden: false)
+        subtitle = [guildName, thread != nil ? parent?.name : channel?.category]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " › ")
     }
 }
 

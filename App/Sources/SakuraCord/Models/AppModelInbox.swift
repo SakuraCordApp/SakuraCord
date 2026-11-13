@@ -45,6 +45,24 @@ extension AppModel {
         inbox.cancelLoad()
     }
 
+    /// The toolbar offers the Inbox beside text conversations only; voice
+    /// channels, Friends, server pages and onboarding have none to open from.
+    var isInboxAvailable: Bool {
+        !isSwitchingAccounts && onboardingEntryGuildID == nil && guildWorkspacePage == nil
+            && !isFriendsPresented && selectedChannel?.kind != .voice
+    }
+
+    /// Opens the Inbox on its Scheduled tab, as the official limit alert's Manage Messages does.
+    func presentScheduledMessages() {
+        guard isInboxAvailable else { return }
+        if inbox.tab != .scheduled {
+            inbox.tab = .scheduled
+            inbox.pendingTab = .scheduled
+            scheduleInboxSettingsSync()
+        }
+        presentInbox()
+    }
+
     /// Switches tabs from retained content; Discord learns the final choice once.
     func selectInboxTab(_ tab: InboxTab) {
         guard inbox.tab != tab else { return }
@@ -66,6 +84,7 @@ extension AppModel {
 
     /// An explicit refresh also refetches content that is already shown.
     func reloadInbox() {
+        if inbox.tab == .scheduled { return loadScheduledMessages() }
         rebuildInboxUnreadGroups()
         for index in inbox.groups.indices where inbox.groups[index].isLoaded && !inbox.groups[index].isAgeRestricted {
             inbox.groups[index].needsRevalidation = true
@@ -103,6 +122,7 @@ extension AppModel {
             inbox.mentionsQuery = inbox.query
         }
         publishInbox()
+        if inbox.tab == .scheduled { return loadScheduledMessages() }
         // Page past hidden mentions even when retained pages are nonempty.
         if inbox.tab == .unread || inbox.visibleMentions.isEmpty || inbox.needsMentionRevalidation { loadMoreInbox() }
     }
@@ -113,6 +133,7 @@ extension AppModel {
     }
 
     func loadMoreInbox() {
+        guard inbox.tab != .scheduled else { return }
         let revalidatesMentions = inbox.tab == .mentions && inbox.needsMentionRevalidation
         guard inbox.isPresented, !inbox.isLoading, inbox.hasMore || revalidatesMentions, inbox.errorMessage == nil else {
             if !inbox.isLoading { inbox.isRefreshing = false }

@@ -219,7 +219,6 @@ struct GuildJoinRequestPage: View {
         // Discord centres the status in the window; a page taller than it scrolls from the top.
         .defaultScrollAnchor(.center, for: .alignment)
         .background { SakuraCordSignInBackdrop().ignoresSafeArea(edges: .top) }
-        .tint(SakuraCordAccentColor.color)
         .animation(motion, value: store.showsAnswers)
         .animation(motion, value: status)
         .animation(motion, value: request?.interviewChannelID)
@@ -378,7 +377,6 @@ private struct GuildJoinApplicationFieldEditor: View {
     private func textField(_ field: some View) -> some View {
         field
             .textFieldStyle(.plain)
-            .tint(SakuraCordAccentColor.color)
             .focused($isFocused)
             .padding(.horizontal, InterfaceScale.metric(11)).padding(.vertical, InterfaceScale.metric(9))
             .modifier(InteractionModalFieldBackground(isFocused: isFocused) { isFocused = true })

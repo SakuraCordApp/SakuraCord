@@ -13,8 +13,6 @@ import Testing
     )
 
     let file = DiscordRESTProvider.forumUploadFile(attachment)
-    #expect(file.name == "SPOILER_renamed.png")
-    #expect(file.description == "A pink SakuraCord flower")
     #expect(
         DiscordRESTProvider.uploadedAttachmentPayload(
             id: 0,
@@ -22,11 +20,23 @@ import Testing
             uploadFilename: "cloud-token"
         ) == .object([
             "id": .string("0"),
-            "filename": .string("SPOILER_renamed.png"),
+            "filename": .string("renamed.png"),
             "uploaded_filename": .string("cloud-token"),
             "description": .string("A pink SakuraCord flower"),
+            "is_spoiler": .bool(true),
+            "original_content_type": .string("image/png"),
         ])
     )
+}
+
+/// Values the desktop client sent as `original_content_type` (web build 670026).
+@Test(arguments: [
+    ("PNG", "image/png"), ("heic", "image/heic"), ("mov", "video/quicktime"), ("wav", "audio/wav"),
+    ("mkv", "video/matroska"), ("xml", "text/xml"), ("txt", "text/plain"), ("zip", "application/zip"),
+    ("log", ""), ("", ""),
+])
+func `attachment content types match the desktop client`(pathExtension: String, contentType: String) {
+    #expect(AttachmentUploadFile.contentType(forPathExtension: pathExtension) == contentType)
 }
 
 @Test func `forum post deletion uses one authenticated delete channel request`() async throws {

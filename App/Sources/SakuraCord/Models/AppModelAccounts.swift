@@ -314,6 +314,7 @@ extension AppModel {
         pinnedMessages.clear(notifying: self)
         threadBrowser.clear()
         inbox.clear(notifying: self)
+        scheduledMessages.clear()
         messageCacheOrder = []
         messageRowCache = [:]
         messageRowCacheOrder = []

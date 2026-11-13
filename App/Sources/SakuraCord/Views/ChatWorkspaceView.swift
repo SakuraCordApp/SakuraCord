@@ -229,15 +229,13 @@ private struct ChatWorkspaceSupplementaryContent: View {
         case .memberInspector:
             HStack(spacing: 0) {
                 if model.selectedChannel?.kind != .directMessage {
-                    Divider()
-                        .ignoresSafeArea(.container, edges: .top)
+                    InspectorDivider()
                 }
                 memberInspector
             }
         case .messageSearch:
             HStack(spacing: 0) {
-                Divider()
-                    .ignoresSafeArea(.container, edges: .top)
+                InspectorDivider()
                 if toolbarSearchFieldMetrics.isValid {
                     MessageSearchPanelView(model: model)
                         .id(ObjectIdentifier(model.messageSearch))
@@ -326,5 +324,19 @@ private struct DirectMessageProfileInspector: View {
                 model.showInspectorProfile(for: recipient)
             }
         }
+    }
+}
+
+/// The line before a trailing column, one pixel wide as an inspector split
+/// item's divider is, where `Divider` is a full point. It reaches up beneath
+/// the toolbar, as the columns do.
+struct InspectorDivider: View {
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1 / displayScale)
+            .ignoresSafeArea(.container, edges: .top)
     }
 }

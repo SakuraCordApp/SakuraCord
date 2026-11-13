@@ -96,7 +96,6 @@ private struct ChatDetailFooter: View {
                     Button("Complete") { model.openGuildJoinApplication(guildID) }
                         .buttonStyle(.glassProminent)
                         .buttonBorderShape(.capsule)
-                        .tint(SakuraCordAccentColor.color)
                         .controlSize(.small)
                 }
             } else {

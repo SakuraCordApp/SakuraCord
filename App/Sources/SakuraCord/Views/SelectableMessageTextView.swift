@@ -204,7 +204,6 @@ struct SelectableMessageTextView: NSViewRepresentable {
             .foregroundColor: NSColor.linkColor,
             .underlineStyle: 0
         ]
-        textView.applySakuraCordTextSelectionAppearance()
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.onMentionClick = onMentionClick
         textView.onURLClick = onURLClick
@@ -219,7 +218,6 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.onRevealSpoiler = onRevealSpoiler
         textView.model = model
         textView.isSelectable = isSelectable
-        textView.applySakuraCordTextSelectionAppearance()
         configureTextContainer(textView.textContainer)
         let coordinator = context.coordinator
         if !TimestampMentionPresentation.tokens(in: source).isEmpty {

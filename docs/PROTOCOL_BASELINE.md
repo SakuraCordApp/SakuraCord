@@ -11,7 +11,7 @@ dated observations establish why a wire shape was chosen.
 | Topic | Read for |
 | --- | --- |
 | [Session and authentication](protocol/SESSION.md) | Client metadata, login, Gateway lifecycle, event delivery, diagnostics. |
-| [Messages and uploads](protocol/MESSAGING.md) | Sends, history, reactions, polls, threads, commands, media preparation. |
+| [Messages and uploads](protocol/MESSAGING.md) | Sends, history, reactions, polls, scheduled messages, threads, commands, media preparation. |
 | [Read state and Inbox](protocol/READ_STATE.md) | Acknowledgements, Undo, mentions, events, notifications. |
 | [Guilds and membership](protocol/GUILDS.md) | Invites, join applications, onboarding, channel customization, Guide, member discovery. |
 | [Friends and relationships](protocol/RELATIONSHIPS.md) | Relationship records, friend presence, requests, blocking, CAPTCHA replay. |

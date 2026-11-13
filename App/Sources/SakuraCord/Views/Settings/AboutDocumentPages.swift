@@ -145,7 +145,6 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textView.applySakuraCordTextSelectionAppearance()
         textView.delegate = context.coordinator
         return textView
     }
@@ -154,7 +153,6 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
         _ textView: NSTextView,
         context: Context
     ) {
-        textView.applySakuraCordTextSelectionAppearance()
         let colorScheme = context.environment.colorScheme
         guard context.coordinator.document != document || context.coordinator.colorScheme != colorScheme else { return }
 

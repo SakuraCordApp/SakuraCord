@@ -261,11 +261,11 @@ enum NativeTimelineBubbleDrawing {
     static var cornerRadius: CGFloat { InterfaceScale.metric(18) }
 
     static func foregroundColor(for region: NativeTimelineBubbleRegion?) -> NSColor {
-        region?.isOutgoing == true ? .white : .labelColor
+        region?.isOutgoing == true ? .sakuraCordLabelOnAccentColor : .labelColor
     }
 
     static func secondaryForegroundColor(for region: NativeTimelineBubbleRegion?) -> NSColor {
-        region?.isOutgoing == true ? .white.withAlphaComponent(0.72) : .secondaryLabelColor
+        region?.isOutgoing == true ? .sakuraCordLabelOnAccentColor.withAlphaComponent(0.72) : .secondaryLabelColor
     }
 
     static let incomingFillColor = NSColor(name: nil) { appearance in

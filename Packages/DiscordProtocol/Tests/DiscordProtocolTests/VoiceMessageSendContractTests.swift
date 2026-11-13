@@ -5,7 +5,7 @@ import Synchronization
 import Testing
 
 struct VoiceMessageSendContractTests {
-    @Test func `voice message reserves, uploads, and posts Discord's voice-message contract`() async throws {
+    @Test func `voice message reserves, uploads, and posts Discord's recorder contract`() async throws {
         let fixture = VoiceMessageSendFixture()
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -27,8 +27,8 @@ struct VoiceMessageSendContractTests {
         #expect(requests.map(\.method) == ["POST", "PUT", "POST"])
         let reservation = try #require(requests.first?.json?["files"] as? [[String: Any]])
         #expect(reservation.count == 1)
-        #expect(reservation.first?["filename"] as? String == "voice-message.ogg")
-        #expect(reservation.first?["original_content_type"] as? String == "audio/ogg; codecs=opus")
+        #expect(reservation.first?["filename"] as? String == "0recording.ogg")
+        #expect(reservation.first?["original_content_type"] as? String == "audio/ogg")
         #expect(reservation.first?["file_size"] as? Int == bytes.count)
 
         #expect(requests[1].path == "/voice")
@@ -38,8 +38,10 @@ struct VoiceMessageSendContractTests {
         let body = try #require(requests[2].json)
         #expect(body["flags"] as? Int == 8192)
         #expect(body["content"] as? String == "")
+        #expect(requests[2].context == #"{"location":"voice_message"}"#)
         let attachment = try #require((body["attachments"] as? [[String: Any]])?.first)
-        #expect(attachment["filename"] as? String == "voice-message.ogg")
+        #expect(attachment["filename"] as? String == "0recording.ogg")
+        #expect(attachment["original_content_type"] as? String == "audio/ogg")
         #expect(attachment["uploaded_filename"] as? String == "slot/voice-message.ogg")
         #expect(attachment["duration_secs"] as? Double == 8)
         #expect(attachment["waveform"] as? String == "AAEC")
@@ -72,6 +74,7 @@ private final class VoiceMessageSendFixture {
         let method: String
         let path: String
         let contentType: String?
+        let context: String?
         let body: Data
 
         var json: [String: Any]? {
@@ -143,6 +146,8 @@ private final class VoiceMessageSendURLProtocol: URLProtocol, @unchecked Sendabl
                     method: method,
                     path: url.path,
                     contentType: request.value(forHTTPHeaderField: "Content-Type"),
+                    context: request.value(forHTTPHeaderField: "X-Context-Properties")
+                        .flatMap { Data(base64Encoded: $0) }.flatMap { String(bytes: $0, encoding: .utf8) },
                     body: body
                 )
             )

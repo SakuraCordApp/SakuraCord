@@ -29,7 +29,6 @@ struct GuildOnboardingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .background { SakuraCordSignInBackdrop().ignoresSafeArea(edges: .top) }
-        .tint(SakuraCordAccentColor.color)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Server Onboarding")
     }

@@ -85,7 +85,7 @@ extension DiscordRESTProvider {
             method: "POST",
             query: [],
             body: body,
-            headers: ["X-Context-Properties": draft.poll == nil ? DiscordClientMetadata.messageContextHeader : "eyJsb2NhdGlvbiI6InBvbGxfY3JlYXRpb24ifQ=="],
+            headers: ["X-Context-Properties": draft.contextHeader],
             maximumAttempts: Self.maximumMessageSendAttempts
         )
         let dto: MessageDTO = try decodedResponse(data, response, method: "POST", path: path) { status, code in
@@ -108,38 +108,34 @@ extension DiscordRESTProvider {
         return message
     }
 
-    /// Discord's voice-message upload: a fixed Ogg Opus filename, its original
-    /// MIME type on the reservation, and duration plus waveform on the message.
+    /// Discord's voice message: its recorder's numbered file, with duration
+    /// and waveform on the shared attachment entry.
     func uploadVoiceMessage(
         _ attachment: ForumPostAttachment,
         metadata: VoiceMessageMetadata,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async throws -> JSONValue {
-        let file = AttachmentUploadFile(url: attachment.url, name: VoiceMessageMetadata.filename, description: nil)
-        let descriptors = try attachmentReservationDescriptors(for: [file]).map { descriptor -> JSONValue in
-            guard case var .object(fields) = descriptor else { return descriptor }
-            fields["original_content_type"] = .string(VoiceMessageMetadata.contentType)
-            return .object(fields)
-        }
-        let reservation = try await reserveAttachmentSlots(
-            descriptors: descriptors,
-            channelID: channelID,
-            fileCount: 1,
-            progress: progress
-        )
-        guard let slot = reservation.attachments.first else {
-            throw ChatProviderError.invalidRequest("Discord did not reserve the voice message.")
-        }
-        try await uploadAttachmentFile(file, to: slot, progress: progress)
-        guard case var .object(payload) = Self.uploadedAttachmentPayload(
-            id: slot.id,
-            file: file,
-            uploadFilename: slot.uploadFilename
-        ) else { throw ChatProviderError.invalidRequest("Discord did not reserve the voice message.") }
-        payload["duration_secs"] = .number(metadata.durationSeconds)
+        let file = AttachmentUploadFile(url: attachment.url, name: "\(voiceMessageCount)recording.ogg", id: attachment.id)
+        voiceMessageCount += 1
+        guard case var .object(payload)? = try await uploadAttachmentFiles([file], channelID: channelID, progress: progress).first
+        else { throw CancellationError() }
+        // Discord's recorder reports whole milliseconds.
+        payload["duration_secs"] = .number((metadata.durationSeconds * 1000).rounded() / 1000)
         payload["waveform"] = .string(metadata.waveform)
         return .object(payload)
+    }
+}
+
+private extension SendMessageDraft {
+    var contextHeader: String {
+        if poll != nil {
+            DiscordClientMetadata.pollCreationContextHeader
+        } else if voiceMessage != nil {
+            DiscordClientMetadata.voiceMessageContextHeader
+        } else {
+            DiscordClientMetadata.messageContextHeader
+        }
     }
 }
 

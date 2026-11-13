@@ -51,7 +51,7 @@ final class NativeMemberListCoordinator: NSObject {
         self.parent = parent
     }
 
-    func makeScrollView() -> NSScrollView {
+    func makeScrollView() -> NativeMemberListScrollView {
         let canvas = NativeMemberListCanvasView(frame: .zero)
         canvas.selectMember = { [weak self] member in
             guard let self else { return }

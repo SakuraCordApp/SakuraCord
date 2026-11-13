@@ -3,6 +3,7 @@ import Foundation
 public enum InboxTab: Int, Codable, CaseIterable, Sendable {
     case mentions = 1
     case unread = 2
+    case scheduled = 7
 }
 
 public struct InboxMentionQuery: Equatable, Sendable {
