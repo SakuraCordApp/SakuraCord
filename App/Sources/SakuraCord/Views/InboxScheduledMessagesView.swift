@@ -70,6 +70,8 @@ private struct ScheduledMessageCard: View {
     let isPending: Bool
     let editTime: () -> Void
     @State private var editedContent: String?
+    /// The text this editor sent; only Discord saving it closes the editor.
+    @State private var submittedContent: String?
     @FocusState private var isEditorFocused: Bool
 
     var body: some View {
@@ -97,7 +99,11 @@ private struct ScheduledMessageCard: View {
         .background(.primary.opacity(0.05))
         .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(16)))
         .opacity(isPending ? 0.6 : 1)
-        .onChange(of: message.content) { editedContent = nil }
+        .onChange(of: message.content) { _, content in
+            guard content == submittedContent else { return }
+            editedContent = nil
+            submittedContent = nil
+        }
     }
 
     private var header: some View {
@@ -212,9 +218,16 @@ private struct ScheduledMessageCard: View {
                 .background(.primary.opacity(0.06), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(10)))
                 .onSubmit {
                     // The editor stays open until Discord saves the edit, so a refused one keeps its text.
-                    if !model.editScheduledMessage(message, content: editedContent) { self.editedContent = nil }
+                    if model.editScheduledMessage(message, content: editedContent) {
+                        submittedContent = editedContent.trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else {
+                        self.editedContent = nil
+                    }
                 }
-                .onExitCommand { self.editedContent = nil }
+                .onExitCommand {
+                    self.editedContent = nil
+                    submittedContent = nil
+                }
             Text("Escape to cancel · Return to save")
                 .font(.interface(.caption2))
                 .foregroundStyle(.tertiary)
