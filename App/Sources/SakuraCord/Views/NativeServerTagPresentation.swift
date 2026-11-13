@@ -22,12 +22,6 @@ nonisolated enum NativeAppBadgePresentation {
             + (isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0)
     }
 
-    @MainActor private static let checkmark = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?
-        .withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: ServerTagAppearance.fontSize, weight: .bold)
-                .applying(.init(paletteColors: [.white]))
-        )
-
     @MainActor
     static func draw(in frame: CGRect, color: NSColor, context: CGContext, text: NativeIdentityTextPresentation? = nil, isVerified: Bool = false) {
         context.saveGState()
@@ -38,7 +32,12 @@ nonisolated enum NativeAppBadgePresentation {
         ))
         context.fillPath()
         let iconInset = isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0
-        if isVerified, let checkmark {
+        // Drawing the symbol image renders it again for every badge drawn;
+        // the timeline's cache rasterizes it once per scale.
+        if isVerified, let checkmark = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+            named: "checkmark", pointSize: ServerTagAppearance.fontSize, weight: .bold, color: .white,
+            scale: abs(context.convertToDeviceSpace(CGSize(width: 1, height: 1)).width)
+        ) {
             let slot = CGRect(
                 x: frame.minX + ServerTagAppearance.horizontalPadding,
                 y: frame.midY - ServerTagAppearance.badgeSize / 2,
