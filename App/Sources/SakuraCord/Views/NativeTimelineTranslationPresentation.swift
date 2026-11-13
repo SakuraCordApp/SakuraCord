@@ -166,6 +166,8 @@ extension NativeTimelineRowPainter {
             framesetter: framesetter,
             in: NativeTimelineTextGeometry.messageContentDrawingFrame(textFrame),
             model: input.model,
+            isOutgoingBubble: region.isOutgoingBubble,
+            surface: input.layout.bubbleRegion.map(NativeTimelineBubbleDrawing.fillColor(for:)),
             selectionRange: input.textSelection?.itemIdentifier == .message(input.row.identity)
                 && input.textSelection?.region == region.regionID ? input.textSelection?.range : nil,
             hoveredMentionCharacterIndex: input.hoveredMention?.itemIdentifier == .message(input.row.identity)
