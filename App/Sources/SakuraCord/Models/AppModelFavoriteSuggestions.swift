@@ -119,14 +119,18 @@ extension AppModel {
             }
             if isWanted { channelsByID[channel.id] = channel }
         }
+        // The depth counts candidates that aren't favourites already, so many
+        // favourited top channels never leave the pool short.
         let depth = Self.favoriteSuggestionPoolDepth
+        let favoriteIDs = favoriteIDs
         func resolved(_ ids: [ChannelID]) -> [ForwardDestination] {
-            Array(ids.lazy.compactMap { self.favoriteSuggestion(channelID: $0, channelsByID: channelsByID) }.prefix(depth))
+            Array(ids.lazy.filter { !favoriteIDs.contains($0) }
+                .compactMap { self.favoriteSuggestion(channelID: $0, channelsByID: channelsByID) }.prefix(depth))
         }
         return FavoriteSuggestionPool(
             channels: resolved(affinities.channelIDs),
             users: resolved(affinities.userIDs.compactMap { directMessageIDs[$0] }),
-            fallback: Array(fallback.prefix(depth))
+            fallback: Array(fallback.lazy.filter { $0.resolvedChannelID.map(favoriteIDs.contains) != true }.prefix(depth))
         )
     }
 

@@ -103,6 +103,7 @@ extension AppModel {
     private func changeLocalFavorites(_ change: (inout [FavoritesSettings.Entry]) -> Void) {
         changeFavorites { change(&favorites.localEntries) }
         saveLocalFavorites()
+        refreshFavoriteSuggestions()
     }
 
     private func saveLocalFavorites() {
