@@ -38,6 +38,28 @@ struct UploadCancellationContractTests {
         #expect(await eventually { fixture.events.stopped == expectedHeld })
     }
 
+    /// Each file has its own reservation, so a file stopped while Discord has
+    /// not yet answered its reservation must not hold up the others' message.
+    @Test func stoppingAFileAbandonsItsPendingReservation() async throws {
+        let fixture = HeldStorageFixture()
+        let directory = try fixture.directory(containing: ["kept.bin", "unreserved.bin"])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = ["kept.bin", "unreserved.bin"].map {
+            AttachmentUploadFile(url: directory.appending(path: $0), name: $0, id: UUID())
+        }
+        let provider = fixture.provider(holdsEveryUpload: false)
+        let upload = Task {
+            try await provider.uploadAttachmentFiles(files, channelID: ChannelID(rawValue: 200), progress: { _ in })
+        }
+        #expect(await eventually { fixture.events.held == 1 })
+        #expect(await provider.cancelAttachmentUpload(try #require(files[1].id)))
+        // The reservation request ends at once, not at its 30-second timeout.
+        #expect(await eventually { fixture.events.stopped == 1 })
+        let uploaded = try await upload.value
+        guard case let .object(payload) = uploaded.first, uploaded.count == 1 else { Issue.record("Missing kept attachment"); return }
+        #expect(payload["filename"] == .string("kept.bin"))
+    }
+
     /// A file stopped while its message waits for its turn may already be
     /// deleted, so the send must neither read nor reserve it.
     @Test func fileStoppedBeforeItsTurnIsNeverRead() async throws {
@@ -162,7 +184,8 @@ private final class HeldStorageFixture {
 }
 
 /// Answers the reservation, completes the kept files' storage PUTs, and holds
-/// the others, and the message itself, open until their transfer is cancelled.
+/// the others, `unreserved.bin`'s reservation, and the message itself, open
+/// until their transfer is cancelled.
 private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
     static let received = Notification.Name("UploadCancellationContract.request")
     static let fixtureHeader = "X-Upload-Cancellation-Test"
@@ -207,6 +230,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
                 return hold()
             }
             let names = (body?["files"] as? [[String: Any]])?.compactMap { $0["filename"] as? String } ?? []
+            if names == ["unreserved.bin"] { return hold() }
             report(.reserved(names))
             let slots = names.enumerated().map { index, name in
                 let stem = (name as NSString).deletingPathExtension
