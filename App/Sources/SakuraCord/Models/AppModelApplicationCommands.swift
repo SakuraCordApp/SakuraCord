@@ -555,10 +555,10 @@ extension AppModel {
         }
     }
 
-    /// `/msg` and `/thread` post outside the outbox. Like Discord's send
-    /// action, a bare `@silent` sends nothing.
+    /// `/msg` and `/thread` post outside the outbox. Discord trims string
+    /// options, and its send action sends nothing for a bare `@silent`.
     private func sendBuiltInMessage(_ message: String, to channelID: ChannelID, session: AppModelAccountSession) async throws {
-        let draft = SendMessageDraft(channelID: channelID, content: message)
+        let draft = SendMessageDraft(channelID: channelID, content: message.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !draft.content.isEmpty else { return }
         _ = try await session.provider.send(draft)
         recordMessageEmojiUsage(message, session: session)
