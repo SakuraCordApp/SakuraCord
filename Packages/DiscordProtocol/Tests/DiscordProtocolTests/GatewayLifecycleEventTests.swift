@@ -41,7 +41,7 @@ struct GatewayLifecycleEventTests {
         (#"[{"id":"1","name":"Bug"},{"id":2,"name":null},"tag"]"#, ["Bug"]),
         (#"{"unexpected":"object"}"#, []),
     ])
-    func `forum keeps its channel despite malformed metadata and thread records stay out`(
+    func `forum keeps its channel despite malformed metadata and thread and unknown-type records stay out`(
         tags: String, expectedNames: [String]
     ) throws {
         let data = Data(
@@ -58,6 +58,10 @@ struct GatewayLifecycleEventTests {
               {
                 "id":"250","guild_id":"100","type":11,
                 "name":"Loose forum post","parent_id":"201"
+              },
+              {
+                "id":"260","guild_id":"100","type":20,"name":"server-hub",
+                "parent_id":null,"position":0,"flags":0,"permission_overwrites":[]
               }
             ]
             """#.utf8
