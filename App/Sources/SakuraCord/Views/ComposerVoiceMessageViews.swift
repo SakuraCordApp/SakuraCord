@@ -50,7 +50,7 @@ struct ComposerSendSlot: View {
             .font(.interfaceSystem(size: 19, weight: .medium))
             .foregroundStyle(foreground)
             .contentTransition(.symbolEffect(.replace.magic(fallback: .downUp.byLayer)))
-            .frame(width: ChatChromeMetrics.composerControlHeight, height: ChatChromeMetrics.composerControlHeight)
+            .frame(width: ChatChromeMetrics.composerButtonSize, height: ChatChromeMetrics.composerButtonSize)
             .scaleEffect(press != nil ? 0.86 : 1)
             .animation(.spring(duration: 0.25, bounce: 0.4), value: press != nil)
             .background {

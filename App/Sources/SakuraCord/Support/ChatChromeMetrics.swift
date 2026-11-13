@@ -11,9 +11,12 @@ nonisolated enum ChatChromeMetrics {
     /// Modal text fields hold interface text, so they keep the input bar's
     /// default radius at every message font size.
     static var modalFieldCornerRadius: CGFloat { InterfaceScale.metric(18) }
-    static var composerAccessoryButtonSize: CGFloat { composerMetric(32) }
+    /// Buttons beside and inside the input bar keep the interface size, so a
+    /// larger message font doesn't take typing width from narrow panes.
+    static var composerButtonSize: CGFloat { InterfaceScale.metric(36) }
+    static var composerAccessoryButtonSize: CGFloat { InterfaceScale.metric(32) }
     static var composerAccessoryEdgeInset: CGFloat {
-        (composerControlHeight - composerAccessoryButtonSize) / 2
+        (composerButtonSize - composerAccessoryButtonSize) / 2
     }
     static var composerSegmentSpacing: CGFloat { InterfaceScale.metric(8) }
     static var controlCornerRadius: CGFloat { InterfaceScale.metric(16) }
@@ -35,8 +38,10 @@ nonisolated enum ChatChromeMetrics {
         )
     }
 
+    /// Kept on the half-point grid, like `InterfaceScale.metric`, so the bar's
+    /// edges stay crisp at every font size.
     private static func composerMetric(_ value: CGFloat) -> CGFloat {
-        InterfaceScale.metric(InterfaceTypographyMetrics.messageLength(value))
+        (InterfaceScale.metric(InterfaceTypographyMetrics.messageLength(value)) * 2).rounded() / 2
     }
 
     static func sidebarTitleTopOffset(height: CGFloat) -> CGFloat {

@@ -279,15 +279,15 @@ struct SakuraCordSessionLoadingView: View {
             HStack(spacing: ChatChromeMetrics.composerSegmentSpacing) {
                 SkeletonShape(Circle())
                     .frame(
-                        width: ChatChromeMetrics.composerControlHeight,
-                        height: ChatChromeMetrics.composerControlHeight
+                        width: ChatChromeMetrics.composerButtonSize,
+                        height: ChatChromeMetrics.composerButtonSize
                     )
                 SkeletonShape(cornerRadius: ChatChromeMetrics.composerCornerRadius)
                     .frame(height: ChatChromeMetrics.composerControlHeight)
                 SkeletonShape(Circle())
                     .frame(
-                        width: ChatChromeMetrics.composerControlHeight,
-                        height: ChatChromeMetrics.composerControlHeight
+                        width: ChatChromeMetrics.composerButtonSize,
+                        height: ChatChromeMetrics.composerButtonSize
                     )
             }
         case .legacy:
