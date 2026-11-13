@@ -41,6 +41,7 @@ final class AppAccentColorController {
     /// their observers invalidate cached presentation; live edits in between
     /// are coalesced to one install per display frame.
     func apply() {
+        guard hasStarted else { return }
         frameLink?.invalidate()
         frameLink = nil
         let themeStore = SakuraCordThemeStore.shared

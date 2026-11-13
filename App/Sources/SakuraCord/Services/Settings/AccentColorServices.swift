@@ -16,7 +16,11 @@ enum SakuraCordAccentColor {
     /// labels stay white until the fill is light enough (relative luminance
     /// above 0.5) that black reads better.
     static var labelOnFillNSColor: NSColor {
-        let fill = nsColor.usingColorSpace(.sRGB) ?? nsColor
+        labelNSColor(on: nsColor)
+    }
+
+    static func labelNSColor(on fill: NSColor) -> NSColor {
+        let fill = fill.usingColorSpace(.sRGB) ?? fill
         let rgb = SakuraCordThemeRGB(red: fill.redComponent, green: fill.greenComponent, blue: fill.blueComponent)
         return rgb.relativeLuminance > 0.5 ? .black : .white
     }

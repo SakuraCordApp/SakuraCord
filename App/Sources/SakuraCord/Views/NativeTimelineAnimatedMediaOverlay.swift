@@ -72,11 +72,12 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
         }
     }
 
-    private func updateSelectionColor() {
+    func updateSelectionColor() {
+        let isEmphasized = window?.isKeyWindow == true
+            && (window?.firstResponder as? NSView).map { isDescendant(of: $0) } == true
+        let color: NSColor = isEmphasized ? .selectedTextBackgroundColor : .unemphasizedSelectedTextBackgroundColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            selectionView.layer?.backgroundColor =
-                NativeTimelineRowPainter.attachmentSelectionHighlightColor
-                    .cgColor
+            selectionView.layer?.backgroundColor = color.withAlphaComponent(0.5).cgColor
         }
     }
 

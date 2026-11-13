@@ -487,11 +487,12 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Hashable, Sendab
         return start + delta * progress
     }
 
-    /// The colour macOS installs as this theme's accent: the first gradient
-    /// colour at full brightness, the same in light and dark, exactly as a
-    /// system accent is.
+    /// The colour installed as this theme's macOS accent, the same in light
+    /// and dark as a system accent is: the first gradient colour at full
+    /// brightness, or exactly macOS Pink for SakuraCord's own pink.
     var accentRGB: SakuraCordThemeRGB {
         let color = activeColors.first ?? Self.defaultTheme.colors[0]
+        guard color != .sakuraPink else { return SakuraCordThemeRGB(red: 0xF7 / 255, green: 0x4F / 255, blue: 0x9E / 255) }
         return SakuraCordThemeRGB(hue: color.hue, saturation: color.saturation, brightness: 1)
     }
 

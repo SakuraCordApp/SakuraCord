@@ -414,6 +414,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         guard notification == nil || notification?.object as? NSWindow === window else { return }
         needsDisplay = true
         reconcileBeginningSelectionOverlay()
+        animatedMediaOverlays.values.forEach { $0.updateSelectionColor() }
     }
 
     func drawSuperclassContent(in dirtyRect: NSRect) {
