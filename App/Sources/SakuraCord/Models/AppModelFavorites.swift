@@ -18,7 +18,9 @@ final class FavoritesStore {
     var suggestionsDismissed: Bool?
     /// Suggested Channels, most suggested first.
     var suggestions: [ForwardDestination] = []
+    @ObservationIgnored var suggestionPool = FavoriteSuggestionPool()
     @ObservationIgnored var suggestionsTask: Task<Void, Never>?
+    @ObservationIgnored var suggestionsNeedRefresh = false
     var isPickerPresented = false
     var isEditingThreadSettings = false
     /// Discord prunes read threads at most once a day per account.
@@ -41,8 +43,10 @@ final class FavoritesStore {
         nameEditor = nil
         suggestionsDismissed = nil
         suggestions = []
+        suggestionPool = FavoriteSuggestionPool()
         suggestionsTask?.cancel()
         suggestionsTask = nil
+        suggestionsNeedRefresh = false
         isPickerPresented = false
         isEditingThreadSettings = false
         lastThreadPrune = nil
@@ -61,10 +65,12 @@ struct FavoriteAddition: Equatable {
     let channelType: Int
 }
 
-/// A favourite Discord's limit kept from being added.
+/// A favourite Discord's limit kept from being added, with where it was going.
 struct FavoritesLimitNotice: Identifiable, Equatable {
     let limit: Int
     let addition: FavoriteAddition
+    var parentID: ChannelID?
+    var categoryName: String?
     var id: ChannelID { addition.id }
 }
 
@@ -292,14 +298,17 @@ extension AppModel {
             // counts, so a deleted or hidden channel never blocks an addition.
             var counted = settings
             counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
-            if let limit = counted.limitBlockingAddition(premiumType: premiumType) {
-                if featuresSettings.unlimitedFavorites {
-                    addLocalFavorite(addition.id, channelType: addition.channelType, parentID: parentID)
-                    continue
+            let limit = counted.limitBlockingAddition(premiumType: premiumType)
+            if let limit, !featuresSettings.unlimitedFavorites {
+                if !isSilent {
+                    favorites.limitReached = FavoritesLimitNotice(
+                        limit: limit, addition: addition, parentID: parentID, categoryName: resolvesCategory ? categoryName : nil
+                    )
                 }
-                if !isSilent { favorites.limitReached = FavoritesLimitNotice(limit: limit, addition: addition) }
                 break
             }
+            // The category comes first, so one kept on this device past the
+            // limit is filed where a synced one would be.
             if let categoryName, resolvesCategory {
                 resolvesCategory = false
                 if let category = settings.category(named: categoryName) {
@@ -311,8 +320,12 @@ extension AppModel {
                     parentID = id
                 } else {
                     if !isSilent { favorites.limitReached = FavoritesLimitNotice(limit: FavoritesSettings.maximumEntries, addition: addition) }
-                    return
+                    break
                 }
+            }
+            if limit != nil {
+                addLocalFavorite(addition.id, channelType: addition.channelType, parentID: parentID)
+                continue
             }
             // Unseen favourites stay stored until keeping them would push the
             // save past Discord's limit; then they go in the same save, as
@@ -333,7 +346,7 @@ extension AppModel {
         settings.unlimitedFavorites = true
         applyFeaturesSettings(settings)
         favorites.limitReached = nil
-        addFavorites([notice.addition])
+        addFavorites([notice.addition], parentID: notice.parentID, categoryName: notice.categoryName)
     }
 
     func createFavoriteCategory(named name: String) {

@@ -2,13 +2,19 @@ import Foundation
 
 /// Discord's affinity rankings, most affine first: channels by score and DM
 /// partners by the probability of messaging them.
-public struct ConversationAffinities: Equatable, Sendable {
+/// The account's channel and DM-partner affinity rankings, with when each was
+/// fetched; Discord persists both and refetches each after its lifetime.
+public struct ConversationAffinities: Codable, Equatable, Sendable {
     public var channelIDs: [ChannelID]
     public var userIDs: [UserID]
+    public var channelsFetchedAt: Date?
+    public var usersFetchedAt: Date?
 
-    public init(channelIDs: [ChannelID] = [], userIDs: [UserID] = []) {
+    public init(channelIDs: [ChannelID] = [], userIDs: [UserID] = [], channelsFetchedAt: Date? = nil, usersFetchedAt: Date? = nil) {
         self.channelIDs = channelIDs
         self.userIDs = userIDs
+        self.channelsFetchedAt = channelsFetchedAt
+        self.usersFetchedAt = usersFetchedAt
     }
 }
 

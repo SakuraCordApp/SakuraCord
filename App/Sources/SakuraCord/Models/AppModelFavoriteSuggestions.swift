@@ -7,6 +7,8 @@ import SakuraCordModels
 /// docs/protocol/SETTINGS.md, Favorites server.
 extension AppModel {
     static let favoriteSuggestionLimit = 4
+    /// Candidates kept per kind beyond those shown, so rows refill without a recompute.
+    static let favoriteSuggestionPoolDepth = 12
     /// Discord files an added suggestion under this category.
     static let favoriteSuggestionsCategoryName = "Channels"
     static let favoritesPickerSelectionLimit = 20
@@ -16,40 +18,93 @@ extension AppModel {
     }
 
     /// Recomputes Suggested Channels while Favorites is open and they are not
-    /// dismissed, as Discord does whenever a store they read changes.
+    /// dismissed, as Discord does whenever a store they read changes. A
+    /// change during a recompute runs one more pass after it rather than
+    /// cancelling it, so a busy launch still shows suggestions.
     func refreshFavoriteSuggestions() {
-        favorites.suggestionsTask?.cancel()
         guard favorites.isPresented, favorites.suggestionsDismissed == false else {
+            favorites.suggestionsTask?.cancel()
+            favorites.suggestionsTask = nil
             favorites.suggestions = []
             return
         }
-        let favoriteIDs = favoriteIDs
-        // A suggestion just added leaves in the same frame; the rest follow the recompute.
-        favorites.suggestions.removeAll { $0.resolvedChannelID.map(favoriteIDs.contains) == true }
-        let history = forwardDestinationHistory
+        // Discord re-picks while rendering, so an added or removed favourite
+        // reshapes the rows in the same frame; the pool refresh follows.
+        favorites.suggestions = favorites.suggestionPool.pick(excluding: favoriteIDs)
+        guard favorites.suggestionsTask == nil else {
+            favorites.suggestionsNeedRefresh = true
+            return
+        }
         favorites.suggestionsTask = startAccountChildTask(account: accountSession()) { model, account in
-            async let affinities = account.provider.conversationAffinities()
-            // The picker's order falls back on frecency, which Discord keeps loaded.
-            await model.loadDiscordEmojiSettings()
-            let index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: model)
-            let fallback = await Task.detached(priority: .userInitiated) {
-                index.results(query: "", recentChannelIDs: history, excludedChannelIDs: favoriteIDs)
-            }.value
-            let resolvedAffinities = await affinities
-            // A newer recompute supersedes this one; skip its main-actor work.
-            guard !Task.isCancelled else { return }
-            let suggestions = model.favoriteSuggestions(affinities: resolvedAffinities, fallback: fallback)
-            guard !Task.isCancelled, model.isCurrentAccountSession(account) else { return }
-            model.favorites.suggestions = suggestions
+            await model.recomputeFavoriteSuggestions(account: account)
+            guard model.isCurrentAccountSession(account) else { return }
+            model.favorites.suggestionsTask = nil
+            if model.favorites.suggestionsNeedRefresh {
+                model.favorites.suggestionsNeedRefresh = false
+                model.refreshFavoriteSuggestions()
+            }
         }
     }
 
-    /// Discord's pick: up to four, alternating the most affine channel and
-    /// DM partner (the other kind when one runs out), then the picker's own
-    /// default order.
-    private func favoriteSuggestions(
+    /// Discord's affinity stores persist, so suggestions come from the stored
+    /// copy at once; the network is read only once a ranking's lifetime has
+    /// passed. The destination index is needed only when affinities run out.
+    private func recomputeFavoriteSuggestions(account: AppModelAccountSession) async {
+        // Frecency orders the fallback; its arrival advances the source revision.
+        if !hasLoadedDiscordEmojiSettings { Task { await loadDiscordEmojiSettings() } }
+        let stored = storedFavoriteAffinities
+        if let stored { await publishFavoriteSuggestions(affinities: stored, account: account) }
+        let fresh = await account.provider.conversationAffinities(restoring: stored)
+        guard isCurrentAccountSession(account) else { return }
+        if fresh != stored {
+            storedFavoriteAffinities = fresh
+            await publishFavoriteSuggestions(affinities: fresh, account: account)
+        }
+    }
+
+    /// Publishes the affinity pick at once; the destination index, needed only
+    /// for the fallback after both affinity rankings, follows when it's needed.
+    private func publishFavoriteSuggestions(affinities: ConversationAffinities, account: AppModelAccountSession) async {
+        publish(favoriteSuggestionPool(affinities: affinities, fallback: []))
+        guard favorites.suggestionPool.channels.count + favorites.suggestionPool.users.count < Self.favoriteSuggestionPoolDepth
+        else { return }
+        let history = forwardDestinationHistory
+        let index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: self)
+        let fallback = await Task.detached(priority: .userInitiated) {
+            index.results(query: "", recentChannelIDs: history)
+        }.value
+        guard isCurrentAccountSession(account) else { return }
+        publish(favoriteSuggestionPool(affinities: affinities, fallback: fallback))
+    }
+
+    private func publish(_ pool: FavoriteSuggestionPool) {
+        guard favorites.isPresented, favorites.suggestionsDismissed == false else { return }
+        favorites.suggestionPool = pool
+        let suggestions = pool.pick(excluding: favoriteIDs)
+        if favorites.suggestions != suggestions { favorites.suggestions = suggestions }
+    }
+
+    /// The account's affinities as last fetched, kept across launches.
+    private var storedFavoriteAffinities: ConversationAffinities? {
+        get {
+            guard let key = favoriteAffinitiesDefaultsKey, let data = UserDefaults.standard.data(forKey: key) else { return nil }
+            return try? JSONDecoder().decode(ConversationAffinities.self, from: data)
+        }
+        set {
+            guard let key = favoriteAffinitiesDefaultsKey else { return }
+            UserDefaults.standard.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: key)
+        }
+    }
+
+    private var favoriteAffinitiesDefaultsKey: String? {
+        currentUser.map { "dev.sakuracord.favorite-affinities.\($0.id)" }
+    }
+
+    /// The resolved candidates Suggested Channels pick from, enough beyond
+    /// the four shown that adding or dismissing rows refills them at once.
+    private func favoriteSuggestionPool(
         affinities: ConversationAffinities, fallback: [ForwardDestination]
-    ) -> [ForwardDestination] {
+    ) -> FavoriteSuggestionPool {
         let excludedUsers = ignoredUsers.blockedUserIDs.union(ignoredUsers.ignoredUserIDs)
         let wantedChannelIDs = Set(affinities.channelIDs)
         let wantedUserIDs = Set(affinities.userIDs).subtracting(excludedUsers)
@@ -64,36 +119,20 @@ extension AppModel {
             }
             if isWanted { channelsByID[channel.id] = channel }
         }
-        var channels = affinities.channelIDs[...]
-        var users = affinities.userIDs.compactMap { directMessageIDs[$0] }[...]
-        var fallback = fallback[...]
-        var chosen: [ForwardDestination] = []
-        func next(_ queue: inout ArraySlice<ChannelID>) -> ForwardDestination? {
-            while let id = queue.popFirst() {
-                if let destination = favoriteSuggestion(channelID: id, channelsByID: channelsByID),
-                   !chosen.contains(where: { $0.id == destination.id }) {
-                    return destination
-                }
-            }
-            return nil
+        let depth = Self.favoriteSuggestionPoolDepth
+        func resolved(_ ids: [ChannelID]) -> [ForwardDestination] {
+            Array(ids.lazy.compactMap { self.favoriteSuggestion(channelID: $0, channelsByID: channelsByID) }.prefix(depth))
         }
-        while chosen.count < Self.favoriteSuggestionLimit {
-            let prefersChannels = chosen.count.isMultiple(of: 2)
-            var destination = prefersChannels ? next(&channels) : next(&users)
-            if destination == nil { destination = prefersChannels ? next(&users) : next(&channels) }
-            while destination == nil, let candidate = fallback.popFirst() {
-                if !chosen.contains(where: { $0.id == candidate.id }) { destination = candidate }
-            }
-            guard let destination else { break }
-            chosen.append(destination)
-        }
-        return chosen
+        return FavoriteSuggestionPool(
+            channels: resolved(affinities.channelIDs),
+            users: resolved(affinities.userIDs.compactMap { directMessageIDs[$0] }),
+            fallback: Array(fallback.prefix(depth))
+        )
     }
 
-    /// A conversation Discord's favourites filter accepts: not a favourite,
-    /// and for a server channel or thread, one the account can view.
+    /// A conversation Discord's favourites filter accepts, favourites aside:
+    /// for a server channel or thread, one the account can view.
     private func favoriteSuggestion(channelID: ChannelID, channelsByID: [ChannelID: Channel]) -> ForwardDestination? {
-        guard !isFavorite(channelID) else { return nil }
         if let channel = channelsByID[channelID] {
             switch channel.kind {
             case .directMessage:
@@ -112,8 +151,10 @@ extension AppModel {
         return ForwardDestination(kind: .thread(thread, parent: parent), guild: thread.guildID.flatMap { serverRailGuildsByID[$0] })
     }
 
+    /// The Favorites list hides conversations without View Channel and Read
+    /// Message History, so suggestions skip them too.
     private func canViewFavoriteCandidate(_ channel: Channel) -> Bool {
-        (effectiveMessagePermissions(in: channel) ?? 0) & DiscordPermissionBits.viewChannel != 0
+        conversationAccess(for: channel) != .hidden
     }
 
     func dismissFavoriteSuggestions() {
@@ -185,5 +226,38 @@ extension AppModel {
         if !favorites.localEntries.isEmpty { clearLocalFavorites() }
         // After the reset, whose fallback to an empty Favorites would cancel this.
         if wasPresented { openFriends() }
+    }
+}
+
+/// Suggested Channels' resolved candidates: affine channels and DM partners
+/// in rank order, then the picker's default order.
+struct FavoriteSuggestionPool: Equatable {
+    var channels: [ForwardDestination] = []
+    var users: [ForwardDestination] = []
+    var fallback: [ForwardDestination] = []
+
+    /// Discord's pick: up to four, alternating the most affine channel and
+    /// DM partner (the other kind when one runs out), then the fallback,
+    /// skipping favourites. Pure array work, cheap enough for every change.
+    func pick(excluding favoriteIDs: Set<ChannelID>) -> [ForwardDestination] {
+        var channels = channels[...], users = users[...], fallback = fallback[...]
+        var chosen: [ForwardDestination] = []
+        func next(_ queue: inout ArraySlice<ForwardDestination>) -> ForwardDestination? {
+            while let candidate = queue.popFirst() {
+                if candidate.resolvedChannelID.map(favoriteIDs.contains) != true, !chosen.contains(where: { $0.id == candidate.id }) {
+                    return candidate
+                }
+            }
+            return nil
+        }
+        while chosen.count < AppModel.favoriteSuggestionLimit {
+            let prefersChannels = chosen.count.isMultiple(of: 2)
+            guard let destination = (prefersChannels ? next(&channels) : next(&users))
+                ?? (prefersChannels ? next(&users) : next(&channels))
+                ?? next(&fallback)
+            else { break }
+            chosen.append(destination)
+        }
+        return chosen
     }
 }

@@ -414,7 +414,9 @@ ignored users left out, an existing DM only), falling back on the other kind
 and then the picker's default order. A candidate must not be a favourite, and
 a server channel or thread must be viewable. Affinities are read only with
 READY's `consents.personalization`, and kept 12 hours (channels) and 8 hours
-(users). An added suggestion is filed under a category named Channels,
+(users) in stores that persist across launches (`ChannelAffinitiesStoreV2`,
+`UserAffinitiesStoreV2`), so a launch suggests from the stored copy without a
+request. An added suggestion is filed under a category named Channels,
 created when missing.
 
 **Add to Favorites** is Discord's destination search (the Forward picker's,

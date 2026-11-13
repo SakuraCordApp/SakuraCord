@@ -40,6 +40,33 @@ struct UnlimitedFavoritesTests {
         #expect(model.favorites.localEntries.map(\.id.rawValue) == [5])
     }
 
+    /// A suggestion added past the limit with Unlimited favorites is filed
+    /// under Channels like a synced one, also when the limit notice's
+    /// Turn On Unlimited Favorites re-adds it.
+    @Test func `a suggestion kept past the limit lands in Channels`() throws {
+        for turnsOnFromNotice in [false, true] {
+            let model = AppModel(launchMode: .offlineTesting)
+            let synced = (1 ... 3).map {
+                FavoritesSettings.Entry(id: ChannelID(rawValue: $0), position: UInt32($0), channelType: 11)
+            }
+            _ = model.consumeFavoritesEvent(.favoritesChanged(FavoritesSettings(entries: synced), isConfirmed: true))
+            model.featuresSettings.unlimitedFavorites = !turnsOnFromNotice
+
+            let suggestion = FavoriteAddition(id: ChannelID(rawValue: 4), channelType: 11)
+            model.addFavorites([suggestion], categoryName: AppModel.favoriteSuggestionsCategoryName)
+            if turnsOnFromNotice {
+                #expect(model.favorites.settings?.category(named: AppModel.favoriteSuggestionsCategoryName) == nil)
+                model.addFavoriteBeyondLimit(try #require(model.favorites.limitReached))
+            }
+
+            let sections = try #require(model.displayedFavorites?.sections)
+            #expect(sections.first?.entries.map(\.id.rawValue) == [1, 2, 3])
+            #expect(sections.last?.category?.nickname == AppModel.favoriteSuggestionsCategoryName)
+            #expect(sections.last?.entries.map(\.id.rawValue) == [4])
+            #expect(model.favorites.localEntries.map(\.id.rawValue) == [4])
+        }
+    }
+
     /// Guards the account: an addition never sends Discord more favourites
     /// than the limit, even when an unseen (deleted) favourite is stored.
     @Test func `an addition at the limit drops unseen favourites instead of exceeding it`() {

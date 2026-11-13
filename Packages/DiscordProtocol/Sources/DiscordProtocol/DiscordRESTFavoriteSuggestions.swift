@@ -57,9 +57,11 @@ extension DiscordRESTProvider {
 
     /// `GET /users/@me/affinities/v2/channels` and `…/users`, each kept for
     /// its lifetime and read only with personalization consent, as the
-    /// official stores do. A failed read leaves that ranking empty.
-    public func conversationAffinities() async -> ConversationAffinities {
+    /// official persisted stores do. A failed read keeps the older ranking.
+    public func conversationAffinities(restoring stored: ConversationAffinities?) async -> ConversationAffinities {
         guard personalizationConsented else { return ConversationAffinities() }
+        if channelAffinities == nil, let stored, let date = stored.channelsFetchedAt { channelAffinities = (stored.channelIDs, date) }
+        if userAffinities == nil, let stored, let date = stored.usersFetchedAt { userAffinities = (stored.userIDs, date) }
         let now = Date.now
         if channelAffinities.map({ now.timeIntervalSince($0.fetchedAt) > Self.channelAffinitiesLifetime }) ?? true,
            let response: ChannelAffinitiesDTO = try? await request("/users/@me/affinities/v2/channels") {
@@ -69,7 +71,10 @@ extension DiscordRESTProvider {
            let response: UserAffinitiesDTO = try? await request("/users/@me/affinities/v2/users") {
             userAffinities = (Self.ranked(response.userAffinities.map { ($0.otherUserID, $0.dmProbability ?? 0) }), now)
         }
-        return ConversationAffinities(channelIDs: channelAffinities?.ids ?? [], userIDs: userAffinities?.ids ?? [])
+        return ConversationAffinities(
+            channelIDs: channelAffinities?.ids ?? [], userIDs: userAffinities?.ids ?? [],
+            channelsFetchedAt: channelAffinities?.fetchedAt, usersFetchedAt: userAffinities?.fetchedAt
+        )
     }
 
     /// Highest first; equal values keep Discord's order, as its stable sort does.
