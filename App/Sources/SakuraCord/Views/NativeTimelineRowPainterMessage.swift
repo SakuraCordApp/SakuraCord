@@ -262,6 +262,9 @@ extension NativeTimelineRowPainter {
            let context = NSGraphicsContext.current?.cgContext {
             input.layout.timestampText?.draw(in: frame, color: .secondaryLabelColor, context: context)
         }
+        if let frame = input.layout.silentBadgeFrame {
+            NativeTimelineSilentBadge.draw(in: frame)
+        }
         if input.showsCompactTimestamp || input.model?.interfaceSettings.alwaysShowsTimestamps == true,
            let frame = input.layout.compactTimestampFrame
         {

@@ -73,18 +73,22 @@ public struct ForwardMessageDraft: Equatable, Sendable {
     public var sourceGuildID: GuildID?
     public var destinationChannelID: ChannelID
     public var nonce: String
+    /// Set when the accompanying message opens with `@silent`.
+    public var suppressesNotifications: Bool
 
     public init(
         sourceMessageID: MessageID,
         sourceChannelID: ChannelID,
         sourceGuildID: GuildID?,
         destinationChannelID: ChannelID,
-        nonce: String = ClientNonce.make()
+        nonce: String = ClientNonce.make(),
+        suppressesNotifications: Bool = false
     ) {
         self.sourceMessageID = sourceMessageID
         self.sourceChannelID = sourceChannelID
         self.sourceGuildID = sourceGuildID
         self.destinationChannelID = destinationChannelID
         self.nonce = nonce
+        self.suppressesNotifications = suppressesNotifications
     }
 }

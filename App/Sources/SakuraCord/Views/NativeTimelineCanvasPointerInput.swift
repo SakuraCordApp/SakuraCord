@@ -230,8 +230,9 @@ extension NativeTimelineCanvasView {
         else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions stop being hovered.
+            // The capsule covers the row's text, so its mentions and badge stop being hovered.
             setHoveredMention(nil)
+            setHoveredSilentBadgeMessageID(nil)
             return
         }
         guard !hoversEditingOverlay(at: point) else { return }
@@ -244,6 +245,7 @@ extension NativeTimelineCanvasView {
             authorNamePointerHit(at: point)
         )
         setHoveredServerTagMessageID(serverTagPointerHit(at: point))
+        setHoveredSilentBadgeMessageID(silentBadgePointerHit(at: point))
         setHoveredCommandPillMessageID(commandPillPointerHit(at: point))
         setHoveredMention(
             mentionPointerHit(at: point)
@@ -277,8 +279,9 @@ extension NativeTimelineCanvasView {
         guard tracksHover, !overlayBlocksInteractions else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions stop being hovered.
+            // The capsule covers the row's text, so its mentions and badge stop being hovered.
             setHoveredMention(nil)
+            setHoveredSilentBadgeMessageID(nil)
             return
         }
         guard !hoversEditingOverlay(at: point) else { return }
@@ -290,6 +293,7 @@ extension NativeTimelineCanvasView {
         )
         setHoveredAuthorMessageID(authorNamePointerHit(at: point))
         setHoveredServerTagMessageID(serverTagPointerHit(at: point))
+        setHoveredSilentBadgeMessageID(silentBadgePointerHit(at: point))
         setHoveredCommandPillMessageID(commandPillPointerHit(at: point))
         setHoveredMention(mentionPointerHit(at: point))
         setHoveredTextLink(textLinkPointerHit(at: point))
@@ -417,7 +421,7 @@ extension NativeTimelineCanvasView {
         guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         window?.makeFirstResponder(self)
         guard event.buttonNumber == 0 else { return }
-        dismissTimestampHover()
+        dismissHoverLabel()
         let point = convert(event.locationInWindow, from: nil)
         pressedActivationTarget = nil
         if beginVoiceMessagePress(at: point) {
@@ -1204,6 +1208,7 @@ extension NativeTimelineCanvasView {
         setHoveredCompactTimestampRow(nil)
         setHoveredAuthorMessageID(nil)
         setHoveredServerTagMessageID(nil)
+        setHoveredSilentBadgeMessageID(nil)
         setHoveredMention(nil)
         setHoveredTextLink(nil)
         setHoveredTextSpoiler(nil)
@@ -1228,8 +1233,9 @@ extension NativeTimelineCanvasView {
         else { return }
         let point = currentMouseLocationInCanvas()
         guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions stop being hovered.
+            // The capsule covers the row's text, so its mentions and badge stop being hovered.
             setHoveredMention(nil)
+            setHoveredSilentBadgeMessageID(nil)
             return
         }
         guard !hoversEditingOverlay(at: point) else { return }
@@ -1247,6 +1253,7 @@ extension NativeTimelineCanvasView {
                 : nil
         )
         setHoveredServerTagMessageID(visibleRect.contains(point) ? serverTagPointerHit(at: point) : nil)
+        setHoveredSilentBadgeMessageID(visibleRect.contains(point) ? silentBadgePointerHit(at: point) : nil)
         setHoveredCommandPillMessageID(visibleRect.contains(point) ? commandPillPointerHit(at: point) : nil)
         setHoveredMention(
             visibleRect.contains(point)

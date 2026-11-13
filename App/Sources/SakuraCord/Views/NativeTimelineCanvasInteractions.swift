@@ -1155,7 +1155,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        dismissTimestampHover()
+        dismissHoverLabel()
         guard !overlayBlocksInteractions, !glideBlocksPointer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         guard let index = rowIndex(at: point.y),

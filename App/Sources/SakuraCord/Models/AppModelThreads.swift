@@ -575,6 +575,11 @@ extension AppModel {
             mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments
         )
+        guard !draft.isEmpty else {
+            // Discord sends nothing for a bare `@silent`, but clears the text.
+            if clearsComposer { threadDraft = "" }
+            return nil
+        }
         let optimistic = optimisticMessage(
             for: draft,
             replyPreview: replyPreview

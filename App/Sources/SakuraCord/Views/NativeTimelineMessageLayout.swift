@@ -392,9 +392,13 @@ extension NativeTimelineRowLayout {
             let editedWidth: CGFloat = message.editedTimestamp != nil
                 ? NativeTimelineRowLayout.measuredTextWidth("(edited)", font: metrics.editedFont) + InterfaceScale.metric(7)
                 : 0
-            // The timestamp and edited label stay whole beside long names, but
+            let silentBadgeWidth = message.flags.contains(.suppressNotifications)
+                ? NativeTimelineSilentBadge.side(for: metrics.timestampFont) + NativeTimelineSilentBadge.spacing
+                : 0
+            // The timestamp and its labels stay whole beside long names, but
             // never take more than a third of a narrow header.
-            let timestampReserve = min(timestampWidth + editedWidth, availableWidth / 3) + InterfaceScale.metric(7)
+            let timestampReserve = min(timestampWidth + silentBadgeWidth + editedWidth, availableWidth / 3)
+                + InterfaceScale.metric(7)
             let botText = author.isSystem
                 ? NativeIdentityTextPresentation(
                     "OFFICIAL", font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize, weight: .medium)
@@ -477,9 +481,13 @@ extension NativeTimelineRowLayout {
         ) {
             let maxHeaderX = contentX + ordinaryContentWidth
             headerX += InterfaceScale.metric(7)
+            let silentBadgeSide: CGFloat? = message.flags.contains(.suppressNotifications)
+                ? NativeTimelineSilentBadge.side(for: metrics.timestampFont) : nil
+            // A shortened timestamp leaves the badge its room in a narrow header.
+            let badgeReserve = silentBadgeSide.map { $0 + NativeTimelineSilentBadge.spacing } ?? 0
             let timestampText = NativeIdentityTextPresentation(
                 timestamp, font: metrics.timestampFont,
-                maximumWidth: max(0, maxHeaderX - headerX)
+                maximumWidth: max(0, maxHeaderX - headerX - badgeReserve)
             )
             result.timestampText = timestampText
             result.timestampFrame = CGRect(
@@ -487,6 +495,15 @@ extension NativeTimelineRowLayout {
                 width: timestampText.width, height: headerHeight
             )
             headerX += timestampText.width
+            if let side = silentBadgeSide {
+                headerX += NativeTimelineSilentBadge.spacing
+                // Centred on the timestamp's capitals, as Discord centres its badges.
+                result.silentBadgeFrame = CGRect(
+                    x: headerX, y: (baselineY - (metrics.timestampFont.capHeight + side) / 2).rounded(),
+                    width: side, height: side
+                )
+                headerX += side
+            }
             if message.editedTimestamp != nil {
                 headerX += InterfaceScale.metric(7)
                 let editedText = NativeIdentityTextPresentation(
