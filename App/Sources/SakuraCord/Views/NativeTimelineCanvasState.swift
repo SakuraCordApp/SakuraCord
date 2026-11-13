@@ -58,6 +58,7 @@ final class NativeTimelinePointerState {
     var hoveredCompactTimestampRow: Int?
     var hoveredAuthorMessageID: MessageID?
     var hoveredServerTagMessageID: MessageID?
+    var hoveredSilentBadgeMessageID: MessageID?
     var hoveredCommandPillMessageID: MessageID?
     var hoveredMention: NativeTimelineMentionHover?
     var hoveredTextLink: NativeTimelineTextLinkHover?
@@ -112,6 +113,7 @@ final class NativeTimelinePointerState {
         hoveredCompactTimestampRow = nil
         hoveredAuthorMessageID = nil
         hoveredServerTagMessageID = nil
+        hoveredSilentBadgeMessageID = nil
         hoveredCommandPillMessageID = nil
         hoveredMention = nil
         hoveredTextLink = nil
@@ -317,6 +319,11 @@ extension NativeTimelineCanvasView {
     var hoveredServerTagMessageID: MessageID? {
         get { pointer.hoveredServerTagMessageID }
         set { pointer.hoveredServerTagMessageID = newValue }
+    }
+
+    var hoveredSilentBadgeMessageID: MessageID? {
+        get { pointer.hoveredSilentBadgeMessageID }
+        set { pointer.hoveredSilentBadgeMessageID = newValue }
     }
 
     var hoveredCommandPillMessageID: MessageID? {

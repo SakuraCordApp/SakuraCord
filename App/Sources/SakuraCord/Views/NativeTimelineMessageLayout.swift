@@ -392,9 +392,13 @@ extension NativeTimelineRowLayout {
             let editedWidth: CGFloat = message.editedTimestamp != nil
                 ? NativeTimelineRowLayout.measuredTextWidth("(edited)", font: metrics.editedFont) + InterfaceScale.metric(7)
                 : 0
-            // The timestamp and edited label stay whole beside long names, but
+            let silentBadgeWidth = message.flags.contains(.suppressNotifications)
+                ? NativeTimelineSilentBadge.side(for: metrics.timestampFont) + NativeTimelineSilentBadge.spacing
+                : 0
+            // The timestamp and its labels stay whole beside long names, but
             // never take more than a third of a narrow header.
-            let timestampReserve = min(timestampWidth + editedWidth, availableWidth / 3) + InterfaceScale.metric(7)
+            let timestampReserve = min(timestampWidth + silentBadgeWidth + editedWidth, availableWidth / 3)
+                + InterfaceScale.metric(7)
             let badge = author.isSystem ? "OFFICIAL" : author.isBot ? "APP" : nil
             let botText = badge.map { NativeIdentityTextPresentation(
                 $0, font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
@@ -483,6 +487,16 @@ extension NativeTimelineRowLayout {
                 width: timestampText.width, height: headerHeight
             )
             headerX += timestampText.width
+            if message.flags.contains(.suppressNotifications) {
+                let side = NativeTimelineSilentBadge.side(for: metrics.timestampFont)
+                headerX += NativeTimelineSilentBadge.spacing
+                // Centred on the timestamp's capitals, as Discord centres its badges.
+                result.silentBadgeFrame = CGRect(
+                    x: headerX, y: (baselineY - (metrics.timestampFont.capHeight + side) / 2).rounded(),
+                    width: side, height: side
+                )
+                headerX += side
+            }
             if message.editedTimestamp != nil {
                 headerX += InterfaceScale.metric(7)
                 let editedText = NativeIdentityTextPresentation(

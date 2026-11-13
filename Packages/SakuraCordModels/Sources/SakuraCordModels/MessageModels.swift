@@ -521,11 +521,29 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// Discord's `@silent` send prefix (web module 677413): a case-sensitive
+/// `@silent` that opens the message and is followed by whitespace or the
+/// end. Discord removes it, trims what remains, and sends
+/// `SUPPRESS_NOTIFICATIONS`. Composers trim their text first, so leading
+/// whitespace never hides the prefix.
+public enum SilentMessagePrefix {
+    public static let token = "@silent"
+
+    public static func split(_ content: String) -> (isSilent: Bool, content: String) {
+        guard content.hasPrefix(token) else { return (false, content) }
+        let remainder = content.dropFirst(token.count)
+        guard remainder.first?.isWhitespace ?? true else { return (false, content) }
+        return (true, remainder.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
 public struct SendMessageDraft: Equatable, Sendable {
     public static let maximumAttachmentCount = 10
 
     public var channelID: ChannelID
+    /// The text Discord receives, without a `@silent` prefix.
     public var content: String
+    public var suppressesNotifications: Bool
     public var replyTo: MessageID?
     public var mentionsRepliedUser: Bool
     public var attachments: [ForumPostAttachment]
@@ -548,10 +566,15 @@ public struct SendMessageDraft: Equatable, Sendable {
         attachments: [ForumPostAttachment]? = nil,
         nonce: String = ClientNonce.make(), stickerIDs: [String] = [], poll: PollDraft? = nil,
         isTTS: Bool = false,
-        voiceMessage: VoiceMessageMetadata? = nil
+        voiceMessage: VoiceMessageMetadata? = nil,
+        suppressesNotifications: Bool = false
     ) {
+        // Like Discord's send action, every send reads the prefix once,
+        // adding to any flag the caller already chose.
+        let prefix = SilentMessagePrefix.split(content)
         self.channelID = channelID
-        self.content = content
+        self.content = prefix.content
+        self.suppressesNotifications = suppressesNotifications || prefix.isSilent
         self.replyTo = replyTo
         self.mentionsRepliedUser = mentionsRepliedUser
         self.attachments =
@@ -561,6 +584,13 @@ public struct SendMessageDraft: Equatable, Sendable {
         self.poll = poll
         self.isTTS = isTTS
         self.voiceMessage = voiceMessage
+    }
+
+    public var messageFlags: MessageFlags {
+        var flags: MessageFlags = []
+        if voiceMessage != nil { flags.insert(.voiceMessage) }
+        if suppressesNotifications { flags.insert(.suppressNotifications) }
+        return flags
     }
 }
 

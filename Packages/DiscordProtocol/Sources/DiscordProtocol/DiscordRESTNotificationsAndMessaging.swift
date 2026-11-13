@@ -228,7 +228,7 @@ extension DiscordRESTProvider {
             "content": .string(""),
             "nonce": .string(draft.nonce),
             "tts": .bool(false),
-            "flags": .number(0),
+            "flags": .number(draft.suppressesNotifications ? Double(MessageFlags.suppressNotifications.rawValue) : 0),
             "mobile_network_type": .string("unknown"),
             "message_reference": .object(reference),
         ]

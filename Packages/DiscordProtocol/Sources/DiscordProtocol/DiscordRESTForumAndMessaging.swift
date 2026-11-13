@@ -297,7 +297,13 @@ extension DiscordRESTProvider {
         progress(.preparing)
         // Build 649389 omits `sticker_ids`, and SakuraCord does not expose
         // forum sticker sending.
-        var message: [String: JSONValue] = ["content": .string(draft.content)]
+        // Discord's post action reads `@silent` like a message send, but
+        // omits `flags` when none are set.
+        let prefix = SilentMessagePrefix.split(draft.content)
+        var message: [String: JSONValue] = ["content": .string(prefix.content)]
+        if prefix.isSilent {
+            message["flags"] = .number(Double(MessageFlags.suppressNotifications.rawValue))
+        }
         if !draft.attachments.isEmpty {
             message["attachments"] = try await .array(
                 uploadForumAttachments(

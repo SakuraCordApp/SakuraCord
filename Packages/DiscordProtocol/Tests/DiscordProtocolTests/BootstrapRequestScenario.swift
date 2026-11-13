@@ -323,6 +323,17 @@ struct BootstrapRequestScenario {
         #expect(mentionBody["mobile_network_type"] as? String == "unknown")
         #expect(mentionBody["allowed_mentions"] == nil)
 
+        // A literal or dropped `@silent` would ping everyone the message mentions.
+        for (typed, content, flags) in [
+            ("@silent \n hello <@2>", "hello <@2>", 4096), ("@Silent hello", "@Silent hello", 0),
+            ("@silenthello", "@silenthello", 0),
+        ] {
+            _ = try await provider.send(SendMessageDraft(channelID: ChannelID(rawValue: 200), content: typed))
+            let body = try #require(RateLimitURLProtocol.sentMessageBody)
+            #expect(body["content"] as? String == content)
+            #expect((body["flags"] as? NSNumber)?.intValue == flags)
+        }
+
         let stickerDraft = SendMessageDraft(
             channelID: ChannelID(rawValue: 200),
             content: "",

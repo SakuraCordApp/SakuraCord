@@ -34,7 +34,7 @@ extension DiscordRESTProvider {
             "content": .string(draft.content),
             "nonce": .string(draft.nonce),
             "tts": .bool(draft.isTTS),
-            "flags": .number(draft.voiceMessage == nil ? 0 : Double(MessageFlags.voiceMessage.rawValue)),
+            "flags": .number(Double(draft.messageFlags.rawValue)),
             // Chromium reports an unknown Network Information API connection
             // type on the current macOS desktop host. The first-party send
             // action forwards that value on every ordinary message POST.

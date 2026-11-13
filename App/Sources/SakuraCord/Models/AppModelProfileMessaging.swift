@@ -42,7 +42,7 @@ extension AppModel {
             // turn, preserving capacity while DM creation is suspended.
             composer.outbox.releaseSubmission(reservation)
             if let outgoing = composer.outbox.draftsByNonce[nonce] {
-                guard outgoing.channelID == channel.id, outgoing.content == content,
+                guard outgoing.channelID == channel.id, outgoing.content == SilentMessagePrefix.split(content).content,
                       outgoingState(nonce: nonce, channelID: channel.id) == .failed,
                       allowSlowmodeSubmission(in: channel.id)
                 else { return false }

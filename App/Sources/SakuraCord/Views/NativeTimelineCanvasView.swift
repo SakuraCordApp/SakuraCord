@@ -346,10 +346,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionBacking: (scale: CGFloat, colorSpace: NSColorSpace?) = (0, nil)
     /// The width the running reaction motions were laid out at.
     var reactionTransitionWidth: CGFloat = 0
-    let timestampHoverCoordinator =
+    let hoverLabelCoordinator =
         StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
-    /// A press dismisses the hovered timestamp's label until another is hovered.
-    var dismissedTimestampHover: NativeTimelineMentionHover?
+    /// A press dismisses the hovered target's label until another is hovered.
+    var dismissedHoverLabel: NativeTimelineHoverLabelTarget?
     var visibleReactionPreviewLoadKeys:
         Set<ReactionPreviewLoadKey> = []
     var reactionPreviewLoadTasks:

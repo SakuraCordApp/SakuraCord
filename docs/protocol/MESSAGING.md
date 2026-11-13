@@ -46,6 +46,19 @@ outside this queue; forwarding keeps the single-attempt mutation budget.
 A reply includes reference type 0, message ID and channel ID. To disable the reply
 ping, include `allowed_mentions` with normal users/roles/everyone parsing and
 `replied_user:false`; do not suppress unrelated content mentions accidentally.
+A message that opens with `@silent` (case-sensitive, then whitespace or the end,
+after the composer trims its text) is sent without the prefix, the remainder
+trimmed, and with `flags: 4096` (`SUPPRESS_NOTIFICATIONS`); a bare `@silent`
+clears the composer and sends nothing. Discord's send action (web module 677413,
+build 671535, captured 13 November 2026) reads it for every send entry point,
+forum posts (which omit `flags` when zero) and a forward's accompanying message,
+whose flag also goes on the forward. Edits and application-command interactions do not read it.
+`SilentMessagePrefix` is that single parser. Recipients keep unread state,
+mention counts and badges but get no desktop notification or sound. Such a
+message starts a new group after an ordinary one, and a mention after it does
+too, so its header can show the bell badge whose tooltip reads "This is a
+@silent message."
+
 Current permissions, membership gates and slowmode are checked before consuming
 a draft or dispatching any send entry point. REST/Gateway confirmations reconcile
 the same optimistic message rather than creating duplicates.

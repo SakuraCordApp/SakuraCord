@@ -408,7 +408,8 @@ extension AppModel {
                 group.addTask {
                     await self.sendForward(
                         message, to: destinationID,
-                        context: contextDestinationIDs.contains(destinationID) ? context : "",
+                        context: context,
+                        sendsContext: contextDestinationIDs.contains(destinationID),
                         session: session
                     )
                 }
@@ -423,7 +424,7 @@ extension AppModel {
 
     private func sendForward(
         _ message: Message, to destinationID: ChannelID,
-        context: String, session: AppModelAccountSession
+        context: String, sendsContext: Bool, session: AppModelAccountSession
     ) async -> String? {
         guard isCurrentAccountSession(session) else { return nil }
         guard allowSlowmodeSubmission(in: destinationID) else {
@@ -433,18 +434,22 @@ extension AppModel {
         defer {
             if isCurrentAccountSession(session) { composer.slowmode.end(in: destinationID) }
         }
+        // Discord reads `@silent` from the accompanying message and silences
+        // the forward with it, even where slowmode holds that message back.
+        let (isSilent, comment) = SilentMessagePrefix.split(context)
         do {
             let confirmed = try await session.provider.forward(ForwardMessageDraft(
                 sourceMessageID: message.id,
                 sourceChannelID: message.channelID,
                 sourceGuildID: message.guildID,
-                destinationChannelID: destinationID
+                destinationChannelID: destinationID,
+                suppressesNotifications: isSilent
             ))
             guard isCurrentAccountSession(session) else { return nil }
             confirmSlowmodeMessage(confirmed)
-            if !context.isEmpty, shouldSendForwardContext(to: destinationID) {
+            if sendsContext, !comment.isEmpty, shouldSendForwardContext(to: destinationID) {
                 let confirmedContext = try await session.provider.send(SendMessageDraft(
-                    channelID: destinationID, content: context
+                    channelID: destinationID, content: comment, suppressesNotifications: isSilent
                 ))
                 guard isCurrentAccountSession(session) else { return nil }
                 recordMessageEmojiUsage(context)

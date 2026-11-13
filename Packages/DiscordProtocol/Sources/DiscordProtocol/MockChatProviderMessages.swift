@@ -338,7 +338,7 @@ public extension MockChatProvider {
                 : [],
             poll: draft.poll?.preview()
         )
-        if draft.voiceMessage != nil { message.flags.insert(.voiceMessage) }
+        message.flags.formUnion(draft.messageFlags)
         messagesByChannel[draft.channelID, default: []].append(message)
         continuation?.yield(.messageCreated(message))
         return message

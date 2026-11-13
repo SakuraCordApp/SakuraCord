@@ -184,6 +184,8 @@ struct NativeTimelineRowLayout {
     var botBadgeFrame: CGRect?
     var botBadgeText: NativeIdentityTextPresentation?
     var timestampFrame: CGRect?
+    /// Discord's @silent badge beside the timestamp.
+    var silentBadgeFrame: CGRect?
     var editedFrame: CGRect?
     var activityIndicators: [ActivityIndicator] = []
     var replyFrame: CGRect?
