@@ -180,8 +180,10 @@ extension AppModel {
     /// Unlimited favorites cleared. Like Discord, it asks nothing and leaves
     /// for Friends.
     func resetFavorites() {
-        if favorites.isPresented { openFriends() }
+        let wasPresented = favorites.isPresented
         updateFavorites(.reset)
         if !favorites.localEntries.isEmpty { clearLocalFavorites() }
+        // After the reset, whose fallback to an empty Favorites would cancel this.
+        if wasPresented { openFriends() }
     }
 }
