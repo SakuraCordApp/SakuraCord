@@ -298,7 +298,12 @@ extension AppModel {
             // counts, so a deleted or hidden channel never blocks an addition.
             var counted = settings
             counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
+            let category = resolvesCategory ? categoryName.flatMap(settings.category(named:)) : nil
+            let newCategoryName = resolvesCategory && category == nil ? categoryName : nil
+            // Discord's list takes the favourite only with room for it and any new category.
             let limit = counted.limitBlockingAddition(premiumType: premiumType)
+                ?? (newCategoryName != nil && counted.entries.count + 2 > FavoritesSettings.maximumEntries
+                    ? FavoritesSettings.maximumEntries : nil)
             if let limit, !featuresSettings.unlimitedFavorites {
                 if !isSilent {
                     favorites.limitReached = FavoritesLimitNotice(
@@ -307,22 +312,17 @@ extension AppModel {
                 }
                 break
             }
-            // The category comes first, so one kept on this device past the
-            // limit is filed where a synced one would be.
-            if let categoryName, resolvesCategory {
+            if resolvesCategory {
                 resolvesCategory = false
-                if let category = settings.category(named: categoryName) {
+                if let category {
                     parentID = category.id
-                } else if counted.entries.count + 1 < FavoritesSettings.maximumEntries {
+                } else if let newCategoryName, limit == nil || settings.entries.count < FavoritesSettings.maximumEntries {
+                    // A favourite kept on this device past the limit is filed where a
+                    // synced one would be, while Discord's list has room for the category.
                     // Discord names a new category with a snowflake for the current time.
                     let id = ChannelID(timestamp: .now)
-                    apply(.createCategory(id, name: categoryName))
+                    apply(.createCategory(id, name: newCategoryName))
                     parentID = id
-                } else if limit == nil {
-                    // Kept on this device instead, it stays uncategorised when
-                    // Discord's list has no room for the category.
-                    if !isSilent { favorites.limitReached = FavoritesLimitNotice(limit: FavoritesSettings.maximumEntries, addition: addition) }
-                    break
                 }
             }
             if limit != nil {

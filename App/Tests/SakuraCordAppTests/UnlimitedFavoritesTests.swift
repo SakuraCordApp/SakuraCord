@@ -67,6 +67,47 @@ struct UnlimitedFavoritesTests {
         }
     }
 
+    /// Guards the account: near Discord's 200-entry cap a suggestion never
+    /// sends more than 200 entries, and Unlimited favorites keeps it locally,
+    /// in Channels only when the list has room for the category.
+    @Test func `a suggestion near the entry cap never sends Discord more than it allows`() throws {
+        func model(threads: Int, unseen: Int, categories: Int) -> AppModel {
+            let model = AppModel(launchMode: .offlineTesting)
+            var entries = (0 ..< categories).map {
+                FavoritesSettings.Entry(id: ChannelID(rawValue: UInt64(1_000 + $0)), isCategory: true, nickname: "C\($0)", position: UInt32($0))
+            }
+            entries += (0 ..< threads).map { FavoritesSettings.Entry(id: ChannelID(rawValue: UInt64(10 + $0)), position: 1, channelType: 11) }
+            entries += (0 ..< unseen).map { FavoritesSettings.Entry(id: ChannelID(rawValue: UInt64(20 + $0)), position: 1, channelType: 0) }
+            _ = model.consumeFavoritesEvent(.favoritesChanged(FavoritesSettings(entries: entries), isConfirmed: true))
+            model.featuresSettings.unlimitedFavorites = true
+            return model
+        }
+        let suggestion = FavoriteAddition(id: ChannelID(rawValue: 99), channelType: 11)
+        let channels = AppModel.favoriteSuggestionsCategoryName
+
+        // 199 entries: the category fits, the favourite doesn't, so it stays local in Channels.
+        let almostFull = model(threads: 2, unseen: 0, categories: 197)
+        almostFull.addFavorites([suggestion], categoryName: channels)
+        let saved = try #require(almostFull.favorites.settings)
+        #expect(saved.entries.count == 200)
+        #expect(almostFull.favorites.localEntries.first?.parentID == saved.category(named: channels)?.id)
+
+        // 200 entries over the free limit with unseen ones: nothing synced changes, kept locally uncategorised.
+        let full = model(threads: 3, unseen: 2, categories: 195)
+        full.addFavorites([suggestion], categoryName: channels)
+        #expect(full.favorites.settings?.entries.count == 200)
+        #expect(full.favorites.settings?.category(named: channels) == nil)
+        #expect(full.favorites.localEntries.map(\.id) == [suggestion.id])
+        #expect(full.favorites.localEntries.first?.parentID == nil)
+
+        // 200 entries under the free limit: unseen ones make room for the category and the favourite.
+        let pruned = model(threads: 1, unseen: 2, categories: 197)
+        pruned.addFavorites([suggestion], categoryName: channels)
+        let synced = try #require(pruned.favorites.settings)
+        #expect(synced.entries.count == 200)
+        #expect(synced.entries.first { $0.id == suggestion.id }?.parentID == synced.category(named: channels)?.id)
+    }
+
     /// Guards the account: an addition never sends Discord more favourites
     /// than the limit, even when an unseen (deleted) favourite is stored.
     @Test func `an addition at the limit drops unseen favourites instead of exceeding it`() {
