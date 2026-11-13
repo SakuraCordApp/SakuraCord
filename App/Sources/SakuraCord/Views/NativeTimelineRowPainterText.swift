@@ -343,7 +343,8 @@ extension NativeTimelineRowPainter {
             // the light label on an accent fill vanishes on the light selection.
             let selected = NSMutableAttributedString(attributedString: drawingValue)
             let range = NSIntersectionRange(selectionRange, NSRange(location: 0, length: selected.length))
-            selected.addAttribute(.foregroundColor, value: NSColor.selectedTextColor, range: range)
+            let textColor: NSColor = drawsEmphasizedSelection ? .selectedTextColor : .unemphasizedSelectedTextColor
+            selected.addAttribute(.foregroundColor, value: textColor, range: range)
             for spoiler in NativeTimelineTextSpoilers.ranges(in: value)
                 where !revealedSpoilerLocations.contains(spoiler.location) {
                 NativeTimelineSpoilerAppearance.concealText(in: selected, range: spoiler)
