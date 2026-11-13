@@ -338,7 +338,7 @@ public extension MockChatProvider {
                 : [],
             poll: draft.poll?.preview()
         )
-        if draft.voiceMessage != nil { message.flags.insert(.voiceMessage) }
+        message.flags.formUnion(draft.messageFlags)
         messagesByChannel[draft.channelID, default: []].append(message)
         continuation?.yield(.messageCreated(message))
         return message
@@ -377,7 +377,9 @@ public extension MockChatProvider {
             attachments: forwardedSnapshot.attachments,
             nonce: draft.nonce,
             type: forwardedSnapshot.type,
-            flags: forwardedSnapshot.flags,
+            // A silent source does not make its forward silent; only the request does.
+            flags: forwardedSnapshot.flags.subtracting(.suppressNotifications)
+                .union(draft.suppressesNotifications ? .suppressNotifications : []),
             guildID: snapshot.channels.first(where: {
                 $0.id == draft.destinationChannelID
             })?.guildID,

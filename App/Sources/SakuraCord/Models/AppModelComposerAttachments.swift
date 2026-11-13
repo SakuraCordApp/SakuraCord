@@ -204,6 +204,8 @@ extension AppModel {
         _ id: UUID,
         from destination: MessageComposerDestination
     ) {
+        // A schedule on its way posts these files; they stay until it is answered.
+        guard !isSchedulingMessage(in: destination) else { return }
         var attachments = composerAttachments(for: destination)
         discardPreuploads([id])
         attachments.removeAll { $0.id == id }
@@ -234,6 +236,7 @@ extension AppModel {
 
     /// Drops the staged files without sending them.
     func clearComposerAttachments(for destination: MessageComposerDestination) {
+        guard !isSchedulingMessage(in: destination) else { return }
         discardPreuploads(composerAttachments(for: destination).map(\.id))
         setComposerAttachments([], for: destination)
     }

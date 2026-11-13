@@ -16,6 +16,9 @@ struct ComposerView: View {
     @State private var showPhotosPicker = false
     @State private var showComposerActions = false
     @State private var showPollCreator = false
+    /// The + menu shows the schedule shortcuts in place of its actions.
+    @State private var showsScheduleShortcuts = false
+    @State private var showsScheduleDialog = false
     @State private var showActivityShelf = false
     @State private var showGIFPicker = false
     @State private var showStickerPicker = false
@@ -83,6 +86,12 @@ struct ComposerView: View {
                         Divider()
                             .transition(.opacity)
                     }
+                    if !hasActiveCommand, hasScheduleHeader {
+                        ComposerScheduleHeader(model: model, destination: conversation) { showsScheduleDialog = true }
+                            .transition(ComposerResizeMotion.headerTransition)
+                        Divider()
+                            .transition(.opacity)
+                    }
                     if !hasActiveCommand, !attachments.isEmpty {
                         ComposerAttachmentTray(
                             attachments: attachments,
@@ -124,6 +133,7 @@ struct ComposerView: View {
                     } else if !isCreatingThread {
                         composerLeadingButton(appearance: appearance)
                         .escapeDismissiblePopover(isPresented: $showComposerActions, arrowEdge: .top) { composerActionsMenu }
+                        .onChange(of: showComposerActions) { if !$1 { showsScheduleShortcuts = false } }
                         .background { activityShelfPresenter }
                     }
                 }
@@ -218,7 +228,7 @@ struct ComposerView: View {
                             if draft.isEmpty, !isComposing, !isVoiceMessageActive {
                                 Text(composerPlaceholder)
                                     .foregroundStyle(.tertiary)
-                                    .font(.interfaceSystem(size: 15))
+                                    .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                                     .allowsHitTesting(false)
@@ -343,6 +353,12 @@ struct ComposerView: View {
         .windowModal(isPresented: $showPollCreator, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             if let channelID = activeConversationID {
                 PollCreationView(model: model, channelID: channelID)
+            }
+        }
+        .windowModal(isPresented: $showsScheduleDialog, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
+            ScheduleMessageDialog(initialDate: model.scheduledSendDate(in: conversation), timeFormat: model.interfaceSettings.timestampFormat) {
+                model.setScheduledSendDate($0, in: conversation)
+                isFocused = true
             }
         }
         .modifier(ComposerPhotosPicker(
@@ -631,6 +647,8 @@ struct ComposerView: View {
         guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
         if model.consumeEscapeForReply(in: conversation) {
             return
+        } else if model.scheduledSendDate(in: conversation) != nil {
+            model.setScheduledSendDate(nil, in: conversation)
         } else if showGIFPicker {
             showGIFPicker = false
         } else if showStickerPicker {
@@ -720,6 +738,8 @@ struct ComposerView: View {
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty,
               !hasCheckingAttachments
         else { return }
+        guard !model.isSchedulingMessage(in: conversation) else { return }
+        if !isCreatingThread, model.scheduledSendDate(in: conversation) != nil { return schedule() }
         isSubmitting = true
         draftSelection = nil
         selectionBeforeEmojiPicker = nil
@@ -772,6 +792,29 @@ struct ComposerView: View {
             isSubmitting = false
             isFocused = true
         }
+    }
+
+    /// Hands the message to Discord to send later; the composer clears only
+    /// once Discord accepts it.
+    /// The pane may show another conversation before Discord answers, so this
+    /// holds no composer state; the model refuses a second create meanwhile.
+    private func schedule() {
+        let staged = attachments
+        model.beginUsingOwnedPromisedFiles(staged.map(\.url))
+        Task {
+            let scopedURLs = staged.map(\.url).filter { $0.startAccessingSecurityScopedResource() }
+            await model.scheduleComposerMessage(in: conversation, attachments: staged)
+            for url in scopedURLs { url.stopAccessingSecurityScopedResource() }
+            model.endUsingOwnedPromisedFiles(staged.map(\.url))
+        }
+    }
+
+    private var hasScheduleHeader: Bool {
+        let state = model.scheduledMessages
+        // Most conversations never schedule; skip resolving this one's channel on each keystroke.
+        guard !state.sendDates.isEmpty || !state.confirmations.isEmpty,
+              !isCreatingThread, let channelID = model.composerSendChannelID(in: conversation) else { return false }
+        return state.sendDates[channelID] != nil || state.confirmations[channelID] != nil
     }
 
     private var autocompleteContext: ColonAutocompleteContext? {
@@ -1198,8 +1241,13 @@ struct ComposerView: View {
     }
 
     private var hasComposerActions: Bool {
-        canAddAttachments || canCreatePoll || canCreateThread || activityChannel != nil
+        canAddAttachments || canCreatePoll || canCreateThread || canScheduleMessage || activityChannel != nil
             || model.translation.settings.isEnabled
+    }
+
+    /// Like the official composer: a DM, or a channel the account may send in.
+    private var canScheduleMessage: Bool {
+        !isCreatingThread && model.composerSendChannelID(in: conversation) != nil
     }
 
     /// The thread pane composes a thread's first message before Discord has
@@ -1670,7 +1718,8 @@ private extension ComposerView {
             attachmentIDs: hasActiveCommand ? [] : attachments.map(\.id),
             replyID: hasActiveCommand ? nil : activeReply?.id,
             hasActiveCommand: hasActiveCommand,
-            hasTranslationHeader: model.draftTranslation(for: conversation) != nil
+            hasTranslationHeader: model.draftTranslation(for: conversation) != nil,
+            hasScheduleHeader: hasScheduleHeader
         )
     }
 
@@ -1696,7 +1745,8 @@ private extension ComposerView {
               conversation == .thread ? !model.isThreadWindowAwayFromNewest : !model.hasMoreLaterMessages,
               let source = sendTransitionAnchor.source(
                   channelID: channelID,
-                  content: draft.trimmingCharacters(in: .whitespacesAndNewlines),
+                  // The optimistic row it lands on has no `@silent` prefix.
+                  content: SilentMessagePrefix.split(draft.trimmingCharacters(in: .whitespacesAndNewlines)).content,
                   attachments: attachments,
                   uploads: model.attachmentUploads
               )
@@ -1710,7 +1760,8 @@ private extension ComposerView {
     }
 }
 
-private struct ComposerActionLabelStyle: LabelStyle {
+/// An icon column then the title, as the + menu and the schedule shortcuts list them.
+struct ComposerActionLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: InterfaceScale.metric(8)) {
             configuration.icon.frame(width: InterfaceScale.metric(20), alignment: .center)
@@ -1731,8 +1782,23 @@ private extension ComposerView {
 }
 
 extension ComposerView {
-    /// The composer's + menu: files, a thread, a poll, an Activity and translation.
-    private var composerActionsMenu: some View {
+    /// The composer's + menu: files, a thread, a poll, a schedule, an Activity and translation.
+    @ViewBuilder private var composerActionsMenu: some View {
+        if showsScheduleShortcuts {
+            ScheduleMessageShortcuts(timeFormat: model.interfaceSettings.timestampFormat) { date in
+                showComposerActions = false
+                model.setScheduledSendDate(date, in: conversation)
+                isFocused = true
+            } custom: {
+                showComposerActions = false
+                showsScheduleDialog = true
+            }
+        } else {
+            composerActionsList
+        }
+    }
+
+    private var composerActionsList: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
             if canAddAttachments {
                 Button {
@@ -1771,6 +1837,16 @@ extension ComposerView {
                     Label("Create a Poll", systemImage: "chart.bar.xaxis")
                         .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
                 }
+            }
+            if canScheduleMessage {
+                Button {
+                    showsScheduleShortcuts = true
+                } label: {
+                    Label("Schedule Message", systemImage: "calendar.badge.clock")
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
+                }
+                // The time is held until the pending schedule is answered.
+                .disabled(model.isSchedulingMessage(in: conversation))
             }
             startActivityRow
             ComposerTranslateDraftRow(model: model, destination: conversation) {

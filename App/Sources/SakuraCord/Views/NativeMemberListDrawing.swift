@@ -60,7 +60,7 @@ extension NativeMemberListCanvasView {
             ofSize: InterfaceTypographyMetrics.interfaceTextSize,
             weight: .semibold
         )
-        let color = NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7)
+        let color = NSColor.labelColor.withAlphaComponent(0.5)
         let labelY = origins[index] + InterfaceScale.metric(16)
         var labelX = InterfaceScale.metric(14)
         if let role = section.role, role.hasIcon {
@@ -300,7 +300,7 @@ extension NativeMemberListCanvasView {
 
         let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
         let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
-        let botBadgeWidth = NativeAppBadgePresentation.width
+        let botBadgeWidth = NativeAppBadgePresentation.width(isVerified: member.user.isVerifiedBot)
         let tagPresentation = prepared.serverTag
         let roleColor = presentation.roleColorDisplay == .nextToNames
             ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Self.color(hex:)) : nil
@@ -332,7 +332,7 @@ extension NativeMemberListCanvasView {
         }
         if member.user.isBot, let accessory = nameLayout.accessoryFrames.first {
             if accessory.width >= botBadgeWidth {
-                drawBotBadge(at: nameX + accessory.minX, nameY: nameY, context: context)
+                drawBotBadge(at: nameX + accessory.minX, nameY: nameY, isVerified: member.user.isVerifiedBot, context: context)
             }
         }
         if let tagPresentation, let frame = geometry.serverTagFrame {
@@ -353,13 +353,13 @@ extension NativeMemberListCanvasView {
         if let activity = prepared.activity,
            let truncationToken = prepared.activityTruncationToken
         {
-            let maximumWidth = max(0, row.maxX - textX - 4 - InterfaceScale.metric(presentation.trailingAccessoryWidth))
+            let activityFrame = activityTextFrame(at: index)
             let visibleActivity = cachedFittedTextLine(
                 activity,
                 token: truncationToken,
-                maximumWidth: maximumWidth
+                maximumWidth: activityFrame.width
             )
-            let origin = CGPoint(x: textX, y: row.minY + InterfaceScale.metric(24))
+            let origin = activityFrame.origin
             Self.draw(line: visibleActivity, at: origin, context: context)
             for region in NativeMemberActivityPresentation.emojiRegions(
                 in: visibleActivity,
@@ -558,12 +558,12 @@ extension NativeMemberListCanvasView {
         context.restoreGState()
     }
 
-    func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, context: CGContext) {
+    func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, isVerified: Bool, context: CGContext) {
         let badge = CGRect(
             x: badgeX, y: nameY + InterfaceScale.metric(8) - ServerTagAppearance.height / 2,
-            width: NativeAppBadgePresentation.width, height: ServerTagAppearance.height
+            width: NativeAppBadgePresentation.width(isVerified: isVerified), height: ServerTagAppearance.height
         )
-        NativeAppBadgePresentation.draw(in: badge, color: .systemIndigo, context: context)
+        NativeAppBadgePresentation.draw(in: badge, color: .sakuraCordAccentColor, context: context, isVerified: isVerified)
     }
 
     /// Discord shows role icons on member-list section headers, not beside names.

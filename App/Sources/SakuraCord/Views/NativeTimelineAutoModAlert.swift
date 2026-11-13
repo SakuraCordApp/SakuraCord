@@ -150,7 +150,7 @@ struct NativeTimelineAutoModAlertLayout {
         let render = { (content: String) in
             NativeTimelineEmbedLayout.resolvedTextBox(
                 prepared: RichMessageAttributedText.prepare(source: content), scope: "automod",
-                emojiSize: 22, embed: embed, message: message, source: source
+                emojiSize: InterfaceTypographyMetrics.message(22), embed: embed, message: message, source: source
             ).value
         }
         let value = NSMutableAttributedString(attributedString: render(alert.content))
@@ -211,7 +211,7 @@ struct NativeTimelineAutoModAlertLayout {
         return NativeTimelineAttributedTextBox(NSAttributedString(
             string: parts.joined(separator: "\n"),
             attributes: [
-                .font: NSFont.interfaceSystemFont(ofSize: 12),
+                .font: NSFont.messageSystemFont(ofSize: 12),
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .paragraphStyle: paragraph,
             ]

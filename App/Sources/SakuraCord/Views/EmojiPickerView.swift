@@ -811,7 +811,6 @@ private struct PickerSearchTextField: NSViewRepresentable {
             guard let textField = notification.object as? NSTextField else { return }
             let editor = textField.currentEditor() as? NSTextView
             PickerSearchTextField.disableCompletionFeatures(in: editor)
-            editor?.applySakuraCordTextSelectionAppearance()
         }
     }
 }

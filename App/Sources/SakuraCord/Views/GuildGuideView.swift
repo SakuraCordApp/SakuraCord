@@ -45,7 +45,6 @@ struct GuildGuideView: View {
             .scrollBounceBehavior(.always, axes: .vertical)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .tint(SakuraCordAccentColor.color)
         .task(id: guild?.iconURL) {
             previewColor = nil
             guard let url = guild?.iconURL else { return }

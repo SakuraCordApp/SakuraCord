@@ -101,7 +101,6 @@ struct MessageRequestActions: View {
             }
             Button("Accept DM") { model.acceptMessageRequest(channel) }
                 .buttonStyle(.glassProminent)
-                .tint(SakuraCordAccentColor.color)
         }
         .disabled(isDeciding)
     }

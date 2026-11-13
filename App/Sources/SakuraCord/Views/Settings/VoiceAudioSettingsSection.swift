@@ -112,7 +112,6 @@ private struct VoiceVolumeSettingsRow: View {
                 Text(title, bundle: #bundle)
             }
             .labelsHidden()
-            .tint(SakuraCordAccentColor.color)
             Text(volume, format: .percent.precision(.fractionLength(0)))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)

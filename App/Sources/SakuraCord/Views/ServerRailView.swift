@@ -509,7 +509,6 @@ private struct PendingApplicationsRailFolder: View {
                     Button("Got it") { showsSubmittedTip = false }
                         .buttonStyle(.glassProminent)
                         .buttonBorderShape(.capsule)
-                        .tint(SakuraCordAccentColor.color)
                         .frame(maxWidth: .infinity)
                         .padding(.top, InterfaceScale.metric(6))
                 }

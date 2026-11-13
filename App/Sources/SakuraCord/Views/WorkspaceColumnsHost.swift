@@ -842,6 +842,22 @@ final class MovingHostContainerView: NSView {
     }
 }
 
+extension NSGlassEffectView {
+    /// The glass of an inspector split item, or nil once its private variant
+    /// is no longer settable: plain glass would not look like an inspector.
+    static func inspector() -> NSGlassEffectView? {
+        let glass = NSGlassEffectView()
+        guard glass.responds(to: NSSelectorFromString("set_variant:")),
+              glass.responds(to: NSSelectorFromString("set_adaptiveAppearance:"))
+        else { return nil }
+        glass.setValue(19, forKey: "_variant")
+        glass.setValue(1, forKey: "_adaptiveAppearance")
+        // An inspector item's glass is square; the view's default rounds it.
+        glass.cornerRadius = 0
+        return glass
+    }
+}
+
 extension NSView {
     private static let coverMaskName = "SakuraCordCoverMask"
 
@@ -891,6 +907,12 @@ extension NSView {
 /// A column's hosting view.
 private final class ColumnHostingView: NSHostingView<AnyView> {
     let container = MovingHostContainerView()
+    /// Every scroll pocket under the toolbar blurs one shared capture, taken
+    /// where the first of them draws: the conversation, before the column,
+    /// so the column's content would be missing from its toolbar band. Glass
+    /// opts its content out of that capture, as it does for a native
+    /// inspector item, so the column's pockets capture their own content.
+    private let glass = NSGlassEffectView.inspector()
 
     /// The widths the column's content takes, measured as it lays out.
     let extent = ColumnExtent()
@@ -916,7 +938,13 @@ private final class ColumnHostingView: NSHostingView<AnyView> {
         sizingOptions = []
         translatesAutoresizingMaskIntoConstraints = false
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(self)
+        if let glass {
+            // Its content view stays put, so the column moves in and out of
+            // the glass without leaving the window.
+            glass.contentView = MovingHostContainerView()
+            container.addSubview(glass)
+        }
+        (glass?.contentView ?? container).addSubview(self)
         setContent(content, isLeaving: false)
     }
 
@@ -926,6 +954,13 @@ private final class ColumnHostingView: NSHostingView<AnyView> {
     /// returns to the pane.
     func showsFullWidth(_ isFullWidth: Bool) {
         extent.isPaused = isFullWidth
+        // A full-width side chat takes the conversation's place, not an inspector's.
+        guard let glass, let pane = glass.contentView else { return }
+        let parent = isFullWidth ? container : pane
+        guard superview !== parent else { return }
+        frame = parent.bounds
+        parent.addSubview(self)
+        glass.isHidden = isFullWidth
     }
 
     /// Takes the column out of the window. The container holds this view

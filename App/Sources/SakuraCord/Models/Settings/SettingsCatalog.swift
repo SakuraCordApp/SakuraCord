@@ -257,6 +257,7 @@ nonisolated extension SettingsControlID {
     static let groupMessageAppearance = Self(rawValue: "appearance.group-messages")
     static let messageAppearance = Self(rawValue: "appearance.messages")
     static let messageDensity = Self(rawValue: "appearance.message-density")
+    static let messageFontSize = Self(rawValue: "appearance.message-font-size")
     static let interfaceSize = Self(rawValue: "interface.size")
     static let resetMessageAppearance = Self(rawValue: "interface.reset-message-appearance")
     static let timestampFormat = Self(rawValue: "interface.timestamp-format")

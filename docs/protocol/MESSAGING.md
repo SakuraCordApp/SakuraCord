@@ -46,6 +46,19 @@ outside this queue; forwarding keeps the single-attempt mutation budget.
 A reply includes reference type 0, message ID and channel ID. To disable the reply
 ping, include `allowed_mentions` with normal users/roles/everyone parsing and
 `replied_user:false`; do not suppress unrelated content mentions accidentally.
+A message that opens with `@silent` (case-sensitive, then whitespace or the end,
+after the composer trims its text) is sent without the prefix, the remainder
+trimmed, and with `flags: 4096` (`SUPPRESS_NOTIFICATIONS`); a bare `@silent`
+clears the composer and sends nothing. Discord's send action (web module 677413,
+build 671535, captured 13 November 2026) reads it for every send entry point,
+forum posts (which omit `flags` when zero) and a forward's accompanying message,
+whose flag also goes on the forward. Edits and application-command interactions do not read it.
+`SilentMessagePrefix` is that single parser. Recipients keep unread state,
+mention counts and badges but get no desktop notification or sound. Such a
+message starts a new group after an ordinary one, and a mention after it does
+too, so its header can show the bell badge whose tooltip reads "This is a
+@silent message."
+
 Current permissions, membership gates and slowmode are checked before consuming
 a draft or dispatching any send entry point. REST/Gateway confirmations reconcile
 the same optimistic message rather than creating duplicates.
@@ -303,6 +316,57 @@ An explicit results read can repeat once if overlapping votes make its unversion
 tally ambiguous; a second overlap reports failure rather than starting polling.
 Poll rejections follow the shared operation-scoped error policy; they do not
 stop unrelated REST or Gateway traffic.
+
+## Scheduled messages
+
+Discord holds a scheduled message and posts it as the account at its time
+(official web build 670026, observed 11 November 2026). The composer's +
+menu offers it wherever the account may send: a DM, a group DM, or a channel
+or thread with `SEND_MESSAGES`. Like the official client, the picked time is
+kept per conversation until it is sent or cleared (× or Escape); sending the
+draft stores any staged files exactly as a send does, then makes one
+`POST /users/@me/scheduled-messages` with `channel_id`, `content`,
+`scheduled_timestamp` (ISO 8601 with milliseconds, UTC), `flags` and
+`attachments` (always present, possibly empty), plus `message_reference`
+(`guild_id` when in a server, `channel_id`, `message_id`; no `type`) and the
+quiet-reply `allowed_mentions` for a reply. A GIF or sticker picked while a
+time is set is scheduled the same way (the GIF's URL as content; a sticker as
+`sticker_ids`, or as its image file when it would be sent as one), leaving the
+typed draft in place. There is no nonce and no
+`X-Context-Properties` header, and nothing enters the timeline. The composer
+clears only when Discord accepts it, so a refusal loses nothing.
+
+Discord's server, for both create and Edit Schedule Time, refuses a time in
+the past (`400` code `640001`), more than eight days away (`640002`) or less
+than ten minutes away (`640004`), checking the time before the account's limit
+(observed 13 November 2026). It accepts any minute; the official dialog offers
+today through the eighth day ahead and 15-minute steps, defaulting to the next
+whole hour, and SakuraCord's dialog does the same. A reschedule also stays
+within 30 days of the message's snowflake time (official client; not
+reproducible live). Failures show Discord's reason after the action's title, as
+the official client does. Full Nitro (premium type 2) may hold 25 scheduled
+messages at once and every other plan one. The client does not check the count
+first: Discord answers an extra create with `400` code `640003`, which shows
+the limit alert (with Nitro's higher limit where it would help) and a way to
+manage scheduled messages.
+
+The Inbox's Scheduled tab (tab `7` in the synced Inbox settings) reads
+`GET /users/@me/scheduled-messages` each time it is shown; no Gateway event
+reports scheduled messages, so another client's changes appear on the next
+read. Rows list the latest send time first; a sticker appears only in the
+object's `message_preview.sticker_items`. Edit Schedule Time sends
+`PATCH …/{id}` with only `scheduled_timestamp`; Edit Message sends only
+`content` and the message's existing `flags`, and saving it without text
+cancels the message instead, even one with files; Send Now is a bodiless
+`POST …/{id}/send` whose message arrives through the ordinary
+`MESSAGE_CREATE`, usually before the response; Cancel is
+`DELETE …/{id}` (`204`). Sent and cancelled rows stay, marked pending, until
+Discord confirms. A due message is posted within seconds as an ordinary
+`MESSAGE_CREATE` without a nonce. A message whose channel was deleted stays
+listed, still state `0` until its time and then `4` (channel not found), until
+it is cancelled; like the official list, its row shows only that its channel
+was not found and Cancel. Every mutation is single-attempt. See
+[ScheduledMessageContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ScheduledMessageContractTests.swift).
 
 ## Forums, threads and commands
 

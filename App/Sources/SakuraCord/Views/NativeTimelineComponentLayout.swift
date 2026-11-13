@@ -193,7 +193,7 @@ struct NativeTimelineComponentLayout {
         if embedComponents == nil, let error = source?.componentError(for: message.id) {
             let errorBox = NodeBuilder.plainText(
                 "⚠ \(error)",
-                font: .interfaceSystemFont(ofSize: 13),
+                font: .messageSystemFont(ofSize: 13),
                 color: .systemRed
             )
             let height = NodeBuilder.measuredHeight(errorBox, width: maximumWidth)
@@ -597,7 +597,7 @@ private enum NodeBuilder {
             componentID: id,
             message: message,
             source: source,
-            emojiSize: 18 * scale,
+            emojiSize: InterfaceTypographyMetrics.message(18) * scale,
             bodyScale: scale
         )
         let width = min(maximumWidth, max(1, NativeTimelineEmbedLayout.idealWidth(box)))
@@ -1222,7 +1222,7 @@ private enum NodeBuilder {
         _ label: String,
         maximumWidth: CGFloat
     ) -> Node {
-        let font = NSFont.interfaceSystemFont(ofSize: 11)
+        let font = NSFont.messageSystemFont(ofSize: 11)
         let width = min(
             maximumWidth,
             ceil(

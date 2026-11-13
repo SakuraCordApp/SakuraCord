@@ -403,7 +403,6 @@ private struct GIFPickerHeader: View {
                 .foregroundStyle(.secondary)
             TextField("Search GIFs", text: $text)
                 .font(.interfaceSystem(size: ChatChromeMetrics.pickerSearchHeaderFontSize))
-                .tint(SakuraCordAccentColor.color)
                 .textFieldStyle(.plain)
                 .focused($isFocused)
             if !text.isEmpty {

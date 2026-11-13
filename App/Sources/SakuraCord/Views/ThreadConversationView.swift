@@ -92,22 +92,21 @@ private struct ThreadCreationView: View {
                     .font(.interface(.headline))
                 ZStack(alignment: .leading) {
                     TextField("", text: $creation.name)
-                        .tint(SakuraCordAccentColor.color)
                         .textFieldStyle(.plain)
-                        .font(.interfaceSystem(size: 15))
+                        .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                         .focused($isNameFocused)
                         .accessibilityLabel("Thread Name")
                         .onSubmit { model.validateThreadCreation() }
                     if creation.name.isEmpty {
                         Text(creation.starterMessage == nil ? "New Thread" : creation.defaultName)
                             .lineLimit(1)
-                            .font(.interfaceSystem(size: 15))
+                            .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                             .foregroundStyle(.tertiary)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                     }
                 }
-                .padding(.horizontal, InterfaceScale.metric(11))
+                .padding(.horizontal, ChatChromeMetrics.composerTextLeadingInset)
                 .frame(
                     maxWidth: .infinity,
                     minHeight: usesDefaultStyle
@@ -130,7 +129,6 @@ private struct ThreadCreationView: View {
                         .font(.interface(.headline))
                     Toggle("Only people you invite and moderators can see", isOn: $creation.isPrivate)
                         .toggleStyle(.checkbox)
-                        .tint(SakuraCordAccentColor.color)
                         .disabled(!creation.permissions.canCreatePublic)
                 }
             }

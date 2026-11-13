@@ -57,7 +57,6 @@ struct ForumPostTitleField: NSViewRepresentable {
             field.font = Self.font
             field.placeholderAttributedString = Self.placeholder
         }
-        field.editor.applySakuraCordTextSelectionAppearance()
         // The editor owns text still being composed with an input method.
         if !field.editor.hasMarkedText(), field.stringValue != text { field.stringValue = text }
         context.coordinator.applyFocus(to: field)

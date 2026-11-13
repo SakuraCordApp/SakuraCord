@@ -1206,16 +1206,13 @@ extension NativeMessageTimelineCoordinator {
                         self?.scheduleModelRowsUpdate()
                     }
                 },
-                center.addObserver(
-                    forName: .sakuraCordThemeDidCommit,
-                    object: nil,
-                    queue: .main
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        self?.canvas?.invalidatePresentationCaches()
-                    }
-                },
             ] + workspaceMotionObservations(center)
+            // Cached rows bake in theme colours, including the label on outgoing bubbles.
+            observations += [.sakuraCordThemeDidCommit, .sakuraCordAccentLabelDidChange].map { name in
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.canvas?.invalidatePresentationCaches() }
+                }
+            }
             observations += [.NSCalendarDayChanged, NSApplication.didBecomeActiveNotification].map { name in
                 center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated {
@@ -1413,78 +1410,6 @@ extension NativeMessageTimelineCoordinator {
             if let canvas, !WorkspaceLayoutMotion.isMoving {
                 canvas.allowHoverPresentationAfterScroll()
             }
-        }
-
-        /// Applies a change in the height the window toolbar covers, such
-        /// as entering or leaving full screen, without moving the reader.
-        /// The new top padding shifts every row, so the visible anchor is
-        /// captured first and restored afterwards, as a resize does.
-        func updateInsetsForToolbarObscuredHeightChange() {
-            guard let scrollView, !isApplyingUpdate,
-                  initialPositionConversation == parent.conversation
-            else {
-                updateInsets()
-                return
-            }
-            let wasNearBottom = lastReportedState?.isNearBottom ?? scrollState().isNearBottom
-            let anchor = wasNearBottom ? nil : visibleAnchor()
-            isApplyingUpdate = true
-            updateInsets()
-            if wasNearBottom {
-                scroll(toDocumentY: .greatestFiniteMagnitude, scrollView: scrollView)
-            } else if let anchor {
-                restore(anchor)
-            }
-            positionViewportCanvas()
-            isApplyingUpdate = false
-            reportScrollState(force: true)
-        }
-
-        func updateInsets() {
-            guard let scrollView, let canvas else { return }
-            let viewportHeight = scrollView.contentView.bounds.height
-            canvas.updateContentOriginY(
-                contentOriginY(viewportHeight: viewportHeight),
-                minimumHeight: max(1, viewportHeight),
-                bottomSpacerHeight:
-                    bottomInset + trailingHistoryReserve
-            )
-            let contentInsets = scrollView.contentInsets
-            if contentInsets.top != 0
-                || contentInsets.left != 0
-                || contentInsets.bottom != 0
-                || contentInsets.right != 0
-            {
-                scrollView.contentInsets = NSEdgeInsets()
-            }
-            let showsVerticalScroller =
-                scrollableDocumentHeight > viewportHeight + 0.5
-            if scrollView.hasVerticalScroller != showsVerticalScroller {
-                scrollView.hasVerticalScroller = showsVerticalScroller
-            }
-        }
-
-        var bottomInset: CGFloat {
-            parent.bottomContentInset
-                + ChatDetailLayoutPolicy.timelineBottomPadding
-        }
-
-        func contentOriginY(viewportHeight: CGFloat) -> CGFloat {
-            // Content scrolls beneath the window toolbar but rests below it.
-            let topPadding = ChatDetailLayoutPolicy.timelineTopPadding
-                + (scrollView?.scrollerInsets.top ?? 0)
-            let topInset = if parent.conversation.alignsUnderfilledContentToTop {
-                topPadding
-            } else {
-                NativeMessageTimelineLayoutPolicy.shortContentTopInset(
-                    viewportHeight: viewportHeight,
-                    contentHeight: contentHeight,
-                    bottomInset: bottomInset,
-                    verticalPadding: topPadding
-                )
-            }
-            return leadingHistoryReserve
-                + topInset
         }
 
         var effectiveContentHeight: CGFloat {

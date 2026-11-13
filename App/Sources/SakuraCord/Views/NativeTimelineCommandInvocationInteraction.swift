@@ -149,7 +149,7 @@ struct CommandInvocationPopover: View {
             model: model,
             message: message,
             content: source,
-            emojiSize: InterfaceScale.metric(22),
+            emojiSize: InterfaceScale.metric(InterfaceTypographyMetrics.message(22)),
             mentionPresentation: MessageMentionResolver(model: model, message: message).presentation
         )
     }

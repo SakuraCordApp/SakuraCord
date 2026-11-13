@@ -41,7 +41,6 @@ struct GeneralSettingsPage: View {
             )
             Section {
                 Toggle("Confirm quitting during calls or uploads", isOn: $confirmsQuitActiveWork)
-                    .tint(SakuraCordAccentColor.color)
                     .settingsControlAnchor(.confirmQuitActiveWork, state: state)
             } header: {
                 Text("Confirmation", bundle: #bundle)
@@ -78,7 +77,6 @@ private struct GeneralStartupSection: View {
                     }
                 )
             )
-            .tint(SakuraCordAccentColor.color)
             .disabled(launchAtLogin.isChanging || !launchAtLogin.isAvailable)
             .settingsControlAnchor(.launchAtLogin, state: state)
 

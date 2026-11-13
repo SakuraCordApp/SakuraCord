@@ -173,7 +173,7 @@ extension NativeTimelineRowPainter {
             inset: bubbleRegion == nil ? NativeTimelineThreadCard.horizontalPadding : 0,
             isHovered: interaction != .idle
         )
-        let accent: NSColor = isOutgoing ? .white : isDormant ? secondary : .sakuraCordAccentColor
+        let accent: NSColor = isOutgoing ? .sakuraCordLabelOnAccentColor : isDormant ? secondary : .sakuraCordAccentColor
 
         systemSymbol(
             NativeTimelineThreadCard.glyphName(for: thread),

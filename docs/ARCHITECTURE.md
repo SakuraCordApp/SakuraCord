@@ -280,6 +280,14 @@ presentation revisions. At 100% every helper returns its input. Message density
 stays in points and is independent. System chrome (window controls, toolbar
 items, menus, alerts) keeps the system size.
 
+Message font size scales message content on top of interface size. Text and
+emoji in messages, embeds, replies, components, the composer and markdown or
+text previews use `NSFont.messageSystemFont` or
+`InterfaceTypographyMetrics.message` with their default-size values, and
+`DiscordRichMessageMetrics.px` scales Discord lengths with them. Cards with
+fixed-height rows (file cards, polls, invites, thread cards, the voice player)
+keep interface-only sizes.
+
 `WindowModalCoordinator` owns input order and focus for each window;
 `WindowModalOverlay` supplies the shared custom modal host. Closing transitions
 retain input ownership until removal. Native sheets and anchored popovers keep

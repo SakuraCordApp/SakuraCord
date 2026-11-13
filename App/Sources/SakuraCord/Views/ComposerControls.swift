@@ -16,7 +16,6 @@ struct UploadProgressView: View {
                 Text("Reserving \(files) file\(files == 1 ? "" : "s")…")
             case let .uploading(_, fileName, completed, total):
                 ProgressView(value: total > 0 ? Double(completed) / Double(total) : 0)
-                    .tint(SakuraCordAccentColor.color)
                     .frame(width: InterfaceScale.metric(90))
                 Text("Uploading \(fileName)…").lineLimit(1)
             case .submitting:
@@ -56,7 +55,7 @@ struct ComposerActionButton: View {
     let help: String
     var iconSize: CGFloat = 18
     var iconWeight: Font.Weight = .medium
-    var size = ChatChromeMetrics.composerControlHeight
+    var size = ChatChromeMetrics.composerButtonSize
     var showsHoverBackground = true
     var appearance: ComposerBarAppearance = .defaultStyle
     var cornerRadius: CGFloat?

@@ -204,7 +204,6 @@ struct SelectableMessageTextView: NSViewRepresentable {
             .foregroundColor: NSColor.linkColor,
             .underlineStyle: 0
         ]
-        textView.applySakuraCordTextSelectionAppearance()
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.onMentionClick = onMentionClick
         textView.onURLClick = onURLClick
@@ -219,7 +218,6 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.onRevealSpoiler = onRevealSpoiler
         textView.model = model
         textView.isSelectable = isSelectable
-        textView.applySakuraCordTextSelectionAppearance()
         configureTextContainer(textView.textContainer)
         let coordinator = context.coordinator
         if !TimestampMentionPresentation.tokens(in: source).isEmpty {
@@ -483,7 +481,7 @@ nonisolated enum RichMessageAttributedText {
         mentionPresentations: [String: MentionPresentation]
     ) -> NSAttributedString {
         let resolvedBaseFontSize = baseFontSize
-            ?? (prepared.isEmojiOnly ? emojiSize : InterfaceScale.fontSize(15))
+            ?? (prepared.isEmojiOnly ? emojiSize : InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize))
         let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize)
         let output = NSMutableAttributedString(
             attributedString: NativeTimelineCoreText.scaledMarkdown(
