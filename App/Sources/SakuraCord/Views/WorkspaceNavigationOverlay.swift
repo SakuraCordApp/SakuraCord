@@ -757,7 +757,7 @@ private struct QuickSwitcherResultList: View {
     let reportFrame: @MainActor () -> Void
     let focus: (QuickSwitcherResultID) -> Void
     let activate: (QuickSwitcherResult) -> Void
-    @State private var pointerLocationAtFocus: CGPoint?
+    @State private var lastHoverLocation: CGPoint?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -765,13 +765,13 @@ private struct QuickSwitcherResultList: View {
                 LazyVStack(spacing: InterfaceScale.metric(2)) {
                     ForEach(rows) { row in
                         if let heading = row.heading {
-                            QuickSwitcherHeadingRow(title: heading)
+                            QuickSwitcherHeadingRow(title: heading, hover: pointerHovered)
                         } else {
                             QuickSwitcherResultRow(
                                 row: row,
                                 isSelected: row.id == selectedResultID,
                                 isPointerFocusEnabled: !keyboardNavigationActive,
-                                focus: focusUnderMovedPointer,
+                                hover: pointerHovered,
                                 activate: activate
                             )
                             .equatable()
@@ -792,18 +792,19 @@ private struct QuickSwitcherResultList: View {
         }
     }
 
-    /// Rows scrolling under a resting pointer also report hover; only a
+    /// Rows scrolling under a resting pointer report hover too; only a
     /// pointer that actually moved may take the selection.
-    private func focusUnderMovedPointer(_ id: QuickSwitcherResultID) {
+    private func pointerHovered(focusing id: QuickSwitcherResultID?) {
         let location = NSEvent.mouseLocation
-        guard location != pointerLocationAtFocus else { return }
-        pointerLocationAtFocus = location
-        focus(id)
+        guard location != lastHoverLocation else { return }
+        lastHoverLocation = location
+        if let id { focus(id) }
     }
 }
 
 private struct QuickSwitcherHeadingRow: View {
     let title: String
+    let hover: (_ focusing: QuickSwitcherResultID?) -> Void
 
     var body: some View {
         Text(title.uppercased())
@@ -813,6 +814,9 @@ private struct QuickSwitcherHeadingRow: View {
             .padding(.horizontal, InterfaceScale.metric(10))
             .padding(.bottom, InterfaceScale.metric(3))
             .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(28), alignment: .bottomLeading)
+            .onContinuousHover { phase in
+                if case .active = phase { hover(nil) }
+            }
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -821,7 +825,7 @@ private struct QuickSwitcherResultRow: View, Equatable {
     let row: QuickSwitcherRowPresentation
     let isSelected: Bool
     let isPointerFocusEnabled: Bool
-    let focus: (QuickSwitcherResultID) -> Void
+    let hover: (_ focusing: QuickSwitcherResultID?) -> Void
     let activate: (QuickSwitcherResult) -> Void
     @Environment(\.windowModalInputAllowed) private var inputAllowed
 
@@ -875,9 +879,8 @@ private struct QuickSwitcherResultRow: View, Equatable {
         .buttonStyle(.plain)
         .onContinuousHover { phase in
             // The panel enables pointer focus only after real movement.
-            if case .active = phase, inputAllowed, isPointerFocusEnabled, !isSelected {
-                focus(row.id)
-            }
+            guard case .active = phase, inputAllowed else { return }
+            hover(isPointerFocusEnabled && !isSelected ? row.id : nil)
         }
         .accessibilityLabel(row.accessibilityLabel)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
