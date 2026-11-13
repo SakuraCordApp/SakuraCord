@@ -61,7 +61,10 @@ final class AppAccentColorController {
         NSApp.perform(setter, with: color)
         installed = rgb
         accent = color
-        labelOnAccent = SakuraCordAccentColor.labelNSColor(on: color)
+        let label = SakuraCordAccentColor.labelNSColor(on: color)
+        guard label != labelOnAccent else { return }
+        labelOnAccent = label
+        NotificationCenter.default.post(name: .sakuraCordAccentLabelDidChange, object: nil)
     }
 
     private func scheduleApply() {

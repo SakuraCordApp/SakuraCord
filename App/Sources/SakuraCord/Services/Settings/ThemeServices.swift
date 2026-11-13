@@ -159,6 +159,24 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
         target.composited(over: self, opacity: fraction)
     }
 
+    /// The same hue and chroma at the highest OKLab lightness that still has
+    /// `ratio` contrast against `background`.
+    func withLightness(reaching ratio: Double, against background: Self) -> Self {
+        guard contrastRatio(with: background) < ratio else { return self }
+        let lab = oklab
+        var lower = 0.0
+        var upper = lab.x
+        for _ in 0 ..< 16 {
+            let middle = (lower + upper) / 2
+            if Self(oklab: SIMD3(middle, lab.y, lab.z)).contrastRatio(with: background) >= ratio {
+                lower = middle
+            } else {
+                upper = middle
+            }
+        }
+        return Self(oklab: SIMD3(lower, lab.y, lab.z))
+    }
+
     /// Interpolates the way CSS `color-mix(in oklab, …)` does.
     func oklabBlended(toward target: Self, fraction: Double) -> Self {
         let source = oklab
@@ -489,11 +507,15 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Hashable, Sendab
 
     /// The colour installed as this theme's macOS accent, the same in light
     /// and dark as a system accent is: the first gradient colour at full
-    /// brightness, or exactly macOS Pink for SakuraCord's own pink.
+    /// brightness, or exactly macOS Pink for SakuraCord's own pink. macOS's
+    /// palest accent, Yellow, is 1.56:1 against white; a theme colour paler
+    /// than any macOS accent is darkened just into that range.
     var accentRGB: SakuraCordThemeRGB {
         let color = activeColors.first ?? Self.defaultTheme.colors[0]
-        guard color != .sakuraPink else { return SakuraCordThemeRGB(red: 0xF7 / 255, green: 0x4F / 255, blue: 0x9E / 255) }
-        return SakuraCordThemeRGB(hue: color.hue, saturation: color.saturation, brightness: 1)
+        let accent = color == .sakuraPink
+            ? SakuraCordThemeRGB(red: 0xF7 / 255, green: 0x4F / 255, blue: 0x9E / 255)
+            : SakuraCordThemeRGB(hue: color.hue, saturation: color.saturation, brightness: 1)
+        return accent.withLightness(reaching: 1.56, against: .white)
     }
 
     var intensityProgress: Double {
@@ -901,6 +923,10 @@ final class SakuraCordThemeStore {
 extension Notification.Name {
     static let sakuraCordThemeDidCommit = Notification.Name(
         "dev.sakuracord.theme-did-commit"
+    )
+    /// The label colour for accent fills flipped during a live theme edit.
+    static let sakuraCordAccentLabelDidChange = Notification.Name(
+        "dev.sakuracord.accent-label-did-change"
     )
 }
 
