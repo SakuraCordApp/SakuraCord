@@ -4,10 +4,12 @@ import SakuraCordModels
 
 extension AppModel {
     func sendProfileMessage(to userID: UserID, content: String, nonce: String = ClientNonce.make()) async -> Bool {
-        guard userID != currentUser?.id,
-              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !composer.outbox.hasPendingDelivery(nonce: nonce)
+        // Like Discord's composer, the text is trimmed and a bare `@silent`
+        // clears it without sending anything.
+        let content = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard userID != currentUser?.id, !content.isEmpty, !composer.outbox.hasPendingDelivery(nonce: nonce)
         else { return false }
+        guard !SilentMessagePrefix.split(content).content.isEmpty else { return true }
         let existing = snapshot?.channels.first {
             $0.kind == .directMessage && $0.recipients.contains { $0.id == userID }
         }

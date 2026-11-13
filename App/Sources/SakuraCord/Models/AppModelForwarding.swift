@@ -436,7 +436,10 @@ extension AppModel {
         }
         // Discord reads `@silent` from the accompanying message and silences
         // the forward with it, even where slowmode holds that message back.
+        // The message's own send reads the prefix again, as Discord's does,
+        // and sends nothing if no text is left.
         let (isSilent, comment) = SilentMessagePrefix.split(context)
+        let accompanying = SendMessageDraft(channelID: destinationID, content: comment, suppressesNotifications: isSilent)
         do {
             let confirmed = try await session.provider.forward(ForwardMessageDraft(
                 sourceMessageID: message.id,
@@ -447,10 +450,8 @@ extension AppModel {
             ))
             guard isCurrentAccountSession(session) else { return nil }
             confirmSlowmodeMessage(confirmed)
-            if sendsContext, !comment.isEmpty, shouldSendForwardContext(to: destinationID) {
-                let confirmedContext = try await session.provider.send(SendMessageDraft(
-                    channelID: destinationID, content: comment, suppressesNotifications: isSilent
-                ))
+            if sendsContext, !accompanying.content.isEmpty, shouldSendForwardContext(to: destinationID) {
+                let confirmedContext = try await session.provider.send(accompanying)
                 guard isCurrentAccountSession(session) else { return nil }
                 recordMessageEmojiUsage(context)
                 confirmSlowmodeMessage(confirmedContext)
