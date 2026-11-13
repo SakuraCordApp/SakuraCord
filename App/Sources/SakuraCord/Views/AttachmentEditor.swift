@@ -87,7 +87,7 @@ struct AttachmentEditor: View {
         Button { isSpoiler.toggle() } label: {
             Label("Spoiler", systemImage: isSpoiler ? "eye.slash.fill" : "eye.slash")
                 .font(.interface(.callout).weight(.semibold))
-                .foregroundStyle(isSpoiler ? .white : .primary)
+                .foregroundStyle(isSpoiler ? SakuraCordAccentColor.labelOnFill : .primary)
                 .padding(.horizontal, InterfaceScale.metric(12))
                 .frame(height: InterfaceScale.metric(32))
                 .contentShape(Capsule())

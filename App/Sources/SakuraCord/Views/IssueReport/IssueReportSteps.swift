@@ -86,7 +86,7 @@ private struct IssueReportKindPicker: View {
                             Text(option == .bug ? "Bug" : "Feature")
                         }
                             .font(.interface(.callout).weight(.semibold))
-                            .foregroundStyle(option == kind ? .white : .primary)
+                            .foregroundStyle(option == kind ? SakuraCordAccentColor.labelOnFill : .primary)
                             .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(34))
                             .contentShape(Capsule())
                     }

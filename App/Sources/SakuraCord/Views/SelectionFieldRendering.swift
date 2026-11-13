@@ -277,7 +277,8 @@ enum SelectionFieldRenderer {
                     hints: [.interpolation: NSImageInterpolation.high]
                 )
             } else {
-                NSColor.sakuraCordAccentColor.withAlphaComponent(0.65).setFill()
+                let fill = NSColor.sakuraCordAccentColor.withAlphaComponent(0.65)
+                fill.setFill()
                 path.fill()
                 let value = String(fallback.prefix(1)).uppercased() as NSString
                 let font = NSFont.interfaceSystemFont(ofSize: 10, weight: .semibold)
@@ -289,7 +290,7 @@ enum SelectionFieldRenderer {
                     ),
                     withAttributes: [
                         .font: font,
-                        .foregroundColor: NSColor.white,
+                        .foregroundColor: SakuraCordAccentColor.labelNSColor(on: fill),
                     ]
                 )
             }

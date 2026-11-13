@@ -300,7 +300,7 @@ private struct PrivateCallGlassButton: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.interface(.callout).weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(SakuraCordAccentColor.label(on: tint))
                 .padding(.horizontal, InterfaceScale.metric(16))
                 .frame(height: InterfaceScale.metric(40))
                 .contentShape(Capsule())

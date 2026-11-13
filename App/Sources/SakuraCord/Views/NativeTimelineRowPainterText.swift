@@ -340,7 +340,7 @@ extension NativeTimelineRowPainter {
         )
         if isOutgoingBubble, let selectionRange, selectionRange.length > 0 {
             // As in an NSTextView, selected text takes the selected-text colour;
-            // white text on an accent fill vanishes on the light selection.
+            // the light label on an accent fill vanishes on the light selection.
             let selected = NSMutableAttributedString(attributedString: drawingValue)
             let range = NSIntersectionRange(selectionRange, NSRange(location: 0, length: selected.length))
             let textColor: NSColor = drawsEmphasizedSelection ? .selectedTextColor : .unemphasizedSelectedTextColor

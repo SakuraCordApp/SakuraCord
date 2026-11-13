@@ -195,7 +195,7 @@ struct IssueReportAreaPicker: View {
                 Text(label).lineLimit(1).minimumScaleFactor(0.85)
             }
             .font(.interface(.callout))
-            .foregroundStyle(isSelected ? .white : .primary)
+            .foregroundStyle(isSelected ? SakuraCordAccentColor.label(on: SakuraCordAccentColor.color.opacity(0.7)) : .primary)
             .padding(.horizontal, InterfaceScale.metric(12))
             .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(32), alignment: .leading)
             .contentShape(Capsule())
@@ -402,7 +402,7 @@ struct IssueReportActionButton: View {
                 Text(title)
             }
             .font(.interface(.body).weight(.semibold))
-            .foregroundStyle(primary ? .white : .primary)
+            .foregroundStyle(primary ? SakuraCordAccentColor.labelOnFill : .primary)
             .padding(.horizontal, InterfaceScale.metric(18))
             .frame(height: InterfaceScale.metric(40))
             .contentShape(Capsule())

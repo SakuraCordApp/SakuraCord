@@ -228,7 +228,7 @@ private struct ForumNewPostButton: View {
                     .frame(width: ForumTagChipMetrics.height)
             }
             .font(.interface(.callout).weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(SakuraCordAccentColor.labelOnFill)
             .frame(height: ForumTagChipMetrics.height)
             .glassEffect(.forumChip(isOn: true), in: Capsule())
             .contentShape(Capsule())
@@ -572,7 +572,7 @@ struct ForumTagButton: View {
                     .lineLimit(1)
             }
             .font(.interface(.callout).weight(.semibold))
-            .foregroundStyle(isSelected ? .white : .primary)
+            .foregroundStyle(isSelected ? SakuraCordAccentColor.labelOnFill : .primary)
             .padding(.horizontal, ForumTagChipMetrics.horizontalPadding)
             .frame(height: ForumTagChipMetrics.height)
             .glassEffect(.forumChip(isOn: isSelected), in: Capsule())

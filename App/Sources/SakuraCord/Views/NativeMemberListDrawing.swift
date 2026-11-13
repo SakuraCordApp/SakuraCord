@@ -519,7 +519,7 @@ extension NativeMemberListCanvasView {
                 ofSize: NativeMemberListMetrics.avatarSize * 0.42,
                 weight: .semibold
             ),
-            color: .white
+            color: SakuraCordAccentColor.labelOnFillNSColor
         )
         let bounds = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
         var ascent: CGFloat = 0

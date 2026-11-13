@@ -64,11 +64,16 @@ struct SettingsSidebar: View {
 private struct SettingsSidebarPageRow: View {
     let page: SettingsPageMetadata
     let isSelected: Bool
+    @Environment(\.backgroundProminence) private var backgroundProminence
 
     var body: some View {
         Label(page.title, systemImage: page.systemImage)
             .lineLimit(1)
             .labelStyle(SettingsSidebarLabelStyle(isSelected: isSelected))
+            // On the accent-coloured selection of a focused list.
+            .foregroundStyle(backgroundProminence == .increased
+                ? AnyShapeStyle(SakuraCordAccentColor.label(on: Color(nsColor: .selectedContentBackgroundColor)))
+                : AnyShapeStyle(.primary))
             .tag(page.id)
     }
 }
@@ -114,7 +119,7 @@ private struct SettingsSidebarLabelStyle: LabelStyle {
             configuration.icon
                 .symbolVariant(.fill)
                 .foregroundStyle(
-                    isSelected ? Color.primary : SakuraCordAccentColor.color
+                    isSelected ? AnyShapeStyle(.foreground) : AnyShapeStyle(SakuraCordAccentColor.color)
                 )
                 .frame(width: InterfaceScale.metric(16))
             configuration.title

@@ -230,7 +230,7 @@ extension NativeTimelineRowPainter {
         if let header = alert.header {
             NSColor.sakuraCordAccentColor.setFill()
             NSBezierPath(ovalIn: header.avatarFrame).fill()
-            systemSymbol("checkmark.shield.fill", in: header.avatarFrame, color: .white,
+            systemSymbol("checkmark.shield.fill", in: header.avatarFrame, color: .sakuraCordLabelOnAccentColor,
                          inset: header.avatarFrame.width * 0.25, weight: .semibold)
             if let context = NSGraphicsContext.current?.cgContext {
                 header.name.draw(in: header.nameFrame, color: .sakuraCordAccentColor, context: context)

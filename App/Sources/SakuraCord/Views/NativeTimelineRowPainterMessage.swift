@@ -965,7 +965,7 @@ extension NativeTimelineRowPainter {
                 ofSize: frame.height * 0.42,
                 weight: .semibold
             ),
-            color: .white,
+            color: SakuraCordAccentColor.labelNSColor(on: darker.blended(withFraction: 0.5, of: lighter) ?? accent),
             alignment: .center
         )
     }
@@ -1281,7 +1281,7 @@ extension NativeTimelineRowPainter {
             color: .secondaryLabelColor
         )
         // Like Discord, hovering fills the pill and turns its content white.
-        let pillContentColor: NSColor = isPillHovered ? .white : .sakuraCordAccentColor
+        let pillContentColor: NSColor = isPillHovered ? .sakuraCordLabelOnAccentColor : .sakuraCordAccentColor
         NSColor.sakuraCordAccentColor.withAlphaComponent(isPillHovered ? 1 : 0.16).setFill()
         NSBezierPath(
             roundedRect: region.pillFrame,
@@ -1477,7 +1477,7 @@ extension NativeTimelineRowPainter {
     ) {
         let colors = sakuraCordDeepLinkColors(for: region.action)
         let outgoing = bubbleRegion?.isOutgoing == true
-        let accent = outgoing ? NSColor.white : colors.first ?? NSColor.sakuraCordAccentColor
+        let accent = outgoing ? NSColor.sakuraCordLabelOnAccentColor : colors.first ?? NSColor.sakuraCordAccentColor
         let cardCornerRadius = ChatChromeMetrics.composerCornerRadius
         let shape = NSBezierPath(
             concentricRoundedRect: region.cardFrame,
@@ -1536,7 +1536,8 @@ extension NativeTimelineRowPainter {
 
         sakuraCordButton(title: region.action.buttonTitle, frame: region.buttonFrame,
             isHovered: isButtonHovered, pressProgress: buttonPressProgress,
-            colors: outgoing ? [.white] : colors, foreground: outgoing ? .sakuraCordAccentColor : .white)
+            colors: outgoing ? [.sakuraCordLabelOnAccentColor] : colors, foreground: outgoing ? .sakuraCordAccentColor
+                : SakuraCordAccentColor.labelNSColor(on: colors.first ?? .sakuraCordAccentColor))
     }
 
     static func sakuraCordDeepLinkButton(
