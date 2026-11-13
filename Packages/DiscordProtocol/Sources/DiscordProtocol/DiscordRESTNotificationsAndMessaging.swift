@@ -493,8 +493,11 @@ extension DiscordRESTProvider {
 
     /// Drops a staged file's early upload: an unfinished transfer stops and a
     /// stored file is deleted, as the first-party composer does on removal.
+    /// A file a message being posted refers to is kept; the post settles it.
     public func discardPreuploadedAttachment(_ attachmentID: UUID) async {
-        guard let preupload = attachmentPreuploads.removeValue(forKey: attachmentID) else { return }
+        guard !postingAttachmentUploads.contains(attachmentID),
+              let preupload = attachmentPreuploads.removeValue(forKey: attachmentID)
+        else { return }
         attachmentUploadDelegates[attachmentID]?.cancel()
         preupload.cancel()
         guard let uploadFilename = try? await preupload.value,

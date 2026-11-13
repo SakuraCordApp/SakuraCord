@@ -97,6 +97,29 @@ struct UploadCancellationContractTests {
         _ = await send.result
     }
 
+    /// Removing a stored file from the composer while a scheduled message that
+    /// refers to it is posting must not delete it from storage under the post.
+    @Test func storedFileOfAScheduledMessageBeingPostedIsKept() async throws {
+        let fixture = HeldStorageFixture()
+        let directory = try fixture.directory(containing: ["kept.bin"])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let attachment = ForumPostAttachment(url: directory.appending(path: "kept.bin"), filename: "kept.bin")
+        let provider = fixture.provider(holdsEveryUpload: false)
+        let channelID = ChannelID(rawValue: 200)
+        #expect(await provider.preuploadAttachment(attachment, channelID: channelID, progress: { _ in }))
+        let schedule = Task {
+            try await provider.scheduleMessage(
+                SendMessageDraft(channelID: channelID, content: "", attachments: [attachment]), at: .now.addingTimeInterval(3600)
+            )
+        }
+        #expect(await eventually { fixture.events.postedNames != nil })
+        await provider.discardPreuploadedAttachment(attachment.id)
+        #expect(await provider.cancelAttachmentUpload(attachment.id) == false)
+        #expect(!fixture.events.requests.contains { $0.hasPrefix("DELETE") })
+        fixture.session?.invalidateAndCancel()
+        _ = await schedule.result
+    }
+
     /// A file stored as it was attached posts as it is rather than uploading
     /// twice, and one removed from the draft is deleted from storage.
     @Test func filesStoredOnAttachPostWithoutUploadingAgain() async throws {
@@ -224,7 +247,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
         var data = Data()
         if request.httpMethod == "POST" {
             let body = Self.requestBody(request)
-            if url.path.hasSuffix("/messages") {
+            if url.path.hasSuffix("/messages") || url.path.hasSuffix("/scheduled-messages") {
                 let attachments = body?["attachments"] as? [[String: Any]]
                 report(.posted(attachments?.compactMap { $0["filename"] as? String } ?? []))
                 return hold()

@@ -12,7 +12,8 @@ struct InboxScheduledMessagesView: View {
         Group {
             if state.messages.isEmpty, state.isLoading || !state.hasLoaded, state.errorMessage == nil {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if state.messages.isEmpty {
+            } else if state.messages.isEmpty, state.hasLoaded {
+                // Only a list read once is known to be empty; a failed first read shows just its error.
                 ContentUnavailableView {
                     Label("Send it at the perfect moment", systemImage: "calendar.badge.clock")
                 } description: {
