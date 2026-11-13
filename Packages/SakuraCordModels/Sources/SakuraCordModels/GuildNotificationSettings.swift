@@ -83,6 +83,21 @@ public struct GuildNotificationSettings: Codable, Hashable, Sendable {
         }
     }
 
+    /// Edits a channel's override where it sits, or appends one. Discord keeps
+    /// override order, and pinned channels with equal positions follow it.
+    public mutating func updateChannelOverride(
+        _ channelID: ChannelID,
+        _ mutation: (inout ChannelNotificationOverride) -> Void
+    ) {
+        if let index = channelOverrides.firstIndex(where: { $0.channelID == channelID }) {
+            mutation(&channelOverrides[index])
+        } else {
+            var override = ChannelNotificationOverride(channelID: channelID)
+            mutation(&override)
+            channelOverrides.append(override)
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case guildID
         case messageNotifications

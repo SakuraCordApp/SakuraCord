@@ -108,7 +108,7 @@ public extension DiscordRESTProvider {
         if !channels.isEmpty {
             patch["channel_overrides"] = .object(Dictionary(uniqueKeysWithValues: channels.map { channelID, selected in
                 let flags = cached?.channelOverrides.first { $0.channelID == channelID }?.flags ?? 0
-                let updated = selected ? flags | GuildChannelSelection.selectedFlag : flags & ~(GuildChannelSelection.selectedFlag | GuildChannelSelection.favoriteFlag)
+                let updated = selected ? flags | GuildChannelSelection.selectedFlag : flags & ~(GuildChannelSelection.selectedFlag | ChannelNotificationOverride.pinnedFlag)
                 return (channelID.description, .object(["flags": .number(Double(updated))]))
             }))
         }
