@@ -155,6 +155,12 @@ nonisolated struct SakuraCordThemeRGB: Hashable, Sendable {
         self.blue = blue
     }
 
+    /// The colour's sRGB components, resolved in the current appearance.
+    init(_ color: NSColor) {
+        let color = color.usingColorSpace(.sRGB) ?? color
+        self.init(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent)
+    }
+
     func blended(toward target: Self, fraction: Double) -> Self {
         target.composited(over: self, opacity: fraction)
     }

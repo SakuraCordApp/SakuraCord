@@ -20,7 +20,9 @@ enum SakuraCordAccentColor {
     }
 
     static func labelNSColor(on fill: NSColor) -> NSColor {
-        SakuraCordThemeRGB(fill).relativeLuminance > 0.5 ? .black : .white
+        let fill = fill.usingColorSpace(.sRGB) ?? fill
+        let rgb = SakuraCordThemeRGB(red: fill.redComponent, green: fill.greenComponent, blue: fill.blueComponent)
+        return rgb.relativeLuminance > 0.5 ? .black : .white
     }
 
     static var labelOnFill: Color {
@@ -69,13 +71,5 @@ extension NSColor {
     /// Resolved when drawn, so cached text layouts follow accent changes.
     static let sakuraCordLabelOnAccentColor = NSColor(name: nil) { _ in
         MainActor.assumeIsolated { SakuraCordAccentColor.labelOnFillNSColor }
-    }
-}
-
-extension SakuraCordThemeRGB {
-    /// The colour's sRGB components, resolved in the current appearance.
-    init(_ color: NSColor) {
-        let color = color.usingColorSpace(.sRGB) ?? color
-        self.init(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent)
     }
 }
