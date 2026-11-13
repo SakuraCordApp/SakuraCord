@@ -220,10 +220,18 @@ extension AppModel {
         // counts, so a deleted or hidden channel never blocks an addition.
         var counted = settings
         counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
-        let limit = counted.limitBlockingAddition(premiumType: currentUser?.premiumType ?? 0)
+        let premiumType = currentUser?.premiumType ?? 0
+        let limit = counted.limitBlockingAddition(premiumType: premiumType)
         if isFavorite(channelID) {
             updateFavorites(.remove(channelID))
         } else if limit == nil {
+            // Unseen favourites stay stored until keeping them would push the
+            // save past Discord's limit; then they go, as Discord prunes them.
+            if settings.limitBlockingAddition(premiumType: premiumType) != nil {
+                for entry in settings.entries where !entry.isCategory && !counted.entries.contains(entry) {
+                    updateFavorites(.remove(entry.id))
+                }
+            }
             updateFavorites(.add(channelID, channelType: channelType))
         } else if featuresSettings.unlimitedFavorites {
             addLocalFavorite(channelID, channelType: channelType)

@@ -1554,7 +1554,9 @@ private struct ChannelRow: View {
                     toggle: { model.toggleChannelPin(channel) }
                 ),
                 favoriteItems: {
-                    FavoritesMenu.toggleItems(for: channel.id, channelType: channel.favoriteChannelType, model: model)
+                    FavoritesMenu.toggleItems(
+                        for: channel.id, channelType: channel.favoriteChannelType, model: model, isChecking: isChecking
+                    )
                 }
             )
         }

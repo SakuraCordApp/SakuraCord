@@ -4,14 +4,19 @@ import SakuraCordModels
 /// Favorites server items for channel, thread and DM context menus.
 @MainActor
 enum FavoritesMenu {
-    /// Outside Favorites: Add to Favorites, or Remove for a favourite.
-    static func toggleItems(for channelID: ChannelID, channelType: Int, model: AppModel) -> [NSMenuItem] {
+    /// Outside Favorites: Add to Favorites, or Remove for a favourite. While
+    /// the channel's access is still being checked only removal is offered.
+    static func toggleItems(
+        for channelID: ChannelID, channelType: Int, model: AppModel, isChecking: Bool = false
+    ) -> [NSMenuItem] {
         let isFavorite = model.isFavorite(channelID)
         guard model.favorites.settings != nil, isFavorite || model.canAddFavorite(channelID) else { return [] }
-        return [item(isFavorite ? "Remove from Favorites" : "Add to Favorites",
-                     systemImage: isFavorite ? "star.slash" : "star") {
+        let toggle = item(isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                          systemImage: isFavorite ? "star.slash" : "star") {
             model.toggleFavorite(channelID, channelType: channelType)
-        }]
+        }
+        toggle.isEnabled = isFavorite || !isChecking
+        return [toggle]
     }
 
     /// A favourite's own menu inside Favorites, as Discord offers it.

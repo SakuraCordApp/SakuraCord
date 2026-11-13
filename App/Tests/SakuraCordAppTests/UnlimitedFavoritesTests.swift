@@ -39,4 +39,19 @@ struct UnlimitedFavoritesTests {
         #expect(!model.isFavorite(ChannelID(rawValue: 5)))
         #expect(model.favorites.localEntries.map(\.id.rawValue) == [5])
     }
+
+    /// Guards the account: an addition never sends Discord more favourites
+    /// than the limit, even when an unseen (deleted) favourite is stored.
+    @Test func `an addition at the limit drops unseen favourites instead of exceeding it`() {
+        let model = AppModel(launchMode: .offlineTesting)
+        let stored = [
+            FavoritesSettings.Entry(id: ChannelID(rawValue: 1), position: 1, channelType: 11),
+            FavoritesSettings.Entry(id: ChannelID(rawValue: 2), position: 2, channelType: 11),
+            FavoritesSettings.Entry(id: ChannelID(rawValue: 3), position: 3, channelType: 0),
+        ]
+        _ = model.consumeFavoritesEvent(.favoritesChanged(FavoritesSettings(entries: stored), isConfirmed: true))
+
+        model.toggleFavorite(ChannelID(rawValue: 4), channelType: 11)
+        #expect(model.favorites.settings?.entries.map(\.id.rawValue) == [1, 2, 4])
+    }
 }

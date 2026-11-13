@@ -370,7 +370,9 @@ When a favourited channel is deleted, the official client removes it from
 Favorites itself after `CHANNEL_DELETE`; SakuraCord does the same. A channel the
 account can no longer see stays stored but hidden. Unlike the official client,
 SakuraCord does not prune such entries on its next write, because an
-incomplete channel catalogue cannot prove a channel is gone. Category collapse
+incomplete channel catalogue cannot prove a channel is gone, except when
+keeping them would push an addition past the limit: that save drops them, so
+Discord never receives more favourites than the account allows. Category collapse
 stays local: the captured collapse save did not carry it.
 
 **Unlimited favorites** (Features › FakeNitro, app-wide, off by default) keeps
