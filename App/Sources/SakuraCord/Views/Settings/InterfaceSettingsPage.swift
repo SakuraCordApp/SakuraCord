@@ -158,16 +158,6 @@ private struct InterfaceMessagesSection: View {
                         neutralValue: InterfaceTypographyMetrics.defaultMessageTextSize
                     ) {
                         Text("Font size", bundle: #bundle)
-                    } minimumValueLabel: {
-                        Image(systemName: "textformat.size.smaller")
-                            .font(.interface(.caption))
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel(Text("Smaller", bundle: #bundle))
-                    } maximumValueLabel: {
-                        Image(systemName: "textformat.size.larger")
-                            .font(.interface(.title3))
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel(Text("Larger", bundle: #bundle))
                     } tick: { stop in
                         stop == InterfaceTypographyMetrics.defaultMessageTextSize
                             ? SliderTick(stop) { Text("Default", bundle: #bundle) }
