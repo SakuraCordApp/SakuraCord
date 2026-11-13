@@ -226,13 +226,12 @@ extension AppModel {
             updateFavorites(.remove(channelID))
         } else if limit == nil {
             // Unseen favourites stay stored until keeping them would push the
-            // save past Discord's limit; then they go, as Discord prunes them.
-            if settings.limitBlockingAddition(premiumType: premiumType) != nil {
-                for entry in settings.entries where !entry.isCategory && !counted.entries.contains(entry) {
-                    updateFavorites(.remove(entry.id))
-                }
-            }
-            updateFavorites(.add(channelID, channelType: channelType))
+            // save past Discord's limit; then they go in the same save, as
+            // Discord prunes them, so Discord never receives more.
+            let pruned = settings.limitBlockingAddition(premiumType: premiumType) == nil ? [] : settings.entries
+                .filter { !$0.isCategory && !counted.entries.contains($0) }
+                .map { FavoritesSettings.Edit.remove($0.id) }
+            updateFavorites(pruned + [.add(channelID, channelType: channelType)])
         } else if featuresSettings.unlimitedFavorites {
             addLocalFavorite(channelID, channelType: channelType)
         } else {
@@ -254,13 +253,18 @@ extension AppModel {
     }
 
     func updateFavorites(_ edit: FavoritesSettings.Edit) {
-        if applyLocalFavoriteEdit(edit) { return }
-        guard var settings = favorites.settings else { return }
-        settings.apply(edit)
+        updateFavorites([edit])
+    }
+
+    /// Edits Discord owns reach the provider in one call, so they share a save.
+    func updateFavorites(_ edits: [FavoritesSettings.Edit]) {
+        let synced = edits.filter { !applyLocalFavoriteEdit($0) }
+        guard !synced.isEmpty, var settings = favorites.settings else { return }
+        synced.forEach { settings.apply($0) }
         presentFavorites(settings, isConfirmed: false)
         startAccountChildTask(account: accountSession()) { model, account in
             do {
-                try await account.provider.updateFavorites(edit)
+                try await account.provider.updateFavorites(synced)
             } catch {
                 guard model.isCurrentAccountSession(account) else { return }
                 model.errorMessage = error.localizedDescription

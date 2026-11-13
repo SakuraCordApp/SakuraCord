@@ -6,20 +6,23 @@ extension DiscordRESTProvider {
         pendingFavorites ?? favoritesMessage.map(DiscordFavoritesProto.settings(from:))
     }
 
-    /// Applies an edit optimistically and saves it at once, like the
-    /// first-party `INFREQUENT_USER_ACTION` (0 s) settings write. Edits made
-    /// while a save is in flight are coalesced into one follow-up save of the
-    /// newest state instead of being discarded with the response.
-    public func updateFavorites(_ edit: FavoritesSettings.Edit) async throws {
+    /// Applies edits optimistically and saves them at once, like the
+    /// first-party `INFREQUENT_USER_ACTION` (0 s) settings write. The edits of
+    /// one call always share a save; edits made while a save is in flight are
+    /// coalesced into one follow-up save of the newest state instead of being
+    /// discarded with the response.
+    public func updateFavorites(_ edits: [FavoritesSettings.Edit]) async throws {
         guard let favoritesMessage else {
             throw ChatProviderError.invalidRequest("Wait for your account settings to finish loading.")
         }
-        var edit = edit
-        if case let .add(id, channelType) = edit {
-            edit = .add(id, channelType: storedChannelType(id) ?? channelType)
-        }
         var next = pendingFavorites ?? DiscordFavoritesProto.settings(from: favoritesMessage)
-        next.apply(edit)
+        for edit in edits {
+            if case let .add(id, channelType) = edit {
+                next.apply(.add(id, channelType: storedChannelType(id) ?? channelType))
+            } else {
+                next.apply(edit)
+            }
+        }
         pendingFavorites = next
         continuation?.yield(.favoritesChanged(next, isConfirmed: false))
         guard favoritesSaveTask == nil else { return }
@@ -49,7 +52,7 @@ extension DiscordRESTProvider {
     /// The official client removes a deleted channel from Favorites itself.
     func removeDeletedFavorite(_ channelID: ChannelID) async {
         guard let settings = await favoritesSettings(), settings.contains(channelID) else { return }
-        try? await updateFavorites(.remove(channelID))
+        try? await updateFavorites([.remove(channelID)])
     }
 
     func finishFavoritesEdits() async {

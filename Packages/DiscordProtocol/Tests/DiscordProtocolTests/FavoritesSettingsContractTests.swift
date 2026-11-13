@@ -16,9 +16,9 @@ struct FavoritesSettingsContractTests {
         #expect(stored.isEnabled)
         #expect(stored.sections.map { $0.entries.map(\.id.rawValue) } == [[1_561_913_785_701_240_903, 1_569_394_316_240_097_365], [1_528_177_367_078_408_228]])
 
-        try await provider.updateFavorites(.remove(ChannelID(rawValue: 1_569_394_316_240_097_365)))
+        try await provider.updateFavorites([.remove(ChannelID(rawValue: 1_569_394_316_240_097_365))])
         await provider.favoritesSaveTask?.value
-        try await provider.updateFavorites(.add(ChannelID(rawValue: 1_466_495_335_391_297_617), channelType: 1))
+        try await provider.updateFavorites([.add(ChannelID(rawValue: 1_466_495_335_391_297_617), channelType: 1)])
         await provider.favoritesSaveTask?.value
 
         #expect(FavoritesURLProtocol.requests.map(\.method) == ["PATCH", "PATCH"])
@@ -38,9 +38,9 @@ struct FavoritesSettingsContractTests {
         #expect(await provider.favoritesSettings() == FavoritesSettings())
         #expect(FavoritesSettings().isEnabled == false)
 
-        try await provider.updateFavorites(.setVisible(true))
+        try await provider.updateFavorites([.setVisible(true)])
         await provider.favoritesSaveTask?.value
-        try await provider.updateFavorites(.setVisible(false))
+        try await provider.updateFavorites([.setVisible(false)])
         await provider.favoritesSaveTask?.value
 
         #expect(FavoritesURLProtocol.requests.map { $0.body["settings"] as? String } == ["egQaAggB", "egIaAA=="])
@@ -54,16 +54,44 @@ struct FavoritesSettingsContractTests {
         defer { FavoritesURLProtocol.responseDelay = nil }
         let provider = makeProvider()
         try await receiveReady(provider, settings: "CgMYnzA=")
-        try await provider.updateFavorites(.setVisible(true))
+        try await provider.updateFavorites([.setVisible(true)])
         try await Task.sleep(for: .milliseconds(100))
         // The official client would discard these with the first response.
-        try await provider.updateFavorites(.setVisible(false))
-        try await provider.updateFavorites(.setVisible(true))
-        try await provider.updateFavorites(.setVisible(false))
+        try await provider.updateFavorites([.setVisible(false)])
+        try await provider.updateFavorites([.setVisible(true)])
+        try await provider.updateFavorites([.setVisible(false)])
         await provider.favoritesSaveTask?.value
 
         #expect(FavoritesURLProtocol.requests.map { $0.body["settings"] as? String } == ["egQaAggB", "egIaAA=="])
         #expect(await provider.favoritesSettings()?.isEnabled == false)
+        await provider.disconnect()
+    }
+
+    @Test func `pruning and adding at the limit send one save that never exceeds it`() async throws {
+        FavoritesURLProtocol.reset()
+        FavoritesURLProtocol.responseDelay = .milliseconds(200)
+        defer { FavoritesURLProtocol.responseDelay = nil }
+        let provider = makeProvider()
+        let stored = FavoritesSettings(entries: (1 ... 3).map {
+            FavoritesSettings.Entry(id: ChannelID(rawValue: UInt64($0)), position: UInt32($0), channelType: 0)
+        }, storedVisibility: true)
+        let message = DiscordFavoritesProto.message(for: stored, preserving: Data())
+        try await receiveReady(provider, settings: DiscordSettingsProto.protoLengthDelimitedField(
+            DiscordFavoritesProto.settingsField, message
+        ).base64EncodedString())
+
+        // Channel 3 is a favourite the account can no longer see.
+        try await provider.updateFavorites([.remove(ChannelID(rawValue: 3)), .add(ChannelID(rawValue: 4), channelType: 0)])
+        await provider.favoritesSaveTask?.value
+
+        let saved = FavoritesURLProtocol.requests.compactMap { request in
+            (request.body["settings"] as? String).flatMap { Data(base64Encoded: $0) }
+                .flatMap(DiscordFavoritesProto.message(inSettings:))
+                .map(DiscordFavoritesProto.settings(from:))
+        }
+        #expect(saved.count == 1)
+        #expect(saved.allSatisfy { $0.entries.count(where: { !$0.isCategory }) <= 3 })
+        #expect(saved.first?.entries.map(\.id.rawValue) == [1, 2, 4])
         await provider.disconnect()
     }
 
