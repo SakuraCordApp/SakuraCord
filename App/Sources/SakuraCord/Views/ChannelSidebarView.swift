@@ -457,8 +457,24 @@ private struct GuildChannelList: View, Equatable {
         }
     }
     private func guildPageRow(_ title: String, symbol: String, page: GuildWorkspacePage) -> some View {
-        ChannelSidebarPageRow(title: title, symbol: symbol, isSelected: input.sidebarSelection == .page(page))
-            .tag(GuildSidebarSelection.page(page))
+        let isSelected = input.sidebarSelection == .page(page)
+        return HStack(spacing: InterfaceScale.metric(8)) {
+            Image(systemName: symbol)
+                .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
+                .fontWeight(.medium)
+                .foregroundStyle(isSelected ? Color.primary : .primary.opacity(0.70))
+                .frame(width: ChannelSidebarLayoutMetrics.iconWidth)
+            Text(title)
+                .font(.interfaceSystem(size: 14, weight: .regular))
+                .foregroundStyle(isSelected ? Color.primary : .primary.opacity(0.70))
+                .lineLimit(1)
+            Spacer()
+        }
+        .frame(minHeight: ChannelSidebarLayoutMetrics.minimumRowHeight)
+        .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
+        .accessibilityElement(children: .combine)
+        .tag(GuildSidebarSelection.page(page))
+        .overlay { ChannelRowHoverBridge(isSelected: isSelected) }
     }
 
 }
@@ -498,32 +514,6 @@ struct ChannelCategoryHeaderButton<Menu: View>: View {
         .buttonStyle(.plain)
         .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
         .overlay { menu }
-    }
-}
-
-/// A page or action row above a sidebar's channels, such as Server Guide.
-struct ChannelSidebarPageRow: View {
-    let title: String
-    let symbol: String
-    var isSelected = false
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(8)) {
-            Image(systemName: symbol)
-                .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
-                .fontWeight(.medium)
-                .foregroundStyle(isSelected ? Color.primary : .primary.opacity(0.70))
-                .frame(width: ChannelSidebarLayoutMetrics.iconWidth)
-            Text(title)
-                .font(.interfaceSystem(size: 14, weight: .regular))
-                .foregroundStyle(isSelected ? Color.primary : .primary.opacity(0.70))
-                .lineLimit(1)
-            Spacer()
-        }
-        .frame(minHeight: ChannelSidebarLayoutMetrics.minimumRowHeight)
-        .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
-        .accessibilityElement(children: .combine)
-        .overlay { ChannelRowHoverBridge(isSelected: isSelected) }
     }
 }
 

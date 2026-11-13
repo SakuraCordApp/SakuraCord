@@ -39,7 +39,6 @@ nonisolated enum ForwardDestinationSearchPolicy {
         let includesChannelRecipientsAsUsers: Bool
         let relationshipNicknamesByUserID: [UserID: String]
         let currentUserID: UserID?
-        let excludedUserIDs: Set<UserID>
         let guilds: [GuildID: Guild]
         let searchableChannelIDs: Set<ChannelID>?
     }
@@ -232,13 +231,17 @@ nonisolated enum ForwardDestinationSearchPolicy {
             recentChannelIDs: [ChannelID] = [],
             pinnedDestinationIDs: [ForwardDestinationID] = [],
             originChannelID: ChannelID? = nil,
+            excludedChannelIDs: Set<ChannelID> = [],
             categories: Set<ResultCategory>? = nil,
             limitPerCategory: Int = ForwardDestinationSearchPolicy.resultLimitPerCategory
         ) -> [ForwardDestination] {
             let normalizedQuery = ForwardDestinationSearchPolicy.normalize(query)
+            func isIncluded(_ destination: ForwardDestination) -> Bool {
+                destination.resolvedChannelID.map(excludedChannelIDs.contains) != true
+            }
             guard !normalizedQuery.isEmpty else {
                 return ForwardDestinationSearchPolicy.unqueriedResults(
-                    destinations: destinations,
+                    destinations: excludedChannelIDs.isEmpty ? destinations : destinations.filter(isIncluded),
                     usageScores: usageScores,
                     usageOrder: usageOrder,
                     recentChannelIDs: recentChannelIDs,
@@ -248,7 +251,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 )
             }
             return ForwardDestinationSearchPolicy.searchedResults(
-                searchRecords,
+                excludedChannelIDs.isEmpty ? searchRecords : searchRecords.filter { isIncluded($0.destination) },
                 query: normalizedQuery,
                 categories: categories,
                 limitPerCategory: limitPerCategory
@@ -347,7 +350,6 @@ nonisolated enum ForwardDestinationSearchPolicy {
         relationshipNicknamesByUserID: [UserID: String] = [:],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
         currentUserID: UserID? = nil,
-        excludedUserIDs: Set<UserID> = [],
         guilds: [GuildID: Guild],
         usageScores: [String: Int],
         maximumUsageScore: Int? = nil,
@@ -364,7 +366,6 @@ nonisolated enum ForwardDestinationSearchPolicy {
             includesChannelRecipientsAsUsers: includesChannelRecipientsAsUsers,
             relationshipNicknamesByUserID: relationshipNicknamesByUserID,
             currentUserID: currentUserID,
-            excludedUserIDs: excludedUserIDs,
             guilds: guilds,
             searchableChannelIDs: searchableChannelIDs
         ))
@@ -522,7 +523,6 @@ nonisolated extension ForwardDestinationSearchPolicy {
             : []
         return (source.users + channelRecipients).compactMap { user in
             guard user.id != source.currentUserID,
-                  !source.excludedUserIDs.contains(user.id),
                   seenUserIDs.insert(user.id).inserted
             else { return nil }
             return ForwardDestination(

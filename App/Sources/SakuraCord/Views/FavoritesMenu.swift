@@ -67,6 +67,17 @@ enum FavoritesMenu {
         return menu
     }
 
+    /// Discord's menu for the Favorites channel list outside its rows.
+    static func listMenu(model: AppModel) -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(item("Add to Favorites", systemImage: "plus") { model.favorites.isPickerPresented = true })
+        menu.addItem(.separator())
+        menu.addItem(item("Create Category", systemImage: "folder.fill.badge.plus") {
+            model.favorites.nameEditor = .createCategory
+        })
+        return menu
+    }
+
     /// A Favorites category's menu: Mark as Read, then Rename and Delete.
     static func categoryMenu(for category: FavoritesSettings.Entry, model: AppModel) -> NSMenu {
         let menu = NSMenu()

@@ -14,16 +14,6 @@ struct FavoritesSidebarView: View {
             // Discord's first-run sidebar: no favourite shown and no category.
             let isEmpty = settings.categories.isEmpty && model.favoriteConversations().isEmpty
             List(selection: selection) {
-                Button { model.favorites.nameEditor = .createCategory } label: {
-                    ChannelSidebarPageRow(title: "Create Category", symbol: "folder.fill.badge.plus")
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .selectionDisabled()
-                Divider()
-                    .listRowInsets(EdgeInsets())
-                    .selectionDisabled()
-                    .accessibilityHidden(true)
                 FavoriteSuggestionsSection(model: model)
                 if isEmpty { FavoritesEmptySidebarHint(model: model) }
                 ForEach(settings.sections) { section in
@@ -40,8 +30,11 @@ struct FavoritesSidebarView: View {
                 SidebarBottomScrollSpacer(height: bottomContentInset)
             }
             .modifier(ChannelSidebarListStyle())
+            .background { ListBackgroundMenuBridge { FavoritesMenu.listMenu(model: model) } }
             .padding(.top, ChatChromeMetrics.channelListTopPadding)
             .clipped()
+            // Discord recomputes suggestions whenever a source they read changes.
+            .onChange(of: model.forwardSearchSourceRevision) { model.refreshFavoriteSuggestions() }
         }
     }
 

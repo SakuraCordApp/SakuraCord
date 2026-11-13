@@ -100,7 +100,7 @@ extension DiscordRESTProvider {
             publishForumPosts(parentID: parentID)
         }
         publishActiveJoinedThreads()
-        if member.userID != nil, Self.isRecentJoin(member.joinTimestamp) {
+        if Self.isRecentJoin(member.joinTimestamp) {
             continuation?.yield(.currentUserThreadMembershipChanged(threadID: threadID, isJoined: true))
         }
     }

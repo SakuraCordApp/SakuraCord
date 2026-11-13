@@ -24,13 +24,21 @@ extension AppModel {
             return
         }
         let favoriteIDs = favoriteIDs
+        // A suggestion just added leaves in the same frame; the rest follow the recompute.
+        favorites.suggestions.removeAll { $0.resolvedChannelID.map(favoriteIDs.contains) == true }
+        let history = forwardDestinationHistory
         favorites.suggestionsTask = startAccountChildTask(account: accountSession()) { model, account in
             async let affinities = account.provider.conversationAffinities()
             // The picker's order falls back on frecency, which Discord keeps loaded.
             await model.loadDiscordEmojiSettings()
-            let index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: model, excluding: favoriteIDs)
-            let fallback = index.results(query: "", recentChannelIDs: model.forwardDestinationHistory)
-            let suggestions = model.favoriteSuggestions(affinities: await affinities, fallback: fallback)
+            let index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: model)
+            let fallback = await Task.detached(priority: .userInitiated) {
+                index.results(query: "", recentChannelIDs: history, excludedChannelIDs: favoriteIDs)
+            }.value
+            let resolvedAffinities = await affinities
+            // A newer recompute supersedes this one; skip its main-actor work.
+            guard !Task.isCancelled else { return }
+            let suggestions = model.favoriteSuggestions(affinities: resolvedAffinities, fallback: fallback)
             guard !Task.isCancelled, model.isCurrentAccountSession(account) else { return }
             model.favorites.suggestions = suggestions
         }
@@ -43,13 +51,27 @@ extension AppModel {
         affinities: ConversationAffinities, fallback: [ForwardDestination]
     ) -> [ForwardDestination] {
         let excludedUsers = ignoredUsers.blockedUserIDs.union(ignoredUsers.ignoredUserIDs)
+        let wantedChannelIDs = Set(affinities.channelIDs)
+        let wantedUserIDs = Set(affinities.userIDs).subtracting(excludedUsers)
+        // One pass collects just the affine channels and DMs.
+        var channelsByID: [ChannelID: Channel] = [:]
+        var directMessageIDs: [UserID: ChannelID] = [:]
+        for channel in snapshot?.channels ?? [] {
+            var isWanted = wantedChannelIDs.contains(channel.id)
+            if channel.kind == .directMessage, let recipient = channel.recipients.first?.id, wantedUserIDs.contains(recipient) {
+                if directMessageIDs[recipient] == nil { directMessageIDs[recipient] = channel.id }
+                isWanted = true
+            }
+            if isWanted { channelsByID[channel.id] = channel }
+        }
         var channels = affinities.channelIDs[...]
-        var users = affinities.userIDs.filter { !excludedUsers.contains($0) }.compactMap(directMessageChannelID)[...]
+        var users = affinities.userIDs.compactMap { directMessageIDs[$0] }[...]
         var fallback = fallback[...]
         var chosen: [ForwardDestination] = []
         func next(_ queue: inout ArraySlice<ChannelID>) -> ForwardDestination? {
             while let id = queue.popFirst() {
-                if let destination = favoriteSuggestion(channelID: id), !chosen.contains(where: { $0.id == destination.id }) {
+                if let destination = favoriteSuggestion(channelID: id, channelsByID: channelsByID),
+                   !chosen.contains(where: { $0.id == destination.id }) {
                     return destination
                 }
             }
@@ -68,15 +90,11 @@ extension AppModel {
         return chosen
     }
 
-    private func directMessageChannelID(_ userID: UserID) -> ChannelID? {
-        snapshot?.channels.first { $0.kind == .directMessage && $0.recipients.first?.id == userID }?.id
-    }
-
     /// A conversation Discord's favourites filter accepts: not a favourite,
     /// and for a server channel or thread, one the account can view.
-    private func favoriteSuggestion(channelID: ChannelID) -> ForwardDestination? {
+    private func favoriteSuggestion(channelID: ChannelID, channelsByID: [ChannelID: Channel]) -> ForwardDestination? {
         guard !isFavorite(channelID) else { return nil }
-        if let channel = knownRootChannel(channelID) {
+        if let channel = channelsByID[channelID] {
             switch channel.kind {
             case .directMessage:
                 return channel.recipients.first.map { ForwardDestination(kind: .user($0, directMessage: channel), guild: nil) }
@@ -88,7 +106,7 @@ extension AppModel {
             }
         }
         guard let thread = sidebarThread(channelID) ?? favorites.threads[channelID],
-              let parent = thread.parentID.flatMap(knownRootChannel),
+              let parent = thread.parentID.flatMap({ channelsByID[$0] ?? knownRootChannel($0) }),
               canViewFavoriteCandidate(parent)
         else { return nil }
         return ForwardDestination(kind: .thread(thread, parent: parent), guild: thread.guildID.flatMap { serverRailGuildsByID[$0] })
@@ -120,23 +138,32 @@ extension AppModel {
         addFavoriteDestinations([destination], categoryName: Self.favoriteSuggestionsCategoryName)
     }
 
-    /// Adds picked or suggested conversations; a person without a DM gets one
-    /// first, as Discord opens it before favouriting.
+    /// Adds picked or suggested conversations at once; a person without a
+    /// DM gets one first, as Discord opens it before favouriting.
     func addFavoriteDestinations(_ destinations: [ForwardDestination], parentID: ChannelID? = nil, categoryName: String? = nil) {
+        var additions: [FavoriteAddition] = []
+        var usersWithoutDirectMessage: [UserID] = []
+        for destination in destinations {
+            switch destination.kind {
+            case .channel(let channel):
+                additions.append(FavoriteAddition(id: channel.id, channelType: channel.favoriteChannelType))
+            case .thread(let thread, _):
+                additions.append(FavoriteAddition(id: thread.id, channelType: thread.isPrivate ? 12 : 11))
+            case .user(let user, let directMessage):
+                if let directMessage {
+                    additions.append(FavoriteAddition(id: directMessage.id, channelType: 1))
+                } else {
+                    usersWithoutDirectMessage.append(user.id)
+                }
+            }
+        }
+        guard !usersWithoutDirectMessage.isEmpty else {
+            return addFavorites(additions, parentID: parentID, categoryName: categoryName)
+        }
         startAccountChildTask(account: accountSession()) { model, account in
-            var additions: [FavoriteAddition] = []
-            for destination in destinations {
-                switch destination.kind {
-                case .channel(let channel):
-                    additions.append(FavoriteAddition(id: channel.id, channelType: channel.favoriteChannelType))
-                case .thread(let thread, _):
-                    additions.append(FavoriteAddition(id: thread.id, channelType: thread.isPrivate ? 12 : 11))
-                case .user(let user, let directMessage):
-                    if let directMessage {
-                        additions.append(FavoriteAddition(id: directMessage.id, channelType: 1))
-                    } else if let channel = try? await account.provider.ensurePrivateChannel(for: user.id) {
-                        additions.append(FavoriteAddition(id: channel.id, channelType: 1))
-                    }
+            for userID in usersWithoutDirectMessage {
+                if let channel = try? await account.provider.ensurePrivateChannel(for: userID) {
+                    additions.append(FavoriteAddition(id: channel.id, channelType: 1))
                 }
             }
             guard model.isCurrentAccountSession(account) else { return }

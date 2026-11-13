@@ -55,25 +55,32 @@ struct FavoritesPickerView: View {
         // follows the destination sources as Forward's does.
         .task(id: model.forwardSearchSourceRevision) {
             if !model.hasLoadedDiscordEmojiSettings { Task { await model.loadDiscordEmojiSettings() } }
-            index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: model, excluding: model.favoriteIDs)
+            index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: model)
+            await refreshResults()
             isSearchFocused = true
         }
-        .task(id: SearchRequest(query: query, pinnedIDs: pinnedIDs, sourceRevision: model.forwardSearchSourceRevision, hasIndex: index != nil)) {
-            refreshResults()
-        }
+        .task(id: SearchRequest(query: query, pinnedIDs: pinnedIDs)) { await refreshResults() }
         .onChange(of: query) { pinnedIDs = selection.map(\.id) }
     }
 
     private struct SearchRequest: Hashable {
         let query: String
         let pinnedIDs: [ForwardDestinationID]
-        let sourceRevision: UInt64
-        let hasIndex: Bool
     }
 
-    private func refreshResults() {
+    private func refreshResults() async {
         guard let index else { return }
-        results = index.results(query: query, recentChannelIDs: model.forwardDestinationHistory, pinnedDestinationIDs: pinnedIDs)
+        let request = SearchRequest(query: query, pinnedIDs: pinnedIDs)
+        let history = model.forwardDestinationHistory
+        let favoriteIDs = model.favoriteIDs
+        let found = await Task.detached(priority: .userInitiated) {
+            index.results(
+                query: request.query, recentChannelIDs: history,
+                pinnedDestinationIDs: request.pinnedIDs, excludedChannelIDs: favoriteIDs
+            )
+        }.value
+        guard !Task.isCancelled, request == SearchRequest(query: query, pinnedIDs: pinnedIDs) else { return }
+        results = found
     }
 
     private func toggle(_ destination: ForwardDestination) {

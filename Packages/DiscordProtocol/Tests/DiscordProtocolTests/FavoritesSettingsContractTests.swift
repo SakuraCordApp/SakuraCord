@@ -145,6 +145,33 @@ struct FavoritesSettingsContractTests {
         #expect(restored.count == dismissed.count)
     }
 
+    /// Reset made while the dismissal's save is in flight still restores
+    /// Suggested Channels in its own write, as the official client's optimistic
+    /// store does.
+    @Test func `reset after a pending dismissal clears bit 807 in the same write`() async throws {
+        FavoritesURLProtocol.reset()
+        FavoritesURLProtocol.holdResponses()
+        let provider = makeProvider()
+        let userContent = DiscordSettingsProto.protoLengthDelimitedField(1, Data([0x01]))
+        try await receiveReady(provider, settings: (
+            DiscordSettingsProto.protoLengthDelimitedField(DiscordUserContentProto.settingsField, userContent)
+                + DiscordSettingsProto.protoLengthDelimitedField(DiscordFavoritesProto.settingsField, Data([0x1A, 0x02, 0x08, 0x01]))
+        ).base64EncodedString())
+        let dismissal = Task { try await provider.setFavoritesSuggestionsDismissed(true) }
+        #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
+        try await provider.updateFavorites([.reset])
+        FavoritesURLProtocol.releaseHeldResponses()
+        try await dismissal.value
+        await provider.favoritesSaveTask?.value
+        #expect(FavoritesURLProtocol.requests.count == 2)
+
+        let resetBody = try #require((FavoritesURLProtocol.requests.last?.body["settings"] as? String).flatMap { Data(base64Encoded: $0) })
+        let savedContent = try #require(DiscordUserContentProto.message(inSettings: resetBody))
+        #expect(!DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: savedContent))
+        #expect(DiscordFavoritesProto.message(inSettings: resetBody) == Data())
+        await provider.disconnect()
+    }
+
     @Test func `moving a favourite renumbers display order like the official client`() {
         var settings = FavoritesSettings(entries: [
             .init(id: ChannelID(rawValue: 1), position: 3, channelType: 15),

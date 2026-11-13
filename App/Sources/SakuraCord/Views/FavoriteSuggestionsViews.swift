@@ -22,11 +22,17 @@ struct FavoriteSuggestionsSection: View {
                 HStack {
                     Text("Suggested Channels")
                     Spacer(minLength: 0)
-                    Button("Dismiss Suggested Channels", systemImage: "xmark", action: model.dismissFavoriteSuggestions)
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .help("Dismiss")
+                    HoverCloseButton(
+                        help: "Dismiss Suggested Channels",
+                        accessibilityIdentifier: "favorites-suggestions-dismiss",
+                        diameter: InterfaceScale.metric(22),
+                        iconSize: 11,
+                        action: model.dismissFavoriteSuggestions
+                    )
                 }
+                // The section header runs 7 pt past the rows; this puts the
+                // × glyph on the Add buttons' trailing edge.
+                .padding(.trailing, InterfaceScale.metric(7))
                 .foregroundStyle(Color.primary.opacity(0.5))
                 .interfaceFontOverride(.interface(.subheadline).weight(.bold))
             }
