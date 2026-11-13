@@ -289,7 +289,7 @@ enum SelectionFieldRenderer {
                     ),
                     withAttributes: [
                         .font: font,
-                        .foregroundColor: NSColor.white,
+                        .foregroundColor: NSColor.sakuraCordLabelOnAccentColor,
                     ]
                 )
             }

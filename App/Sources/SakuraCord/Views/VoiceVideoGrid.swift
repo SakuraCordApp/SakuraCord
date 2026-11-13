@@ -659,6 +659,7 @@ private struct VoiceStreamTile: View {
                     systemImage: "rectangle.on.rectangle.angled"
                 )
                     .font(metrics.font(12, weight: .semibold))
+                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                     .frame(
                         minWidth: metrics.value(isCentered ? 132 : 88),
                         minHeight: metrics.value(isCentered ? 42 : 34)

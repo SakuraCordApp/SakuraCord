@@ -518,6 +518,7 @@ extension NativeTimelineRowPainter {
                 region.text,
                 in: region.frame,
                 model: input.model,
+                bubble: input.bubbleRegion,
                 selectionRange:
                     input.textSelection?.itemIdentifier == input.itemIdentifier
                         && input.textSelection?.region == textRegion
@@ -814,7 +815,7 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static let bubbleIntegratedSectionTintColor = NSColor(
+    static let bubbleIntegratedSectionTintColor = NSColor(
         name: nil
     ) { appearance in
         switch appearance.bestMatch(from: [.darkAqua, .aqua]) {

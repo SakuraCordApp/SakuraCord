@@ -112,6 +112,8 @@ private struct ServerInviteLinkRow: View {
     let isCopied: Bool
     let copy: () -> Void
 
+    private var tint: Color { isCopied ? .green : SakuraCordAccentColor.color }
+
     var body: some View {
         HStack(spacing: InterfaceScale.metric(12)) {
             VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
@@ -127,13 +129,14 @@ private struct ServerInviteLinkRow: View {
             Button(action: copy) {
                 Label(isCopied ? "Copied" : "Copy", systemImage: isCopied ? "checkmark" : "doc.on.doc")
                     .font(.interface(.callout).weight(.semibold))
+                    .foregroundStyle(SakuraCordAccentColor.label(on: tint))
                     .contentTransition(.symbolEffect(.replace))
                     .padding(.horizontal, InterfaceScale.metric(12))
                     .frame(height: InterfaceScale.metric(32))
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .glassEffect(.regular.tint(isCopied ? .green : SakuraCordAccentColor.color).interactive(), in: Capsule())
+            .glassEffect(.regular.tint(tint).interactive(), in: Capsule())
             .help("Copy Invite Link")
             .accessibilityLabel(isCopied ? "Copied" : "Copy Invite Link")
         }

@@ -1289,7 +1289,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
                 String(name.prefix(1)).uppercased(),
                 rect: rect.offsetBy(dx: 0, dy: InterfaceScale.metric(5)),
                 font: .interfaceSystemFont(ofSize: 10, weight: .semibold),
-                color: .white,
+                color: .sakuraCordLabelOnAccentColor,
                 alignment: .center
             )
         }

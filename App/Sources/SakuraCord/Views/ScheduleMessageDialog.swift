@@ -104,10 +104,10 @@ struct ScheduleMessageDialog: View {
                     VStack(spacing: 2) {
                         Text(candidate.weekday)
                             .font(.caption)
-                            .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                            .foregroundStyle(isSelected ? AnyShapeStyle(SakuraCordAccentColor.labelOnFill.opacity(0.85)) : AnyShapeStyle(.secondary))
                         Text(candidate.number)
                             .font(.body.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                            .foregroundStyle(isSelected ? AnyShapeStyle(SakuraCordAccentColor.labelOnFill) : AnyShapeStyle(.primary))
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)

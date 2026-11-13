@@ -1038,6 +1038,7 @@ struct ServerRailSymbolButton: View {
                 ServerRailBadgedIcon(mentionCount: mentionCount) {
                     Image(systemName: systemImage)
                         .font(.interface(.title2))
+                        .foregroundStyle(isSelected || isHovering ? SakuraCordAccentColor.labelOnFill : .primary)
                         .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
                         .background(
                             isSelected || isHovering ? SakuraCordAccentColor.color : Color.secondary.opacity(0.16),

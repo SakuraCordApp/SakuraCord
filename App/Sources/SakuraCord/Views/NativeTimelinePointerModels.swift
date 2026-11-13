@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import QuartzCore
 import SakuraCordModels
 
@@ -59,6 +59,56 @@ enum NativeTimelineMentionAppearance {
     static func backgroundAlpha(isHovered: Bool, isTimestamp: Bool = false) -> CGFloat {
         isTimestamp ? (isHovered ? 0.18 : 0.12) : (isHovered ? 0.34 : 0.18)
     }
+
+    /// The colour of a mention's text, icon and pill in the current drawing
+    /// appearance. Role and accent colours keep their hue, but their OKLab
+    /// lightness moves until the text has WCAG AA contrast (4.5:1) on its
+    /// resting pill over every sample of the theme background, or over an
+    /// incoming bubble both plain and under its section tint. Persistent row
+    /// highlights tint by at most 14%, so 14% black and white overlays bound
+    /// them, and the colour stays the same in every row state.
+    static func color(for presentation: MentionPresentation, inBubble: Bool = false) -> NSColor {
+        if presentation.isTimestamp { return .labelColor }
+        let key = ColorKey(
+            // Resolved here because the accent fallback can change with no theme commit.
+            source: SakuraCordThemeRGB(NativeTimelineRowPainter.roleColor(presentation.colorHex) ?? .sakuraCordAccentColor),
+            inBubble: inBubble,
+            isDark: NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua,
+            theme: SakuraCordThemeStore.shared.committedTheme
+        )
+        if let color = colors[key] { return color }
+        let surfaces: [SakuraCordThemeRGB]
+        if inBubble {
+            let fill = SakuraCordThemeRGB(NativeTimelineBubbleDrawing.incomingFillColor)
+            let tint = NativeTimelineRowPainter.bubbleIntegratedSectionTintColor.usingColorSpace(.sRGB)
+                ?? NativeTimelineRowPainter.bubbleIntegratedSectionTintColor
+            surfaces = [fill, SakuraCordThemeRGB(tint).composited(over: fill, opacity: tint.alphaComponent)]
+        } else {
+            surfaces = key.theme.backgroundSamples(for: key.isDark ? .dark : .light)
+        }
+        let shaded = [SakuraCordThemeRGB.black, .white].flatMap { overlay in
+            surfaces.map { overlay.composited(over: $0, opacity: 0.14) }
+        }
+        let color = NSColor(key.source.withLightness(
+            reaching: 4.5,
+            against: surfaces + shaded,
+            tintOpacity: backgroundAlpha(isHovered: false)
+        ))
+        // One search takes up to 0.4 ms in a debug build, too long to repeat
+        // for every mention on every draw.
+        if colors.count >= 512 { colors.removeAll() }
+        colors[key] = color
+        return color
+    }
+
+    private struct ColorKey: Hashable {
+        let source: SakuraCordThemeRGB
+        let inBubble: Bool
+        let isDark: Bool
+        let theme: SakuraCordGradientTheme
+    }
+
+    private static var colors: [ColorKey: NSColor] = [:]
 }
 
 nonisolated struct NativeTimelineComponentButtonTarget: Hashable {
