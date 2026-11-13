@@ -77,9 +77,9 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
     ) -> Self {
         let baseFontSize: CGFloat =
             if message.type.hasGeneratedContent {
-                13
+                InterfaceTypographyMetrics.message(13)
             } else {
-                15
+                InterfaceTypographyMetrics.messageTextSize
             }
         let visibleContent =
             if message.type.hasGeneratedContent {
@@ -130,7 +130,7 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                 DiscordMarkdown.appKitAttributed(
                     prepared.markdownPlan,
                     baseFontSize: prepared.isEmojiOnly
-                        ? 48
+                        ? InterfaceTypographyMetrics.message(48)
                         : baseFontSize,
                     usesMessageLineHeight: !prepared.isEmojiOnly,
                     reservesCodeCopyButton: true
@@ -921,10 +921,20 @@ nonisolated enum MessageGrouping {
             && isGroupable(message)
             && !previous.isPostStarter
             && sharesAuthorIdentity(previous, message)
+            && !changesSilence(from: previous, to: message)
             && message.replyTo == nil
             && (interval >= 0 || message.isUnconfirmedLocalSend)
             && abs(interval) < continuationInterval
             && calendar.isDate(previous.timestamp, inSameDayAs: message.timestamp)
+    }
+
+    /// Discord heads a @silent message that follows an ordinary one, and a
+    /// mention that follows a @silent one, so the header shows which it is.
+    private static func changesSilence(from previous: Message, to message: Message) -> Bool {
+        let wasSilent = previous.flags.contains(.suppressNotifications)
+        guard message.flags.contains(.suppressNotifications) != wasSilent else { return false }
+        return !wasSilent
+            || !message.mentionedUsers.isEmpty || !message.mentionedRoleIDs.isEmpty || message.mentionsEveryone
     }
 
     /// One webhook ID posts under many names and avatars; Discord starts a

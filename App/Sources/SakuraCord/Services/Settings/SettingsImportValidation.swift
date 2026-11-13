@@ -28,6 +28,7 @@ nonisolated enum SettingsImportValidation {
         switch id {
         case .windowOpacity: return AppearanceSettingsSnapshot.windowOpacityRange.contains(number)
         case .messageDensity: return AppearanceSettingsSnapshot.messageSpacingRange.contains(number)
+        case .messageFontSize: return InterfaceTypographyMetrics.messageTextSizeRange.contains(CGFloat(number))
         case .interfaceSize: return InterfaceScale.range.contains(number)
         case .voiceInputVolume, .voiceOutputVolume: return (0 ... 2).contains(number)
         default: return true

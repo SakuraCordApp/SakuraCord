@@ -35,7 +35,7 @@ struct MediaViewerText: View {
             }
         }
         .mediaViewerTextPage()
-        .task(id: TextKey(url: url, colorScheme: colorScheme)) {
+        .task(id: TextKey(url: url, colorScheme: colorScheme, messageTextSize: InterfaceTypographyMetrics.messageTextSize)) {
             text = nil
             failed = false
             let loaded = try? await Self.text(of: url)
@@ -110,10 +110,12 @@ struct MediaViewerText: View {
         }
     }
 
-    /// The page follows the window's appearance, so the text is redrawn when it changes.
+    /// The page follows the window's appearance and the message font size,
+    /// so the text is redrawn when either changes.
     private struct TextKey: Equatable {
         let url: URL
         let colorScheme: ColorScheme
+        let messageTextSize: CGFloat
     }
 
     private static func attributed(
@@ -122,13 +124,13 @@ struct MediaViewerText: View {
         let notice = bytesLeft > 0
             ? "\n\n… \(NativeTimelineFileCard.sizeText(bytesLeft)) more. Download the file to see all of it."
             : ""
-        let fontSize = InterfaceScale.fontSize(13)
+        let fontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.message(13))
         if markdownLanguages.contains(language) {
             let document = NSMutableAttributedString(
                 attributedString: MarkdownDocumentText.make(MarkdownDocumentText.parse(text), codeBackground: background)
             )
             document.append(NSAttributedString(string: notice, attributes: [
-                .font: NSFont.interfaceSystemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
+                .font: NSFont.messageSystemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
             ]))
             return document
         }

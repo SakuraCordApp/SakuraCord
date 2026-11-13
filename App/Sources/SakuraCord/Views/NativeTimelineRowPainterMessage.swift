@@ -262,6 +262,9 @@ extension NativeTimelineRowPainter {
            let context = NSGraphicsContext.current?.cgContext {
             input.layout.timestampText?.draw(in: frame, color: .secondaryLabelColor, context: context)
         }
+        if let frame = input.layout.silentBadgeFrame {
+            NativeTimelineSilentBadge.draw(in: frame)
+        }
         if input.showsCompactTimestamp || input.model?.interfaceSettings.alwaysShowsTimestamps == true,
            let frame = input.layout.compactTimestampFrame
         {
@@ -339,7 +342,7 @@ extension NativeTimelineRowPainter {
             ).fill()
         }
         if let headerFrame = input.layout.forwardedHeaderFrame {
-            let baseFont = NSFont.interfaceSystemFont(
+            let baseFont = NSFont.messageSystemFont(
                 ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
                 weight: .semibold
             )
@@ -902,7 +905,7 @@ extension NativeTimelineRowPainter {
                     url: source.iconURL,
                     in: CGRect(
                         x: source.frame.minX + InterfaceScale.metric(6),
-                        y: source.frame.minY + InterfaceScale.metric(2),
+                        y: source.frame.midY - InterfaceScale.metric(9),
                         width: InterfaceScale.metric(18),
                         height: InterfaceScale.metric(18)
                     )
@@ -919,7 +922,7 @@ extension NativeTimelineRowPainter {
                     width: max(1, source.frame.maxX - labelX),
                     height: source.frame.height
                 ),
-                font: .interfaceSystemFont(
+                font: .messageSystemFont(
                     ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
                     weight: .medium
                 ),
