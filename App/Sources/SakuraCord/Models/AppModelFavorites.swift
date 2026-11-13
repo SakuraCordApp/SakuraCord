@@ -318,7 +318,9 @@ extension AppModel {
                     let id = ChannelID(timestamp: .now)
                     apply(.createCategory(id, name: categoryName))
                     parentID = id
-                } else {
+                } else if limit == nil {
+                    // Kept on this device instead, it stays uncategorised when
+                    // Discord's list has no room for the category.
                     if !isSilent { favorites.limitReached = FavoritesLimitNotice(limit: FavoritesSettings.maximumEntries, addition: addition) }
                     break
                 }

@@ -69,9 +69,11 @@ extension AppModel {
         guard favorites.suggestionPool.channels.count + favorites.suggestionPool.users.count < Self.favoriteSuggestionPoolDepth
         else { return }
         let history = forwardDestinationHistory
+        let favoriteIDs = favoriteIDs
         let index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: self)
+        // Discord's favourites filter applies before the list is capped.
         let fallback = await Task.detached(priority: .userInitiated) {
-            index.results(query: "", recentChannelIDs: history)
+            index.results(query: "", recentChannelIDs: history, excludedChannelIDs: favoriteIDs)
         }.value
         guard isCurrentAccountSession(account) else { return }
         publish(favoriteSuggestionPool(affinities: affinities, fallback: fallback))
@@ -130,7 +132,9 @@ extension AppModel {
         return FavoriteSuggestionPool(
             channels: resolved(affinities.channelIDs),
             users: resolved(affinities.userIDs.compactMap { directMessageIDs[$0] }),
-            fallback: Array(fallback.lazy.filter { $0.resolvedChannelID.map(favoriteIDs.contains) != true }.prefix(depth))
+            fallback: Array(fallback.lazy.filter {
+                $0.resolvedChannelID.map(favoriteIDs.contains) != true && self.isListableFavoriteCandidate($0)
+            }.prefix(depth))
         )
     }
 
@@ -153,6 +157,15 @@ extension AppModel {
               canViewFavoriteCandidate(parent)
         else { return nil }
         return ForwardDestination(kind: .thread(thread, parent: parent), guild: thread.guildID.flatMap { serverRailGuildsByID[$0] })
+    }
+
+    /// A picker candidate the Favorites list would show once added.
+    private func isListableFavoriteCandidate(_ destination: ForwardDestination) -> Bool {
+        switch destination.kind {
+        case .channel(let channel): channel.guildID == nil || canViewFavoriteCandidate(channel)
+        case .thread(_, let parent): parent.map(canViewFavoriteCandidate) ?? false
+        case .user: true
+        }
     }
 
     /// The Favorites list hides conversations without View Channel and Read
