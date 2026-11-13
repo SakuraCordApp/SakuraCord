@@ -63,9 +63,9 @@ enum NativeTimelineMentionAppearance {
     /// The colour of a mention's text, icon and pill in the current drawing
     /// appearance. Role and accent colours keep their hue, but their OKLab
     /// lightness moves until the text has WCAG AA contrast (4.5:1) on its
-    /// resting pill over `surface`, or over every sample of the theme
-    /// background when there is none. Row highlights and bubble section
-    /// tints shade a surface by at most 14%, so 14% black and white overlays
+    /// resting pill over every sample of the theme background, or over a
+    /// bubble's `surface` both plain and under its section tint. Persistent
+    /// row highlights tint by at most 14%, so 14% black and white overlays
     /// bound them, and the colour stays the same in every row state.
     static func color(for presentation: MentionPresentation, on surface: NSColor? = nil) -> NSColor {
         if presentation.isTimestamp { return .labelColor }
@@ -76,7 +76,8 @@ enum NativeTimelineMentionAppearance {
             theme: SakuraCordThemeStore.shared.committedTheme
         )
         if let color = colors[key] { return color }
-        let surfaces = key.surface.map { [$0] } ?? key.theme.backgroundSamples(for: key.isDark ? .dark : .light)
+        let surfaces = key.surface.map { [$0, sectionTinted($0)] }
+            ?? key.theme.backgroundSamples(for: key.isDark ? .dark : .light)
         let shaded = [SakuraCordThemeRGB.black, .white].flatMap { overlay in
             surfaces.map { overlay.composited(over: $0, opacity: 0.14) }
         }
@@ -100,6 +101,12 @@ enum NativeTimelineMentionAppearance {
     }
 
     private static var colors: [ColorKey: NSColor] = [:]
+
+    private static func sectionTinted(_ surface: SakuraCordThemeRGB) -> SakuraCordThemeRGB {
+        let tint = NativeTimelineRowPainter.bubbleIntegratedSectionTintColor.usingColorSpace(.sRGB)
+            ?? NativeTimelineRowPainter.bubbleIntegratedSectionTintColor
+        return rgb(tint).composited(over: surface, opacity: tint.alphaComponent)
+    }
 
     private static func rgb(_ color: NSColor) -> SakuraCordThemeRGB {
         let color = color.usingColorSpace(.sRGB) ?? color

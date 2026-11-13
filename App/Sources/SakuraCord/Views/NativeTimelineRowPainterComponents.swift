@@ -816,7 +816,7 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static let bubbleIntegratedSectionTintColor = NSColor(
+    static let bubbleIntegratedSectionTintColor = NSColor(
         name: nil
     ) { appearance in
         switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
