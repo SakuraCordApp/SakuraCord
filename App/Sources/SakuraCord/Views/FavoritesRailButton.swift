@@ -68,31 +68,38 @@ struct FavoritesDialogs: ViewModifier {
 private struct FavoritesNameEditorView: View {
     let model: AppModel
     let editor: FavoritesNameEditor
+    /// The favourite being nicknamed, as opposed to a category.
+    private let favorite: FavoritesSettings.Entry?
+    /// A cleared nickname shows the channel's own name.
+    private let channelName: String?
     @State private var draft: String
 
     init(model: AppModel, editor: FavoritesNameEditor) {
         self.model = model
         self.editor = editor
-        if case .rename(let entry) = editor { _draft = State(initialValue: entry.nickname) } else { _draft = State(initialValue: "") }
+        let entry: FavoritesSettings.Entry? = if case .rename(let renamed) = editor { renamed } else { nil }
+        let favorite = entry?.isCategory == false ? entry : nil
+        self.favorite = favorite
+        channelName = favorite.flatMap { model.favoriteConversation($0)?.channel.name }
+        _draft = State(initialValue: entry?.nickname ?? "")
     }
 
     var body: some View {
-        let nicknamed: FavoritesSettings.Entry? = if case .rename(let entry) = editor, !entry.isCategory { entry } else { nil }
         NameEditorPanel(
-            title: nicknamed != nil ? "Change Nickname" : editor == .createCategory ? "Create Category" : "Rename Category",
-            fieldTitle: nicknamed != nil ? "Nickname" : "Category Name",
-            placeholder: nicknamed.flatMap { model.favoriteConversation($0)?.channel.name } ?? "New Category",
+            title: favorite != nil ? "Change Nickname" : editor == .createCategory ? "Create Category" : "Rename Category",
+            fieldTitle: favorite != nil ? "Nickname" : "Category Name",
+            placeholder: channelName ?? "New Category",
             draft: $draft,
             actionTitle: editor == .createCategory ? "Create Category" : "Save",
             save: save
         ) {
-            if nicknamed != nil {
+            if favorite != nil {
                 Text("This name only appears in your Favorites.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } accessory: {
-            if let nicknamed, !nicknamed.nickname.isEmpty {
+            if favorite?.nickname.isEmpty == false {
                 Button("Reset Nickname") { draft = "" }
                     .buttonStyle(.link)
             }
@@ -100,11 +107,11 @@ private struct FavoritesNameEditorView: View {
     }
 
     private func save() {
-        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         switch editor {
         case .createCategory:
-            model.createFavoriteCategory(named: name)
+            model.createFavoriteCategory(named: draft)
         case .rename(let entry):
+            let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             // A category needs a name; a cleared nickname restores the channel's own.
             if !entry.isCategory || !name.isEmpty { model.updateFavorites(.rename(entry.id, nickname: name)) }
         }

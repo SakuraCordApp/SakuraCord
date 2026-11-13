@@ -15,6 +15,7 @@ struct NicknameEditorView: View {
             fieldTitle: isFriend ? "Friend Nickname" : "Nickname",
             placeholder: presentation.fallbackName,
             draft: Bindable(store).draft,
+            maximumLength: NicknameEditorStore.maximumLength,
             error: store.error,
             isSaving: store.isSaving,
             save: save
@@ -39,13 +40,6 @@ struct NicknameEditorView: View {
                     .buttonStyle(.link)
             }
         }
-        .onChange(of: store.draft) { _, value in
-            // Discord's 32-character limit counts UTF-16 units, as its text input does.
-            guard value.utf16.count > NicknameEditorStore.maximumLength else { return }
-            var trimmed = value
-            while trimmed.utf16.count > NicknameEditorStore.maximumLength { trimmed.removeLast() }
-            store.draft = trimmed
-        }
     }
 
     private func save() {
@@ -61,6 +55,8 @@ struct NameEditorPanel<Notice: View, Accessory: View>: View {
     let fieldTitle: String
     let placeholder: String
     @Binding var draft: String
+    /// Discord's limit in UTF-16 units, as its text input counts them.
+    var maximumLength: Int?
     var error: String?
     var isSaving = false
     var actionTitle = "Save"
@@ -80,7 +76,7 @@ struct NameEditorPanel<Notice: View, Accessory: View>: View {
             }
             .padding(.horizontal, 12)
             VStack(alignment: .leading, spacing: 8) {
-                NameEditorField(title: fieldTitle, placeholder: placeholder, draft: $draft, submit: save)
+                NameEditorField(title: fieldTitle, placeholder: placeholder, draft: $draft, maximumLength: maximumLength, submit: save)
                 if let error {
                     Text(error).font(.caption).foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
@@ -122,6 +118,7 @@ private struct NameEditorField: View {
     let title: String
     let placeholder: String
     @Binding var draft: String
+    let maximumLength: Int?
     let submit: () -> Void
     @FocusState private var isFocused: Bool
 
@@ -134,6 +131,12 @@ private struct NameEditorField: View {
                 .onSubmit(submit)
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .modifier(ModalInputSurface(isFocused: isFocused) { isFocused = true })
+                .onChange(of: draft) { _, value in
+                    guard let maximumLength, value.utf16.count > maximumLength else { return }
+                    var trimmed = value
+                    while trimmed.utf16.count > maximumLength { trimmed.removeLast() }
+                    draft = trimmed
+                }
                 .accessibilityLabel(title)
         }
         .task {
