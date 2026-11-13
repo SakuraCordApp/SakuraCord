@@ -24,7 +24,7 @@ struct IssueReportRowBackground: ViewModifier {
             .background(.quaternary.opacity(isHighlighted ? 0.8 : 0.5), in: shape)
             .overlay {
                 shape
-                    .strokeBorder(isHighlighted ? Color(nsColor: .keyboardFocusIndicatorColor) : .clear, lineWidth: 1.5)
+                    .strokeBorder(isHighlighted ? SakuraCordAccentColor.focusRing : .clear, lineWidth: 1.5)
             }
             .animation(.easeOut(duration: 0.15), value: isHighlighted)
         if let focus {

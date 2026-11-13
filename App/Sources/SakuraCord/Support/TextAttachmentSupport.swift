@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 extension NSTextView {
     func attachmentSelectionRects() -> [NSRect] {

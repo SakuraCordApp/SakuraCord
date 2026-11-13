@@ -21,7 +21,7 @@ extension View {
             .background(.background.opacity(0.72), in: Capsule())
             .overlay {
                 Capsule()
-                    .stroke(isEditorActive ? Color(nsColor: .keyboardFocusIndicatorColor) : .primary.opacity(0.12), lineWidth: 1)
+                    .stroke(isEditorActive ? SakuraCordAccentColor.focusRing : .primary.opacity(0.12), lineWidth: 1)
             }
             .background {
                 LoginTextEditorBridge(isActive: isEditorActive, onDismiss: onDismiss)

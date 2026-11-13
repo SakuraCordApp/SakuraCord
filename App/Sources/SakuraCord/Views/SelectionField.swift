@@ -308,7 +308,7 @@ struct SelectionField<ID: Hashable & Sendable>: View {
         .overlay {
             RoundedRectangle(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius)
                 .strokeBorder(isExpanded
-                    ? Color(nsColor: .keyboardFocusIndicatorColor)
+                    ? SakuraCordAccentColor.focusRing
                     : Color.primary.opacity(hovered ? 0.25 : 0.16), lineWidth: 1)
                 .allowsHitTesting(false)
         }

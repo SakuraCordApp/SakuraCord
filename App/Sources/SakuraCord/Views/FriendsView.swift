@@ -321,6 +321,6 @@ private struct AddFriendView: View {
     private func borderColor(_ friends: FriendsState) -> Color {
         if friends.addFriendError != nil { return Color(hex: 0xF23F43) }
         if friends.addFriendSuccess != nil { return Color(hex: 0x23A55A) }
-        return focusedField == nil ? .clear : Color(nsColor: .keyboardFocusIndicatorColor)
+        return focusedField == nil ? .clear : SakuraCordAccentColor.focusRing
     }
 }

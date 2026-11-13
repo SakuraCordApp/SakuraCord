@@ -225,7 +225,7 @@ extension NativeTimelineRowPainter {
                 highlight = label
             } else {
                 button = isFailed ? .systemRed : accent
-                glyph = isFailed ? .white : label
+                glyph = SakuraCordAccentColor.labelNSColor(on: button)
                 link = accent
                 failure = .systemRed
                 highlight = .labelColor

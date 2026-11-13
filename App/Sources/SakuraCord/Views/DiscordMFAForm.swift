@@ -173,7 +173,7 @@ struct DiscordMFAForm: View {
         .overlay {
             RoundedRectangle(cornerRadius: radius)
                 .stroke(
-                    isCurrent ? Color(nsColor: .keyboardFocusIndicatorColor) : .primary.opacity(0.12),
+                    isCurrent ? SakuraCordAccentColor.focusRing : .primary.opacity(0.12),
                     lineWidth: 1
                 )
         }

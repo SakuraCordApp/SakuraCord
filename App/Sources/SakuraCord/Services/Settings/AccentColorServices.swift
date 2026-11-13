@@ -16,7 +16,7 @@ enum SakuraCordAccentColor {
     /// labels stay white until the fill is light enough (relative luminance
     /// above 0.5) that black reads better.
     static var labelOnFillNSColor: NSColor {
-        labelNSColor(on: nsColor)
+        AppAccentColorController.shared.labelOnAccent
     }
 
     static func labelNSColor(on fill: NSColor) -> NSColor {
@@ -27,6 +27,11 @@ enum SakuraCordAccentColor {
 
     static var labelOnFill: Color {
         Color(nsColor: labelOnFillNSColor)
+    }
+
+    /// Custom focus outlines, drawn in the colour of AppKit's focus ring.
+    static var focusRing: Color {
+        Color(nsColor: .keyboardFocusIndicatorColor)
     }
 
     static func color(forRoleColorHex colorHex: UInt32?) -> Color {

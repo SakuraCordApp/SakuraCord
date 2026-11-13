@@ -237,7 +237,7 @@ struct InteractionModalFieldBackground: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
                         hasError ? Color.red.opacity(0.8)
-                            : (isFocused ? Color(nsColor: .keyboardFocusIndicatorColor) : .clear),
+                            : (isFocused ? SakuraCordAccentColor.focusRing : .clear),
                         lineWidth: 1.5
                     )
             }
