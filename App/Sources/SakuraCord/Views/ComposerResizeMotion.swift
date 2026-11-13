@@ -41,4 +41,5 @@ struct ComposerChromeKey: Equatable {
     var replyID: MessageID?
     var hasActiveCommand: Bool
     var hasTranslationHeader: Bool
+    var hasScheduleHeader: Bool
 }
