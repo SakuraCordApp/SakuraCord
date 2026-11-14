@@ -496,7 +496,7 @@ extension NativeTimelineCanvasView {
                 pressedComponentButton,
                 to: 0
             )
-            if TimelineButtonActivationPolicy.activates(
+            if NativeTimelinePointerActivationPolicy.activates(
                 pressed: pressedComponentButton,
                 released: hit?.target
             ), let hit

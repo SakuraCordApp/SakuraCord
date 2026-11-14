@@ -866,16 +866,6 @@ extension NativeTimelineRowPainter {
         return nil
     }
 
-    static func roleColor(_ value: UInt32?) -> NSColor? {
-        guard let value, value != 0 else { return nil }
-        return NSColor(
-            red: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
-    }
-
     static func measuredTextWidth(
         _ value: String,
         font: NSFont

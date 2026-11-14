@@ -20,4 +20,10 @@ extension NSColor {
             alpha: 1
         )
     }
+
+    /// A role or accent colour as Discord sends it, where 0 means none.
+    nonisolated convenience init?(discordColor value: UInt32?) {
+        guard let value, value != 0 else { return nil }
+        self.init(hex: value)
+    }
 }

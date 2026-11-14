@@ -202,12 +202,12 @@ extension NativeTimelineRowPainter {
                         color: presentedAuthor.isBot
                             ? .sakuraCordAccentColor
                             : display != .inNames
-                            ? .labelColor : roleColor(author?.roleColorHex) ?? .labelColor,
+                            ? .labelColor : NSColor(discordColor: author?.roleColorHex) ?? .labelColor,
                         context: context, isUnderlined: input.interaction.isAuthorHovered
                     )
                 }
             }
-            if display == .nextToNames, let color = roleColor(author?.roleColorHex) {
+            if display == .nextToNames, let color = NSColor(discordColor: author?.roleColorHex) {
                 roleDot(gradientColors ?? [color], in: CGRect(
                     x: frame.minX - InterfaceScale.metric(15),
                     y: frame.midY - InterfaceScale.metric(4.5),
@@ -221,9 +221,9 @@ extension NativeTimelineRowPainter {
 
     static func roleGradientColors(_ author: MessageAuthorPresentation?) -> [NSColor]? {
         RoleGradientPaint.colors(
-            primary: roleColor(author?.roleColorHex),
-            secondary: roleColor(author?.roleSecondaryColorHex),
-            tertiary: roleColor(author?.roleTertiaryColorHex)
+            primary: NSColor(discordColor: author?.roleColorHex),
+            secondary: NSColor(discordColor: author?.roleSecondaryColorHex),
+            tertiary: NSColor(discordColor: author?.roleTertiaryColorHex)
         )
     }
 
@@ -602,7 +602,7 @@ extension NativeTimelineRowPainter {
             discordCard(
                 region.frame,
                 cornerRadius: region.cornerRadius,
-                accent: roleColor(region.accentColor) ?? DiscordEmbedPalette.defaultAccent
+                accent: NSColor(discordColor: region.accentColor) ?? DiscordEmbedPalette.defaultAccent
             )
         } else if region.kind == .bubbleIntegratedCard, let bubbleRegion {
             bubbleIntegratedSection(
@@ -1130,7 +1130,7 @@ extension NativeTimelineRowPainter {
             displayName,
             font: font
         )
-        let roleColor = roleColor(presentation?.roleColorHex)
+        let roleColor = NSColor(discordColor: presentation?.roleColorHex)
         let showsIndicator = model?.accessibilitySettings.roleColorDisplay == .nextToNames && roleColor != nil
         let indicatorWidth: CGFloat = showsIndicator ? InterfaceScale.metric(16) : 0
         let authorFrame = CGRect(

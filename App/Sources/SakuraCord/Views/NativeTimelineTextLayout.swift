@@ -86,7 +86,7 @@ enum NativeTimelineTextPresentation {
             return empty()
         }
         let systemActorColor = source?.roleColorDisplay == .inNames
-            ? NativeTimelineRowPainter.roleColor(source?.authorPresentation(for: message).roleColorHex)
+            ? NSColor(discordColor: source?.authorPresentation(for: message).roleColorHex)
             : nil
         let plan = if message.type.hasGeneratedContent {
             NativeTimelineTextPlan.make(

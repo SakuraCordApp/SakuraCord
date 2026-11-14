@@ -71,16 +71,6 @@ extension NativeTimelineRowPainter {
 
     }
 
-    private static func isInsideHiddenComponentContainer(
-        _ frame: CGRect,
-        hiddenContainerFrames: [CGRect]
-    ) -> Bool {
-        NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
-            frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        )
-    }
-
     private static func isConcealedComponentContent(
         contentID: String,
         isSpoiler: Bool,
@@ -103,7 +93,7 @@ extension NativeTimelineRowPainter {
         for container in input.layout.containers {
             let isHidden = hiddenContainerFrames.contains(container.frame)
             if !isHidden,
-               isInsideHiddenComponentContainer(
+               NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                    container.frame,
                    hiddenContainerFrames: hiddenContainerFrames
                ) { continue }
@@ -122,7 +112,7 @@ extension NativeTimelineRowPainter {
                 discordCard(
                     container.frame,
                     cornerRadius: container.cornerRadius,
-                    accent: roleColor(container.accentColor)
+                    accent: NSColor(discordColor: container.accentColor)
                 )
             }
             if isHidden {
@@ -135,7 +125,7 @@ extension NativeTimelineRowPainter {
         }
         for separator in input.layout.separators
         where separator.drawsDivider
-            && !isInsideHiddenComponentContainer(
+            && !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                 separator.frame,
                 hiddenContainerFrames: hiddenContainerFrames
             ) {
@@ -156,7 +146,7 @@ extension NativeTimelineRowPainter {
         hiddenContainerFrames: [CGRect]
     ) {
         for (textIndex, region) in input.layout.textRegions.enumerated()
-        where !isInsideHiddenComponentContainer(
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
@@ -186,7 +176,7 @@ extension NativeTimelineRowPainter {
         hiddenContainerFrames: [CGRect]
     ) {
         for region in input.layout.mediaRegions
-        where !isInsideHiddenComponentContainer(
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
@@ -252,7 +242,7 @@ extension NativeTimelineRowPainter {
         hiddenContainerFrames: [CGRect]
     ) {
         for region in input.layout.buttons
-        where !isInsideHiddenComponentContainer(
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
@@ -276,7 +266,7 @@ extension NativeTimelineRowPainter {
             )
         }
         for region in input.layout.selects
-        where !isInsideHiddenComponentContainer(
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
@@ -299,7 +289,7 @@ extension NativeTimelineRowPainter {
         hiddenContainerFrames: [CGRect]
     ) {
         for region in input.layout.unsupported
-        where !isInsideHiddenComponentContainer(
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
@@ -339,7 +329,7 @@ extension NativeTimelineRowPainter {
             frame,
             bubbleRegion: bubbleRegion
         )
-        if let railColor = roleColor(accentColor)
+        if let railColor = NSColor(discordColor: accentColor)
             ?? (drawsNeutralRail
                 ? NSColor.secondaryLabelColor.withAlphaComponent(0.52)
                 : nil)
@@ -360,7 +350,7 @@ extension NativeTimelineRowPainter {
             if geometry.ownsBottomEdge,
                bubbleRegion.showsTail,
                !bubbleRegion.isOutgoing,
-               let accentColor = roleColor(accentColor)
+               let accentColor = NSColor(discordColor: accentColor)
             {
                 accentColor.setFill()
                 NativeTimelineBubbleDrawing.fillTailProtrusion(of: bubbleRegion)

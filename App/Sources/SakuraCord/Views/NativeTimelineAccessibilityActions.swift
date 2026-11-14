@@ -30,7 +30,7 @@ extension NativeTimelineCanvasView {
         // A file previews when pressed; its card's button downloads it.
         if let file, !isHiddenSpoiler {
             element.setAccessibilityCustomActions([
-                NSAccessibilityCustomAction(name: fileCardActionDescription(file, name: label)) { [weak self] in
+                NSAccessibilityCustomAction(name: fileCardAction(file, name: label).description) { [weak self] in
                     self?.activateFileCard(file)
                     return self != nil
                 },

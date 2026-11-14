@@ -344,7 +344,7 @@ extension AppModel {
 
     private func forumCardAuthor(for message: Message) -> ForumCardPresentation.Author {
         let presentation = authorPresentation(for: message)
-        let roleColor = NativeTimelineRowPainter.roleColor(presentation.roleColorHex)
+        let roleColor = NSColor(discordColor: presentation.roleColorHex)
         let display = accessibilitySettings.roleColorDisplay
         let color: NSColor? =
             if presentation.user.isBot {

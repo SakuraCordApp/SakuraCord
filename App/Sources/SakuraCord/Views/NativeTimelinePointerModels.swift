@@ -87,7 +87,7 @@ enum NativeTimelineMentionAppearance {
         if presentation.isTimestamp { return .labelColor }
         let key = ColorKey(
             // Resolved here because the accent fallback can change with no theme commit.
-            source: SakuraCordThemeRGB(NativeTimelineRowPainter.roleColor(presentation.colorHex) ?? .sakuraCordAccentColor),
+            source: SakuraCordThemeRGB(NSColor(discordColor: presentation.colorHex) ?? .sakuraCordAccentColor),
             inBubble: inBubble,
             isDark: NSAppearance.currentDrawing().isDark,
             theme: SakuraCordThemeStore.shared.committedTheme
@@ -191,18 +191,6 @@ nonisolated struct NativeTimelineHoverFade {
 
     func delayed(by interval: TimeInterval) -> Self {
         Self(from: from, to: to, start: start + interval)
-    }
-}
-
-nonisolated enum TimelineButtonActivationPolicy {
-    static func activates(
-        pressed: NativeTimelineComponentButtonTarget?,
-        released: NativeTimelineComponentButtonTarget?
-    ) -> Bool {
-        NativeTimelinePointerActivationPolicy.activates(
-            pressed: pressed,
-            released: released
-        )
     }
 }
 

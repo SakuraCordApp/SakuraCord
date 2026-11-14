@@ -138,10 +138,6 @@ extension NativeTimelineCanvasView {
     }
 
     /// What activating a file card does in its current download state.
-    func fileCardActionDescription(_ attachment: Attachment, name: String) -> String {
-        fileCardAction(attachment, name: name).description
-    }
-
     func fileCardAction(_ attachment: Attachment, name: String) -> (title: String, description: String) {
         switch model?.attachmentDownloads.states[attachment.id] {
         case .downloading: ("Cancel Download", "Cancel downloading \(name)")
