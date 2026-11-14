@@ -1472,12 +1472,7 @@ extension NativeTimelineRowPainter {
             NSBezierPath.clip(CGRect(x: frame.minX + barWidth, y: frame.minY, width: frame.width - barWidth, height: frame.height))
         }
         DiscordEmbedPalette.cardBorder.setStroke()
-        let border = NSBezierPath(
-            concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: cornerRadius - 0.5
-        )
-        border.lineWidth = 1
-        border.stroke()
+        NSBezierPath.strokeHairline(frame, cornerRadius: cornerRadius)
         NSGraphicsContext.restoreGraphicsState()
     }
 
@@ -1598,13 +1593,7 @@ extension NativeTimelineRowPainter {
                 isEnabled: isEnabled
             )
         ).setStroke()
-        let buttonBorder = NSBezierPath(
-            concentricRoundedRect:
-                frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: frame.height / 2 - 0.5
-        )
-        buttonBorder.lineWidth = 1
-        buttonBorder.stroke()
+        NSBezierPath.strokeHairline(frame, cornerRadius: frame.height / 2)
         text(
             title,
             in: frame,

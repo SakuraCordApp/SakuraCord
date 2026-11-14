@@ -1087,12 +1087,7 @@ extension NativeTimelineRowPainter {
         fill.setFill()
         NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: cornerRadius).fill()
         border.setStroke()
-        let outline = NSBezierPath(
-            concentricRoundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: max(0, cornerRadius - 0.5)
-        )
-        outline.lineWidth = 1
-        outline.stroke()
+        NSBezierPath.strokeHairline(region.frame, cornerRadius: cornerRadius)
         drawComponentButtonContent(region, color: foreground, drawsEmoji: !hasAnimatedEmojiOverlay)
         if isDimmed { context?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
@@ -1176,12 +1171,7 @@ extension NativeTimelineRowPainter {
         ).fill()
         // The open field's resting border.
         NSColor.labelColor.withAlphaComponent(0.16 * opacity).setStroke()
-        let border = NSBezierPath(
-            concentricRoundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: max(0, cornerRadius - 0.5)
-        )
-        border.lineWidth = 1
-        border.stroke()
+        NSBezierPath.strokeHairline(region.frame, cornerRadius: cornerRadius)
 
         let options = region.selectedOptions.map {
             ComponentChoiceOptionPresentation.fieldOption(
