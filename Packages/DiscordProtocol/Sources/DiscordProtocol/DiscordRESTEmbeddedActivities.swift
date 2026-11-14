@@ -386,10 +386,14 @@ private struct ActivityShelfDTO: Decodable {
             case isMonetized = "is_monetized"
         }
 
+        /// The application CONTEXTLESS_ACTIVITY flag, in `flags_new`.
+        private static let contextlessActivityFlag: UInt64 = 1 << 9
+
         /// The client's test for a contextless Activity: the
         /// CONTEXTLESS_ACTIVITY flag and the main embedded surface.
         var isContextless: Bool {
-            extendedFlags.flatMap(UInt64.init).map { $0 & 1 << 9 != 0 } == true && embeddedSurfaces?.contains(0) == true
+            extendedFlags.flatMap(UInt64.init).map { $0 & Self.contextlessActivityFlag != 0 } == true
+                && embeddedSurfaces?.contains(0) == true
         }
     }
 
@@ -433,7 +437,7 @@ private struct ActivityShelfDTO: Decodable {
                       let id = ApplicationID(application.id) else { return nil }
                 // Discord keys assets by name, so the last of a repeated name wins.
                 let cover = assets?[application.id]?.elements.last { $0.name == "embedded_cover" }
-                    .flatMap { URL(string: "https://cdn.discordapp.com/app-assets/\(id)/\($0.id).png?size=512") }
+                    .flatMap { DiscordCDN.applicationAsset(id.description, assetID: $0.id, fileExtension: "png", size: 512) }
                     ?? application.coverImage.flatMap { DiscordCDN.applicationImage(id, image: $0, size: 512) }
                 return EmbeddedActivityApplication(
                     id: id,

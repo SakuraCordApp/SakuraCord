@@ -10,10 +10,11 @@ struct ProfileGameGallery: View {
 
     private var items: [RichMediaItem] {
         let trailers = (game.metadata?.trailers ?? []).compactMap { trailer -> RichMediaItem? in
-            let base = "https://cdn.discordapp.com/app-assets/\(trailer.applicationID)/store/\(trailer.id)"
+            let assetID = "store/\(trailer.id)"
             let size = Self.supportedSize(Double(trailer.width) * displayScale)
-            guard let url = URL(string: "\(base).mp4?size=\(size)"),
-                  let preview = URL(string: "\(base).webp?size=\(size)") else { return nil }
+            guard let url = DiscordCDN.applicationAsset(trailer.applicationID, assetID: assetID, fileExtension: "mp4", size: size),
+                  let preview = DiscordCDN.applicationAsset(trailer.applicationID, assetID: assetID, fileExtension: "webp", size: size)
+            else { return nil }
             return RichMediaItem(
                 id: trailer.id,
                 media: MessageEmbedMedia(url: url, proxyURL: preview, width: trailer.width, height: trailer.height, contentType: "video/mp4"),

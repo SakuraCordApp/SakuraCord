@@ -296,7 +296,7 @@ public extension MockChatProvider {
         case .archived(let value): updated.thread.isArchived = value
         case .locked(let value): updated.thread.isLocked = value
         case .pinned(let value):
-            if value { updated.thread.flags |= 1 << 1 } else { updated.thread.flags &= ~(1 << 1) }
+            updated.thread.flags = updated.thread.flags(settingPinned: value)
         }
         posts[index] = updated
         forumPostsByChannel[parentID] = posts
@@ -469,7 +469,7 @@ public extension MockChatProvider {
                     lastMessageID: message.id, isArchived: index >= count / 2,
                     isLocked: index.isMultiple(of: 17),
                     ownerID: author.id, appliedTagIDs: tagSets[templateIndex],
-                    flags: index == 0 ? 1 << 1 : 0,
+                    flags: index == 0 ? MessageThreadSummary.pinnedFlag : 0,
                     archiveTimestamp: index >= count / 2 ? timestamp : nil,
                     createdAt: timestamp.addingTimeInterval(-1_800), totalMessageSent: index + 2
                 ),

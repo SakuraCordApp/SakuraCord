@@ -7,6 +7,17 @@ public enum DiscordCDN {
         URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\(image).png?size=\(size)")
     }
 
+    /// An application's asset, such as an Activity cover or, under `store/`,
+    /// a store trailer.
+    public static func applicationAsset(
+        _ applicationID: String, assetID: String, fileExtension: String, size: Int, animated: Bool = false
+    ) -> URL? {
+        URL(
+            string: "https://cdn.discordapp.com/app-assets/\(applicationID)/\(assetID).\(fileExtension)?size=\(size)"
+                + (animated ? "&animated=true" : "")
+        )
+    }
+
     /// An application's icon at 64 points, by the ID as Discord sent it.
     public static func applicationIcon(_ applicationID: String, hash: String) -> URL? {
         URL(string: "https://cdn.discordapp.com/app-icons/\(applicationID)/\(hash).webp?size=64")

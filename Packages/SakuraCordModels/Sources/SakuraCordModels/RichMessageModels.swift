@@ -450,7 +450,15 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
         self.notificationSettings = notificationSettings
     }
 
-    public var isPinned: Bool { flags & (1 << 1) != 0 }
+    /// Discord's thread PINNED flag, which pins a forum post.
+    public static let pinnedFlag: UInt64 = 1 << 1
+
+    public var isPinned: Bool { flags & Self.pinnedFlag != 0 }
+
+    /// `flags` with the PINNED flag set or cleared.
+    public func flags(settingPinned isPinned: Bool) -> UInt64 {
+        isPinned ? flags | Self.pinnedFlag : flags & ~Self.pinnedFlag
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id, guildID, parentID, name, messageCount, memberCount, lastMessageID

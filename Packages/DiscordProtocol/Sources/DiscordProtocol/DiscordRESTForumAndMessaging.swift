@@ -449,11 +449,7 @@ extension DiscordRESTProvider {
                 body: ["locked": .bool(value), "archived": .bool(wasArchived)]
             )
         case .pinned(let value):
-            var body: [String: JSONValue] = [
-                "flags": .number(
-                    Double(
-                        value ? working.thread.flags | (1 << 1) : working.thread.flags & ~(1 << 1)))
-            ]
+            var body: [String: JSONValue] = ["flags": .number(Double(working.thread.flags(settingPinned: value)))]
             if value, working.thread.isArchived { body["archived"] = .bool(false) }
             working = try await patchForumPost(working, body: body)
         }
