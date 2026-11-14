@@ -31,7 +31,7 @@ struct FavoritesSidebarView: View {
                 SidebarBottomScrollSpacer(height: bottomContentInset)
             }
             .modifier(ChannelSidebarListStyle())
-            .background { ListBackgroundMenuBridge { FavoritesMenu.listMenu(model: model) } }
+            .background { if model.favorites.isPresented { ListBackgroundMenuBridge { FavoritesMenu.listMenu(model: model) } } }
             .padding(.top, ChatChromeMetrics.channelListTopPadding)
             .clipped()
             // Discord recomputes suggestions whenever a source they read changes.
@@ -40,10 +40,12 @@ struct FavoritesSidebarView: View {
     }
 
     private var selection: Binding<ChannelID?> {
+        // The list stays mounted while Favorites is closed; hidden, it neither
+        // follows nor changes the open conversation.
         Binding(
-            get: { model.presentedFavoriteChannelID },
+            get: { model.favorites.isPresented ? model.presentedFavoriteChannelID : nil },
             set: { id in
-                guard let id else { return }
+                guard model.favorites.isPresented, let id else { return }
                 // Choosing the shown favourite again supersedes a navigation in flight, as in a server's channel list.
                 guard id != model.presentedFavoriteChannelID else { return model.cancelConversationNavigation() }
                 guard let favorite = model.favoriteConversations().first(where: { $0.id == id }) else { return }
@@ -55,7 +57,7 @@ struct FavoritesSidebarView: View {
     @ViewBuilder
     private func rows(_ section: FavoritesSettings.Section) -> some View {
         ForEach(section.entries.compactMap(model.favoriteConversation)) { favorite in
-            FavoriteRow(model: model, favorite: favorite, isSelected: model.presentedFavoriteChannelID == favorite.id)
+            FavoriteRow(model: model, favorite: favorite, isSelected: model.favorites.isPresented && model.presentedFavoriteChannelID == favorite.id)
                 .tag(favorite.id)
         }
     }

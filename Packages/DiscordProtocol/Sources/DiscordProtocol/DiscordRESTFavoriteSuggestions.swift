@@ -20,6 +20,7 @@ extension DiscordRESTProvider {
         let stored = message ?? Data()
         let wasDismissed = userContentMessage.map { DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: $0) }
         userContentMessage = stored
+        confirmedUserContentMessage = stored
         let isDismissed = DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: stored)
         if wasDismissed != isDismissed { continuation?.yield(.favoritesSuggestionsDismissed(isDismissed)) }
     }

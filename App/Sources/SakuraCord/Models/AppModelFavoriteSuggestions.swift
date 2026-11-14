@@ -25,9 +25,8 @@ extension AppModel {
         guard favorites.isPresented, favorites.suggestionsDismissed == false else {
             favorites.suggestionsTask?.cancel()
             favorites.suggestionsTask = nil
-            // Closing Favorites keeps its rows: removing a section from the
-            // list in the update that removes the list throws inside AppKit,
-            // and the window then stops drawing.
+            // Closing Favorites keeps the rows, so the hidden list doesn't
+            // churn and reopening shows them without animating them back in.
             if favorites.isPresented { favorites.suggestions = [] }
             return
         }
@@ -214,7 +213,7 @@ extension AppModel {
             case .channel(let channel):
                 additions.append(FavoriteAddition(id: channel.id, channelType: channel.favoriteChannelType))
             case .thread(let thread, _):
-                additions.append(FavoriteAddition(id: thread.id, channelType: thread.favoriteChannelType))
+                additions.append(FavoriteAddition(id: thread.id, channelType: favoriteChannelType(for: thread)))
             case .user(let user, let directMessage):
                 if let directMessage {
                     additions.append(FavoriteAddition(id: directMessage.id, channelType: 1))

@@ -203,8 +203,12 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var pendingFavorites: FavoritesSettings?
     var favoritesSaveTask: Task<Void, Never>?
     var favoritesGeneration: UInt64 = 0
-    /// The confirmed settings-proto/1 UserContentSettings message.
+    /// The settings-proto/1 UserContentSettings message, with any write still
+    /// awaiting Discord's answer applied.
     var userContentMessage: Data?
+    /// The UserContentSettings Discord last confirmed, which a failed write
+    /// rolls back to.
+    var confirmedUserContentMessage: Data?
     /// UserContentSettings a pending Favorites save carries, as Reset brings
     /// Suggested Channels back in the same write.
     var pendingUserContent: Data?

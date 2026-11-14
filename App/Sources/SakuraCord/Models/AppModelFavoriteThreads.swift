@@ -80,7 +80,7 @@ extension AppModel {
             ? thread.guildID.flatMap { serverRailGuildsByID[$0]?.name.trimmingCharacters(in: .whitespacesAndNewlines) }
             : nil
         addFavorites(
-            [FavoriteAddition(id: threadID, channelType: thread.favoriteChannelType)],
+            [FavoriteAddition(id: threadID, channelType: favoriteChannelType(for: thread))],
             categoryName: serverName.flatMap { $0.isEmpty ? nil : $0 } ?? FavoritesSettings.autoAddedThreadsCategoryName,
             isSilent: true
         )

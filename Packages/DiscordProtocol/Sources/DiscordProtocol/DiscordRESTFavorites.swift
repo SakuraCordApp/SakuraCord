@@ -71,6 +71,7 @@ extension DiscordRESTProvider {
         pendingFavorites = nil
         pendingUserContent = nil
         userContentMessage = nil
+        confirmedUserContentMessage = nil
         userContentDataVersion = nil
         personalizationConsented = false
         channelAffinities = nil
@@ -102,14 +103,14 @@ extension DiscordRESTProvider {
                 pendingFavorites = nil
                 publishStoredFavorites()
                 // A Reset queued behind this save is dropped with it, so its
-                // restored Suggested Channels are rolled back too.
+                // restored Suggested Channels return to what Discord confirmed.
                 let unsavedContent = pendingUserContent ?? userContent
                 pendingUserContent = nil
-                if let unsavedContent, userContentMessage == unsavedContent {
-                    userContentMessage = DiscordUserContentProto.setting(
-                        DiscordUserContentProto.favoritesSuggestions, dismissed: true, in: unsavedContent
-                    )
-                    continuation?.yield(.favoritesSuggestionsDismissed(true))
+                if let unsavedContent, userContentMessage == unsavedContent, let confirmed = confirmedUserContentMessage {
+                    userContentMessage = confirmed
+                    continuation?.yield(.favoritesSuggestionsDismissed(
+                        DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: confirmed)
+                    ))
                 }
                 continuation?.yield(.favoritesSaveFailed(reason: error.localizedDescription))
                 return

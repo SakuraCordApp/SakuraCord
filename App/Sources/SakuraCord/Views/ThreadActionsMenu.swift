@@ -85,7 +85,7 @@ struct ThreadActionsMenu {
                 sections.append([ThreadMenuEntry(
                     id: Self.favoriteID, title: isFavorite ? "Remove from Favorites" : "Add to Favorites",
                     systemImage: isFavorite ? "star.slash.fill" : "star.fill",
-                    content: .action { model.toggleFavorite(thread.id, channelType: thread.favoriteChannelType) }
+                    content: .action { model.toggleFavorite(thread.id, channelType: model.favoriteChannelType(for: thread)) }
                 )])
             }
         }

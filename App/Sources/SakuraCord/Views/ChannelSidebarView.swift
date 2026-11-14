@@ -141,66 +141,22 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if voiceModel.favorites.isPresented {
+            // Both lists stay mounted and Favorites only shows or hides them. A
+            // list removed in the same update that changes its rows throws
+            // inside AppKit ("no common ancestor"), and the window then never
+            // draws again.
+            let showsFavorites = voiceModel.favorites.isPresented
+            conversationList
+                .opacity(showsFavorites ? 0 : 1)
+                .disabled(showsFavorites)
+                .accessibilityHidden(showsFavorites)
+                .zIndex(showsFavorites ? 0 : 1)
+            if voiceModel.showsFavoritesRailItem {
                 FavoritesSidebarView(model: voiceModel, bottomContentInset: accountControlHeight)
-            } else if let guildID = voiceModel.presentedGuildJoinRequestID {
-                // A pending server has no channels; its sidebar describes it instead.
-                GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
-            } else if guild == nil {
-                DirectMessageInboxView(
-                    model: voiceModel,
-                    channels: channels,
-                    membersByID: voiceModel.membersByID,
-                    privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
-                        !$0.value.isUnavailable
-                    },
-                    animatesAvatars: true,
-                    selection: directMessageSelection,
-                    bottomContentInset: accountControlHeight
-                )
-            } else {
-                let preparedThreads = threadLayout(at: .now)
-                // Re-evaluate when a timed-relevant thread expires. An explicit
-                // schedule reports its next entry as `context.date`, so read the clock.
-                TimelineView(.explicit(preparedThreads.relevanceDeadlines)) { _ in
-                    let now = Date.now
-                    let threads = preparedThreads.relevanceDeadlines.first.map { $0 <= now } == true
-                        ? threadLayout(at: now)
-                        : preparedThreads
-                    GuildChannelList(
-                        input: GuildChannelListInput(
-                            modelIdentity: ObjectIdentifier(voiceModel),
-                            guildID: guild?.id,
-                            customizationTitle: voiceModel.customizationTitle(in: guild?.id),
-                            hasCustomization: guild.map { voiceModel.hasChannelsAndRoles(in: $0.id) } ?? false,
-                            hasGuide: guild.map { voiceModel.hasGuildGuide(in: $0.id) } ?? false,
-                            channelGroups: voiceModel.selectedChannelGroups(
-                                channelGroups,
-                                guildID: guild?.id,
-                                threadsByParentID: threads.threadsByParentID
-                            ),
-                            rulesChannelID: guild?.rulesChannelID,
-                            activeVoiceChannelID: activeVoiceChannelID,
-                            hiddenChannelIDs: hiddenChannelIDs,
-                            checkingChannelIDs: checkingChannelIDs,
-                            // Read here so another server's unread categories
-                            // do not invalidate the workspace around the sidebar.
-                            unreadCategoryIDs: guild.map { voiceModel.unreadCategoryIDsByGuild[$0.id] ?? [] } ?? [],
-                            sidebarSelection: guildSelection,
-                            threadsByParentID: threads.threadsByParentID,
-                            bottomContentInset: accountControlHeight
-                        ),
-                        model: voiceModel,
-                        selection: deferredGuildSelection
-                    )
-                    .equatable()
-                }
-                .onChange(of: guildSelection) { _, newSelection in
-                    selectionCommitter.selectedValueChanged(
-                        to: newSelection
-                    )
-                }
-                .onChange(of: guild?.id) { _, _ in selectionCommitter.cancel() }
+                    .opacity(showsFavorites ? 1 : 0)
+                    .disabled(!showsFavorites)
+                    .accessibilityHidden(!showsFavorites)
+                    .zIndex(showsFavorites ? 1 : 0)
             }
 
             AccountControlView(
@@ -220,7 +176,7 @@ struct ChannelSidebarView: View {
                 guard height.isFinite, height >= 0 else { return }
                 accountControlHeight = height
             }
-            .zIndex(1)
+            .zIndex(2)
         }
         .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .environment(
@@ -240,6 +196,68 @@ struct ChannelSidebarView: View {
             .stroke(Color(nsColor: .separatorColor), lineWidth: separatorLineWidth)
             .ignoresSafeArea(.container, edges: isFullScreen ? .top : [])
             .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder private var conversationList: some View {
+        if let guildID = voiceModel.presentedGuildJoinRequestID {
+            // A pending server has no channels; its sidebar describes it instead.
+            GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
+        } else if guild == nil {
+            DirectMessageInboxView(
+                model: voiceModel,
+                channels: channels,
+                membersByID: voiceModel.membersByID,
+                privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
+                    !$0.value.isUnavailable
+                },
+                animatesAvatars: true,
+                selection: directMessageSelection,
+                bottomContentInset: accountControlHeight
+            )
+        } else {
+            let preparedThreads = threadLayout(at: .now)
+            // Re-evaluate when a timed-relevant thread expires. An explicit
+            // schedule reports its next entry as `context.date`, so read the clock.
+            TimelineView(.explicit(preparedThreads.relevanceDeadlines)) { _ in
+                let now = Date.now
+                let threads = preparedThreads.relevanceDeadlines.first.map { $0 <= now } == true
+                    ? threadLayout(at: now)
+                    : preparedThreads
+                GuildChannelList(
+                    input: GuildChannelListInput(
+                        modelIdentity: ObjectIdentifier(voiceModel),
+                        guildID: guild?.id,
+                        customizationTitle: voiceModel.customizationTitle(in: guild?.id),
+                        hasCustomization: guild.map { voiceModel.hasChannelsAndRoles(in: $0.id) } ?? false,
+                        hasGuide: guild.map { voiceModel.hasGuildGuide(in: $0.id) } ?? false,
+                        channelGroups: voiceModel.selectedChannelGroups(
+                            channelGroups,
+                            guildID: guild?.id,
+                            threadsByParentID: threads.threadsByParentID
+                        ),
+                        rulesChannelID: guild?.rulesChannelID,
+                        activeVoiceChannelID: activeVoiceChannelID,
+                        hiddenChannelIDs: hiddenChannelIDs,
+                        checkingChannelIDs: checkingChannelIDs,
+                        // Read here so another server's unread categories
+                        // do not invalidate the workspace around the sidebar.
+                        unreadCategoryIDs: guild.map { voiceModel.unreadCategoryIDsByGuild[$0.id] ?? [] } ?? [],
+                        sidebarSelection: guildSelection,
+                        threadsByParentID: threads.threadsByParentID,
+                        bottomContentInset: accountControlHeight
+                    ),
+                    model: voiceModel,
+                    selection: deferredGuildSelection
+                )
+                .equatable()
+            }
+            .onChange(of: guildSelection) { _, newSelection in
+                selectionCommitter.selectedValueChanged(
+                    to: newSelection
+                )
+            }
+            .onChange(of: guild?.id) { _, _ in selectionCommitter.cancel() }
         }
     }
 

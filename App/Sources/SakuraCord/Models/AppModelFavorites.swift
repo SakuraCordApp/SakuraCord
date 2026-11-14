@@ -432,9 +432,13 @@ extension AppModel {
     }
 }
 
-extension MessageThreadSummary {
-    /// The Discord channel type a favourited thread records.
-    var favoriteChannelType: Int { isPrivate ? 12 : 11 }
+extension AppModel {
+    /// The Discord channel type a favourited thread records: 10 under an
+    /// announcement channel, 12 when private, otherwise 11.
+    func favoriteChannelType(for thread: MessageThreadSummary) -> Int {
+        if thread.isPrivate { return 12 }
+        return thread.parentID.flatMap(knownRootChannel)?.kind == .announcement ? 10 : 11
+    }
 }
 
 extension Channel {
