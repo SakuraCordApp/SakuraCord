@@ -455,9 +455,7 @@ extension AppModel {
             enrichInteractionResponse(&message)
             composer.outbox.noteConfirmation(nonce: nonce, channelID: message.channelID)
             // Discord has the upload; the recording is no longer needed.
-            if let outgoing = composer.outbox.draftsByNonce[nonce] { discardVoiceMessageFile(for: outgoing) }
-            composer.outbox.draftsByNonce[nonce] = nil
-            composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
+            forgetOutgoingDraft(nonce: nonce)
             pruneOwnedPromisedAttachmentFiles()
         }
         recordAuthoritativeMessageUpsert(message)

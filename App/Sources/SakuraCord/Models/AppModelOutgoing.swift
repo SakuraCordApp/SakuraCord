@@ -3,6 +3,14 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    /// Forgets a settled send's draft, sticker upload source and voice
+    /// recording.
+    func forgetOutgoingDraft(nonce: String) {
+        if let outgoing = composer.outbox.draftsByNonce[nonce] { discardVoiceMessageFile(for: outgoing) }
+        composer.outbox.draftsByNonce[nonce] = nil
+        composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
+    }
+
     func discardFailedOutgoingMessage(_ message: Message) {
         guard message.outboxState == .failed,
               let nonce = message.nonce,
@@ -12,11 +20,9 @@ extension AppModel {
               ) == .failed
         else { return }
         if let outgoing = composer.outbox.draftsByNonce[nonce] {
-            discardVoiceMessageFile(for: outgoing)
             discardPreuploads(outgoing.attachments.map(\.id))
         }
-        composer.outbox.draftsByNonce[nonce] = nil
-        composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
+        forgetOutgoingDraft(nonce: nonce)
         attachmentUploads.finish(nonce: nonce)
         removeOutgoingMessage(
             nonce: nonce,
