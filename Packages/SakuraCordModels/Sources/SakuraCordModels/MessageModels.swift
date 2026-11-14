@@ -65,7 +65,7 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
         self.durationSeconds = durationSeconds
         self.waveform = waveform
         self.flags = flags
-        self.isSpoiler = isSpoiler ?? (filename.hasPrefix("SPOILER_") || flags.contains(.spoiler))
+        self.isSpoiler = isSpoiler ?? (filename.hasPrefix(UploadFilename.spoilerPrefix) || flags.contains(.spoiler))
         self.isAnimated =
             isAnimated ?? (mediaType?.lowercased() == "image/gif" || flags.contains(.animated))
     }
@@ -95,7 +95,7 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
         flags = try values.decodeIfPresent(AttachmentFlags.self, forKey: .flags) ?? []
         isSpoiler =
             try values.decodeIfPresent(Bool.self, forKey: .isSpoiler)
-                ?? (filename.hasPrefix("SPOILER_") || flags.contains(.spoiler))
+                ?? (filename.hasPrefix(UploadFilename.spoilerPrefix) || flags.contains(.spoiler))
         isAnimated =
             try values.decodeIfPresent(Bool.self, forKey: .isAnimated)
                 ?? (mediaType?.lowercased() == "image/gif" || flags.contains(.animated))

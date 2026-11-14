@@ -190,7 +190,7 @@ struct GatewayGuildPatchDTO: Decodable {
                 ?? .onlyMentions,
             isUnavailable: unavailable ?? existing?.isUnavailable ?? false,
             joinedAt: joinedAt.flatMap(DiscordDate.parse) ?? existing?.joinedAt,
-            isAgeRestricted: nsfwLevel.map { $0 == 1 || $0 == 3 } ?? existing?.isAgeRestricted ?? false
+            isAgeRestricted: nsfwLevel.map(Guild.isAgeRestricted(nsfwLevel:)) ?? existing?.isAgeRestricted ?? false
         )
     }
 }

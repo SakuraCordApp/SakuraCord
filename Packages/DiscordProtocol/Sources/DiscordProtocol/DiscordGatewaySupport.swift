@@ -878,7 +878,7 @@ struct GatewayReadyGuildsDTO: Decodable {
                         MessageNotificationLevel.init(rawValue:)
                     ) ?? .onlyMentions,
                 joinedAt: joinedAt.flatMap(DiscordDate.parse),
-                isAgeRestricted: nsfwLevel == 1 || nsfwLevel == 3
+                isAgeRestricted: nsfwLevel.map(Guild.isAgeRestricted(nsfwLevel:)) ?? false
             )
         }
     }

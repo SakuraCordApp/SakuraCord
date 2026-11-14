@@ -679,7 +679,7 @@ extension AppModel {
             channelID: creation.parentID,
             name: name,
             isPrivate: creation.isPrivate,
-            autoArchiveDuration: selectedChannel?.defaultAutoArchiveDuration ?? Channel.defaultThreadAutoArchiveDuration,
+            autoArchiveDuration: selectedChannel?.defaultAutoArchiveDuration ?? ThreadAutoArchive.defaultDuration,
             starterMessageID: creation.starterMessage?.id,
             isFromThreadBrowser: creation.isFromThreadBrowser
         )
@@ -841,10 +841,4 @@ extension AppModel {
         guard let selectedGuildID else { return [] }
         return activeJoinedThreads.filter { $0.guildID == selectedGuildID && !$0.isArchived }
     }
-}
-
-extension Channel {
-    /// Discord's three-day auto-archive for a thread in a channel without
-    /// its own default.
-    static let defaultThreadAutoArchiveDuration = 4_320
 }

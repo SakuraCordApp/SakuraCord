@@ -27,7 +27,7 @@ extension MockMessageFixtureBuilder {
             result.append(showcaseMessage(UInt64(212 + index * 3), content: "Spoiler: \(sample.0.lowercased())") {
                 var spoiler = attachment
                 spoiler.isSpoiler = true
-                spoiler.filename = "SPOILER_" + attachment.filename
+                spoiler.filename = UploadFilename.spoilerPrefix + attachment.filename
                 $0.attachments = [spoiler]
             })
         }

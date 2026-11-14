@@ -233,7 +233,7 @@ extension AppModel {
         // loaded message, else the previous millisecond. Its read state
         // compares timestamps, so a boundary inside the selected message's
         // own millisecond would leave that message read.
-        let millisecond = message.id.rawValue >> 22
+        let millisecond = message.id.discordEpochMilliseconds
         let target = conversationMessages.lazy.map(\.id).filter { $0 < message.id }.max()
             ?? MessageID(rawValue: millisecond > 0 ? (millisecond - 1) << 22 : 0)
         guard !isOutsideAcknowledgementScope(channelID) else { return }

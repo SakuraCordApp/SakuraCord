@@ -309,7 +309,7 @@ extension AppModel {
                     let timeoutRevision = store.timeoutRevisions[guildID, default: 0]
                     let member = try await account.provider.refreshCurrentMember(in: guildID)
                     guard model.isCurrentAccountSession(account), store.entries[guildID]?.revision == entry.revision else { return }
-                    guard member.flags.map({ $0 & 2 != 0 }) == true else {
+                    guard member.hasCompletedOnboarding else {
                         throw ChatProviderError.invalidRequest("Discord has not confirmed onboarding completion. Refresh to continue.")
                     }
                     model.receiveOnboardingMember(member, guildID: guildID, timeoutRevision: timeoutRevision)
@@ -403,7 +403,7 @@ extension AppModel {
                 let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
                     || (isThreadFullWidth && openThread?.parentID == channel.id)
                 if filtersSelection {
-                    if hasGuide, resources.contains(channel.id) || channel.flags & (1 << 7) != 0,
+                    if hasGuide, resources.contains(channel.id) || channel.isGuildResource,
                        channel.id != activeChannelID { return true }
                     if !GuildChannelSelection.isSelected(channel.id, settings: settings),
                        !(group.categoryID.map { GuildChannelSelection.isSelected($0, settings: settings) } ?? false),

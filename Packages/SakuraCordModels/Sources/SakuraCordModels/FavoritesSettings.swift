@@ -136,7 +136,7 @@ public struct FavoritesSettings: Equatable, Sendable {
     /// channel limit from 3 to 200; categories don't count.
     public func limitBlockingAddition(premiumType: Int) -> Int? {
         if entries.count >= Self.maximumEntries { return Self.maximumEntries }
-        let limit = premiumType == 2 ? Self.maximumEntries : 3
+        let limit = premiumType == DiscordPremiumType.nitro ? Self.maximumEntries : 3
         return entries.count(where: { !$0.isCategory }) >= limit ? limit : nil
     }
 

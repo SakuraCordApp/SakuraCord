@@ -409,11 +409,11 @@ extension AccountReadStateModel {
         guildJoinedAt: Date?,
         now: Date = .now
     ) -> MessageID {
-        func milliseconds(_ date: Date) -> Int { Int(MessageID(timestamp: date).rawValue >> 22) }
+        func milliseconds(_ date: Date) -> Int { Int(MessageID(timestamp: date).discordEpochMilliseconds) }
         let joined = thread.notificationSettings?.joinedAt.map { milliseconds($0) - 5_000 } ?? -5_000
         let archived = thread.archiveTimestamp.map { milliseconds($0) - 1 } ?? 0
         var boundary = max(joined, archived)
-        if boundary <= 0 { boundary = Int(thread.id.rawValue >> 22) - 1 }
+        if boundary <= 0 { boundary = Int(thread.id.discordEpochMilliseconds) - 1 }
         if !isForumPost { boundary = max(boundary, milliseconds(guildJoinedAt ?? now)) }
         return MessageID(rawValue: UInt64(max(boundary, 0) + 1) << 22 - 1)
     }

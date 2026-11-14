@@ -24,9 +24,13 @@ public struct Snowflake<Kind>: RawRepresentable, Codable, Hashable, Comparable, 
         rawValue = UInt64(max(0, milliseconds)) << 22
     }
 
-    /// Discord snowflakes store milliseconds since 2015-01-01 in their upper 42 bits.
+    /// Milliseconds since Discord's 2015-01-01 epoch, from the upper 42 bits.
+    public var discordEpochMilliseconds: UInt64 {
+        rawValue >> 22
+    }
+
     public var createdAt: Date {
-        let milliseconds = (rawValue >> 22) + ClientNonce.discordEpochMilliseconds
+        let milliseconds = discordEpochMilliseconds + ClientNonce.discordEpochMilliseconds
         return Date(timeIntervalSince1970: Double(milliseconds) / 1_000)
     }
 

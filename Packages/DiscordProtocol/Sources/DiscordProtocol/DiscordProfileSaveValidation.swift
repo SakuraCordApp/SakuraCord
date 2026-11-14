@@ -11,7 +11,7 @@ extension DiscordRESTProvider {
         try checkLength(changes.identity.name, maximum: 32, field: "Display name")
         try checkLength(changes.metadata.bio, maximum: 300, field: "About Me")
         try checkLength(changes.metadata.pronouns, maximum: 40, field: "Pronouns")
-        let hasFullNitro = user.premiumType == 2
+        let hasFullNitro = user.premiumType == DiscordPremiumType.nitro
         try validateProfileNitroAccess(changes, in: scope, hasFullNitro: hasFullNitro)
         try validateProfileImages(changes, user: user, hasFullNitro: hasFullNitro)
         try validateProfileNameStyle(changes.identity.displayNameStyle)

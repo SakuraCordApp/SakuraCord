@@ -8,9 +8,9 @@ public enum DiscordAttachmentUploadPolicy {
 
     public static func maximumFileSize(premiumType: Int) -> Int64 {
         switch premiumType {
-        case 1, 3:
+        case DiscordPremiumType.nitroClassic, DiscordPremiumType.nitroBasic:
             basicAndClassicLimit
-        case 2:
+        case DiscordPremiumType.nitro:
             nitroLimit
         default:
             baseLimit

@@ -19,6 +19,11 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
     public var joinedAt: Date?
     public var isAgeRestricted: Bool
 
+    /// Discord's `EXPLICIT` (1) and `AGE_RESTRICTED` (3) guild NSFW levels.
+    public static func isAgeRestricted(nsfwLevel: Int) -> Bool {
+        nsfwLevel == 1 || nsfwLevel == 3
+    }
+
     public init(
         id: GuildID, name: String, iconURL: URL? = nil, accentHex: UInt32 = 0x5865F2,
         unreadCount: Int = 0, mentionCount: Int = 0, isOwnedByCurrentUser: Bool? = nil, ownerID: UserID? = nil,

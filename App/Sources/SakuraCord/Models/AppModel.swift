@@ -1292,7 +1292,7 @@ extension AppModel {
         activeJoinedThreads = snapshot?.activeJoinedThreads ?? []
         knownThreadIDs = Set(threads.map(\.id)).union(activeJoinedThreads.map(\.id))
         guildIDsWithResourceChannels = Set((snapshot?.channels ?? []).compactMap { channel in
-            channel.flags & (1 << 7) != 0 ? channel.guildID : nil
+            channel.isGuildResource ? channel.guildID : nil
         })
         refreshServerRailDirectMessages(replacing: previous)
         refreshSelectedGuildPresentation()

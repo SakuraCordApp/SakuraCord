@@ -398,7 +398,7 @@ private extension ForumPostComposer {
                     content: draft.content,
                     attachments: attachments,
                     appliedTagIDs: appliedTagIDs,
-                    autoArchiveDuration: channel.defaultAutoArchiveDuration ?? Channel.defaultThreadAutoArchiveDuration
+                    autoArchiveDuration: channel.defaultAutoArchiveDuration ?? ThreadAutoArchive.defaultDuration
                 )
             )
             // Cleared even if the composer closed meanwhile.

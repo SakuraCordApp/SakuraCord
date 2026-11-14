@@ -34,7 +34,7 @@ extension AppModel {
         let hidesResources = hasGuildGuide(in: guildID)
         let resources = Set(onboarding.guides[guildID]?.configuration?.resourceChannels.map(\.channelID) ?? [])
         return messagePresentationChannels.filter {
-            $0.guildID == guildID && (!hidesResources || ($0.flags & (1 << 7) == 0 && !resources.contains($0.id)))
+            $0.guildID == guildID && (!hidesResources || (!$0.isGuildResource && !resources.contains($0.id)))
                 && conversationAccess(for: $0).isReadable
         }
     }

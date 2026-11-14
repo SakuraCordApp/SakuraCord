@@ -288,7 +288,7 @@ public actor MockChatProvider: ChatProvider {
             serverMetadata: scope.guildID.map { _ in ProfileMetadataFields() },
             presentation: presentation,
             widgetEligibility: ProfileWidgetEligibility(
-                hasFullNitro: currentUser.premiumType == 2, hasPersonalWidgetAccess: false
+                hasFullNitro: currentUser.premiumType == DiscordPremiumType.nitro, hasPersonalWidgetAccess: false
             )
         )
     }

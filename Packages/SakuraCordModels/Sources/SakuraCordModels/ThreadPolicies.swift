@@ -1,6 +1,11 @@
 import Foundation
 
 /// Thread and forum-post names: Discord accepts 1–100 characters.
+/// Discord's three-day auto-archive, for a thread whose channel sets none.
+public enum ThreadAutoArchive {
+    public static let defaultDuration = 4_320
+}
+
 public enum ThreadNamePolicy {
     public static let maximumLength = 100
     /// Fallback when a starter message yields no usable text.
@@ -182,9 +187,6 @@ public struct ThreadActionPolicy: Equatable, Sendable {
         )
     }
 
-    /// User-authored message types that can start a thread.
-    private static let threadStarterMessageTypes: Set<Int> = [0, 19, 20, 23, 26, 41, 45, 47, 68]
-
     /// Starting a public thread from a confirmed message posted directly in
     /// `parent`. Messages inside threads or voice-channel chats never qualify,
     /// nor does a message that already has a thread.
@@ -196,7 +198,7 @@ public struct ThreadActionPolicy: Equatable, Sendable {
         guard parent.guildID != nil, message.channelID == parent.id,
               [.text, .announcement, .forum].contains(parent.kind),
               message.outboxState == .confirmed,
-              threadStarterMessageTypes.contains(message.type.rawValue),
+              message.type.canStartThread,
               !message.flags.contains(.hasThread), !message.flags.contains(.ephemeral),
               message.thread == nil
         else { return false }

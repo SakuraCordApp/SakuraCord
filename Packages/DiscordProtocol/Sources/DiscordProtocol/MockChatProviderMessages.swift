@@ -309,7 +309,7 @@ public extension MockChatProvider {
             )
             let filename = attachment.filename.trimmingCharacters(in: .whitespacesAndNewlines)
             staged.filename =
-                attachment.isSpoiler && !filename.hasPrefix("SPOILER_")
+                attachment.isSpoiler && !filename.hasPrefix(UploadFilename.spoilerPrefix)
                     ? "SPOILER_\(filename)" : filename
             staged.description = attachment.description
             if let voiceMessage = draft.voiceMessage {

@@ -194,6 +194,11 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         flags & (1 << 4) != 0
     }
 
+    /// Discord's `IS_GUILD_RESOURCE_CHANNEL`: a server guide resource.
+    public var isGuildResource: Bool {
+        flags & (1 << 7) != 0
+    }
+
     /// Where Discord files the conversation: spam outranks a plain request.
     public var messageRequest: MessageRequestStatus? {
         if isSpam { return .spam }
@@ -572,13 +577,11 @@ public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
         self.url = url
         self.filename = filename ?? url.lastPathComponent
         self.description = description
-        self.isSpoiler = isSpoiler || self.filename.hasPrefix(Self.spoilerPrefix)
+        self.isSpoiler = isSpoiler || self.filename.hasPrefix(UploadFilename.spoilerPrefix)
     }
 
-    private static let spoilerPrefix = "SPOILER_"
-
     private static func droppingSpoilerPrefix(_ name: String) -> String {
-        name.hasPrefix(spoilerPrefix) ? String(name.dropFirst(spoilerPrefix.count)) : name
+        name.hasPrefix(UploadFilename.spoilerPrefix) ? String(name.dropFirst(UploadFilename.spoilerPrefix.count)) : name
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -605,7 +608,7 @@ public struct CreateForumPostDraft: Equatable, Sendable {
         content: String,
         attachments: [ForumPostAttachment] = [],
         appliedTagIDs: [ForumTagID] = [],
-        autoArchiveDuration: Int = 4_320
+        autoArchiveDuration: Int = ThreadAutoArchive.defaultDuration
     ) {
         self.channelID = channelID
         self.title = title
@@ -635,7 +638,7 @@ public struct CreateThreadDraft: Equatable, Sendable {
         channelID: ChannelID,
         name: String,
         isPrivate: Bool = false,
-        autoArchiveDuration: Int = 4_320,
+        autoArchiveDuration: Int = ThreadAutoArchive.defaultDuration,
         starterMessageID: MessageID? = nil,
         isFromThreadBrowser: Bool = false
     ) {
@@ -658,7 +661,7 @@ public struct CreateThreadDraft: Equatable, Sendable {
         return Self(
             channelID: parent.id,
             name: trimmed.isEmpty ? ThreadNamePolicy.defaultName(for: message) : trimmed,
-            autoArchiveDuration: parent.defaultAutoArchiveDuration ?? 4_320,
+            autoArchiveDuration: parent.defaultAutoArchiveDuration ?? ThreadAutoArchive.defaultDuration,
             starterMessageID: message.id
         )
     }

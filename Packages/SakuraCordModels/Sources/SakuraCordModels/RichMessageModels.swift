@@ -92,6 +92,16 @@ public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable 
         }
     }
 
+    /// User-authored message types that can start a thread.
+    public var canStartThread: Bool {
+        switch rawValue {
+        case 0, 19, 20, 23, 26, 41, 45, 47, 68:
+            true
+        default:
+            false
+        }
+    }
+
     /// A command's response, which shows who ran which command above it.
     public var isCommandResponse: Bool {
         self == .chatInputCommand || self == .contextMenuCommand

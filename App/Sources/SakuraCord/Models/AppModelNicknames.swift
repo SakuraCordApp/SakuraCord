@@ -212,12 +212,11 @@ nonisolated enum NicknamePermissionPolicy {
         let isAdministrator = permissions & DiscordPermissionBits.administrator != 0
         guard isAdministrator || permissions & DiscordPermissionBits.manageNicknames != 0 else { return false }
         let member = context.currentMember
-        let flags = member?.flags ?? 0
         // Discord restricts pending members and guests even with Administrator.
-        guard member?.isPending != true, flags & 16 == 0 else { return false }
+        guard member?.isPending != true, member?.isGuest != true else { return false }
         // AutoMod quarantine and timeout masks apply only to non-administrators.
         if !isAdministrator {
-            guard flags & (128 | 256 | 1024) == 0,
+            guard member?.isQuarantined != true,
                   member?.communicationDisabledUntil.map({ $0 > now }) != true else { return false }
         }
         return isRole(

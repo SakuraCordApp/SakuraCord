@@ -460,15 +460,10 @@ extension AccountReadStateModel {
             _ entry: Entry,
             channelByID: [ChannelID: Channel]
         ) -> Bool {
-            let resourceFlag: UInt64 = 1 << 7
-            if let channel = channelByID[entry.channelID],
-               channel.flags & resourceFlag != 0
-            {
+            if let channel = channelByID[entry.channelID], channel.isGuildResource {
                 return true
             }
-            let parentFlags = entry.parentID.flatMap { channelByID[$0] }?.flags
-                ?? 0
-            return parentFlags & resourceFlag != 0
+            return entry.parentID.flatMap { channelByID[$0] }?.isGuildResource == true
         }
     }
 

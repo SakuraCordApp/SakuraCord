@@ -84,7 +84,7 @@ nonisolated enum SoundboardPlaybackPolicy {
         guard effectivePermissions & DiscordPermissionBits.useExternalSounds != 0 else {
             return nil
         }
-        return premiumType == 2 ? .native : (fakeNitroEnabled ? .outgoingMixer : nil)
+        return premiumType == DiscordPremiumType.nitro ? .native : (fakeNitroEnabled ? .outgoingMixer : nil)
     }
 }
 

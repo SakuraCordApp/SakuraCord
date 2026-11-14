@@ -1,9 +1,10 @@
+import SakuraCordModels
 import MediaPipeline
 
 extension AppModel {
     var allowsEnhancedStreamQuality: Bool {
         let premiumType = currentUser?.premiumType ?? 0
-        return featuresSettings.fakeNitroStreamQuality || premiumType == 1 || premiumType == 2
+        return featuresSettings.fakeNitroStreamQuality || premiumType == DiscordPremiumType.nitroClassic || premiumType == DiscordPremiumType.nitro
     }
 
     var availableScreenShareQualities: [ScreenShareQuality] {
