@@ -349,10 +349,9 @@ case "$MODE" in
     sleep 2
     sakuracord_is_scoped_app_running
     ;;
-  --offline-forum-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-files-performance|--offline-chat-files-performance-autoscroll|--offline-chat-files-performance-open)
+  --offline*)
     # Forward the result path, which `open` does not pass on by itself.
     sakuracord_launch_scoped_app ${SAKURACORD_PERFORMANCE_RESULT_PATH:+--env "SAKURACORD_PERFORMANCE_RESULT_PATH=$SAKURACORD_PERFORMANCE_RESULT_PATH"} \
       --args "$MODE" ${LIVE_TIMELINE_ARGS[@]+"${LIVE_TIMELINE_ARGS[@]}"} ;;
-  --offline*) sakuracord_launch_scoped_app --args "$MODE" ;;
   --media-viewer-benchmark) sakuracord_launch_scoped_app --env SAKURACORD_MEDIA_VIEWER_BENCHMARK=1 ;;
 esac
