@@ -10,17 +10,6 @@ extension AppModel {
         }
     }
 
-    func dismissEphemeralMessage(_ message: Message) {
-        guard message.flags.contains(.ephemeral) else { return }
-        invalidateMessageTranslation(message.id)
-        if message.channelID == selectedChannelID {
-            mutateSelectedMessages {
-                $0.removeAll { $0.id == message.id }
-            }
-        }
-        messageCache[message.channelID]?.removeAll { $0.id == message.id }
-    }
-
     func toggleReaction(_ emoji: String, on message: Message) async {
         guard canUpdateReactions(on: message) else { return }
         let guildID = message.guildID ?? selectedGuildID

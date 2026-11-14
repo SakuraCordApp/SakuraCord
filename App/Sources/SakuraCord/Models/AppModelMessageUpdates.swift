@@ -1,6 +1,17 @@
 import SakuraCordModels
 
 extension AppModel {
+    func dismissEphemeralMessage(_ message: Message) {
+        guard message.flags.contains(.ephemeral) else { return }
+        invalidateMessageTranslation(message.id)
+        if message.channelID == selectedChannelID {
+            mutateSelectedMessages {
+                $0.removeAll { $0.id == message.id }
+            }
+        }
+        messageCache[message.channelID]?.removeAll { $0.id == message.id }
+    }
+
     func invalidateChangedSystemMessageRecipients(replacing previous: BootstrapSnapshot?) {
         func recipients(in snapshot: BootstrapSnapshot?) -> [ChannelID: User] {
             var result: [ChannelID: User] = [:]
