@@ -107,7 +107,7 @@ struct EmojiFrecencyTests {
         document.synchronize(with: model, useCase: .message)
         #expect(document.selectableCells.filter { $0.rowID.hasPrefix("emojis:frequent:") }.count == 41)
         model.currentUserRoleIDsByGuild[restricted.guildID] = []
-        model.serverRailGuildsByID[restricted.guildID] = Guild(id: restricted.guildID, name: "Subscriptions", features: ["ROLE_SUBSCRIPTIONS_ENABLED"])
+        model.serverRailGuildsByID[restricted.guildID] = Guild(id: restricted.guildID, name: "Subscriptions", features: [GuildFeature.roleSubscriptionsEnabled])
         model.guildRolesByGuildID[restricted.guildID] = [GuildRole(id: roleID, name: "Subscriber", isPurchasableSubscription: true)]
         #expect(model.canResolveFrequentlyUsedEmoji(restricted))
         model.serverRailGuildsByID[restricted.guildID]?.features = []

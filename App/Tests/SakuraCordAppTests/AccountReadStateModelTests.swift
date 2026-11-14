@@ -1150,8 +1150,8 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
     await model.channelLoadTask?.value
     let guildIndex = try #require(model.snapshot?.guilds.firstIndex { $0.id == guildID })
     let resourceIndex = try #require(model.snapshot?.channels.firstIndex { $0.id == ChannelID(rawValue: 200) })
-    model.snapshot?.guilds[guildIndex].features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
-    model.serverRailGuildsByID[guildID]?.features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
+    model.snapshot?.guilds[guildIndex].features = [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]
+    model.serverRailGuildsByID[guildID]?.features = [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]
     model.snapshot?.channels[resourceIndex].flags = 128
     var member = Member(user: try #require(model.currentUser), roleName: "", isOnline: true)
     member.flags = 98

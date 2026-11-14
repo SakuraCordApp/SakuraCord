@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import Foundation
+import SakuraCordModels
 import Testing
 
 @Test func `external attachment uploader defaults to a cookie free ephemeral session`() {
@@ -33,8 +34,8 @@ func `anonymised multipart uploads omit original names and preserve source files
     #expect(!multipart.contains(filename))
     let uploadedName = try #require(multipart.components(separatedBy: "filename=\"").last?.components(separatedBy: "\"").first)
     #expect((uploadedName as NSString).pathExtension == source.pathExtension)
-    #expect(uploadedName.hasPrefix("SPOILER_") == filename.hasPrefix("SPOILER_"))
-    let stem = (uploadedName as NSString).deletingPathExtension.replacingOccurrences(of: "SPOILER_", with: "")
+    #expect(uploadedName.hasPrefix(UploadFilename.spoilerPrefix) == filename.hasPrefix(UploadFilename.spoilerPrefix))
+    let stem = (uploadedName as NSString).deletingPathExtension.replacingOccurrences(of: UploadFilename.spoilerPrefix, with: "")
     #expect(UUID(uuidString: stem) != nil)
     #expect(multipart.contains("attachment contents"))
     #expect(try Data(contentsOf: source) == bytes)

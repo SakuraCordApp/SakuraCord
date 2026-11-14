@@ -6,7 +6,7 @@ import Testing
 private let now = Date(timeIntervalSince1970: 1_791_295_000)
 
 private func snowflake(at date: Date) -> UInt64 {
-    UInt64(date.timeIntervalSince1970 * 1_000 - 1_420_070_400_000) << 22
+    MessageID(timestamp: date).rawValue
 }
 
 private func candidate(

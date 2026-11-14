@@ -602,7 +602,7 @@ import UserNotifications
     let model = AppModel(launchMode: .offlineTesting)
     var snapshot = try await MockChatProvider().bootstrap()
     let guildID = try #require(snapshot.guilds.first?.id)
-    snapshot.guilds[0].features.formUnion(["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"])
+    snapshot.guilds[0].features.formUnion([GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide])
     var member = Member(user: snapshot.currentUser, roleName: "", isOnline: false)
     member.flags = 98
     member.joinedAt = .now.addingTimeInterval(-10 * 24 * 60 * 60)
@@ -638,7 +638,7 @@ import UserNotifications
     await model.start()
     var snapshot = try #require(model.snapshot)
     var guild = try #require(snapshot.guilds.first)
-    guild.features.insert("GUILD_ONBOARDING")
+    guild.features.insert(GuildFeature.onboarding)
     guild.currentUserPermissions = .max
     let guildIndex = try #require(snapshot.guilds.firstIndex { $0.id == guild.id })
     snapshot.guilds[guildIndex] = guild

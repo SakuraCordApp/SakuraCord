@@ -789,7 +789,7 @@ private struct MockFixtureAssembly {
                 defaultSortOrder: .latestActivity,
                 defaultForumLayout: .list,
                 defaultTagMatch: .matchSome,
-                defaultAutoArchiveDuration: 4_320
+                defaultAutoArchiveDuration: ThreadAutoArchive.defaultDuration
             ),
             Channel(
                 id: ChannelID(rawValue: 221), guildID: auroraID, name: "bug-reports",
@@ -802,7 +802,7 @@ private struct MockFixtureAssembly {
                 defaultSortOrder: .latestActivity,
                 defaultForumLayout: .list,
                 defaultTagMatch: .matchSome,
-                defaultAutoArchiveDuration: 4_320
+                defaultAutoArchiveDuration: ThreadAutoArchive.defaultDuration
             ),
             Channel(
                 id: ChannelID(rawValue: 230), guildID: auroraID, name: "Studio Lounge",

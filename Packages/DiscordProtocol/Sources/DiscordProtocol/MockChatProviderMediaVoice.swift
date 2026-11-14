@@ -108,9 +108,7 @@ public extension MockChatProvider {
     ) async throws -> VoiceConnectionInfo {
         guard snapshot.channels.contains(where: {
             $0.id == channelID
-                && ($0.kind == .voice
-                    || $0.kind == .directMessage
-                    || $0.kind == .groupDirectMessage)
+                && ($0.kind == .voice || $0.kind.isDirectMessage)
         }) else {
             throw ChatProviderError.invalidRequest("That demo voice channel is unavailable.")
         }

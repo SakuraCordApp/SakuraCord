@@ -380,7 +380,7 @@ public extension MockChatProvider {
             id: ChannelID(rawValue: 903), guildID: channels.first { $0.id == parentID }?.guildID,
             parentID: parentID, name: "Archived showcase notes", messageCount: 1, memberCount: 1,
             isArchived: true, ownerID: owner.id, archiveTimestamp: .now.addingTimeInterval(-3 * 86_400),
-            createdAt: .now.addingTimeInterval(-10 * 86_400), autoArchiveDuration: 4_320
+            createdAt: .now.addingTimeInterval(-10 * 86_400), autoArchiveDuration: ThreadAutoArchive.defaultDuration
         )
         forumPosts[parentID, default: []].append(ForumPost(thread: archived, owner: owner))
         messages[archived.id] = [

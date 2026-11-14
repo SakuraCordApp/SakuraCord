@@ -13,7 +13,7 @@ public enum DiscordProfileImageAssets {
         let index = if let discriminator, discriminator != "0", let legacy = UInt64(discriminator) {
             legacy % 5
         } else {
-            ((UInt64(userID) ?? 0) >> 22) % UInt64(assets.count)
+            (UserID(userID)?.discordEpochMilliseconds ?? 0) % UInt64(assets.count)
         }
         return URL(string: "https://discord.com/assets/\(assets[Int(index)])")
     }

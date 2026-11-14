@@ -348,7 +348,7 @@ private extension DiscordRESTProvider {
 
     func seedInviteGuild(owner: Bool, community: Bool = false) {
         cachedGuilds[.init(rawValue: 900)] = Guild(id: .init(rawValue: 900), name: "Test", isOwnedByCurrentUser: owner,
-                                               features: community ? ["COMMUNITY"] : [])
+                                               features: community ? [GuildFeature.community] : [])
     }
 }
 

@@ -47,8 +47,8 @@ struct GuildCustomizationTests {
         let configuration = await provider.configuration
         let guildID = configuration.guildID
         let guildIndex = try #require(model.snapshot?.guilds.firstIndex { $0.id == guildID })
-        model.snapshot?.guilds[guildIndex].features.insert("GUILD_ONBOARDING")
-        model.serverRailGuildsByID[guildID]?.features.insert("GUILD_ONBOARDING")
+        model.snapshot?.guilds[guildIndex].features.insert(GuildFeature.onboarding)
+        model.serverRailGuildsByID[guildID]?.features.insert(GuildFeature.onboarding)
         model.onboarding.members[guildID] = try await provider.refreshCurrentMember(in: guildID)
         model.onboarding.entries[guildID] = .init(configuration: configuration, responses: ["required"], promptID: "1", initial: true, refreshedAt: .now)
         await model.activateGuild(nil)
@@ -79,8 +79,8 @@ struct GuildCustomizationTests {
         let mention = Channel(id: .init(rawValue: 203), guildID: id, name: "mentioned", mentionCount: 1)
         let channels = [selected, omitted, resource, mention]
         model.snapshot?.channels = channels
-        model.snapshot?.guilds[0].features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
-        model.serverRailGuildsByID[id]?.features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
+        model.snapshot?.guilds[0].features = [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]
+        model.serverRailGuildsByID[id]?.features = [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]
         model.serverRailGuildsByID[id]?.currentUserPermissions = .max
         var member = Member(user: try #require(model.currentUser), roleName: "", isOnline: false)
         member.flags = 2
@@ -110,7 +110,7 @@ struct GuildCustomizationTests {
         model.setChannelSelected(false, channelID: selected.id, guildID: id)
         #expect(model.onboarding.channelSelections.isEmpty)
         #expect(model.presentedGuildChannelSettings(in: id) == savedSettings)
-        model.serverRailGuildsByID[id]?.features.insert("GUILD_ONBOARDING_HAS_PROMPTS")
+        model.serverRailGuildsByID[id]?.features.insert(GuildFeature.onboardingHasPrompts)
         #expect(model.hasChannelsAndRoles(in: id))
         #expect(model.customizationTitle(in: id) == "Roles")
         model.featuresSettings.channelManagement = true
