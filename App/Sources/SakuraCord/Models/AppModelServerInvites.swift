@@ -170,11 +170,7 @@ extension AppModel {
         // host. Close its shared state before that host is recreated.
         serverInvites.showsJoinDialog = false
         navigateToInvite(invite)
-        if screening {
-            openGuildJoinApplication(guild.id, inviteCode: invite.reference.code)
-        } else if guild.hasOnboarding {
-            openChannelsAndRoles(in: guild.id)
-        }
+        presentPostJoinFlow(guild: guild, screening: screening, inviteCode: invite.reference.code)
         loadServerInvite(invite.reference, refresh: true)
         return true
     }
