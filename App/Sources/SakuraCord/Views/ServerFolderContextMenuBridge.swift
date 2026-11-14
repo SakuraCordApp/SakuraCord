@@ -25,7 +25,7 @@ struct ServerFolderContextMenuBridge: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject {
+    final class Coordinator {
         var bridge: ServerFolderContextMenuBridge
 
         init(_ bridge: ServerFolderContextMenuBridge) {
@@ -35,40 +35,17 @@ struct ServerFolderContextMenuBridge: NSViewRepresentable {
         func makeMenu() -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            menu.addItem(menuItem(
+            menu.addItem(ContextMenuItemSupport.item(
                 "Mark Folder as Read",
                 systemImage: "envelope.open.fill",
-                action: #selector(markReadFromMenu),
                 isEnabled: bridge.isUnread
-            ))
+            ) { self.bridge.markRead() })
             menu.addItem(.separator())
-            menu.addItem(menuItem(
+            menu.addItem(ContextMenuItemSupport.item(
                 "Folder Settings",
-                systemImage: "folder.fill.badge.gearshape",
-                action: #selector(openSettingsFromMenu)
-            ))
+                systemImage: "folder.fill.badge.gearshape"
+            ) { self.bridge.openSettings() })
             return menu
-        }
-
-        private func menuItem(
-            _ title: String,
-            systemImage: String,
-            action: Selector,
-            isEnabled: Bool = true
-        ) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            item.isEnabled = isEnabled
-            ContextMenuItemSupport.configure(item, title: title, systemImage: systemImage)
-            return item
-        }
-
-        @objc private func markReadFromMenu() {
-            bridge.markRead()
-        }
-
-        @objc private func openSettingsFromMenu() {
-            bridge.openSettings()
         }
     }
 }

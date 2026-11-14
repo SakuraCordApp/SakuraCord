@@ -6,7 +6,7 @@ import SakuraCordModels
 /// menu and adds the forum card's tag picker with its emoji.
 @MainActor
 final class ForumPostMenuBuilder: NSObject {
-    private let renderer = ThreadActionsMenuRenderer()
+    private let renderer = ActionMenuRenderer()
     private var customTagImages: [ForumTagID: NSImage] = [:]
     private var imageTasks: [ForumTagID: Task<Void, Never>] = [:]
     private var toggleTag: (ForumTagID) -> Void = { _ in }
@@ -24,7 +24,7 @@ final class ForumPostMenuBuilder: NSObject {
         toggleTag: @escaping (ForumTagID) -> Void
     ) -> NSMenu {
         self.toggleTag = toggleTag
-        return renderer.makeMenu(actionsMenu) { [self] entry in
+        return renderer.makeMenu(actionsMenu.sections) { [self] entry in
             guard entry.id == ThreadActionsMenu.tagsSlotID else { return nil }
             preloadCustomTagImages(for: tags, customEmojiURLsByID: customEmojiURLsByID)
             return tagsMenuItem(tags: tags, appliedTagIDs: appliedTagIDs, canToggle: canToggle)

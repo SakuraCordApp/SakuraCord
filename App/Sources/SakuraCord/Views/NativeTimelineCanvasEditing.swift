@@ -444,25 +444,10 @@ extension NativeTimelineCanvasView {
         isDestructive: Bool = false,
         action: @escaping () -> Void
     ) -> NSMenuItem {
-        let target = NativeTimelineMenuAction { [weak self] in
+        ContextMenuItemSupport.item(title, systemImage: systemImage, isDestructive: isDestructive) { [weak self] in
             guard let self, !self.sendTransitionBlocksInteractions else { return }
             action()
         }
-        let item = NSMenuItem(
-            title: title,
-            action: #selector(NativeTimelineMenuAction.performAction),
-            keyEquivalent: ""
-        )
-        item.target = target
-        item.representedObject = target
-        item.isEnabled = true
-        ContextMenuItemSupport.configure(
-            item,
-            title: title,
-            systemImage: systemImage,
-            isDestructive: isDestructive
-        )
-        return item
     }
 
     func requestDelete(_ message: Message) {

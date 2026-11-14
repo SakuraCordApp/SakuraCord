@@ -22,14 +22,11 @@ enum UserContextMenu {
 
     static func items(_ actions: [UserMenuAction]) -> [NSMenuItem] {
         actions.map { action in
-            let target = NativeTimelineMenuAction(action.perform)
-            let item = NSMenuItem(title: action.title, action: #selector(NativeTimelineMenuAction.performAction), keyEquivalent: "")
-            item.target = target
-            item.representedObject = target
-            item.isEnabled = action.isEnabled
+            let item = ContextMenuItemSupport.item(
+                action.title, systemImage: action.systemImage, isEnabled: action.isEnabled,
+                isDestructive: action.isDestructive, action: action.perform
+            )
             item.identifier = NSUserInterfaceItemIdentifier("user-\(action.group.rawValue)")
-            ContextMenuItemSupport.configure(item, title: action.title, systemImage: action.systemImage,
-                                             isDestructive: action.isDestructive)
             return item
         }
     }

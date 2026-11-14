@@ -14,7 +14,7 @@ import Testing
     let post = try #require(model.forumCataloguePosts.first {
         !$0.thread.isArchived && !$0.thread.isLocked && $0.thread.notificationSettings == nil
     })
-    func entries() -> [String: ThreadMenuEntry] {
+    func entries() -> [String: ActionMenuEntry] {
         let menu = ThreadActionsMenu(model: model, thread: post.thread, surface: .forumCard, offersTags: true)
         return Dictionary(menu.sections.flatMap { $0 }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }

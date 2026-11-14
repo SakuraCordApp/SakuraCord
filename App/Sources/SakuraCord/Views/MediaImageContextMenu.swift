@@ -31,7 +31,7 @@ enum MediaImageContextMenuBuilder {
         includesLinkActions: Bool
     ) {
         menu.addItem(
-            actionItem(
+            ContextMenuItemSupport.item(
                 "Copy Image",
                 systemImage: "document.on.document.fill",
                 action: actions.copyImage
@@ -47,14 +47,14 @@ enum MediaImageContextMenuBuilder {
         guard includesLinkActions else { return }
         menu.addItem(.separator())
         menu.addItem(
-            actionItem(
+            ContextMenuItemSupport.item(
                 "Copy Image Link",
                 systemImage: "link",
                 action: actions.copyLink
             )
         )
         menu.addItem(
-            actionItem(
+            ContextMenuItemSupport.item(
                 "Open Image Link",
                 systemImage: "arrow.up.forward.app",
                 action: actions.openLink
@@ -62,27 +62,6 @@ enum MediaImageContextMenuBuilder {
         )
     }
 
-    private static func actionItem(
-        _ title: String,
-        systemImage: String,
-        action: @escaping () -> Void
-    ) -> NSMenuItem {
-        let target = NativeTimelineMenuAction(action)
-        let item = NSMenuItem(
-            title: title,
-            action: #selector(NativeTimelineMenuAction.performAction),
-            keyEquivalent: ""
-        )
-        item.target = target
-        item.representedObject = target
-        item.isEnabled = true
-        ContextMenuItemSupport.configure(
-            item,
-            title: title,
-            systemImage: systemImage
-        )
-        return item
-    }
 }
 
 /// A right-click-only AppKit surface. Primary clicks pass through to the

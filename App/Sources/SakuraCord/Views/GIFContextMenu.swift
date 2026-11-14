@@ -13,7 +13,7 @@ enum GIFContextMenuBuilder {
     static func make(actions: GIFContextMenuActions) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(actionItem(
+        menu.addItem(ContextMenuItemSupport.item(
             actions.isFavorite
                 ? "Remove from Favorites"
                 : "Add to Favorites",
@@ -21,7 +21,7 @@ enum GIFContextMenuBuilder {
             isEnabled: !actions.isFavoriteMutationPending,
             action: actions.toggleFavorite
         ))
-        menu.addItem(actionItem(
+        menu.addItem(ContextMenuItemSupport.item(
             "Copy Media Link",
             systemImage: "link",
             action: actions.copyMediaLink
@@ -29,28 +29,6 @@ enum GIFContextMenuBuilder {
         return menu
     }
 
-    private static func actionItem(
-        _ title: String,
-        systemImage: String,
-        isEnabled: Bool = true,
-        action: @escaping () -> Void
-    ) -> NSMenuItem {
-        let target = NativeTimelineMenuAction(action)
-        let item = NSMenuItem(
-            title: title,
-            action: #selector(NativeTimelineMenuAction.performAction),
-            keyEquivalent: ""
-        )
-        item.target = target
-        item.representedObject = target
-        item.isEnabled = isEnabled
-        ContextMenuItemSupport.configure(
-            item,
-            title: title,
-            systemImage: systemImage
-        )
-        return item
-    }
 }
 
 enum NativeTimelineGIFContextMenuPlan {

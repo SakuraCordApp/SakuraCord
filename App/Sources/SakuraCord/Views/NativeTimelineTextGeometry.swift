@@ -9,18 +9,6 @@ import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
-final class NativeTimelineMenuAction: NSObject {
-    let handler: () -> Void
-
-    init(_ handler: @escaping () -> Void) {
-        self.handler = handler
-    }
-
-    @objc func performAction() {
-        handler()
-    }
-}
-
 struct NativeTimelineTextHit {
     let characterIndex: Int
     let url: URL?

@@ -62,6 +62,65 @@ nonisolated enum ChannelContextMenuSubtitle {
     }
 }
 
+/// The mute and notification items that channel, category and server menus
+/// share.
+@MainActor
+enum NotificationMenuItems {
+    /// Unmute, with the time a timed mute has left.
+    static func unmute(
+        _ title: String, until endTime: Date?, isEnabled: Bool, action: @escaping () -> Void
+    ) -> NSMenuItem {
+        let item = ContextMenuItemSupport.item(title, systemImage: "bell.fill", isEnabled: isEnabled, action: action)
+        if let subtitle = ChannelContextMenuSubtitle.muteRemaining(until: endTime) {
+            item.subtitle = subtitle
+        }
+        return item
+    }
+
+    /// Mute, with a submenu of durations.
+    static func mute(
+        _ title: String, isEnabled: Bool, action: @escaping (ChannelMuteDuration) -> Void
+    ) -> NSMenuItem {
+        let item = ContextMenuItemSupport.item(title, systemImage: "bell.slash.fill", isEnabled: isEnabled, action: nil)
+        let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = false
+        for duration in ChannelMuteDuration.allCases {
+            submenu.addItem(ContextMenuItemSupport.item(duration.title, isEnabled: isEnabled) { action(duration) })
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    /// Notification Settings, with the effective level beside its submenu.
+    static func settings(selection: String, isEnabled: Bool, submenu: NSMenu) -> NSMenuItem {
+        let item = ContextMenuItemSupport.item(
+            "Notification Settings", systemImage: "bell.badge.fill", isEnabled: isEnabled, action: nil
+        )
+        item.subtitle = selection
+        item.submenu = submenu
+        return item
+    }
+
+    static func submenu() -> NSMenu {
+        let menu = NSMenu(title: "Notification Settings")
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// One level in the Notification Settings submenu, checked when selected.
+    static func level(
+        _ level: MessageNotificationLevel,
+        title: String,
+        selected: MessageNotificationLevel,
+        isEnabled: Bool,
+        action: @escaping (MessageNotificationLevel) -> Void
+    ) -> NSMenuItem {
+        let item = ContextMenuItemSupport.item(title, isEnabled: isEnabled) { action(level) }
+        item.state = selected == level ? .on : .off
+        return item
+    }
+}
+
 nonisolated enum ChannelNotificationInheritanceSource: Equatable, Sendable {
     case category
     case server
@@ -188,101 +247,50 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject {
-        private var isUnread: Bool
-        private var subject: ChannelContextMenuSubject
-        private var isMutationPending: Bool
-        private var allowsMutations: Bool
-        private var directOverride: ChannelNotificationOverride?
-        private var inheritedLevel: MessageNotificationLevel
-        private var inheritanceSource: ChannelNotificationInheritanceSource
-        private var markRead: () -> Void
-        private var mute: (ChannelMuteDuration) -> Void
-        private var unmute: () -> Void
-        private var setNotificationLevel: (MessageNotificationLevel) -> Void
-        private var copyChannelID: () -> Void
-        private var copyLink: () -> Void
-        private var pinAction: ChannelPinMenuAction
-        private var userMenu: () -> NSMenu?
-        private var groupActions: GroupDirectMessageMenuActions?
-        private var closeDirectMessage: (() -> Void)?
-        private var favoriteItems: () -> [NSMenuItem]
+    final class Coordinator {
+        private var bridge: ChannelContextMenuBridge
 
         init(from bridge: ChannelContextMenuBridge) {
-            subject = bridge.subject
-            isUnread = bridge.isUnread
-            isMutationPending = bridge.isMutationPending
-            allowsMutations = bridge.allowsMutations
-            directOverride = bridge.directOverride
-            inheritedLevel = bridge.inheritedLevel
-            inheritanceSource = bridge.inheritanceSource
-            markRead = bridge.markRead
-            mute = bridge.mute
-            unmute = bridge.unmute
-            setNotificationLevel = bridge.setNotificationLevel
-            copyChannelID = bridge.copyChannelID
-            copyLink = bridge.copyLink
-            pinAction = bridge.pinAction
-            userMenu = bridge.userMenu
-            groupActions = bridge.groupActions
-            closeDirectMessage = bridge.closeDirectMessage
-            favoriteItems = bridge.favoriteItems
+            self.bridge = bridge
         }
 
         func update(from bridge: ChannelContextMenuBridge) {
-            subject = bridge.subject
-            isUnread = bridge.isUnread
-            isMutationPending = bridge.isMutationPending
-            allowsMutations = bridge.allowsMutations
-            directOverride = bridge.directOverride
-            inheritedLevel = bridge.inheritedLevel
-            inheritanceSource = bridge.inheritanceSource
-            markRead = bridge.markRead
-            mute = bridge.mute
-            unmute = bridge.unmute
-            setNotificationLevel = bridge.setNotificationLevel
-            copyChannelID = bridge.copyChannelID
-            copyLink = bridge.copyLink
-            pinAction = bridge.pinAction
-            userMenu = bridge.userMenu
-            groupActions = bridge.groupActions
-            closeDirectMessage = bridge.closeDirectMessage
-            favoriteItems = bridge.favoriteItems
+            self.bridge = bridge
         }
 
         func makeMenu() -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
+            let canMutate = bridge.allowsMutations && !bridge.isMutationPending
 
             menu.addItem(
-                menuItem(
-                    "Mark as Read",
-                    systemImage: "envelope.open.fill",
-                    action: #selector(markReadFromMenu),
-                    isEnabled: isUnread && allowsMutations
-                )
+                ContextMenuItemSupport.item("Mark as Read", systemImage: "envelope.open.fill", isEnabled: bridge.isUnread && bridge.allowsMutations) {
+                    self.bridge.markRead()
+                }
             )
             menu.addItem(.separator())
 
-            let favorites = favoriteItems()
+            let favorites = bridge.favoriteItems()
             if !favorites.isEmpty {
                 favorites.forEach(menu.addItem)
                 menu.addItem(.separator())
             }
 
-            if let pinTitle = pinAction.title {
+            if let pinTitle = bridge.pinAction.title {
                 menu.addItem(
-                    menuItem(
-                        pinTitle,
-                        systemImage: "pin.fill",
-                        action: #selector(togglePinFromMenu),
-                        isEnabled: allowsMutations && !isMutationPending
-                    )
+                    ContextMenuItemSupport.item(pinTitle, systemImage: "pin.fill", isEnabled: canMutate) {
+                        if case let .available(_, _, toggle) = self.bridge.pinAction {
+                            toggle()
+                        }
+                    }
                 )
                 menu.addItem(.separator())
             }
 
-            addGroupItem("Edit Group", systemImage: "pencil", action: #selector(editGroupFromMenu), to: menu)
+            if bridge.groupActions != nil {
+                menu.addItem(ContextMenuItemSupport.item("Edit Group", systemImage: "pencil", isEnabled: bridge.allowsMutations) { self.bridge.groupActions?.edit() })
+                menu.addItem(.separator())
+            }
 
             let personItems = detachedUserMenuItems()
             let copyIdentifier = "user-\(UserMenuAction.Group.copy.rawValue)"
@@ -295,59 +303,37 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 menu.addItem(.separator())
             }
 
-            if isDirectlyMuted {
-                let unmuteItem = menuItem(
-                    subject.unmuteTitle,
-                    systemImage: "bell.fill",
-                    action: #selector(unmuteFromMenu),
-                    isEnabled: allowsMutations && !isMutationPending
+            if bridge.directOverride?.isActivelyMuted() == true {
+                menu.addItem(
+                    NotificationMenuItems.unmute(
+                        bridge.subject.unmuteTitle,
+                        until: bridge.directOverride?.muteConfiguration?.endTime,
+                        isEnabled: canMutate
+                    ) { self.bridge.unmute() }
                 )
-                if let subtitle = ChannelContextMenuSubtitle.muteRemaining(
-                    until: directOverride?.muteConfiguration?.endTime
-                ) {
-                    unmuteItem.subtitle = subtitle
-                }
-                menu.addItem(unmuteItem)
             } else {
-                let muteItem = menuItem(
-                    subject.muteTitle,
-                    systemImage: "bell.slash.fill",
-                    action: nil,
-                    isEnabled: allowsMutations && !isMutationPending
+                menu.addItem(
+                    NotificationMenuItems.mute(bridge.subject.muteTitle, isEnabled: canMutate) { self.bridge.mute($0) }
                 )
-                let muteMenu = NSMenu(title: subject.muteTitle)
-                muteMenu.autoenablesItems = false
-                for (index, duration) in ChannelMuteDuration.allCases.enumerated() {
-                    let item = menuItem(
-                        duration.title,
-                        action: #selector(muteFromMenu(_:)),
-                        isEnabled: allowsMutations && !isMutationPending
-                    )
-                    item.representedObject = NSNumber(value: index)
-                    muteMenu.addItem(item)
-                }
-                muteItem.submenu = muteMenu
-                menu.addItem(muteItem)
             }
 
-            let notificationItem = menuItem(
-                "Notification Settings",
-                systemImage: "bell.badge.fill",
-                action: nil,
-                isEnabled: allowsMutations && !isMutationPending
-            )
-            notificationItem.subtitle =
-                ChannelContextMenuSubtitle.notificationSelection(
-                    configured:
-                        directOverride?.messageNotifications ?? .inherit,
-                    inherited: inheritedLevel
+            menu.addItem(
+                NotificationMenuItems.settings(
+                    selection: ChannelContextMenuSubtitle.notificationSelection(
+                        configured: bridge.directOverride?.messageNotifications ?? .inherit,
+                        inherited: bridge.inheritedLevel
+                    ),
+                    isEnabled: canMutate,
+                    submenu: notificationMenu(isEnabled: canMutate)
                 )
-            notificationItem.submenu = notificationMenu()
-            menu.addItem(notificationItem)
+            )
 
             menu.addItem(.separator())
             personItems.filter { $0.identifier?.rawValue == copyIdentifier }.forEach(menu.addItem)
-            appendChannelCopyItems(to: menu)
+            menu.addItem(ContextMenuItemSupport.item(bridge.subject.copyIDTitle, systemImage: "number.square.fill") { self.bridge.copyChannelID() })
+            if bridge.subject.includesCopyLink {
+                menu.addItem(ContextMenuItemSupport.item("Copy Link", systemImage: "link") { self.bridge.copyLink() })
+            }
             let destructiveItems = personItems.filter { $0.identifier?.rawValue == destructiveIdentifier }
             UserContextMenu.append(conversationLeavingItems(around: destructiveItems), to: menu)
             return menu
@@ -357,163 +343,47 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         /// actions; Leave Group follows them for a group DM.
         private func conversationLeavingItems(around destructiveItems: [NSMenuItem]) -> [NSMenuItem] {
             var items = destructiveItems
-            if closeDirectMessage != nil {
+            if bridge.closeDirectMessage != nil {
                 items.insert(
-                    menuItem(
-                        "Close DM", systemImage: "xmark",
-                        action: #selector(closeDirectMessageFromMenu), isEnabled: allowsMutations
-                    ),
+                    ContextMenuItemSupport.item("Close DM", systemImage: "xmark", isEnabled: bridge.allowsMutations) { self.bridge.closeDirectMessage?() },
                     at: 0
                 )
             }
-            if groupActions != nil {
+            if bridge.groupActions != nil {
                 items.append(
-                    menuItem(
+                    ContextMenuItemSupport.item(
                         "Leave Group", systemImage: "rectangle.portrait.and.arrow.right",
-                        action: #selector(leaveGroupFromMenu), isEnabled: allowsMutations, isDestructive: true
-                    )
+                        isEnabled: bridge.allowsMutations, isDestructive: true
+                    ) { self.bridge.groupActions?.leave() }
                 )
             }
             return items
         }
 
-        private func appendChannelCopyItems(to menu: NSMenu) {
-            menu.addItem(
-                menuItem(
-                    subject.copyIDTitle,
-                    systemImage: "number.square.fill",
-                    action: #selector(copyChannelIDFromMenu)
-                )
-            )
-            if subject.includesCopyLink {
-                menu.addItem(
-                    menuItem(
-                        "Copy Link",
-                        systemImage: "link",
-                        action: #selector(copyLinkFromMenu)
-                    )
-                )
-            }
-        }
-
-        /// A group DM action in its own section, as Discord's group menu lists it.
-        private func addGroupItem(
-            _ title: String, systemImage: String, action: Selector, to menu: NSMenu
-        ) {
-            guard groupActions != nil else { return }
-            menu.addItem(
-                menuItem(title, systemImage: systemImage, action: action, isEnabled: allowsMutations)
-            )
-            menu.addItem(.separator())
-        }
-
         private func detachedUserMenuItems() -> [NSMenuItem] {
-            let menu = userMenu()
+            let menu = bridge.userMenu()
             let items = menu?.items ?? []
             menu?.removeAllItems()
             return items
         }
 
-        private var isDirectlyMuted: Bool {
-            directOverride?.isActivelyMuted() == true
-        }
-
-        private func notificationMenu() -> NSMenu {
-            let menu = NSMenu(title: "Notification Settings")
-            menu.autoenablesItems = false
-            let selected = directOverride?.messageNotifications ?? .inherit
+        private func notificationMenu(isEnabled: Bool) -> NSMenu {
+            let menu = NotificationMenuItems.submenu()
+            let selected = bridge.directOverride?.messageNotifications ?? .inherit
             let levels: [MessageNotificationLevel] = [
                 .inherit, .allMessages, .onlyMentions, .nothing,
             ]
             for level in levels {
-                let title =
-                    if level == .inherit {
-                        inheritanceSource.menuTitle
-                    } else {
-                        level.menuTitle
-                    }
-                let item = menuItem(
-                    title,
-                    action: #selector(setNotificationFromMenu(_:)),
-                    isEnabled: allowsMutations && !isMutationPending
-                )
-                item.state = selected == level ? .on : .off
-                item.representedObject = NSNumber(value: level.rawValue)
+                let title = level == .inherit ? bridge.inheritanceSource.menuTitle : level.menuTitle
+                let item = NotificationMenuItems.level(level, title: title, selected: selected, isEnabled: isEnabled) {
+                    self.bridge.setNotificationLevel($0)
+                }
                 if level == .inherit {
-                    item.subtitle = inheritedLevel.menuTitle
+                    item.subtitle = bridge.inheritedLevel.menuTitle
                 }
                 menu.addItem(item)
             }
             return menu
-        }
-
-        private func menuItem(
-            _ title: String,
-            systemImage: String? = nil,
-            action: Selector?,
-            isEnabled: Bool = true,
-            isDestructive: Bool = false
-        ) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = action == nil ? nil : self
-            item.isEnabled = isEnabled
-            if let systemImage {
-                ContextMenuItemSupport.configure(
-                    item,
-                    title: title,
-                    systemImage: systemImage,
-                    isDestructive: isDestructive
-                )
-            }
-            return item
-        }
-
-        @objc private func markReadFromMenu() {
-            markRead()
-        }
-
-        @objc private func togglePinFromMenu() {
-            if case let .available(_, _, toggle) = pinAction {
-                toggle()
-            }
-        }
-
-        @objc private func editGroupFromMenu() {
-            groupActions?.edit()
-        }
-
-        @objc private func leaveGroupFromMenu() {
-            groupActions?.leave()
-        }
-
-        @objc private func closeDirectMessageFromMenu() {
-            closeDirectMessage?()
-        }
-
-        @objc private func muteFromMenu(_ sender: NSMenuItem) {
-            guard let index = (sender.representedObject as? NSNumber)?.intValue,
-                  ChannelMuteDuration.allCases.indices.contains(index)
-            else { return }
-            mute(ChannelMuteDuration.allCases[index])
-        }
-
-        @objc private func unmuteFromMenu() {
-            unmute()
-        }
-
-        @objc private func setNotificationFromMenu(_ sender: NSMenuItem) {
-            guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
-                  let level = MessageNotificationLevel(rawValue: rawValue)
-            else { return }
-            setNotificationLevel(level)
-        }
-
-        @objc private func copyChannelIDFromMenu() {
-            copyChannelID()
-        }
-
-        @objc private func copyLinkFromMenu() {
-            copyLink()
         }
     }
 }

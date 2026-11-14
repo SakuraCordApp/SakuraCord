@@ -153,16 +153,16 @@ struct ConversationOverflowToolbarMenu: View {
 
     private var menu: ThreadActionsMenu {
         var entries = [
-            ThreadMenuEntry(id: "inbox", title: "Inbox", systemImage: "tray", content: .action(model.presentInbox)),
+            ActionMenuEntry(id: "inbox", title: "Inbox", systemImage: "tray", content: .action(model.presentInbox)),
         ]
         if let pinsChannelID {
-            entries.append(ThreadMenuEntry(
+            entries.append(ActionMenuEntry(
                 id: "pins", title: "Pinned Messages", systemImage: "pin",
                 content: .action { [model] in model.presentPinnedMessages(channelID: pinsChannelID) }
             ))
         }
         if offersThreads {
-            entries.append(ThreadMenuEntry(
+            entries.append(ActionMenuEntry(
                 id: "threads", title: "Threads", systemImage: SakuraCordSystemSymbol.thread,
                 content: .action(model.toggleThreadBrowser)
             ))

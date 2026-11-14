@@ -13,7 +13,7 @@ import Testing
     )
     let menu = ForumPostMenuBuilder().makeMenu(
         actionsMenu: ThreadActionsMenu(sections: [[
-            ThreadMenuEntry(id: ThreadActionsMenu.tagsSlotID, title: "Tags", content: .slot),
+            ActionMenuEntry(id: ThreadActionsMenu.tagsSlotID, title: "Tags", content: .slot),
         ]]),
         tags: [ordinary, moderated],
         appliedTagIDs: [moderated.id],

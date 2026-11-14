@@ -28,11 +28,11 @@ struct ThreadActionsToolbarMenu: View {
 @MainActor
 final class ThreadActionsMenuPresenter {
     weak var anchor: NSView?
-    private let renderer = ThreadActionsMenuRenderer()
+    private let renderer = ActionMenuRenderer()
 
     func show(_ actionsMenu: ThreadActionsMenu) {
         guard let anchor else { return }
-        renderer.makeMenu(actionsMenu).popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: anchor)
+        renderer.makeMenu(actionsMenu.sections).popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: anchor)
     }
 }
 
