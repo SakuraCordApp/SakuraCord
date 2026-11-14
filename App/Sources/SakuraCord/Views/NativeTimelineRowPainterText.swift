@@ -280,12 +280,10 @@ extension NativeTimelineRowPainter {
         spoilerHoverProgress: [Int: CGFloat] = [:],
         revealedSpoilerLocations: Set<Int> = []
     ) {
-        var drawingFrame = frame
-        drawingFrame.size.height += box.layoutHeightAdjustment
         attributedText(
             box.value,
             framesetter: box.framesetter,
-            in: drawingFrame,
+            in: box.drawingFrame(frame),
             model: model,
             bubble: bubble,
             selectionRange: selectionRange,

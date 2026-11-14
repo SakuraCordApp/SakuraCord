@@ -157,9 +157,7 @@ extension NativeTimelineCanvasView {
             for (textIndex, textRegion) in
                 embed.textRegions.enumerated()
             where includesNonSelectable || textRegion.isSelectable {
-                var frame = textRegion.frame
-                frame.size.height +=
-                    textRegion.text.layoutHeightAdjustment
+                let frame = textRegion.text.drawingFrame(textRegion.frame)
                 result.append(SelectableTextRegion(
                     region: .embed(
                         embedID: embed.embedID,
@@ -178,9 +176,7 @@ extension NativeTimelineCanvasView {
             for (textIndex, textRegion) in
                 component.textRegions.enumerated()
             where includesNonSelectable || textRegion.isSelectable {
-                var frame = textRegion.frame
-                frame.size.height +=
-                    textRegion.text.layoutHeightAdjustment
+                let frame = textRegion.text.drawingFrame(textRegion.frame)
                 result.append(SelectableTextRegion(
                     region: .component(
                         layoutIndex: layoutIndex,
@@ -247,11 +243,10 @@ extension NativeTimelineCanvasView {
             return
         }
 
-        var overlayFrame = localFrame.offsetBy(
+        let overlayFrame = box.drawingFrame(localFrame.offsetBy(
             dx: 0,
             dy: displayedRowOrigin(at: index)
-        )
-        overlayFrame.size.height += box.layoutHeightAdjustment
+        ))
         beginningSelectionOverlay.frame = overlayFrame
         beginningSelectionOverlay.image =
             NativeTimelineRowPainter.selectionOverlayImage(

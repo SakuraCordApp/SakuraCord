@@ -1046,11 +1046,11 @@ private enum NodeBuilder {
                     spacing: componentSpacing
                 )
             }
-            let width = fixedWidth ?? DiscordComponentContainerLayoutPlan.width(
-                idealContent: content(width: max(1, maximumWidth - padding * 2)).size.width,
-                available: maximumWidth,
-                maximum: DiscordRichMessageMetrics.componentsMaximumWidth,
-                padding: padding
+            // The accent bar overlays the leading padding, so it adds no width.
+            let width = fixedWidth ?? min(
+                max(0, content(width: max(1, maximumWidth - padding * 2)).size.width + padding * 2),
+                max(0, maximumWidth),
+                DiscordRichMessageMetrics.componentsMaximumWidth
             )
             let content = content(width: max(1, width - padding * 2))
             let frame = CGRect(x: 0, y: 0, width: width, height: content.size.height + padding * 2)

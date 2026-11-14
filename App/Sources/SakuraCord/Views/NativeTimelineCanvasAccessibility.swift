@@ -1295,9 +1295,7 @@ extension NativeTimelineCanvasView {
                     embedID: region.embedID,
                     textIndex: textIndex
                 )
-                var drawingFrame = textRegion.frame
-                drawingFrame.size.height +=
-                    textRegion.text.layoutHeightAdjustment
+                let drawingFrame = textRegion.text.drawingFrame(textRegion.frame)
                 appendTextAccessibility(to: &groupChildren, input: .init(
                     value: textRegion.text.value,
                     framesetter: textRegion.text.framesetter,
@@ -1487,9 +1485,7 @@ extension NativeTimelineCanvasView {
                     layoutIndex: layoutIndex,
                     textIndex: textIndex
                 )
-                var drawingFrame = textRegion.frame
-                drawingFrame.size.height +=
-                    textRegion.text.layoutHeightAdjustment
+                let drawingFrame = textRegion.text.drawingFrame(textRegion.frame)
                 appendTextAccessibility(to: &children, input: .init(
                     value: textRegion.text.value,
                     framesetter: textRegion.text.framesetter,

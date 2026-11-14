@@ -471,8 +471,7 @@ extension NativeTimelineCanvasView {
                 )
             }
             for (textIndex, textRegion) in embed.textRegions.enumerated() {
-                var drawingFrame = textRegion.frame
-                drawingFrame.size.height += textRegion.text.layoutHeightAdjustment
+                let drawingFrame = textRegion.text.drawingFrame(textRegion.frame)
                 let textRegionID = NativeTimelineTextRegion.embed(
                     embedID: embed.embedID,
                     textIndex: textIndex
@@ -561,8 +560,7 @@ extension NativeTimelineCanvasView {
         where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
             textRegion.frame, hiddenContainerFrames: hiddenContainerFrames
         ) {
-            var drawingFrame = textRegion.frame
-            drawingFrame.size.height += textRegion.text.layoutHeightAdjustment
+            let drawingFrame = textRegion.text.drawingFrame(textRegion.frame)
             let textRegionID = NativeTimelineTextRegion.component(
                 layoutIndex: componentIndex,
                 textIndex: textIndex

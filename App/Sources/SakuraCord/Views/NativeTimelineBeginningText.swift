@@ -4,7 +4,7 @@ enum NativeTimelineBeginningText {
     static func title(
         _ beginning: NativeTimelineBeginning
     ) -> NativeTimelineAttributedTextBox {
-        box(
+        .plain(
             beginning.title,
             font: .interfaceSystemFont(
                 ofSize: NSFont.preferredFont(
@@ -25,7 +25,7 @@ enum NativeTimelineBeginningText {
         // Only a channel's own topic is Markdown; generated descriptions embed
         // names that must render literally.
         guard let topic = beginning.topic else {
-            return box(beginning.description, font: font, color: .secondaryLabelColor)
+            return .plain(beginning.description, font: font, color: .secondaryLabelColor)
         }
         let baseFontSize = font.pointSize
         let prepared = RichMessageAttributedText.prepare(source: topic)
@@ -49,24 +49,5 @@ enum NativeTimelineBeginningText {
             }
         }
         return NativeTimelineAttributedTextBox(attributed)
-    }
-
-    static func box(
-        _ value: String,
-        font: NSFont,
-        color: NSColor
-    ) -> NativeTimelineAttributedTextBox {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byWordWrapping
-        return NativeTimelineAttributedTextBox(
-            NSAttributedString(
-                string: value,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: color,
-                    .paragraphStyle: paragraph,
-                ]
-            )
-        )
     }
 }

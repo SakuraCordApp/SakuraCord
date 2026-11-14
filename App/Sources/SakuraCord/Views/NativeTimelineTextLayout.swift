@@ -79,13 +79,13 @@ enum NativeTimelineTextPresentation {
 
     static var interactionLoadingTextIndent: CGFloat { InteractionLoadingDots.size.width + InterfaceScale.metric(4) }
 
-    static var empty: Value {
+    static func empty(linkedImages: [LinkedImageReference] = []) -> Value {
         Value(
             attributedContent: nil,
             framesetter: CTFramesetterCreateWithAttributedString(
                 NSAttributedString()
             ),
-            linkedImages: []
+            linkedImages: linkedImages
         )
     }
 
@@ -96,7 +96,7 @@ enum NativeTimelineTextPresentation {
     ) -> Value {
         let message = row.message
         guard !message.flags.contains(.isComponentsV2) else {
-            return empty
+            return empty()
         }
         let systemActorColor = source?.roleColorDisplay == .inNames
             ? NativeTimelineRowPainter.roleColor(source?.authorPresentation(for: message).roleColorHex)
@@ -121,13 +121,7 @@ enum NativeTimelineTextPresentation {
         relativeTo date: Date = .now
     ) -> Value {
         guard plan.preparedText != nil else {
-            return Value(
-                attributedContent: nil,
-                framesetter: CTFramesetterCreateWithAttributedString(
-                    NSAttributedString()
-                ),
-                linkedImages: plan.linkedImages
-            )
+            return empty(linkedImages: plan.linkedImages)
         }
 
         let preservesCompactSystemStyle = message.type.hasGeneratedContent
@@ -165,13 +159,7 @@ enum NativeTimelineTextPresentation {
             baseFontSize: resolvedBaseFontSize,
             relativeTo: date
         ) else {
-            return Value(
-                attributedContent: nil,
-                framesetter: CTFramesetterCreateWithAttributedString(
-                    NSAttributedString()
-                ),
-                linkedImages: plan.linkedImages
-            )
+            return empty(linkedImages: plan.linkedImages)
         }
         let box = resolvedBox(for: preparation)
         return Value(
@@ -950,6 +938,13 @@ nonisolated enum NativeTimelineMentionMetrics {
 }
 
 extension NativeTimelineAttributedTextBox {
+    /// `frame` grown by the height the box's layout leaves out.
+    nonisolated func drawingFrame(_ frame: CGRect) -> CGRect {
+        var frame = frame
+        frame.size.height += layoutHeightAdjustment
+        return frame
+    }
+
     /// Word-wrapped text in one font and colour, linking all of it when
     /// given a link.
     nonisolated static func plain(

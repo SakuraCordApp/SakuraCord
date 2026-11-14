@@ -569,12 +569,10 @@ enum NativeTimelineTextHitTester {
         characterIndex: Int,
         rawToken: String
     ) -> CGRect? {
-        var drawingFrame = frame
-        drawingFrame.size.height += box.layoutHeightAdjustment
         return mentionAnchorFrame(
             value: box.value,
             framesetter: box.framesetter,
-            frame: drawingFrame,
+            frame: box.drawingFrame(frame),
             characterIndex: characterIndex,
             rawToken: rawToken
         )
@@ -696,12 +694,10 @@ enum NativeTimelineTextHitTester {
         frame: CGRect,
         point: CGPoint
     ) -> NativeTimelineTextHit? {
-        var drawingFrame = frame
-        drawingFrame.size.height += box.layoutHeightAdjustment
         return hit(
             value: box.value,
             framesetter: box.framesetter,
-            frame: drawingFrame,
+            frame: box.drawingFrame(frame),
             point: point
         )
     }
@@ -925,12 +921,10 @@ enum NativeTimelineTextHitTester {
         point: CGPoint,
         clampsToText: Bool
     ) -> Int? {
-        var drawingFrame = frame
-        drawingFrame.size.height += box.layoutHeightAdjustment
         return caretIndex(
             value: box.value,
             framesetter: box.framesetter,
-            frame: drawingFrame,
+            frame: box.drawingFrame(frame),
             point: point,
             clampsToText: clampsToText
         )

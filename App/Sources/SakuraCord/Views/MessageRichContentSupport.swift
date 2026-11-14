@@ -53,12 +53,6 @@ enum DiscordEmbedPalette {
     }
 }
 
-nonisolated enum DiscordFittingWidthPlan {
-    static func width(ideal: CGFloat, available: CGFloat?, maximum: CGFloat) -> CGFloat {
-        min(max(0, ideal), max(0, available ?? maximum), maximum)
-    }
-}
-
 nonisolated enum MessageEmbedPresentationKind: Equatable {
     case hidden, bareMedia, card
 }
@@ -896,22 +890,6 @@ nonisolated enum MediaGalleryPlan {
 nonisolated enum MediaGalleryImagePresentation {
     static func fillsFrame(itemCount: Int) -> Bool {
         itemCount > 1
-    }
-}
-
-nonisolated enum DiscordComponentContainerLayoutPlan {
-    static func width(
-        idealContent: CGFloat,
-        available: CGFloat?,
-        maximum: CGFloat,
-        padding: CGFloat
-    ) -> CGFloat {
-        // The accent bar overlays the leading padding, so it adds no width.
-        DiscordFittingWidthPlan.width(
-            ideal: idealContent + padding * 2,
-            available: available,
-            maximum: maximum
-        )
     }
 }
 

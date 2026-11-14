@@ -166,12 +166,11 @@ actor SharedAnimatedImageLoader {
 }
 
 nonisolated enum AnimatedImageDecodePolicy {
-    /// Full GIF/APNG/WebP frame expansion is memory-bandwidth intensive. A
-    /// burst of visible avatars and emoji previously started one detached
-    /// user-initiated decode per asset, saturating several cores immediately
-    /// after a server switch. Static first frames use the separate two-lane
-    /// thumbnail scheduler, so serialize the optional animation expansion at
-    /// utility priority without delaying first paint.
+    /// Full GIF/APNG/WebP frame expansion is memory-bandwidth intensive, and
+    /// a burst of visible avatars and emoji would saturate several cores.
+    /// Static first frames use the separate two-lane thumbnail scheduler, so
+    /// animation expansion runs one at a time at background priority without
+    /// delaying first paint.
     static let maximumConcurrentDecodes = 1
     static let taskPriority = TaskPriority.background
 }

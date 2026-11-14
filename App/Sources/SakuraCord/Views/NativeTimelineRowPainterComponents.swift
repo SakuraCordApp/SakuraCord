@@ -720,7 +720,7 @@ extension NativeTimelineRowPainter {
         }
 
         NSGraphicsContext.saveGraphicsState()
-        // A press also dips the button about its centre, as before.
+        // A press also dips the button about its centre.
         let scale = NativeTimelineComponentButtonVisualState.scale(pressProgress: pressProgress)
         if abs(scale - 1) > 0.0001 {
             let transform = NSAffineTransform()
