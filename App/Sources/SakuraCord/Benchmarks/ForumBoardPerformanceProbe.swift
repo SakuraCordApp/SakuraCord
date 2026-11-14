@@ -239,11 +239,9 @@ enum ForumBoardBenchmark {
             NotificationCenter.default.post(name: .sakuracordToggleChannelSidebar, object: nil)
         }
         window.setFrame(original, display: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = (try? encoder.encode(result)) ?? Data()
-        try? data.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-forum-resize-benchmark.json"))
-        logger.notice("FORUM_RESIZE_BENCHMARK \(String(bytes: data, encoding: .utf8) ?? "", privacy: .public)")
+        PerformanceBenchmarkHarness.writeResult(
+            result, fileName: "sakuracord-forum-resize-benchmark.json", logPrefix: "FORUM_RESIZE_BENCHMARK", logger: logger
+        )
     }
 
     /// Calls `step` each frame with a progress that eases 0 → 1 → 0 every
@@ -266,9 +264,7 @@ enum ForumBoardBenchmark {
     }
 
     private static func report(_ result: Result) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = (try? encoder.encode(result)) ?? Data()
+        let data = (try? PerformanceBenchmarkHarness.resultEncoder.encode(result)) ?? Data()
         // The sandboxed app can only write beneath its own container, so
         // scripts pass a path under it, as the other offline benchmarks do.
         let path = PerformanceBenchmarkHarness.resultPath

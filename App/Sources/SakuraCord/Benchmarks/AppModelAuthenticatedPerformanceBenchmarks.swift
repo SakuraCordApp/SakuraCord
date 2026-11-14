@@ -195,17 +195,9 @@ import SakuraCordModels
             outcome: String,
             pageCount: Int
         ) {
-            guard let path = PerformanceBenchmarkHarness.resultPath else { return }
-            let contents = """
-            outcome\t\(outcome)
-            page_count\t\(pageCount)
-
-            """
-            try? contents.write(
-                to: URL(fileURLWithPath: path),
-                atomically: true,
-                encoding: .utf8
-            )
+            PerformanceBenchmarkHarness.writeResultFields {
+                [("outcome", outcome), ("page_count", pageCount)]
+            }
         }
 
         func runAuthenticatedAccountSwitchPerformanceBenchmark() async {
@@ -293,19 +285,14 @@ import SakuraCordModels
             sourceAccountID: String?,
             targetAccountID: String?
         ) {
-            guard let path = PerformanceBenchmarkHarness.resultPath else { return }
-            let contents = """
-            outcome\t\(outcome)
-            switch_count\t\(switchCount)
-            source_account_id\t\(sourceAccountID ?? "")
-            target_account_id\t\(targetAccountID ?? "")
-
-            """
-            try? contents.write(
-                to: URL(fileURLWithPath: path),
-                atomically: true,
-                encoding: .utf8
-            )
+            PerformanceBenchmarkHarness.writeResultFields {
+                [
+                    ("outcome", outcome),
+                    ("switch_count", switchCount),
+                    ("source_account_id", sourceAccountID ?? ""),
+                    ("target_account_id", targetAccountID ?? ""),
+                ]
+            }
         }
 
         func runAuthenticatedGestureScrollPerformanceBenchmark() async {
@@ -538,24 +525,22 @@ import SakuraCordModels
             detail: String = "",
             channel: Channel? = nil
         ) {
-            guard let path = PerformanceBenchmarkHarness.resultPath else { return }
-            let contents = """
-            outcome\t\(outcome)
-            detail\t\(detail)
-            target\t\(target)
-            target_channel_id\t\(channel?.id.rawValue.description ?? "")
-            target_channel_name\t\(channel?.name ?? "")
-            surface\t\(ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_SCROLL_SURFACE"] ?? "all")
-            display_maximum_frames_per_second\t\(max(1, NSApp.keyWindow?.screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 60))
-            initial_message_count\t\(initialMessageCount ?? messageCount)
-            message_count\t\(messageCount)
-
-            """
-            try? contents.write(
-                to: URL(fileURLWithPath: path),
-                atomically: true,
-                encoding: .utf8
-            )
+            PerformanceBenchmarkHarness.writeResultFields {
+                [
+                    ("outcome", outcome),
+                    ("detail", detail),
+                    ("target", target),
+                    ("target_channel_id", channel?.id.rawValue.description ?? ""),
+                    ("target_channel_name", channel?.name ?? ""),
+                    ("surface", ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_SCROLL_SURFACE"] ?? "all"),
+                    (
+                        "display_maximum_frames_per_second",
+                        max(1, NSApp.keyWindow?.screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 60)
+                    ),
+                    ("initial_message_count", initialMessageCount ?? messageCount),
+                    ("message_count", messageCount),
+                ]
+            }
         }
 
         func runAuthenticatedNavigationPerformanceBenchmark() async {
@@ -735,19 +720,14 @@ import SakuraCordModels
             serverCount: Int,
             channelCount: Int
         ) {
-            guard let path = PerformanceBenchmarkHarness.resultPath else { return }
-            let contents = """
-            outcome\t\(outcome)
-            direct_message_count\t\(directMessageCount)
-            server_count\t\(serverCount)
-            channel_count\t\(channelCount)
-
-            """
-            try? contents.write(
-                to: URL(fileURLWithPath: path),
-                atomically: true,
-                encoding: .utf8
-            )
+            PerformanceBenchmarkHarness.writeResultFields {
+                [
+                    ("outcome", outcome),
+                    ("direct_message_count", directMessageCount),
+                    ("server_count", serverCount),
+                    ("channel_count", channelCount),
+                ]
+            }
         }
     }
 #endif

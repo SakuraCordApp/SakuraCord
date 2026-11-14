@@ -143,17 +143,36 @@ enum PerformanceBenchmarkHarness {
         return candidates.max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
     }
 
-    /// Writes `result` as sorted, pretty-printed JSON to `fileName` in the
-    /// temporary directory and logs it after `logPrefix`.
     /// Where a script asked a benchmark to write its result, if it did.
     nonisolated static var resultPath: String? {
         ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_RESULT_PATH"]
     }
 
-    static func writeResult(_ result: some Encodable, fileName: String, logPrefix: String, logger: Logger) {
+    /// Writes the fields `makeFields` returns to `resultPath`, one
+    /// tab-separated name and value per line, when a script asked for them.
+    static func writeResultFields(_ makeFields: () -> [(String, Any)]) {
+        guard let path = resultPath else { return }
+        let contents = makeFields().map { "\($0)\t\($1)\n" }.joined()
+        try? contents.write(to: URL(fileURLWithPath: path), atomically: true, encoding: .utf8)
+    }
+
+    /// Encodes JSON results as sorted, pretty-printed JSON.
+    static let resultEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = (try? encoder.encode(result)) ?? Data()
+        return encoder
+    }()
+
+    /// Writes `result` as JSON to `fileName` in the temporary directory and
+    /// logs it after `logPrefix`.
+    static func writeResult(_ result: some Encodable, fileName: String, logPrefix: String, logger: Logger) {
+        let data: Data
+        do {
+            data = try resultEncoder.encode(result)
+        } catch {
+            logger.error("\(logPrefix, privacy: .public) could not encode its result: \(error, privacy: .public)")
+            return
+        }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         try? data.write(to: url, options: .atomic)
         logger.notice("\(logPrefix, privacy: .public) \(String(bytes: data, encoding: .utf8) ?? "", privacy: .public)")
