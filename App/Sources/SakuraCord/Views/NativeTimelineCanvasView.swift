@@ -307,17 +307,17 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
-    var pendingReactionBaseline: NativeTimelineRowMotionBaseline?
+    var pendingRowMotionBaseline: NativeTimelineRowMotionBaseline?
     var reactionTransitions: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionTransition] = [:]
     var rowMotions: [NativeTimelineRowMotion] = []
     /// Per-frame geometry of `rowMotions`: the displacement of rows up
     /// to the first changed one, and how much less each changed row and the
     /// rows after it are displaced.
-    var reactionMotionShift: CGFloat = 0
-    var reactionMotionSteps: [(index: Int, cumulative: CGFloat)] = []
-    var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
+    var rowMotionShift: CGFloat = 0
+    var rowMotionSteps: [(index: Int, cumulative: CGFloat)] = []
+    var rowMotionRemainingHeights: [Int: CGFloat] = [:]
     /// The part of each row's remaining height that its edited text's band still has to glide.
-    var reactionMotionTextRemainingHeights: [Int: CGFloat] = [:]
+    var rowMotionTextRemainingHeights: [Int: CGFloat] = [:]
     var editedTextBands: [NativeMessageTimelineItem.Identifier: NativeTimelineEditedTextBand] = [:] {
         didSet {
             guard oldValue.isEmpty != editedTextBands.isEmpty else { return }
@@ -338,14 +338,14 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var handOvers: [NativeMessageTimelineItem.Identifier: HandOver] = [:]
     var nextRowMotionID = 1
     let rowMotionTicker = DisplayLinkTicker()
-    /// When the reaction ticker last stepped, to tell a late frame.
-    var reactionStepUptime: TimeInterval?
+    /// When the row motion ticker last stepped, to tell a late frame.
+    var rowMotionStepUptime: TimeInterval?
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
     var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]
     /// The display scale and colour space reaction pictures are drawn for.
     var reactionBacking: (scale: CGFloat, colorSpace: NSColorSpace?) = (0, nil)
-    /// The width the running reaction motions were laid out at.
-    var reactionTransitionWidth: CGFloat = 0
+    /// The width the running row motions were laid out at.
+    var rowMotionTransitionWidth: CGFloat = 0
     let hoverLabelCoordinator =
         StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
     /// A press dismisses the hovered target's label until another is hovered.

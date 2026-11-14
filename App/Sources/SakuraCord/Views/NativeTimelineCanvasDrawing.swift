@@ -82,7 +82,7 @@ extension NativeTimelineCanvasView {
         // Rows laid out at another width no longer match the chips' frames
         // or the fading pictures.
         if !reactionTransitions.isEmpty || !rowMotions.isEmpty || !departedRuns.isEmpty,
-           abs(reactionTransitionWidth - max(1, viewportWidth)) >= 0.5 {
+           abs(rowMotionTransitionWidth - max(1, viewportWidth)) >= 0.5 {
             finishRowMotions()
         }
         let size = NSSize(

@@ -196,7 +196,7 @@ extension NativeTimelineCanvasView {
     /// Records the rows around the viewport before the coordinator replaces
     /// them in the shared storage.
     func captureRowMotionBaseline() {
-        pendingReactionBaseline = nil
+        pendingRowMotionBaseline = nil
         // An update during an inline edit lands at once: the editor already
         // shows its result. The saved edit hands the editor over to its row
         // as a remote edit would change it.
@@ -227,7 +227,7 @@ extension NativeTimelineCanvasView {
                 editor: isEdited ? editor : nil
             )
         }
-        if !rows.isEmpty { pendingReactionBaseline = NativeTimelineRowMotionBaseline(width: bounds.width, rows: rows) }
+        if !rows.isEmpty { pendingRowMotionBaseline = NativeTimelineRowMotionBaseline(width: bounds.width, rows: rows) }
     }
 
     /// Starts the motion of the update just applied, after the coordinator
@@ -238,8 +238,8 @@ extension NativeTimelineCanvasView {
     /// Any other change near the viewport, such as a new message, applies
     /// instantly as before.
     func beginRowMotions() {
-        guard let baseline = pendingReactionBaseline else { return }
-        pendingReactionBaseline = nil
+        guard let baseline = pendingRowMotionBaseline else { return }
+        pendingRowMotionBaseline = nil
         // The whole update reads glides at one time, so a stall inside it,
         // such as rasterizing a tall row's picture, is made up on the next
         // frame as one.
@@ -315,9 +315,9 @@ extension NativeTimelineCanvasView {
         )
         guard update.startedChips || !departedRuns.isEmpty || update.plan.motion != nil
         else { return }
-        reactionTransitionWidth = bounds.width
+        rowMotionTransitionWidth = bounds.width
         if rowMotionTicker.displayLink == nil {
-            reactionStepUptime = nil
+            rowMotionStepUptime = nil
             rowMotionTicker.start(on: self) { [weak self] in self?.stepRowMotions() }
         }
     }
@@ -515,7 +515,7 @@ extension NativeTimelineCanvasView {
                 reconcilesMedia = reconcilesMedia || animatedMediaRows[identifier] != nil
             }
         }
-        if redrawsRows { redrawForRowMotion(invalidating: reactionMotionFrame) }
+        if redrawsRows { redrawForRowMotion(invalidating: rowMotionFrame) }
         if !fadeFrame.isNull { setNeedsDisplay(fadeFrame.union(departedRunFrame)) }
         if reconcilesMedia { reconcileAnimatedMediaOverlays(reduceMotion: false) }
         if reactionTransitions.isEmpty, rowMotions.isEmpty, departedRuns.isEmpty {
@@ -524,12 +524,12 @@ extension NativeTimelineCanvasView {
     }
 
     /// A late frame moves glides by at most one 60 Hz frame of their curve.
-    private static let reactionFrameAllowance: TimeInterval = 1.0 / 60
+    private static let rowMotionFrameAllowance: TimeInterval = 1.0 / 60
 
     /// The time row motion was last brought to. Drawing reads fades and
     /// gaps at it, so they stay with the rows' places when a draw stalls.
     var rowMotionUptime: TimeInterval {
-        reactionStepUptime ?? ProcessInfo.processInfo.systemUptime
+        rowMotionStepUptime ?? ProcessInfo.processInfo.systemUptime
     }
 
     /// A late frame, such as one held up by the first draw of a tall row,
@@ -538,13 +538,13 @@ extension NativeTimelineCanvasView {
     /// Runs before anything reads a glide's progress, so an update landing
     /// after a stall starts from where the rows still are.
     private func deferGlides(pastStallBefore now: TimeInterval) {
-        guard let last = reactionStepUptime else {
-            reactionStepUptime = now
+        guard let last = rowMotionStepUptime else {
+            rowMotionStepUptime = now
             return
         }
         guard now > last else { return }
-        reactionStepUptime = now
-        let stall = now - last - Self.reactionFrameAllowance
+        rowMotionStepUptime = now
+        let stall = now - last - Self.rowMotionFrameAllowance
         guard stall > 0 else { return }
         for index in rowMotions.indices where rowMotions[index].timing == .glide {
             rowMotions[index].startUptime? += stall
@@ -564,10 +564,10 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    /// Lands every reaction motion on the static layout, for another motion
+    /// Lands every row motion on the static layout, for another motion
     /// or a conversation change.
     func finishRowMotions() {
-        pendingReactionBaseline = nil
+        pendingRowMotionBaseline = nil
         rowMotionTicker.stop()
         let hadMotion = !rowMotions.isEmpty
         let hadChips = !reactionTransitions.isEmpty || !departedRuns.isEmpty || !editedTextBands.isEmpty
@@ -591,8 +591,8 @@ extension NativeTimelineCanvasView {
     @discardableResult
     func refreshRowMotionGeometry(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         deferGlides(pastStallBefore: uptime)
-        guard !rowMotions.isEmpty || !reactionMotionSteps.isEmpty else { return false }
-        if let pendingReactionBaseline { handOverDepartedMotion(in: pendingReactionBaseline, at: uptime) }
+        guard !rowMotions.isEmpty || !rowMotionSteps.isEmpty else { return false }
+        if let pendingRowMotionBaseline { handOverDepartedMotion(in: pendingRowMotionBaseline, at: uptime) }
         // A motion whose row is gone no longer describes the layout.
         removeRowMotions { motion in
             motion.steps.contains { rowIndex(forIdentifier: $0.identifier, hint: $0.rowIndex) == nil }
@@ -628,46 +628,46 @@ extension NativeTimelineCanvasView {
             remaining[step.index] = step.cumulative - (position > 0 ? cumulative[position - 1].cumulative : 0)
         }
         let snappedShift = snapped(shift)
-        let moved = snappedShift != reactionMotionShift
-            || !cumulative.elementsEqual(reactionMotionSteps) { $0.index == $1.index && $0.cumulative == $1.cumulative }
-        reactionMotionSteps = cumulative
-        reactionMotionShift = snappedShift
-        reactionMotionRemainingHeights = remaining
-        reactionMotionTextRemainingHeights = textRemaining
+        let moved = snappedShift != rowMotionShift
+            || !cumulative.elementsEqual(rowMotionSteps) { $0.index == $1.index && $0.cumulative == $1.cumulative }
+        rowMotionSteps = cumulative
+        rowMotionShift = snappedShift
+        rowMotionRemainingHeights = remaining
+        rowMotionTextRemainingHeights = textRemaining
         return moved
     }
 
     /// The part of the viewport whose rows move: from the top when rows
     /// before the first changed one are displaced, to the bottom when rows
     /// after the last one are.
-    private var reactionMotionFrame: CGRect {
+    private var rowMotionFrame: CGRect {
         let visible = visibleRect
-        guard let first = reactionMotionSteps.first, let last = reactionMotionSteps.last,
+        guard let first = rowMotionSteps.first, let last = rowMotionSteps.last,
               items.indices.contains(first.index), items.indices.contains(last.index)
         else { return visible }
-        let minY = reactionMotionShift == 0 ? displayedRowOrigin(at: first.index) : visible.minY
-        let maxY = reactionMotionShift == last.cumulative
+        let minY = rowMotionShift == 0 ? displayedRowOrigin(at: first.index) : visible.minY
+        let maxY = rowMotionShift == last.cumulative
             ? displayedRowOrigin(at: last.index) + displayedRowHeight(at: last.index) + abs(last.cumulative)
             : visible.maxY
         return CGRect(x: visible.minX, y: minY, width: visible.width, height: max(0, maxY - minY))
             .intersection(visible)
     }
 
-    /// Displacement of a row by the running reaction motions.
+    /// Displacement of a row by the running row motions.
     func rowMotionOffset(at index: Int) -> CGFloat {
-        guard !reactionMotionSteps.isEmpty else { return 0 }
+        guard !rowMotionSteps.isEmpty else { return 0 }
         var lower = 0
-        var upper = reactionMotionSteps.count
+        var upper = rowMotionSteps.count
         while lower < upper {
             let middle = (lower + upper) / 2
-            if reactionMotionSteps[middle].index < index { lower = middle + 1 } else { upper = middle }
+            if rowMotionSteps[middle].index < index { lower = middle + 1 } else { upper = middle }
         }
-        return reactionMotionShift - (lower > 0 ? reactionMotionSteps[lower - 1].cumulative : 0)
+        return rowMotionShift - (lower > 0 ? rowMotionSteps[lower - 1].cumulative : 0)
     }
 
     /// The part of a row's height change that has not happened on screen yet.
     func rowMotionRemainingHeight(at index: Int) -> CGFloat {
-        reactionMotionRemainingHeights[index] ?? 0
+        rowMotionRemainingHeights[index] ?? 0
     }
 
     /// The row with this identifier. `hint` is where it last was.

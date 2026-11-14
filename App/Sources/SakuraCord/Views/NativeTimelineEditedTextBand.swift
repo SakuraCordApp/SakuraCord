@@ -133,7 +133,7 @@ extension NativeTimelineCanvasView {
     /// the row's text steps still to come, which an interrupted edit's
     /// step can carry past where this band started.
     private func shownHeight(of band: NativeTimelineEditedTextBand, at index: Int) -> CGFloat {
-        max(0, band.newHeight - (reactionMotionTextRemainingHeights[index] ?? 0))
+        max(0, band.newHeight - (rowMotionTextRemainingHeights[index] ?? 0))
     }
 
     /// How far the band's new text has faded in at `shown`.
