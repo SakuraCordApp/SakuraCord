@@ -10,7 +10,6 @@ public extension MockChatProvider {
     }
 
     private func forumPage(in channelID: ChannelID, query: ForumPostQuery) throws -> ForumPostPage {
-        forumQueriesByChannel[channelID, default: []].append(query)
         guard snapshot.channels.contains(where: { $0.id == channelID && $0.kind == .forum }) else {
             throw ChatProviderError.channelNotFound
         }
@@ -75,10 +74,6 @@ public extension MockChatProvider {
             continuation?.yield(.forumPostPreviewsChanged(channelID: channelID, posts: current))
         }
         return stripped
-    }
-
-    func forumQueries(in channelID: ChannelID) -> [ForumPostQuery] {
-        forumQueriesByChannel[channelID] ?? []
     }
 
     func forumPost(threadID: ChannelID) async throws -> ForumPost {

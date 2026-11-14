@@ -41,7 +41,6 @@ public actor MockChatProvider: ChatProvider {
     var categoryCollapsedUpdateWaiters: [CheckedContinuation<Void, Never>] = []
     public internal(set) var threadNotificationRequests: [ThreadNotificationRequest] = []
     public internal(set) var groupLeaveRequests: [(channelID: ChannelID, silently: Bool)] = []
-    var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
     var relationshipPresences: [UserID: UserPresence]?
     var presenceChurnTask: Task<Void, Never>?
 #if SAKURACORD_MOTION_BENCHMARK

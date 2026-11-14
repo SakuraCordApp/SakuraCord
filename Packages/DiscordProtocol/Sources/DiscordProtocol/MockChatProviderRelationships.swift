@@ -5,7 +5,7 @@ public extension MockChatProvider {
     func dismissIgnoredGroupWarning(in channelID: ChannelID) async throws {
         guard let index = snapshot.channels.firstIndex(where: { $0.id == channelID }) else { return }
         snapshot.channels[index].blockedUserWarningDismissed = true
-        continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
+        publishPrivateChannels()
     }
 
     func setMemberNickname(_ nickname: String, for userID: UserID, in guildID: GuildID) async throws -> String? {
@@ -36,7 +36,7 @@ public extension MockChatProvider {
             channel.name = channel.recipients.map { nicknames[$0.id] ?? $0.displayName }.joined(separator: ", ")
             return channel
         }
-        continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
+        publishPrivateChannels()
         continuation?.yield(.privateMembersChanged(try await members(in: nil)))
         return nicknames[userID]
     }

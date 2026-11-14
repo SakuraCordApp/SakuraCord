@@ -30,7 +30,7 @@ public extension MockChatProvider {
             channel.iconURL = url
         }
         snapshot.channels[index] = channel
-        continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
+        publishPrivateChannels()
         return channel
     }
 
@@ -40,7 +40,7 @@ public extension MockChatProvider {
         }
         groupLeaveRequests.append((channelID, silently))
         snapshot.channels.removeAll { $0.id == channelID }
-        continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
+        publishPrivateChannels()
     }
 
     func closeDirectMessage(_ channelID: ChannelID) async throws {
@@ -48,7 +48,7 @@ public extension MockChatProvider {
             throw ChatProviderError.invalidRequest("That demo conversation is unavailable.")
         }
         snapshot.channels.removeAll { $0.id == channelID }
-        continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
+        publishPrivateChannels()
     }
 
     func acceptMessageRequest(_ channelID: ChannelID) async throws {
@@ -57,7 +57,7 @@ public extension MockChatProvider {
         }
         snapshot.channels[index].isMessageRequest = false
         snapshot.channels[index].isSpam = false
-        continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
+        publishPrivateChannels()
     }
 
     func ignoreMessageRequest(_ channelID: ChannelID) async throws {
@@ -65,6 +65,12 @@ public extension MockChatProvider {
             throw ChatProviderError.invalidRequest("That demo request is unavailable.")
         }
         snapshot.channels.removeAll { $0.id == channelID }
+        publishPrivateChannels()
+    }
+}
+
+extension MockChatProvider {
+    func publishPrivateChannels() {
         continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
     }
 }
