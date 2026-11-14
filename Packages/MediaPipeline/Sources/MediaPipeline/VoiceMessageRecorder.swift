@@ -370,21 +370,7 @@ final class VoiceMessageCaptureProcessor: NSObject,
             converter = AVAudioConverter(from: input.format, to: codec.pcmFormat)
             converter?.downmix = true
         }
-        guard let converter else { return nil }
-        let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * OpusCodec.sampleRate / input.format.sampleRate)) + 32
-        guard let output = AVAudioPCMBuffer(pcmFormat: codec.pcmFormat, frameCapacity: capacity) else { return nil }
-        var supplied = false
-        var error: NSError?
-        _ = converter.convert(to: output, error: &error) { _, status in
-            guard !supplied else {
-                status.pointee = .noDataNow
-                return nil
-            }
-            supplied = true
-            status.pointee = .haveData
-            return input
-        }
-        return error == nil && output.frameLength > 0 ? output : nil
+        return converter?.convertOnce(input, to: codec.pcmFormat)
     }
 
     /// Bars are RMS over `liveBarInterval`, the same measure as the finished
