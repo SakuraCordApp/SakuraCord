@@ -511,8 +511,7 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
     let url: URL
 
     var isEmoji: Bool {
-        url.host?.lowercased() == "cdn.discordapp.com"
-            && url.path.hasPrefix("/emojis/")
+        Self.isCanonicalEmojiURL(url)
     }
 
     var linkedEmoji: EmojiReference? {
@@ -525,10 +524,11 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
               })
         else { return nil }
 
-        let queryName = URLComponents(
+        let queryItems = URLComponents(
             url: url,
             resolvingAgainstBaseURL: false
-        )?.queryItems?.first(where: { $0.name == "name" })?.value
+        )?.queryItems ?? []
+        let queryName = queryItems.first(where: { $0.name == "name" })?.value
         let rawName = (queryName ?? label)
             .trimmingCharacters(
                 in: CharacterSet.whitespacesAndNewlines.union(
@@ -544,10 +544,6 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
               })
         else { return nil }
 
-        let queryItems = URLComponents(
-            url: url,
-            resolvingAgainstBaseURL: false
-        )?.queryItems ?? []
         let isAnimated =
             url.pathExtension.lowercased() == "gif"
             || queryItems.contains {
