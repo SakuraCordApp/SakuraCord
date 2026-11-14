@@ -77,24 +77,10 @@ extension AppModel {
     func outgoingMediaPresentationPreserving(
         _ incoming: Message
     ) -> Message {
-        let existing: Message? = {
-            let matches: (Message) -> Bool = { message in
-                message.id == incoming.id
-                    || (incoming.nonce != nil && message.nonce == incoming.nonce)
-            }
-            if incoming.channelID == openThread?.id,
-               let message = threadMessages.first(where: matches)
-            {
-                return message
-            }
-            if incoming.channelID == selectedChannelID,
-               let message = messages.first(where: matches)
-            {
-                return message
-            }
-            return messageCache[incoming.channelID]?.first(where: matches)
-        }()
-        guard let existing else { return incoming }
+        guard let existing = outgoingMessage(in: incoming.channelID, where: { message in
+            message.id == incoming.id
+                || (incoming.nonce != nil && message.nonce == incoming.nonce)
+        })?.message else { return incoming }
 
         var resolved = incoming
         resolved.nonce = resolved.nonce ?? existing.nonce

@@ -850,24 +850,36 @@ extension AppModel {
         }
     }
 
+    enum OutgoingMessageSlot {
+        case thread(Int)
+        case selected(Int)
+        case cached(Int)
+    }
+
+    /// Finds a message in the open thread, then the selected channel's window,
+    /// then the channel's cache, whichever first holds it.
+    func outgoingMessage(
+        in channelID: ChannelID,
+        where matches: (Message) -> Bool
+    ) -> (slot: OutgoingMessageSlot, message: Message)? {
+        if openThread?.id == channelID, let index = threadMessages.firstIndex(where: matches) {
+            return (.thread(index), threadMessages[index])
+        }
+        if selectedChannelID == channelID, let index = messages.firstIndex(where: matches) {
+            return (.selected(index), messages[index])
+        }
+        guard let cached = messageCache[channelID], let index = cached.firstIndex(where: matches) else { return nil }
+        return (.cached(index), cached[index])
+    }
+
     func mutateOutgoingMessage(nonce: String, channelID: ChannelID, _ body: (inout Message) -> Void) {
-        if openThread?.id == channelID,
-           let index = threadMessages.firstIndex(where: { $0.nonce == nonce })
-        {
-            body(&threadMessages[index])
-            return
+        guard var found = outgoingMessage(in: channelID, where: { $0.nonce == nonce }) else { return }
+        body(&found.message)
+        switch found.slot {
+        case let .thread(index): threadMessages[index] = found.message
+        case let .selected(index): mutateSelectedMessages { $0[index] = found.message }
+        case let .cached(index): messageCache[channelID]?[index] = found.message
         }
-        if selectedChannelID == channelID,
-           let index = messages.firstIndex(where: { $0.nonce == nonce })
-        {
-            mutateSelectedMessages { body(&$0[index]) }
-            return
-        }
-        guard var cached = messageCache[channelID],
-              let index = cached.firstIndex(where: { $0.nonce == nonce })
-        else { return }
-        body(&cached[index])
-        messageCache[channelID] = cached
     }
 
     func removeOutgoingMessage(nonce: String, channelID: ChannelID) {

@@ -236,25 +236,14 @@ extension AppModel {
     private func mutateInteractionPlaceholder(
         nonce: String, channelID: ChannelID, _ change: (inout Message) -> Bool
     ) {
-        if openThread?.id == channelID,
-           let index = threadMessages.firstIndex(where: { $0.nonce == nonce })
-        {
-            var message = threadMessages[index]
-            if change(&message) { threadMessages[index] = message }
-            return
-        }
-        if selectedChannelID == channelID,
-           let index = messages.firstIndex(where: { $0.nonce == nonce })
-        {
-            var message = messages[index]
-            guard change(&message) else { return }
-            replaceSelectedMessage(message, at: index)
-            return
-        }
-        guard var cached = messageCache[channelID],
-              let index = cached.firstIndex(where: { $0.nonce == nonce })
+        guard var found = outgoingMessage(in: channelID, where: { $0.nonce == nonce }),
+              change(&found.message)
         else { return }
-        if change(&cached[index]) { messageCache[channelID] = cached }
+        switch found.slot {
+        case let .thread(index): threadMessages[index] = found.message
+        case let .selected(index): replaceSelectedMessage(found.message, at: index)
+        case let .cached(index): messageCache[channelID]?[index] = found.message
+        }
     }
 
     private func interactionLocalMessage(
