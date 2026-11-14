@@ -73,13 +73,8 @@ extension AppModel {
             // The visual divider survives acknowledgements. Jump to the
             // current unread run without moving that retained divider.
             guard let summary, !summary.isLowerBound else { return }
-            model.messageNavigationRequestID &+= 1
-            model.messageNavigationRequest = MessageNavigationRequest(
-                requestID: model.messageNavigationRequestID,
-                channelID: channelID,
-                messageID: summary.firstUnreadMessageID,
-                glides: glides,
-                isUnreadBoundary: true
+            model.requestMessageNavigation(
+                channelID: channelID, messageID: summary.firstUnreadMessageID, glides: glides, isUnreadBoundary: true
             )
         }
     }

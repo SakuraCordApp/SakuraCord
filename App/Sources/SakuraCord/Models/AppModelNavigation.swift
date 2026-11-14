@@ -549,12 +549,20 @@ extension AppModel {
             errorMessage = "That message could not be found in the linked thread."
             return
         }
+        requestMessageNavigation(channelID: post.id, messageID: landingID, glides: wasShowingMessage)
+    }
+
+    /// Asks the timeline showing `channelID` to bring `messageID` into view.
+    func requestMessageNavigation(
+        channelID: ChannelID, messageID: MessageID, glides: Bool, isUnreadBoundary: Bool = false
+    ) {
         messageNavigationRequestID &+= 1
         messageNavigationRequest = MessageNavigationRequest(
             requestID: messageNavigationRequestID,
-            channelID: post.id,
-            messageID: landingID,
-            glides: wasShowingMessage
+            channelID: channelID,
+            messageID: messageID,
+            glides: glides,
+            isUnreadBoundary: isUnreadBoundary
         )
     }
 
@@ -629,13 +637,7 @@ extension AppModel {
                 errorMessage = "That message could not be found in the linked channel."
                 return
             }
-            messageNavigationRequestID &+= 1
-            messageNavigationRequest = MessageNavigationRequest(
-                requestID: messageNavigationRequestID,
-                channelID: channel.id,
-                messageID: landingID,
-                glides: wasShowingMessage
-            )
+            requestMessageNavigation(channelID: channel.id, messageID: landingID, glides: wasShowingMessage)
         }
     }
 

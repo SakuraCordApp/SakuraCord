@@ -440,13 +440,7 @@ extension AppModel {
             guard model.openThread?.id == thread.id, model.threadWindow.revision == windowRevision,
                   let landingID = Self.landingID(for: target, in: model.threadMessages, nearest: nearest)
             else { return }
-            model.messageNavigationRequestID &+= 1
-            model.messageNavigationRequest = MessageNavigationRequest(
-                requestID: model.messageNavigationRequestID,
-                channelID: thread.id,
-                messageID: landingID,
-                glides: false
-            )
+            model.requestMessageNavigation(channelID: thread.id, messageID: landingID, glides: false)
         }
     }
 
