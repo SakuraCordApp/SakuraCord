@@ -700,3 +700,43 @@ actor SharedMediaDataLoader {
         return true
     }
 }
+
+nonisolated enum MediaLoadPriority: Int, Sendable {
+    case prefetch
+    case visible
+}
+
+nonisolated enum SharedMediaRequestSchedulingPolicy {
+    static let maximumConcurrentRemoteLoads = 8
+    static let maximumConcurrentPrefetchLoads = 2
+    static let maximumPendingRemoteLoads = 64
+    static let maximumPendingPrefetchLoads = 24
+
+    static func acceptsRemoteLoad(pendingRemoteCount: Int) -> Bool {
+        pendingRemoteCount < maximumPendingRemoteLoads
+    }
+
+    static func acceptsPrefetch(pendingPrefetchCount: Int) -> Bool {
+        pendingPrefetchCount < maximumPendingPrefetchLoads
+    }
+
+    static func nextURL(
+        in order: [URL],
+        priorities: [URL: MediaLoadPriority],
+        activeCount: Int,
+        activePrefetchCount: Int
+    ) -> URL? {
+        guard activeCount < maximumConcurrentRemoteLoads else { return nil }
+        if let visible = order.first(where: {
+            priorities[$0] == .visible
+        }) {
+            return visible
+        }
+        guard activePrefetchCount < maximumConcurrentPrefetchLoads else {
+            return nil
+        }
+        return order.first(where: {
+            priorities[$0] == .prefetch
+        })
+    }
+}
