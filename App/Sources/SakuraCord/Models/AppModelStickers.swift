@@ -310,12 +310,7 @@ extension AppModel {
             stickers: [presentedSticker]
         )
         admitToOutbox(optimistic, draft: draft)
-        let advancedLocally = advanceTimelineForLocalSend(channelID: channelID)
-        let didSend = await performOutgoingSend(draft, isRetry: false)
-        if didSend {
-            completeConfirmedSend(channelID: channelID, advancedLocally: advancedLocally)
-        }
-        return didSend
+        return await enqueueOutgoingSend(draft, isRetry: false, completesReading: true).value
     }
 
 }
