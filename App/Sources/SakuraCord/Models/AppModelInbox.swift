@@ -241,7 +241,7 @@ extension AppModel {
             if let context = channel ?? entry.parentID.flatMap({ channels[$0] }),
                let permissions = effectiveMessagePermissions(in: context),
                permissions & DiscordPermissionBits.readMessageHistory == 0 { continue }
-            let age = now.timeIntervalSince1970 - Double((newest.rawValue >> 22) + 1_420_070_400_000) / 1_000
+            let age = now.timeIntervalSince(newest.createdAt)
             let rank = inbox.settings.favoriteChannelIDs.contains(entry.channelID) ? 0
                 : entry.guildID == nil ? 1 : entry.mentionCount > 0 ? ((entry.flags ?? 0) & 4 == 0 ? 2 : 3)
                 : age > 10 * 86_400 ? 8 : age > 2 * 86_400 ? 6

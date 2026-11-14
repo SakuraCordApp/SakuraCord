@@ -55,7 +55,7 @@ public extension MockChatProvider {
             // Like a live catalogue entry, the stripped post keeps its
             // activity order through its last message ID.
             if let latest = stripped.posts[index].mostRecentMessage {
-                stripped.posts[index].thread.lastMessageID = .messageSearchBoundary(at: latest.timestamp)
+                stripped.posts[index].thread.lastMessageID = MessageID(timestamp: latest.timestamp)
             }
             stripped.posts[index].firstMessage = nil
             stripped.posts[index].mostRecentMessage = nil

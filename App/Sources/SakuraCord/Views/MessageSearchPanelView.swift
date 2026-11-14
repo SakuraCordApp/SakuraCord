@@ -595,11 +595,11 @@ struct MessageSearchFiltersOverlay: View {
     private func apply() {
         let calendar = Calendar.current
         draft.maximumMessageID = beforeEnabled
-            ? .messageSearchBoundary(at: calendar.startOfDay(for: beforeDate))
+            ? MessageID(timestamp: calendar.startOfDay(for: beforeDate))
             : nil
         draft.minimumMessageID = afterEnabled
             ? calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: afterDate))
-                .map { MessageID.messageSearchBoundary(at: $0) }
+                .map { MessageID(timestamp: $0) }
             : nil
         draft.pinned = pinnedChoice.value
         model.applyMessageSearchFilters(draft)
