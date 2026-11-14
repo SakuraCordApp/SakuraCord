@@ -1135,8 +1135,7 @@ nonisolated struct CoreTextFrameLayout {
         zip(lines, origins).lazy.flatMap { value, origin in
             let line = coreTextLine(value)
             return (CTLineGetGlyphRuns(line) as NSArray).lazy
-                .compactMap { $0 as? CTRun }
-                .map { Run(run: $0, line: line, lineOrigin: origin) }
+                .map { Run(run: unsafeDowncast($0 as AnyObject, to: CTRun.self), line: line, lineOrigin: origin) }
         }
     }
 }

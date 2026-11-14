@@ -255,7 +255,7 @@ extension AppModel {
                 forumPaginationError = nil
             }
             let requestGeneration = forumLoadGeneration
-            func isCurrentRequest() -> Bool {
+            @MainActor func isCurrentRequest() -> Bool {
                 isCurrentAccountSession(session)
                     && selectedChannelID == channelID
                     && forumLoadGeneration == requestGeneration
