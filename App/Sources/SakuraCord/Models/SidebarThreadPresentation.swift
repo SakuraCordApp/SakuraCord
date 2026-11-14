@@ -146,7 +146,7 @@ extension AppModel {
                     for: candidates,
                     openThread: openCandidate,
                     unreadOnly: !isFocused && (isCollapsed || isChannelMuted(channel)),
-                    hideMuted: !isFocused && readState.notificationSettings(guildID: guildID)?.hideMutedChannels == true,
+                    hideMuted: !isFocused && settings?.hideMutedChannels == true,
                     now: now
                 )
                 if !rows.isEmpty {

@@ -232,15 +232,10 @@ nonisolated enum ForumPostReactionPresentation {
         reactions: [Reaction],
         defaultReaction: ForumDefaultReaction?
     ) -> Reaction? {
-        var highestCountReaction: Reaction?
-        for reaction in MessageReactionPresentation.items(from: reactions) {
-            if highestCountReaction == nil
-                || reaction.count > (highestCountReaction?.count ?? 0)
-            {
-                highestCountReaction = reaction
-            }
-        }
-        if let highestCountReaction {
+        // `max(by:)` keeps the first of equally counted reactions.
+        if let highestCountReaction = MessageReactionPresentation.items(from: reactions)
+            .max(by: { $0.count < $1.count })
+        {
             return highestCountReaction
         }
         guard let token = defaultReactionToken(defaultReaction) else { return nil }

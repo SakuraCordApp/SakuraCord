@@ -38,10 +38,8 @@ extension AppModel {
             return hasChannelList ? .hidden : .checking
         }
         guard let guildID = channel.guildID else { return .readable(canSend: true) }
-        if thread.isPrivate, thread.notificationSettings == nil {
-            guard let permissions = effectiveMessagePermissions(in: channel) else { return .checking }
-            guard permissions & DiscordPermissionBits.manageThreads != 0 else { return .hidden }
-        }
+        guard let hidesPrivateThread = hidesUnprovenPrivateThread(thread, parent: channel) else { return .checking }
+        guard !hidesPrivateThread else { return .hidden }
         let access = ConversationPermissionResolver.threadAccess(
             effectivePermissions: effectiveMessagePermissions(in: channel),
             isLocked: thread.isLocked
@@ -197,10 +195,15 @@ extension AppModel {
     /// member-less Gateway update, must be resolved before it is shown. Public
     /// threads follow their parent's permissions and stay cache-first.
     private func openThreadNeedsAccessResolution(_ thread: MessageThreadSummary) -> Bool {
+        hidesUnprovenPrivateThread(thread, parent: openThreadParentChannel) ?? true
+    }
+
+    /// Whether a private thread without membership evidence stays hidden
+    /// because the user lacks Manage Threads in `parent`; nil while those
+    /// permissions are unknown.
+    private func hidesUnprovenPrivateThread(_ thread: MessageThreadSummary, parent: Channel?) -> Bool? {
         guard thread.isPrivate, thread.notificationSettings == nil else { return false }
-        guard let parent = openThreadParentChannel,
-              let permissions = effectiveMessagePermissions(in: parent)
-        else { return true }
+        guard let parent, let permissions = effectiveMessagePermissions(in: parent) else { return nil }
         return permissions & DiscordPermissionBits.manageThreads == 0
     }
 
