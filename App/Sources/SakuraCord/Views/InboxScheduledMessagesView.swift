@@ -246,7 +246,7 @@ private struct ScheduledMessageCard: View {
                 StickerPreview(sticker: sticker)
                     .frame(width: InterfaceScale.metric(160), height: InterfaceScale.metric(160))
             }
-            if let media = ForwardMessagePreviewPlan.make(message: preview).media, let url = media.url {
+            if let media = CompactMessagePreviewPlan.make(message: preview).media, let url = media.url {
                 // A GIF link's embed plays its looping video over the still, as in the timeline.
                 let video = media.isSpoiler ? nil : preview.embeds.first(where: \.isGIFV)?.video
                 ZStack {

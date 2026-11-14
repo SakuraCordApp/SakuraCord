@@ -908,7 +908,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         )
     }
 
-    let text = ForwardMessagePreviewPlan.make(message: message(
+    let text = CompactMessagePreviewPlan.make(message: message(
         content: "A deliberately long message with <:wave:123> that wraps onto another line."
     ))
     #expect(text.content?.contains("<:wave:123>") == true)
@@ -916,7 +916,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(text.attachmentSummary == nil)
     #expect(text.media == nil)
 
-    let heading = ForwardMessagePreviewPlan.make(message: message(
+    let heading = CompactMessagePreviewPlan.make(message: message(
         content: "# Preview heading\n\nPreview body"
     ))
     #expect(heading.content == "**Preview heading** Preview body")
@@ -929,7 +929,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
             mediaType: "image/png"
         )
     }
-    let imagePlan = ForwardMessagePreviewPlan.make(message: message(attachments: images))
+    let imagePlan = CompactMessagePreviewPlan.make(message: message(attachments: images))
     #expect(imagePlan.content == nil)
     #expect(imagePlan.contentLineLimit == 1)
     #expect(imagePlan.attachmentSummary == "5 images")
@@ -940,7 +940,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     ))
     #expect(imagePlan.mediaOverflowCount == 4)
 
-    let linked = ForwardMessagePreviewPlan.make(message: message(
+    let linked = CompactMessagePreviewPlan.make(message: message(
         content: imageURL.absoluteString,
         embeds: [MessageEmbed(
             type: "image",
@@ -955,7 +955,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         kind: .image(animated: false)
     ))
 
-    let spoileredLink = ForwardMessagePreviewPlan.make(message: message(
+    let spoileredLink = CompactMessagePreviewPlan.make(message: message(
         content: "||\(imageURL.absoluteString)||",
         embeds: [MessageEmbed(
             type: "image",
@@ -966,7 +966,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(spoileredLink.media?.isSpoiler == true)
 
     let videoURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/video.mp4"))
-    let linkedVideo = ForwardMessagePreviewPlan.make(message: message(
+    let linkedVideo = CompactMessagePreviewPlan.make(message: message(
         content: "https://example.com/video",
         embeds: [MessageEmbed(
             type: "video",
@@ -981,7 +981,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         kind: .image(animated: false)
     ))
 
-    let stickerOnly = ForwardMessagePreviewPlan.make(message: Message(
+    let stickerOnly = CompactMessagePreviewPlan.make(message: Message(
         id: MessageID(rawValue: 9),
         channelID: ChannelID(rawValue: 2),
         author: author,
@@ -1024,7 +1024,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         ]
     )
 
-    let plan = ForwardMessagePreviewPlan.make(message: message)
+    let plan = CompactMessagePreviewPlan.make(message: message)
     #expect(plan.content == "**Component preview heading** Component preview text")
     #expect(plan.attachmentSummary == nil)
     #expect(plan.mediaOverflowCount == 1)

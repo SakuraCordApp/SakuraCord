@@ -18,7 +18,7 @@ nonisolated struct ForwardPreviewMedia: Equatable {
     static let thumbnailPixelDimension = 128
 }
 
-nonisolated struct ForwardMessagePreviewPlan: Equatable {
+nonisolated struct CompactMessagePreviewPlan: Equatable {
     let content: String?
     let attachmentSummary: String?
     let attachmentSystemImage: String?
@@ -221,8 +221,8 @@ struct ForwardedMessagePreview: View {
     let model: AppModel
     let message: Message
 
-    private var plan: ForwardMessagePreviewPlan {
-        ForwardMessagePreviewPlan.make(message: message)
+    private var plan: CompactMessagePreviewPlan {
+        CompactMessagePreviewPlan.make(message: message)
     }
 
     var body: some View {
