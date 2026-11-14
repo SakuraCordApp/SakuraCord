@@ -100,7 +100,7 @@ extension AppModel {
             database = AppPerformanceSignposts.measureSync("AccountDatabaseOpen") {
                 AccountID(handle.accountID).flatMap(accountDatabaseFactory)
             }
-            resetForAccountConnection(handle)
+            resetAccountScopedState(for: handle)
             await refreshSupportedCapabilities(for: session)
             guard isCurrentAccountSession(session) else { return false }
             await applyLiveBootstrap(

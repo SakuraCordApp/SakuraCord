@@ -206,7 +206,7 @@ extension AppModel {
         }
         installAccountSession(provider: nextProvider, database: nextDatabase)
         accountTransitionIsActive = false
-        resetForAccountConnection(handle)
+        resetAccountScopedState(for: handle)
         resetAccountPresentationState()
         AppPerformanceSignposts.signposter.endInterval(
             "AccountConnectionPreparation",
@@ -226,23 +226,26 @@ extension AppModel {
         return isAuthenticated
     }
 
-    func resetForAccountConnection(_ handle: CredentialHandle) {
+    /// Points account-owned stores at `handle`'s account, or at the signed-out scope when it is `nil`.
+    func resetAccountScopedState(for handle: CredentialHandle?) {
+        let isOffline = launchMode == .offlineTesting
+        let frecencyScope = handle?.accountID ?? (isOffline ? "offline" : "signed-out")
         hasPendingLaunchWelcome = false
+        credentialHandle = handle
+        activeAccountID = handle?.accountID
         resetAcknowledgementWork()
         resetChannelNotificationMutations()
-        readState.reset(accountID: handle.accountID)
+        readState.reset(accountID: handle?.accountID ?? (isOffline ? "offline" : nil))
         currentUserRoleIDsByGuild = [:]
+        commandComposer.configureFrecencyScope(frecencyScope)
+        configureEmojiFrecency(scope: frecencyScope)
+        configureLocalFavorites(accountID: handle?.accountID)
         supportedCapabilities = []
         componentInteractionPresentation = .init()
         pendingInteractions = [:]
         pendingInteractionOrder = []
         interactionModalForm = nil
-        credentialHandle = handle
-        activeAccountID = handle.accountID
         didAttemptSessionRestore = true
-        commandComposer.configureFrecencyScope(handle.accountID)
-        configureEmojiFrecency(scope: handle.accountID)
-        configureLocalFavorites(accountID: handle.accountID)
     }
 
     func resetAccountPresentationState() {
@@ -411,27 +414,11 @@ extension AppModel {
     }
 
     func installSignedOutAccountState() {
-        hasPendingLaunchWelcome = false
         bootstrapHistoryPrefetch?.task.cancel()
         bootstrapHistoryPrefetch = nil
-        credentialHandle = nil
-        activeAccountID = nil
-        resetAcknowledgementWork()
-        resetChannelNotificationMutations()
-        readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
-        currentUserRoleIDsByGuild = [:]
-        commandComposer.configureFrecencyScope(
-            launchMode == .offlineTesting ? "offline" : "signed-out"
-        )
-        configureEmojiFrecency(scope: launchMode == .offlineTesting ? "offline" : "signed-out")
-        configureLocalFavorites(accountID: nil)
+        resetAccountScopedState(for: nil)
         let signedOutProvider: any ChatProvider =
             launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider()
-        supportedCapabilities = []
-        componentInteractionPresentation = .init()
-        pendingInteractions = [:]
-        pendingInteractionOrder = []
-        interactionModalForm = nil
         let signedOutDatabase = launchMode == .offlineTesting
             ? try? SakuraCordDatabase(inMemory: true)
             : nil
@@ -440,7 +427,6 @@ extension AppModel {
         resetAccountPresentationState()
         connectionState = .disconnected
         isAuthenticated = false
-        didAttemptSessionRestore = true
         sessionState = launchMode == .offlineTesting ? .connecting : .signedOut
     }
 
