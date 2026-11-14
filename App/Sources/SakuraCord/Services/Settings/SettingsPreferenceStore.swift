@@ -412,19 +412,19 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         SettingsPreferenceRegistration(
             id: .notificationEnabled,
             page: .notifications,
-            key: "notifications.enabled",
+            key: NotificationPreferenceKeys.enabled,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationPreview,
             page: .notifications,
-            key: "notifications.preview",
+            key: NotificationPreferenceKeys.preview,
             defaultValue: .string(NotificationPreviewStyle.full.rawValue)
         ),
         SettingsPreferenceRegistration(
             id: .notificationSound,
             page: .notifications,
-            key: "notifications.sound",
+            key: NotificationPreferenceKeys.sound,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
@@ -442,61 +442,61 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         SettingsPreferenceRegistration(
             id: .notificationDockBadge,
             page: .notifications,
-            key: "notifications.dockBadge",
+            key: NotificationPreferenceKeys.dockBadge,
             defaultValue: .string(NotificationDockBadgeStyle.mentions.rawValue)
         ),
         SettingsPreferenceRegistration(
             id: .notificationDirectMessages,
             page: .notifications,
-            key: "notifications.events.directMessages",
+            key: NotificationPreferenceKeys.directMessages,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationGroupDirectMessages,
             page: .notifications,
-            key: "notifications.events.groupDirectMessages",
+            key: NotificationPreferenceKeys.groupDirectMessages,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationMentions,
             page: .notifications,
-            key: "notifications.events.mentions",
+            key: NotificationPreferenceKeys.mentions,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationReplies,
             page: .notifications,
-            key: "notifications.events.replies",
+            key: NotificationPreferenceKeys.replies,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationIncomingCalls,
             page: .notifications,
-            key: "notifications.events.incomingCalls",
+            key: NotificationPreferenceKeys.incomingCalls,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationServerActivity,
             page: .notifications,
-            key: "notifications.events.serverActivity",
+            key: NotificationPreferenceKeys.serverActivity,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationSuppressCurrent,
             page: .notifications,
-            key: "notifications.suppressCurrentConversation",
+            key: NotificationPreferenceKeys.suppressCurrentConversation,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationGroupBursts,
             page: .notifications,
-            key: "notifications.groupByConversation",
+            key: NotificationPreferenceKeys.groupByConversation,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationClearWhenRead,
             page: .notifications,
-            key: "notifications.clearWhenRead",
+            key: NotificationPreferenceKeys.clearWhenRead,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(

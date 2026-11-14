@@ -182,24 +182,27 @@ nonisolated struct NotificationContentPresentation: Equatable, Sendable {
     }
 }
 
+/// The UserDefaults keys NotificationPreferences and the settings registry share.
+nonisolated enum NotificationPreferenceKeys {
+    static let enabled = "notifications.enabled"
+    static let preview = "notifications.preview"
+    static let sound = "notifications.sound"
+    static let dockBadge = "notifications.dockBadge"
+    static let directMessages = "notifications.events.directMessages"
+    static let groupDirectMessages = "notifications.events.groupDirectMessages"
+    static let mentions = "notifications.events.mentions"
+    static let replies = "notifications.events.replies"
+    static let incomingCalls = "notifications.events.incomingCalls"
+    static let serverActivity = "notifications.events.serverActivity"
+    static let suppressCurrentConversation = "notifications.suppressCurrentConversation"
+    static let groupByConversation = "notifications.groupByConversation"
+    static let clearWhenRead = "notifications.clearWhenRead"
+}
+
 @MainActor
 @Observable
 final class NotificationPreferences {
-    private enum Key {
-        static let enabled = "notifications.enabled"
-        static let preview = "notifications.preview"
-        static let sound = "notifications.sound"
-        static let dockBadge = "notifications.dockBadge"
-        static let directMessages = "notifications.events.directMessages"
-        static let groupDirectMessages = "notifications.events.groupDirectMessages"
-        static let mentions = "notifications.events.mentions"
-        static let replies = "notifications.events.replies"
-        static let incomingCalls = "notifications.events.incomingCalls"
-        static let serverActivity = "notifications.events.serverActivity"
-        static let suppressCurrentConversation = "notifications.suppressCurrentConversation"
-        static let groupByConversation = "notifications.groupByConversation"
-        static let clearWhenRead = "notifications.clearWhenRead"
-    }
+    private typealias Key = NotificationPreferenceKeys
 
     var isEnabled: Bool { didSet { defaults.set(isEnabled, forKey: Key.enabled) } }
     var previewStyle: NotificationPreviewStyle {
