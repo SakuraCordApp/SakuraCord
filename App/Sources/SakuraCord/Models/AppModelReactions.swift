@@ -201,23 +201,73 @@ extension AppModel {
         emoji: String
     ) {
         guard let currentUserID = snapshot?.currentUser.id else { return }
-        let update: MessageReactionUpdate =
-            reacted
+        applyReactionUpdate(
+            currentUserReactionUpdate(reacted, for: key, emoji: emoji, userID: currentUserID),
+            persistsResult: false
+        )
+    }
+
+    func reactionPresentationPreserving(_ incoming: Message) -> Message {
+        var result = incoming
+        let lookupKey = ReactionMutationKey(
+            channelID: incoming.channelID,
+            messageID: incoming.id,
+            reactionID: ""
+        )
+        if let existing = reactionMessage(for: lookupKey) {
+            result = result.preservingReactionReactors(from: existing)
+        }
+        return applyingReactionMutations(to: result, using: \.desiredReacted)
+    }
+
+    func reactionConfirmedSnapshot(_ message: Message) -> Message {
+        applyingReactionMutations(to: message, using: \.confirmedReacted)
+    }
+
+    private func applyingReactionMutations(
+        to message: Message,
+        using reactedState: KeyPath<ReactionMutationState, Bool>
+    ) -> Message {
+        guard let currentUserID = snapshot?.currentUser.id else { return message }
+        var result = message
+        let currentUserReactor = knownReactionReactor(for: currentUserID)
+        for (key, mutation) in reactionMutations
+        where key.channelID == result.channelID && key.messageID == result.id {
+            let reacted = mutation[keyPath: reactedState]
+            let currentlyReacted =
+                result.reactions.first(where: { $0.id == key.reactionID })?
+                    .didCurrentUserReact ?? false
+            guard currentlyReacted != reacted else { continue }
+            _ = result.applyReactionUpdate(
+                currentUserReactionUpdate(reacted, for: key, emoji: mutation.emoji, userID: currentUserID),
+                currentUserID: currentUserID,
+                reactor: currentUserReactor
+            )
+        }
+        return result
+    }
+
+    private func currentUserReactionUpdate(
+        _ reacted: Bool,
+        for key: ReactionMutationKey,
+        emoji: String,
+        userID: UserID
+    ) -> MessageReactionUpdate {
+        reacted
             ? .add(
                 channelID: key.channelID,
                 messageID: key.messageID,
-                userID: currentUserID,
+                userID: userID,
                 emoji: emoji,
                 kind: .normal
             )
             : .remove(
                 channelID: key.channelID,
                 messageID: key.messageID,
-                userID: currentUserID,
+                userID: userID,
                 emoji: emoji,
                 kind: .normal
             )
-        applyReactionUpdate(update, persistsResult: false)
     }
 
     func loadReactionReactors(_ requestedReaction: Reaction, on message: Message) async {
