@@ -213,25 +213,12 @@ extension AppModel {
     }
 
     func reconcilePollSearchMessage(_ message: Message) {
-        for search in retainedMessageSearches {
-            guard message.poll != nil, var page = search.page else { continue }
-            var changed = false
-            for resultIndex in page.results.indices {
-                for index in page.results[resultIndex].messages.indices
-                where page.results[resultIndex].messages[index].id == message.id {
-                    guard page.results[resultIndex].messages[index].poll != message.poll else { continue }
-                    page.results[resultIndex].messages[index].poll = message.poll
-                    page.results[resultIndex].messages[index].hasPoll = true
-                    changed = true
-                }
-            }
-            guard changed else { continue }
-            let oldRows = search.rows
-            search.page = page
-            search.rows = MessageSearchPresentation.rows(for: page, channelsByID: messageSearchChannelsByID(additionalChannels: page.channels))
-            let revision = search.rowsRevision &+ 1
-            search.rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: search.rows, revision: revision))
-            search.rowsRevision = revision
+        guard message.poll != nil else { return }
+        updateRetainedSearchMessages(id: message.id) {
+            guard $0.poll != message.poll else { return false }
+            $0.poll = message.poll
+            $0.hasPoll = true
+            return true
         }
     }
 

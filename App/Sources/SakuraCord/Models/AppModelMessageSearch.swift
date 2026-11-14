@@ -110,6 +110,28 @@ extension AppModel {
         [messageSearch] + Array(messageSearchesByGuildID.values)
     }
 
+    /// Patches every retained search result with this message ID, then
+    /// republishes the rows of each search where `update` reported a change.
+    func updateRetainedSearchMessages(id: MessageID, _ update: (inout Message) -> Bool) {
+        for search in retainedMessageSearches {
+            guard var page = search.page else { continue }
+            var changed = false
+            for resultIndex in page.results.indices {
+                for index in page.results[resultIndex].messages.indices
+                where page.results[resultIndex].messages[index].id == id {
+                    changed = update(&page.results[resultIndex].messages[index]) || changed
+                }
+            }
+            guard changed else { continue }
+            let oldRows = search.rows
+            search.page = page
+            search.rows = MessageSearchPresentation.rows(for: page, channelsByID: messageSearchChannelsByID(additionalChannels: page.channels))
+            let revision = search.rowsRevision &+ 1
+            search.rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: search.rows, revision: revision))
+            search.rowsRevision = revision
+        }
+    }
+
     func switchMessageSearchScope(from previousGuildID: GuildID?) {
         // Timings belong to the visible search, while requests may finish off-screen.
         cancelMessageSearchMeasurement("MessageSearchBenchmark", measuresPagination: false)
