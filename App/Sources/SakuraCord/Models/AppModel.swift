@@ -1233,6 +1233,10 @@ final class AppModel {
         }
         configureAttachmentMedia()
     }
+
+    func dismissError() {
+        errorMessage = nil
+    }
 }
 
 extension AppModel {

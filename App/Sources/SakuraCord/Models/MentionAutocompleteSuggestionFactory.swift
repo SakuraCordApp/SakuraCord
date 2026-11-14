@@ -3,6 +3,18 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct MentionAutocompleteSuggestion: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let value: String
+    let target: MentionTarget
+    var avatarURL: URL?
+    var colorHex: UInt32?
+    var member: Member?
+    var systemImage: String?
+}
+
 enum MentionAutocompleteSuggestionFactory {
     private static let resultLimit = 10
 

@@ -137,10 +137,6 @@ final class ComposerFileDropView: NSView {
     }
 }
 
-struct ComposerAttachmentEditorTarget: Identifiable {
-    let id: UUID
-}
-
 @MainActor
 final class ComposerPromisedFileCollector {
     private var remainingCount: Int

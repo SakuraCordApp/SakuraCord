@@ -2,6 +2,10 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct ComposerAttachmentEditorTarget: Identifiable {
+    let id: UUID
+}
+
 struct ComposerAttachmentTray: View {
     static var cornerRadius: CGFloat { InterfaceScale.metric(12) }
     static var tileSize: CGFloat { InterfaceScale.metric(132) }

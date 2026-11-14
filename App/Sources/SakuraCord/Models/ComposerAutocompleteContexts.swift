@@ -166,15 +166,3 @@ struct KeywordMentionContext {
         query = prefix.substring(with: match.range(at: 2))
     }
 }
-
-struct MentionAutocompleteSuggestion: Identifiable {
-    let id: String
-    let title: String
-    let detail: String
-    let value: String
-    let target: MentionTarget
-    var avatarURL: URL?
-    var colorHex: UInt32?
-    var member: Member?
-    var systemImage: String?
-}
