@@ -286,3 +286,12 @@ nonisolated enum FriendsListPolicy {
         return .valid(tag: tag, username: String(parts[0]), discriminator: discriminator)
     }
 }
+
+extension Member {
+    /// A user outside any server, with their Friends list presence if known.
+    static func friend(_ user: User, presence: UserPresence?) -> Member {
+        var member = Member(user: user, roleName: "", status: presence?.status ?? .offline)
+        member.customStatus = presence?.customStatus
+        return member
+    }
+}

@@ -8,6 +8,10 @@ extension AppModel {
         relationshipNicknamesByUserID[userID]
     }
 
+    func friendDisplayName(_ user: User) -> String {
+        friendNickname(for: user.id) ?? user.displayName
+    }
+
     func isFriend(_ userID: UserID) -> Bool {
         friendUserIDs.contains(userID)
     }

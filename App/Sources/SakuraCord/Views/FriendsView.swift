@@ -27,12 +27,6 @@ struct FriendsView: View {
     }
 }
 
-extension AppModel {
-    func friendDisplayName(_ user: User) -> String {
-        friendNickname(for: user.id) ?? user.displayName
-    }
-}
-
 private struct FriendsListView: View {
     let model: AppModel
 

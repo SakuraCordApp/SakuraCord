@@ -239,9 +239,7 @@ extension AppModel {
     }
 
     func showFriendProfile(_ row: FriendRow) {
-        var member = Member(user: row.user, roleName: "", status: row.presence.status)
-        member.customStatus = row.presence.customStatus
-        presentProfile(for: member, in: nil, destination: .expanded)
+        presentProfile(for: .friend(row.user, presence: row.presence), in: nil, destination: .expanded)
     }
 
     /// Opens the existing conversation, or creates it through the provider.

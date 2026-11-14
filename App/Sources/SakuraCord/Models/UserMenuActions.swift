@@ -168,13 +168,7 @@ extension AppModel {
     }
 
     private func userMenuMember(_ user: User, context: UserMenuContext) -> Member {
-        if let member = profileMember(user.id, in: context.guildID) { return member }
-        var member = Member(user: user, roleName: "", status: .offline)
-        if let row = friends.row(for: user.id) {
-            member.status = row.presence.status
-            member.customStatus = row.presence.customStatus
-        }
-        return member
+        profileMember(user.id, in: context.guildID) ?? .friend(user, presence: friends.row(for: user.id)?.presence)
     }
 
     private func mentionUserFromMenu(_ user: User, context: UserMenuContext) {
