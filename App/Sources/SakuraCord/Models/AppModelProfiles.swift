@@ -402,6 +402,10 @@ extension AppModel {
             ?? (guildID == selectedGuildID ? membersByID[userID] : nil)
     }
 
+    func knownUser(_ userID: UserID) -> User? {
+        currentUser?.id == userID ? currentUser : membersByID[userID]?.user
+    }
+
     /// Resolves presence from the member store so presented profiles stay live.
     func liveProfilePresentation(
         for destination: ProfilePresentationDestination

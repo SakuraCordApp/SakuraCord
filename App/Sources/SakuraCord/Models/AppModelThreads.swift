@@ -65,9 +65,7 @@ extension AppModel {
         // The thread's creator started it, who may not have written the
         // message it was started from. An unknown creator shows no credit.
         let creator: User? = if let ownerID = thread.ownerID {
-            starter?.author.id == ownerID ? starter?.author
-                : ownerID == currentUser?.id ? currentUser
-                : membersByID[ownerID]?.user
+            starter?.author.id == ownerID ? starter?.author : knownUser(ownerID)
         } else {
             starter?.author
         }

@@ -422,8 +422,7 @@ final class EmbeddedActivityHost: NSObject {
 
     private func activityUser(_ userID: UserID) -> User? {
         guard let model else { return nil }
-        if model.currentUser?.id == userID { return model.currentUser }
-        return model.membersByID[userID]?.user
+        return model.knownUser(userID)
             ?? model.embeddedActivities.session?.channel.recipients.first { $0.id == userID }
     }
 

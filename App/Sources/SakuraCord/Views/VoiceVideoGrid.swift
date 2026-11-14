@@ -115,9 +115,7 @@ struct VoiceVideoGrid: View {
 
         for participant in localParticipants where values[participant.userID] == nil {
             let numericID = UserID(participant.userID)
-            let user = numericID.flatMap { id in
-                id == currentUser?.id ? currentUser : model.membersByID[id]?.user
-            }
+            let user = numericID.flatMap { model.knownUser($0) }
             values[participant.userID] = VoiceTileParticipant(
                 id: participant.userID,
                 name: user?.displayName ?? "User \(participant.userID)",

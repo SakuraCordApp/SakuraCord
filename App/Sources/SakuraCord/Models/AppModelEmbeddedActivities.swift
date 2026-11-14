@@ -504,7 +504,7 @@ extension AppModel {
     }
 
     func activityPlayerAvatarURL(_ userID: UserID) -> URL? {
-        (currentUser?.id == userID ? currentUser : membersByID[userID]?.user)?.avatarURL
+        knownUser(userID)?.avatarURL
     }
 
     /// The launch message's button: join a running instance, show it joined,

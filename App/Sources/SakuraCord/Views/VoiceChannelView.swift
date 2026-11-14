@@ -143,9 +143,7 @@ struct VoiceChannelView: View {
         return model.voiceStates.values
             .filter { $0.channelID == channel.id }
             .map { state in
-                let user = state.userID == currentUser?.id
-                    ? currentUser
-                    : model.membersByID[state.userID]?.user
+                let user = model.knownUser(state.userID)
                 return VoiceChannelPreviewParticipant(
                     id: state.userID,
                     name: user?.displayName ?? "User \(state.userID.rawValue)",
