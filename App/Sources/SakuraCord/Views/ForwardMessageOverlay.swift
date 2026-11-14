@@ -7,20 +7,20 @@ struct ForwardMessageOverlay: View {
     @Environment(\.windowModalContext) private var dismiss
     @State private var query = ""
     @State private var context = ""
-    @State private var selectedDestinationIDs: [ForwardDestinationID] = []
-    @State private var searchPinnedDestinationIDs: [ForwardDestinationID] = []
-    @State private var searchIndex: ForwardDestinationSearchPolicy.Index?
+    @State private var selectedDestinationIDs: [ConversationDestinationID] = []
+    @State private var searchPinnedDestinationIDs: [ConversationDestinationID] = []
+    @State private var searchIndex: ConversationDestinationSearchPolicy.Index?
     @State private var searchIndexRevision = 0
-    @State private var displayedDestinations: [ForwardDestination] = []
-    @State private var unqueriedDestinations: [ForwardDestination] = []
-    @State private var destinationScrollPosition: ForwardDestinationID?
+    @State private var displayedDestinations: [ConversationDestination] = []
+    @State private var unqueriedDestinations: [ConversationDestination] = []
+    @State private var destinationScrollPosition: ConversationDestinationID?
     @FocusState private var focus: Field?
 
     private enum Field { case search, context }
 
     private struct SearchRequest: Hashable {
         let query: String
-        let pinnedDestinationIDs: [ForwardDestinationID]
+        let pinnedDestinationIDs: [ConversationDestinationID]
         let indexRevision: Int
     }
 
@@ -35,7 +35,7 @@ struct ForwardMessageOverlay: View {
             }
         }
         guard !Task.isCancelled else { return }
-        guard let index = await ForwardDestinationSearchIndexCache.shared.prepare(
+        guard let index = await ConversationDestinationSearchIndexCache.shared.prepare(
             for: model,
             priority: .userInitiated
         ), !Task.isCancelled
@@ -86,8 +86,8 @@ struct ForwardMessageOverlay: View {
     }
 
     private func validateContentPermissions(
-        in results: [ForwardDestination]
-    ) -> [ForwardDestination] {
+        in results: [ConversationDestination]
+    ) -> [ConversationDestination] {
         let needsContentPermissionValidation = !message.attachments.isEmpty
             || !message.embeds.isEmpty
             || !message.stickers.isEmpty
@@ -156,7 +156,7 @@ struct ForwardMessageOverlay: View {
     }
 
     private var searchPlaceholder: String {
-        selectedDestinationIDs.count >= ForwardDestinationSearchPolicy.maximumSelections
+        selectedDestinationIDs.count >= ConversationDestinationSearchPolicy.maximumSelections
             ? "Maximum 5 places at once"
             : "Forward to…"
     }
@@ -169,7 +169,7 @@ struct ForwardMessageOverlay: View {
             // race a live search-index update.
             VStack(spacing: InterfaceScale.metric(2)) {
                 ForEach(displayedDestinations) { destination in
-                    ForwardDestinationRow(
+                    ConversationDestinationRow(
                         destination: destination,
                         isSelected: selectedDestinationIDs.contains(destination.id)
                     ) {
@@ -234,7 +234,7 @@ struct ForwardMessageOverlay: View {
         }
     }
 
-    private func toggle(_ destinationID: ForwardDestinationID) {
+    private func toggle(_ destinationID: ConversationDestinationID) {
         let selectedFromSearch = !query.trimmingCharacters(
             in: .whitespacesAndNewlines
         ).isEmpty
@@ -260,10 +260,45 @@ struct ForwardMessageOverlay: View {
             selectedDestinationIDs.remove(at: index)
             return
         }
-        guard selectedDestinationIDs.count < ForwardDestinationSearchPolicy.maximumSelections else {
+        guard selectedDestinationIDs.count < ConversationDestinationSearchPolicy.maximumSelections else {
             NSSound.beep()
             return
         }
         selectedDestinationIDs.insert(destinationID, at: 0)
+    }
+}
+
+nonisolated enum ForwardDestinationSelectionPolicy {
+    static func searchPins(
+        afterSelecting destinationID: ConversationDestinationID,
+        query: String,
+        selectedDestinationIDs: [ConversationDestinationID],
+        existing: [ConversationDestinationID]
+    ) -> [ConversationDestinationID] {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return existing
+        }
+        let newlyPinned = [destinationID]
+            + selectedDestinationIDs.filter { $0 != destinationID }
+        let newlyPinnedSet = Set(newlyPinned)
+        return newlyPinned + existing.filter { !newlyPinnedSet.contains($0) }
+    }
+
+    static func mergingPinnedDestinations(
+        _ pins: [ConversationDestinationID],
+        into destinations: [ConversationDestination],
+        fallbacks: [ConversationDestination],
+        limit: Int = 15
+    ) -> [ConversationDestination] {
+        guard !pins.isEmpty else { return Array(destinations.prefix(limit)) }
+        let destinationsByID = Dictionary(
+            (destinations + fallbacks).map { ($0.id, $0) },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+        var seen = Set<ConversationDestinationID>()
+        return (pins + destinations.map(\.id)).compactMap { destinationID in
+            guard seen.insert(destinationID).inserted else { return nil }
+            return destinationsByID[destinationID]
+        }.prefix(limit).map { $0 }
     }
 }

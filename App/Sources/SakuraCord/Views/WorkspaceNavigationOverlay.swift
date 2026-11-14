@@ -26,8 +26,8 @@ struct WorkspaceNavigationOverlayView: View {
 }
 
 private nonisolated struct QuickSwitcherSearchInput: Sendable {
-    let index: ForwardDestinationSearchPolicy.Index
-    let userIndex: ForwardDestinationSearchPolicy.Index
+    let index: ConversationDestinationSearchPolicy.Index
+    let userIndex: ConversationDestinationSearchPolicy.Index
     let guilds: [Guild]
     let usageScores: [String: Int]
     let history: [ChannelID]
@@ -93,7 +93,7 @@ private struct QuickSwitcherView: View {
     let animationState: WindowModalContext
     @Environment(\.openSettings) private var openSettings
     @State private var query = ""
-    @State private var searchIndex: ForwardDestinationSearchPolicy.Index?
+    @State private var searchIndex: ConversationDestinationSearchPolicy.Index?
     @State private var searchInput: QuickSwitcherSearchInput?
     @State private var searchIndexRevision: UInt64 = 0
     @State private var contextRevision: UInt64 = 0
@@ -178,7 +178,7 @@ private struct QuickSwitcherView: View {
                 if isVisible {
                     let currentUserID = model.currentUser?.id
                     let sourceRevision = model.forwardSearchSourceRevision
-                    if let exact = ForwardDestinationSearchIndexCache.shared.value(
+                    if let exact = ConversationDestinationSearchIndexCache.shared.value(
                         for: model,
                         userID: currentUserID,
                         revision: sourceRevision
@@ -214,14 +214,14 @@ private struct QuickSwitcherView: View {
                     // retained, invisible view observe every source revision.
                     // The cache owns and coalesces this background work.
                     if model.snapshot != nil {
-                        ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
+                        ConversationDestinationSearchIndexCache.shared.schedulePrewarm(
                             for: model
                         )
                     }
                     return
                 }
                 if activeMemberSearchRequest != nil {
-                    ForwardDestinationSearchIndexCache.shared.invalidate(for: model)
+                    ConversationDestinationSearchIndexCache.shared.invalidate(for: model)
                 }
                 if !model.hasLoadedDiscordEmojiSettings {
                     Task { @MainActor in
@@ -230,12 +230,12 @@ private struct QuickSwitcherView: View {
                 }
                 let userID = model.currentUser?.id
                 let revision = activeIndexRequest.revision
-                let exact = ForwardDestinationSearchIndexCache.shared.value(
+                let exact = ConversationDestinationSearchIndexCache.shared.value(
                     for: model,
                     userID: userID,
                     revision: revision
                 )
-                let latest = ForwardDestinationSearchIndexCache.shared.latestValue(
+                let latest = ConversationDestinationSearchIndexCache.shared.latestValue(
                     for: model,
                     userID: userID
                 )
@@ -245,11 +245,11 @@ private struct QuickSwitcherView: View {
                 {
                     applySearchIndex(immediatelyAvailable)
                 }
-                let prepared: ForwardDestinationSearchPolicy.Index?
+                let prepared: ConversationDestinationSearchPolicy.Index?
                 if let exact {
                     prepared = exact
                 } else {
-                    prepared = await ForwardDestinationSearchIndexCache.shared.prepare(
+                    prepared = await ConversationDestinationSearchIndexCache.shared.prepare(
                         for: model,
                         priority: .userInitiated
                     )
@@ -316,7 +316,7 @@ private struct QuickSwitcherView: View {
     }
 
     private func applySearchIndex(
-        _ index: ForwardDestinationSearchPolicy.Index
+        _ index: ConversationDestinationSearchPolicy.Index
     ) {
         searchIndex = index
         searchInput = makeSearchInput(searchIndex: index)
@@ -324,7 +324,7 @@ private struct QuickSwitcherView: View {
     }
 
     private func makeSearchInput(
-        searchIndex: ForwardDestinationSearchPolicy.Index
+        searchIndex: ConversationDestinationSearchPolicy.Index
     ) -> QuickSwitcherSearchInput? {
         guard let snapshot = model.snapshot else { return nil }
         let guildsByID = Dictionary(
@@ -588,7 +588,7 @@ private struct QuickSwitcherView: View {
     }
 
     private func destinationMetadata(
-        _ destination: ForwardDestination
+        _ destination: ConversationDestination
     ) -> (inlineDetail: String?, trailingDetail: String?) {
         switch destination.kind {
         case .user(let user, _):
@@ -603,7 +603,7 @@ private struct QuickSwitcherView: View {
         }
     }
 
-    private func destinationImageURL(_ destination: ForwardDestination) -> URL? {
+    private func destinationImageURL(_ destination: ConversationDestination) -> URL? {
         switch destination.kind {
         case .user:
             destination.avatarURL
@@ -615,7 +615,7 @@ private struct QuickSwitcherView: View {
         }
     }
 
-    private func destinationSystemImage(_ destination: ForwardDestination) -> String {
+    private func destinationSystemImage(_ destination: ConversationDestination) -> String {
         switch destination.kind {
         case .user: "person.crop.circle"
         case .thread: "number"

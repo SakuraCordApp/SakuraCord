@@ -2,13 +2,13 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
-nonisolated enum ForwardDestinationSearchPolicy {
+nonisolated enum ConversationDestinationSearchPolicy {
     enum ResultCategory: Sendable {
         case user, groupDirectMessage, selectableChannel, voiceChannel
     }
 
     struct ScoredResult: Sendable {
-        let destination: ForwardDestination
+        let destination: ConversationDestination
         let category: ResultCategory
         let score: Double
         let comparator: String?
@@ -16,7 +16,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
     }
 
     private struct RankedDestination {
-        let destination: ForwardDestination
+        let destination: ConversationDestination
         let category: ResultCategory
         let score: Double
         let comparator: String?
@@ -26,7 +26,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
 
     private struct IndexedGroupDestination {
         let offset: Int
-        let destination: ForwardDestination
+        let destination: ConversationDestination
         let position: Int
     }
 
@@ -74,14 +74,14 @@ nonisolated enum ForwardDestinationSearchPolicy {
     }
 
     fileprivate final class SearchRecord: Sendable {
-        let destination: ForwardDestination
+        let destination: ConversationDestination
         let category: ResultCategory
         let sourceOrder: Int
         let isEligible: Bool
         let values: SearchValues
 
         init(
-            destination: ForwardDestination,
+            destination: ConversationDestination,
             category: ResultCategory,
             sourceOrder: Int,
             isEligible: Bool,
@@ -109,7 +109,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             separatedTerms = value.contains(where: { $0 == " " || $0 == "," })
                 ? value.split(whereSeparator: { $0 == " " || $0 == "," }).map(String.init)
                 : []
-            confusableSkeleton = ForwardDestinationSearchPolicy.discordConfusableSkeleton(value)
+            confusableSkeleton = ConversationDestinationSearchPolicy.discordConfusableSkeleton(value)
         }
     }
 
@@ -131,11 +131,11 @@ nonisolated enum ForwardDestinationSearchPolicy {
         let comparator: String
 
         init(_ value: String) {
-            searchValue = ForwardDestinationSearchPolicy.userIdentitySearchValue(value)
-            confusableSkeleton = ForwardDestinationSearchPolicy.discordConfusableSkeleton(
+            searchValue = ConversationDestinationSearchPolicy.userIdentitySearchValue(value)
+            confusableSkeleton = ConversationDestinationSearchPolicy.discordConfusableSkeleton(
                 searchValue
             )
-            comparator = ForwardDestinationSearchPolicy.userIdentityComparator(value)
+            comparator = ConversationDestinationSearchPolicy.userIdentityComparator(value)
         }
     }
 
@@ -187,7 +187,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
     }
 
     struct Index: Sendable {
-        let destinations: [ForwardDestination]
+        let destinations: [ConversationDestination]
         fileprivate let searchRecords: [SearchRecord]
         fileprivate let usageScores: [String: Int]
         fileprivate let usageOrder: [String]
@@ -206,7 +206,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             }
             return Index(
                 destinations: users,
-                searchRecords: ForwardDestinationSearchPolicy.makeSearchRecords(
+                searchRecords: ConversationDestinationSearchPolicy.makeSearchRecords(
                     users,
                     usageScores: usageScores,
                     maximumUsageScore: Double(maximumResolvableUsageScore),
@@ -229,18 +229,18 @@ nonisolated enum ForwardDestinationSearchPolicy {
         func results(
             query: String,
             recentChannelIDs: [ChannelID] = [],
-            pinnedDestinationIDs: [ForwardDestinationID] = [],
+            pinnedDestinationIDs: [ConversationDestinationID] = [],
             originChannelID: ChannelID? = nil,
             excludedChannelIDs: Set<ChannelID> = [],
             categories: Set<ResultCategory>? = nil,
-            limitPerCategory: Int = ForwardDestinationSearchPolicy.resultLimitPerCategory
-        ) -> [ForwardDestination] {
-            let normalizedQuery = ForwardDestinationSearchPolicy.normalize(query)
-            func isIncluded(_ destination: ForwardDestination) -> Bool {
+            limitPerCategory: Int = ConversationDestinationSearchPolicy.resultLimitPerCategory
+        ) -> [ConversationDestination] {
+            let normalizedQuery = ConversationDestinationSearchPolicy.normalize(query)
+            func isIncluded(_ destination: ConversationDestination) -> Bool {
                 destination.resolvedChannelID.map(excludedChannelIDs.contains) != true
             }
             guard !normalizedQuery.isEmpty else {
-                return ForwardDestinationSearchPolicy.unqueriedResults(
+                return ConversationDestinationSearchPolicy.unqueriedResults(
                     destinations: excludedChannelIDs.isEmpty ? destinations : destinations.filter(isIncluded),
                     usageScores: usageScores,
                     usageOrder: usageOrder,
@@ -250,7 +250,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
                     originChannelID: originChannelID
                 )
             }
-            return ForwardDestinationSearchPolicy.searchedResults(
+            return ConversationDestinationSearchPolicy.searchedResults(
                 excludedChannelIDs.isEmpty ? searchRecords : searchRecords.filter { isIncluded($0.destination) },
                 query: normalizedQuery,
                 categories: categories,
@@ -268,9 +268,9 @@ nonisolated enum ForwardDestinationSearchPolicy {
             allowsEmptyQuery: Bool = false,
             groupsBeforeUsersForEqualScores: Bool = false
         ) -> [ScoredResult] {
-            let normalizedQuery = ForwardDestinationSearchPolicy.normalize(query)
+            let normalizedQuery = ConversationDestinationSearchPolicy.normalize(query)
             guard allowsEmptyQuery || !normalizedQuery.isEmpty else { return [] }
-            return ForwardDestinationSearchPolicy.searchedResults(
+            return ConversationDestinationSearchPolicy.searchedResults(
                 searchRecords,
                 query: normalizedQuery,
                 categories: categories,
@@ -286,7 +286,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             currentGuildID: GuildID?,
             limit: Int
         ) -> [ScoredResult] {
-            ForwardDestinationSearchPolicy.unqueriedTextChannelResults(
+            ConversationDestinationSearchPolicy.unqueriedTextChannelResults(
                 searchRecords,
                 currentGuildID: currentGuildID,
                 limit: limit
@@ -298,7 +298,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             currentChannelID: ChannelID?,
             limit: Int
         ) -> [ScoredResult] {
-            ForwardDestinationSearchPolicy.messageSearchUnqueriedChannelResults(
+            ConversationDestinationSearchPolicy.messageSearchUnqueriedChannelResults(
                 searchRecords,
                 currentGuildID: currentGuildID,
                 currentChannelID: currentChannelID,
@@ -310,7 +310,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             currentChannelID: ChannelID?,
             limit: Int
         ) -> [ScoredResult] {
-            ForwardDestinationSearchPolicy.messageSearchUnqueriedDirectMessageResults(
+            ConversationDestinationSearchPolicy.messageSearchUnqueriedDirectMessageResults(
                 searchRecords,
                 currentChannelID: currentChannelID,
                 limit: limit
@@ -321,16 +321,16 @@ nonisolated enum ForwardDestinationSearchPolicy {
             query: String,
             limit: Int
         ) -> [ScoredResult] {
-            ForwardDestinationSearchPolicy.messageSearchDirectMessageResults(
+            ConversationDestinationSearchPolicy.messageSearchDirectMessageResults(
                 searchRecords,
-                query: ForwardDestinationSearchPolicy.normalize(query),
+                query: ConversationDestinationSearchPolicy.normalize(query),
                 relationshipNicknamesByUserID: relationshipNicknamesByUserID,
                 limit: limit
             )
         }
 
         func messageSearchUnqueriedUserResults(limit: Int) -> [User] {
-            ForwardDestinationSearchPolicy.messageSearchUnqueriedUserResults(
+            ConversationDestinationSearchPolicy.messageSearchUnqueriedUserResults(
                 searchRecords,
                 limit: limit
             )
@@ -425,11 +425,11 @@ nonisolated enum ForwardDestinationSearchPolicy {
         maximumUsageScore: Int? = nil,
         usageOrder: [String] = [],
         recentChannelIDs: [ChannelID] = [],
-        pinnedDestinationIDs: [ForwardDestinationID] = [],
+        pinnedDestinationIDs: [ConversationDestinationID] = [],
         searchableChannelIDs: Set<ChannelID>? = nil,
         eligibleChannelIDs: Set<ChannelID>? = nil,
         originChannelID: ChannelID? = nil
-    ) -> [ForwardDestination] {
+    ) -> [ConversationDestination] {
         makeIndex(
             channels: channels,
             threads: threads,
@@ -457,10 +457,10 @@ nonisolated enum ForwardDestinationSearchPolicy {
 
 }
 
-nonisolated extension ForwardDestinationSearchPolicy {
+nonisolated extension ConversationDestinationSearchPolicy {
     private static func makeDestinations(
         source: DestinationSource
-    ) -> [ForwardDestination] {
+    ) -> [ConversationDestination] {
         let channels = source.channels
         let channelsByID = Dictionary(
             channels.map { ($0.id, $0) },
@@ -483,7 +483,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
             if lhs.position != rhs.position { return lhs.position < rhs.position }
             return lhs.offset < rhs.offset
         }.map(\.destination)
-        let nonGroupChannelDestinations = indexedChannelDestinations.compactMap { item -> ForwardDestination? in
+        let nonGroupChannelDestinations = indexedChannelDestinations.compactMap { item -> ConversationDestination? in
             let (_, destination) = item
             guard case .channel(let channel) = destination.kind,
                   channel.kind == .groupDirectMessage
@@ -507,7 +507,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
 
     private static func makeUserDestinations(
         source: DestinationSource
-    ) -> [ForwardDestination] {
+    ) -> [ConversationDestination] {
         let directMessagesByUserID = Dictionary(
             source.channels.compactMap { channel -> (UserID, Channel)? in
                 guard channel.kind == .directMessage,
@@ -525,7 +525,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
             guard user.id != source.currentUserID,
                   seenUserIDs.insert(user.id).inserted
             else { return nil }
-            return ForwardDestination(
+            return ConversationDestination(
                 kind: .user(user, directMessage: directMessagesByUserID[user.id]),
                 guild: nil,
                 titleOverride: source.relationshipNicknamesByUserID[user.id]
@@ -535,7 +535,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
 
     private static func makeChannelDestinations(
         source: DestinationSource
-    ) -> [ForwardDestination] {
+    ) -> [ConversationDestination] {
         source.channels.compactMap { channel in
             guard channel.kind != .directMessage else { return nil }
             if channel.kind != .groupDirectMessage {
@@ -543,7 +543,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
                       source.searchableChannelIDs?.contains(channel.id) != false
                 else { return nil }
             }
-            return ForwardDestination(
+            return ConversationDestination(
                 kind: .channel(channel),
                 guild: channel.guildID.flatMap { source.guilds[$0] },
                 detailOverride: groupDirectMessageDetail(channel)
@@ -554,13 +554,13 @@ nonisolated extension ForwardDestinationSearchPolicy {
     private static func makeThreadDestinations(
         source: DestinationSource,
         channelsByID: [ChannelID: Channel]
-    ) -> [ForwardDestination] {
+    ) -> [ConversationDestination] {
         source.threads.compactMap { thread in
             guard source.includesUnjoinedThreads || !thread.isArchived,
                   source.includesUnjoinedThreads || thread.notificationSettings != nil,
                   source.searchableChannelIDs?.contains(thread.id) != false
             else { return nil }
-            return ForwardDestination(
+            return ConversationDestination(
                 kind: .thread(
                     thread,
                     parent: thread.parentID.flatMap { channelsByID[$0] }
@@ -571,9 +571,9 @@ nonisolated extension ForwardDestinationSearchPolicy {
     }
 
     private static func orderThreadDestinations(
-        _ threadDestinations: [ForwardDestination],
+        _ threadDestinations: [ConversationDestination],
         channelStoreOrder: [ChannelID]
-    ) -> [ForwardDestination] {
+    ) -> [ConversationDestination] {
         let parentSourceOrder = Dictionary(
             channelStoreOrder.enumerated().map { ($0.element, $0.offset) },
             uniquingKeysWith: { earlier, _ in earlier }
@@ -581,7 +581,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
         // ThreadStore returns a guild's threads grouped by parent-channel
         // store position, with snowflake order inside each parent. Ordinary
         // channels still precede the complete thread projection.
-        func parentChannelID(of destination: ForwardDestination) -> ChannelID? {
+        func parentChannelID(of destination: ConversationDestination) -> ChannelID? {
             guard case .thread(_, let parent) = destination.kind else { return nil }
             return parent?.id
         }
@@ -645,7 +645,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
     }
 
     private static func makeSearchRecords(
-        _ destinations: [ForwardDestination],
+        _ destinations: [ConversationDestination],
         usageScores: [String: Int],
         maximumUsageScore: Double,
         friendUserIDs: Set<UserID>,
@@ -919,7 +919,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
     }
 
     private static func isEligible(
-        _ destination: ForwardDestination,
+        _ destination: ConversationDestination,
         eligibleChannelIDs: Set<ChannelID>?
     ) -> Bool {
         switch destination.kind {
@@ -955,7 +955,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
         // first duplicate type/id, then globally sorts. The forwarding filter
         // runs afterward, so an ineligible row still consumes its raw category
         // slot and is not replaced by a lower-ranked candidate.
-        var seen: Set<ForwardDestinationID> = []
+        var seen: Set<ConversationDestinationID> = []
         let unique = limited.filter {
             seen.insert($0.destination.destination.id).inserted
         }
@@ -1265,7 +1265,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
     }
 
     private static func isVoiceDestination(
-        _ destination: ForwardDestination
+        _ destination: ConversationDestination
     ) -> Bool {
         switch destination.kind {
         case .channel(let channel): channel.kind == .voice
@@ -1295,14 +1295,14 @@ nonisolated extension ForwardDestinationSearchPolicy {
     }
 
     private static func unqueriedResults(
-        destinations: [ForwardDestination],
+        destinations: [ConversationDestination],
         usageScores: [String: Int],
         usageOrder: [String],
         recentChannelIDs: [ChannelID],
-        pinnedDestinationIDs: [ForwardDestinationID],
+        pinnedDestinationIDs: [ConversationDestinationID],
         eligibleChannelIDs: Set<ChannelID>?,
         originChannelID: ChannelID?
-    ) -> [ForwardDestination] {
+    ) -> [ConversationDestination] {
         let destinations = destinations.filter {
             isEligible($0, eligibleChannelIDs: eligibleChannelIDs)
         }
@@ -1336,7 +1336,7 @@ nonisolated extension ForwardDestinationSearchPolicy {
             destinationsByChannelID[$0]?.id
         }
         let pinned = Set(pinnedDestinationIDs)
-        var seen: Set<ForwardDestinationID> = []
+        var seen: Set<ConversationDestinationID> = []
         return (pinnedDestinationIDs + recentDestinationIDs + frequentDestinationIDs)
             .compactMap { destinationID in
             guard seen.insert(destinationID).inserted,

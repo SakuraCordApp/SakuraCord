@@ -7,12 +7,12 @@ struct FavoritesPickerView: View {
     let model: AppModel
     @Environment(\.windowModalContext) private var modal
     @State private var query = ""
-    @State private var selection: [ForwardDestination] = []
+    @State private var selection: [ConversationDestination] = []
     /// The picks as of the last query change, which Discord lists first.
-    @State private var pinnedIDs: [ForwardDestinationID] = []
-    @State private var index: ForwardDestinationSearchPolicy.Index?
+    @State private var pinnedIDs: [ConversationDestinationID] = []
+    @State private var index: ConversationDestinationSearchPolicy.Index?
     @State private var indexRevision = 0
-    @State private var results: [ForwardDestination] = []
+    @State private var results: [ConversationDestination] = []
     @FocusState private var isSearchFocused: Bool
 
     private var isAtLimit: Bool { selection.count >= AppModel.favoritesPickerSelectionLimit }
@@ -37,7 +37,7 @@ struct FavoritesPickerView: View {
                     VStack(spacing: InterfaceScale.metric(2)) {
                         ForEach(results) { destination in
                             let isSelected = selection.contains { $0.id == destination.id }
-                            ForwardDestinationRow(destination: destination, isSelected: isSelected) { toggle(destination) }
+                            ConversationDestinationRow(destination: destination, isSelected: isSelected) { toggle(destination) }
                                 .disabled(!isSelected && isAtLimit)
                         }
                     }
@@ -57,7 +57,7 @@ struct FavoritesPickerView: View {
         .task(id: model.forwardSearchSourceRevision) {
             if !model.hasLoadedDiscordEmojiSettings { Task { await model.loadDiscordEmojiSettings() } }
             // nil when a newer source revision's task owns the index now.
-            guard let built = await ForwardDestinationSearchIndexCache.shared.prepare(
+            guard let built = await ConversationDestinationSearchIndexCache.shared.prepare(
                 for: model, priority: .userInitiated, corpus: .favorites
             ) else { return }
             index = built
@@ -72,7 +72,7 @@ struct FavoritesPickerView: View {
     /// index's results replace its own.
     private struct SearchRequest: Hashable {
         let query: String
-        let pinnedIDs: [ForwardDestinationID]
+        let pinnedIDs: [ConversationDestinationID]
         let indexRevision: Int
     }
 
@@ -97,7 +97,7 @@ struct FavoritesPickerView: View {
         results = found
     }
 
-    private func toggle(_ destination: ForwardDestination) {
+    private func toggle(_ destination: ConversationDestination) {
         if let position = selection.firstIndex(where: { $0.id == destination.id }) {
             selection.remove(at: position)
         } else if !isAtLimit {

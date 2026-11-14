@@ -3,8 +3,8 @@ import SakuraCordModels
 import SwiftUI
 
 @MainActor
-final class ForwardDestinationSearchIndexCache {
-    static let shared = ForwardDestinationSearchIndexCache()
+final class ConversationDestinationSearchIndexCache {
+    static let shared = ConversationDestinationSearchIndexCache()
 
     /// The destinations a search covers. Forward lists conversations the
     /// account can post in; Favorites (Add to Favorites and Suggested
@@ -23,9 +23,9 @@ final class ForwardDestinationSearchIndexCache {
         var modelID: ObjectIdentifier?
         var userID: UserID?
         var revision: UInt64?
-        var index: ForwardDestinationSearchPolicy.Index?
+        var index: ConversationDestinationSearchPolicy.Index?
         var preparationKey: Key?
-        var preparationTask: Task<ForwardDestinationSearchPolicy.Index, Never>?
+        var preparationTask: Task<ConversationDestinationSearchPolicy.Index, Never>?
     }
 
     private struct PrewarmKey: Equatable {
@@ -49,8 +49,8 @@ final class ForwardDestinationSearchIndexCache {
         /// nil for the Favorites corpus.
         let eligibleChannelIDs: Set<ChannelID>?
 
-        func makeIndex() -> ForwardDestinationSearchPolicy.Index {
-            ForwardDestinationSearchPolicy.makeIndex(
+        func makeIndex() -> ConversationDestinationSearchPolicy.Index {
+            ConversationDestinationSearchPolicy.makeIndex(
                 channels: channels,
                 threads: threads,
                 channelStoreOrder: channelStoreOrder,
@@ -86,7 +86,7 @@ final class ForwardDestinationSearchIndexCache {
         let usageOrder: [String]
 
         func makeInput(currentUserID: UserID?, corpus: Corpus) -> Input {
-            let channels = ForwardDestinationSearchPolicy.channelsInStoreOrder(
+            let channels = ConversationDestinationSearchPolicy.channelsInStoreOrder(
                 snapshot?.channels ?? [],
                 storeOrder: snapshot?.forwardChannelStoreOrder ?? []
             )
@@ -121,7 +121,7 @@ final class ForwardDestinationSearchIndexCache {
             }
             let searchableChannelIDs = Set(
                 channels.lazy.filter { channel in
-                    ForwardDestinationPermissionPolicy.canSearchChannel(
+                    ConversationDestinationPermissionPolicy.canSearchChannel(
                         channel,
                         permissions: permissionsByChannelID[channel.id]
                     )
@@ -130,7 +130,7 @@ final class ForwardDestinationSearchIndexCache {
                 guard !thread.isArchived,
                       let parentID = thread.parentID,
                       let parent = channelsByID[parentID],
-                      ForwardDestinationPermissionPolicy.canSearchThread(
+                      ConversationDestinationPermissionPolicy.canSearchThread(
                           parent: parent,
                           permissions: permissionsByChannelID[parent.id]
                       )
@@ -139,7 +139,7 @@ final class ForwardDestinationSearchIndexCache {
             })
             let eligibleChannelIDs = corpus == .favorites ? nil : Set(
                 channels.lazy.filter { channel in
-                    ForwardDestinationPermissionPolicy.canUseChannel(
+                    ConversationDestinationPermissionPolicy.canUseChannel(
                         channel,
                         permissions: permissionsByChannelID[channel.id]
                     )
@@ -148,7 +148,7 @@ final class ForwardDestinationSearchIndexCache {
                 guard !thread.isArchived,
                       let parentID = thread.parentID,
                       let parent = channelsByID[parentID],
-                      ForwardDestinationPermissionPolicy.canUseThread(
+                      ConversationDestinationPermissionPolicy.canUseThread(
                           parent: parent,
                           permissions: permissionsByChannelID[parent.id]
                       )
@@ -224,7 +224,7 @@ final class ForwardDestinationSearchIndexCache {
         userID: UserID?,
         revision: UInt64,
         corpus: Corpus = .forward
-    ) -> ForwardDestinationSearchPolicy.Index? {
+    ) -> ConversationDestinationSearchPolicy.Index? {
         guard let slot = slots[corpus], slot.modelID == ObjectIdentifier(model),
               slot.userID == userID,
               slot.revision == revision
@@ -240,7 +240,7 @@ final class ForwardDestinationSearchIndexCache {
         for model: AppModel,
         userID: UserID?,
         corpus: Corpus = .forward
-    ) -> ForwardDestinationSearchPolicy.Index? {
+    ) -> ConversationDestinationSearchPolicy.Index? {
         guard let slot = slots[corpus], slot.modelID == ObjectIdentifier(model),
               slot.userID == userID
         else { return nil }
@@ -254,7 +254,7 @@ final class ForwardDestinationSearchIndexCache {
     }
 
     func store(
-        _ index: ForwardDestinationSearchPolicy.Index,
+        _ index: ConversationDestinationSearchPolicy.Index,
         for model: AppModel,
         userID: UserID?,
         revision: UInt64,
@@ -313,7 +313,7 @@ final class ForwardDestinationSearchIndexCache {
         for model: AppModel,
         priority: TaskPriority,
         corpus: Corpus = .forward
-    ) async -> ForwardDestinationSearchPolicy.Index? {
+    ) async -> ConversationDestinationSearchPolicy.Index? {
         let currentUserID = model.snapshot?.currentUser.id
         let sourceRevision = model.forwardSearchSourceRevision
         if let cached = value(
@@ -350,7 +350,7 @@ final class ForwardDestinationSearchIndexCache {
             return await prepare(for: model, priority: priority, corpus: corpus)
         }
 
-        let task: Task<ForwardDestinationSearchPolicy.Index, Never>
+        let task: Task<ConversationDestinationSearchPolicy.Index, Never>
         if slots[corpus]?.preparationKey == key, let preparationTask = slots[corpus]?.preparationTask {
             task = preparationTask
         } else {

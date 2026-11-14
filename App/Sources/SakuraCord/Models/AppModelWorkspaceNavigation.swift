@@ -310,7 +310,7 @@ extension AppModel {
         workspaceNavigationOverlay = nil
     }
 
-    func activateQuickSwitcherDestination(_ destination: ForwardDestination) {
+    func activateQuickSwitcherDestination(_ destination: ConversationDestination) {
         switch destination.kind {
         case .channel(let channel):
             workspaceNavigationOverlay = nil

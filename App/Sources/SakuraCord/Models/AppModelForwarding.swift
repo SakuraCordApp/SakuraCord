@@ -71,7 +71,7 @@ extension AppModel {
     ) async -> Bool {
         await forward(
             message,
-            to: destinationChannelIDs.map(ForwardDestinationID.channel),
+            to: destinationChannelIDs.map(ConversationDestinationID.channel),
             context: context
         )
     }
@@ -79,7 +79,7 @@ extension AppModel {
     @discardableResult
     func forward(
         _ message: Message,
-        to destinationIDs: [ForwardDestinationID],
+        to destinationIDs: [ConversationDestinationID],
         context: String
     ) async -> Bool {
         let requestedDestinations = uniqueForwardDestinations(destinationIDs)
@@ -110,14 +110,14 @@ extension AppModel {
     }
 
     private func uniqueForwardDestinations(
-        _ destinationIDs: [ForwardDestinationID]
-    ) -> [ForwardDestinationID] {
-        var seen: Set<ForwardDestinationID> = []
+        _ destinationIDs: [ConversationDestinationID]
+    ) -> [ConversationDestinationID] {
+        var seen: Set<ConversationDestinationID> = []
         return Array(destinationIDs.filter { seen.insert($0).inserted }.prefix(5))
     }
 
     private func resolveForwardDestinations(
-        _ destinationIDs: [ForwardDestinationID],
+        _ destinationIDs: [ConversationDestinationID],
         session: AppModelAccountSession
     ) async -> [ForwardDestinationResolution] {
         let knownChannels = snapshot?.channels ?? []
@@ -144,7 +144,7 @@ extension AppModel {
     }
 
     nonisolated private static func resolveForwardDestination(
-        _ destination: ForwardDestinationID,
+        _ destination: ConversationDestinationID,
         index: Int,
         knownChannels: [Channel],
         knownThreadIDs: Set<ChannelID>,

@@ -338,7 +338,7 @@ enum MessageSearchAutocompletePolicy {
     private static func allFilterResult(
         query: String,
         model: AppModel,
-        index: ForwardDestinationSearchPolicy.Index
+        index: ConversationDestinationSearchPolicy.Index
     ) -> Result {
         var resultRows: [MessageSearchAutocompleteSuggestion] = []
         let users = userResults(
@@ -409,7 +409,7 @@ enum MessageSearchAutocompletePolicy {
         query: String,
         op: MessageSearchAutocompleteOperator,
         model: AppModel,
-        index: ForwardDestinationSearchPolicy.Index,
+        index: ConversationDestinationSearchPolicy.Index,
         limit: Int
     ) -> [MessageSearchAutocompleteSuggestion] {
         if query.isEmpty {
@@ -533,7 +533,7 @@ enum MessageSearchAutocompletePolicy {
     private static func channelResults(
         query: String,
         model: AppModel,
-        index: ForwardDestinationSearchPolicy.Index,
+        index: ConversationDestinationSearchPolicy.Index,
         limit: Int
     ) -> [MessageSearchAutocompleteSuggestion] {
         if model.selectedGuildID == nil {
@@ -606,7 +606,7 @@ enum MessageSearchAutocompletePolicy {
     private static func searchIndex(
         model: AppModel,
         users: [User]? = nil
-    ) -> ForwardDestinationSearchPolicy.Index {
+    ) -> ConversationDestinationSearchPolicy.Index {
         let guilds = model.serverRailGuildsByID
         let channels = model.messageSearchChannels
         let channelIDs = Set(channels.map(\.id))
@@ -626,7 +626,7 @@ enum MessageSearchAutocompletePolicy {
         let searchableIDs = channelIDs.union(threads.map(\.id))
         let maximumUsageScore = model.discordSyncedGuildAndChannelUsageScores
             .values.max()
-        return ForwardDestinationSearchPolicy.makeIndex(
+        return ConversationDestinationSearchPolicy.makeIndex(
             channels: channels,
             threads: threads,
             includesUnjoinedThreads: true,
@@ -657,8 +657,8 @@ enum MessageSearchAutocompletePolicy {
 
     private static func userSearchIndex(
         model: AppModel,
-        index: ForwardDestinationSearchPolicy.Index
-    ) -> ForwardDestinationSearchPolicy.Index {
+        index: ConversationDestinationSearchPolicy.Index
+    ) -> ConversationDestinationSearchPolicy.Index {
         guard let selectedGuildID = model.selectedGuildID
         else { return index }
         var aliases = model.userSearchAliasesByUserID

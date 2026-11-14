@@ -3,15 +3,15 @@ import SwiftUI
 
 /// Rows sit 8 points inside the 32-point panel. Their 24-point corners stay
 /// concentric with it, as the 32-point avatar and check do 8 points inside them.
-struct ForwardDestinationRow: View {
-    let destination: ForwardDestination
+struct ConversationDestinationRow: View {
+    let destination: ConversationDestination
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(10)) {
-                ForwardDestinationAvatar(destination: destination)
+                ConversationDestinationAvatar(destination: destination)
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(1)) {
                     Text(destination.title)
                         .font(.interface(.body).weight(.medium))
@@ -51,8 +51,8 @@ struct ForwardDestinationRow: View {
     }
 }
 
-struct ForwardDestinationAvatar: View {
-    let destination: ForwardDestination
+struct ConversationDestinationAvatar: View {
+    let destination: ConversationDestination
 
     var body: some View {
         switch destination.kind {

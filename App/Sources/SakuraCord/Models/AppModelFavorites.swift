@@ -17,7 +17,7 @@ final class FavoritesStore {
     /// nil until the account's settings load.
     var suggestionsDismissed: Bool?
     /// Suggested Channels, most suggested first.
-    var suggestions: [ForwardDestination] = []
+    var suggestions: [ConversationDestination] = []
     @ObservationIgnored var suggestionPool = FavoriteSuggestionPool()
     /// The stored affinities, once read this session.
     @ObservationIgnored var affinities: ConversationAffinities?

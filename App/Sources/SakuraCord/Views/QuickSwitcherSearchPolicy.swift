@@ -38,7 +38,7 @@ nonisolated struct QuickSwitcherParsedQuery: Equatable, Sendable {
 
 nonisolated enum QuickSwitcherResultID: Hashable, Sendable {
     case heading(String)
-    case destination(ForwardDestinationID)
+    case destination(ConversationDestinationID)
     case guild(GuildID)
     case navigation(String)
 }
@@ -83,7 +83,7 @@ nonisolated struct QuickSwitcherNavigationDestination: Identifiable, Equatable, 
 
 nonisolated enum QuickSwitcherResult: Identifiable, Equatable, Sendable {
     case heading(id: String, title: String)
-    case destination(ForwardDestination)
+    case destination(ConversationDestination)
     case guild(Guild)
     case navigation(QuickSwitcherNavigationDestination)
 
@@ -103,8 +103,8 @@ nonisolated enum QuickSwitcherResult: Identifiable, Equatable, Sendable {
 }
 
 nonisolated struct QuickSwitcherSearchContext: Sendable {
-    let index: ForwardDestinationSearchPolicy.Index
-    let userIndex: ForwardDestinationSearchPolicy.Index
+    let index: ConversationDestinationSearchPolicy.Index
+    let userIndex: ConversationDestinationSearchPolicy.Index
     let guilds: [Guild]
     let usageScores: [String: Int]
     let history: [ChannelID]
@@ -212,9 +212,9 @@ nonisolated enum QuickSwitcherSearchPolicy {
     ) -> [QuickSwitcherResult] {
         let maximumUsage = context.index.maximumResolvableUsageScore
         func destinationRows(
-            categories: Set<ForwardDestinationSearchPolicy.ResultCategory>,
+            categories: Set<ConversationDestinationSearchPolicy.ResultCategory>,
             limit: Int
-        ) -> [(ForwardDestinationSearchPolicy.ScoredResult, RankedResult)] {
+        ) -> [(ConversationDestinationSearchPolicy.ScoredResult, RankedResult)] {
             let nonUserCategories = categories.subtracting([.user])
             let nonUsers = nonUserCategories.isEmpty ? [] : context.index.scoredResults(
                 query: query,
@@ -243,7 +243,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
         func guildRows(limit: Int) -> [RankedResult] {
             context.guilds.enumerated().compactMap { offset, guild -> RankedResult? in
                 guard guild.id != context.currentGuildID else { return nil }
-                let score = ForwardDestinationSearchPolicy.guildSearchScore(
+                let score = ConversationDestinationSearchPolicy.guildSearchScore(
                     name: guild.name,
                     query: query,
                     usageScore: context.usageScores[guild.id.description, default: 0],
@@ -259,7 +259,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
             }.sorted(by: ranksBefore).prefix(limit).map { $0 }
         }
 
-        let initialCategories: Set<ForwardDestinationSearchPolicy.ResultCategory> = [
+        let initialCategories: Set<ConversationDestinationSearchPolicy.ResultCategory> = [
             .user, .groupDirectMessage, .selectableChannel,
         ]
         var destinations = destinationRows(categories: initialCategories, limit: limit)
@@ -267,7 +267,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
         var navigation: [RankedResult] = []
         for (offset, item) in QuickSwitcherNavigationDestination.discordDefaults.enumerated() {
             let score = item.searchAliases.map {
-                ForwardDestinationSearchPolicy.guildSearchScore(
+                ConversationDestinationSearchPolicy.guildSearchScore(
                     name: $0,
                     query: query,
                     usageScore: 0,
@@ -300,9 +300,9 @@ nonisolated enum QuickSwitcherSearchPolicy {
     }
 
     private static func channelResults(
-        index: ForwardDestinationSearchPolicy.Index,
+        index: ConversationDestinationSearchPolicy.Index,
         query: String,
-        categories: Set<ForwardDestinationSearchPolicy.ResultCategory>,
+        categories: Set<ConversationDestinationSearchPolicy.ResultCategory>,
         limit: Int,
         includesVoice: Bool,
         onlyVoice: Bool
@@ -385,7 +385,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
         var seen = protectedHistoryIDs
         if let currentChannelID = context.currentChannelID { seen.insert(currentChannelID) }
 
-        func sectionRows(_ ids: [ChannelID]) -> [ForwardDestination] {
+        func sectionRows(_ ids: [ChannelID]) -> [ConversationDestination] {
             ids.compactMap { id in
                 guard seen.insert(id).inserted else { return nil }
                 return destinationsByChannel[id]
@@ -432,7 +432,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
         return guilds.enumerated().compactMap { offset, guild -> RankedGuild? in
             guard guild.id != excludedGuildID else { return nil }
             let usage = usageScores[guild.id.description, default: 0]
-            let score = ForwardDestinationSearchPolicy.guildSearchScore(
+            let score = ConversationDestinationSearchPolicy.guildSearchScore(
                 name: guild.name,
                 query: query,
                 usageScore: usage,
@@ -466,7 +466,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
         rows.isEmpty ? [] : [.heading(id: id, title: title)] + rows
     }
 
-    private static func isVoice(_ destination: ForwardDestination) -> Bool {
+    private static func isVoice(_ destination: ConversationDestination) -> Bool {
         guard case .channel(let channel) = destination.kind else { return false }
         return channel.kind == .voice
     }

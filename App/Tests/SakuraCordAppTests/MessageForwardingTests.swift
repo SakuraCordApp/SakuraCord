@@ -37,7 +37,7 @@ import Testing
         ),
     ]
 
-    let personResults = ForwardDestinationSearchPolicy.results(
+    let personResults = ConversationDestinationSearchPolicy.results(
         query: "maya_user",
         channels: channels,
         guilds: [guild.id: guild],
@@ -45,7 +45,7 @@ import Testing
     )
     #expect(personResults.compactMap(\.resolvedChannelID) == [ChannelID(rawValue: 11)])
 
-    let channelResults = ForwardDestinationSearchPolicy.results(
+    let channelResults = ConversationDestinationSearchPolicy.results(
         query: "sakura gen",
         channels: channels,
         guilds: [guild.id: guild],
@@ -82,14 +82,14 @@ func `forward destination index warms before the menu is presented`() async thro
 
     #expect(model.forwardingMessage == nil)
     let index = try #require(
-        await ForwardDestinationSearchIndexCache.shared.prepare(
+        await ConversationDestinationSearchIndexCache.shared.prepare(
             for: model,
             priority: .utility
         )
     )
 
     #expect(index.results(query: "warm").map(\.id) == [.channel(channel.id)])
-    #expect(ForwardDestinationSearchIndexCache.shared.value(
+    #expect(ConversationDestinationSearchIndexCache.shared.value(
         for: model,
         userID: currentUser.id,
         revision: model.forwardSearchSourceRevision
@@ -103,7 +103,7 @@ func `forward destination index warms before the menu is presented`() async thro
         displayName: "Supplemental User"
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "supplemental",
         channels: [],
         users: [knownUser],
@@ -182,7 +182,7 @@ func `open forward search observes live user and guild nickname store updates`()
         )
     }
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "",
         channels: channels,
         guilds: [guild.id: guild],
@@ -211,7 +211,7 @@ func `open forward search observes live user and guild nickname store updates`()
         )
     }
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "",
         channels: channels,
         guilds: [guild.id: guild],
@@ -405,7 +405,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         ),
     ]
 
-    let boosted = ForwardDestinationSearchPolicy.results(
+    let boosted = ConversationDestinationSearchPolicy.results(
         query: "gen",
         channels: channels,
         guilds: [guild.id: guild],
@@ -413,7 +413,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     )
     #expect(boosted.compactMap(\.resolvedChannelID).first == ChannelID(rawValue: 11))
 
-    let sourceOrdered = ForwardDestinationSearchPolicy.results(
+    let sourceOrdered = ConversationDestinationSearchPolicy.results(
         query: "gen",
         channels: channels,
         guilds: [guild.id: guild],
@@ -427,7 +427,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
 
     var earlierPosition = channels[1]
     earlierPosition.position = -1
-    let positioned = ForwardDestinationSearchPolicy.results(
+    let positioned = ConversationDestinationSearchPolicy.results(
         query: "gen",
         channels: [channels[0], earlierPosition, channels[2]],
         guilds: [guild.id: guild],
@@ -457,7 +457,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         ),
     ]
 
-    let ordered = ForwardDestinationSearchPolicy.channelsInStoreOrder(
+    let ordered = ConversationDestinationSearchPolicy.channelsInStoreOrder(
         sidebarOrdered,
         storeOrder: [sidebarOrdered[1].id, sidebarOrdered[0].id]
     )
@@ -493,7 +493,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         ),
     ]
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "group",
         channels: channels,
         guilds: [:],
@@ -508,11 +508,11 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
 }
 
 @Test func `blank selection stays in place while search selection becomes a picker pin`() {
-    let existing: [ForwardDestinationID] = [
+    let existing: [ConversationDestinationID] = [
         .channel(ChannelID(rawValue: 10)),
         .channel(ChannelID(rawValue: 11)),
     ]
-    let selected = ForwardDestinationID.channel(ChannelID(rawValue: 12))
+    let selected = ConversationDestinationID.channel(ChannelID(rawValue: 12))
 
     #expect(ForwardDestinationSelectionPolicy.searchPins(
         afterSelecting: selected,
@@ -520,7 +520,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         selectedDestinationIDs: [.channel(ChannelID(rawValue: 13))],
         existing: existing
     ) == existing)
-    let blankSelected = ForwardDestinationID.channel(ChannelID(rawValue: 13))
+    let blankSelected = ConversationDestinationID.channel(ChannelID(rawValue: 13))
     #expect(ForwardDestinationSelectionPolicy.searchPins(
         afterSelecting: selected,
         query: "meow",
@@ -540,9 +540,9 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         )
     }
     let destinations = channels.prefix(15).map {
-        ForwardDestination(kind: .channel($0), guild: guild)
+        ConversationDestination(kind: .channel($0), guild: guild)
     }
-    let searchedDestination = ForwardDestination(
+    let searchedDestination = ConversationDestination(
         kind: .channel(channels[20]),
         guild: guild
     )
@@ -580,7 +580,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     )
     let relationshipNames = [friend.id: "USERNAME THIEF!!!"]
 
-    let person = try #require(ForwardDestinationSearchPolicy.results(
+    let person = try #require(ConversationDestinationSearchPolicy.results(
         query: "thief",
         channels: [namedGroup, unnamedGroup],
         users: [friend],
@@ -592,7 +592,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(person.title == "USERNAME THIEF!!!")
     #expect(person.detail == "legacy-bot#8860")
 
-    let groups = ForwardDestinationSearchPolicy.results(
+    let groups = ConversationDestinationSearchPolicy.results(
         query: "group",
         channels: [namedGroup, unnamedGroup],
         users: [friend, clown],
@@ -613,7 +613,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         hasExplicitName: true, kind: .groupDirectMessage,
         recipients: [clown, friend, clown, friend, clown]
     )
-    let largeDetail = ForwardDestinationSearchPolicy.results(
+    let largeDetail = ConversationDestinationSearchPolicy.results(
         query: "large",
         channels: [largeGroup],
         relationshipNicknamesByUserID: relationshipNames,
@@ -634,7 +634,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         kind: .directMessage, recipients: [samy]
     )
 
-    let person = try #require(ForwardDestinationSearchPolicy.results(
+    let person = try #require(ConversationDestinationSearchPolicy.results(
         query: "meow",
         channels: [directMessage],
         users: [samy],
@@ -658,7 +658,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         recipients: [recipient]
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "meow",
         channels: [group],
         users: [recipient],
@@ -682,7 +682,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         kind: .groupDirectMessage, recipients: [recipient]
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "len",
         channels: [group],
         users: [recipient],
@@ -710,7 +710,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         name: "unrelated", kind: .text
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "gen",
         channels: [exact, boostedPrefix, accountMaximum],
         guilds: [guild.id: guild],
@@ -731,7 +731,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         name: "unrelated", kind: .text
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "cord",
         channels: [usedChannel, accountMaximum],
         guilds: [guild.id: guild],
@@ -759,7 +759,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         )
     }
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "match",
         channels: channels,
         users: users,
@@ -785,7 +785,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     }
     let eligible = Set(channels.dropFirst(4).map(\.id))
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "match",
         channels: channels,
         guilds: [guild.id: guild],
@@ -816,7 +816,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     )
     let channels = textChannels + [voice]
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "match",
         channels: channels,
         guilds: [guild.id: guild],
@@ -840,7 +840,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         name: "music lounge", kind: .voice
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "admin",
         channels: [matching, unmatchedVoice],
         guilds: [guild.id: guild],
@@ -872,7 +872,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     }
     let channels = forums + textChannels
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "match",
         channels: channels,
         guilds: [guild.id: guild],
@@ -1039,7 +1039,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         id: UserID(rawValue: 20), username: "match-alpha", displayName: "Match Second"
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "match",
         channels: [],
         users: [first, second],
@@ -1058,7 +1058,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         id: UserID(rawValue: 20), username: "yuk1n0w", displayName: "Yotsuba"
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "a",
         channels: [],
         users: [usernameMatch, aliasMatch],
@@ -1079,7 +1079,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         displayName: "𝙶𝚎𝚗𝚎𝚛𝚊𝚕"
     )
 
-    let samResults = ForwardDestinationSearchPolicy.results(
+    let samResults = ConversationDestinationSearchPolicy.results(
         query: "sam",
         channels: [],
         users: [smartNickname],
@@ -1087,7 +1087,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         guilds: [:],
         usageScores: [:]
     )
-    let genResults = ForwardDestinationSearchPolicy.results(
+    let genResults = ConversationDestinationSearchPolicy.results(
         query: "gen",
         channels: [],
         users: [styledName],
@@ -1111,7 +1111,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         kind: .directMessage, recipients: [existing]
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "match",
         channels: [channel],
         users: [existing, friend],
@@ -1148,7 +1148,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         kind: .directMessage, recipients: [direct]
     )
 
-    let index = ForwardDestinationSearchPolicy.makeIndex(
+    let index = ConversationDestinationSearchPolicy.makeIndex(
         channels: [groupChannel, directChannel],
         users: [unboosted, groupFirst, groupSecond, direct, friend],
         friendUserIDs: [friend.id],
@@ -1185,7 +1185,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         id: ChannelID(rawValue: 11), guildID: guild.id, name: "match-hidden", kind: .text
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "match",
         channels: [visible, hidden],
         guilds: [guild.id: guild],
@@ -1207,8 +1207,8 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         name: "voice-match", kind: .voice
     )
 
-    #expect(ForwardDestinationPermissionPolicy.canSearchChannel(text, permissions: nil))
-    #expect(!ForwardDestinationPermissionPolicy.canSearchChannel(voice, permissions: nil))
+    #expect(ConversationDestinationPermissionPolicy.canSearchChannel(text, permissions: nil))
+    #expect(!ConversationDestinationPermissionPolicy.canSearchChannel(voice, permissions: nil))
 }
 
 @Test func `active forum thread remains a forward destination while its parent does not`() {
@@ -1223,7 +1223,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         notificationSettings: ThreadNotificationSettings()
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "forwarded",
         channels: [forum],
         threads: [thread],
@@ -1256,7 +1256,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         notificationSettings: ThreadNotificationSettings()
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "match",
         channels: [first, forum, last],
         threads: [thread],
@@ -1286,7 +1286,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         notificationSettings: ThreadNotificationSettings()
     )
 
-    let results = ForwardDestinationSearchPolicy.results(
+    let results = ConversationDestinationSearchPolicy.results(
         query: "matching",
         channels: [forum],
         threads: [unjoined, archived],
@@ -1312,7 +1312,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         id: ChannelID(rawValue: 20), guildID: nil, name: boostedContains.displayName,
         kind: .directMessage, recipients: [boostedContains]
     )
-    let base = ForwardDestinationSearchPolicy.makeIndex(
+    let base = ConversationDestinationSearchPolicy.makeIndex(
         channels: [],
         users: [plainContains, boostedContains, aliasPrefix],
         userBoosterChannels: [privateChannel],
@@ -1356,7 +1356,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         id: ChannelID(rawValue: 22), guildID: nil, name: "team room",
         kind: .groupDirectMessage
     )
-    let index = ForwardDestinationSearchPolicy.makeIndex(
+    let index = ConversationDestinationSearchPolicy.makeIndex(
         channels: [prefixDM, containsDM, group],
         users: [prefix, containsOnly],
         guilds: [:],
@@ -1398,7 +1398,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     let threads = [
         unjoinedFeature, activeLater, unjoinedBugLater, activeEarlier, unjoinedBugEarlier,
     ]
-    let index = ForwardDestinationSearchPolicy.makeIndex(
+    let index = ConversationDestinationSearchPolicy.makeIndex(
         channels: [bugForum, featureForum],
         threads: threads,
         includesUnjoinedThreads: true,

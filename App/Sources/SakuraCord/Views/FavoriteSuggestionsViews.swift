@@ -41,12 +41,12 @@ struct FavoriteSuggestionsSection: View {
 }
 
 private struct FavoriteSuggestionRow: View {
-    let destination: ForwardDestination
+    let destination: ConversationDestination
     let add: () -> Void
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {
-            ForwardDestinationAvatar(destination: destination)
+            ConversationDestinationAvatar(destination: destination)
             VStack(alignment: .leading, spacing: InterfaceScale.metric(1)) {
                 Text(destination.title)
                     .font(.interface(.body).weight(.medium))

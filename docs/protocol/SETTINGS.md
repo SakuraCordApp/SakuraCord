@@ -287,7 +287,7 @@ request. An added suggestion is filed under a category named Channels,
 created when missing.
 
 **Add to Favorites** is Discord's destination search (the Forward picker's,
-from `ForwardDestinationSearchPolicy`) without the account's favourites:
+from `ConversationDestinationSearchPolicy`) without the account's favourites:
 searchable conversations, people without a DM included (one is opened before
 favouriting), picks listed first as of the last query change, at most 20. The
 default order is the recent channels, then the frecency list; a client's

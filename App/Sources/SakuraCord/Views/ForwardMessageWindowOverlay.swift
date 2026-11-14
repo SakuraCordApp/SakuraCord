@@ -22,7 +22,7 @@ struct ForwardMessageWindowOverlay: View {
             // picker instead of starting permission and fuzzy-index work on open.
             .task(id: model.forwardSearchSourceRevision) {
                 guard model.snapshot != nil else { return }
-                ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
+                ConversationDestinationSearchIndexCache.shared.schedulePrewarm(
                     for: model
                 )
             }
