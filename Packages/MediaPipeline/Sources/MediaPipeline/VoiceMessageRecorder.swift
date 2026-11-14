@@ -25,6 +25,11 @@ public struct VoiceMessageRecording: Equatable, Sendable {
 
     /// Removes the recording's private directory.
     public func discard() {
+        Self.discardDirectory(of: fileURL)
+    }
+
+    /// Removes the private directory holding a recording's file.
+    public static func discardDirectory(of fileURL: URL) {
         try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent())
     }
 }
@@ -77,8 +82,6 @@ public final class VoiceMessageRecorder {
     private var outputBeforeCapture: (deviceID: AudioDeviceID, sampleRate: Double)?
 
     public init() {}
-
-    public var isRecording: Bool { processor != nil }
 
     public func start(inputDeviceID: AudioDeviceID? = nil) throws {
         cancel()

@@ -85,6 +85,6 @@ extension AppModel {
     /// Recordings live in a private temporary directory until delivered or discarded.
     func discardVoiceMessageFile(for outgoing: SendMessageDraft) {
         guard outgoing.voiceMessage != nil, let url = outgoing.attachmentURLs.first else { return }
-        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        VoiceMessageRecording.discardDirectory(of: url)
     }
 }
