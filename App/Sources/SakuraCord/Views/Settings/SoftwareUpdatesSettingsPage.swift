@@ -146,18 +146,12 @@ private struct CurrentPullRequestBuildRow: View {
                 }
                 .textSelection(.enabled)
                 Spacer(minLength: InterfaceScale.metric(8))
-                Button {
+                GlassCircleButton(
+                    symbol: "folder", help: "Show Recovery Copy in Finder",
+                    diameter: InterfaceScale.metric(32), font: .interface(.callout).weight(.medium)
+                ) {
                     Task { await updateController.revealRecoveryCopy() }
-                } label: {
-                    Image(systemName: "folder")
-                        .font(.interface(.callout).weight(.medium))
-                        .frame(width: InterfaceScale.metric(32), height: InterfaceScale.metric(32))
-                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: Circle())
-                .help("Show Recovery Copy in Finder")
-                .accessibilityLabel("Show Recovery Copy in Finder")
             }
             GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
                 HStack(spacing: InterfaceScale.metric(8)) {
