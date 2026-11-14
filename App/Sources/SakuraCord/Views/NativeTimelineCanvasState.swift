@@ -287,11 +287,6 @@ extension NativeTimelineCanvasView {
         set { pointer.hoveredServerTagMessageID = newValue }
     }
 
-    var hoveredSilentBadgeMessageID: MessageID? {
-        get { pointer.hoveredSilentBadgeMessageID }
-        set { pointer.hoveredSilentBadgeMessageID = newValue }
-    }
-
     var hoveredCommandPillMessageID: MessageID? {
         get { pointer.hoveredCommandPillMessageID }
         set { pointer.hoveredCommandPillMessageID = newValue }
@@ -380,11 +375,6 @@ extension NativeTimelineCanvasView {
     var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] {
         get { pointer.textSpoilerHoverFades }
         set { pointer.textSpoilerHoverFades = newValue }
-    }
-
-    var componentButtonHoverAnimationTask: Task<Void, Never>? {
-        get { pointer.componentButtonHoverAnimationTask }
-        set { pointer.componentButtonHoverAnimationTask = newValue }
     }
 
     var fileCardFinishFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {

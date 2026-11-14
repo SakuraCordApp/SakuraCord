@@ -45,8 +45,8 @@ extension NativeTimelineCanvasView {
     }
 
     func setHoveredSilentBadgeMessageID(_ value: MessageID?) {
-        guard hoveredSilentBadgeMessageID != value else { return }
-        hoveredSilentBadgeMessageID = value
+        guard pointer.hoveredSilentBadgeMessageID != value else { return }
+        pointer.hoveredSilentBadgeMessageID = value
         presentHoverLabel()
     }
 
@@ -209,9 +209,9 @@ extension NativeTimelineCanvasView {
     }
 
     private func animateHoverFades() {
-        guard componentButtonHoverAnimationTask == nil else { return }
+        guard pointer.componentButtonHoverAnimationTask == nil else { return }
         var previous = ProcessInfo.processInfo.systemUptime
-        componentButtonHoverAnimationTask = Task { @MainActor [weak self] in
+        pointer.componentButtonHoverAnimationTask = Task { @MainActor [weak self] in
             while let self, !Task.isCancelled {
                 let now = ProcessInfo.processInfo.systemUptime
                 // Work that holds the main thread, such as saving a finished
@@ -237,7 +237,7 @@ extension NativeTimelineCanvasView {
                     || textSpoilerHoverFades.values.contains(where: { !$0.isSettled(at: now) })
                     || !fileCardFinishFades.isEmpty
                 else {
-                    componentButtonHoverAnimationTask = nil
+                    pointer.componentButtonHoverAnimationTask = nil
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(8))
