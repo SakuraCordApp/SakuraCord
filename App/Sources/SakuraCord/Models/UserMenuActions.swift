@@ -70,9 +70,9 @@ extension AppModel {
                 add("call", "Start a Call", "phone", .communication) { $0.callUserFromMenu(user) }
             }
             for nickname in nicknameMenuActions(for: user, in: context.guildID) {
-                add("nickname-\(nickname.title)", nickname.title, nickname.systemImage, .personal, enabled: !pending) { model in
+                add(nickname.id, nickname.title, nickname.systemImage, nickname.group, enabled: !pending) { model in
                     model.nicknameMenuActions(for: user, in: context.guildID)
-                        .first { $0.title == nickname.title }?.perform()
+                        .first { $0.id == nickname.id }?.perform()
                 }
             }
         }

@@ -2,13 +2,6 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
-/// A nickname action offered by a user context menu.
-struct NicknameMenuAction {
-    let title: String
-    let systemImage: String
-    let perform: () -> Void
-}
-
 extension AppModel {
     /// The private nickname the current account gave this friend.
     func friendNickname(for userID: UserID) -> String? {
@@ -43,14 +36,19 @@ extension AppModel {
     /// Discord's user-menu nickname items for a server (`guildID`) or private
     /// context: the friend nickname, then your per-server profile or another
     /// member's Change Nickname.
-    func nicknameMenuActions(for user: User, in guildID: GuildID?) -> [NicknameMenuAction] {
+    func nicknameMenuActions(for user: User, in guildID: GuildID?) -> [UserMenuAction] {
         guard let currentUserID = currentUser?.id, !user.isWebhookIdentity, !user.isSystem else { return [] }
-        var actions: [NicknameMenuAction] = []
+        var actions: [UserMenuAction] = []
+        func add(_ title: String, _ systemImage: String, _ perform: @escaping () -> Void) {
+            actions.append(UserMenuAction(
+                id: "nickname-\(title)", title: title, systemImage: systemImage, group: .personal, perform: perform
+            ))
+        }
         if isFriend(user.id) {
             let title = friendNickname(for: user.id) == nil ? "Add Friend Nickname" : "Change Friend Nickname"
-            actions.append(NicknameMenuAction(title: title, systemImage: "person.text.rectangle.fill") { [weak self] in
+            add(title, "person.text.rectangle.fill") { [weak self] in
                 self?.presentFriendNicknameEditor(for: user, in: guildID)
-            })
+            }
         }
         if let guildID {
             // Discord's menu subscribes to the target member and excludes
@@ -62,13 +60,13 @@ extension AppModel {
             guard member.joinedAt != nil else { return actions }
         }
         if let guildID, user.id == currentUserID {
-            actions.append(NicknameMenuAction(title: "Edit Per-server Profile", systemImage: "person.crop.circle") { [weak self] in
+            add("Edit Per-server Profile", "person.crop.circle") { [weak self] in
                 self?.editServerProfile(in: guildID)
-            })
+            }
         } else if let guildID, canChangeNickname(of: user.id, in: guildID) {
-            actions.append(NicknameMenuAction(title: "Change Nickname", systemImage: "pencil") { [weak self] in
+            add("Change Nickname", "pencil") { [weak self] in
                 self?.presentNicknameEditor(for: user, in: guildID)
-            })
+            }
         }
         return actions
     }
