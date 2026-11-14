@@ -150,7 +150,8 @@ extension NativeTimelineRowPainter {
              in: layout.instructionFrame, font: .interfaceSystemFont(ofSize: 12), color: NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubble))
         for region in layout.answers {
             guard let answer = poll.answers.first(where: { $0.id == region.id }) else { continue }
-            drawPollAnswer(answer, region: region, poll: poll, state: state, bubbleRegion: bubble)
+            drawPollAnswer(answer, region: region, poll: poll, state: state, bubbleRegion: bubble,
+                           hasAnimatedEmojiOverlay: input.animatedOverlayRoles.contains(.pollAnswer(answer.id)))
         }
         drawPollFooter(poll, layout: layout, state: state,
                        isConfirmed: input.row.message.outboxState == .confirmed,
@@ -158,7 +159,8 @@ extension NativeTimelineRowPainter {
     }
 
     private static func drawPollAnswer(_ answer: PollAnswer, region: NativeTimelinePollLayout.Answer,
-                                       poll: MessagePoll, state: NativeTimelinePollPresentation, bubbleRegion: NativeTimelineBubbleRegion?) {
+                                       poll: MessagePoll, state: NativeTimelinePollPresentation, bubbleRegion: NativeTimelineBubbleRegion?,
+                                       hasAnimatedEmojiOverlay: Bool) {
         let results = state.showsResults(for: poll)
         let selected = results ? poll.selectedAnswerIDs.contains(answer.id) : state.selected.contains(answer.id)
         let highestCount = poll.results?.answerCounts.map(\.count).max() ?? 0
@@ -183,7 +185,7 @@ extension NativeTimelineRowPainter {
             path.lineWidth = 1
             path.stroke()
         }
-        drawPollEmoji(answer.emoji, frame: region.emojiFrame)
+        if !hasAnimatedEmojiOverlay { drawPollEmoji(answer.emoji, frame: region.emojiFrame) }
         text(answer.text, in: region.textFrame, font: .interfaceSystemFont(ofSize: 13, weight: .medium),
              color: foreground, lineBreakMode: .byWordWrapping)
         if results {
