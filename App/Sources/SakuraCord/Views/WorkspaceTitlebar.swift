@@ -9,6 +9,9 @@ import SwiftUI
 final class WorkspaceColumnsGeometry {
     struct Column: Equatable {
         let id: String
+        let isSideConversation: Bool
+        /// A thread or a thread being created.
+        let isThread: Bool
         /// In window coordinates.
         let minX: CGFloat
         let maxX: CGFloat
@@ -20,8 +23,6 @@ final class WorkspaceColumnsGeometry {
         let reveal: CGFloat
         /// Whether the column is leaving the workspace.
         let isDeparting: Bool
-
-        var isThread: Bool { id.hasPrefix("side-thread") }
     }
 
     static let shared = WorkspaceColumnsGeometry()
@@ -340,7 +341,7 @@ final class WorkspaceTitlebarView: NSView {
         // leaves; they never pass it to come back.
         let searchMinX = showsSearch || searchAlpha > 0 ? searchFieldMinX : nil
         let searchLimit = (searchMinX ?? bounds.maxX + inset) - inset
-        let hasSideConversation = geometry.columns.contains { $0.id.hasPrefix("side-") }
+        let hasSideConversation = geometry.columns.contains(where: \.isSideConversation)
         let windowMaxX = convert(CGPoint(x: bounds.maxX, y: 0), to: nil).x
         for id in order {
             guard let views = groups[id] else { continue }

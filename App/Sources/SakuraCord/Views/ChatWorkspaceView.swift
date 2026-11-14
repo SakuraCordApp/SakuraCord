@@ -116,10 +116,15 @@ struct ChatWorkspaceView: View, Equatable {
         WorkspaceColumnsHost(
             conversation: AnyView(primary()),
             columns: columns.map { column in
-                let isSideConversation = if case .sideConversation = column.content { true } else { false }
+                let conversation: SideConversation? = if case .sideConversation(let conversation) = column.content {
+                    conversation
+                } else {
+                    nil
+                }
                 return WorkspaceColumnsHost.Column(
                     id: column.id,
-                    isSideConversation: isSideConversation,
+                    isSideConversation: conversation != nil,
+                    isThread: conversation?.isThread == true,
                     isFullWidth: column.id == fullWidthThread?.id,
                     content: AnyView(columnContent(column))
                 )
@@ -224,8 +229,9 @@ private struct ChatWorkspaceSupplementaryContent: View {
 
     var body: some View {
         switch pane {
-        case .sideConversation(let conversation):
-            SideConversationView(model: model, conversation: conversation)
+        case .sideConversation:
+            // Side chats are columns of their own, never an inspector's content.
+            EmptyView()
         case .memberInspector:
             HStack(spacing: 0) {
                 if model.selectedChannel?.kind != .directMessage {
