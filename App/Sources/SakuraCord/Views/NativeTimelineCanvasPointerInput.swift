@@ -1079,7 +1079,7 @@ extension NativeTimelineCanvasView {
         guard let index = hitRowIndex(at: point.y),
               case .message = items[index],
               layouts[index].compactTimestampFrame != nil,
-              NativeTimelineCompactTimestampHitTesting.contains(
+              NativeTimelineHoverHitTesting.contains(
                   point,
                   rowOrigin: displayedRowOrigin(at: index),
                   highlightFrame: layouts[index].highlightFrame

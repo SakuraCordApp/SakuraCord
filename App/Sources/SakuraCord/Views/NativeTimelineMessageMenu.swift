@@ -414,7 +414,7 @@ extension NativeTimelineCanvasView {
             )
         }
         guard let actions,
-              TimelineContextMenuHitTesting.contains(
+              NativeTimelineHoverHitTesting.contains(
                   point,
                   rowOrigin: displayedRowOrigin(at: index),
                   highlightFrame: layouts[index].highlightFrame
