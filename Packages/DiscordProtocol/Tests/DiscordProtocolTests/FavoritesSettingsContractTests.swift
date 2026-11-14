@@ -245,6 +245,28 @@ struct FavoritesSettingsContractTests {
         await provider.disconnect()
     }
 
+    /// A Favorites edit queued behind a failed dismissal is dropped with it,
+    /// not left showing as if it were saved while it never reaches Discord.
+    @Test func `a favourite queued behind a failed dismissal is rolled back`() async throws {
+        FavoritesURLProtocol.reset()
+        FavoritesURLProtocol.holdResponses()
+        let provider = makeProvider()
+        try await receiveReady(provider, settings: (
+            DiscordSettingsProto.protoLengthDelimitedField(
+                DiscordUserContentProto.settingsField, DiscordSettingsProto.protoLengthDelimitedField(1, Data([0x01]))
+            ) + DiscordSettingsProto.protoLengthDelimitedField(DiscordFavoritesProto.settingsField, Data([0x1A, 0x00]))
+        ).base64EncodedString())
+        try await provider.setFavoritesSuggestionsDismissed(true)
+        #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
+        try await provider.updateFavorites([.add(ChannelID(rawValue: 9), channelType: 0, categoryID: nil)])
+        FavoritesURLProtocol.releaseHeldResponses(failing: true)
+        await provider.favoritesSaveTask?.value
+
+        #expect(FavoritesURLProtocol.requests.count == 1)
+        #expect(await provider.favoritesSettings()?.contains(ChannelID(rawValue: 9)) == false)
+        await provider.disconnect()
+    }
+
     @Test func `moving a favourite renumbers display order like the official client`() {
         var settings = FavoritesSettings(entries: [
             .init(id: ChannelID(rawValue: 1), position: 3, channelType: 15),

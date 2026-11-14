@@ -108,7 +108,8 @@ extension DiscordRESTProvider {
                 guard generation == favoritesGeneration else { return }
                 if error is UserSettingsRejection { await reloadUserSettings() }
                 gatewayLogger.error("Could not save Favorites: \(error.localizedDescription, privacy: .public)")
-                if target != nil {
+                // Edits queued behind this save are dropped with it.
+                if pendingFavorites != nil {
                     pendingFavorites = nil
                     publishStoredFavorites()
                 }
