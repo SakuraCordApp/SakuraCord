@@ -692,12 +692,11 @@ struct RichMediaItem: Identifiable, Hashable {
         width = media.width
         height = media.height
         size = 0
-        let pathExtension = media.url?.pathExtension.lowercased()
         if media.contentType?.hasPrefix("video/") == true {
             kind = .video
         } else {
             kind = .image(
-                animated: media.flags & 1 != 0 || pathExtension == "gif" || pathExtension == "apng"
+                animated: media.flags & 1 != 0 || media.url.map(Self.isAnimatedImageURL) == true
             )
         }
         isSpoiler = false
@@ -773,10 +772,7 @@ struct RichMediaItem: Identifiable, Hashable {
         self.width = width
         self.height = height
         size = 0
-        let pathExtension = url.pathExtension.lowercased()
-        kind = .image(
-            animated: pathExtension == "gif" || pathExtension == "apng"
-        )
+        kind = .image(animated: Self.isAnimatedImageURL(url))
         isSpoiler = false
         autoplaysInline = false
     }

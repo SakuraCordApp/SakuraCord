@@ -14,15 +14,6 @@ enum NativeTimelineSemanticColor {
     }
 }
 
-nonisolated enum TimelineInlineVideoPolicy {
-    static func canvasOwnsLoadingSurface(
-        mediaIsVideo: Bool,
-        autoplaysInline: Bool
-    ) -> Bool {
-        !mediaIsVideo || !autoplaysInline
-    }
-}
-
 enum NativeTimelinePostStarterDividerMetrics {
     static var rowHeight: CGFloat { InterfaceScale.metric(25) }
 }

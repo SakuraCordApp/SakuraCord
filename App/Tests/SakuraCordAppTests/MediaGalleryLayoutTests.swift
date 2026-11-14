@@ -15,20 +15,6 @@ import Testing
     )
     #expect(embed.autoplaysInline)
     #expect(!attachment.autoplaysInline)
-    #expect(
-        !TimelineInlineVideoPolicy
-            .canvasOwnsLoadingSurface(
-                mediaIsVideo: true,
-                autoplaysInline: true
-            )
-    )
-    #expect(
-        TimelineInlineVideoPolicy
-            .canvasOwnsLoadingSurface(
-                mediaIsVideo: true,
-                autoplaysInline: false
-            )
-    )
 }
 
 @MainActor @Test func `linked Discord emoji and image markdown is extracted into inline media`() {

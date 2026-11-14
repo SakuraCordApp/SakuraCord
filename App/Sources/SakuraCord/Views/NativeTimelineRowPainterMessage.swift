@@ -669,12 +669,10 @@ extension NativeTimelineRowPainter {
                 )
             )
         }
+        // An inline-playing video draws its own loading surface.
         guard let frame = region.mediaFrame,
               let url = region.mediaURL,
-              isCovered || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
-                  mediaIsVideo: region.mediaIsVideo,
-                  autoplaysInline: region.mediaAutoplaysInline
-              )
+              isCovered || !region.mediaIsVideo || !region.mediaAutoplaysInline
         else { return }
         drawMediaSurface(
             in: frame,

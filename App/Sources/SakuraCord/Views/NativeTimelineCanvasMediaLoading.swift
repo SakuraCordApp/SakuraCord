@@ -482,10 +482,8 @@ extension NativeTimelineCanvasView {
                 }
             }
             // A covered video's poster is what its spoiler cover blurs.
-            if concealedEmbeds[region.embedID] != nil || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
-                mediaIsVideo: region.mediaIsVideo,
-                autoplaysInline: region.mediaAutoplaysInline
-            ), let url = region.mediaPreviewURL ?? (region.mediaIsVideo ? nil : region.mediaURL)
+            if concealedEmbeds[region.embedID] != nil || !region.mediaIsVideo || !region.mediaAutoplaysInline,
+               let url = region.mediaPreviewURL ?? (region.mediaIsVideo ? nil : region.mediaURL)
             {
                 keys.append(.media(url))
             }

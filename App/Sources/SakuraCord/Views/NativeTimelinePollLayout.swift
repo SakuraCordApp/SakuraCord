@@ -119,9 +119,7 @@ extension NativeTimelineRowPainter {
         NativeTimelineSemanticColor.opacity(.controlBackgroundColor, 0.45).setFill()
         NSBezierPath(concentricRoundedRect: frame, cornerRadius: radius).fill()
         NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
-        let border = NSBezierPath(concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5), cornerRadius: radius - 0.5)
-        border.lineWidth = 1
-        border.stroke()
+        NSBezierPath.strokeHairline(frame, cornerRadius: radius)
     }
 
     static func pollButton(_ title: String, in frame: CGRect, control: NativeTimelinePollTarget.Control,

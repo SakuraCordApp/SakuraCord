@@ -928,7 +928,7 @@ private enum NodeBuilder {
                     RichMediaItem.aspectRatio(width: $0.1.width, height: $0.1.height)
                 },
                 intrinsicSizes: resolved.map {
-                    intrinsicSize(width: $0.1.width, height: $0.1.height)
+                    RichMediaItem.knownSize(width: $0.1.width, height: $0.1.height) ?? .zero
                 },
                 spacing: DiscordRichMessageMetrics.px(4)
             )
@@ -1263,15 +1263,5 @@ private enum NodeBuilder {
         media.attachmentName.flatMap { name in
             attachments.first { $0.filename == name || $0.id == name }
         }
-    }
-
-    private static func intrinsicSize(
-        width: Int?,
-        height: Int?
-    ) -> CGSize {
-        guard let width, let height, width > 0, height > 0 else {
-            return .zero
-        }
-        return CGSize(width: width, height: height)
     }
 }
