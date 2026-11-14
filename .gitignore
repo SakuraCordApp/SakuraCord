@@ -1,6 +1,8 @@
 .DS_Store
 .build/
 **/.build/
+# The setup script links App/.build to a shared build cache.
+/App/.build
 dist/
 .codex-runtime/
 DerivedData/
