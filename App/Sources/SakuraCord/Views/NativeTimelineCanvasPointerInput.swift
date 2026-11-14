@@ -893,9 +893,13 @@ extension NativeTimelineCanvasView {
                     frame: attachmentRegion.frame, rowIndex: rowIndex
                 ) { [weak self, attachmentID = attachment.id] index, layout, message in
                     guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
-                    _ = self?.openAttachmentInViewer(region, message: message, layout: layout, rowIndex: index)
+                    _ = self?.openAttachmentInViewer(
+                        region.attachment, sourceFrame: region.frame, message: message, layout: layout, rowIndex: index
+                    )
                 }
-            } else if !openAttachmentInViewer(attachmentRegion, message: row.message, layout: layout, rowIndex: rowIndex) {
+            } else if !openAttachmentInViewer(
+                attachment, sourceFrame: attachmentRegion.frame, message: row.message, layout: layout, rowIndex: rowIndex
+            ) {
                 NSWorkspace.shared.open(attachment.url)
             }
             return true
@@ -903,21 +907,9 @@ extension NativeTimelineCanvasView {
         if let embedRegion = layout.embedRegions.first(where: {
             $0.mediaFrame?.contains(point) == true
         }) {
-            if let presentation = NativeTimelineMediaViewerPlan.embed(
-                in: row.message,
-                id: embedRegion.embedID
-            ) {
-                model?.mediaViewerPresentation = mediaViewerPresentation(
-                    presentation,
-                    sourceFrame: embedRegion.mediaFrame ?? .zero,
-                    rowIndex: rowIndex,
-                    mediaKey: embedRegion.mediaURL.map {
-                        NativeTimelineMediaKey.media($0)
-                    },
-                    cornerRadius: InterfaceScale.metric(8),
-                    fillsFrame: embedRegion.mediaFillsFrame
-                )
-            } else if let mediaURL = embedRegion.mediaURL {
+            if !openEmbedMediaInViewer(id: embedRegion.embedID, region: embedRegion, message: row.message, rowIndex: rowIndex),
+               let mediaURL = embedRegion.mediaURL
+            {
                 NSWorkspace.shared.open(mediaURL)
             }
             return true
@@ -1839,14 +1831,15 @@ extension NativeTimelineCanvasView {
     /// Opens the media viewer at an attachment, zooming from its tile.
     /// Returns false when the attachment has no viewer presentation.
     func openAttachmentInViewer(
-        _ region: NativeTimelineRowLayout.AttachmentRegion,
+        _ attachment: Attachment,
+        sourceFrame: CGRect,
         message: Message,
         layout: NativeTimelineRowLayout,
         rowIndex: Int
     ) -> Bool {
         guard let presentation = NativeTimelineMediaViewerPlan.attachments(
             in: message,
-            selectedAttachmentID: region.attachment.id,
+            selectedAttachmentID: attachment.id,
             isRevealed: { [spoilerRevealStore] componentID in
                 spoilerRevealStore.isMediaRevealed(
                     NativeTimelineComponentRevealKey(messageID: message.id, componentID: componentID)
@@ -1855,11 +1848,31 @@ extension NativeTimelineCanvasView {
         ) else { return false }
         model?.mediaViewerPresentation = mediaViewerPresentation(
             presentation,
-            sourceFrame: region.frame,
+            sourceFrame: sourceFrame,
             rowIndex: rowIndex,
-            mediaKey: NativeTimelineMediaKey.attachment(region.attachment),
+            mediaKey: NativeTimelineMediaKey.attachment(attachment),
             cornerRadius: InterfaceScale.metric(8),
             fillsFrame: MediaGalleryImagePresentation.fillsFrame(itemCount: layout.mediaGalleryItemCount)
+        )
+        return true
+    }
+
+    /// Opens an embed's media in the viewer, zooming from `region` when it
+    /// is on screen; false when the embed has nothing the viewer shows.
+    func openEmbedMediaInViewer(
+        id: String,
+        region: NativeTimelineRowLayout.EmbedRegion?,
+        message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        guard let presentation = NativeTimelineMediaViewerPlan.embed(in: message, id: id) else { return false }
+        model?.mediaViewerPresentation = mediaViewerPresentation(
+            presentation,
+            sourceFrame: region?.mediaFrame ?? .zero,
+            rowIndex: rowIndex,
+            mediaKey: region?.mediaURL.map { NativeTimelineMediaKey.media($0) },
+            cornerRadius: InterfaceScale.metric(8),
+            fillsFrame: region?.mediaFillsFrame ?? false
         )
         return true
     }
