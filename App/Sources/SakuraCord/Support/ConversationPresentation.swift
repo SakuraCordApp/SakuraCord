@@ -466,3 +466,52 @@ nonisolated enum ThreadTimelineLayoutPolicy {
         return !calendar.isDate(firstReplyDate, inSameDayAs: starterDate)
     }
 }
+
+nonisolated struct ConversationPermissionBasis: Sendable {
+    let guild: Guild
+    let resolvedBasePermissions: UInt64?
+    let overwritePrincipals: PermissionOverwritePrincipals
+    let hasCurrentRoleIdentity: Bool
+    let currentUserIsPending: Bool
+    var currentUserCommunicationDisabledUntil: Date?
+    var currentUserRequiresOnboarding: Bool = false
+    var currentUserOnboardingIsKnown: Bool = true
+
+    func effectivePermissions(in channel: Channel) -> UInt64? {
+        ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            resolvedBasePermissions: resolvedBasePermissions,
+            overwritePrincipals: overwritePrincipals,
+            hasCurrentRoleIdentity: hasCurrentRoleIdentity,
+            communicationDisabledUntil: currentUserCommunicationDisabledUntil
+        )
+    }
+}
+
+nonisolated extension ConversationPermissionBasis {
+    /// The basis for the current user, as `member` when known, in `guild`.
+    /// Stored role IDs win over the member's, which may be stale.
+    init(guild: Guild, currentUserID: UserID, member: Member?, roles: [GuildRole], storedRoleIDs: Set<RoleID>?) {
+        let roleIDs = storedRoleIDs ?? Set(member?.roles.map(\.id) ?? [])
+        self.init(
+            guild: guild,
+            resolvedBasePermissions: guild.currentUserPermissions
+                ?? ConversationPermissionResolver.basePermissions(
+                    guildID: guild.id,
+                    roleIDs: roleIDs,
+                    roles: roles
+                ),
+            overwritePrincipals: PermissionOverwritePrincipals(
+                guildID: guild.id,
+                currentUserID: currentUserID,
+                roleIDs: roleIDs
+            ),
+            hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
+            currentUserIsPending: member?.isPending == true,
+            currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
+            currentUserRequiresOnboarding: guild.hasOnboarding && member?.requiresOnboarding == true,
+            currentUserOnboardingIsKnown: guild.isOnboardingStateKnown(for: member)
+        )
+    }
+}

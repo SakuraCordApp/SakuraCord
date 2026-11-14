@@ -3,6 +3,20 @@ import Foundation
 import MediaPipeline
 import SakuraCordModels
 
+enum ApplicationStreamPlaybackState: Equatable {
+    case available
+    case connecting
+    case watching
+    case broadcasting
+    case reconnecting
+    case failed(String)
+}
+
+struct ApplicationStreamDemandIntent: Equatable {
+    var isEnabled: Bool
+    var pixelCount: Int?
+}
+
 extension AppModel {
     func presentScreenSharePreview() async {
         guard activeVoiceChannel != nil, voiceSessionState == .connected else {

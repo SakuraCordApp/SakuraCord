@@ -2,6 +2,13 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
+struct ComponentInteractionPresentationState {
+    var pendingControls: Set<ComponentControlKey> = []
+    var pendingMessages: Set<MessageID> = []
+    var errors: [ComponentControlKey: String] = [:]
+    var selections: [ComponentControlKey: [ComponentSelectOption]] = [:]
+}
+
 extension AppModel {
     func submitComponent(
         on message: Message, customID: String, kind: ComponentInteractionKind, values: [String] = []

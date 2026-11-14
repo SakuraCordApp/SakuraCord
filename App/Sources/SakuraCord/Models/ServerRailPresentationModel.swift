@@ -2,6 +2,11 @@ import Observation
 import OSLog
 import SakuraCordModels
 
+enum ServerRailNavigationDestination: Equatable {
+    case directMessages
+    case guild(GuildID)
+}
+
 struct ServerRailGuildPresentation: Equatable {
     let guild: Guild
     let notificationSettings: GuildNotificationSettings
