@@ -15,7 +15,14 @@ nonisolated enum ConversationDestinationSearchPolicy {
         let stableOrder: Int
     }
 
-    private struct RankedDestination {
+    /// A candidate ordered as Discord's search worker orders results.
+    nonisolated protocol RankedCandidate {
+        var score: Double { get }
+        var comparator: String? { get }
+        var sourceOrder: Int { get }
+    }
+
+    private struct RankedDestination: RankedCandidate {
         let destination: ConversationDestination
         let category: ResultCategory
         let score: Double
@@ -894,9 +901,9 @@ nonisolated extension ConversationDestinationSearchPolicy {
         }.prefix(limit))
     }
 
-    private static func ranksBefore(
-        _ lhs: RankedDestination,
-        _ rhs: RankedDestination
+    static func ranksBefore<Candidate: RankedCandidate>(
+        _ lhs: Candidate,
+        _ rhs: Candidate
     ) -> Bool {
         if lhs.score != rhs.score { return lhs.score > rhs.score }
         if let left = lhs.comparator,

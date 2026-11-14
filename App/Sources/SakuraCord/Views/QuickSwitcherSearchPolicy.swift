@@ -123,11 +123,11 @@ nonisolated struct QuickSwitcherSearchContext: Sendable {
 }
 
 nonisolated enum QuickSwitcherSearchPolicy {
-    private struct RankedResult {
+    private struct RankedResult: ConversationDestinationSearchPolicy.RankedCandidate {
         let result: QuickSwitcherResult
         let score: Double
         let comparator: String?
-        let stableOrder: Int
+        let sourceOrder: Int
     }
 
     private struct RankedGuild {
@@ -236,7 +236,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
                     result: .destination(row.destination),
                     score: row.score,
                     comparator: row.comparator,
-                    stableOrder: row.stableOrder
+                    sourceOrder: row.stableOrder
                 ))
             }
         }
@@ -254,9 +254,9 @@ nonisolated enum QuickSwitcherSearchPolicy {
                     result: .guild(guild),
                     score: score,
                     comparator: nil,
-                    stableOrder: 3 * limit + offset
+                    sourceOrder: 3 * limit + offset
                 )
-            }.sorted(by: ranksBefore).prefix(limit).map { $0 }
+            }.sorted(by: ConversationDestinationSearchPolicy.ranksBefore).prefix(limit).map { $0 }
         }
 
         let initialCategories: Set<ConversationDestinationSearchPolicy.ResultCategory> = [
@@ -279,7 +279,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
                 result: .navigation(item),
                 score: score,
                 comparator: nil,
-                stableOrder: 7 * limit + offset
+                sourceOrder: 7 * limit + offset
             ))
         }
 
@@ -296,7 +296,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
         }
 
         let ranked = destinations.map(\.1) + guilds + navigation
-        return ranked.sorted(by: ranksBefore).map(\.result)
+        return ranked.sorted(by: ConversationDestinationSearchPolicy.ranksBefore).map(\.result)
     }
 
     private static func channelResults(
@@ -469,20 +469,6 @@ nonisolated enum QuickSwitcherSearchPolicy {
     private static func isVoice(_ destination: ConversationDestination) -> Bool {
         guard case .channel(let channel) = destination.kind else { return false }
         return channel.kind == .voice
-    }
-
-    private static func ranksBefore(
-        _ lhs: RankedResult,
-        _ rhs: RankedResult
-    ) -> Bool {
-        if lhs.score != rhs.score { return lhs.score > rhs.score }
-        if let left = lhs.comparator,
-           let right = rhs.comparator,
-           left != right
-        {
-            return left.utf16.lexicographicallyPrecedes(right.utf16)
-        }
-        return lhs.stableOrder < rhs.stableOrder
     }
 
 }
