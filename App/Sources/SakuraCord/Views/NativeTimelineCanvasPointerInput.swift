@@ -1610,11 +1610,7 @@ extension NativeTimelineCanvasView {
         guard let presentation = MediaViewerPlan.attachments(
             in: message,
             selectedAttachmentID: attachment.id,
-            isRevealed: { [spoilerRevealStore] componentID in
-                spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(messageID: message.id, componentID: componentID)
-                )
-            }
+            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
         ) else { return false }
         model?.mediaViewerPresentation = mediaViewerPresentation(
             presentation,

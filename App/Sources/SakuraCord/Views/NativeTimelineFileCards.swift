@@ -4,7 +4,12 @@ import SakuraCordModels
 extension NativeTimelineCanvasView {
     /// Whether an attachment still hides behind its spoiler cover.
     func isConcealedSpoiler(_ attachment: Attachment, in messageID: MessageID) -> Bool {
-        attachment.isSpoiler && !spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: attachment.id))
+        NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+            messageID: messageID,
+            contentID: NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id),
+            isSpoiler: attachment.isSpoiler,
+            store: spoilerRevealStore
+        )
     }
 
     /// Whether a spoiler hides an upload's ring: it still hides its file

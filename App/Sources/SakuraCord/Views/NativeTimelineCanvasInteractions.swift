@@ -40,8 +40,9 @@ extension NativeTimelineCanvasView {
             }
             for region in componentLayout.media
             where region.frame.contains(point) {
-                let revealKey = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
-                if region.isVideo, !region.isSpoiler || spoilerRevealStore.isMediaRevealed(revealKey) {
+                if region.isVideo, !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
+                ) {
                     let (id, openURL, isSpoiler) = (region.componentID, region.openURL, region.isSpoiler)
                     playInline(region.displayURL, mediaID: id, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
                         _ = self?.activateComponentMedia(
@@ -92,24 +93,15 @@ extension NativeTimelineCanvasView {
         message: Message,
         rowIndex: Int
     ) -> Bool {
-        let key = NativeTimelineComponentRevealKey(
-            messageID: message.id,
-            componentID: id
-        )
-        if isSpoiler, !spoilerRevealStore.isMediaRevealed(key) {
-            reveal(key, rowIndex: rowIndex)
+        if NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+            messageID: message.id, contentID: id, isSpoiler: isSpoiler, store: spoilerRevealStore
+        ) {
+            reveal(NativeTimelineComponentRevealKey(messageID: message.id, componentID: id), rowIndex: rowIndex)
         } else if let presentation = MediaViewerPlan.components(
             in: message,
             layouts: layout.componentLayouts,
             selectedComponentID: id,
-            isRevealed: { [spoilerRevealStore] componentID in
-                spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(
-                        messageID: message.id,
-                        componentID: componentID
-                    )
-                )
-            }
+            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
         ) {
             model?.mediaViewerPresentation = mediaViewerPresentation(
                 presentation,

@@ -20,8 +20,9 @@ extension NativeTimelineCanvasView {
             messageID: message.id,
             componentID: componentID
         )
-        let isHiddenSpoiler =
-            isSpoiler && !spoilerRevealStore.isMediaRevealed(key)
+        let isHiddenSpoiler = NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+            messageID: message.id, contentID: componentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+        )
         let element = accessibilityElement(
             role: .button,
             label: isHiddenSpoiler ? "Reveal spoiler" : label,

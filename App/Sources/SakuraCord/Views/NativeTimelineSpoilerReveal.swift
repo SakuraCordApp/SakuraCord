@@ -118,6 +118,13 @@ final class NativeTimelineSpoilerRevealStore {
         isRevealed(.media(componentID: key.componentID), in: key.messageID)
     }
 
+    /// Whether each of a message's media, by reveal component ID, is revealed.
+    func isMediaRevealed(in messageID: MessageID) -> (String) -> Bool {
+        { [self] componentID in
+            isMediaRevealed(NativeTimelineComponentRevealKey(messageID: messageID, componentID: componentID))
+        }
+    }
+
     @discardableResult
     func revealMedia(
         _ key: NativeTimelineComponentRevealKey

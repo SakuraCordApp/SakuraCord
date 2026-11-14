@@ -1584,14 +1584,7 @@ extension NativeTimelineCanvasView {
                             in: message,
                             layouts: layouts,
                             selectedComponentID: region.componentID,
-                            isRevealed: { [spoilerRevealStore] componentID in
-                                spoilerRevealStore.isMediaRevealed(
-                                    NativeTimelineComponentRevealKey(
-                                        messageID: message.id,
-                                        componentID: componentID
-                                    )
-                                )
-                            }
+                            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
                         )
                 ))
             }
@@ -1615,14 +1608,7 @@ extension NativeTimelineCanvasView {
                             in: message,
                             layouts: layouts,
                             selectedComponentID: region.componentID,
-                            isRevealed: { [spoilerRevealStore] componentID in
-                                spoilerRevealStore.isMediaRevealed(
-                                    NativeTimelineComponentRevealKey(
-                                        messageID: message.id,
-                                        componentID: componentID
-                                    )
-                                )
-                            }
+                            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
                         )
                 ))
             }
@@ -1646,14 +1632,7 @@ extension NativeTimelineCanvasView {
                             in: message,
                             layouts: layouts,
                             selectedComponentID: region.componentID,
-                            isRevealed: { [spoilerRevealStore] componentID in
-                                spoilerRevealStore.isMediaRevealed(
-                                    NativeTimelineComponentRevealKey(
-                                        messageID: message.id,
-                                        componentID: componentID
-                                    )
-                                )
-                            }
+                            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
                         )
                 ))
             }

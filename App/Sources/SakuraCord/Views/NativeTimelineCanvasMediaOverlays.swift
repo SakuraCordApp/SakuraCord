@@ -1374,19 +1374,10 @@ extension NativeTimelineCanvasView {
         frame: CGRect,
         hiddenContainerFrames: [CGRect]
     ) -> Bool {
-        isSpoiler && !isInsideSpoilerContainer(
+        isSpoiler && !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
             frame,
             hiddenContainerFrames: hiddenContainerFrames
         )
-    }
-
-    private func isInsideSpoilerContainer(
-        _ frame: CGRect,
-        hiddenContainerFrames: [CGRect]
-    ) -> Bool {
-        hiddenContainerFrames.contains {
-            $0.contains(CGPoint(x: frame.midX, y: frame.midY))
-        }
     }
 
     private func appendDesiredSpoilerOverlay(

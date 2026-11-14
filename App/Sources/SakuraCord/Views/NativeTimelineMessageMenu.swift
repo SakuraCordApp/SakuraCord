@@ -385,14 +385,7 @@ extension NativeTimelineCanvasView {
             in: row.message,
             layout: layouts[index],
             at: localPoint,
-            isRevealed: { [spoilerRevealStore] componentID in
-                spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(
-                        messageID: row.message.id,
-                        componentID: componentID
-                    )
-                )
-            }
+            isRevealed: spoilerRevealStore.isMediaRevealed(in: row.message.id)
         )
         let gif = NativeTimelineGIFContextMenuPlan.result(
             in: row.message,
