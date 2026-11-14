@@ -4,7 +4,7 @@ import SwiftUI
 
 struct MemberInspectorView: View {
     private let runsPerformanceAutoScroll =
-        AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
+        AppLaunchConfiguration.current
         .runsMemberListPerformanceAutoScroll
     let sections: [MemberSection]
     let customEmojiURLsByID: CustomEmojiImageURLs

@@ -6,7 +6,7 @@ struct MessageTimelineView: View {
     let bottomContentInset: CGFloat
     var editRequest: MessageTimelineEditRequest?
     private let runsPerformanceAutoScroll =
-        AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
+        AppLaunchConfiguration.current
         .runsChatPerformanceAutoScroll
     @State private var scrollPolicy = MessageTimelineScrollPolicy()
     @State private var allowsAutomaticHistoryLoading = false

@@ -1174,9 +1174,7 @@ final class AppModel {
         self.privacySafetySettingsStore = resolvedPrivacyStore
         runsChatPerformanceBenchmark =
             runsChatPerformanceBenchmarkOverride
-                ?? AppLaunchConfiguration(
-                    arguments: ProcessInfo.processInfo.arguments
-                ).runsAnyReadOnlyPerformanceBenchmark
+                ?? AppLaunchConfiguration.current.runsAnyReadOnlyPerformanceBenchmark
         discordNetworkDisabled =
             discordNetworkDisabledOverride
                 ?? (launchMode == .offlineTesting

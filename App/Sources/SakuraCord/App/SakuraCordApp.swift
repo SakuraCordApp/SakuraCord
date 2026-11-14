@@ -14,25 +14,11 @@ public func runSakuraCord() {
 struct SakuraCordApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
-    private let opensForumPerformanceFixture: Bool
-    private let runsForumPerformanceAutoScroll: Bool
-    private let opensChatPerformanceFixture: Bool
-    private let opensPinsPerformanceFixture: Bool
-    private let runsFriendsPerformanceBenchmark: Bool
-    private let runsChannelOpenBenchmark: Bool
+    private let launch = AppLaunchConfiguration.current
 #if SAKURACORD_MOTION_BENCHMARK
     /// Set when the launch runs the side chat motion benchmark.
     private let sideChatMotionOptions: SideChatMotionBenchmark.Options?
 #endif
-    private let runsChatLiveArrivalStress: Bool
-    private let runsAuthenticatedNavigationBenchmark: Bool
-    private let runsAuthenticatedAccountSwitchBenchmark: Bool
-    private let runsHistoryPaginationBenchmark: Bool
-    private let runsAuthenticatedGestureScrollBenchmark: Bool
-    private let runsLoadingScrollOverlapBenchmark: Bool
-    private let preparesTimelineScrollBenchmark: Bool
-    private let preparesMemberListScrollBenchmark: Bool
-    private let activatesAuthenticatedScrollBenchmark: Bool
     private let performanceMockProvider: MockChatProvider?
 
     init() {
@@ -41,16 +27,10 @@ struct SakuraCordApp: App {
         SharedMediaDataLoader.removeAbandonedDownloadsAtStartup()
         MediaViewerPreviewFile.removeAbandonedFilesAtStartup()
         DiagnosticsPreferences.restore()
-        let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
-        opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
-        runsForumPerformanceAutoScroll = configuration.runsForumPerformanceAutoScroll
+        let configuration = AppLaunchConfiguration.current
 #if DEBUG
         ForumLayoutStabilityProbe.shared.isEnabled = configuration.includesForumPerformanceFixture
 #endif
-        opensChatPerformanceFixture = configuration.includesChatPerformanceFixture
-        opensPinsPerformanceFixture = configuration.includesPinsPerformanceFixture
-        runsFriendsPerformanceBenchmark = configuration.runsFriendsPerformanceBenchmark
-        runsChannelOpenBenchmark = configuration.runsChannelOpenBenchmark
 #if SAKURACORD_MOTION_BENCHMARK
         let motionOptions = configuration.runsSideChatMotionBenchmark
             ? SideChatMotionBenchmark.Options(arguments: ProcessInfo.processInfo.arguments)
@@ -65,31 +45,6 @@ struct SakuraCordApp: App {
             )
         }
 #endif
-        runsChatLiveArrivalStress = configuration.runsChatLiveArrivalStress
-        runsAuthenticatedNavigationBenchmark =
-            configuration.runsAuthenticatedNavigationBenchmark
-        runsAuthenticatedAccountSwitchBenchmark =
-            configuration.runsAuthenticatedAccountSwitchBenchmark
-        runsHistoryPaginationBenchmark =
-            configuration.runsHistoryPaginationBenchmark
-        runsAuthenticatedGestureScrollBenchmark =
-            configuration.runsAuthenticatedGestureScrollBenchmark
-        runsLoadingScrollOverlapBenchmark =
-            configuration.runsLoadingScrollOverlapBenchmark
-        preparesTimelineScrollBenchmark =
-            configuration.mode == .normal
-            && configuration.runsChatPerformanceAutoScroll
-        preparesMemberListScrollBenchmark =
-            configuration.mode == .normal
-            && configuration.runsMemberListPerformanceAutoScroll
-        activatesAuthenticatedScrollBenchmark =
-            configuration.mode == .normal
-            && (
-                configuration.runsChatPerformanceAutoScroll
-                    || configuration.runsMemberListPerformanceAutoScroll
-                    || configuration.runsAuthenticatedGestureScrollBenchmark
-                    || configuration.runsLoadingScrollOverlapBenchmark
-            )
         let mockProvider = configuration.mode == .offlineTesting
             ? MockChatProvider(
                 serverList: configuration.mockServerList,
@@ -162,22 +117,22 @@ struct SakuraCordApp: App {
                     await appDelegate.startSession(for: model)
                     await model.applyConfiguredLocalStorageLimit()
 #if DEBUG
-                    if runsAuthenticatedNavigationBenchmark {
+                    if launch.runsAuthenticatedNavigationBenchmark {
                         await model.runAuthenticatedNavigationPerformanceBenchmark()
                     }
-                    if runsAuthenticatedAccountSwitchBenchmark {
+                    if launch.runsAuthenticatedAccountSwitchBenchmark {
                         await model.runAuthenticatedAccountSwitchPerformanceBenchmark()
                     }
-                    if runsHistoryPaginationBenchmark {
+                    if launch.runsHistoryPaginationBenchmark {
                         await model.runAuthenticatedHistoryPaginationPerformanceBenchmark()
                     }
-                    if runsAuthenticatedGestureScrollBenchmark {
+                    if launch.runsAuthenticatedGestureScrollBenchmark {
                         await model.runAuthenticatedGestureScrollPerformanceBenchmark()
                     }
-                    if runsLoadingScrollOverlapBenchmark {
+                    if launch.runsLoadingScrollOverlapBenchmark {
                         await model.runAuthenticatedLoadingScrollOverlapPerformanceBenchmark()
                     }
-                    if activatesAuthenticatedScrollBenchmark {
+                    if launch.activatesAuthenticatedScrollBenchmark {
                         // A display-link benchmark is only representative
                         // while AppKit is presenting this window normally.
                         // Background/occluded windows are intentionally
@@ -185,37 +140,36 @@ struct SakuraCordApp: App {
                         // scheduling as SakuraCord frame loss.
                         NSApp.activate(ignoringOtherApps: true)
                     }
-                    if preparesTimelineScrollBenchmark {
+                    if launch.preparesTimelineScrollBenchmark {
                         await model.prepareAuthenticatedTimelineScrollPerformanceBenchmark()
                     }
-                    if preparesMemberListScrollBenchmark {
+                    if launch.preparesMemberListScrollBenchmark {
                         await model.prepareAuthenticatedMemberListScrollPerformanceBenchmark()
                     }
 #endif
-                    if opensChatPerformanceFixture {
+                    if launch.includesChatPerformanceFixture {
                         NSApp.activate(ignoringOtherApps: true)
                     }
-                    if opensForumPerformanceFixture {
+                    if launch.includesForumPerformanceFixture {
                         model.selectedChannelID = ChannelID(rawValue: 220)
-                    } else if opensChatPerformanceFixture, !runsChannelOpenBenchmark {
+                    } else if launch.includesChatPerformanceFixture, !launch.runsChannelOpenBenchmark {
                         model.selectedChannelID = ChannelID(rawValue: 210)
                     }
 #if DEBUG
-                    if runsForumPerformanceAutoScroll {
+                    if launch.runsForumPerformanceAutoScroll {
                         await ForumBoardBenchmark.run(model: model)
                     }
 #endif
-                    if runsFriendsPerformanceBenchmark {
+                    if launch.runsFriendsPerformanceBenchmark {
                         await FriendsPerformanceBenchmark.run(model: model, provider: performanceMockProvider)
                     }
-                    let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
-                    if configuration.runsServerRailPerformanceBenchmark {
+                    if launch.runsServerRailPerformanceBenchmark {
                         await ServerRailPerformanceBenchmark.run(model: model)
                     }
-                    if configuration.runsUnreadChurnBenchmark {
+                    if launch.runsUnreadChurnBenchmark {
                         await UnreadChurnBenchmark.run(model: model, provider: performanceMockProvider)
                     }
-                    if runsChannelOpenBenchmark {
+                    if launch.runsChannelOpenBenchmark {
                         await ChannelOpenBenchmark.run(model: model, channelID: ChannelID(rawValue: 210))
                     }
 #if SAKURACORD_MOTION_BENCHMARK
@@ -223,13 +177,13 @@ struct SakuraCordApp: App {
                         await SideChatMotionBenchmark.run(model: model, options: sideChatMotionOptions)
                     }
 #endif
-                    if opensPinsPerformanceFixture {
+                    if launch.includesPinsPerformanceFixture {
                         await model.channelLoadTask?.value
                         model.presentPinnedMessages(channelID: ChannelID(rawValue: 210))
                         await model.pinnedMessages.loadTask?.value
                         await model.preparePinnedMessagesPerformanceBenchmark()
                     }
-                    if runsChatLiveArrivalStress {
+                    if launch.runsChatLiveArrivalStress {
                         await NativeTimelinePerformanceBenchmarkGate.shared
                             .waitUntilStarted()
                         guard !Task.isCancelled,
@@ -321,8 +275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sessionStartTask: Task<Void, Never>?
 
     override init() {
-        let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
-        if configuration.mode == .normal {
+        if AppLaunchConfiguration.current.mode == .normal {
             SakuraCordOnboardingStore.registerInstallation()
         }
         updateController = AppUpdateController()
