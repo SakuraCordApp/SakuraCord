@@ -356,7 +356,7 @@ struct VoiceCallControlDock: View {
                     isPresented: $showInputControls,
                     arrowEdge: .bottom
                 ) {
-                    VoiceInputControls(model: model)
+                    VoiceAudioControls(model: model, direction: .input)
                 }
 
                 CallDockSplitButton(
@@ -372,7 +372,7 @@ struct VoiceCallControlDock: View {
                     isPresented: $showOutputControls,
                     arrowEdge: .bottom
                 ) {
-                    VoiceOutputControls(model: model)
+                    VoiceAudioControls(model: model, direction: .output)
                 }
 
                 CallDockButton(
@@ -708,59 +708,40 @@ private struct CallDockLeaveButton: View {
     }
 }
 
-private struct VoiceInputControls: View {
+/// A call's input or output device and volume.
+private struct VoiceAudioControls: View {
+    enum Direction { case input, output }
+
     let model: AppModel
+    let direction: Direction
 
     var body: some View {
+        let isInput = direction == .input
         VStack(alignment: .leading, spacing: InterfaceScale.metric(14)) {
-            Text("Input").font(.interface(.headline))
+            Text(isInput ? "Input" : "Output").font(.interface(.headline))
             VoiceDevicePicker(
-                title: "Input Device",
-                systemImage: "mic",
-                devices: model.mediaDevices.audioInputs,
-                selectedUID: model.voiceVideoPreferences.inputDeviceUID,
-                select: { device in await model.selectInputDevice(device) }
+                title: isInput ? "Input Device" : "Output Device",
+                systemImage: isInput ? "mic" : "speaker.wave.2",
+                devices: isInput ? model.mediaDevices.audioInputs : model.mediaDevices.audioOutputs,
+                selectedUID: isInput ? model.voiceVideoPreferences.inputDeviceUID : model.voiceVideoPreferences.outputDeviceUID,
+                select: { device in
+                    isInput ? await model.selectInputDevice(device) : await model.selectOutputDevice(device)
+                }
             )
             VolumeControl(
-                title: "Input Volume",
-                systemImage: "mic.fill",
+                title: isInput ? "Input Volume" : "Output Volume",
+                systemImage: isInput ? "mic.fill" : "speaker.wave.2.fill",
                 value: Binding(
-                    get: { Double(model.inputVolume) },
-                    set: { value in Task { await model.updateInputVolume(Float(value)) } }
-                )
-            )
-            if let status = model.voiceDeviceStatusMessage {
-                Text(status)
-                    .font(.interface(.caption))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(InterfaceScale.metric(16))
-        .frame(width: InterfaceScale.metric(300))
-        .task { await model.refreshMediaDevices() }
-    }
-}
-
-private struct VoiceOutputControls: View {
-    let model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(14)) {
-            Text("Output").font(.interface(.headline))
-            VoiceDevicePicker(
-                title: "Output Device",
-                systemImage: "speaker.wave.2",
-                devices: model.mediaDevices.audioOutputs,
-                selectedUID: model.voiceVideoPreferences.outputDeviceUID,
-                select: { device in await model.selectOutputDevice(device) }
-            )
-            VolumeControl(
-                title: "Output Volume",
-                systemImage: "speaker.wave.2.fill",
-                value: Binding(
-                    get: { Double(model.outputVolume) },
-                    set: { value in Task { await model.updateOutputVolume(Float(value)) } }
+                    get: { Double(isInput ? model.inputVolume : model.outputVolume) },
+                    set: { value in
+                        Task {
+                            if isInput {
+                                await model.updateInputVolume(Float(value))
+                            } else {
+                                await model.updateOutputVolume(Float(value))
+                            }
+                        }
+                    }
                 )
             )
             if let status = model.voiceDeviceStatusMessage {
@@ -840,7 +821,7 @@ private struct VoiceDevicePicker: View {
     var body: some View {
         LabeledContent {
             Picker(title, selection: $selectionUID) {
-                Text(systemDefaultAudioDeviceLabel(devices)).tag("")
+                Text(systemDefaultDeviceLabel(devices.first(where: \.isDefault)?.name)).tag("")
                 ForEach(devices) { device in
                     Text(device.name).tag(device.uid)
                 }
@@ -867,9 +848,9 @@ private struct VoiceDevicePicker: View {
     }
 }
 
-private func systemDefaultAudioDeviceLabel(_ devices: [AudioDeviceInfo]) -> String {
-    guard let device = devices.first(where: \.isDefault) else { return "System Default" }
-    return "System Default (\(device.name))"
+/// A device menu's System Default entry, naming the device it stands for.
+func systemDefaultDeviceLabel(_ defaultDeviceName: String?) -> String {
+    defaultDeviceName.map { "System Default (\($0))" } ?? "System Default"
 }
 
 private struct CameraDevicePicker: View {
