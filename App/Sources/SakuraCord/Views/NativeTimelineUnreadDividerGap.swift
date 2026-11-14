@@ -6,47 +6,11 @@ import AppKit
 /// already holds its final size. The motion displaces rows instead of laying
 /// them out again (see `NativeTimelineUnreadDividerGap`).
 nonisolated enum NativeTimelineUnreadDividerGapGeometry {
-    /// How far rows before the divider must still be displaced for the
-    /// picture to match what was on screen before the update.
-    static func startBeforeShift(
-        topInViewport: CGFloat,
-        viewportMinY: CGFloat,
-        staticTop: CGFloat
-    ) -> CGFloat {
-        topInViewport + viewportMinY - staticTop
-    }
-
     /// The most the divider's row may change by and still be described by the
     /// motion: the divider plus the author header the row gains or loses with
     /// it, since a divider breaks a message group.
     static func maximumSpace(dividerHeight: CGFloat) -> CGFloat {
         dividerHeight * 3
-    }
-
-    /// The space the divider opens or closes: how much its row grew or shrank.
-    /// That is less than the divider itself when the divider replaces the
-    /// spacing a message normally has above it, and more when the row also
-    /// gains an author header. Nil when the row changed in any other way, so
-    /// the motion would not describe the update.
-    static func spaceHeight(
-        isAppearing: Bool,
-        dividerHeight: CGFloat,
-        heightBefore: CGFloat,
-        heightAfter: CGFloat
-    ) -> CGFloat? {
-        let change = (heightAfter - heightBefore) * (isAppearing ? 1 : -1)
-        return change > 0.5 && change <= maximumSpace(dividerHeight: dividerHeight) + 0.5 ? change : nil
-    }
-
-    /// Whether the space holds more than the divider: an author header that
-    /// the row on the other side of the update does not have.
-    static func includesHeader(spaceHeight: CGFloat, dividerHeight: CGFloat) -> Bool {
-        spaceHeight > dividerHeight + 0.5
-    }
-
-    /// The update must not have scrolled the timeline by more than the space.
-    static func isFeasible(spaceHeight: CGFloat, startBeforeShift: CGFloat) -> Bool {
-        abs(startBeforeShift) <= spaceHeight + 1
     }
 
     /// The part of the divider that may show: from the top of the gap down to
@@ -115,7 +79,7 @@ extension NativeTimelineCanvasView {
         from source: NativeTimelineUnreadDividerSource,
         appearing: Bool
     ) -> Bool {
-        guard !unreadDividerReducesMotion,
+        guard AppMotionPolicy.animatesUncategorized,
               window != nil,
               rowDisclosure == nil,
               !appearing || !sendTransitionBlocksInteractions,
@@ -131,31 +95,32 @@ extension NativeTimelineCanvasView {
               abs(frame.minY) < 0.5,
               appearing || layout.unreadSeparatorFrame == nil
         else { return false }
-        guard let space = NativeTimelineUnreadDividerGapGeometry.spaceHeight(
-            isAppearing: appearing,
-            dividerHeight: frame.height,
-            heightBefore: source.height,
-            heightAfter: layout.height
-        ) else { return false }
-        // A header that goes with the divider is no longer in the row, so
-        // its picture from before the update closes with the divider.
+        // The space the divider opens or closes is how much its row grew or
+        // shrank. That is less than the divider itself when the divider
+        // replaces the spacing a message normally has above it, and more when
+        // the row also gains an author header. A row that changed in any
+        // other way is not described by the motion.
+        let space = (layout.height - source.height) * (appearing ? 1 : -1)
+        guard space > 0.5,
+              space <= NativeTimelineUnreadDividerGapGeometry.maximumSpace(dividerHeight: frame.height) + 0.5
+        else { return false }
+        // A space holding more than the divider includes an author header.
+        // That header is no longer in the row, so its picture from before
+        // the update closes with the divider.
         var snapshot: NativeTimelineUnreadDividerSnapshot?
         var snapshotTail: NativeTimelineUnreadDividerSnapshot?
-        if !appearing, NativeTimelineUnreadDividerGapGeometry.includesHeader(
-            spaceHeight: space, dividerHeight: frame.height
-        ) {
+        if !appearing, space > frame.height + 0.5 {
             guard let picture = source.topSnapshot, let image = picture.top(space) else { return false }
             snapshot = image
             snapshotTail = picture.avatarTail(below: space)
         }
         let startGap = source.startGap ?? (appearing ? 0 : space)
         let staticTop = contentOriginY + rowOrigins[index]
-        let startShift = NativeTimelineUnreadDividerGapGeometry.startBeforeShift(
-            topInViewport: source.topInViewport,
-            viewportMinY: viewportMinY,
-            staticTop: staticTop
-        )
-        guard NativeTimelineUnreadDividerGapGeometry.isFeasible(spaceHeight: space, startBeforeShift: startShift),
+        // How far rows before the divider must still be displaced for the
+        // picture to match what was on screen before the update, which must
+        // not have scrolled the timeline by more than the space.
+        let startShift = source.topInViewport + viewportMinY - staticTop
+        guard abs(startShift) <= space + 1,
               CGRect(x: 0, y: staticTop - space, width: 1, height: space * 3).intersects(visibleRect)
         else { return false }
         // Two row motions would fight over the same displacement.

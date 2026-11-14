@@ -76,26 +76,6 @@ enum NativeTimelineUnreadDividerMotion {
     /// Reduce Motion keeps a plain, quick fade and nothing else.
     static let reducedMotionDuration: CFTimeInterval = 0.12
     static let opacityKey = "sakuraCordUnreadDividerFade"
-
-    /// Whether the divider may move in an update. It animates only for a
-    /// change made under a reader who is already looking at the conversation
-    /// settled: a message arriving, or the divider being acknowledged. A
-    /// conversation that is still opening (a channel or thread switch, an
-    /// account switch, a restored or cached channel, the first load) and a
-    /// jump to the unread boundary show the divider and its gap in place.
-    static func animates(
-        conversationChanged: Bool,
-        hadInitialPosition: Bool,
-        hadMessages: Bool,
-        isJumpingToUnreadBoundary: Bool
-    ) -> Bool {
-        !conversationChanged && hadInitialPosition && hadMessages && !isJumpingToUnreadBoundary
-    }
-
-    static func duration(appearing: Bool, reducesMotion: Bool) -> CFTimeInterval {
-        if reducesMotion { return reducedMotionDuration }
-        return appearing ? fadeInDuration : fadeOutDuration
-    }
 }
 
 /// The divider painted once. It never redraws while it fades or while its
@@ -215,10 +195,6 @@ struct NativeTimelineUnreadDividerFade {
 }
 
 extension NativeTimelineCanvasView {
-    var unreadDividerReducesMotion: Bool {
-        !AppMotionPolicy.animatesUncategorized
-    }
-
     /// The divider's row as laid out now, whether or not it has one.
     func unreadDividerSource(
         forMessageID messageID: MessageID?,
@@ -278,22 +254,15 @@ extension NativeTimelineCanvasView {
         return result
     }
 
-    /// The divider's placement in the row that now has it.
-    func unreadDividerPlacement(
-        forMessageID messageID: MessageID?
-    ) -> (identifier: NativeMessageTimelineItem.Identifier, frameInRow: CGRect)? {
-        guard let source = unreadDividerSource(forMessageID: messageID),
-              let frame = source.frameInRow
-        else { return nil }
-        return (source.identifier, frame)
-    }
-
     /// Opens or closes the divider's gap and fades the line inside it. Where
     /// the gap cannot move rows, an arriving divider simply fades in; a
     /// removed one is dropped, since the next message already fills its slot,
     /// unless it was folded into a date divider, which stays and loses NEW.
     func transitionUnreadDivider(_ change: NativeTimelineUnreadDividerChange) {
-        let added = unreadDividerPlacement(forMessageID: change.addedMessageID)
+        // The divider's placement in the row that now has it.
+        let added = unreadDividerSource(forMessageID: change.addedMessageID).flatMap { source in
+            source.frameInRow.map { (identifier: source.identifier, frameInRow: $0) }
+        }
         let removed = change.removed.flatMap { $0.frameInRow == nil ? nil : $0 }
         var opensGap = false
         if let removed, added == nil {
@@ -391,10 +360,11 @@ extension NativeTimelineCanvasView {
             appearing ? 0 : 1
         }
         let targetOpacity: Float = appearing ? 1 : 0
-        let fullDuration = NativeTimelineUnreadDividerMotion.duration(
-            appearing: appearing,
-            reducesMotion: unreadDividerReducesMotion
-        )
+        let fullDuration = if !AppMotionPolicy.animatesUncategorized {
+            NativeTimelineUnreadDividerMotion.reducedMotionDuration
+        } else {
+            appearing ? NativeTimelineUnreadDividerMotion.fadeInDuration : NativeTimelineUnreadDividerMotion.fadeOutDuration
+        }
         let duration = max(0.05, fullDuration * Double(abs(targetOpacity - startOpacity)))
         unreadDividerFades[identifier] = NativeTimelineUnreadDividerFade(
             overlay: overlay,
@@ -523,16 +493,22 @@ extension NativeMessageTimelineCoordinator {
         let conversationChanged = newParent.conversation != parent.conversation
         // With all animations off the divider changes in place; Reduce
         // Motion alone keeps its short fade.
-        guard !AppMotionPolicy.settings.disablesAllAnimations, NativeTimelineUnreadDividerMotion.animates(
-            conversationChanged: conversationChanged,
-            // Read before this update can establish the position or bring in
-            // the first rows, so a divider that arrives with either stays
-            // still. An empty timeline can hold a position, for instance
-            // after a failed first load that is then retried.
-            hadInitialPosition: initialPositionConversation == parent.conversation,
-            hadMessages: items.contains { $0.messageID != nil },
-            isJumpingToUnreadBoundary: isJumpingToUnreadBoundary(in: newParent)
-        ) else {
+        // The divider moves only for a change made under a reader who is
+        // already looking at the conversation settled: a message arriving,
+        // or the divider being acknowledged. A conversation that is still
+        // opening (a channel or thread switch, an account switch, a restored
+        // or cached channel, the first load) and a jump to the unread
+        // boundary show the divider and its gap in place. The position and
+        // rows are read before this update can establish the position or
+        // bring in the first rows, so a divider that arrives with either
+        // stays still. An empty timeline can hold a position, for instance
+        // after a failed first load that is then retried.
+        guard !AppMotionPolicy.settings.disablesAllAnimations,
+              !conversationChanged,
+              initialPositionConversation == parent.conversation,
+              items.contains(where: { $0.messageID != nil }),
+              !isJumpingToUnreadBoundary(in: newParent)
+        else {
             // Includes a motion already running when the reader jumps.
             canvas.finishUnreadDividerFades()
             return nil
