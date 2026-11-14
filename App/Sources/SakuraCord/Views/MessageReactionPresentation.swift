@@ -45,10 +45,8 @@ nonisolated enum MessageReactionPresentation {
                 result[index].count = max(result[index].count, normalized.count)
                 result[index].didCurrentUserReact =
                     result[index].didCurrentUserReact || normalized.didCurrentUserReact
-                result[index].reactors = uniqueReactors(
-                    result[index].reactors + normalized.reactors,
-                    maximumCount: max(result[index].count, normalized.count)
-                )
+                result[index].reactors = (result[index].reactors + normalized.reactors)
+                    .uniqueReactors(limit: max(result[index].count, normalized.count))
             } else {
                 indicesByID[normalized.id] = result.count
                 result.append(normalized)
@@ -59,7 +57,7 @@ nonisolated enum MessageReactionPresentation {
 
     static func previewPlan(for reaction: Reaction) -> MessageReactionPreviewPlan {
         let safeCount = max(0, reaction.count)
-        let knownReactors = uniqueReactors(reaction.reactors, maximumCount: safeCount)
+        let knownReactors = reaction.reactors.uniqueReactors(limit: safeCount)
         // Reserve every preview slot before reactor metadata or images arrive.
         let avatarCount = min(safeCount, MessageReactionMetrics.maximumAvatarCount)
         let previews = Array(knownReactors.prefix(avatarCount))
@@ -78,7 +76,7 @@ nonisolated enum MessageReactionPresentation {
     }
 
     static func tooltipSummary(for reaction: Reaction) -> MessageReactionTooltipSummary {
-        let reactors = uniqueReactors(reaction.reactors, maximumCount: reaction.count)
+        let reactors = reaction.reactors.uniqueReactors(limit: reaction.count)
         guard !reactors.isEmpty else { return .countOnly(reaction.count) }
         return .knownReactors(
             names: reactors.map(\.displayName),
@@ -134,20 +132,7 @@ nonisolated enum MessageReactionPresentation {
 
     private static func normalized(_ reaction: Reaction) -> Reaction {
         var result = reaction
-        result.reactors = uniqueReactors(reaction.reactors, maximumCount: reaction.count)
-        return result
-    }
-
-    private static func uniqueReactors(
-        _ reactors: [ReactionReactor], maximumCount: Int
-    ) -> [ReactionReactor] {
-        guard maximumCount > 0 else { return [] }
-        var seen: Set<UserID> = []
-        var result: [ReactionReactor] = []
-        for reactor in reactors where seen.insert(reactor.id).inserted {
-            result.append(reactor)
-            if result.count == maximumCount { break }
-        }
+        result.reactors = reaction.reactors.uniqueReactors(limit: reaction.count)
         return result
     }
 }

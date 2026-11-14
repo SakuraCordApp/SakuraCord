@@ -6011,8 +6011,8 @@ func `revisited messages restore reactor identities without another request`(isS
     replaceHistory(with: [])
     replaceHistory(with: [message])
     #expect(retainedMessage()?.reactions.first?.reactors.isEmpty == true)
-    #expect(model.retainedReactionReactors(for: message.reactions[0], on: message) == fetched)
-    #expect(model.retainedReactionReactors(for: Reaction(emoji: "👍", count: 5), on: message).isEmpty)
+    #expect(model.loadedReactionReactorPreviews.values.map { $0.reactors } == [fetched])
+    #expect(model.loadedReactionReactorPreviews.values.map { $0.count } == [4])
     #expect(await provider.reactorRequestCount() == 1)
     await model.loadReactionReactors(message.reactions[0], on: message)
     #expect(retainedMessage()?.reactions.first?.reactors == fetched)
@@ -6083,7 +6083,6 @@ func `reaction changes discard pending preview identities even if the count retu
     let expectedIDs = restoresCount ? [remaining.id, newcomer.id] : [remaining.id]
     #expect(reaction.count == expectedIDs.count)
     #expect(reaction.reactors.map(\.id) == expectedIDs)
-    #expect(model.retainedReactionReactors(for: reaction, on: current).map(\.id) == expectedIDs)
     #expect(model.loadedReactionReactorPreviews.isEmpty)
     #expect(model.reactionReactorLoadTasks.isEmpty)
     #expect(model.reactionReactorLoadIDs.isEmpty)
@@ -6111,7 +6110,7 @@ func `reaction changes preserve unrelated pending and saved previews`(clearsAll:
     await load.value
 
     let current = try #require(model.messages.first)
-    let reactors = model.retainedReactionReactors(for: message.reactions[0], on: current)
+    let reactors = current.reactions.first { $0.id == message.reactions[0].id }?.reactors ?? []
     #expect(reactors.count == (clearsAll ? 0 : 2))
     #expect(model.loadedReactionReactorPreviews.count == (clearsAll ? 0 : 1))
     if !clearsAll {

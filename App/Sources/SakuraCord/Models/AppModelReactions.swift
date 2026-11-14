@@ -230,7 +230,7 @@ extension AppModel {
             reaction = requestedReaction
         }
         guard reaction.count > 0,
-              Set(reaction.reactors.map(\.id)).count < min(reaction.count, 5)
+              Set(reaction.reactors.map(\.id)).count < min(reaction.count, ReactionReactor.previewLimit)
         else { return }
         let session = accountSession()
         let key = ReactionReactorLoadKey(
@@ -307,31 +307,16 @@ extension AppModel {
            let evictedKey = loadedReactionReactorPreviews.keys.first {
             loadedReactionReactorPreviews[evictedKey] = nil
         }
-        var seen: Set<UserID> = []
-        let previews = Array(reactors.filter { seen.insert($0.id).inserted }.prefix(5))
+        let previews = reactors.uniqueReactors(limit: ReactionReactor.previewLimit)
         loadedReactionReactorPreviews[key] = (count, previews)
         applyReactionReactors(previews, for: key)
-    }
-
-    /// Returns only identities already held locally; never starts a load.
-    func retainedReactionReactors(for reaction: Reaction, on message: Message) -> [ReactionReactor] {
-        let key = ReactionReactorLoadKey(
-            channelID: message.channelID, messageID: message.id, reactionID: reaction.id
-        )
-        let cached = loadedReactionReactorPreviews[key]
-        let saved = cached?.count == reaction.count ? cached?.reactors ?? [] : []
-        var seen: Set<UserID> = []
-        return Array((reaction.reactors + saved)
-            .filter { seen.insert($0.id).inserted }
-            .prefix(min(5, max(0, reaction.count))))
     }
 
     func applyReactionReactors(
         _ reactors: [ReactionReactor],
         for key: ReactionReactorLoadKey
     ) {
-        var seen: Set<UserID> = []
-        let normalized = reactors.filter { seen.insert($0.id).inserted }.prefix(5)
+        let normalized = reactors.uniqueReactors(limit: ReactionReactor.previewLimit)
 
         func updating(_ values: [Message]) -> [Message] {
             guard let messageIndex = values.firstIndex(where: { $0.id == key.messageID }) else {
@@ -349,14 +334,8 @@ extension AppModel {
                 })
             else { return message }
             var result = message
-            var seen = Set<UserID>()
-            let merged =
-                normalized + result.reactions[reactionIndex].reactors
-            result.reactions[reactionIndex].reactors = Array(
-                merged
-                    .filter { seen.insert($0.id).inserted }
-                    .prefix(min(5, max(0, result.reactions[reactionIndex].count)))
-            )
+            result.reactions[reactionIndex].reactors = (normalized + result.reactions[reactionIndex].reactors)
+                .uniqueReactors(limit: min(ReactionReactor.previewLimit, result.reactions[reactionIndex].count))
             return result
         }
 
@@ -545,4 +524,23 @@ extension AppModel {
         NotificationCenter.default.post(name: .sakuracordMessageReactionDidChange, object: self, userInfo: ["update": update])
     }
 
+}
+
+nonisolated extension ReactionReactor {
+    /// Reactors a reaction keeps and shows in its tooltip.
+    static let previewLimit = 5
+}
+
+nonisolated extension [ReactionReactor] {
+    /// The first `limit` distinct reactors, in order.
+    func uniqueReactors(limit: Int) -> [ReactionReactor] {
+        guard limit > 0 else { return [] }
+        var seen: Set<UserID> = []
+        var result: [ReactionReactor] = []
+        for reactor in self where seen.insert(reactor.id).inserted {
+            result.append(reactor)
+            if result.count == limit { break }
+        }
+        return result
+    }
 }
