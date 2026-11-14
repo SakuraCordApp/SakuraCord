@@ -59,7 +59,6 @@ nonisolated enum GIFMasonryLayout {
 }
 
 nonisolated enum GIFPickerMediaPolicy {
-    static let maximumRequestCount = 3
     private static let videoExtensions = ["webm", "mp4"]
 
     static func isVideo(
@@ -68,10 +67,6 @@ nonisolated enum GIFPickerMediaPolicy {
     ) -> Bool {
         declaredKind == .video
             || videoExtensions.contains(url.pathExtension.lowercased())
-    }
-
-    static func nativeAnimationURL(for gif: GIFSearchResult) -> URL? {
-        nativeAnimationURLs(for: gif).first
     }
 
     static func nativeAnimationURLs(for gif: GIFSearchResult) -> [URL] {
@@ -127,13 +122,6 @@ nonisolated enum GIFPickerMediaPolicy {
                 declaredKind: candidate == gif.mediaURL ? gif.mediaKind : nil
             )
         }
-    }
-
-    static func requestURLs(for gif: GIFSearchResult) -> [URL] {
-        ([staticFallbackURL(for: gif), nativeVideoURL(for: gif)].compactMap(\.self)
-            + nativeAnimationURLs(for: gif)).reduce(into: []) { unique, url in
-                if !unique.contains(url) { unique.append(url) }
-            }
     }
 
     private static func tenorMP4Suffix(for url: URL) -> String? {

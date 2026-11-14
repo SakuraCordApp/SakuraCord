@@ -334,15 +334,6 @@ extension AppModel {
         return message
     }
 
-    func attachmentFileSize(at url: URL) -> Int64? {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { url.stopAccessingSecurityScopedResource() }
-        }
-        let values = try? url.resourceValues(forKeys: [.fileSizeKey])
-        return values?.fileSize.map(Int64.init)
-    }
-
     private func enqueueOversizedAttachmentPrompt(_ prompt: OversizedAttachmentPrompt) {
         queuedOversizedAttachmentPrompts.append(prompt)
         presentNextOversizedAttachmentPrompt()

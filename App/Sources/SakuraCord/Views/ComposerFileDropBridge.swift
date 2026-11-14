@@ -97,7 +97,7 @@ final class ComposerFileDropView: NSView {
             let urls = ComposerPasteboardAttachments.fileURLs(from: sender.draggingPasteboard)
             return !urls.isEmpty && receiveURLs(urls, location, isInstant)
         }
-        guard let directory = try? Self.makeReceivingDirectory()
+        guard let directory = try? ComposerPromisedFileStorage.makeReceivingDirectory()
         else { return false }
         // Each receiver represents one promised file. `fileTypes` lists the
         // representations that file can provide; it is not a callback count.
@@ -117,12 +117,6 @@ final class ComposerFileDropView: NSView {
             }
         }
         return true
-    }
-
-    static func makeReceivingDirectory(fileManager: FileManager = .default) throws -> URL {
-        try ComposerPromisedFileStorage.makeReceivingDirectory(
-            fileManager: fileManager
-        )
     }
 
     private func updateTarget(_ sender: any NSDraggingInfo) -> NSDragOperation {

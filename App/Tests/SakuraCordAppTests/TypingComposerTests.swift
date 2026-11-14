@@ -46,7 +46,7 @@ import Testing
     defer { model.onboarding.reset() }
     let channelID = try #require(model.selectedChannelID)
     let otherChannelID = ChannelID(rawValue: 12)
-    let directory = try ComposerFileDropView.makeReceivingDirectory()
+    let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
     let file = directory.appendingPathComponent("kept.bin")
     try Data("kept".utf8).write(to: file)
     #expect(await model.addPromisedComposerAttachments(
@@ -185,7 +185,7 @@ func `oversized files reach an external host only when the upload policy allows`
     #expect(model.channelComposerAttachments.first?.url == exact)
     let compacted = try #require(model.channelComposerAttachments.last?.url)
     #expect(compacted != oversized)
-    #expect(model.attachmentFileSize(at: oversized) == DiscordAttachmentUploadPolicy.baseLimit + 1)
+    #expect(try oversized.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) == DiscordAttachmentUploadPolicy.baseLimit + 1)
     model.clearComposerAttachments(for: .channel)
     #expect(!FileManager.default.fileExists(atPath: compacted.path))
 }

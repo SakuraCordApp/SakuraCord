@@ -45,9 +45,9 @@ func commandSearchRanking() throws {
         )
     ])
 
-    #expect(model.rankedCommands(query: "verify").map(\.id) == ["200", "201"])
-    #expect(model.rankedCommands(query: "vys").map(\.id) == ["202"])
-    #expect(model.rankedCommands(query: "utility").map(\.id) == ["202"])
+    #expect(model.sections(query: "verify").flatMap(\.commands).map(\.id) == ["200", "201"])
+    #expect(model.sections(query: "vys").flatMap(\.commands).map(\.id) == ["202"])
+    #expect(model.sections(query: "utility").flatMap(\.commands).map(\.id) == ["202"])
     #expect(model.sections(query: "verify").flatMap(\.commands).map(\.id) == ["200", "201"])
 }
 
@@ -150,15 +150,15 @@ func commandAvailabilityFiltering() throws {
         ], channel: destination, currentUserID: userID)
     }
     load(in: otherChannel)
-    #expect(model.rankedCommands(query: "verify").map(\.id) == [command.id])
+    #expect(model.sections(query: "verify").flatMap(\.commands).map(\.id) == [command.id])
     load(in: channel)
-    #expect(model.rankedCommands(query: "verify").isEmpty)
+    #expect(model.sections(query: "verify").flatMap(\.commands).isEmpty)
     load(in: otherChannel)
-    #expect(model.rankedCommands(query: "verify").map(\.id) == [command.id])
+    #expect(model.sections(query: "verify").flatMap(\.commands).map(\.id) == [command.id])
     command.name = "inspect"
     load(in: otherChannel)
-    #expect(model.rankedCommands(query: "verify").isEmpty)
-    #expect(model.rankedCommands(query: "inspect").map(\.id) == [command.id])
+    #expect(model.sections(query: "verify").flatMap(\.commands).isEmpty)
+    #expect(model.sections(query: "inspect").flatMap(\.commands).map(\.id) == [command.id])
 }
 
 @MainActor
@@ -410,7 +410,7 @@ func attachmentPasteTargetLifecycle() throws {
     #expect(model.pastedAttachmentOption?.id == first.id)
 
     let changedFocus = try #require(model.attachmentPasteTarget())
-    model.focusField(second.id)
+    model.setFocus(.field(second.id))
     #expect(!model.finishAttachmentPaste(oldURL, target: changedFocus))
     #expect(model.attachmentURLs.isEmpty)
 
