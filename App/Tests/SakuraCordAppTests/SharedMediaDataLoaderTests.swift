@@ -271,11 +271,11 @@ import Testing
         }
     )
     let key = MediaImageKey.media(url, maximumPixelDimension: 32)
-    var outcomes: [NativeTimelineStaticMediaLoadOutcome] = []
+    var outcomes: [MediaImageLoadOutcome] = []
     store.request(
         key,
         owner: UUID(),
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 1)
         )),
@@ -288,7 +288,7 @@ import Testing
     store.request(
         key,
         owner: UUID(),
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 2)
         )),
@@ -335,7 +335,7 @@ import Testing
     store.request(
         key,
         owner: UUID(),
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 1)
         )),
@@ -346,7 +346,7 @@ import Testing
     store.request(
         key,
         owner: UUID(),
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 2)
         )),
@@ -373,11 +373,11 @@ import Testing
         await probe.load(url: url, dimension: dimension, priority: priority)
     }
     let owner = UUID()
-    var outcomes: [NativeTimelineStaticMediaLoadOutcome] = []
+    var outcomes: [MediaImageLoadOutcome] = []
     store.request(
         key,
         owner: owner,
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 98_111)
         )),
@@ -412,7 +412,7 @@ import Testing
         )
     )
     var callbackOutcomes:
-        [UUID: [NativeTimelineStaticMediaLoadOutcome]] = [:]
+        [UUID: [MediaImageLoadOutcome]] = [:]
     var invalidationOwners: [UUID] = []
 
     store.retainVisibleImages(for: [key], owner: firstOwner)
@@ -479,7 +479,7 @@ import Testing
     let row = NativeMessageTimelineItem.Identifier.message(.server(
         channelID: ChannelID(rawValue: 1), messageID: MessageID(rawValue: 2)
     ))
-    func request(_ owner: UUID) async -> NativeTimelineStaticMediaLoadOutcome {
+    func request(_ owner: UUID) async -> MediaImageLoadOutcome {
         await withCheckedContinuation { continuation in
             store.request(key, owner: owner, subscriber: row) { continuation.resume(returning: $0) }
         }

@@ -30,9 +30,7 @@ extension ForumBoardView {
         failedMediaKeys.formIntersection(keys)
         for (postID, postKeys) in keysByPost {
             for key in postKeys where store.image(for: key) == nil && !failedMediaKeys.contains(key) {
-                // The store keys subscribers by timeline item; a forum post is
-                // the same post identity the Inbox uses.
-                store.request(key, owner: mediaOwner, subscriber: .inboxForumPost(postID)) { [weak self] outcome in
+                store.request(key, owner: mediaOwner, subscriber: postID) { [weak self] outcome in
                     guard let self, outcome != .cancelled else { return }
                     if outcome == .failed { failedMediaKeys.insert(key) }
                     cards[.post(postID)]?.render(scale: backingScale, fading: outcome == .ready)

@@ -467,12 +467,6 @@ actor NativeTimelineMediaDecodeScheduler {
 #endif
 }
 
-enum NativeTimelineStaticMediaLoadOutcome: Equatable {
-    case ready
-    case failed
-    case cancelled
-}
-
 enum NativeTimelineMediaDecoder {
     nonisolated static func prepareForTimeline(_ image: CGImage) -> CGImage {
         // The row cache uses eight-bit device RGB. Perform high-bit-depth

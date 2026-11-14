@@ -36,7 +36,7 @@ struct NativeInvitePreview: NSViewRepresentable {
                         invite.inviter?.avatarURL.map { MediaImageKey.media($0, maximumPixelDimension: 32) }].compactMap { $0 }
                 + invite.traits.compactMap { $0.emojiURL.map { MediaImageKey.media($0, maximumPixelDimension: 32) } }
             for key in keys {
-                MediaImageStore.shared.request(key, owner: mediaOwner, subscriber: .loader) { [weak self] _ in self?.needsDisplay = true }
+                MediaImageStore.shared.request(key, owner: mediaOwner, subscriber: key) { [weak self] _ in self?.needsDisplay = true }
             }
         }
         override func viewDidMoveToWindow() {

@@ -123,14 +123,11 @@ final class MediaImageStore {
     ) async -> CGImage?
     typealias DecodedImagePromotion = (URL, Int) async -> Void
 
-    struct AnimatedSubscriberID: Hashable {
+    /// One subscription to a key: the owner, and whatever the owner names
+    /// its subscriber by, such as a timeline row or a forum post.
+    struct SubscriberID: Hashable {
         let owner: UUID
-        let row: NativeMessageTimelineItem.Identifier
-    }
-
-    struct StaticSubscriberID: Hashable {
-        let owner: UUID
-        let row: NativeMessageTimelineItem.Identifier
+        let subscriber: AnyHashable
     }
 
     struct CachedImage {
@@ -171,7 +168,7 @@ final class MediaImageStore {
     var loadingTasks: [MediaImageKey: Task<Void, Never>] = [:]
     var subscribers:
         [MediaImageKey:
-            [StaticSubscriberID: (NativeTimelineStaticMediaLoadOutcome) -> Void]] = [:]
+            [SubscriberID: (MediaImageLoadOutcome) -> Void]] = [:]
     let animatedCache: NSCache<NSString, NativeTimelineAnimatedMedia> = {
         let cache = NSCache<NSString, NativeTimelineAnimatedMedia>()
         cache.countLimit = 32
@@ -184,7 +181,7 @@ final class MediaImageStore {
     var animatedLoadingTasks:
         [MediaImageKey: Task<Void, Never>] = [:]
     var animatedSubscribers:
-        [MediaImageKey: [AnimatedSubscriberID: () -> Void]] = [:]
+        [MediaImageKey: [SubscriberID: () -> Void]] = [:]
     // Row bitmaps can outlive NSCache's volatile decoded-media entry. Keep
     // the exact source images used by each retained bitmap strongly reachable
     // so a hover/direct-paint pass cannot replace an already-visible
@@ -283,16 +280,13 @@ final class MediaImageStore {
     func requestAnimated(
         _ key: MediaImageKey,
         owner: UUID,
-        subscriber: NativeMessageTimelineItem.Identifier,
+        subscriber: AnyHashable,
         completion: @escaping () -> Void
     ) {
         guard animatedCache.object(forKey: key.cacheKey) == nil else {
             return
         }
-        let subscriberID = AnimatedSubscriberID(
-            owner: owner,
-            row: subscriber
-        )
+        let subscriberID = SubscriberID(owner: owner, subscriber: subscriber)
         animatedSubscribers[key, default: [:]][subscriberID] = completion
         guard animatedLoading.insert(key).inserted else { return }
 
@@ -367,16 +361,16 @@ final class MediaImageStore {
     func request(
         _ key: MediaImageKey,
         owner: UUID,
-        subscriber: NativeMessageTimelineItem.Identifier,
+        subscriber: AnyHashable,
         priority: MediaLoadPriority = .visible,
-        completion: @escaping (NativeTimelineStaticMediaLoadOutcome) -> Void
+        completion: @escaping (MediaImageLoadOutcome) -> Void
     ) {
         guard image(for: key) == nil else { return }
         guard !hasFailed(key) else {
             completion(.failed)
             return
         }
-        let subscriberID = StaticSubscriberID(owner: owner, row: subscriber)
+        let subscriberID = SubscriberID(owner: owner, subscriber: subscriber)
         subscribers[key, default: [:]][subscriberID] = completion
         guard loading.insert(key).inserted else {
             guard priority == .visible,
@@ -458,7 +452,7 @@ final class MediaImageStore {
     private func removeStaticSubscriptions(
         owner: UUID,
         where shouldRemove: (MediaImageKey) -> Bool,
-        outcome: NativeTimelineStaticMediaLoadOutcome? = nil
+        outcome: MediaImageLoadOutcome? = nil
     ) {
         for key in Array(subscribers.keys) where shouldRemove(key) {
             guard var subscriptions = subscribers[key] else { continue }
@@ -638,4 +632,10 @@ final class MediaImageStore {
         }
     }
 #endif
+}
+
+enum MediaImageLoadOutcome: Equatable {
+    case ready
+    case failed
+    case cancelled
 }
