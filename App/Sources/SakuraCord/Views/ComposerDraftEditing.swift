@@ -16,10 +16,7 @@ nonisolated enum ComposerPlaceholderPolicy {
         if startsThread {
             return "Enter a message to start the conversation!"
         }
-        if destination == .channel,
-           channelKind == .directMessage
-            || channelKind == .groupDirectMessage
-        {
+        if destination == .channel, channelKind?.isDirectMessage == true {
             return "Message @\(channelName)"
         }
         return "Message #\(channelName)"

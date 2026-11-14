@@ -767,10 +767,7 @@ final class AppModel {
     }
 
     func canJoinVoice(_ channel: Channel) -> Bool {
-        guard channel.kind == .voice
-                || channel.kind == .directMessage
-                || channel.kind == .groupDirectMessage
-        else { return false }
+        guard channel.kind == .voice || channel.kind.isDirectMessage else { return false }
         // A message request takes no calls until it is accepted; call setup
         // can hold an older channel value, so read the current set.
         return !awaitsMessageRequestDecision(in: channel.id) && conversationAccess(for: channel).isReadable

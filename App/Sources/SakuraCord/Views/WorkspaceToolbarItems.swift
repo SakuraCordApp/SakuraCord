@@ -172,13 +172,12 @@ struct MemberInspectorToolbarButton: View {
 
     var body: some View {
         let isDirectMessage = model.selectedChannel?.kind == .directMessage
-        let isGroup = model.selectedChannel?.kind == .groupDirectMessage
         let isShown = model.workspacePresentation.supplementaryPane == .memberInspector
         Button {
             model.toggleMemberInspector()
         } label: {
             Label {
-                Text(isDirectMessage || isGroup ? "People" : "Members")
+                Text(model.selectedChannel?.kind.isDirectMessage == true ? "People" : "Members")
             } icon: {
                 ToggleSymbol(
                     off: isDirectMessage ? "person" : "person.2",

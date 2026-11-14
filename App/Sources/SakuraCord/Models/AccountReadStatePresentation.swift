@@ -225,9 +225,7 @@ extension AccountReadStateModel {
                     unreadConversationIDs.insert(channelID)
                 }
                 totalMentions += channelMentions
-                if entry.kind == .directMessage
-                    || entry.kind == .groupDirectMessage
-                {
+                if entry.kind.isDirectMessage {
                     directMessageUnread = directMessageUnread || channelUnread
                     directMessageMentions += channelMentions
                 }
@@ -298,8 +296,7 @@ extension AccountReadStateModel {
         let usesNewNotifications: Bool
 
         func effectivePolicy(for entry: Entry, now: Date) -> EffectivePolicy {
-            let isDirectMessage = entry.kind == .directMessage
-                || entry.kind == .groupDirectMessage
+            let isDirectMessage = entry.kind.isDirectMessage
             let guildSettings = settingsByGuild[entry.guildID]
             let overrides = overridesByGuildAndChannelID[entry.guildID]
             let directOverride = overrides?[entry.channelID]

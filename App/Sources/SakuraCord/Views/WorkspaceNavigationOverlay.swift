@@ -607,8 +607,7 @@ private struct QuickSwitcherView: View {
         switch destination.kind {
         case .user:
             destination.avatarURL
-        case .channel(let channel) where channel.kind == .directMessage
-            || channel.kind == .groupDirectMessage:
+        case .channel(let channel) where channel.kind.isDirectMessage:
             destination.avatarURL
         case .channel, .thread:
             nil
