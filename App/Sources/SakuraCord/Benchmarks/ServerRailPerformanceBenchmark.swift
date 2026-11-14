@@ -32,7 +32,7 @@ enum ServerRailPerformanceBenchmark {
     static func run(model: AppModel) async {
         NSApp.activate(ignoringOtherApps: true)
         try? await Task.sleep(for: .seconds(4))
-        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
+        guard let window = PerformanceBenchmarkHarness.mainWindow,
               let scrollView = PerformanceBenchmarkHarness.tallestScrollView(
                   in: window.contentView, where: { abs($0.frame.width - ChatChromeMetrics.serverRailWidth) < 1 }
               ) else {
@@ -159,11 +159,10 @@ enum ServerRailPerformanceBenchmark {
     /// it does in use, turning at either end.
     private static func scroll(_ scrollView: NSScrollView, interval: TimeInterval) {
         let clip = scrollView.contentView
-        let minimumY = -scrollView.contentInsets.top
-        let maximumY = max(minimumY, (scrollView.documentView?.frame.height ?? 0) - clip.bounds.height + scrollView.contentInsets.bottom)
-        if clip.bounds.minY >= maximumY - 1 {
+        let range = PerformanceBenchmarkHarness.scrollRange(of: scrollView)
+        if clip.bounds.minY >= range.upperBound - 1 {
             scrollDirection = -1
-        } else if clip.bounds.minY <= minimumY + 1 {
+        } else if clip.bounds.minY <= range.lowerBound + 1 {
             scrollDirection = 1
         }
         sendScroll(-scrollDirection * 2_400 * CGFloat(min(interval, 0.05)), phase: scrollPhase, to: scrollView)

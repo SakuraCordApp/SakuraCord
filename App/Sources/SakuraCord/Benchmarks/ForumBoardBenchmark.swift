@@ -106,13 +106,12 @@ struct ForumFrameTimingSampler {
 
 /// Offline forum benchmark: after the first page loads, scrolls the board at a
 /// steady speed on the display link, then writes frame timing and layout
-/// stability. The board registers its scroll view with `register(scrollView:)`.
+/// stability.
 @MainActor
 enum ForumBoardBenchmark {
     private static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "ForumBenchmark")
     private static let scrollSpeed: CGFloat = 2_000
     private static let scrollDuration: TimeInterval = 15
-    private static weak var registeredScrollView: NSScrollView?
 
     private struct Result: Codable {
         var scrollDistance: Double = 0
@@ -125,14 +124,12 @@ enum ForumBoardBenchmark {
         var layout = ForumLayoutStabilityProbe.Summary()
     }
 
-    static func register(scrollView: NSScrollView) {
-        registeredScrollView = scrollView
-    }
-
     static func run(model: AppModel) async {
         ForumLayoutStabilityProbe.shared.reset()
         NSApp.activate(ignoringOtherApps: true)
-        guard await waitUntil({ model.hasLoadedForumPosts && !model.forumPosts.isEmpty }, seconds: 30),
+        guard await PerformanceBenchmarkHarness.waitUntil(
+            { model.hasLoadedForumPosts && !model.forumPosts.isEmpty }, seconds: 30
+        ),
               let scrollView = await findScrollView()
         else {
             logger.error("ForumBenchmark: the forum did not load or has no scroll view")
@@ -149,23 +146,12 @@ enum ForumBoardBenchmark {
         report(result)
     }
 
-    private static func waitUntil(_ condition: () -> Bool, seconds: Double) async -> Bool {
-        let deadline = ProcessInfo.processInfo.systemUptime + seconds
-        while !condition() {
-            guard ProcessInfo.processInfo.systemUptime < deadline else { return false }
-            do {
-                try await Task.sleep(for: .milliseconds(100))
-            } catch {
-                return false
-            }
-        }
-        return true
-    }
-
     private static func findScrollView() async -> NSScrollView? {
         var found: NSScrollView?
-        _ = await waitUntil({
-            found = registeredScrollView
+        _ = await PerformanceBenchmarkHarness.waitUntil({
+            found = PerformanceBenchmarkHarness.tallestScrollView(
+                in: PerformanceBenchmarkHarness.mainWindow?.contentView, where: { $0 is ForumBoardScrollView }
+            )
             return found.map { ($0.documentView?.frame.height ?? 0) > $0.contentView.bounds.height } ?? false
         }, seconds: 15)
         return found
@@ -185,11 +171,7 @@ enum ForumBoardBenchmark {
         ) { frame in
             sampler.record(interval: frame.interval)
             let clip = scrollView.contentView
-            let maximumY = max(
-                -scrollView.contentInsets.top,
-                (scrollView.documentView?.frame.height ?? 0) - clip.bounds.height
-                    + scrollView.contentInsets.bottom
-            )
+            let maximumY = PerformanceBenchmarkHarness.scrollRange(of: scrollView).upperBound
             // An interval is capped so one long hitch cannot skip the
             // posts that pagination is about to deliver.
             let proposedY = clip.bounds.minY + scrollSpeed * CGFloat(min(frame.interval, 0.1))

@@ -273,11 +273,6 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             RunLoop.main.add(timer, forMode: .common)
             minuteTimer = timer
         }
-        #if DEBUG
-        if let scrollView = enclosingScrollView {
-            ForumBoardBenchmark.register(scrollView: scrollView)
-        }
-        #endif
     }
 
     /// Card coordinates are top-down like the view's. AppKit may or may not

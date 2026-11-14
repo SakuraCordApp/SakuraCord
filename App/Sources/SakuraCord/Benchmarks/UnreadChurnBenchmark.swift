@@ -32,7 +32,7 @@ enum UnreadChurnBenchmark {
         NSApp.activate(ignoringOtherApps: true)
         try? await Task.sleep(for: .seconds(4))
         guard let provider, let currentUser = model.currentUser,
-              let view = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain })?.contentView
+              let view = PerformanceBenchmarkHarness.mainWindow?.contentView
         else {
             logger.error("Unread benchmark could not start")
             return

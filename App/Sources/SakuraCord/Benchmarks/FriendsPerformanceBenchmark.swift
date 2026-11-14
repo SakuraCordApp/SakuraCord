@@ -28,7 +28,7 @@ enum FriendsPerformanceBenchmark {
         try? await Task.sleep(for: .seconds(1))
         model.selectFriendsSection(.all)
         try? await Task.sleep(for: .seconds(3))
-        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
+        guard let window = PerformanceBenchmarkHarness.mainWindow,
               let scrollView = PerformanceBenchmarkHarness.tallestScrollView(
                   in: window.contentView, where: { $0.frame.width > 400 }
               ) else {
@@ -54,10 +54,15 @@ enum FriendsPerformanceBenchmark {
             if frame.elapsed > 0.2 { intervals.append(frame.interval * 1_000) }
             let workStart = ProcessInfo.processInfo.systemUptime
             let clip = scrollView.contentView
-            let minimumY = -scrollView.contentInsets.top
-            let maximumY = max(minimumY, (scrollView.documentView?.frame.height ?? 0) - clip.bounds.height + scrollView.contentInsets.bottom)
+            let range = PerformanceBenchmarkHarness.scrollRange(of: scrollView)
             var offsetY = clip.bounds.minY + direction * speed * CGFloat(min(frame.interval, 0.05))
-            if offsetY >= maximumY { offsetY = maximumY; direction = -1 } else if offsetY <= minimumY { offsetY = minimumY; direction = 1 }
+            if offsetY >= range.upperBound {
+                offsetY = range.upperBound
+                direction = -1
+            } else if offsetY <= range.lowerBound {
+                offsetY = range.lowerBound
+                direction = 1
+            }
             distance += abs(offsetY - clip.bounds.minY)
             clip.scroll(to: NSPoint(x: 0, y: offsetY))
             scrollView.reflectScrolledClipView(clip)

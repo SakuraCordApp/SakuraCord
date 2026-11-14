@@ -130,6 +130,34 @@ enum PerformanceBenchmarkHarness {
         return sorted[min(max(rank - 1, 0), sorted.count - 1)]
     }
 
+    /// The visible window that can become main.
+    static var mainWindow: NSWindow? {
+        NSApp.windows.first { $0.isVisible && $0.canBecomeMain }
+    }
+
+    /// Whether `condition` held within `seconds`, checking every 100 ms;
+    /// false once the task is cancelled.
+    static func waitUntil(_ condition: () -> Bool, seconds: Double) async -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + seconds
+        while !condition() {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { return false }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// The clip view origins `scrollView` can scroll between, insets included.
+    static func scrollRange(of scrollView: NSScrollView) -> ClosedRange<CGFloat> {
+        let minimumY = -scrollView.contentInsets.top
+        let maximumY = (scrollView.documentView?.frame.height ?? 0) - scrollView.contentView.bounds.height
+            + scrollView.contentInsets.bottom
+        return minimumY ... max(minimumY, maximumY)
+    }
+
     /// The scroll view under `root` that `matches` accepts holding the
     /// tallest document.
     static func tallestScrollView(in root: NSView?, where matches: (NSScrollView) -> Bool) -> NSScrollView? {

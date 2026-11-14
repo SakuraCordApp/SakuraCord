@@ -71,7 +71,7 @@ enum SideChatMotionBenchmark {
             return
         }
         guard let threads = await motionThreads(model: model, count: options.cycles + 1),
-              let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
+              let window = PerformanceBenchmarkHarness.mainWindow,
               let contentView = window.contentView
         else {
             logger.error("Side chat motion benchmark could not find its fixture threads")
@@ -112,13 +112,10 @@ enum SideChatMotionBenchmark {
         func perform(_ steps: [Step], cycle: Int) async {
             for step in steps {
                 recorder.recordAction(step, cycle: cycle)
-                let interval = AppPerformanceSignposts.signposter.beginInterval(
-                    "SideChatMotionAction", id: AppPerformanceSignposts.signposter.makeSignpostID(),
-                    "\(step.name, privacy: .public) \(step.variant ?? "-", privacy: .public) \(cycle, privacy: .public)"
-                )
-                step.perform(model)
-                try? await Task.sleep(for: .seconds(options.settleSeconds))
-                AppPerformanceSignposts.signposter.endInterval("SideChatMotionAction", interval)
+                await signpostAction(step.name, variant: step.variant ?? "-", cycle: cycle) {
+                    step.perform(model)
+                    try? await Task.sleep(for: .seconds(options.settleSeconds))
+                }
             }
         }
         for cycle in 0 ..< options.cycles {
@@ -190,12 +187,9 @@ enum SideChatMotionBenchmark {
                 try? await Task.sleep(for: .seconds(options.settleSeconds))
                 let step = Step(name: "window-resize", variant: variant, movingProbe: nil, edge: nil) { _ in }
                 recorder.recordAction(step, cycle: cycle)
-                let interval = AppPerformanceSignposts.signposter.beginInterval(
-                    "SideChatMotionAction", id: AppPerformanceSignposts.signposter.makeSignpostID(),
-                    "window-resize \(variant, privacy: .public) \(cycle, privacy: .public)"
-                )
-                await WindowResizeDriver(window: window).run(narrowing: 440, seconds: 1.6)
-                AppPerformanceSignposts.signposter.endInterval("SideChatMotionAction", interval)
+                await signpostAction("window-resize", variant: variant, cycle: cycle) {
+                    await WindowResizeDriver(window: window).run(narrowing: 440, seconds: 1.6)
+                }
                 try? await Task.sleep(for: .seconds(options.settleSeconds))
             }
         }
@@ -212,6 +206,16 @@ enum SideChatMotionBenchmark {
             await recorder.idle(seconds: Double(options.liveResizeSeconds), label: nil)
             recorder.recordsLiveResize = false
         }
+    }
+
+    /// Runs `action` inside a SideChatMotionAction signpost interval.
+    private static func signpostAction(_ name: String, variant: String, cycle: Int, _ action: () async -> Void) async {
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "SideChatMotionAction", id: AppPerformanceSignposts.signposter.makeSignpostID(),
+            "\(name, privacy: .public) \(variant, privacy: .public) \(cycle, privacy: .public)"
+        )
+        await action()
+        AppPerformanceSignposts.signposter.endInterval("SideChatMotionAction", interval)
     }
 
     /// One cycle: the member list as the reference motion, a cold and a warm
@@ -292,7 +296,7 @@ enum SideChatMotionBenchmark {
     /// a log line naming the window to capture at each step.
     private static func showFollowShowcase(model: AppModel) async {
         guard let post = await forumPosts(model: model)?.first,
-              let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain })
+              let window = PerformanceBenchmarkHarness.mainWindow
         else { return }
         model.open(post)
         try? await Task.sleep(for: .seconds(3))
@@ -308,29 +312,22 @@ enum SideChatMotionBenchmark {
     /// The offline forum's posts, once the forum is selected and loaded.
     private static func forumPosts(model: AppModel) async -> [ForumPost]? {
         model.selectedChannelID = ChannelID(rawValue: 220)
-        let deadline = ContinuousClock.now + .seconds(10)
-        while ContinuousClock.now < deadline {
-            if !model.forumPosts.isEmpty {
-                try? await Task.sleep(for: .seconds(1))
-                return model.forumPosts
-            }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        return nil
+        guard await PerformanceBenchmarkHarness.waitUntil({ !model.forumPosts.isEmpty }, seconds: 10) else { return nil }
+        try? await Task.sleep(for: .seconds(1))
+        return model.forumPosts
     }
 
     /// The fixture's motion threads, once their starters reached the channel.
     private static func motionThreads(model: AppModel, count: Int) async -> [MessageThreadSummary]? {
-        let deadline = ContinuousClock.now + .seconds(15)
-        while ContinuousClock.now < deadline {
+        var threads: [MessageThreadSummary] = []
+        guard await PerformanceBenchmarkHarness.waitUntil({
             var seen = Set<ChannelID>()
-            let threads = model.messages
+            threads = model.messages
                 .compactMap(\.thread)
                 .filter { $0.name.hasPrefix("Motion thread") && seen.insert($0.id).inserted }
-            if threads.count >= count { return Array(threads.prefix(count)) }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        return nil
+            return threads.count >= count
+        }, seconds: 15) else { return nil }
+        return Array(threads.prefix(count))
     }
 }
 
