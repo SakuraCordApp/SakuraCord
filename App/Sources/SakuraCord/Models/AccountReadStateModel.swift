@@ -1393,18 +1393,6 @@ extension AccountReadStateModel {
         // Scalar callers retain behavior; the app runs this same value-semantic
         // projection in a detached preparation task.
         unreadPresentationSource().projection(now: now)
-            ?? UnreadPresentationProjection(
-                unreadConversationCount: 0,
-                unreadByChannelID: [:],
-                mentionsByChannelID: [:],
-                newForumPostsByChannelID: [:],
-                unreadByGuildID: [:],
-                mentionsByGuildID: [:],
-                unreadCategoryIDsByGuild: [:],
-                directMessageUnread: false,
-                directMessageMentions: 0,
-                totalMentions: 0
-            )
     }
 
     func unreadPresentationSource() -> UnreadPresentationSource {

@@ -143,17 +143,19 @@ extension AccountReadStateModel {
             return false
         }
 
+        func projection(now: Date = .now) -> UnreadPresentationProjection {
+            projection(of: entries.values, now: now) {}
+        }
+
+        /// The projection, or nil once `cancellationCheck`, consulted every
+        /// 64 conversations, asks it to stop.
         func projection(
             now: Date = .now,
-            cancelsCooperatively: Bool = false,
-            cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
+            cancellationCheck: @Sendable () -> Bool
         ) -> UnreadPresentationProjection? {
-            projection(
-                of: entries.values,
-                now: now,
-                cancelsCooperatively: cancelsCooperatively,
-                cancellationCheck: cancellationCheck
-            )
+            try? projection(of: entries.values, now: now) { () throws(CancellationError) in
+                if cancellationCheck() { throw CancellationError() }
+            }
         }
 
         /// The projection of one server's conversations, or of direct
@@ -162,19 +164,15 @@ extension AccountReadStateModel {
         func projection(
             scope guildID: GuildID?,
             now: Date = .now
-        ) -> UnreadPresentationProjection? {
-            projection(
-                of: entries.values.lazy.filter { $0.guildID == guildID },
-                now: now
-            )
+        ) -> UnreadPresentationProjection {
+            projection(of: entries.values.lazy.filter { $0.guildID == guildID }, now: now) {}
         }
 
-        private func projection(
+        private func projection<Failure: Error>(
             of scope: some Sequence<Entry>,
             now: Date,
-            cancelsCooperatively: Bool = false,
-            cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
-        ) -> UnreadPresentationProjection? {
+            checkCancellation: () throws(Failure) -> Void
+        ) throws(Failure) -> UnreadPresentationProjection {
             var unreadConversationIDs: Set<ChannelID> = []
             var unreadByChannelID: [ChannelID: Bool] = [:]
             var mentionsByChannelID: [ChannelID: Int] = [:]
@@ -189,11 +187,8 @@ extension AccountReadStateModel {
             mentionsByChannelID.reserveCapacity(scope.underestimatedCount)
 
             for (offset, entry) in scope.enumerated() {
-                if cancelsCooperatively,
-                   offset.isMultiple(of: 64),
-                   cancellationCheck()
-                {
-                    return nil
+                if offset.isMultiple(of: 64) {
+                    try checkCancellation()
                 }
                 let channelID = entry.channelID
                 let isEligible = entry.isAccessible

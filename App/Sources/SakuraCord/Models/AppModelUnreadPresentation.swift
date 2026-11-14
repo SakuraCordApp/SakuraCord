@@ -44,7 +44,6 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
         }
         let readInterval = signposter.beginInterval("UnreadStateProjection")
         guard let unread = readState.projection(
-            cancelsCooperatively: true,
             cancellationCheck: {
                 Task.isCancelled
                     || (observesAppScrollWorkGate
@@ -392,7 +391,6 @@ extension AppModel {
         ) {
             readState.unreadPresentationSource().projection(scope: guildID)
         }
-        guard let unread else { return }
         let rowIDs = Set([channelID, entry.parentID].compactMap(\.self))
         var rows = visibleChannels
         var rowsChanged = false
