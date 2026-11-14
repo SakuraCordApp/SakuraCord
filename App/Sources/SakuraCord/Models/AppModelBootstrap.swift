@@ -211,8 +211,7 @@ extension AppModel {
                         "SAKURACORD_PERFORMANCE_ACCOUNT_ID"
                     ]
                     : nil
-            let launchDestination: SettingsLaunchDestination =
-                SettingsPreferenceStore.shared.rawValue(.launchDestination) ?? .lastVisitedConversation
+            let launchDestination: SettingsLaunchDestination = SettingsPreferenceStore.shared.rawValue(.launchDestination)
             if SettingsLaunchAccountPolicy.presentsAccountPicker(
                 destination: launchDestination,
                 performanceAccountID: preferredPerformanceAccountID

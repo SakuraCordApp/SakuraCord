@@ -807,11 +807,6 @@ final class SettingsPreferenceStore {
         ] {
             defaults.removeObject(forKey: key)
         }
-        let launchDestinationKey = "settings.launchDestination"
-        if let rawValue = defaults.object(forKey: launchDestinationKey) as? String,
-           SettingsLaunchDestination(rawValue: rawValue) == nil {
-            defaults.removeObject(forKey: launchDestinationKey)
-        }
         let legacyRoleKey = "settings.interface.showRoleColors"
         let roleKey = "settings.accessibility.roleColorDisplay"
         if defaults.object(forKey: roleKey) == nil,
@@ -850,37 +845,43 @@ final class SettingsPreferenceStore {
         defaults.set(true, forKey: key)
     }
 
-    func value(for id: SettingsControlID) -> SettingsPreferenceValue? {
-        guard let registration = registry.registration(id) else { return nil }
-        guard let stored = defaults.object(forKey: registration.key) else {
-            return registration.defaultValue
+    /// The stored value, or the default when nothing valid is stored.
+    func value(for id: SettingsControlID) -> SettingsPreferenceValue {
+        guard let registration = registry.registration(id) else {
+            preconditionFailure("\(id.rawValue) has no registered preference.")
         }
-        return registration.defaultValue.accepts(stored) ?? registration.defaultValue
-    }
-
-    func bool(_ id: SettingsControlID) -> Bool? {
-        guard case let .bool(stored) = value(for: id) else { return nil }
+        guard let stored = defaults.object(forKey: registration.key).flatMap(registration.defaultValue.accepts),
+              registration.accepts(stored)
+        else { return registration.defaultValue }
         return stored
     }
 
-    func integer(_ id: SettingsControlID) -> Int? {
-        guard case let .integer(stored) = value(for: id) else { return nil }
+    func bool(_ id: SettingsControlID) -> Bool {
+        guard case let .bool(stored) = value(for: id) else { preconditionFailure("\(id.rawValue) is not a Bool.") }
         return stored
     }
 
-    func double(_ id: SettingsControlID) -> Double? {
-        guard case let .double(stored) = value(for: id) else { return nil }
+    func integer(_ id: SettingsControlID) -> Int {
+        guard case let .integer(stored) = value(for: id) else { preconditionFailure("\(id.rawValue) is not an Int.") }
         return stored
     }
 
-    func string(_ id: SettingsControlID) -> String? {
-        guard case let .string(stored) = value(for: id) else { return nil }
+    func double(_ id: SettingsControlID) -> Double {
+        guard case let .double(stored) = value(for: id) else { preconditionFailure("\(id.rawValue) is not a Double.") }
         return stored
     }
 
-    /// A stored string as the value it names.
-    func rawValue<Value: RawRepresentable>(_ id: SettingsControlID) -> Value? where Value.RawValue == String {
-        string(id).flatMap(Value.init(rawValue:))
+    func string(_ id: SettingsControlID) -> String {
+        guard case let .string(stored) = value(for: id) else { preconditionFailure("\(id.rawValue) is not a String.") }
+        return stored
+    }
+
+    /// A stored string as the value it names. The registration validates the raw value.
+    func rawValue<Value: RawRepresentable>(_ id: SettingsControlID) -> Value where Value.RawValue == String {
+        guard let value = Value(rawValue: string(id)) else {
+            preconditionFailure("\(id.rawValue) does not validate \(Value.self).")
+        }
+        return value
     }
 
     func containsStoredValue(for id: SettingsControlID) -> Bool {
@@ -907,7 +908,7 @@ final class SettingsPreferenceStore {
             .filter(\.exports)
         var values: [String: SettingsPreferenceValue] = [:]
         for registration in registrations {
-            guard let value = value(for: registration.id) else { continue }
+            let value = value(for: registration.id)
             // A custom sound is a machine-local file bookmark, like the download folder,
             // so only its ID would travel and Import would silently restore Default.
             if value == .string(NotificationSoundLibrary.customID) { continue }

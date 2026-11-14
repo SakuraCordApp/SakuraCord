@@ -199,10 +199,9 @@ final class InterfaceSettingsStore {
 
     func load() -> InterfaceSettingsSnapshot {
         var value = InterfaceSettingsSnapshot.defaults
-        value.timestampFormat = preferences.rawValue(.timestampFormat) ?? value.timestampFormat
+        value.timestampFormat = preferences.rawValue(.timestampFormat)
         value.includesTimestampSeconds = preferences.bool(.timestampSeconds)
-            ?? value.includesTimestampSeconds
-        value.alwaysShowsTimestamps = preferences.bool(.alwaysShowTimestamps) ?? false
+        value.alwaysShowsTimestamps = preferences.bool(.alwaysShowTimestamps)
         return value
     }
 

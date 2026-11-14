@@ -41,7 +41,7 @@ final class SettingsTransferService {
         for (key, value) in values.sorted(by: { $0.key < $1.key }) {
             let id = SettingsControlID(rawValue: key)
             guard let registration = preferences.registry.registration(id), registration.exports,
-                  SettingsImportValidation.accepts(value, registration: registration)
+                  registration.accepts(value)
             else {
                 report.unsupportedKeys.append(key)
                 continue

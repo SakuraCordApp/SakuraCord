@@ -82,17 +82,10 @@ final class PrivacySafetySettingsStore {
 
     func load() -> PrivacySafetySettingsSnapshot {
         var value = PrivacySafetySettingsSnapshot.defaults
-        if let saved = preferences.bool(.removeMediaMetadata) {
-            value.removesMediaMetadata = saved
-        }
-        if let saved = preferences.bool(.anonymiseFileNames) {
-            value.anonymisesFileNames = saved
-        }
-        if let saved = preferences.bool(.privacyTypingIndicators) {
-            value.sendsTypingIndicators = saved
-        }
+        value.removesMediaMetadata = preferences.bool(.removeMediaMetadata)
+        value.anonymisesFileNames = preferences.bool(.anonymiseFileNames)
+        value.sendsTypingIndicators = preferences.bool(.privacyTypingIndicators)
         value.externalLinkConfirmationPolicy = preferences.rawValue(.externalLinkProtection)
-            ?? value.externalLinkConfirmationPolicy
         if case let .strings(domains) = preferences.value(for: .trustedDomains) {
             value.trustedDomains = ExternalLinkTrustedDomain.normalizedList(domains)
         }

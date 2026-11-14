@@ -174,48 +174,18 @@ final class AppearanceSettingsStore {
     }
 
     func load() -> AppearanceSettingsSnapshot {
-        let colorScheme: AppColorScheme
-        if let rawValue = preferences.string(.appColorScheme) {
-            colorScheme = AppColorScheme(rawValue: rawValue) ?? .system
-        } else {
-            colorScheme = .system
-        }
-        let appearance: ComposerBarAppearance
-        if let rawValue = preferences.string(.composerBarAppearance) {
-            appearance = ComposerBarAppearance(rawValue: rawValue) ?? .defaultStyle
-        } else {
-            appearance = .defaultStyle
-        }
-        func messageAppearance(_ id: SettingsControlID) -> MessageAppearance {
-            guard let rawValue = preferences.string(id) else { return .defaultStyle }
-            return MessageAppearance(rawValue: rawValue) ?? .defaultStyle
-        }
-        let messageSpacing: Double
-        if let value = preferences.double(.messageDensity) {
-            messageSpacing = value
-        } else {
-            messageSpacing = AppearanceSettingsSnapshot.defaults.messageSpacing
-        }
         var value = AppearanceSettingsSnapshot(
-            colorScheme: colorScheme,
-            composerBarAppearance: appearance,
-            directMessageAppearance: messageAppearance(.directMessageAppearance),
-            groupMessageAppearance: messageAppearance(.groupMessageAppearance),
-            serverMessageAppearance: messageAppearance(.messageAppearance),
-            messageSpacing: messageSpacing
+            colorScheme: preferences.rawValue(.appColorScheme),
+            composerBarAppearance: preferences.rawValue(.composerBarAppearance),
+            directMessageAppearance: preferences.rawValue(.directMessageAppearance),
+            groupMessageAppearance: preferences.rawValue(.groupMessageAppearance),
+            serverMessageAppearance: preferences.rawValue(.messageAppearance),
+            messageSpacing: preferences.double(.messageDensity)
         )
-        if let stored = preferences.string(.composerIcons) {
-            value.composerIcons = ComposerIconLayout(storageValue: stored)
-        }
-        if let stored = preferences.double(.windowOpacity) {
-            value.windowOpacity = stored
-        }
-        if let stored = preferences.double(.interfaceSize) {
-            value.interfaceSize = stored
-        }
-        if let stored = preferences.double(.messageFontSize) {
-            value.messageTextSize = stored
-        }
+        value.composerIcons = ComposerIconLayout(storageValue: preferences.string(.composerIcons))
+        value.windowOpacity = preferences.double(.windowOpacity)
+        value.interfaceSize = preferences.double(.interfaceSize)
+        value.messageTextSize = preferences.double(.messageFontSize)
         value.normalize()
         return value
     }

@@ -203,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let confirmsActiveWork = SettingsPreferenceStore.shared.bool(.confirmQuitActiveWork) != false
+        let confirmsActiveWork = SettingsPreferenceStore.shared.bool(.confirmQuitActiveWork)
         let activities = model?.generalQuitActivities ?? []
         guard GeneralQuitConfirmationPolicy.shouldConfirm(
             isEnabled: confirmsActiveWork,

@@ -35,14 +35,10 @@ final class StorageDownloadsSettingsStore {
 
     func load() -> StorageDownloadsSettingsSnapshot {
         var value = StorageDownloadsSettingsSnapshot.defaults
-        if let rawLimit = preferences.integer(.localStorageLimit),
-           let limit = LocalStorageLimit(rawValue: Int64(rawLimit))
-        {
+        if let limit = LocalStorageLimit(rawValue: Int64(preferences.integer(.localStorageLimit))) {
             value.localStorageLimit = limit
         }
-        if let reveals = preferences.bool(.revealCompletedDownloads) {
-            value.revealsCompletedDownloads = reveals
-        }
+        value.revealsCompletedDownloads = preferences.bool(.revealCompletedDownloads)
         return value
     }
 
@@ -68,10 +64,8 @@ final class StorageDownloadsSettingsStore {
     }
 
     func resolvedDefaultFolder() throws -> URL? {
-        guard let encoded = preferences.string(.downloadFolderBookmark),
-              !encoded.isEmpty,
-              let data = Data(base64Encoded: encoded)
-        else { return nil }
+        let encoded = preferences.string(.downloadFolderBookmark)
+        guard !encoded.isEmpty, let data = Data(base64Encoded: encoded) else { return nil }
         var isStale = false
         let url = try URL(
             resolvingBookmarkData: data,
@@ -86,10 +80,8 @@ final class StorageDownloadsSettingsStore {
     }
 
     var defaultFolderName: String? {
-        guard let value = preferences.string(.downloadFolderName),
-              !value.isEmpty
-        else { return nil }
-        return value
+        let value = preferences.string(.downloadFolderName)
+        return value.isEmpty ? nil : value
     }
 
     func recordMediaCacheClear(at date: Date) {
@@ -97,10 +89,8 @@ final class StorageDownloadsSettingsStore {
     }
 
     var lastMediaCacheClearDate: Date? {
-        guard let value = preferences.double(.mediaCacheLastCleared),
-              value > 0
-        else { return nil }
-        return Date(timeIntervalSince1970: value)
+        let value = preferences.double(.mediaCacheLastCleared)
+        return value > 0 ? Date(timeIntervalSince1970: value) : nil
     }
 }
 

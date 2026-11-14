@@ -18,9 +18,9 @@ final class TranslationSettingsStore {
 
     func load() -> TranslationSettingsSnapshot {
         var value = TranslationSettingsSnapshot.defaults
-        if let saved = preferences.bool(.translationEnabled) { value.isEnabled = saved }
-        if let saved = preferences.string(.translationMessageLanguage) { value.messageLanguage = saved }
-        if let saved = preferences.string(.translationDraftLanguage) { value.draftLanguage = saved }
+        value.isEnabled = preferences.bool(.translationEnabled)
+        value.messageLanguage = preferences.string(.translationMessageLanguage)
+        value.draftLanguage = preferences.string(.translationDraftLanguage)
         return value
     }
 

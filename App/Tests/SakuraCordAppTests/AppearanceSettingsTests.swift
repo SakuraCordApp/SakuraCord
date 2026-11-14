@@ -862,9 +862,9 @@ private final class ThemeIntermediateFrameProbe {
     let registration = try #require(
         SettingsPreferenceRegistry.foundation.registrations.first { $0.id == .interfaceSize }
     )
-    #expect(SettingsImportValidation.accepts(.double(0.8), registration: registration))
-    #expect(!SettingsImportValidation.accepts(.double(2), registration: registration))
-    #expect(!SettingsImportValidation.accepts(.double(.nan), registration: registration))
+    #expect(registration.accepts(.double(0.8)))
+    #expect(!registration.accepts(.double(2)))
+    #expect(!registration.accepts(.double(.nan)))
 }
 
 @MainActor

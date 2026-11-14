@@ -720,12 +720,7 @@ final class SakuraCordThemeSettingsStore {
 
     func load() -> SakuraCordGradientTheme {
         if preferences.containsStoredValue(for: .themeDesigner) {
-            if let rawValue = preferences.string(.themeDesigner),
-               let stored = SakuraCordGradientTheme(storageValue: rawValue)
-            {
-                return stored
-            }
-            return .defaultTheme
+            return SakuraCordGradientTheme(storageValue: preferences.string(.themeDesigner)) ?? .defaultTheme
         }
 
         guard preferences.containsStoredValue(for: .legacyAccentColorMigration) else {

@@ -27,17 +27,17 @@ final class FeaturesSettingsStore {
 
     func load() -> FeaturesSettingsSnapshot {
         var value = FeaturesSettingsSnapshot.defaults
-        if let saved = preferences.bool(.readAllButton) { value.readAllButton = saved }
-        if let saved = preferences.bool(.channelManagement) { value.channelManagement = saved }
-        if let saved = preferences.bool(.showHiddenChannels) { value.showHiddenChannels = saved }
-        if let saved = preferences.bool(.fakeNitroEmojis) { value.fakeNitroEmojis = saved }
-        if let saved = preferences.bool(.fakeNitroStickers) { value.fakeNitroStickers = saved }
-        if let saved = preferences.bool(.fakeNitroSoundboard) { value.fakeNitroSoundboard = saved }
-        if let saved = preferences.bool(.fakeNitroStreamQuality) { value.fakeNitroStreamQuality = saved }
-        if let saved = preferences.bool(.unlimitedFavorites) { value.unlimitedFavorites = saved }
-        if let saved = preferences.bool(.voiceMessageRecording) { value.voiceMessageRecording = saved }
-        if let saved = preferences.bool(.messageHoverActions) { value.messageHoverActions = saved }
-        if let saved = preferences.bool(.scrollToBottomButton) { value.scrollToBottomButton = saved }
+        value.readAllButton = preferences.bool(.readAllButton)
+        value.channelManagement = preferences.bool(.channelManagement)
+        value.showHiddenChannels = preferences.bool(.showHiddenChannels)
+        value.fakeNitroEmojis = preferences.bool(.fakeNitroEmojis)
+        value.fakeNitroStickers = preferences.bool(.fakeNitroStickers)
+        value.fakeNitroSoundboard = preferences.bool(.fakeNitroSoundboard)
+        value.fakeNitroStreamQuality = preferences.bool(.fakeNitroStreamQuality)
+        value.unlimitedFavorites = preferences.bool(.unlimitedFavorites)
+        value.voiceMessageRecording = preferences.bool(.voiceMessageRecording)
+        value.messageHoverActions = preferences.bool(.messageHoverActions)
+        value.scrollToBottomButton = preferences.bool(.scrollToBottomButton)
         return value
     }
 

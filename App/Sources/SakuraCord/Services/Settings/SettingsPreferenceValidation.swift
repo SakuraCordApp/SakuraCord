@@ -1,24 +1,25 @@
 import Foundation
 import MediaPipeline
 
-nonisolated enum SettingsImportValidation {
-    static func accepts(_ value: SettingsPreferenceValue, registration: SettingsPreferenceRegistration) -> Bool {
-        // Swift's NSNumber bridging can treat 1 as true. Match the archive's declared type exactly.
-        switch (registration.defaultValue, value) {
+nonisolated extension SettingsPreferenceRegistration {
+    /// Whether a stored or imported value is one this setting can hold.
+    func accepts(_ value: SettingsPreferenceValue) -> Bool {
+        // Swift's NSNumber bridging can treat 1 as true. Match the declared type exactly.
+        switch (defaultValue, value) {
         case (.bool, .bool), (.integer, .integer), (.double, .double), (.string, .string), (.strings, .strings): break
         default: return false
         }
         if case let .double(number) = value, !number.isFinite { return false }
         switch value {
-        case let .string(raw): return acceptsString(raw, id: registration.id)
-        case let .double(number): return acceptsDouble(number, id: registration.id)
+        case let .string(raw): return Self.acceptsString(raw, id: id)
+        case let .double(number): return Self.acceptsDouble(number, id: id)
         case let .integer(number):
-            switch registration.id {
+            switch id {
             case .localStorageLimit: return LocalStorageLimit(rawValue: Int64(number)) != nil
             case .voiceScreenShareFrameRate: return ScreenShareFrameRate(rawValue: number) != nil
             default: return true
             }
-        case let .strings(domains) where registration.id == .trustedDomains:
+        case let .strings(domains) where id == .trustedDomains:
             return domains.allSatisfy { ExternalLinkTrustedDomain.normalized($0) != nil }
         default: return true
         }

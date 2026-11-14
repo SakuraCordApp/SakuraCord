@@ -70,37 +70,26 @@ final class AccessibilitySettingsStore {
 
     func load() -> AccessibilitySettingsSnapshot {
         var value = AccessibilitySettingsSnapshot.defaults
-        value.underlinesLinks = preferences.bool(.underlineLinks) ?? false
-        value.roleColorDisplay = preferences.rawValue(.roleColorDisplay) ?? .inNames
+        value.underlinesLinks = preferences.bool(.underlineLinks)
+        value.roleColorDisplay = preferences.rawValue(.roleColorDisplay)
         value.disablesProfileEffects = preferences.bool(.accessibilityDisableProfileEffects)
-            ?? value.disablesProfileEffects
         value.disablesNameplates = preferences.bool(.accessibilityDisableNameplates)
-            ?? value.disablesNameplates
-        value.disablesAvatarDecorations = preferences.bool(.accessibilityDisableAvatarDecorations) ?? value.disablesAvatarDecorations
+        value.disablesAvatarDecorations = preferences.bool(.accessibilityDisableAvatarDecorations)
         value.disablesProfileFrames = preferences.bool(.accessibilityDisableProfileFrames)
-            ?? value.disablesProfileFrames
         value.disablesNameStyles = preferences.bool(.accessibilityDisableNameStyles)
-            ?? value.disablesNameStyles
         value.disablesProfileGradients = preferences.bool(.accessibilityDisableProfileGradients)
-            ?? value.disablesProfileGradients
         value.disablesServerTags = preferences.bool(.accessibilityDisableServerTags)
-            ?? value.disablesServerTags
         value.announcesTimestamps = preferences.bool(.accessibilityAnnounceTimestamp)
-            ?? value.announcesTimestamps
         value.announcesEditedStatus = preferences.bool(.accessibilityAnnounceEdited)
-            ?? value.announcesEditedStatus
         value.announcesReactionCounts = preferences.bool(.accessibilityAnnounceReactions)
-            ?? value.announcesReactionCounts
         value.announcesAttachmentTypes = preferences.bool(.accessibilityAnnounceAttachmentTypes)
-            ?? value.announcesAttachmentTypes
         value.announcesNewMessages = preferences.bool(.accessibilityAnnounceNewMessages)
-            ?? value.announcesNewMessages
-        value.disablesMessageSendingAnimations = preferences.bool(.accessibilityDisableSendAnimations) ?? false
-        value.disablesAllAnimations = preferences.bool(.accessibilityDisableAllAnimations) ?? false
-        value.disablesSidebarAnimations = preferences.bool(.accessibilityDisableSidebarAnimations) ?? false
-        value.disablesSideChatAnimations = preferences.bool(.accessibilityDisableSideChatAnimations) ?? false
-        value.disablesOverlayAnimations = preferences.bool(.accessibilityDisableOverlayAnimations) ?? false
-        value.disablesOwnCosmetics = preferences.bool(.accessibilityDisableOwnCosmetics) ?? false
+        value.disablesMessageSendingAnimations = preferences.bool(.accessibilityDisableSendAnimations)
+        value.disablesAllAnimations = preferences.bool(.accessibilityDisableAllAnimations)
+        value.disablesSidebarAnimations = preferences.bool(.accessibilityDisableSidebarAnimations)
+        value.disablesSideChatAnimations = preferences.bool(.accessibilityDisableSideChatAnimations)
+        value.disablesOverlayAnimations = preferences.bool(.accessibilityDisableOverlayAnimations)
+        value.disablesOwnCosmetics = preferences.bool(.accessibilityDisableOwnCosmetics)
         return value
     }
 
