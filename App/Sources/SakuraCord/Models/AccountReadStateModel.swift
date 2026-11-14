@@ -651,7 +651,6 @@ extension AccountReadStateModel {
     }
 
     func inheritedNotificationLevel(for channel: Channel) -> MessageNotificationLevel {
-        let guildSettings = settingsByGuild[channel.guildID]
         let parentOverride = channel.categoryID.flatMap { parentID in
             notificationOverride(channelID: parentID, guildID: channel.guildID)
         }
@@ -660,15 +659,21 @@ extension AccountReadStateModel {
         {
             return level
         }
-        let configuredGuildLevel = guildSettings?.messageNotifications ?? .inherit
-        if configuredGuildLevel != .inherit {
-            return configuredGuildLevel
+        guard let guildID = channel.guildID else {
+            let configured = settingsByGuild[nil]?.messageNotifications ?? .inherit
+            return configured != .inherit ? configured : .allMessages
         }
-        if channel.guildID == nil {
-            return .allMessages
+        return inheritedNotificationLevel(forCategoryIn: guildID)
+    }
+
+    func inheritedNotificationLevel(
+        forCategoryIn guildID: GuildID
+    ) -> MessageNotificationLevel {
+        let configured = settingsByGuild[guildID]?.messageNotifications ?? .inherit
+        if configured != .inherit {
+            return configured
         }
-        return channel.guildID.flatMap { defaultNotificationLevelByGuild[$0] }
-            ?? .onlyMentions
+        return defaultNotificationLevelByGuild[guildID] ?? .onlyMentions
     }
 
     func updateCurrentUserRoles(_ roleIDs: Set<RoleID>, guildID: GuildID) {

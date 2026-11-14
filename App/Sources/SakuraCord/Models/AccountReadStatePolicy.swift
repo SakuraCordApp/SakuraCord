@@ -69,16 +69,6 @@ extension AccountReadStateModel {
         )?.isCollapsed == true
     }
 
-    func inheritedNotificationLevel(
-        forCategoryIn guildID: GuildID
-    ) -> MessageNotificationLevel {
-        let configured = settingsByGuild[guildID]?.messageNotifications ?? .inherit
-        if configured != .inherit {
-            return configured
-        }
-        return unreadPolicySource.defaultNotificationLevelByGuild[guildID] ?? .onlyMentions
-    }
-
     /// Discord acknowledges a forum up to the current time, so its boundary
     /// covers every post and reply so far, and any other conversation up to
     /// its newest message.
