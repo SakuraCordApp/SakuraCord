@@ -135,4 +135,27 @@ extension DiscordRESTProvider {
         else { return }
         update.thread = .some(thread)
     }
+
+    /// Join/Follow or Leave/Unfollow. Discord's THREAD_MEMBERS_UPDATE carries
+    /// the authoritative member; the confirmed response updates the catalogue first.
+    public func setThreadMembership(
+        threadID: ChannelID,
+        isJoined: Bool,
+        location: ThreadMembershipLocation
+    ) async throws {
+        advanceThreadMembershipRevision(threadID)
+        let epoch = threadRevisions.membershipEpochs[threadID]
+        let (data, response) = try await perform(
+            "/channels/\(threadID)/thread-members/@me",
+            method: isJoined ? "POST" : "DELETE",
+            query: [URLQueryItem(name: "location", value: location.rawValue)],
+            body: nil
+        )
+        if Self.discordErrorCode(from: data) == 30033 { throw ChatProviderError.threadMemberLimitReached }
+        try validateEmptyResponse(data, response)
+        // A Gateway membership event or a newer join/leave supersedes this
+        // answer; an overlapping read does not.
+        guard threadRevisions.membershipEpochs[threadID] == epoch else { return }
+        reconcileConfirmedThreadMembership(threadID: threadID, isJoined: isJoined)
+    }
 }

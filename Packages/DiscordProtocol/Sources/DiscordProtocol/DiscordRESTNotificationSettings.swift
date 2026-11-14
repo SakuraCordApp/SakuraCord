@@ -211,3 +211,79 @@ public extension DiscordRESTProvider {
         return settings
     }
 }
+
+extension DiscordRESTProvider {
+    public func updateForumPostNotificationLevel(
+        _ post: ForumPost,
+        level: MessageNotificationLevel
+    ) async throws {
+        var settings = try await joinedThreadNotificationSettings(for: post)
+        settings.flags = settings.flags(setting: level)
+        try await patchThreadNotificationSettings(
+            threadID: post.id,
+            body: ["flags": .number(Double(settings.flags))]
+        )
+        updateCachedThreadNotificationSettings(settings, for: post)
+    }
+
+    public func updateForumPostMute(
+        _ post: ForumPost,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        var settings = try await joinedThreadNotificationSettings(for: post)
+        try await patchThreadNotificationSettings(threadID: post.id, body: Self.muteSettings(isMuted: isMuted, until: until))
+        settings.setMuted(isMuted, until: until)
+        updateCachedThreadNotificationSettings(settings, for: post)
+    }
+
+    func joinedThreadNotificationSettings(
+        for post: ForumPost
+    ) async throws -> ThreadNotificationSettings {
+        if let cached = post.thread.parentID.flatMap({
+            cachedForumPosts[$0]?[post.id]?.thread.notificationSettings
+        }) ?? post.thread.notificationSettings {
+            return cached
+        }
+        // The current Discord client joins an unjoined thread once before it
+        // applies member-scoped notification settings.
+        try await requestEmpty(
+            "/channels/\(post.id)/thread-members/@me",
+            method: "POST",
+            query: [
+                URLQueryItem(
+                    name: "location",
+                    value: "Change Notification Settings"
+                )
+            ]
+        )
+        let joined = ThreadNotificationSettings()
+        updateCachedThreadNotificationSettings(joined, for: post)
+        return joined
+    }
+
+    func patchThreadNotificationSettings(
+        threadID: ChannelID,
+        body: [String: JSONValue]
+    ) async throws {
+        try await requestEmpty(
+            "/channels/\(threadID)/thread-members/@me/settings",
+            method: "PATCH",
+            body: body
+        )
+    }
+
+    func updateCachedThreadNotificationSettings(
+        _ settings: ThreadNotificationSettings,
+        for post: ForumPost
+    ) {
+        guard let parentID = post.thread.parentID else { return }
+        var cached = cachedForumPosts[parentID]?[post.id] ?? post
+        cached.thread.notificationSettings = settings
+        advanceThreadMembershipRevision(post.id)
+        cachedForumPosts[parentID, default: [:]][post.id] = cached
+        reconcileJoinedThread(cached.thread)
+        publishForumPosts(parentID: parentID)
+        publishActiveJoinedThreads()
+    }
+}
