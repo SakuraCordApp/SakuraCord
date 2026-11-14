@@ -1032,9 +1032,7 @@ extension AppModel {
             retainedGuildIDs.contains($0.key)
         }
         for guildID in onboarding.members.keys where !retainedGuildIDs.contains(guildID) {
-            onboarding.members[guildID] = nil
-            onboarding.timeoutExpiryTasks.removeValue(forKey: guildID)?.cancel()
-            onboarding.timeoutRevisions[guildID] = nil
+            onboarding.removeMembership(in: guildID)
         }
         readState.retainGuilds(retainedGuildIDs)
         readState.merge(guilds: guilds)

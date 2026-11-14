@@ -54,9 +54,29 @@ final class GuildOnboardingStore {
         isChannelSearchFocused = false
         channelSelections = [:]
     }
+
+    /// Forgets the account's membership in a guild it no longer has, with
+    /// its timeout tracking.
+    func removeMembership(in guildID: GuildID) {
+        members[guildID] = nil
+        timeoutExpiryTasks.removeValue(forKey: guildID)?.cancel()
+        timeoutRevisions[guildID] = nil
+    }
 }
 
 extension AppModel {
+    func installBootstrapMembership(_ value: BootstrapSnapshot) {
+        onboarding.members = value.currentMembersByGuildID
+        let bootstrapMembers = onboarding.bootstrapMembers
+        onboarding.bootstrapMembers = [:]
+        for guild in value.guilds {
+            if let member = bootstrapMembers[guild.id]?[value.currentUser.id] {
+                receiveOnboardingMember(member, guildID: guild.id)
+            }
+        }
+        reconcileGuildTimeoutExpiries()
+    }
+
     nonisolated static func resolveConversationAccess(
         for channel: Channel,
         permissionBasis: ConversationPermissionBasis?

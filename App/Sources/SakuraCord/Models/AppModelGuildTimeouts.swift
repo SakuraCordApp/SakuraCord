@@ -2,18 +2,6 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
-    func installBootstrapMembership(_ value: BootstrapSnapshot) {
-        onboarding.members = value.currentMembersByGuildID
-        let bootstrapMembers = onboarding.bootstrapMembers
-        onboarding.bootstrapMembers = [:]
-        for guild in value.guilds {
-            if let member = bootstrapMembers[guild.id]?[value.currentUser.id] {
-                receiveOnboardingMember(member, guildID: guild.id)
-            }
-        }
-        reconcileGuildTimeoutExpiries()
-    }
-
     func guildTimeoutUntil(in channelID: ChannelID, guildID: GuildID? = nil, now: Date = .now) -> Date? {
         guard let guildID = guildID ?? messagePermissionContext(for: channelID)?.channel.guildID,
               let until = onboardingMember(in: guildID)?.communicationDisabledUntil,

@@ -53,9 +53,7 @@ extension AppModel {
         serverRailPresentation.updateAvailableGuildIDs(serverRailGuildsByID.keys)
         for guildID in previous.keys where serverRailGuildsByID[guildID] == nil {
             onboarding.entries[guildID] = nil
-            onboarding.members[guildID] = nil
-            onboarding.timeoutExpiryTasks.removeValue(forKey: guildID)?.cancel()
-            onboarding.timeoutRevisions[guildID] = nil
+            onboarding.removeMembership(in: guildID)
             onboarding.guides[guildID] = nil
             onboarding.channelSelections[guildID] = nil
             if onboarding.presentedGuildID == guildID { onboarding.presentedGuildID = nil }
