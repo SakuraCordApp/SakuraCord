@@ -309,8 +309,7 @@ extension DiscordRESTProvider {
     }
 
     func cancelSoundboardRequests() {
-        soundboardRequestTimeoutTasks.values.forEach { $0.cancel() }
-        soundboardRequestTimeoutTasks = [:]
+        soundboardRequestTimeoutTasks.cancelAll()
         let requests = pendingSoundboardRequests.values
         pendingSoundboardRequests = [:]
         for request in requests {

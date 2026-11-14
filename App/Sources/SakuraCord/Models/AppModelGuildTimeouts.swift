@@ -14,8 +14,7 @@ extension AppModel {
     }
 
     func reconcileGuildTimeoutExpiries() {
-        for task in onboarding.timeoutExpiryTasks.values { task.cancel() }
-        onboarding.timeoutExpiryTasks = [:]
+        onboarding.timeoutExpiryTasks.cancelAll()
         for guildID in onboarding.members.keys { scheduleGuildTimeoutExpiry(in: guildID) }
     }
 

@@ -199,10 +199,7 @@ extension AppModel {
 
     func resetAppSounds() {
         resetPrivateCallActions()
-        for task in outgoingPrivateCallRingTimeoutTasks.values {
-            task.cancel()
-        }
-        outgoingPrivateCallRingTimeoutTasks = [:]
+        outgoingPrivateCallRingTimeoutTasks.cancelAll()
         locallyStartedOutgoingPrivateCallRings = []
         soundPlayer.stopAll()
     }

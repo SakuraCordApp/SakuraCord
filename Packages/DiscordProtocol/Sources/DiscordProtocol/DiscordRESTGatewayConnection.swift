@@ -196,8 +196,7 @@ extension DiscordRESTProvider {
         // Teardown flushes below, and saves already awaiting a sheet, must
         // fail rather than wait on a human.
         captchaHandler = nil
-        for presentation in captchaPresentations.values { presentation.cancel() }
-        captchaPresentations = [:]
+        captchaPresentations.cancelAll()
         resetMemberListSubscriptionWork()
         await finishGuildFoldersEdits()
         await finishFavoritesEdits()
@@ -216,29 +215,14 @@ extension DiscordRESTProvider {
         cancelStartupSearchCacheLoad()
         await flushForwardSearchPeopleCachePersistence()
         failInitialGatewaySnapshot(CancellationError())
-        for task in forumCatalogueTasks.values {
-            task.cancel()
-        }
-        forumCatalogueTasks = [:]
+        forumCatalogueTasks.cancelAll()
         forumCatalogueTaskIDs = [:]
-        for task in messageSendTasks.values {
-            task.cancel()
-        }
-        messageSendTasks = [:]
-        for task in attachmentPreuploads.values {
-            task.cancel()
-        }
-        attachmentPreuploads = [:]
-        for task in forumPreviewHydrationTasks.values {
-            task.cancel()
-        }
-        forumPreviewHydrationTasks = [:]
+        messageSendTasks.cancelAll()
+        attachmentPreuploads.cancelAll()
+        forumPreviewHydrationTasks.cancelAll()
         forumPreviewHydrationTaskIDs = [:]
         forumPreviewHydrationQueues = [:]
-        for task in applicationCommandCatalogTasks.values {
-            task.cancel()
-        }
-        applicationCommandCatalogTasks = [:]
+        applicationCommandCatalogTasks.cancelAll()
         cachedApplicationCommandCatalogs = [:]
         cancelPendingInteractionRequests()
         cancelPendingMemberRequests(error: CancellationError())
@@ -252,8 +236,7 @@ extension DiscordRESTProvider {
         }
         activeVoiceConnection = nil
         cancelApplicationStreamNegotiations(error: CancellationError())
-        applicationStreamNegotiationTimeoutTasks.values.forEach { $0.cancel() }
-        applicationStreamNegotiationTimeoutTasks = [:]
+        applicationStreamNegotiationTimeoutTasks.cancelAll()
         applicationStreamConnections = [:]
         applicationStreams = [:]
         gatewayEventTask?.cancel()
@@ -568,10 +551,7 @@ extension DiscordRESTProvider {
     }
 
     func cancelPendingInteractionRequests() {
-        for task in autocompleteTimeoutTasks.values {
-            task.cancel()
-        }
-        autocompleteTimeoutTasks = [:]
+        autocompleteTimeoutTasks.cancelAll()
         autocompleteOptionTypes = [:]
         autocompleteNonceOrder = []
         pendingInteractionContexts = [:]

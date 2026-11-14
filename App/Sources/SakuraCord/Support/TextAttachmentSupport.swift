@@ -1,4 +1,5 @@
 import AppKit
+import SakuraCordModels
 
 extension NSTextView {
     func attachmentSelectionRects() -> [NSRect] {
@@ -135,10 +136,7 @@ final class InlineAttachmentImageLoader {
     }
 
     func cancel() {
-        for task in emojiTasks.values {
-            task.cancel()
-        }
-        emojiTasks.removeAll()
+        emojiTasks.cancelAll()
         for load in mentionAvatarTasks.values {
             load.task.cancel()
         }

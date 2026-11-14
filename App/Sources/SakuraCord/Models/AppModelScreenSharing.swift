@@ -506,8 +506,7 @@ extension AppModel {
         applicationStreamFrames = [:]
         applicationStreamOperationGenerations = [:]
         applicationStreamDemandGenerations = [:]
-        for task in applicationStreamDemandUpdateTasks.values { task.cancel() }
-        applicationStreamDemandUpdateTasks = [:]
+        applicationStreamDemandUpdateTasks.cancelAll()
         applicationStreamDemandIntents = [:]
         manuallyStoppedApplicationStreamKeys = []
         localApplicationStreamKey = nil

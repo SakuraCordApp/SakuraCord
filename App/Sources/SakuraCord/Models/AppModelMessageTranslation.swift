@@ -45,8 +45,7 @@ extension AppModel {
     }
 
     func clearMessageTranslations() {
-        for task in translation.messageTasks.values { task.cancel() }
-        translation.messageTasks.removeAll()
+        translation.messageTasks.cancelAll()
         guard !translation.messages.isEmpty else { return }
         translation.messages.removeAll()
         invalidateTimelinePresentation()
