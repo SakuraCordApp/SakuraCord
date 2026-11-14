@@ -278,11 +278,11 @@ private struct ScreenSharePreviewFooter: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(includesAudio ? Color.primary : Color(hex: 0xF23F43))
+        .foregroundStyle(includesAudio ? Color.primary : MentionRed.color)
         .glassEffect(
             includesAudio
                 ? .regular.interactive()
-                : .regular.tint(Color(hex: 0xF23F43).opacity(0.18)).interactive(),
+                : .regular.tint(MentionRed.color.opacity(0.18)).interactive(),
             in: Capsule()
         )
         .disabled(model.isStartingScreenShare)
@@ -302,7 +302,7 @@ private struct ScreenSharePreviewFooter: View {
             .buttonStyle(.plain)
             .foregroundStyle(.white)
             .glassEffect(
-                .regular.tint(Color(hex: 0xDA373C)).interactive(),
+                .regular.tint(Color.leaveCallRed).interactive(),
                 in: Capsule()
             )
         } else {

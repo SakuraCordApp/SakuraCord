@@ -159,7 +159,7 @@ struct VoiceSidebarControlPanel: View {
     private var statusColor: Color {
         switch model.voiceSessionState {
         case .connecting, .reconnecting: Color(hex: 0xF0B232)
-        case .failed, .disconnected: Color(hex: 0xDA373C)
+        case .failed, .disconnected: Color.leaveCallRed
         default: Color(hex: 0x23A55A)
         }
     }
@@ -248,7 +248,7 @@ struct SidebarVoiceGlassButton: View {
     }
 
     private var effectiveTint: Color? {
-        tintColor ?? (isAlert ? Color(hex: 0xF23F43) : nil)
+        tintColor ?? (isAlert ? MentionRed.color : nil)
     }
 
     private var foregroundColor: Color {
@@ -257,7 +257,7 @@ struct SidebarVoiceGlassButton: View {
 
     private var glass: Glass {
         if role == .destructive {
-            return .regular.tint(Color(hex: 0xDA373C)).interactive()
+            return .regular.tint(Color.leaveCallRed).interactive()
         }
         if let effectiveTint {
             return .regular.tint(effectiveTint.opacity(0.18)).interactive()
@@ -456,7 +456,7 @@ private struct ScreenShareControlsPopover: View {
             actionRow(
                 title: "Stop Sharing",
                 systemImage: "rectangle.on.rectangle.slash",
-                color: Color(hex: 0xF23F43)
+                color: MentionRed.color
             ) {
                 dismiss()
                 Task { await model.stopScreenSharing() }
@@ -675,7 +675,7 @@ private struct CallDockSplitButton: View {
     }
 
     private var effectiveTint: Color? {
-        tintColor ?? (isAlert ? Color(hex: 0xF23F43) : nil)
+        tintColor ?? (isAlert ? MentionRed.color : nil)
     }
 }
 
@@ -701,7 +701,7 @@ private struct CallDockLeaveButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(.white)
         .glassEffect(
-            .regular.tint(Color(hex: 0xDA373C)).interactive(),
+            .regular.tint(Color.leaveCallRed).interactive(),
             in: Capsule()
         )
         .help("Disconnect")

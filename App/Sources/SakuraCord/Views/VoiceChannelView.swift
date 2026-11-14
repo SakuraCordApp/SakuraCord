@@ -41,7 +41,7 @@ struct VoiceChannelView: View {
                 VStack(spacing: InterfaceScale.metric(10)) {
                     Image(systemName: "wifi.exclamationmark")
                         .font(.interfaceSystem(size: 28, weight: .medium))
-                        .foregroundStyle(Color(hex: 0xDA373C))
+                        .foregroundStyle(Color.leaveCallRed)
                     Text("Voice disconnected")
                         .font(.interface(.headline))
                     Text("SakuraCord is no longer receiving call audio.")
@@ -50,7 +50,7 @@ struct VoiceChannelView: View {
                 }
                 .padding(InterfaceScale.metric(20))
                 .glassEffect(
-                    .regular.tint(Color(hex: 0xDA373C).opacity(0.16)),
+                    .regular.tint(Color.leaveCallRed.opacity(0.16)),
                     in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous)
                 )
             }

@@ -516,7 +516,7 @@ private struct VoiceStreamTile: View {
                     if case .failed(let message) = state {
                         Text(message)
                             .font(metrics.font(12))
-                            .foregroundStyle(Color(hex: 0xF23F43))
+                            .foregroundStyle(MentionRed.color)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, metrics.value(16))
@@ -541,7 +541,7 @@ private struct VoiceStreamTile: View {
                     if case .failed(let message) = state {
                         Text(message)
                             .font(metrics.font(12))
-                            .foregroundStyle(Color(hex: 0xF23F43))
+                            .foregroundStyle(MentionRed.color)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, metrics.value(16))

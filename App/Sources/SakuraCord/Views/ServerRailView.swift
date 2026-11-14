@@ -565,7 +565,7 @@ private struct JoinRequestRailButton: View {
                               cornerRadius: InterfaceScale.metric(13), animates: isHovering, isSelected: entry.isSelected)
                     .saturation(0.4)
                     .modifier(ApplicationStatusBadge(symbol: entry.status == .rejected ? "xmark" : "hourglass",
-                                                     tint: entry.status == .rejected ? Color(hex: 0xF23F43) : .gray,
+                                                     tint: entry.status == .rejected ? MentionRed.color : .gray,
                                                      diameter: 18, offset: 4, isHidden: entry.status == .started))
                     .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: entry.status)
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))

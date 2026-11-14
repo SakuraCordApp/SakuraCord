@@ -266,7 +266,7 @@ private struct PrivateCallActionDock: View {
                     PrivateCallGlassButton(
                         title: "Decline",
                         systemImage: "phone.down.fill",
-                        tint: Color(hex: 0xDA373C),
+                        tint: Color.leaveCallRed,
                         action: decline
                     )
                     PrivateCallGlassButton(
@@ -408,7 +408,7 @@ private struct IncomingPrivateCallCard: View {
                     IncomingCallActionButton(
                         title: "Decline",
                         systemImage: "xmark",
-                        tint: Color(hex: 0xDA373C),
+                        tint: Color.leaveCallRed,
                         action: decline
                     )
                     IncomingCallActionButton(
