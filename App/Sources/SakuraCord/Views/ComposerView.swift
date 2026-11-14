@@ -551,7 +551,7 @@ struct ComposerView: View {
                 ApplicationCommandHelpStrip(draft: draft, issue: commandComposer.fieldIssue, cancel: cancelCommand)
                     .commandPanelSurface(cornerRadius: commandPanelCornerRadius)
             }
-        } else if let context = timeMentionContext, case let rows = timeRows(for: context), timeQueryNeedsPick || !rows.isEmpty {
+        } else if let context = timeMentionContext, case let rows = ComposerTimeFormatPicker.rows(for: context.query, now: timeQueryDate), timeQueryNeedsPick || !rows.isEmpty {
             timeMentionMenu(context, rows: rows)
         } else if let context = gameMentionContext {
             gameMentionMenu(context)
@@ -835,38 +835,10 @@ struct ComposerView: View {
     private func mentionAutocompleteSuggestions(
         for context: MentionAutocompleteContext
     ) -> [MentionAutocompleteSuggestion] {
-        switch context.kind {
-        case .member:
-            return MentionAutocompleteSuggestionFactory.memberSuggestions(
-                query: context.query,
-                recentMessages: activeMessages.filter { !model.isMessageSuppressed($0) },
-                localMembers: model.mentionAutocompleteMembers.filter { !model.isUserIgnored($0.id) },
-                remoteMembers: model.mentionMemberResults.filter { !model.isUserIgnored($0.id) },
-                roles: model.guildRoles,
-                isGuildChannel: model.selectedChannel?.guildID != nil,
-                canMentionNonMentionableRoles:
-                MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
-                    in: model.selectedChannel,
-                    guild: model.selectedGuildID.flatMap { model.serverRailGuildsByID[$0] },
-                    currentUserID: model.currentUser?.id,
-                    currentMember: (model.currentUser?.id).flatMap {
-                        model.membersByID[$0]
-                    },
-                    roles: model.guildRoles
-                )
-            )
-        case .channel:
-            return MentionAutocompleteSuggestionFactory.channelSuggestions(
-                query: context.query,
-                channels: model.visibleChannels.filter { !model.hiddenChannelIDs.contains($0.id) },
-                threads: model.mentionAutocompleteThreads,
-                guilds: model.serverRailGuildsByID,
-                guildAndChannelUsageScores: model.discordGuildAndChannelUsageScores,
-                currentUserID: model.currentUser?.id,
-                currentMember: (model.currentUser?.id).flatMap { model.membersByID[$0] },
-                roles: model.guildRoles
-            )
-        }
+        model.mentionAutocompleteSuggestions(
+            for: context,
+            recentMessages: activeMessages.filter { !model.isMessageSuppressed($0) }
+        )
     }
 
     private func updateMentionMemberSearch() {
@@ -1342,10 +1314,6 @@ private extension ComposerView {
         return KeywordMentionContext(.time, text: draft, selection: draftSelection)
     }
 
-    private func timeRows(for context: KeywordMentionContext) -> [ComposerTimeFormatPicker.Row] {
-        ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: context.query, now: timeQueryDate))
-    }
-
     private func timeMentionMenu(_ context: KeywordMentionContext, rows: [ComposerTimeFormatPicker.Row]) -> some View {
         ComposerTimeFormatPicker(
             query: context.query,
@@ -1362,7 +1330,7 @@ private extension ComposerView {
     /// Keys while times match what is typed after `@time `. Return with no
     /// match neither sends nor leaves the query, as in Discord.
     private func handleTimeMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
-        let rows = timeRows(for: context)
+        let rows = ComposerTimeFormatPicker.rows(for: context.query, now: timeQueryDate)
         if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
         switch command {
         case .previous:

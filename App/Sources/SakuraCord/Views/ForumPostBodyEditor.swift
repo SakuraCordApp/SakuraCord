@@ -123,10 +123,13 @@ struct ForumPostBodyEditor: View {
         if let context = emojiContext, case let suggestions = emojiCache.suggestions(query: context.query, model: model), !suggestions.isEmpty {
             return .emoji(context, suggestions)
         }
-        if let context = mentionContext, case let suggestions = mentionSuggestions(for: context), !suggestions.isEmpty {
+        // The forum is the selected channel while its composer is open, so
+        // people, roles and channels resolve as they do in the message composer.
+        if let context = mentionContext,
+           case let suggestions = model.mentionAutocompleteSuggestions(for: context, recentMessages: []), !suggestions.isEmpty {
             return .mention(context, suggestions)
         }
-        if let context = timeContext, case let rows = timeRows(for: context), timeQueryNeedsPick || !rows.isEmpty {
+        if let context = timeContext, case let rows = ComposerTimeFormatPicker.rows(for: context.query, now: timeQueryDate), timeQueryNeedsPick || !rows.isEmpty {
             return .time(context, rows)
         }
         return nil
@@ -190,49 +193,10 @@ struct ForumPostBodyEditor: View {
         isAutocompleteDismissed || emojiContext != nil ? nil : MentionAutocompleteContext(text: text, selection: selection)
     }
 
-    /// The forum is the selected channel while its composer is open, so
-    /// people, roles and channels resolve as they do in the message composer.
-    private func mentionSuggestions(for context: MentionAutocompleteContext) -> [MentionAutocompleteSuggestion] {
-        let currentMember = (model.currentUser?.id).flatMap { model.membersByID[$0] }
-        switch context.kind {
-        case .member:
-            return MentionAutocompleteSuggestionFactory.memberSuggestions(
-                query: context.query,
-                recentMessages: [],
-                localMembers: model.mentionAutocompleteMembers.filter { !model.isUserIgnored($0.id) },
-                remoteMembers: model.mentionMemberResults.filter { !model.isUserIgnored($0.id) },
-                roles: model.guildRoles,
-                isGuildChannel: model.selectedChannel?.guildID != nil,
-                canMentionNonMentionableRoles: MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
-                    in: model.selectedChannel,
-                    guild: model.selectedGuildID.flatMap { model.serverRailGuildsByID[$0] },
-                    currentUserID: model.currentUser?.id,
-                    currentMember: currentMember,
-                    roles: model.guildRoles
-                )
-            )
-        case .channel:
-            return MentionAutocompleteSuggestionFactory.channelSuggestions(
-                query: context.query,
-                channels: model.visibleChannels.filter { !model.hiddenChannelIDs.contains($0.id) },
-                threads: model.mentionAutocompleteThreads,
-                guilds: model.serverRailGuildsByID,
-                guildAndChannelUsageScores: model.discordGuildAndChannelUsageScores,
-                currentUserID: model.currentUser?.id,
-                currentMember: currentMember,
-                roles: model.guildRoles
-            )
-        }
-    }
-
     /// The `@time` menu replaces the mention menu once `@time ` is typed.
     private var timeContext: KeywordMentionContext? {
         isAutocompleteDismissed || emojiContext != nil || mentionContext != nil
             ? nil : KeywordMentionContext(.time, text: text, selection: selection)
-    }
-
-    private func timeRows(for context: KeywordMentionContext) -> [ComposerTimeFormatPicker.Row] {
-        ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: context.query, now: timeQueryDate))
     }
 
     private var memberQuery: String? {

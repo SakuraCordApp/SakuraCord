@@ -212,6 +212,45 @@ extension AppModel {
         commandComposer.memberResults = []
     }
 
+    /// The people, roles, channels and threads an `@` or `#` typed in the
+    /// selected channel's editors can mention. Only member queries read
+    /// `recentMessages`.
+    func mentionAutocompleteSuggestions(
+        for context: MentionAutocompleteContext,
+        recentMessages: @autoclosure () -> [Message]
+    ) -> [MentionAutocompleteSuggestion] {
+        let currentMember = (currentUser?.id).flatMap { membersByID[$0] }
+        switch context.kind {
+        case .member:
+            return MentionAutocompleteSuggestionFactory.memberSuggestions(
+                query: context.query,
+                recentMessages: recentMessages(),
+                localMembers: mentionAutocompleteMembers.filter { !isUserIgnored($0.id) },
+                remoteMembers: mentionMemberResults.filter { !isUserIgnored($0.id) },
+                roles: guildRoles,
+                isGuildChannel: selectedChannel?.guildID != nil,
+                canMentionNonMentionableRoles: MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
+                    in: selectedChannel,
+                    guild: selectedGuildID.flatMap { serverRailGuildsByID[$0] },
+                    currentUserID: currentUser?.id,
+                    currentMember: currentMember,
+                    roles: guildRoles
+                )
+            )
+        case .channel:
+            return MentionAutocompleteSuggestionFactory.channelSuggestions(
+                query: context.query,
+                channels: visibleChannels.filter { !hiddenChannelIDs.contains($0.id) },
+                threads: mentionAutocompleteThreads,
+                guilds: serverRailGuildsByID,
+                guildAndChannelUsageScores: discordGuildAndChannelUsageScores,
+                currentUserID: currentUser?.id,
+                currentMember: currentMember,
+                roles: guildRoles
+            )
+        }
+    }
+
     func requestMentionMemberSearch(query: String) {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let guildID = selectedGuildID, !normalized.isEmpty else {

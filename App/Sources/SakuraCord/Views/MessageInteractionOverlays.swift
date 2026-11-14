@@ -988,7 +988,7 @@ private struct InlineMessageEditor: View {
 
     private var timeRows: [ComposerTimeFormatPicker.Row] {
         timeContext.map {
-            ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: $0.query, now: timeQueryDate))
+            ComposerTimeFormatPicker.rows(for: $0.query, now: timeQueryDate)
         } ?? []
     }
 
