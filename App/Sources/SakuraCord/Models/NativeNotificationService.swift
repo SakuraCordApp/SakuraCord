@@ -424,13 +424,6 @@ protocol NativeNotificationService: Sendable {
     func setSuppressed(_ suppressed: Bool)
     func requestAuthorization() async throws -> Bool
     func authorizationStatus() async -> UNAuthorizationStatus
-    func deliver(
-        message: Message,
-        channel: Channel?,
-        guild: Guild?,
-        accountID: String,
-        preferences: NotificationPreferences
-    ) async
     func deliverMessage(
         message: Message,
         channel: Channel?,
@@ -445,34 +438,18 @@ protocol NativeNotificationService: Sendable {
 
 extension NativeNotificationService {
     func setSuppressed(_: Bool) {}
-
-    func deliverMessage(
-        message: Message,
-        channel: Channel?,
-        guild: Guild?,
-        accountID: String,
-        presentation: NotificationContentPresentation,
-        preferences: NotificationPreferences
-    ) async {
-        await deliver(
-            message: message,
-            channel: channel,
-            guild: guild,
-            accountID: accountID,
-            preferences: preferences
-        )
-    }
 }
 
 @MainActor
 final class NoopNativeNotificationService: NativeNotificationService {
     func requestAuthorization() async throws -> Bool { false }
     func authorizationStatus() async -> UNAuthorizationStatus { .notDetermined }
-    func deliver(
+    func deliverMessage(
         message _: Message,
         channel _: Channel?,
         guild _: Guild?,
         accountID _: String,
+        presentation _: NotificationContentPresentation,
         preferences _: NotificationPreferences
     ) async {}
     func cancel(accountID _: String, channelID _: ChannelID) async {}
@@ -536,25 +513,6 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
 
     func authorizationStatus() async -> UNAuthorizationStatus {
         await center.notificationSettings().authorizationStatus
-    }
-
-    func deliver(
-        message: Message,
-        channel: Channel?,
-        guild: Guild?,
-        accountID: String,
-        preferences: NotificationPreferences
-    ) async {
-        await deliverMessage(
-            message: message,
-            channel: channel,
-            guild: guild,
-            accountID: accountID,
-            presentation: NotificationContentPresentation.make(
-                message: message, channel: channel, guild: guild, style: preferences.previewStyle
-            ),
-            preferences: preferences
-        )
     }
 
     func deliverMessage(

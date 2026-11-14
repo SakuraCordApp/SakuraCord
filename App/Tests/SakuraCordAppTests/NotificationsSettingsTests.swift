@@ -457,8 +457,12 @@ func `DND invalidates native notifications awaiting image preparation`(entersDND
         )]
     )
     let delivery = Task {
-        await service.deliver(
-            message: message, channel: nil, guild: nil, accountID: "offline", preferences: preferences
+        await service.deliverMessage(
+            message: message, channel: nil, guild: nil, accountID: "offline",
+            presentation: NotificationContentPresentation.make(
+                message: message, channel: nil, guild: nil, style: preferences.previewStyle
+            ),
+            preferences: preferences
         )
     }
     defer { resume.continuation.finish(); delivery.cancel() }
@@ -543,11 +547,12 @@ private final class RecordingNotificationService: NativeNotificationService {
         return status == .authorized
     }
     func authorizationStatus() async -> UNAuthorizationStatus { status }
-    func deliver(
+    func deliverMessage(
         message _: Message,
         channel _: Channel?,
         guild _: Guild?,
         accountID _: String,
+        presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
     ) async {
         messageSounds.append(preferences.playsSound)

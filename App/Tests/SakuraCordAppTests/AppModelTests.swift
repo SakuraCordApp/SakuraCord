@@ -8617,11 +8617,12 @@ private final class PermissionRecordingNotificationService: NativeNotificationSe
         status
     }
 
-    func deliver(
+    func deliverMessage(
         message: Message,
         channel: Channel?,
         guild: Guild?,
         accountID: String,
+        presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
     ) async {}
 
@@ -8640,11 +8641,12 @@ private final class SuspendedAccountNotificationService: NativeNotificationServi
     func requestAuthorization() async throws -> Bool { true }
     func authorizationStatus() async -> UNAuthorizationStatus { .authorized }
 
-    func deliver(
+    func deliverMessage(
         message: Message,
         channel: Channel?,
         guild: Guild?,
         accountID: String,
+        presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
     ) async {
         deliveryStarted = true
