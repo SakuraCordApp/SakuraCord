@@ -205,6 +205,48 @@ final class ThreadBrowserState {
         }
     }
 
+    /// Applies the archived page requested at `offset`. True when the page
+    /// should be requested again at the listing's current offset.
+    func applyArchivedPage(
+        _ page: ForumPostPage, in parentID: ChannelID, requestedOffset offset: Int, since sequence: UInt64
+    ) -> Bool {
+        var reconciled = page
+        reconciled.posts = reconciling(page.posts, since: sequence)
+        // Records deleted or reopened in flight, whether the provider
+        // or live changes here dropped them, moved later records back.
+        let stillArchived = Set(reconciled.posts.filter(\.thread.isArchived).map(\.id))
+        let departedCount = page.departedCount
+            + page.posts.count { $0.thread.isArchived && !stillArchived.contains($0.id) }
+        let isCurrent = listings[parentID, default: ThreadBrowserListing()]
+            .append(reconciled, requestedOffset: offset, departedCount: departedCount)
+        // Page records are as new as the provider's; a thread they show
+        // archived must leave the active sections.
+        for post in reconciled.posts where records[post.id] != nil {
+            records[post.id] = post
+        }
+        // A thread archived while the page was in flight may be absent
+        // from it; apply the current records to the loaded range.
+        listings[parentID]?.reconcile(with: Array(records.values))
+        isLoadingArchived = false
+        // A loaded thread left while the page was in flight, moving the
+        // next offset; request the page at the current one instead.
+        // A page that advanced no further is requested again, as the
+        // footer's identity did not change.
+        return !isCurrent || listings[parentID]?.nextOffset == offset
+    }
+
+    func applySearchResults(_ page: ForumPostPage, in parentID: ChannelID, since sequence: UInt64) {
+        let posts = reconciling(page.posts, since: sequence)
+        search?.results = posts
+        search?.hasLoaded = true
+        // Results are as new as the provider's records; an active match
+        // the browser had not seen joins its sections.
+        for post in posts {
+            records[post.id] = post
+        }
+        listings[parentID]?.reconcile(with: Array(records.values))
+    }
+
     private func recordLiveChanges(_ threadIDs: [ChannelID], isDeleted: Bool) {
         liveSequence &+= 1
         for threadID in threadIDs {
