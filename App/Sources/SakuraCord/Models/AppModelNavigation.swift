@@ -641,6 +641,28 @@ extension AppModel {
         }
     }
 
+    /// Opens what a mention names. User and role mentions open popovers
+    /// their view anchors, so those callers handle them.
+    func openMention(_ target: MentionTarget, fromMessageIn channelID: ChannelID?) {
+        switch target {
+        case .unresolved, .user, .role:
+            return
+        case let .game(id):
+            presentedProfileGame = gameMentions.gamesByID[id]
+        case let .command(id, name):
+            guard let channelID = channelID ?? selectedChannelID else { return }
+            startCommandMention(id: id, name: name, in: channelID)
+        case let .guildNavigation(guildID, destination):
+            openGuildNavigationDestination(destination, in: guildID)
+        case let .channel(id):
+            navigate(to: id)
+        case let .linkedChannel(guildID, channelID):
+            navigate(to: guildID, linkedChannelID: channelID)
+        case let .message(guildID, channelID, messageID):
+            navigate(to: guildID, channelID: channelID, messageID: messageID)
+        }
+    }
+
     func navigate(from notification: NotificationDeepLink) async {
         if readState.accountID != notification.accountID {
             let handles = try? await credentialStore.handles()

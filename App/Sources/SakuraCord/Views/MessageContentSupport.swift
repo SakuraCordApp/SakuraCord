@@ -93,13 +93,8 @@ struct CustomEmojiRichText: View {
         onMentionClick(mention, anchor)
         guard let model else { return }
         switch mention.target {
-        case .unresolved:
-            return
-        case let .game(id):
-            model.presentedProfileGame = model.gameMentions.gamesByID[id]
-        case let .command(id, name):
-            guard let channelID = message?.channelID ?? model.selectedChannelID else { return }
-            model.startCommandMention(id: id, name: name, in: channelID)
+        case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message:
+            model.openMention(mention.target, fromMessageIn: message?.channelID)
         case let .user(id):
             let user = MessageMentionResolver(model: model, message: message).user(id)
                 ?? model.membersByID[id]?.user
@@ -118,14 +113,6 @@ struct CustomEmojiRichText: View {
                 anchor: anchor,
                 profileRequestID: nil
             )
-        case let .guildNavigation(guildID, destination):
-            model.openGuildNavigationDestination(destination, in: guildID)
-        case let .channel(id):
-            model.navigate(to: id)
-        case let .linkedChannel(guildID, channelID):
-            model.navigate(to: guildID, linkedChannelID: channelID)
-        case let .message(guildID, channelID, messageID):
-            model.navigate(to: guildID, channelID: channelID, messageID: messageID)
         }
     }
 }
