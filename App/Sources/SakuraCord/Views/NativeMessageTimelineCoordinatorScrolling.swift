@@ -371,15 +371,6 @@ extension NativeMessageTimelineCoordinator {
             || followsMaterializedHistoryBoundary(direction)
     }
 
-    func provisionalHistoryMinimumY(
-        viewportHeight: CGFloat
-    ) -> CGFloat {
-        provisionalHistoryBoundaryY(
-            .earlier,
-            viewportHeight: viewportHeight
-        )
-    }
-
     func provisionalHistoryBoundaryY(
         _ direction: TimelineHistoryDirection,
         viewportHeight: CGFloat
@@ -979,6 +970,44 @@ extension NativeMessageTimelineCoordinator {
         }
     }
 
+    /// Lays out the rows `matches` selects again, keeping the reader in place
+    /// when their heights change.
+    func relayRows(
+        where matches: (NativeMessageTimelineItem) -> Bool,
+        on canvas: NativeTimelineCanvasView,
+        in scrollView: NSScrollView,
+        layout makeLayout: (NativeMessageTimelineItem) -> NativeTimelineRowLayout
+    ) {
+        cachedItemLayouts = cachedItemLayouts.filter { !matches($0.value.item) }
+        let wasNearBottom = scrollState().isNearBottom
+        let anchor = visibleAnchor()
+        var changed = IndexSet()
+        var changesHeight = false
+        for index in items.indices where matches(items[index]) {
+            let updated = makeLayout(items[index])
+            changesHeight = changesHeight || abs(updated.height - rowHeights[index]) >= 0.5
+            layouts[index] = updated
+            rowHeights[index] = updated.height
+            canvas.invalidateRowLayout(items[index].identifier)
+            canvas.accessibilityProxies.remove(items[index].identifier)
+            changed.insert(index)
+        }
+        guard !changed.isEmpty else { return }
+        if changesHeight { rebuildOrigins() }
+        applySnapshot(to: canvas, in: scrollView)
+        canvas.window?.invalidateCursorRects(for: canvas)
+        if changesHeight {
+            canvas.invalidateVisibleContent()
+            if wasNearBottom {
+                _ = scroll(to: .bottom, in: scrollView)
+            } else if let anchor {
+                restore(anchor)
+            }
+        } else {
+            canvas.invalidateRows(changed)
+        }
+    }
+
     func restore(_ anchor: VisibleAnchor) {
         guard let index = items.firstIndex(where: {
             $0.containsMessage(anchor.messageID)
@@ -1157,12 +1186,12 @@ extension NativeMessageTimelineCoordinator {
         let clampedY = NativeMessageTimelineLayoutPolicy.clampedDocumentY(
             proposedY: targetY,
             contentHeight: scrollableDocumentHeight,
-            viewportHeight: scrollView.contentView.bounds.height,
-            bottomInset: 0
+            viewportHeight: scrollView.contentView.bounds.height
         )
         let minimumY =
             parent.hasMoreMessages
-            ? provisionalHistoryMinimumY(
+            ? provisionalHistoryBoundaryY(
+                .earlier,
                 viewportHeight:
                     scrollView.contentView.bounds.height
             )

@@ -2157,7 +2157,8 @@ func `completed initial ten message page exposes history reserve before first up
     #expect(coordinator.followsMaterializedHistoryBoundary)
     #expect(canvas.historySkeleton != nil)
     #expect(
-        coordinator.provisionalHistoryMinimumY(
+        coordinator.provisionalHistoryBoundaryY(
+            .earlier,
             viewportHeight: scrollView.contentView.bounds.height
         ) == 0
     )

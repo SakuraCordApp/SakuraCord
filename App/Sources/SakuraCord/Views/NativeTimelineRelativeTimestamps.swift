@@ -61,42 +61,4 @@ extension NativeMessageTimelineCoordinator {
             layout: { NativeTimelineRowLayout.make(item: $0, width: layoutWidth, source: parent.model, relativeTo: date) }
         )
     }
-
-    /// Lays out the rows `matches` selects again, keeping the reader in place
-    /// when their heights change.
-    func relayRows(
-        where matches: (NativeMessageTimelineItem) -> Bool,
-        on canvas: NativeTimelineCanvasView,
-        in scrollView: NSScrollView,
-        layout makeLayout: (NativeMessageTimelineItem) -> NativeTimelineRowLayout
-    ) {
-        cachedItemLayouts = cachedItemLayouts.filter { !matches($0.value.item) }
-        let wasNearBottom = scrollState().isNearBottom
-        let anchor = visibleAnchor()
-        var changed = IndexSet()
-        var changesHeight = false
-        for index in items.indices where matches(items[index]) {
-            let updated = makeLayout(items[index])
-            changesHeight = changesHeight || abs(updated.height - rowHeights[index]) >= 0.5
-            layouts[index] = updated
-            rowHeights[index] = updated.height
-            canvas.invalidateRowLayout(items[index].identifier)
-            canvas.accessibilityProxies.remove(items[index].identifier)
-            changed.insert(index)
-        }
-        guard !changed.isEmpty else { return }
-        if changesHeight { rebuildOrigins() }
-        applySnapshot(to: canvas, in: scrollView)
-        canvas.window?.invalidateCursorRects(for: canvas)
-        if changesHeight {
-            canvas.invalidateVisibleContent()
-            if wasNearBottom {
-                _ = scroll(to: .bottom, in: scrollView)
-            } else if let anchor {
-                restore(anchor)
-            }
-        } else {
-            canvas.invalidateRows(changed)
-        }
-    }
 }

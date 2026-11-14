@@ -732,10 +732,9 @@ nonisolated enum NativeMessageTimelineLayoutPolicy {
     static func clampedDocumentY(
         proposedY: CGFloat,
         contentHeight: CGFloat,
-        viewportHeight: CGFloat,
-        bottomInset: CGFloat
+        viewportHeight: CGFloat
     ) -> CGFloat {
-        let maximumY = max(0, contentHeight - viewportHeight + bottomInset)
+        let maximumY = max(0, contentHeight - viewportHeight)
         return min(max(0, proposedY), maximumY)
     }
 
