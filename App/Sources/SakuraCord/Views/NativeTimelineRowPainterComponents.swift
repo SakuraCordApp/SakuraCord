@@ -204,27 +204,16 @@ extension NativeTimelineRowPainter {
     }
 
     private static func drawComponentImage(_ region: NativeTimelineComponentLayout.ImageRegion) {
-        NSColor.secondaryLabelColor.withAlphaComponent(0.08).setFill()
-        NSBezierPath(
-            concentricRoundedRect: region.frame,
-            cornerRadius: region.cornerRadius
-        ).fill()
-        if let image = mediaImage(for: .media(
-            region.displayURL,
-            maximumPixelDimension: region.maximumPixelDimension
-        )) {
-            // Discord crops a thumbnail to fill its square.
-            drawImage(
-                image,
-                in: region.frame,
-                cornerRadius: region.cornerRadius,
-                fillsFrame: true
-            )
-        } else if let placeholder = region.placeholder?.image {
-            drawImage(placeholder, in: region.frame, cornerRadius: region.cornerRadius, fillsFrame: true)
-        } else {
-            systemSymbol("photo", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(22))
-        }
+        // Discord crops a thumbnail to fill its square.
+        drawMediaSurface(
+            in: region.frame,
+            cornerRadius: region.cornerRadius,
+            backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.08),
+            image: mediaImage(for: .media(region.displayURL, maximumPixelDimension: region.maximumPixelDimension)),
+            fillsFrame: true,
+            placeholder: region.placeholder,
+            fallbackSymbol: ("photo", InterfaceScale.metric(22))
+        )
     }
 
     private static func drawComponentMedia(
@@ -247,18 +236,16 @@ extension NativeTimelineRowPainter {
     }
 
     private static func drawComponentMediaItem(_ region: NativeTimelineComponentLayout.MediaRegion) {
-        NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-        NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8)).fill()
-        if let previewURL = region.previewURL,
-           let image = mediaImage(for: .media(previewURL))
-        {
-            drawImage(image, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
-        } else if let placeholder = region.placeholder?.image {
-            drawImage(placeholder, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
-        } else if region.isVideo {
-            systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-        }
-        if region.isVideo { mediaPlayGlyph(in: region.frame) }
+        drawMediaSurface(
+            in: region.frame,
+            cornerRadius: DiscordRichMessageMetrics.px(8),
+            backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.10),
+            image: region.previewURL.flatMap { mediaImage(for: .media($0)) },
+            fillsFrame: true,
+            placeholder: region.placeholder,
+            fallbackSymbol: region.isVideo ? ("film", InterfaceScale.metric(30)) : nil,
+            isVideo: region.isVideo
+        )
     }
 
     private static func drawComponentFiles(
@@ -979,6 +966,33 @@ extension NativeTimelineRowPainter {
     ) -> NSImage? {
         MediaImageStore.shared.firstAnimatedFrame(for: key)
             ?? MediaImageStore.shared.image(for: key)
+    }
+
+    /// A media tile: an optional tinted backdrop, then the loaded image, its
+    /// ThumbHash placeholder or a fallback symbol, and a play glyph on video.
+    static func drawMediaSurface(
+        in frame: CGRect,
+        cornerRadius: CGFloat,
+        backdrop: NSColor?,
+        image: NSImage?,
+        fillsFrame: Bool,
+        placeholder: @autoclosure () -> NativeTimelineMediaPlaceholder?,
+        placeholderFillsFrame: Bool = true,
+        fallbackSymbol: (name: String, inset: CGFloat)?,
+        isVideo: Bool = false
+    ) {
+        if let backdrop {
+            backdrop.setFill()
+            NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).fill()
+        }
+        if let image {
+            drawImage(image, in: frame, cornerRadius: cornerRadius, fillsFrame: fillsFrame)
+        } else if let placeholder = placeholder()?.image {
+            drawImage(placeholder, in: frame, cornerRadius: cornerRadius, fillsFrame: placeholderFillsFrame)
+        } else if let fallbackSymbol {
+            systemSymbol(fallbackSymbol.name, in: frame, color: .secondaryLabelColor, inset: fallbackSymbol.inset)
+        }
+        if isVideo { mediaPlayGlyph(in: frame) }
     }
 
     /// Where an image of `size` lands when it fills or fits `frame`, centred.

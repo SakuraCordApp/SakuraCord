@@ -534,29 +534,19 @@ extension NativeTimelineRowPainter {
         let attachment = region.attachment
         let layout = input.layout
         let message = input.row.message
-        if attachment.mediaKind.isVisual {
-            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(
-                concentricRoundedRect: region.frame,
-                cornerRadius: attachmentCornerRadius
-            ).fill()
-        }
         switch attachment.mediaKind {
         case .image, .animatedImage, .video:
             let isVideo = attachment.mediaKind == .video
-            if let image = region.previewKey.flatMap(mediaImage(for:)) {
-                drawImage(
-                    image,
-                    in: region.frame,
-                    cornerRadius: attachmentCornerRadius,
-                    fillsFrame: fillsFrame
-                )
-            } else if let placeholder = region.placeholder?.image {
-                drawImage(placeholder, in: region.frame, cornerRadius: attachmentCornerRadius, fillsFrame: true)
-            } else if isVideo {
-                systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-            }
-            if isVideo { mediaPlayGlyph(in: region.frame) }
+            drawMediaSurface(
+                in: region.frame,
+                cornerRadius: attachmentCornerRadius,
+                backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.10),
+                image: region.previewKey.flatMap(mediaImage(for:)),
+                fillsFrame: fillsFrame,
+                placeholder: region.placeholder,
+                fallbackSymbol: isVideo ? ("film", InterfaceScale.metric(30)) : nil,
+                isVideo: isVideo
+            )
         case .audio, .file:
             fileCard(
                 .init(
@@ -654,26 +644,19 @@ extension NativeTimelineRowPainter {
     /// of a video that otherwise plays in its own view.
     private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion, isCovered: Bool) {
         for imageRegion in region.imageRegions {
-            if let image = mediaImage(for: .media(
-                imageRegion.url,
-                maximumPixelDimension: imageRegion.maximumPixelDimension
-            )) {
-                drawImage(
-                    image,
-                    in: imageRegion.frame,
-                    cornerRadius: imageRegion.cornerRadius,
-                    fillsFrame: false
-                )
-            } else if let placeholder = imageRegion.placeholder?.image {
-                drawImage(placeholder, in: imageRegion.frame, cornerRadius: imageRegion.cornerRadius, fillsFrame: false)
-            } else {
-                systemSymbol(
+            drawMediaSurface(
+                in: imageRegion.frame,
+                cornerRadius: imageRegion.cornerRadius,
+                backdrop: nil,
+                image: mediaImage(for: .media(imageRegion.url, maximumPixelDimension: imageRegion.maximumPixelDimension)),
+                fillsFrame: false,
+                placeholder: imageRegion.placeholder,
+                placeholderFillsFrame: false,
+                fallbackSymbol: (
                     imageRegion.fallbackSystemImage,
-                    in: imageRegion.frame,
-                    color: .secondaryLabelColor,
-                    inset: imageRegion.frame.width >= InterfaceScale.metric(70) ? InterfaceScale.metric(22) : InterfaceScale.metric(2)
+                    imageRegion.frame.width >= InterfaceScale.metric(70) ? InterfaceScale.metric(22) : InterfaceScale.metric(2)
                 )
-            }
+            )
         }
         guard let frame = region.mediaFrame,
               let url = region.mediaURL,
@@ -682,19 +665,16 @@ extension NativeTimelineRowPainter {
                   autoplaysInline: region.mediaAutoplaysInline
               )
         else { return }
-        NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.10).setFill()
-        NSBezierPath(concentricRoundedRect: frame, cornerRadius: InterfaceScale.metric(8)).fill()
-        if let image = mediaImage(for: .media(region.mediaPreviewURL ?? url)) {
-            drawImage(
-                image, in: frame, cornerRadius: InterfaceScale.metric(8),
-                fillsFrame: region.mediaFillsFrame || region.mediaPosterFillsFrame
-            )
-        } else if let placeholder = region.mediaPlaceholder?.image {
-            drawImage(placeholder, in: frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
-        } else if region.mediaIsVideo {
-            systemSymbol("film", in: frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-        }
-        if region.mediaIsVideo { mediaPlayGlyph(in: frame) }
+        drawMediaSurface(
+            in: frame,
+            cornerRadius: InterfaceScale.metric(8),
+            backdrop: NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.10),
+            image: mediaImage(for: .media(region.mediaPreviewURL ?? url)),
+            fillsFrame: region.mediaFillsFrame || region.mediaPosterFillsFrame,
+            placeholder: region.mediaPlaceholder,
+            fallbackSymbol: region.mediaIsVideo ? ("film", InterfaceScale.metric(30)) : nil,
+            isVideo: region.mediaIsVideo
+        )
     }
 
     private static func drawMessageComponentsAndStickers(
