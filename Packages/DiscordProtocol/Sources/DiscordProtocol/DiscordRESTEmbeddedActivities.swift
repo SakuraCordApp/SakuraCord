@@ -57,12 +57,12 @@ public extension DiscordRESTProvider {
         _ = try await persistFrecencySettingsPatch(patch)
     }
 
-    /// The Gateway session that owns this account's Activity participation.
     /// An application's icon or cover image on Discord's CDN.
     static func applicationImageURL(_ id: ApplicationID, image: String, size: Int) -> URL? {
         URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\(image).png?size=\(size)")
     }
 
+    /// The Gateway session that owns this account's Activity participation.
     func embeddedActivitySessionID() async throws -> String {
         try await interactionSessionID()
     }
