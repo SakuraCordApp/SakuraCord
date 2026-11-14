@@ -274,10 +274,6 @@ final class NativeMessageTimelineCoordinator: NSObject {
         static let historyReserveChunk: CGFloat = 65_536
         static let maximumCachedItemLayouts = 750
         static let cachedItemLayoutsPerConversation = 256
-        static let performanceSignposter = OSSignposter(
-            subsystem: "dev.sakuracord.SakuraCord",
-            category: "PointsOfInterest"
-        )
         static let performanceLogger = Logger(
             subsystem: "dev.sakuracord.SakuraCord",
             category: "TimelinePerformance"
@@ -583,7 +579,7 @@ extension NativeMessageTimelineCoordinator {
                 transcriptAnchor: sendTransitionAnchor
             )
             if let unreadDivider { canvas.transitionUnreadDivider(unreadDivider) }
-            Self.performanceSignposter.endInterval(
+            AppPerformanceSignposts.signposter.endInterval(
                 "MessageTimelineReload",
                 measurement.signpost
             )
@@ -643,7 +639,7 @@ extension NativeMessageTimelineCoordinator {
             self.scrollView = scrollView
             let measurement = TimelineReloadMeasurement(
                 startUptime: ProcessInfo.processInfo.systemUptime,
-                signpost: Self.performanceSignposter.beginInterval(
+                signpost: AppPerformanceSignposts.signposter.beginInterval(
                     "MessageTimelineReload"
                 )
             )
@@ -1003,7 +999,7 @@ extension NativeMessageTimelineCoordinator {
             }
             let establishedInitialPosition = applyInitialPositionIfNeeded()
             if recentLayoutCacheHits > 0 {
-                Self.performanceSignposter.emitEvent("ConversationRowLayoutCacheUsed")
+                AppPerformanceSignposts.signposter.emitEvent("ConversationRowLayoutCacheUsed")
             }
             applyScrollRequestIfNeeded()
             applyEditRequestIfNeeded()

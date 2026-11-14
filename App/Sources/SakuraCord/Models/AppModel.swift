@@ -104,10 +104,6 @@ final class AppModel {
         subsystem: "dev.sakuracord.SakuraCord",
         category: "MemberList"
     )
-    static let forumPerformanceSignposter = OSSignposter(
-        subsystem: "dev.sakuracord.SakuraCord",
-        category: "PointsOfInterest"
-    )
     nonisolated static let maximumConcurrentReactionReactorLoads = 4
 
     enum SessionState: Equatable {

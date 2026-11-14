@@ -238,9 +238,9 @@ extension AppModel {
               selectedConversationAccess.isReadable
         else { return }
         let session = accountSession()
-        let loadSignpost = Self.forumPerformanceSignposter.beginInterval("ForumPostsLoad")
+        let loadSignpost = AppPerformanceSignposts.signposter.beginInterval("ForumPostsLoad")
         defer {
-            Self.forumPerformanceSignposter.endInterval("ForumPostsLoad", loadSignpost)
+            AppPerformanceSignposts.signposter.endInterval("ForumPostsLoad", loadSignpost)
         }
         let trimmedSearch = forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let isSearch = !trimmedSearch.isEmpty
@@ -312,9 +312,9 @@ extension AppModel {
         scope: ForumPostScope,
         reset: Bool
     ) async throws -> ForumPostPage {
-        let providerSignpost = Self.forumPerformanceSignposter.beginInterval("ForumProviderLoad")
+        let providerSignpost = AppPerformanceSignposts.signposter.beginInterval("ForumProviderLoad")
         defer {
-            Self.forumPerformanceSignposter.endInterval(
+            AppPerformanceSignposts.signposter.endInterval(
                 "ForumProviderLoad",
                 providerSignpost
             )
@@ -421,7 +421,7 @@ extension AppModel {
         reset: Bool,
         channelID: ChannelID
     ) {
-        let catalogueSignpost = Self.forumPerformanceSignposter.beginInterval(
+        let catalogueSignpost = AppPerformanceSignposts.signposter.beginInterval(
             "ForumCatalogueUpdate"
         )
         if isSearch {
@@ -431,15 +431,15 @@ extension AppModel {
         } else {
             mergeForumCatalogue(page.posts)
         }
-        Self.forumPerformanceSignposter.endInterval(
+        AppPerformanceSignposts.signposter.endInterval(
             "ForumCatalogueUpdate",
             catalogueSignpost
         )
-        let presentationSignpost = Self.forumPerformanceSignposter.beginInterval(
+        let presentationSignpost = AppPerformanceSignposts.signposter.beginInterval(
             "ForumPresentation"
         )
         applyForumPresentation()
-        Self.forumPerformanceSignposter.endInterval(
+        AppPerformanceSignposts.signposter.endInterval(
             "ForumPresentation",
             presentationSignpost
         )

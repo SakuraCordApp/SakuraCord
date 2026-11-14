@@ -152,7 +152,7 @@ extension NativeMessageTimelineCoordinator {
                 beginPerformanceBenchmarkPaginationIntent(
                     towardLater: scrollsTowardLater
                 )
-                let signpost = Self.performanceSignposter.beginInterval(
+                let signpost = AppPerformanceSignposts.signposter.beginInterval(
                     "MessageTimelineAutoScrollBenchmark"
                 )
                 AppPerformanceSignposts.beginResourceWindow(
@@ -162,7 +162,7 @@ extension NativeMessageTimelineCoordinator {
                     scrollsTowardLater: scrollsTowardLater,
                     initialItemCount: items.count,
                     closeMeasurement: {
-                        Self.performanceSignposter.endInterval(
+                        AppPerformanceSignposts.signposter.endInterval(
                             "MessageTimelineAutoScrollBenchmark",
                             signpost
                         )
@@ -331,7 +331,7 @@ extension NativeMessageTimelineCoordinator {
             case .paginationFailed:
                 "MessageTimelineAutoScrollBenchmarkPaginationFailed"
             }
-            Self.performanceSignposter.emitEvent(event)
+            AppPerformanceSignposts.signposter.emitEvent(event)
         }
 
         static func writePerformanceBenchmarkArtifact(

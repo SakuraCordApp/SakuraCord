@@ -290,10 +290,6 @@ final class AnimatedRemoteImageDisplayCache: @unchecked Sendable {
 }
 
 nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
-    private static let performanceSignposter = OSSignposter(
-        subsystem: "dev.sakuracord.SakuraCord",
-        category: "PointsOfInterest"
-    )
     private static let performanceLogger = Logger(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "AnimatedMediaPerformance"
@@ -331,11 +327,11 @@ nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
         shouldInterrupt: @escaping @Sendable () -> Bool = { false }
     ) throws {
         let decodeStart = ProcessInfo.processInfo.systemUptime
-        let decodeSignpost = Self.performanceSignposter.beginInterval(
+        let decodeSignpost = AppPerformanceSignposts.signposter.beginInterval(
             "AnimatedImageDecode"
         )
         defer {
-            Self.performanceSignposter.endInterval(
+            AppPerformanceSignposts.signposter.endInterval(
                 "AnimatedImageDecode",
                 decodeSignpost
             )
