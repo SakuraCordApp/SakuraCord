@@ -7,10 +7,8 @@ import Synchronization
 @MainActor
 enum NativeTimelineTextPresentation {
     nonisolated struct Preparation: Sendable {
+        /// Also carries the prepared text, emoji size and base font size.
         let key: NativeTimelineResolvedTextCache.Key
-        let prepared: RichMessageAttributedText.Prepared
-        let emojiSize: CGFloat
-        let baseFontSize: CGFloat
         let mentions: [String: MentionPresentation]
     }
 
@@ -211,13 +209,7 @@ enum NativeTimelineTextPresentation {
             baseFontSize: resolvedBaseFontSize,
             presentations: mentions
         )
-        return Preparation(
-            key: cacheKey,
-            prepared: prepared,
-            emojiSize: emojiSize,
-            baseFontSize: resolvedBaseFontSize,
-            mentions: mentions
-        )
+        return Preparation(key: cacheKey, mentions: mentions)
     }
 
     @discardableResult
@@ -235,9 +227,9 @@ enum NativeTimelineTextPresentation {
         ) {
             NativeTimelineAttributedTextBox(
                 NativeTimelineCoreText.make(
-                    prepared: preparation.prepared,
-                    emojiSize: preparation.emojiSize,
-                    baseFontSize: preparation.baseFontSize,
+                    prepared: preparation.key.prepared,
+                    emojiSize: preparation.key.emojiSize,
+                    baseFontSize: preparation.key.baseFontSize,
                     mentionPresentations: preparation.mentions,
                     usesMessageLineHeight: true
                 )
