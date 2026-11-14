@@ -30,7 +30,7 @@ struct GatewayLifecycleEventTests {
             )
         )
 
-        #expect(await provider.cachedChannelForTesting(channelID: threadID) == nil)
+        #expect(await provider.cachedChannel(threadID) == nil)
         #expect(
             await provider.cachedForumPostForTesting(threadID: threadID)?.thread.parentID
                 == forumChannelID
@@ -133,7 +133,7 @@ struct GatewayLifecycleEventTests {
             data: .object(["id": .string("100")])
         )
         #expect(await provider.cachedGuildForTesting(guildID: guildID) == nil)
-        #expect(await provider.cachedChannelForTesting(channelID: textChannelID) == nil)
+        #expect(await provider.cachedChannel(textChannelID) == nil)
     }
 
     @Test func `a server joined mid-session keeps the join time GUILD_CREATE carries`() async throws {
@@ -210,7 +210,7 @@ struct GatewayLifecycleEventTests {
             guildID: guildID, memberListID: memberListID
         ) == [UserID(rawValue: 1), UserID(rawValue: 2), UserID(rawValue: 3)])
 
-        var otherChannel = try #require(await provider.cachedChannelForTesting(channelID: forumChannelID))
+        var otherChannel = try #require(await provider.cachedChannel(forumChannelID))
         otherChannel.memberListID = "other-list"
         await provider.seedGuildChannelForTesting(otherChannel)
         try await provider.subscribeToMemberList(guildID: guildID, channelID: forumChannelID)
@@ -304,7 +304,7 @@ struct GatewayLifecycleEventTests {
     @Test func `member SYNC received before subscription completion is published after commit`() async throws {
         let fixture = try await makeMemberListProvider()
         let (provider, socket) = (fixture.provider, fixture.socket)
-        var channel = try #require(await provider.cachedChannelForTesting(channelID: forumChannelID))
+        var channel = try #require(await provider.cachedChannel(forumChannelID))
         channel.memberListID = "early-sync"
         await provider.seedGuildChannelForTesting(channel)
         let events = await provider.eventStream()
@@ -389,7 +389,7 @@ struct GatewayLifecycleEventTests {
         )
         let (provider, socket) = (fixture.provider, fixture.socket)
         let memberListID = fixture.memberListID
-        var selectedChannel = try #require(await provider.cachedChannelForTesting(channelID: textChannelID))
+        var selectedChannel = try #require(await provider.cachedChannel(textChannelID))
         selectedChannel.permissionOverwrites = []
         selectedChannel.memberListID = memberListID
         await provider.seedGuildChannelForTesting(selectedChannel)
@@ -468,7 +468,7 @@ struct GatewayLifecycleEventTests {
 
         #expect(await provider.cachedGuildForTesting(guildID: guildID)?.name == "Recovered Guild")
         #expect(await provider.cachedGuildForTesting(guildID: guildID)?.currentUserPermissions == 2_048)
-        #expect(await provider.cachedChannelForTesting(channelID: textChannelID) != nil)
+        #expect(await provider.cachedChannel(textChannelID) != nil)
     }
 
     private func makeProvider(
@@ -522,7 +522,7 @@ struct GatewayLifecycleEventTests {
                 guildID: guildID, channelID: textChannelID, ranges: [0 ... 99]
             )
         }
-        let channel = try #require(await provider.cachedChannelForTesting(channelID: textChannelID))
+        let channel = try #require(await provider.cachedChannel(textChannelID))
         let roles = await provider.cachedGuildRoles[guildID] ?? []
         let memberListID = DiscordMemberListIdentity.id(for: channel, guildID: guildID, roles: roles)
         return MemberListFixture(provider: provider, socket: socket, memberListID: memberListID)

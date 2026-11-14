@@ -6,9 +6,7 @@ extension DiscordRESTProvider {
         -> ForumPostPage
     {
         guard
-            let channel = cachedChannels.values.lazy.flatMap(\.self).first(where: {
-                $0.id == channelID && $0.kind == .forum
-            })
+            let channel = cachedChannel(channelID), channel.kind == .forum
         else { throw ChatProviderError.channelNotFound }
 
         switch query.scope {
@@ -232,9 +230,7 @@ extension DiscordRESTProvider {
     ) async throws -> ForumPost {
         try requireGuildCommunication(in: draft.channelID)
         guard
-            let channel = cachedChannels.values.lazy.flatMap(\.self).first(where: {
-                $0.id == draft.channelID && $0.kind == .forum
-            })
+            let channel = cachedChannel(draft.channelID), channel.kind == .forum
         else { throw ChatProviderError.channelNotFound }
         guard let title = ThreadNamePolicy.validatedName(draft.title) else {
             throw ChatProviderError.invalidRequest(
@@ -318,9 +314,7 @@ extension DiscordRESTProvider {
     public func createThread(_ draft: CreateThreadDraft) async throws -> MessageThreadSummary {
         try requireGuildCommunication(in: draft.channelID)
         guard
-            let channel = cachedChannels.values.lazy.flatMap(\.self).first(where: {
-                $0.id == draft.channelID && ($0.kind == .text || $0.kind == .announcement)
-            })
+            let channel = cachedChannel(draft.channelID), channel.kind == .text || channel.kind == .announcement
         else { throw ChatProviderError.channelNotFound }
         guard let name = ThreadNamePolicy.validatedName(draft.name) else {
             throw ChatProviderError.invalidRequest("Thread names must be between 1 and 100 characters.")
@@ -407,9 +401,7 @@ extension DiscordRESTProvider {
             working = try await patchForumPost(working, body: ["name": .string(name)])
         case .tags(let tags):
             guard
-                let channel = cachedChannels.values.lazy.flatMap(\.self).first(where: {
-                    $0.id == parentID && $0.kind == .forum
-                })
+                let channel = cachedChannel(parentID), channel.kind == .forum
             else { throw ChatProviderError.channelNotFound }
             let selectedTags = Self.orderedUniqueForumTagIDs(
                 tags,

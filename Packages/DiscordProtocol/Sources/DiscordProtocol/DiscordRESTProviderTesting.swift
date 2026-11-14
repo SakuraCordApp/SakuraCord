@@ -131,10 +131,6 @@ import SakuraCordModels
             deferredPresenceTask != nil
         }
 
-        func cachedChannelForTesting(channelID: ChannelID) -> Channel? {
-            cachedChannels.values.lazy.flatMap { $0 }.first { $0.id == channelID }
-        }
-
         func cachedPrivateChannelsForTesting() -> [Channel] {
             cachedChannels[nil] ?? []
         }

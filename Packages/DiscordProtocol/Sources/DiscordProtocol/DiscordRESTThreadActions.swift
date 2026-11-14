@@ -9,9 +9,7 @@ extension DiscordRESTProvider {
         -> ForumPostPage
     {
         guard
-            let channel = cachedChannels.values.lazy.flatMap(\.self).first(where: {
-                $0.id == parentID && [.text, .announcement, .forum].contains($0.kind)
-            })
+            let channel = cachedChannel(parentID), [.text, .announcement, .forum].contains(channel.kind)
         else { throw ChatProviderError.channelNotFound }
         var catalogueQuery = ForumPostQuery(
             sortOrder: .latestActivity,

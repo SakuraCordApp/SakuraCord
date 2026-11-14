@@ -120,7 +120,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
     )
 
     #expect(
-        await provider.cachedChannelForTesting(channelID: forum.id)?.lastMessageID
+        await provider.cachedChannel(forum.id)?.lastMessageID
             == MessageID(rawValue: 200)
     )
     await provider.disconnect()
@@ -182,7 +182,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
     )
 
     #expect(
-        await provider.cachedChannelForTesting(channelID: forum.id)?.lastMessageID
+        await provider.cachedChannel(forum.id)?.lastMessageID
             == MessageID(rawValue: 250)
     )
     #expect(
