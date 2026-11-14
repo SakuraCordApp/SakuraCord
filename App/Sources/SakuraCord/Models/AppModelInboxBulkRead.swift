@@ -18,13 +18,7 @@ extension AppModel {
         }
         let channelIDs = Set((snapshot?.channels.filter { $0.guildID == guildID }.map(\.id) ?? [])
             + (snapshot?.activeJoinedThreads.filter { $0.guildID == guildID }.map(\.id) ?? []))
-        let now = Date.now
-        let targets = readState.entries.values.compactMap { entry -> BulkReadStateAcknowledgement? in
-            guard channelIDs.contains(entry.channelID), entry.isAccessible, entry.latestKnownMessageID != nil,
-                  let target = AccountReadStateModel.acknowledgementTarget(for: entry, now: now) else { return nil }
-            return BulkReadStateAcknowledgement(channelID: entry.channelID, messageID: target)
-        }.sorted { $0.channelID < $1.channelID }
-        markInboxGroupsRead(groups, additionalTargets: targets)
+        markInboxGroupsRead(groups, additionalTargets: readState.inboxGuildAcknowledgements(in: channelIDs))
     }
 
     private func markInboxGroupsRead(_ groups: [InboxUnreadGroup], additionalTargets: [BulkReadStateAcknowledgement] = []) {

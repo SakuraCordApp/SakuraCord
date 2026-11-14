@@ -97,6 +97,17 @@ extension AccountReadStateModel {
         }.sorted { $0.channelID < $1.channelID }
     }
 
+    /// The Inbox's server Mark as Read: every accessible conversation in
+    /// `channelIDs` with a known message, read or not.
+    func inboxGuildAcknowledgements(in channelIDs: Set<ChannelID>) -> [BulkReadStateAcknowledgement] {
+        let now = Date.now
+        return entries.values.compactMap { entry -> BulkReadStateAcknowledgement? in
+            guard channelIDs.contains(entry.channelID), entry.isAccessible, entry.latestKnownMessageID != nil,
+                  let target = Self.acknowledgementTarget(for: entry, now: now) else { return nil }
+            return BulkReadStateAcknowledgement(channelID: entry.channelID, messageID: target)
+        }.sorted { $0.channelID < $1.channelID }
+    }
+
     func serverAcknowledgement(
         for entry: Entry,
         guildIDs: Set<GuildID>,

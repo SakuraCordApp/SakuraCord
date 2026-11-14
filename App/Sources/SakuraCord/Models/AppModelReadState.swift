@@ -329,11 +329,16 @@ extension AppModel {
             || (channelID == selectedChannelID && hasMoreLaterMessages)
     }
 
-    /// DEBUG Inbox verification confines account acknowledgements to one server.
     func isOutsideAcknowledgementScope(_ channelID: ChannelID) -> Bool {
+        isOutsideAcknowledgementScope(guildID: readState[channelID]?.guildID)
+    }
+
+    /// DEBUG Inbox verification confines account acknowledgements to one
+    /// server, so live verification leaves unrelated conversations unread.
+    func isOutsideAcknowledgementScope(guildID: @autoclosure () -> GuildID?) -> Bool {
         #if DEBUG
             if let scope = ProcessInfo.processInfo.environment["SAKURACORD_INBOX_VERIFICATION_GUILD_ID"] {
-                return readState[channelID]?.guildID?.description != scope
+                return guildID()?.description != scope
             }
         #endif
         return false
