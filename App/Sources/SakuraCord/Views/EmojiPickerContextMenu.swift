@@ -98,9 +98,6 @@ final class EmojiPickerContextMenu: NSObject {
     }
 
     private func copy(_ value: String?) {
-        guard let value else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(value, forType: .string)
+        value.map(Pasteboard.copy)
     }
 }

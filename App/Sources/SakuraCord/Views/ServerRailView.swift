@@ -829,7 +829,7 @@ struct GuildRailButton: View {
                     )
                 },
                 copyServerID: {
-                    ChannelContextMenuValue.copy(guild.id.description)
+                    Pasteboard.copy(guild.id.description)
                 },
                 leaveServer: guild.isOwnedByCurrentUser == false && !guild.isUnavailable
                     ? { contextMenuActions.leaveServer(guild) } : nil,

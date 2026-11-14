@@ -35,18 +35,6 @@ nonisolated enum ChannelMuteDuration: CaseIterable, Equatable, Sendable {
     }
 }
 
-nonisolated enum ChannelContextMenuValue {
-    static func link(guildID: GuildID?, channelID: ChannelID) -> String {
-        "https://discord.com/channels/\(guildID?.description ?? "@me")/\(channelID)"
-    }
-
-    @MainActor
-    static func copy(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-    }
-}
-
 nonisolated enum ChannelContextMenuSubtitle {
     static func muteRemaining(
         until endTime: Date?,

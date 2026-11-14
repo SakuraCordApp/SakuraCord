@@ -81,7 +81,7 @@ extension NativeTimelineCanvasView {
             result.append(NSAccessibilityCustomAction(
                 name: "Copy Text"
             ) {
-                Self.copyText(message.content)
+                Pasteboard.copy(message.content)
                 return true
             })
             return result
@@ -135,20 +135,20 @@ extension NativeTimelineCanvasView {
         result.append(NSAccessibilityCustomAction(
             name: "Copy Text"
         ) {
-            Self.copyText(message.content)
+            Pasteboard.copy(message.content)
             return true
         })
         result.append(NSAccessibilityCustomAction(
             name: "Copy Message Link"
         ) { [weak self] in
             guard let self else { return false }
-            Self.copyText(self.messageLink(for: message))
+            Pasteboard.copy(self.messageLink(for: message))
             return true
         })
         result.append(NSAccessibilityCustomAction(
             name: "Copy Message ID"
         ) {
-            Self.copyText(message.id.description)
+            Pasteboard.copy(message.id.description)
             return true
         })
         if canDelete {
@@ -186,12 +186,12 @@ extension NativeTimelineCanvasView {
                 return true
             },
             NSAccessibilityCustomAction(name: "Copy Text") {
-                Self.copyText(message.content)
+                Pasteboard.copy(message.content)
                 return true
             },
             NSAccessibilityCustomAction(name: "Copy Message Link") { [weak self] in
                 guard let self else { return false }
-                Self.copyText(self.messageLink(for: message))
+                Pasteboard.copy(self.messageLink(for: message))
                 return true
             },
         ]
@@ -206,11 +206,11 @@ extension NativeTimelineCanvasView {
         }
         result.append(contentsOf: [
             NSAccessibilityCustomAction(name: "Copy Message ID") {
-                Self.copyText(message.id.description)
+                Pasteboard.copy(message.id.description)
                 return true
             },
             NSAccessibilityCustomAction(name: "Copy Message Author ID") {
-                Self.copyText(message.author.id.description)
+                Pasteboard.copy(message.author.id.description)
                 return true
             },
         ])

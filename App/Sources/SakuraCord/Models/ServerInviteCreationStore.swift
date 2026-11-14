@@ -183,7 +183,7 @@ extension AppModel {
     func copyServerInvite(_ invite: CreatedServerInvite) {
         let store = serverInvites.creation
         guard !accountTransitionIsActive else { return }
-        ChannelContextMenuValue.copy(invite.reference.url.absoluteString)
+        Pasteboard.copy(invite.reference.url.absoluteString)
         store.error = nil
         store.copiedCode = invite.reference.code
         store.copyRevision &+= 1

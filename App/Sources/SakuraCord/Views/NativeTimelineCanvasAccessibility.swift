@@ -1207,7 +1207,7 @@ extension NativeTimelineCanvasView {
                 ),
                 parent: input.parent
             ) {
-                Self.copyText(codeBlock.content)
+                Pasteboard.copy(codeBlock.content)
                 return true
             })
         }

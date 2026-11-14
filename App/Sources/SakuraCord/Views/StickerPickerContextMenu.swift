@@ -79,9 +79,7 @@ struct StickerPickerContextMenuBridge: NSViewRepresentable {
         @objc private func copyStickerImageLink() { copy(sticker.pickerImageLink?.absoluteString) }
 
         private func copy(_ value: String?) {
-            guard let value else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(value, forType: .string)
+            value.map(Pasteboard.copy)
         }
     }
 }

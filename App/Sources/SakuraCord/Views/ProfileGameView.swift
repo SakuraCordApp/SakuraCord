@@ -111,7 +111,7 @@ struct ProfileGameView: View {
         HStack(spacing: InterfaceScale.metric(8)) {
             if editor.canEditWidgets { addToProfileMenu }
             Button {
-                MediaViewerActionService.copyText("https://discord.com/games/\(game.id)")
+                Pasteboard.copy("https://discord.com/games/\(game.id)")
                 copiedLink = true
             } label: {
                 Image(systemName: copiedLink ? "checkmark" : "link").contentTransition(.symbolEffect(.replace))
@@ -128,7 +128,7 @@ struct ProfileGameView: View {
             }
             if editor.snapshot?.widgetEligibility.showsDeveloperWidgets == true {
                 Menu {
-                    Button("Copy Game ID") { MediaViewerActionService.copyText(game.id) }
+                    Button("Copy Game ID") { Pasteboard.copy(game.id) }
                 } label: {
                     Image(systemName: "ellipsis").profileGameActionLabel(isIcon: true)
                 }

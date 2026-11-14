@@ -93,9 +93,9 @@ extension AppModel {
             }
         }
         if !user.username.isEmpty {
-            add("copy-username", "Copy Username", "doc.on.doc", .copy) { _ in ChannelContextMenuValue.copy(user.tag) }
+            add("copy-username", "Copy Username", "doc.on.doc", .copy) { _ in Pasteboard.copy(user.tag) }
         }
-        add("copy-user-id", "Copy User ID", "number", .copy) { _ in ChannelContextMenuValue.copy(user.id.description) }
+        add("copy-user-id", "Copy User ID", "number", .copy) { _ in Pasteboard.copy(user.id.description) }
         return UserMenuAction.Group.allCases.flatMap { group in
             let grouped = actions.filter { $0.group == group }
             guard group == .destructive else { return grouped }

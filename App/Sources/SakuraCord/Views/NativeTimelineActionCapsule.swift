@@ -170,10 +170,10 @@ extension NativeTimelineCanvasView {
             reply: reply,
             forward: forward,
             react: { emoji in actions.react(emoji, row.message) },
-            copy: { Self.copyText(row.message.content) },
+            copy: { Pasteboard.copy(row.message.content) },
             copyLink: { [weak self] in
                 guard let self else { return }
-                Self.copyText(self.messageLink(for: row.message))
+                Pasteboard.copy(self.messageLink(for: row.message))
             },
             copyMessageID: messageMenuHandler(action: .copyMessageID, row: row, index: index, actions: actions),
             markUnread: messageMenuHandler(action: .markUnread, row: row, index: index, actions: actions),

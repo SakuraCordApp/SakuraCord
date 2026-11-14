@@ -913,8 +913,7 @@ final class RichMessageNSTextView: NSTextView {
         let range = selectedRange()
         guard range.length > 0 else { return }
         let value = RichMessageCopySerializer.string(from: attributedString(), range: range)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
+        Pasteboard.copy(value)
     }
 
     func claimSelectionOwnership() {

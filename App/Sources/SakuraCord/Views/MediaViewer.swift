@@ -279,12 +279,12 @@ struct MediaViewer: View {
     }
 
     private func copyLink(_ item: RichMediaItem) {
-        MediaViewerActionService.copyText(item.url.absoluteString)
+        Pasteboard.copy(item.url.absoluteString)
         showFeedback("Media link copied")
     }
 
     private func copyAttachmentID(_ item: RichMediaItem) {
-        MediaViewerActionService.copyText(item.id)
+        Pasteboard.copy(item.id)
         showFeedback("Attachment ID copied")
     }
 

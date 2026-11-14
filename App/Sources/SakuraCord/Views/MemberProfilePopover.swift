@@ -916,8 +916,7 @@ private struct CopyableProfileUsername: View {
         let isActive = isHovering || didCopy
 
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(username, forType: .string)
+            Pasteboard.copy(username)
             didCopy = true
         } label: {
             HStack(spacing: InterfaceScale.metric(4)) {

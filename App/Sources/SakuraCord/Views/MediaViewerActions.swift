@@ -13,11 +13,6 @@ enum MediaViewerActionService {
     /// or saves it.
     @MainActor static var resolveRemoteURL: (@MainActor (URL) async -> URL)?
 
-    static func copyText(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-    }
-
     static func copyImage(from url: URL) async throws {
         let data = try await SharedMediaDataLoader.shared.data(for: url)
         guard let image = NSImage(data: data) else {

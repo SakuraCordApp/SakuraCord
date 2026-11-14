@@ -361,8 +361,7 @@ class ProfileSelectableTextView: NSTextView {
         let range = selectedRange()
         guard range.length > 0 else { return }
         let value = ComposerEmojiAttributedText.serialize(attributedString(), range: range)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
+        Pasteboard.copy(value)
     }
 
 }

@@ -147,10 +147,10 @@ struct ThreadActionsMenu {
         let guildID = thread.guildID ?? thread.parentID.flatMap { model.messagePresentationChannelsByID[$0] }?.guildID
         sections.append([
             ThreadMenuEntry(id: "copy-id", title: "Copy \(noun) ID", systemImage: "number.square.fill", content: Self.guarded(model, thread, \.canRead) {
-                ChannelContextMenuValue.copy(thread.id.description)
+                Pasteboard.copy(thread.id.description)
             }),
             ThreadMenuEntry(id: "copy-link", title: "Copy Link", systemImage: "link", content: Self.guarded(model, thread, \.canRead) {
-                ChannelContextMenuValue.copy(ChannelContextMenuValue.link(guildID: guildID, channelID: thread.id))
+                Pasteboard.copy(DiscordLink.channel(guildID: guildID, channelID: thread.id))
             }),
         ])
 

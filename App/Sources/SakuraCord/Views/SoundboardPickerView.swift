@@ -444,7 +444,7 @@ private struct SoundboardButton: View {
                 isFavorite: model.isFavoriteSound(sound),
                 toggleFavorite: { Task { await model.toggleFavoriteSound(sound) } },
                 saveActions: saveActions,
-                copyID: { MediaViewerActionService.copyText(sound.id) }
+                copyID: { Pasteboard.copy(sound.id) }
             )
         }
         .accessibilityElement(children: .contain)

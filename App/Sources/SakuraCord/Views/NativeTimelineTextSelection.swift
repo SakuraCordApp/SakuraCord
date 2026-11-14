@@ -330,13 +330,9 @@ extension NativeTimelineCanvasView {
         return NSRange(location: index, length: end - index)
     }
 
-    static func copyText(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-    }
-
     func messageLink(for message: Message) -> String {
-        let guild = (message.guildID ?? model?.selectedGuildID)?.description ?? "@me"
-        return "https://discord.com/channels/\(guild)/\(message.channelID)/\(message.id)"
+        DiscordLink.message(
+            guildID: message.guildID ?? model?.selectedGuildID, channelID: message.channelID, messageID: message.id
+        )
     }
 }

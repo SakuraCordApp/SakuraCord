@@ -227,11 +227,11 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
         }
 
         @objc private func copyFilenameFromMenu() {
-            MediaViewerActionService.copyText(filenameDescription)
+            Pasteboard.copy(filenameDescription)
         }
 
         @objc private func copySizeFromMenu() {
-            MediaViewerActionService.copyText(sizeDescription)
+            Pasteboard.copy(sizeDescription)
         }
 
         @objc private func openFromMenu() {

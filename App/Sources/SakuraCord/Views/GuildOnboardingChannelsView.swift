@@ -114,9 +114,9 @@ private struct BrowseChannelRow: View {
                 mute: { model.setChannelMute(true, until: $0.endDate(), for: channel) },
                 unmute: { model.setChannelMute(false, until: nil, for: channel) },
                 setNotificationLevel: { model.setChannelNotificationLevel($0, for: channel) },
-                copyChannelID: { ChannelContextMenuValue.copy(channel.id.description) },
+                copyChannelID: { Pasteboard.copy(channel.id.description) },
                 copyLink: {
-                    ChannelContextMenuValue.copy(ChannelContextMenuValue.link(guildID: channel.guildID, channelID: channel.id))
+                    Pasteboard.copy(DiscordLink.channel(guildID: channel.guildID, channelID: channel.id))
                 }
             )
         }

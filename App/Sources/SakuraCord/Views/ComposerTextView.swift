@@ -1142,8 +1142,7 @@ final class ComposerNSTextView: ComposerFocusReportingTextView, WindowModalEscap
         let range = selectedRange()
         guard range.length > 0 else { return }
         let raw = ComposerEmojiAttributedText.serialize(attributedString(), range: range)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(raw, forType: .string)
+        Pasteboard.copy(raw)
     }
 
     // AppKit validates Paste and Services against these types, then reads

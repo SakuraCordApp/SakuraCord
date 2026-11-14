@@ -269,11 +269,11 @@ private struct DirectMessageInboxRow: View {
                     model.setChannelNotificationLevel(level, for: channel)
                 },
                 copyChannelID: {
-                    ChannelContextMenuValue.copy(channel.id.description)
+                    Pasteboard.copy(channel.id.description)
                 },
                 copyLink: {
-                    ChannelContextMenuValue.copy(
-                        ChannelContextMenuValue.link(
+                    Pasteboard.copy(
+                        DiscordLink.channel(
                             guildID: nil,
                             channelID: channel.id
                         )

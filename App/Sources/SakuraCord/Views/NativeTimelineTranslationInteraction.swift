@@ -16,7 +16,7 @@ extension NativeTimelineCanvasView {
         if model?.translatedMessageText(message) != nil {
             actions.append(NSAccessibilityCustomAction(name: "Copy Translation") { [weak self] in
                 guard let text = self?.model?.translatedMessageText(message) else { return false }
-                Self.copyText(text)
+                Pasteboard.copy(text)
                 return true
             })
         }

@@ -922,7 +922,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
 
         private func copySearchSelection(in editor: NSTextView) -> Bool {
             guard let value = canonicalSelection(in: editor) else { return false }
-            writeToPasteboard(value)
+            Pasteboard.copy(value)
             return true
         }
 
@@ -930,7 +930,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             guard let value = canonicalSelection(in: editor) else { return false }
             let emptiesEditor = editor.selectedRange().length == editor.string.utf16.count
             editor.delete(nil)
-            writeToPasteboard(value)
+            Pasteboard.copy(value)
             if emptiesEditor {
                 restoreSearchFocusAfterKeyboardClear()
             }
@@ -1031,11 +1031,6 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
                 selectedRange: editor.selectedRange(),
                 tokens: searchTokens.wrappedValue
             )
-        }
-
-        private func writeToPasteboard(_ value: String) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(value, forType: .string)
         }
 
     }

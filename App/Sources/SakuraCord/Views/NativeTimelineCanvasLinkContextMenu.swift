@@ -34,7 +34,7 @@ extension NativeTimelineCanvasView {
         }
         let open = textLinkOpenWithMenu(url: url, displayedText: text.hit.displayedText)
         let copy = actionItem("Copy Link", systemImage: "link") {
-            Self.copyText(url.absoluteString)
+            Pasteboard.copy(url.absoluteString)
         }
         menu.insertItem(.separator(), at: 0)
         menu.insertItem(copy, at: 0)

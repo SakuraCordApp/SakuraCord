@@ -1473,19 +1473,19 @@ extension NativeTimelineCanvasView {
         switch action {
         case .copyTranslation:
             { [weak model] in
-                if let text = model?.translatedMessageText(row.message) { Self.copyText(text) }
+                if let text = model?.translatedMessageText(row.message) { Pasteboard.copy(text) }
             }
         case .copyText:
-            { Self.copyText(row.message.content) }
+            { Pasteboard.copy(row.message.content) }
         case .copyLink:
             { [weak self] in
                 guard let self else { return }
-                Self.copyText(self.messageLink(for: row.message))
+                Pasteboard.copy(self.messageLink(for: row.message))
             }
         case .copyMessageID:
-            { Self.copyText(row.message.id.description) }
+            { Pasteboard.copy(row.message.id.description) }
         case .copyAuthorID:
-            { Self.copyText(row.message.author.id.description) }
+            { Pasteboard.copy(row.message.author.id.description) }
         default:
             nil
         }
@@ -1525,7 +1525,7 @@ extension NativeTimelineCanvasView {
                 }
             ),
             copyLink: {
-                MediaViewerActionService.copyText(item.url.absoluteString)
+                Pasteboard.copy(item.url.absoluteString)
             },
             openLink: {
                 MediaViewerActionService.openInBrowser(item.url)
@@ -1565,7 +1565,7 @@ extension NativeTimelineCanvasView {
                 )
             },
             copyMediaLink: {
-                MediaViewerActionService.copyText(gif.url.absoluteString)
+                Pasteboard.copy(gif.url.absoluteString)
             }
         )
     }

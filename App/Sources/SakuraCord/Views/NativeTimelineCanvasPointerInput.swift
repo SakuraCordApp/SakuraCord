@@ -632,7 +632,7 @@ extension NativeTimelineCanvasView {
                released?.rangeLocation
                     == pressedCodeBlockCopyButton.rangeLocation
             {
-                Self.copyText(pressedCodeBlockCopyButton.content)
+                Pasteboard.copy(pressedCodeBlockCopyButton.content)
                 codeCopyControl?.confirmCopy()
             }
             return true
@@ -926,7 +926,7 @@ extension NativeTimelineCanvasView {
            let selectedText = selectedTextValue()
         {
             guard !sendTransitionBlocksInteractions else { return true }
-            Self.copyText(selectedText)
+            Pasteboard.copy(selectedText)
             return true
         }
         return super.performKeyEquivalent(with: event)

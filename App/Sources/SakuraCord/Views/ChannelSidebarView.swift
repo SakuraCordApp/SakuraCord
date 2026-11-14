@@ -857,7 +857,7 @@ private struct ChannelGroupRows: View {
                                 )
                             },
                             copyChannelID: {
-                                ChannelContextMenuValue.copy(
+                                Pasteboard.copy(
                                     categoryID.description
                                 )
                             },
@@ -1536,11 +1536,11 @@ private struct ChannelRow: View {
                     model.setChannelNotificationLevel(level, for: channel)
                 },
                 copyChannelID: {
-                    ChannelContextMenuValue.copy(channel.id.description)
+                    Pasteboard.copy(channel.id.description)
                 },
                 copyLink: {
-                    ChannelContextMenuValue.copy(
-                        ChannelContextMenuValue.link(
+                    Pasteboard.copy(
+                        DiscordLink.channel(
                             guildID: channel.guildID,
                             channelID: channel.id
                         )
