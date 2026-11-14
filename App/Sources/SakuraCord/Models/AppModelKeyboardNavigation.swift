@@ -113,7 +113,9 @@ extension AppModel {
     func hasKeyboardShortcutConversationDestination(unreadOnly: Bool, mentionsOnly: Bool = false) -> Bool {
         let selectedID = shortcutThreadIsFullWidth ? openThread?.id : selectedChannelID
         if favorites.isPresented, !unreadOnly {
-            return favoriteConversations().contains { $0.id != presentedFavoriteChannelID }
+            // Stops at the first other favourite instead of resolving them all.
+            return (displayedFavorites?.sections.flatMap(\.entries) ?? []).lazy
+                .compactMap(favoriteConversation).contains { $0.id != presentedFavoriteChannelID }
         }
         if !unreadOnly {
             if selectedGuildID == nil {

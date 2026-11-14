@@ -96,7 +96,7 @@ extension ProtoReader {
     /// does. nil when the field is absent.
     static func mergedMessage(_ field: Int, in data: Data) -> Data? {
         let payloads = fields(data).filter { $0.field == field }.compactMap(\.payload)
-        return payloads.isEmpty ? nil : payloads.reduce(Data(), +)
+        return payloads.isEmpty ? nil : Data(payloads.joined())
     }
 
     static func fields(_ data: Data) -> [RawProtoField] {
