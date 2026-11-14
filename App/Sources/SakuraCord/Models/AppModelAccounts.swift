@@ -262,7 +262,7 @@ extension AppModel {
         forwardingMessage = nil
         forwardingErrorMessage = nil
         isForwardingMessages = false
-        forwardDestinationHistory = []
+        conversationDestinationHistory = []
         quickSwitcherDraftChannelIDs = []
         snapshot = nil
         replaceServerRailGuilds([:])

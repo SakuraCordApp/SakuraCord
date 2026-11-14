@@ -231,7 +231,7 @@ import Testing
 
     model.messageSearch.queryText = "private query"
     model.messageSearch.isPresented = true
-    model.forwardDestinationHistory = [channelID]
+    model.conversationDestinationHistory = [channelID]
     model.recordMessageEmojiUsage("👋")
     let pending = model.emojiFrecency.pendingUsages
     model.discordFavoriteEmojiKeys = ["wave"]
@@ -240,7 +240,7 @@ import Testing
 
     #expect(model.messageSearch.queryText == "private query")
     #expect(model.messageSearch.isPresented)
-    #expect(model.forwardDestinationHistory.isEmpty)
+    #expect(model.conversationDestinationHistory.isEmpty)
     #expect(model.emojiFrecency.pendingUsages == pending)
     #expect(model.discordFavoriteEmojiKeys == ["wave"])
 }

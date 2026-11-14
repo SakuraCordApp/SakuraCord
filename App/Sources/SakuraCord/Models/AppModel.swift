@@ -469,7 +469,7 @@ final class AppModel {
     var forwardingMessage: Message?
     var forwardingErrorMessage: String?
     var isForwardingMessages = false
-    var forwardDestinationHistory: [ChannelID] = []
+    var conversationDestinationHistory: [ChannelID] = []
     var quickSwitcherDraftChannelIDs: [ChannelID] = []
     var forwardSearchSourceRevision: UInt64 = 0
     var forumCreateGeneration: UInt64 = 0
@@ -650,7 +650,7 @@ final class AppModel {
     var discordSyncedGuildAndChannelUsageScores: [String: Int] = [:]
     var discordGuildAndChannelUsage: [String: DiscordFrecencyUsage] = [:]
     var discordGuildAndChannelUsageOrder: [String] = []
-    @ObservationIgnored var forwardDestinationHistoryDefaultsKey = "dev.sakuracord.forward-destination-history.signed-out"
+    @ObservationIgnored var destinationHistoryDefaultsKey = "dev.sakuracord.forward-destination-history.signed-out"
     @ObservationIgnored var pendingDiscordFrecencyUses: [(key: String, timestamp: UInt64)] = []
     @ObservationIgnored var persistedDiscordFrecencyUsageDeltas: [String: DiscordFrecencyUsage] = [:]
     @ObservationIgnored var discordFrecencyUsageDeltasDefaultsKey = "dev.sakuracord.forward-frecency-deltas.signed-out"

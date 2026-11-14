@@ -269,7 +269,7 @@ struct ChannelSidebarView: View {
                         guard guild?.id == guildID else { return }
                         switch newSelection {
                         case .channel(let channelID):
-                            voiceModel.recordForwardDestinationVisit(channelID)
+                            voiceModel.recordConversationDestinationVisit(channelID)
                             if selection == channelID {
                                 // The parent row leaves its open thread, as in Discord.
                                 voiceModel.closeThread()
@@ -312,7 +312,7 @@ struct ChannelSidebarView: View {
                     voiceModel.openMessageRequests()
                 case .channel(let channelID):
                     guard selection != channelID || voiceModel.isFriendsPresented else { return }
-                    voiceModel.recordForwardDestinationVisit(channelID)
+                    voiceModel.recordConversationDestinationVisit(channelID)
                     selection = channelID
                 case nil:
                     break

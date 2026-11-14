@@ -230,14 +230,14 @@ func `open forward search observes live user and guild nickname store updates`()
 @Test func `forward channel history is most recent unique and capped at eight`() {
     var history: [ChannelID] = []
     for value in 1 ... 10 {
-        history = AppModel.updatedForwardDestinationHistory(
+        history = AppModel.updatedConversationDestinationHistory(
             history,
             visiting: ChannelID(rawValue: UInt64(value))
         )
     }
     #expect(history.map(\.rawValue) == [10, 9, 8, 7, 6, 5, 4, 3])
 
-    history = AppModel.updatedForwardDestinationHistory(
+    history = AppModel.updatedConversationDestinationHistory(
         history,
         visiting: ChannelID(rawValue: 6)
     )
@@ -259,9 +259,9 @@ func `open forward search observes live user and guild nickname store updates`()
         discordNetworkDisabledOverride: true,
         restoresStoredSession: false
     )
-    first.configureForwardDestinationHistoryScope(scope)
-    first.recordForwardDestinationVisit(ChannelID(rawValue: 10))
-    first.recordForwardDestinationVisit(ChannelID(rawValue: 20))
+    first.configureConversationDestinationHistoryScope(scope)
+    first.recordConversationDestinationVisit(ChannelID(rawValue: 10))
+    first.recordConversationDestinationVisit(ChannelID(rawValue: 20))
 
     let second = AppModel(
         launchMode: .normal,
@@ -269,8 +269,8 @@ func `open forward search observes live user and guild nickname store updates`()
         discordNetworkDisabledOverride: true,
         restoresStoredSession: false
     )
-    second.configureForwardDestinationHistoryScope(scope)
-    #expect(second.forwardDestinationHistory == [
+    second.configureConversationDestinationHistoryScope(scope)
+    #expect(second.conversationDestinationHistory == [
         ChannelID(rawValue: 20), ChannelID(rawValue: 10),
     ])
 }
@@ -304,10 +304,10 @@ func `passive initial channel selection does not contaminate forward history`() 
     model.visibleChannels = [first, second]
 
     model.selectedChannelID = first.id
-    #expect(model.forwardDestinationHistory.isEmpty)
+    #expect(model.conversationDestinationHistory.isEmpty)
 
     model.selectedChannelID = second.id
-    #expect(model.forwardDestinationHistory.isEmpty)
+    #expect(model.conversationDestinationHistory.isEmpty)
 }
 
 @MainActor @Test func `failed frecency enrichment never leaves forwarding destinations loading`() async {

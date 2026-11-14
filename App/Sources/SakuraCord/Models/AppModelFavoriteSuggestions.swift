@@ -71,7 +71,7 @@ extension AppModel {
         var pool = favoriteSuggestionPool(affinities: affinities)
         publish(pool)
         guard pool.channels.count + pool.users.count < Self.favoriteSuggestionPoolDepth else { return }
-        let history = forwardDestinationHistory
+        let history = conversationDestinationHistory
         let favoriteIDs = favoriteIDs
         guard let index = await ConversationDestinationSearchIndexCache.shared.prepare(
             for: self, priority: .userInitiated, corpus: .favorites

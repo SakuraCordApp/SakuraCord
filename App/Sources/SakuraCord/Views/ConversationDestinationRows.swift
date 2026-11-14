@@ -31,7 +31,7 @@ struct ConversationDestinationRow: View {
                     .font(.interfaceSystem(size: 20))
                     .foregroundStyle(isSelected ? SakuraCordAccentColor.color : Color.secondary.opacity(0.6))
                     .contentTransition(.symbolEffect(.replace))
-                    .frame(width: ForwardPickerLayoutMetrics.iconSize, height: ForwardPickerLayoutMetrics.iconSize)
+                    .frame(width: ConversationDestinationLayoutMetrics.iconSize, height: ConversationDestinationLayoutMetrics.iconSize)
                     .accessibilityHidden(true)
             }
             .padding(InterfaceScale.metric(8))
@@ -64,7 +64,7 @@ struct ConversationDestinationAvatar: View {
             AvatarView(
                 name: destination.title,
                 url: destination.avatarURL,
-                size: ForwardPickerLayoutMetrics.iconSize
+                size: ConversationDestinationLayoutMetrics.iconSize
             )
         }
     }
@@ -75,14 +75,14 @@ struct ConversationDestinationAvatar: View {
                 GuildIconView(
                     name: destination.guild?.name ?? destination.title,
                     iconURL: destination.guild?.iconURL,
-                    size: ForwardPickerLayoutMetrics.iconSize,
-                    cornerRadius: ForwardPickerLayoutMetrics.iconSize / 2,
+                    size: ConversationDestinationLayoutMetrics.iconSize,
+                    cornerRadius: ConversationDestinationLayoutMetrics.iconSize / 2,
                     animates: false
                 )
             } else {
                 Circle()
                     .fill(Color.secondary.opacity(0.16))
-                    .frame(width: ForwardPickerLayoutMetrics.iconSize, height: ForwardPickerLayoutMetrics.iconSize)
+                    .frame(width: ConversationDestinationLayoutMetrics.iconSize, height: ConversationDestinationLayoutMetrics.iconSize)
                     .overlay {
                         Text(guildInitials)
                             .font(.interfaceSystem(size: 10, weight: .medium))
@@ -103,7 +103,7 @@ struct ConversationDestinationAvatar: View {
                 }
                 .offset(x: InterfaceScale.metric(3), y: InterfaceScale.metric(3))
         }
-        .frame(width: ForwardPickerLayoutMetrics.iconSize, height: ForwardPickerLayoutMetrics.iconSize)
+        .frame(width: ConversationDestinationLayoutMetrics.iconSize, height: ConversationDestinationLayoutMetrics.iconSize)
         .accessibilityHidden(true)
     }
 

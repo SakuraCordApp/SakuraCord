@@ -278,7 +278,7 @@ extension AppModel {
             friends.replaceRelationships(value.relationships)
             ignoredUsers.replaceRelationships(value.relationships)
             installBootstrapMembership(value)
-            configureForwardDestinationHistoryScope(
+            configureConversationDestinationHistoryScope(
                 credentialHandle?.accountID
                     ?? (launchMode == .offlineTesting ? "offline" : "signed-out")
             )

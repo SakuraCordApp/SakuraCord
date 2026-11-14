@@ -52,7 +52,7 @@ struct ForwardMessageOverlay: View {
         let query = query
         let pins = searchPinnedDestinationIDs
         let indexRevision = searchIndexRevision
-        let history = model.forwardDestinationHistory
+        let history = model.conversationDestinationHistory
         let originChannelID = message.channelID
         let searchTask = Task.detached(priority: .userInitiated) {
             searchIndex.results(
@@ -301,4 +301,9 @@ nonisolated enum ForwardDestinationSelectionPolicy {
             return destinationsByID[destinationID]
         }.prefix(limit).map { $0 }
     }
+}
+
+nonisolated enum ForwardPickerLayoutMetrics {
+    static var width: CGFloat { InterfaceScale.metric(480) }
+    static var height: CGFloat { InterfaceScale.metric(679) }
 }

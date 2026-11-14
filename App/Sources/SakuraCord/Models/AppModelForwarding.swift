@@ -153,7 +153,7 @@ extension AppModel {
         switch destination {
         case .channel(let channelID):
             let isKnown = knownChannels.contains {
-                $0.id == channelID && supportsForwardDestination($0.kind)
+                $0.id == channelID && ConversationDestinationPermissionPolicy.supportsDestination($0.kind)
             } || knownThreadIDs.contains(channelID)
             return ForwardDestinationResolution(
                 index: index,
@@ -291,20 +291,6 @@ extension AppModel {
             ? failures[0]
             : "Forwarding failed for \(failures.count) destinations."
         errorMessage = forwardingErrorMessage
-    }
-
-    nonisolated static func supportsForwardDestination(_ kind: ChannelKindValue) -> Bool {
-        switch kind {
-        case .text, .announcement, .voice, .directMessage, .groupDirectMessage: true
-        case .forum, .unknown: false
-        }
-    }
-
-    nonisolated static func supportsForwardSearchCandidate(_ kind: ChannelKindValue) -> Bool {
-        switch kind {
-        case .text, .announcement, .forum, .voice, .groupDirectMessage: true
-        case .directMessage, .unknown: false
-        }
     }
 }
 

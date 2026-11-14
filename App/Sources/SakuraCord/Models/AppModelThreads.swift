@@ -113,7 +113,7 @@ extension AppModel {
         if let selectedChannelID, !isConversationPresented(selectedChannelID) {
             suspendSelectedConversationPresentation()
         }
-        recordForwardDestinationVisit(thread.id)
+        recordConversationDestinationVisit(thread.id)
         _ = readState.updatePresentation(
             channelID: thread.id,
             isPresented: isConversationPresented(thread.id),

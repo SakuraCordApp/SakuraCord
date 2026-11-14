@@ -375,7 +375,7 @@ private struct QuickSwitcherView: View {
             ),
             guilds: guildsInStoreOrder,
             usageScores: model.discordGuildAndChannelUsageScores,
-            history: model.forwardDestinationHistory,
+            history: model.conversationDestinationHistory,
             currentChannelID: model.selectedChannelID,
             currentGuildID: model.selectedGuildID,
             currentUserID: snapshot.currentUser.id,

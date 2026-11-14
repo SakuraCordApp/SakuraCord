@@ -2,9 +2,7 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
-nonisolated enum ForwardPickerLayoutMetrics {
-    static var width: CGFloat { InterfaceScale.metric(480) }
-    static var height: CGFloat { InterfaceScale.metric(679) }
+nonisolated enum ConversationDestinationLayoutMetrics {
     static var iconSize: CGFloat { InterfaceScale.metric(32) }
 }
 
@@ -87,11 +85,25 @@ nonisolated struct ConversationDestination: Identifiable, Equatable {
 }
 
 nonisolated enum ConversationDestinationPermissionPolicy {
+    static func supportsDestination(_ kind: ChannelKindValue) -> Bool {
+        switch kind {
+        case .text, .announcement, .voice, .directMessage, .groupDirectMessage: true
+        case .forum, .unknown: false
+        }
+    }
+
+    static func supportsSearchCandidate(_ kind: ChannelKindValue) -> Bool {
+        switch kind {
+        case .text, .announcement, .forum, .voice, .groupDirectMessage: true
+        case .directMessage, .unknown: false
+        }
+    }
+
     static func canSearchChannel(
         _ channel: Channel,
         permissions: UInt64?
     ) -> Bool {
-        guard AppModel.supportsForwardSearchCandidate(channel.kind) else {
+        guard supportsSearchCandidate(channel.kind) else {
             return false
         }
         guard channel.kind != .groupDirectMessage else { return true }
@@ -114,7 +126,7 @@ nonisolated enum ConversationDestinationPermissionPolicy {
         _ channel: Channel,
         permissions: UInt64?
     ) -> Bool {
-        guard AppModel.supportsForwardDestination(channel.kind) else {
+        guard supportsDestination(channel.kind) else {
             return false
         }
         guard channel.kind != .groupDirectMessage else {

@@ -2977,7 +2977,7 @@ func `removing a saved account without a credential still clears derived caches`
     _ = await iterator.next()
     model.installAccountSession(provider: MockChatProvider(), database: nil)
     model.draft = "new account draft"
-    model.forwardDestinationHistory = [ChannelID(rawValue: 200)]
+    model.conversationDestinationHistory = [ChannelID(rawValue: 200)]
     release.continuation.yield(())
     do {
         try await clearing.value
@@ -2988,7 +2988,7 @@ func `removing a saved account without a credential still clears derived caches`
         #expect(!error.localizedDescription.contains("draft"))
     }
     #expect(model.draft == "new account draft")
-    #expect(model.forwardDestinationHistory == [ChannelID(rawValue: 200)])
+    #expect(model.conversationDestinationHistory == [ChannelID(rawValue: 200)])
     await provider.disconnect()
 }
 

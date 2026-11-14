@@ -83,7 +83,7 @@ struct FavoritesPickerView: View {
     private func refreshResults() async {
         guard let index else { return }
         let request = searchRequest
-        let history = model.forwardDestinationHistory
+        let history = model.conversationDestinationHistory
         let favoriteIDs = model.favoriteIDs
         let search = Task.detached(priority: .userInitiated) {
             index.results(

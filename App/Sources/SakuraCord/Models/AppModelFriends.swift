@@ -265,7 +265,7 @@ extension AppModel {
                 model.mergeOpenedPrivateChannel(channel)
                 if model.selectedGuildID != nil { await model.activateGuild(nil, account: session) }
                 guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
-                model.recordForwardDestinationVisit(channel.id)
+                model.recordConversationDestinationVisit(channel.id)
                 model.closeThread()
                 model.selectedChannelID = channel.id
             } catch {

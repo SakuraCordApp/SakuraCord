@@ -2,11 +2,11 @@ import Foundation
 
 extension AppModel {
     func clearLocalDestinationHistory() {
-        forwardDestinationHistory = []
+        conversationDestinationHistory = []
         workspaceNavigationOverlay = nil
         guard launchMode == .normal else { return }
         UserDefaults.standard.removeObject(
-            forKey: forwardDestinationHistoryDefaultsKey
+            forKey: destinationHistoryDefaultsKey
         )
     }
 

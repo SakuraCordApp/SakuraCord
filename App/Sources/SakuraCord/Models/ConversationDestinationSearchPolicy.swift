@@ -539,7 +539,7 @@ nonisolated extension ConversationDestinationSearchPolicy {
         source.channels.compactMap { channel in
             guard channel.kind != .directMessage else { return nil }
             if channel.kind != .groupDirectMessage {
-                guard supportsSearchCandidate(channel.kind),
+                guard ConversationDestinationPermissionPolicy.supportsSearchCandidate(channel.kind),
                       source.searchableChannelIDs?.contains(channel.id) != false
                 else { return nil }
             }
@@ -616,13 +616,6 @@ nonisolated extension ConversationDestinationSearchPolicy {
         let orderedThreadDestinations = activeJoinedThreadDestinations
             + remainingThreadDestinations
         return orderedThreadDestinations
-    }
-
-    private static func supportsSearchCandidate(_ kind: ChannelKindValue) -> Bool {
-        switch kind {
-        case .text, .announcement, .forum, .voice, .groupDirectMessage: true
-        case .directMessage, .unknown: false
-        }
     }
 
     private static func channelsByID(_ channels: [Channel]) -> [ChannelID: Channel] {

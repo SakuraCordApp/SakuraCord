@@ -333,7 +333,7 @@ extension AppModel {
             guard !Task.isCancelled,
                   model.isCurrentAccountSession(account)
             else { return }
-            model.recordForwardDestinationVisit(channel.id)
+            model.recordConversationDestinationVisit(channel.id)
             model.closeThread()
             model.selectedChannelID = channel.id
         }

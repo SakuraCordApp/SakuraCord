@@ -2,10 +2,10 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
-/// Recently visited forward destinations and the guild and channel
+/// Recently visited conversation destinations and the guild and channel
 /// frecency Discord ranks them by.
 extension AppModel {
-    nonisolated static func updatedForwardDestinationHistory(
+    nonisolated static func updatedConversationDestinationHistory(
         _ history: [ChannelID],
         visiting channelID: ChannelID
     ) -> [ChannelID] {
@@ -14,22 +14,22 @@ extension AppModel {
         return Array(result.prefix(8))
     }
 
-    func configureForwardDestinationHistoryScope(_ scope: String) {
+    func configureConversationDestinationHistoryScope(_ scope: String) {
         let safeScope = DiscordFrecencyStore.safeScope(scope)
         let historyKey = "dev.sakuracord.forward-destination-history.\(safeScope)"
         let deltasKey = "dev.sakuracord.forward-frecency-deltas.\(safeScope)"
         if discordFrecencyUsageDeltasDefaultsKey != deltasKey {
             appliedDiscordFrecencyDeltasKey = nil
         }
-        forwardDestinationHistoryDefaultsKey = historyKey
+        destinationHistoryDefaultsKey = historyKey
         discordFrecencyUsageDeltasDefaultsKey = deltasKey
         guard launchMode == .normal else {
-            forwardDestinationHistory = []
+            conversationDestinationHistory = []
             persistedDiscordFrecencyUsageDeltas = [:]
             appliedDiscordFrecencyDeltasKey = nil
             return
         }
-        forwardDestinationHistory = Array(
+        conversationDestinationHistory = Array(
             (UserDefaults.standard.stringArray(forKey: historyKey) ?? [])
                 .compactMap(ChannelID.init)
                 .prefix(8)
@@ -52,15 +52,15 @@ extension AppModel {
         }
     }
 
-    func recordForwardDestinationVisit(_ channelID: ChannelID) {
-        forwardDestinationHistory = Self.updatedForwardDestinationHistory(
-            forwardDestinationHistory,
+    func recordConversationDestinationVisit(_ channelID: ChannelID) {
+        conversationDestinationHistory = Self.updatedConversationDestinationHistory(
+            conversationDestinationHistory,
             visiting: channelID
         )
         guard launchMode == .normal else { return }
         UserDefaults.standard.set(
-            forwardDestinationHistory.map(\.description),
-            forKey: forwardDestinationHistoryDefaultsKey
+            conversationDestinationHistory.map(\.description),
+            forKey: destinationHistoryDefaultsKey
         )
         let now = UInt64(Date().timeIntervalSince1970 * 1_000)
         if lastDiscordFrecencyChannelID != channelID {
