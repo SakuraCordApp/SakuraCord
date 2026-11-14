@@ -98,6 +98,8 @@ nonisolated struct SettingsPreferenceRegistration: Identifiable, Sendable {
     let defaultValue: SettingsPreferenceValue
     let exports: Bool
     let resets: Bool
+    /// What a string setting accepts.
+    let validate: (@Sendable (String) -> Bool)?
 
     init(
         id: SettingsControlID,
@@ -105,7 +107,8 @@ nonisolated struct SettingsPreferenceRegistration: Identifiable, Sendable {
         key: String,
         defaultValue: SettingsPreferenceValue,
         exports: Bool = true,
-        resets: Bool = true
+        resets: Bool = true,
+        validate: (@Sendable (String) -> Bool)? = nil
     ) {
         self.id = id
         self.page = page
@@ -113,6 +116,7 @@ nonisolated struct SettingsPreferenceRegistration: Identifiable, Sendable {
         self.defaultValue = defaultValue
         self.exports = exports
         self.resets = resets
+        self.validate = validate
     }
 }
 
@@ -136,7 +140,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .launchDestination,
             page: .general,
             key: "settings.launchDestination",
-            defaultValue: .string(SettingsLaunchDestination.lastVisitedConversation.rawValue)
+            defaultValue: .string(SettingsLaunchDestination.lastVisitedConversation.rawValue),
+            validate: { SettingsLaunchDestination(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .confirmQuitActiveWork,
@@ -148,7 +153,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .appColorScheme,
             page: .appearance,
             key: "settings.appearance.colorScheme",
-            defaultValue: .string(AppColorScheme.system.rawValue)
+            defaultValue: .string(AppColorScheme.system.rawValue),
+            validate: { AppColorScheme(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .windowOpacity,
@@ -167,29 +173,34 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .themeDesigner,
             page: .appearance,
             key: "settings.appearance.customGradientTheme",
-            defaultValue: .string(SakuraCordGradientTheme.defaultTheme.storageValue)
+            defaultValue: .string(SakuraCordGradientTheme.defaultTheme.storageValue),
+            validate: { SakuraCordGradientTheme(storageValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .composerBarAppearance,
             page: .interface,
             key: "settings.appearance.composerBar",
-            defaultValue: .string(ComposerBarAppearance.defaultStyle.rawValue)
+            defaultValue: .string(ComposerBarAppearance.defaultStyle.rawValue),
+            validate: { ComposerBarAppearance(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .messageAppearance,
             page: .interface,
             key: "settings.appearance.serverMessages",
-            defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
+            defaultValue: .string(MessageAppearance.defaultStyle.rawValue),
+            validate: { MessageAppearance(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .directMessageAppearance, page: .interface,
             key: "settings.appearance.directMessages",
-            defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
+            defaultValue: .string(MessageAppearance.defaultStyle.rawValue),
+            validate: { MessageAppearance(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .groupMessageAppearance, page: .interface,
             key: "settings.appearance.groupMessages",
-            defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
+            defaultValue: .string(MessageAppearance.defaultStyle.rawValue),
+            validate: { MessageAppearance(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .messageFontSize,
@@ -215,7 +226,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .timestampFormat,
             page: .interface,
             key: "settings.interface.timestampFormat",
-            defaultValue: .string(InterfaceTimestampFormat.system.rawValue)
+            defaultValue: .string(InterfaceTimestampFormat.system.rawValue),
+            validate: { InterfaceTimestampFormat(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .alwaysShowTimestamps, page: .interface,
@@ -225,12 +237,14 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         SettingsPreferenceRegistration(
             id: .roleColorDisplay, page: .accessibility,
             key: "settings.accessibility.roleColorDisplay",
-            defaultValue: .string(RoleColorDisplay.inNames.rawValue)
+            defaultValue: .string(RoleColorDisplay.inNames.rawValue),
+            validate: { RoleColorDisplay(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .composerIcons, page: .interface,
             key: "settings.appearance.composerIcons",
-            defaultValue: .string(ComposerIconLayout.defaults.storageValue)
+            defaultValue: .string(ComposerIconLayout.defaults.storageValue),
+            validate: { (try? JSONDecoder().decode(ComposerIconLayout.self, from: Data($0.utf8))) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .timestampSeconds,
@@ -301,7 +315,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .emojiSkinTone,
             page: .general,
             key: "emojiSkinTone",
-            defaultValue: .string(NativeEmojiSkinTone.standard.rawValue)
+            defaultValue: .string(NativeEmojiSkinTone.standard.rawValue),
+            validate: { NativeEmojiSkinTone(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .translationEnabled, page: .features,
@@ -309,11 +324,13 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         ),
         SettingsPreferenceRegistration(
             id: .translationMessageLanguage, page: .features,
-            key: "settings.translation.messageLanguage", defaultValue: .string("")
+            key: "settings.translation.messageLanguage", defaultValue: .string(""),
+            validate: { TranslationLanguages.validPreference($0) }
         ),
         SettingsPreferenceRegistration(
             id: .translationDraftLanguage, page: .features,
-            key: "settings.translation.draftLanguage", defaultValue: .string("en")
+            key: "settings.translation.draftLanguage", defaultValue: .string("en"),
+            validate: { TranslationLanguages.validPreference($0) }
         ),
         SettingsPreferenceRegistration(
             id: .readAllButton, page: .features,
@@ -361,19 +378,23 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         ),
         SettingsPreferenceRegistration(
             id: .attachmentCompactionPrompt, page: .features,
-            key: "settings.attachments.attachmentCompactionPrompt", defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue)
+            key: "settings.attachments.attachmentCompactionPrompt", defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue),
+            validate: { AttachmentHandlingPolicy(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .attachmentExternalUploadPrompt, page: .features,
-            key: "settings.attachments.attachmentExternalUploadPrompt", defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue)
+            key: "settings.attachments.attachmentExternalUploadPrompt", defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue),
+            validate: { AttachmentHandlingPolicy(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .attachmentExternalProvider, page: .features,
-            key: "settings.attachments.externalProvider", defaultValue: .string(ExternalAttachmentHostingService.litterbox.rawValue)
+            key: "settings.attachments.externalProvider", defaultValue: .string(ExternalAttachmentHostingService.litterbox.rawValue),
+            validate: { ExternalAttachmentHostingService(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .attachmentCompactionQuality, page: .features,
-            key: "settings.attachments.attachmentCompactionQuality", defaultValue: .string(AttachmentCompactionOptions.Quality.balanced.rawValue)
+            key: "settings.attachments.attachmentCompactionQuality", defaultValue: .string(AttachmentCompactionOptions.Quality.balanced.rawValue),
+            validate: { AttachmentCompactionOptions.Quality(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .localStorageLimit,
@@ -419,7 +440,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .notificationPreview,
             page: .notifications,
             key: NotificationPreferenceKeys.preview,
-            defaultValue: .string(NotificationPreviewStyle.full.rawValue)
+            defaultValue: .string(NotificationPreviewStyle.full.rawValue),
+            validate: { NotificationPreviewStyle(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .notificationSound,
@@ -443,7 +465,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .notificationDockBadge,
             page: .notifications,
             key: NotificationPreferenceKeys.dockBadge,
-            defaultValue: .string(NotificationDockBadgeStyle.mentions.rawValue)
+            defaultValue: .string(NotificationDockBadgeStyle.mentions.rawValue),
+            validate: { NotificationDockBadgeStyle(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .notificationDirectMessages,
@@ -569,7 +592,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .voiceScreenShareQuality,
             page: .voiceVideo,
             key: "voice.screenShare.quality",
-            defaultValue: .string(ScreenShareQuality.p720.rawValue)
+            defaultValue: .string(ScreenShareQuality.p720.rawValue),
+            validate: { ScreenShareQuality(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .voiceScreenShareFrameRate,
@@ -703,7 +727,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .externalLinkProtection,
             page: .privacySafety,
             key: "settings.privacy.externalLinkConfirmationPolicy",
-            defaultValue: .string(ExternalLinkConfirmationPolicy.untrustedDomains.rawValue)
+            defaultValue: .string(ExternalLinkConfirmationPolicy.untrustedDomains.rawValue),
+            validate: { ExternalLinkConfirmationPolicy(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .trustedDomains,
@@ -745,7 +770,8 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             page: .softwareUpdates,
             key: AppUpdateReleaseTrack.preferenceKey,
             defaultValue: .string(AppUpdateReleaseTrack.regular.rawValue),
-            resets: false
+            resets: false,
+            validate: { AppUpdateReleaseTrack(rawValue: $0) != nil }
         ),
     ] + KeyboardShortcutAction.allCases.map { action in
         SettingsPreferenceRegistration(
