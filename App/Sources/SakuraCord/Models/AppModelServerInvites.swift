@@ -49,20 +49,6 @@ final class ServerInvitePresentationStore {
 }
 
 extension AppModel {
-    func updateServerRailMembership(replacing previous: [GuildID: Guild]) {
-        serverRailPresentation.updateAvailableGuildIDs(serverRailGuildsByID.keys)
-        for guildID in previous.keys where serverRailGuildsByID[guildID] == nil {
-            onboarding.entries[guildID] = nil
-            onboarding.removeMembership(in: guildID)
-            onboarding.guides[guildID] = nil
-            onboarding.channelSelections[guildID] = nil
-            if onboarding.presentedGuildID == guildID { onboarding.presentedGuildID = nil }
-        }
-        if previous.mapValues(\.isUnavailable) != serverRailGuildsByID.mapValues(\.isUnavailable) {
-            serverInvites.changed()
-        }
-    }
-
     func loadServerInvite(_ reference: ServerInviteReference, refresh: Bool = false) {
         let store = serverInvites
         guard !accountTransitionIsActive, store.queue.count < 64 else { return }

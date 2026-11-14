@@ -62,9 +62,28 @@ final class GuildOnboardingStore {
         timeoutExpiryTasks.removeValue(forKey: guildID)?.cancel()
         timeoutRevisions[guildID] = nil
     }
+
+    /// Forgets everything kept for a guild the account no longer has.
+    func removeGuild(_ guildID: GuildID) {
+        entries[guildID] = nil
+        removeMembership(in: guildID)
+        guides[guildID] = nil
+        channelSelections[guildID] = nil
+        if presentedGuildID == guildID { presentedGuildID = nil }
+    }
 }
 
 extension AppModel {
+    func updateServerRailMembership(replacing previous: [GuildID: Guild]) {
+        serverRailPresentation.updateAvailableGuildIDs(serverRailGuildsByID.keys)
+        for guildID in previous.keys where serverRailGuildsByID[guildID] == nil {
+            onboarding.removeGuild(guildID)
+        }
+        if previous.mapValues(\.isUnavailable) != serverRailGuildsByID.mapValues(\.isUnavailable) {
+            serverInvites.changed()
+        }
+    }
+
     func installBootstrapMembership(_ value: BootstrapSnapshot) {
         onboarding.members = value.currentMembersByGuildID
         let bootstrapMembers = onboarding.bootstrapMembers
