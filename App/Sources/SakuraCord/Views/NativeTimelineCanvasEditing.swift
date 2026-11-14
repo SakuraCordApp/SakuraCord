@@ -383,30 +383,13 @@ extension NativeTimelineCanvasView {
     func focusEditingTextView(
         in host: NSView
     ) {
-        guard let textView = firstDescendant(
-            of: ComposerNSTextView.self,
-            in: host
-        ) else { return }
+        guard let textView = host.firstDescendant(of: ComposerNSTextView.self) else { return }
         editingTextView = textView
         guard let window = textView.window ?? self.window else { return }
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(textView)
     }
 
-    func firstDescendant<View: NSView>(
-        of type: View.Type,
-        in root: NSView
-    ) -> View? {
-        if let match = root as? View {
-            return match
-        }
-        for child in root.subviews {
-            if let match = firstDescendant(of: type, in: child) {
-                return match
-            }
-        }
-        return nil
-    }
 }
 
 extension NativeMessageTimelineCoordinator {

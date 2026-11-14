@@ -14,25 +14,13 @@ enum ToolbarSearchFieldLocator {
         }
         for item in window.toolbar?.items ?? [] {
             if let view = item.view,
-               let searchField = firstSearchField(in: view)
+               let searchField = view.firstDescendant(of: NSSearchField.self)
             {
                 return searchField
             }
         }
         guard let frameView = window.contentView?.superview else { return nil }
-        return firstSearchField(in: frameView)
-    }
-
-    private static func firstSearchField(in view: NSView) -> NSSearchField? {
-        if let searchField = view as? NSSearchField {
-            return searchField
-        }
-        for subview in view.subviews {
-            if let searchField = firstSearchField(in: subview) {
-                return searchField
-            }
-        }
-        return nil
+        return frameView.firstDescendant(of: NSSearchField.self)
     }
 }
 
