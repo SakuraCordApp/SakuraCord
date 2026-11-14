@@ -304,20 +304,11 @@ struct ComposerView: View {
                 .transaction(value: activeConversationID) { $0.disablesAnimations = true }
                 .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
                 .padding(.bottom, ChatChromeMetrics.composerWindowInset)
-                .keyframeAnimator(
-                    initialValue: CGFloat.zero,
+                .modifier(RejectionShake(
                     trigger: activeConversationID.map {
                         model.composer.slowmode.rejectedAttempts[$0, default: 0]
                     } ?? 0
-                ) { content, offset in
-                    content.offset(x: offset)
-                } keyframes: { _ in
-                    LinearKeyframe(-5, duration: 0.04)
-                    LinearKeyframe(5, duration: 0.06)
-                    LinearKeyframe(-3, duration: 0.06)
-                    LinearKeyframe(3, duration: 0.06)
-                    LinearKeyframe(0, duration: 0.04)
-                }
+                ))
         }
         .windowModal(isPresented: $showPollCreator, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             if let channelID = activeConversationID {

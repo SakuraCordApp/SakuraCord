@@ -76,6 +76,11 @@ struct ForumPostComposer: View {
         self.channel = channel
     }
 
+    /// A field's shake count, held still while motion is reduced.
+    private func shakeTrigger(_ field: ForumPostField) -> Int {
+        ComposerResizeMotion.isReduced ? 0 : shakes[field, default: 0]
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             titleField
@@ -152,7 +157,7 @@ struct ForumPostComposer: View {
         .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(58), alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture { isTitleFocused = true }
-        .modifier(ForumPostRejectionShake(trigger: shakes[.title, default: 0]))
+        .modifier(RejectionShake(trigger: shakeTrigger(.title)))
     }
 
     private var bodyField: some View {
@@ -180,7 +185,7 @@ struct ForumPostComposer: View {
                     .transition(.opacity)
             }
         }
-        .modifier(ForumPostRejectionShake(trigger: shakes[.content, default: 0]))
+        .modifier(RejectionShake(trigger: shakeTrigger(.content)))
     }
 
     private var attachmentTray: some View {
@@ -235,7 +240,7 @@ struct ForumPostComposer: View {
         .padding(.vertical, InterfaceScale.metric(10))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tags")
-        .modifier(ForumPostRejectionShake(trigger: shakes[.tags, default: 0]))
+        .modifier(RejectionShake(trigger: shakeTrigger(.tags)))
     }
 
     // MARK: Status and footer
@@ -280,7 +285,7 @@ struct ForumPostComposer: View {
             ModalGlassButton(symbol: "paperplane", label: "Post", primary: true, isLoading: isSubmitting, action: submit)
                 .disabled(isSubmitting || draft.isEmpty || model.guildTimeoutUntil(in: channel.id) != nil)
                 .keyboardShortcut(.return, modifiers: .command)
-                .modifier(ForumPostRejectionShake(trigger: shakes[.post, default: 0]))
+                .modifier(RejectionShake(trigger: shakeTrigger(.post)))
                 .padding(.leading, InterfaceScale.metric(4))
         }
         .padding(InterfaceScale.metric(12))
@@ -550,21 +555,3 @@ private extension ForumPostComposer {
 }
 
 private enum ForumPostField { case title, content, tags, post }
-
-/// Nudges a field side to side when Post is pressed while it's the reason
-/// the post can't be sent, as the composer does for slowmode.
-private struct ForumPostRejectionShake: ViewModifier {
-    let trigger: Int
-
-    func body(content: Content) -> some View {
-        content.keyframeAnimator(initialValue: CGFloat.zero, trigger: ComposerResizeMotion.isReduced ? 0 : trigger) { content, offset in
-            content.offset(x: offset)
-        } keyframes: { _ in
-            LinearKeyframe(-5, duration: 0.04)
-            LinearKeyframe(5, duration: 0.06)
-            LinearKeyframe(-3, duration: 0.06)
-            LinearKeyframe(3, duration: 0.06)
-            LinearKeyframe(0, duration: 0.04)
-        }
-    }
-}
