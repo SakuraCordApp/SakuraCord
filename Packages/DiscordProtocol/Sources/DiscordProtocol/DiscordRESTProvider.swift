@@ -225,14 +225,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     }
     var cachedMembersByID: [GuildID: [UserID: Member]] = [:]
     var cachedPrivateMembersByID: [UserID: Member] = [:]
-    var cachedMemberListItems:
-        [GuildID: [String: [GuildMemberListUpdateDTO.Item?]]] = [:]
-    var cachedMemberListGroups:
-        [GuildID: [String: [GuildMemberListGroup]]] = [:]
     var threadMemberSubscriptions: [GuildID: [ChannelID]] = [:]
     var threadMemberSubscriptionRequestIDs: [GuildID: [ChannelID: UUID]] = [:]
     var cachedThreadMemberIDs: [ChannelID: [UserID]] = [:]
-    var selectedMemberListID: [GuildID: String] = [:]
     var memberListState = MemberListSubscriptionState()
     /// Selection can replace the desired viewport while an older send is suspended.
     var memberListInFlightRequests:
@@ -244,8 +239,6 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     #endif
     var guildSubscriptionGenerations: [GuildID: UUID] = [:]
     var guildSubscriptionTaskIDs: [GuildID: UUID] = [:]
-    var memberListRefreshRetryTasks: [GuildID: Task<Void, Never>] = [:]
-    var memberListViewportRestoreTasks: [GuildID: Task<Void, Never>] = [:]
     var memberListRefreshRetryAttempts: [GuildID: Set<String>] = [:]
     var cachedGatewayUsersByID: [String: UserDTO] = [:]
     var cachedGatewayUserOrder: [String] = []

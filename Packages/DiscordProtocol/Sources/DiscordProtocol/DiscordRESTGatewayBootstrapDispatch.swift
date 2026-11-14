@@ -127,9 +127,6 @@ extension DiscordRESTProvider {
         }
         quickSwitcherGuildMemberUserIDsByGuildID = [:]
         quickSwitcherJoinedMemberIDsByGuildID = [:]
-        cachedMemberListItems = [:]
-        cachedMemberListGroups = [:]
-        selectedMemberListID = [:]
         memberListState = MemberListSubscriptionState()
         cachedGuildChannelDTOs = [:]
         cachedGuildRoles = [:]

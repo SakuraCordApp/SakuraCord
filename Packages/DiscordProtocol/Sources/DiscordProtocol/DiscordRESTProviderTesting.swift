@@ -39,16 +39,16 @@ import SakuraCordModels
         }
 
         func runScheduledMemberListRefreshForTesting(guildID: GuildID) async -> Bool {
-            if let task = memberListViewportRestoreTasks.removeValue(forKey: guildID),
+            if let task = memberListState.viewportRestoreTasks.removeValue(forKey: guildID),
                let generation = guildSubscriptionGenerations[guildID] {
                 task.cancel()
                 gatewayOpcodeRateLimitDates[37] = nil
                 await restoreSelectedMemberListViewport(guildID: guildID, generation: generation)
                 return true
             }
-            guard let task = memberListRefreshRetryTasks.removeValue(forKey: guildID),
-                  let memberListID = selectedMemberListID[guildID],
-                  let refresh = memberListState.memberListsNeedingRefresh[guildID]?[memberListID]
+            guard let task = memberListState.refreshRetryTasks.removeValue(forKey: guildID),
+                  let memberListID = memberListState.selectedIDs[guildID],
+                  let refresh = memberListState.listsNeedingRefresh[guildID]?[memberListID]
             else { return false }
             task.cancel()
             gatewayOpcodeRateLimitDates[37] = nil

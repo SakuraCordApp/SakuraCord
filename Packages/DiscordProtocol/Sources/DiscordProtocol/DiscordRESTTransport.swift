@@ -37,7 +37,7 @@ extension DiscordRESTProvider {
         func memberListGroupsForTesting(
             guildID: GuildID, memberListID: String
         ) -> [GuildMemberListGroup] {
-            cachedMemberListGroups[guildID]?[memberListID] ?? []
+            memberListState.cachedGroups[guildID]?[memberListID] ?? []
         }
     #endif
 
@@ -101,7 +101,7 @@ extension DiscordRESTProvider {
         }
         var seen = Set<UserID>()
         let previousMembers = cachedMemberIndex(guildID: guildID)
-        return (cachedMemberListItems[guildID]?[memberListID] ?? []).enumerated().compactMap { index, item -> Member? in
+        return (memberListState.cachedItems[guildID]?[memberListID] ?? []).enumerated().compactMap { index, item -> Member? in
             guard let memberDTO = item?.member,
                   let userID = UserID(memberDTO.user.id),
                   changedUserIDs?.contains(userID) != false,
@@ -125,8 +125,8 @@ extension DiscordRESTProvider {
         guildID: GuildID,
         memberListID: String? = nil
     ) -> [Member]? {
-        guard let memberListID = memberListID ?? selectedMemberListID[guildID],
-              let memberListItems = cachedMemberListItems[guildID]?[memberListID]
+        guard let memberListID = memberListID ?? memberListState.selectedIDs[guildID],
+              let memberListItems = memberListState.cachedItems[guildID]?[memberListID]
         else { return nil }
         let ordering = discordPerformanceSignposter.beginInterval(
             "GatewayMemberListOrdering",
@@ -254,7 +254,7 @@ extension DiscordRESTProvider {
         guildID: GuildID,
         memberListID: String
     ) {
-        var items = cachedMemberListItems[guildID]?[memberListID] ?? []
+        var items = memberListState.cachedItems[guildID]?[memberListID] ?? []
         let keepInvalidatedRows = !memberListSubscriptionsForRefresh(
             guildID: guildID, memberListID: memberListID
         ).isEmpty
@@ -263,7 +263,7 @@ extension DiscordRESTProvider {
                 operation, to: &items, keepingInvalidatedRows: keepInvalidatedRows
             )
         }
-        cachedMemberListItems[guildID, default: [:]][memberListID] = items
+        memberListState.cachedItems[guildID, default: [:]][memberListID] = items
     }
 
     /// A retained subscription is accessible while its channel is still
@@ -273,7 +273,7 @@ extension DiscordRESTProvider {
         guildID: GuildID, memberListID: String,
         subscription requestedSubscription: DiscordMemberListSubscription? = nil
     ) -> Bool {
-        guard let subscription = requestedSubscription ?? memberListState.memberListSubscriptions[guildID]?[memberListID],
+        guard let subscription = requestedSubscription ?? memberListState.subscriptions[guildID]?[memberListID],
               let channel = cachedChannels[guildID]?.first(where: {
                   $0.id == subscription.channelID
               })
@@ -287,8 +287,8 @@ extension DiscordRESTProvider {
     }
 
     func selectedMemberListGroups(guildID: GuildID) -> [GuildMemberListGroup] {
-        guard let memberListID = selectedMemberListID[guildID] else { return [] }
-        return cachedMemberListGroups[guildID]?[memberListID] ?? []
+        guard let memberListID = memberListState.selectedIDs[guildID] else { return [] }
+        return memberListState.cachedGroups[guildID]?[memberListID] ?? []
     }
 
     func request<Response: Decodable>(
