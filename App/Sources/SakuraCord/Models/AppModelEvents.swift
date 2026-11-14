@@ -248,7 +248,7 @@ extension AppModel {
              .voiceChannelEffect:
             consumeSoundboardEvent(event)
         case .typing(let channelID, let user):
-            guard !isUserIgnored(user.id), !ignoredUsers.blockedUserIDs.contains(user.id) else { return }
+            guard userSuppressionReason(user.id) == nil else { return }
             typingState.receive(
                 channelID: channelID,
                 user: user,
