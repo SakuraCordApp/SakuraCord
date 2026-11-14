@@ -1252,7 +1252,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
             accessibilityDescription: nil
         )?.withSymbolConfiguration(configuration)
         else { return }
-        let destination = NativeTimelineSymbolGeometry.opticallyFitted(
+        let destination = SymbolGeometry.opticallyFitted(
             sourceSize: image.size,
             alignmentRect: image.alignmentRect,
             in: rect

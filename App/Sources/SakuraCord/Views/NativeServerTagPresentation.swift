@@ -44,7 +44,7 @@ nonisolated enum NativeAppBadgePresentation {
                 y: frame.midY - ServerTagAppearance.badgeSize / 2,
                 width: ServerTagAppearance.badgeSize, height: ServerTagAppearance.badgeSize
             )
-            let target = NativeTimelineSymbolGeometry.opticallyFitted(
+            let target = SymbolGeometry.opticallyFitted(
                 sourceSize: checkmark.size, alignmentRect: checkmark.alignmentRect, in: slot
             )
             checkmark.draw(in: target, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)

@@ -895,7 +895,7 @@ extension NativeTimelineRowPainter {
             dx: min(max(0, inset), frame.width / 2 - 1),
             dy: min(max(0, inset), frame.height / 2 - 1)
         )
-        let fittedTarget = NativeTimelineSymbolGeometry.opticallyFitted(
+        let fittedTarget = SymbolGeometry.opticallyFitted(
             sourceSize: image.size,
             alignmentRect: image.alignmentRect,
             in: target
