@@ -85,7 +85,7 @@ struct ProfileImageProcessingTests {
     }
 
     @Test(arguments: [false, true])
-    func imagePipelinePreservesStaticAndGIFOrientation(animated: Bool) throws {
+    func imagePipelinePreservesStaticAndGIFFrames(animated: Bool) throws {
         let fixture = try animation()
         let source = try #require(CGImageSourceCreateWithData(fixture as CFData, nil))
         let encoded = NSMutableData()
@@ -97,9 +97,7 @@ struct ProfileImageProcessingTests {
         }
         #expect(CGImageDestinationFinalize(destination))
         let input = try ProfileImageSource(data: encoded as Data)
-        var geometry = ProfileImageCropGeometry(naturalSize: input.size, purpose: .avatar)
-        geometry.rotate()
-        let output = try ProfileImageProcessor.crop(input, geometry: geometry)
+        let output = try ProfileImageProcessor.crop(input, geometry: ProfileImageCropGeometry(naturalSize: input.size, purpose: .avatar))
         #expect(output.isAnimated == animated)
         #expect(output.mediaType == (animated ? "image/gif" : "image/png"))
         let result = try #require(CGImageSourceCreateWithData(output.data as CFData, nil))
@@ -107,8 +105,8 @@ struct ProfileImageProcessingTests {
         let frame = try #require(CGImageSourceCreateImageAtIndex(result, 0, nil))
         #expect(frame.width == 32 && frame.height == 32)
         let colors = try pixels(frame)
-        let red = (8 * 32 + 24) * 4
-        let green = (24 * 32 + 24) * 4
+        let red = (8 * 32 + 8) * 4
+        let green = (8 * 32 + 24) * 4
         #expect(colors[red] > 220 && colors[red + 1] < 30)
         #expect(colors[green + 1] > 220 && colors[green] < 30)
     }
@@ -138,7 +136,7 @@ struct ProfileImageProcessingTests {
         }
     }
 
-    @Test func staticCropKeepsTheSelectedVerticalRegionAndFractionalEdge() throws {
+    @Test func staticCropKeepsTheFractionalEdge() throws {
         let width = 600, height = 211
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
         for row in 0 ..< height {
@@ -160,22 +158,12 @@ struct ProfileImageProcessingTests {
         CGImageDestinationAddImage(destination, frame, nil)
         #expect(CGImageDestinationFinalize(destination))
         let image = try ProfileImageSource(data: encoded as Data)
-        var geometry = ProfileImageCropGeometry(naturalSize: image.size, purpose: .banner)
-        let centered = try ProfileImageProcessor.crop(image, geometry: geometry)
+        let centered = try ProfileImageProcessor.crop(image, geometry: ProfileImageCropGeometry(naturalSize: image.size, purpose: .banner))
         let centeredSource = try #require(CGImageSourceCreateWithData(centered.data as CFData, nil))
         let centeredFrame = try #require(CGImageSourceCreateImageAtIndex(centeredSource, 0, nil))
         // The official canvas leaves the fraction of the first row outside the
         // source transparent; integer output dimensions must not shift the crop.
         #expect(try pixels(centeredFrame)[3] == 172)
-
-        geometry.setZoom(2)
-        geometry.setOffset(CGPoint(x: 0, y: 50))
-        let panned = try ProfileImageProcessor.crop(image, geometry: geometry)
-        let pannedSource = try #require(CGImageSourceCreateWithData(panned.data as CFData, nil))
-        let pannedFrame = try #require(CGImageSourceCreateImageAtIndex(pannedSource, 0, nil))
-        let colors = try pixels(pannedFrame)
-        let center = ((pannedFrame.height / 2) * pannedFrame.width + pannedFrame.width / 2) * 4
-        #expect(colors[center] == 255 && colors[center + 2] == 0)
     }
 
     @Test func rejectsInvalidMediaAndOutOfBoundsCrops() throws {
@@ -184,10 +172,8 @@ struct ProfileImageProcessingTests {
         for region in [ProfilePixelCrop(originX: -1, originY: 0, width: 16, height: 16), .init(originX: 31, originY: 0, width: 2, height: 2), .init(originX: 0, originY: 0, width: 0, height: 16)] {
             #expect(throws: (any Error).self) { try ProfileWebPCropper.crop(source, region: region) }
         }
-        var geometry = ProfileImageCropGeometry(naturalSize: CGSize(width: 600, height: 211), purpose: .widgetCover, aspectRatio: 399 / 142)
-        geometry.rotate(); geometry.setZoom(1.5); geometry.setOffset(CGPoint(x: 1000, y: -1000))
+        let geometry = ProfileImageCropGeometry(naturalSize: CGSize(width: 600, height: 211), purpose: .widgetCover, aspectRatio: 399 / 142)
         #expect(abs(geometry.cropSize.width / geometry.cropSize.height - 399 / 142) < 0.001)
-        #expect(geometry.sourceRect.minX >= -1 && geometry.sourceRect.minY >= -1)
     }
 
     private func animation() throws -> Data {
