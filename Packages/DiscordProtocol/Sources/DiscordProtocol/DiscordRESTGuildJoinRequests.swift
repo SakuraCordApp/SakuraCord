@@ -175,7 +175,7 @@ private struct MemberVerificationFormDTO: Decodable {
         let icon = profile?.iconHash ?? guild?.icon
         return GuildJoinApplicationForm(
             guildID: guildID, guildName: profile?.name ?? guild?.name,
-            iconURL: icon.flatMap { URL(string: "https://cdn.discordapp.com/icons/\(guildID)/\($0).webp?size=128") },
+            iconURL: icon.flatMap { DiscordCDN.guildIcon(guildID, hash: $0, marksAnimation: false) },
             description: profile?.description ?? guild?.description,
             memberCount: guild?.approximateMemberCount, onlineCount: guild?.approximatePresenceCount, fields: fields
         )
@@ -266,7 +266,7 @@ private struct PartialGuildDTO: Decodable {
     func domain() -> GuildJoinRequestGuild? {
         guard let guildID = GuildID(id) else { return nil }
         return GuildJoinRequestGuild(id: guildID, name: name,
-            iconURL: icon.flatMap { URL(string: "https://cdn.discordapp.com/icons/\(guildID)/\($0).webp?size=128") })
+            iconURL: icon.flatMap { DiscordCDN.guildIcon(guildID, hash: $0, marksAnimation: false) })
     }
 }
 

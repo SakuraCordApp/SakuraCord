@@ -239,7 +239,7 @@ private struct ServerInviteDTO: Decodable {
             reference: reference, guildID: guildID,
             channelID: channel.flatMap { ChannelID($0.id) }, channelType: channel?.type,
             name: profile?.name ?? guild.name,
-            iconURL: icon.flatMap { URL(string: "https://cdn.discordapp.com/icons/\(guildID)/\($0).webp?size=128") },
+            iconURL: icon.flatMap { DiscordCDN.guildIcon(guildID, hash: $0, marksAnimation: false) },
             inviter: inviter?.domain(),
             brandColor: profile?.brandColorPrimary.flatMap { UInt32($0.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) },
             description: profile?.description ?? guild.description,

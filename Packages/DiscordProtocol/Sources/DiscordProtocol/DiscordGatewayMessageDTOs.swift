@@ -212,9 +212,7 @@ struct GatewayInteractionModalDTO: Decodable {
     /// interaction's own context because the event does not carry it.
     func modal(invocationGuildID: GuildID?) -> InteractionModal? {
         guard let applicationIdentifier, let channelID = ChannelID(channelID) else { return nil }
-        let iconURL = application?.icon.flatMap { hash in
-            URL(string: "https://cdn.discordapp.com/app-icons/\(applicationIdentifier)/\(hash).webp?size=64")
-        }
+        let iconURL = application?.icon.flatMap { DiscordCDN.applicationIcon(applicationIdentifier, hash: $0) }
         return InteractionModal(
             interactionID: id,
             openingNonce: nonce?.value ?? "",
@@ -296,9 +294,7 @@ struct MessageDTO: Decodable {
                 id: id,
                 name: name,
                 description: description ?? "",
-                iconURL: icon.flatMap {
-                    URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).webp?size=64")
-                },
+                iconURL: icon.flatMap { DiscordCDN.applicationIcon(id, hash: $0) },
                 bot: bot.flatMap { try? $0.domain() }
             )
         }

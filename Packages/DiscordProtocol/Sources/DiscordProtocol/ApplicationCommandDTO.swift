@@ -17,12 +17,7 @@ struct ApplicationCommandIndexDecoder {
 
         var domain: User? {
             guard let id = UserID(id) else { return nil }
-            let avatarURL = avatar.flatMap { hash in
-                URL(
-                    string:
-                    "https://cdn.discordapp.com/avatars/\(id)/\(hash).webp?size=64&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                )
-            }
+            let avatarURL = avatar.flatMap { DiscordCDN.userAvatar(id, hash: $0, size: 64) }
             return User(
                 id: id, username: username, discriminator: discriminator ?? "0", displayName: globalName ?? username,
                 avatarURL: avatarURL ?? DiscordProfileImageAssets.defaultAvatarURL(userID: id.description, discriminator: discriminator), isBot: bot ?? true
@@ -100,9 +95,7 @@ struct ApplicationCommandIndexDecoder {
         }
 
         var domain: ApplicationCommandApplication {
-            let iconURL = icon.flatMap { hash in
-                URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\(hash).webp?size=64")
-            }
+            let iconURL = icon.flatMap { DiscordCDN.applicationIcon(id, hash: $0) }
             return ApplicationCommandApplication(
                 id: id, name: name, description: description ?? "", iconURL: iconURL,
                 bot: bot?.domain, botID: botID.flatMap(UserID.init)
