@@ -36,7 +36,7 @@ public extension DiscordRESTProvider {
         if let messageID { body["invite_instance_id"] = .string("\(messageID):\(reference.code)") }
         let (data, response) = try await perform(
             "/invites/\(reference.code)", method: "POST", query: [], body: body,
-            headers: ["X-Context-Properties": contextData.base64EncodedString()], maximumAttempts: 1
+            headers: ["X-Context-Properties": contextData.base64EncodedString()]
         )
         try checkInviteResponse(data, response)
         struct Acceptance: Decodable {
@@ -61,7 +61,7 @@ public extension DiscordRESTProvider {
         }
         let (data, response) = try await perform(
             "/guilds/\(guildID)/members/@me", method: "PUT", query: [URLQueryItem(name: "lurker", value: "false")],
-            body: [:], headers: ["X-Context-Properties": Data("{}".utf8).base64EncodedString()], maximumAttempts: 1
+            body: [:], headers: ["X-Context-Properties": Data("{}".utf8).base64EncodedString()]
         )
         try checkInviteResponse(data, response)
         struct Joined: Decodable {
@@ -95,7 +95,7 @@ public extension DiscordRESTProvider {
         let context = try JSONSerialization.data(withJSONObject: ["location": location])
         let (data, response) = try await perform(
             "/channels/\(channelID)/invites", method: "POST", query: [], body: body,
-            headers: ["X-Context-Properties": context.base64EncodedString()], maximumAttempts: 1
+            headers: ["X-Context-Properties": context.base64EncodedString()]
         )
         if !(200 ..< 300).contains(response.statusCode) {
             switch Self.discordErrorCode(from: data) {
@@ -143,7 +143,7 @@ public extension DiscordRESTProvider {
         }
         let (data, response) = try await perform(
             "/users/@me/guilds/\(guildID)", method: "DELETE", query: [],
-            body: ["lurking": .bool(false)], maximumAttempts: 1
+            body: ["lurking": .bool(false)]
         )
         try checkInviteResponse(data, response)
         // Do not remove local membership optimistically. GUILD_DELETE and READY remain authoritative.

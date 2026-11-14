@@ -223,7 +223,7 @@ extension DiscordRESTProvider {
             headers["X-Context-Properties"] = context.base64EncodedString()
         }
         let ((data, response), challengeDismissed) = try await performAnsweringChallenge(
-            path, method: method, query: [], body: body, headers: headers, maximumAttempts: 1
+            path, method: method, query: [], body: body, headers: headers
         )
         // Another session already removed it; Gateway reconciles the list.
         if response.statusCode == 404, method == "DELETE" { return }

@@ -1225,8 +1225,7 @@ extension DiscordRESTProvider {
             "/channels/\(channelID)/messages/\(messageID)/ack",
             method: "POST",
             query: [],
-            body: body,
-            maximumAttempts: 1
+            body: body
         )
         try validateEmptyResponse(data, response)
         guard !data.isEmpty else { return ReadAcknowledgementResponse(token: token) }

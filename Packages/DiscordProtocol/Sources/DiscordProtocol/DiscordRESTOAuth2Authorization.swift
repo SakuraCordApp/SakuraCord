@@ -85,8 +85,7 @@ extension DiscordRESTProvider {
                     "channel_id": .string("10000"),
                     "channel_type": .number(10_000),
                 ]),
-            ],
-            maximumAttempts: 1
+            ]
         )
         let authorized: OAuth2AuthorizationLocationDTO = try decodedResponse(
             data, response, method: "POST", path: "/oauth2/authorize"

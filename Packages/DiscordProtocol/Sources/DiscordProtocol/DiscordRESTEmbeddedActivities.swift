@@ -78,8 +78,7 @@ public extension DiscordRESTProvider {
             if let guildID { body["guild_id"] = .string(guildID.description) }
             try Task.checkCancellation()
             let (data, response) = try await perform(
-                "/activities/\(channelID)/\(applicationID)", method: "POST", query: [], body: body,
-                maximumAttempts: 1
+                "/activities/\(channelID)/\(applicationID)", method: "POST", query: [], body: body
             )
             guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
             return
@@ -111,7 +110,7 @@ public extension DiscordRESTProvider {
         let path = "/applications/\(instance.applicationID)/activities/\(instance.location.id)"
             + "/instances/\(instance.instanceID)/leave"
         let (data, response) = try await perform(
-            path, method: "POST", query: [], body: ["session_id": .string(sessionID)], maximumAttempts: 1
+            path, method: "POST", query: [], body: ["session_id": .string(sessionID)]
         )
         guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
     }
@@ -154,7 +153,7 @@ public extension DiscordRESTProvider {
     ) async throws {
         let (data, response) = try await perform(
             "/applications/\(applicationID)/disclosures", method: "POST", query: [],
-            body: ["disclosures": .array(disclosures.map { .number(Double($0.rawValue)) })], maximumAttempts: 1
+            body: ["disclosures": .array(disclosures.map { .number(Double($0.rawValue)) })]
         )
         guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
     }
@@ -215,8 +214,7 @@ public extension DiscordRESTProvider {
             "/oauth2/authorize",
             method: "POST",
             query: Self.authorizationQuery(authorization),
-            body: body,
-            maximumAttempts: 1
+            body: body
         )
         let authorized: ActivityAuthorizationLocationDTO = try decodedResponse(
             data, response, method: "POST", path: "/oauth2/authorize"

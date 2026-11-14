@@ -37,7 +37,7 @@ public extension DiscordRESTProvider {
         let startedFrom = cachedGuildJoinRequests[guildID]?.id
         let (data, response) = try await perform(
             "/guilds/\(guildID)/requests/@me", method: "PUT", query: [],
-            body: ["version": .string(cached.version), "form_fields": .array(answered)], maximumAttempts: 1
+            body: ["version": .string(cached.version), "form_fields": .array(answered)]
         )
         try checkJoinRequestResponse(data, response)
         try applyJoinRequestResponse(data, startedFrom: startedFrom)
@@ -46,16 +46,14 @@ public extension DiscordRESTProvider {
     /// Starts a new application after a rejection.
     func reapplyToGuild(_ guildID: GuildID) async throws {
         let startedFrom = cachedGuildJoinRequests[guildID]?.id
-        let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "POST", query: [], body: nil,
-                                                 maximumAttempts: 1)
+        let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "POST", query: [], body: nil)
         try checkJoinRequestResponse(data, response)
         try applyJoinRequestResponse(data, startedFrom: startedFrom)
     }
 
     func withdrawGuildJoinRequest(_ guildID: GuildID) async throws {
         let startedFrom = cachedGuildJoinRequests[guildID]?.id
-        let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "DELETE", query: [], body: nil,
-                                                 maximumAttempts: 1)
+        let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "DELETE", query: [], body: nil)
         try checkJoinRequestResponse(data, response)
         // GUILD_JOIN_REQUEST_DELETE normally arrives first; a lost event must not leave the request shown.
         // A newer application made elsewhere meanwhile is not the one withdrawn.
@@ -67,7 +65,7 @@ public extension DiscordRESTProvider {
     /// Records that the applicant saw an approval, so Discord stops reporting it.
     func acknowledgeGuildJoinRequest(_ request: GuildJoinRequest) async throws {
         let (data, response) = try await perform("/guilds/\(request.guildID)/requests/\(request.id)/ack", method: "POST",
-                                                 query: [], body: nil, maximumAttempts: 1)
+                                                 query: [], body: nil)
         try checkJoinRequestResponse(data, response)
         if cachedGuildJoinRequests[request.guildID]?.id == request.id {
             cachedGuildJoinRequests[request.guildID]?.isAcknowledged = true
