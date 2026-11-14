@@ -50,10 +50,14 @@ extension DiscordRESTProvider {
             )
             applyUserContentSettingsProto(response.settings, replacesAllSettings: true)
         } catch {
-            if userContentMessage == message {
-                userContentMessage = current
+            // Back to what Discord confirmed: `current` may hold a Reset whose
+            // own save has failed.
+            if userContentMessage == message, let confirmed = confirmedUserContentMessage {
+                userContentMessage = confirmed
                 if pendingUserContent == message { pendingUserContent = queuedReset }
-                continuation?.yield(.favoritesSuggestionsDismissed(!dismissed))
+                continuation?.yield(.favoritesSuggestionsDismissed(
+                    DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: confirmed)
+                ))
             }
             if error is UserSettingsRejection { await reloadUserSettings() }
             throw error

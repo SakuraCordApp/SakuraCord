@@ -151,13 +151,11 @@ struct ChannelSidebarView: View {
                 .disabled(showsFavorites)
                 .accessibilityHidden(showsFavorites)
                 .zIndex(showsFavorites ? 0 : 1)
-            if voiceModel.showsFavoritesRailItem {
-                FavoritesSidebarView(model: voiceModel, bottomContentInset: accountControlHeight)
-                    .opacity(showsFavorites ? 1 : 0)
-                    .disabled(!showsFavorites)
-                    .accessibilityHidden(!showsFavorites)
-                    .zIndex(showsFavorites ? 1 : 0)
-            }
+            FavoritesSidebarView(model: voiceModel, bottomContentInset: accountControlHeight)
+                .opacity(showsFavorites ? 1 : 0)
+                .disabled(!showsFavorites)
+                .accessibilityHidden(!showsFavorites)
+                .zIndex(showsFavorites ? 1 : 0)
 
             AccountControlView(
                 voiceModel: voiceModel,
