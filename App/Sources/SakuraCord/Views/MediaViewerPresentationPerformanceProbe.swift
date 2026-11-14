@@ -33,7 +33,7 @@ final class MediaViewerPresentationPerformanceProbe {
         ] == "1"
 
     private var pending: PendingPresentation?
-    private var displayLinkTicker: NativeTimelineDisplayLinkTicker?
+    private var displayLinkTicker: DisplayLinkTicker?
 
     func begin(mediaWidth: Int?, mediaHeight: Int?) {
         guard Self.isEnabled else { return }
@@ -69,7 +69,7 @@ final class MediaViewerPresentationPerformanceProbe {
         self.pending = pending
         Self.signposter.emitEvent("MediaViewerOverlayAttached")
 
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         displayLinkTicker = ticker
         ticker.start(on: view) { [weak self] in
             self?.displayLinkDidFire()

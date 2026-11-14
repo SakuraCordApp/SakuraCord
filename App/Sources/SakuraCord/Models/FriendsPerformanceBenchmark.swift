@@ -78,7 +78,7 @@ enum FriendsPerformanceBenchmark {
     }
 
     private static func scroll(_ scrollView: NSScrollView, seconds: Double, into result: inout Result) async {
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         let speed: CGFloat = 2_400
         var intervals: [Double] = [], work: [Double] = []
         var previous = ProcessInfo.processInfo.systemUptime
@@ -123,7 +123,7 @@ enum FriendsPerformanceBenchmark {
             let start = ProcessInfo.processInfo.systemUptime
             model.selectFriendsSection(order[step % order.count])
             let expectedSections = model.friendsProjection.displaySections.map(\.id)
-            let ticker = NativeTimelineDisplayLinkTicker()
+            let ticker = DisplayLinkTicker()
             var timedOut = false
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 ticker.start(on: view) {

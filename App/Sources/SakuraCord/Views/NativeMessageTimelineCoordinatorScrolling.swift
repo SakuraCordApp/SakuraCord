@@ -93,7 +93,7 @@ nonisolated enum NativeTimelineWidthRelayoutPolicy {
 
 @MainActor
 final class NativeTimelineBenchmarkStartupState {
-    let ticker = NativeTimelineDisplayLinkTicker()
+    let ticker = DisplayLinkTicker()
     let startedAt = ProcessInfo.processInfo.systemUptime
     var previousTickUptime = ProcessInfo.processInfo.systemUptime
     var maximumTickInterval = 0.0
@@ -119,7 +119,7 @@ final class NativeTimelineBenchmarkStartupState {
 final class NativeTimelineBenchmarkRunState {
     let startedAt = ProcessInfo.processInfo.systemUptime
     let mainThreadCPUTimeAtStart = NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
-    let ticker = NativeTimelineDisplayLinkTicker()
+    let ticker = DisplayLinkTicker()
     let scrollsTowardLater: Bool
     let closeMeasurement: () -> Void
     var controller: NativeTimelineBenchmarkScrollController

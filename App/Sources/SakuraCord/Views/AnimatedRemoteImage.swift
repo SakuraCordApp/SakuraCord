@@ -1180,7 +1180,7 @@ final class AnimatedImageCanvas: NSView {
     private var usesBoundedPlayback = false
     private var boundedStartTime: CFTimeInterval = 0
     private var boundedFrameIndex: Int?
-    private let frameTicker = NativeTimelineDisplayLinkTicker()
+    private let frameTicker = DisplayLinkTicker()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

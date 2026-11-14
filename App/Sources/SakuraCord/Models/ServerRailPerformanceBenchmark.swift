@@ -217,7 +217,7 @@ enum ServerRailPerformanceBenchmark {
         tick: @escaping (TimeInterval) -> Void
     ) async -> Phase {
         try? await Task.sleep(for: .milliseconds(500))
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         var intervals: [Double] = []
         var previous = ProcessInfo.processInfo.systemUptime
         let start = previous

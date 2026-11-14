@@ -33,7 +33,7 @@ final class NativeMemberListCoordinator: NSObject {
     private var animatesShimmer: Bool?
     var contentIdentity: String?
     var contentPreparations: [String: NativeMemberListCanvasView.PreparationSnapshot] = [:]
-    var performanceTicker: NativeTimelineDisplayLinkTicker?
+    var performanceTicker: DisplayLinkTicker?
     var performanceStartTask: Task<Void, Never>?
     var performanceStartGeneration: UInt64 = 0
     var performanceLayoutSections: [PerformanceLayoutSection]?
@@ -467,7 +467,7 @@ final class NativeMemberListCoordinator: NSObject {
         delayedTickSamples.reserveCapacity(64)
         var maximumTickInterval = 0.0
         var maximumScrollWork = 0.0
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         performanceTicker = ticker
         ticker.start(on: canvas) { [weak self, weak ticker] in
             guard let self else { return }

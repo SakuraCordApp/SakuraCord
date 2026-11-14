@@ -32,7 +32,7 @@ nonisolated enum NativeTimelineGlideScrollPolicy {
 
 @MainActor
 final class NativeTimelineGlideScroll {
-    let ticker = NativeTimelineDisplayLinkTicker()
+    let ticker = DisplayLinkTicker()
     let target: MessageTimelineScrollRequest.Target
     let startUptime = ProcessInfo.processInfo.systemUptime
     let duration: TimeInterval

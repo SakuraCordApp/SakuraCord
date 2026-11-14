@@ -204,7 +204,7 @@ final class ScrollInputPerformanceProbe {
     private var eventMonitor: Any?
     private var liveScrollObservers: [NSObjectProtocol] = []
     private var liveScrollEndTask: Task<Void, Never>?
-    private var displayLinkTicker: NativeTimelineDisplayLinkTicker?
+    private var displayLinkTicker: DisplayLinkTicker?
     private var pendingInterval: OSSignpostIntervalState?
     private var pendingInputTimestamp: TimeInterval = 0
     private var pendingDispatchUptime: TimeInterval = 0
@@ -383,7 +383,7 @@ final class ScrollInputPerformanceProbe {
         pendingHasPreciseDeltas = event.hasPreciseScrollingDeltas
         pendingInterval = beginSignpostInterval(kind: kind)
 
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         displayLinkTicker = ticker
         ticker.start(on: scrollView.contentView) { [weak self] in
             self?.displayLinkDidFire()

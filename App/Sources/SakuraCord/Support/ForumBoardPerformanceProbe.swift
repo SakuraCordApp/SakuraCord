@@ -188,7 +188,7 @@ enum ForumBoardBenchmark {
     }
 
     private static func scroll(_ scrollView: NSScrollView, model: AppModel, into result: inout Result) async {
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         let framesPerSecond = scrollView.window?.screen?.maximumFramesPerSecond ?? 60
         let nominalInterval = 1 / Double(max(framesPerSecond, 1))
         var sampler = ForumFrameTimingSampler()
@@ -285,7 +285,7 @@ enum ForumBoardBenchmark {
         seconds: TimeInterval,
         step: @escaping (CGFloat) -> Void
     ) async -> ForumFrameTimingSampler.Summary {
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         let nominalInterval = 1 / Double(max(view.window?.screen?.maximumFramesPerSecond ?? 60, 1))
         var sampler = ForumFrameTimingSampler()
         let start = ProcessInfo.processInfo.systemUptime

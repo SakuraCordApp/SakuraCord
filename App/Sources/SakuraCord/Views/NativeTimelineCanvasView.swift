@@ -177,7 +177,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     weak var reactionDetailsPopoverAnchor: NSView?
     var reactionPopoverLayoutAnchors: [(view: NSView, frameInWindow: CGRect)] = []
     var pollClockTask: Task<Void, Never>?
-    let pollAnimationTicker = NativeTimelineDisplayLinkTicker()
+    let pollAnimationTicker = DisplayLinkTicker()
     // Intermediate resize widths are short-lived; paint them without replacing
     // the stable row bitmap cache on every animation frame.
     var isPreviewingWidth = false
@@ -203,8 +203,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var transcriptGlideFinishTask: Task<Void, Never>?
     var unreadDividerFades: [NativeMessageTimelineItem.Identifier: NativeTimelineUnreadDividerFade] = [:]
     var unreadDividerGap: NativeTimelineUnreadDividerGap?
-    let unreadDividerGapTicker = NativeTimelineDisplayLinkTicker()
-    let authorHoverTicker = NativeTimelineDisplayLinkTicker()
+    let unreadDividerGapTicker = DisplayLinkTicker()
+    let authorHoverTicker = DisplayLinkTicker()
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
@@ -260,7 +260,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var disclosureMaskedViews: [NSView] = []
     /// A header whose viewport position the next structural update keeps.
     var pendingDisclosureScrollAnchor: NativeTimelineRowDisclosure.Key?
-    let disclosureTicker = NativeTimelineDisplayLinkTicker()
+    let disclosureTicker = DisplayLinkTicker()
     var model: AppModel?
     var accessibilitySettingsSnapshot = AccessibilitySettingsSnapshot.defaults
     var presentedConversationID: ChannelID?
@@ -337,7 +337,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     /// By deleted row, for the update that deleted it to place.
     var handOvers: [NativeMessageTimelineItem.Identifier: HandOver] = [:]
     var nextReactionMotionID = 1
-    let reactionTicker = NativeTimelineDisplayLinkTicker()
+    let reactionTicker = DisplayLinkTicker()
     /// When the reaction ticker last stepped, to tell a late frame.
     var reactionStepUptime: TimeInterval?
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]

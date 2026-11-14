@@ -242,7 +242,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     var rowOverlay: NSHostingView<AnyView>?
     var rowForegroundOverlay: NativeMemberForegroundOverlayView?
     var rowOverlayIndex: Int?
-    let memberHoverTicker = NativeTimelineDisplayLinkTicker()
+    let memberHoverTicker = DisplayLinkTicker()
     var profileAnchorIndex: Int?
     let profilePopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()

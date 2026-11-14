@@ -399,7 +399,7 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var widthRelayoutGeneration: UInt64 = 0
         var performanceAutoScrollTask: Task<Void, Never>?
         var performanceDisplayLinkTicker:
-            NativeTimelineDisplayLinkTicker?
+            DisplayLinkTicker?
         var performanceBenchmarkFinish:
             ((NativeTimelineBenchmarkFinishOutcome) -> Void)?
         var didStartPerformanceAutoScroll = false

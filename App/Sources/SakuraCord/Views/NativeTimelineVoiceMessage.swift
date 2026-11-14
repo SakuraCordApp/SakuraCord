@@ -573,7 +573,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     /// Supplies the live state for each animation frame.
     var refresh: (() -> NativeTimelineVoiceMessageDrawState?)?
-    private let ticker = NativeTimelineDisplayLinkTicker()
+    private let ticker = DisplayLinkTicker()
     private var clockOrigin = ProcessInfo.processInfo.systemUptime
 
     override var isFlipped: Bool { true }

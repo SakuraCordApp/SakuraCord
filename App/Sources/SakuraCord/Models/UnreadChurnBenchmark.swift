@@ -81,7 +81,7 @@ enum UnreadChurnBenchmark {
         seconds: Double,
         tick: @escaping (TimeInterval) -> Void
     ) async -> Phase {
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         var intervals: [Double] = []
         var previous = ProcessInfo.processInfo.systemUptime
         let start = previous
