@@ -92,13 +92,13 @@ extension ForumBoardView {
 
     func contextMenu(for post: ForumPost, model: AppModel, channel: Channel) -> NSMenu {
         menuBuilder.makeMenu(
-            actionsMenu: ThreadActionsMenu(
+            sections: ThreadActionsMenu(
                 model: model,
                 thread: post.thread,
                 surface: .forumCard,
                 isUnread: model.canMarkConversationRead(channelID: post.id),
                 offersTags: true
-            ),
+            ).sections,
             tags: channel.availableTags,
             appliedTagIDs: post.thread.appliedTagIDs,
             customEmojiURLsByID: model.customEmojiURLsByID,

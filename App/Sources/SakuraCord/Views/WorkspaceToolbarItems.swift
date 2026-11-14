@@ -126,7 +126,7 @@ struct ConversationOverflowToolbarMenu: View {
     let pinsChannelID: ChannelID?
     let offersThreads: Bool
     var presentsPanels = true
-    @State private var presenter = ThreadActionsMenuPresenter()
+    @State private var presenter = ActionMenuPresenter()
 
     var body: some View {
         Button {
@@ -136,7 +136,7 @@ struct ConversationOverflowToolbarMenu: View {
         }
         .help("More")
         .background {
-            ThreadActionsMenuAnchor(presenter: presenter)
+            ActionMenuAnchor(presenter: presenter)
             ToolbarPanelPresenter(model: model, panel: .inbox, isEnabled: presentsPanels)
             if let pinsChannelID {
                 ToolbarPanelPresenter(model: model, panel: .pinnedMessages(pinsChannelID), isEnabled: presentsPanels)
@@ -147,7 +147,7 @@ struct ConversationOverflowToolbarMenu: View {
         }
     }
 
-    private var menu: ThreadActionsMenu {
+    private var menu: [[ActionMenuEntry]] {
         var entries = [
             ActionMenuEntry(id: "inbox", title: "Inbox", systemImage: "tray", content: .action(model.presentInbox)),
         ]
@@ -163,7 +163,7 @@ struct ConversationOverflowToolbarMenu: View {
                 content: .action(model.toggleThreadBrowser)
             ))
         }
-        return ThreadActionsMenu(sections: [entries])
+        return [entries]
     }
 }
 

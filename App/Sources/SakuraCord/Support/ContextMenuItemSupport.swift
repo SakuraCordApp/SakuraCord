@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 extension NSEvent {
     /// A secondary click: the right button, or the left with Control held.
@@ -114,14 +115,10 @@ struct ActionMenuEntry: Identifiable {
 }
 
 /// Renders ActionMenuEntry sections as a native AppKit menu for right-click menus,
-/// which keep item images and subtitles. Keep the renderer alive while its
-/// menu is open; it owns the item actions.
+/// which keep item images and subtitles.
 @MainActor
-final class ActionMenuRenderer: NSObject {
-    private var actions: [@MainActor () -> Void] = []
-
-    func makeMenu(_ sections: [[ActionMenuEntry]], slot: (ActionMenuEntry) -> NSMenuItem? = { _ in nil }) -> NSMenu {
-        actions.removeAll()
+enum ActionMenuRenderer {
+    static func makeMenu(_ sections: [[ActionMenuEntry]], slot: (ActionMenuEntry) -> NSMenuItem? = { _ in nil }) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
         for (index, section) in sections.enumerated() {
@@ -133,38 +130,55 @@ final class ActionMenuRenderer: NSObject {
         return menu
     }
 
-    private func menuItem(_ entry: ActionMenuEntry, slot: (ActionMenuEntry) -> NSMenuItem?) -> NSMenuItem? {
-        if case .slot = entry.content { return slot(entry) }
-        let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
-        item.isEnabled = entry.isEnabled
-        item.state = entry.isChecked ? .on : .off
-        if let systemImage = entry.systemImage {
-            ContextMenuItemSupport.configure(
-                item, title: entry.title, systemImage: systemImage, isDestructive: entry.isDestructive
-            )
-        }
-        if let subtitle = entry.subtitle { item.subtitle = subtitle }
+    private static func menuItem(_ entry: ActionMenuEntry, slot: (ActionMenuEntry) -> NSMenuItem?) -> NSMenuItem? {
+        let action: (() -> Void)?
         switch entry.content {
-        case .action(let action):
-            item.action = #selector(invoke(_:))
-            item.target = self
-            item.tag = actions.count
-            actions.append(action)
-        case .submenu(let children):
+        case .slot: return slot(entry)
+        case .action(let entryAction): action = entryAction
+        case .submenu: action = nil
+        }
+        let item = ContextMenuItemSupport.item(
+            entry.title,
+            systemImage: entry.systemImage,
+            isEnabled: entry.isEnabled,
+            isDestructive: entry.isDestructive,
+            action: action
+        )
+        item.state = entry.isChecked ? .on : .off
+        if let subtitle = entry.subtitle { item.subtitle = subtitle }
+        if case .submenu(let children) = entry.content {
             let submenu = NSMenu(title: entry.title)
             submenu.autoenablesItems = false
             for child in children {
                 if let childItem = menuItem(child, slot: slot) { submenu.addItem(childItem) }
             }
             item.submenu = submenu
-        case .slot:
-            break
         }
         return item
     }
+}
 
-    @objc private func invoke(_ sender: NSMenuItem) {
-        guard actions.indices.contains(sender.tag) else { return }
-        actions[sender.tag]()
+/// Pops an action menu below the view it is anchored to.
+@MainActor
+final class ActionMenuPresenter {
+    weak var anchor: NSView?
+
+    func show(_ sections: [[ActionMenuEntry]]) {
+        guard let anchor else { return }
+        ActionMenuRenderer.makeMenu(sections).popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: anchor)
+    }
+}
+
+struct ActionMenuAnchor: NSViewRepresentable {
+    let presenter: ActionMenuPresenter
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        presenter.anchor = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        presenter.anchor = nsView
     }
 }

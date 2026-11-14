@@ -10,43 +10,16 @@ struct ThreadActionsToolbarMenu: View {
     let model: AppModel
     let thread: MessageThreadSummary
     let surface: ThreadActionSurface
-    @State private var presenter = ThreadActionsMenuPresenter()
+    @State private var presenter = ActionMenuPresenter()
 
     var body: some View {
         Button {
-            presenter.show(ThreadActionsMenu(model: model, thread: thread, surface: surface))
+            presenter.show(ThreadActionsMenu(model: model, thread: thread, surface: surface).sections)
         } label: {
             Label("More", systemImage: "ellipsis")
         }
         .help(model.isForumThread(thread) ? "More post actions" : "More thread actions")
-        .background { ThreadActionsMenuAnchor(presenter: presenter) }
-    }
-}
-
-/// Pops a thread's AppKit menu below the view it is anchored to, and keeps
-/// the renderer, which owns the item actions, alive while the menu is open.
-@MainActor
-final class ThreadActionsMenuPresenter {
-    weak var anchor: NSView?
-    private let renderer = ActionMenuRenderer()
-
-    func show(_ actionsMenu: ThreadActionsMenu) {
-        guard let anchor else { return }
-        renderer.makeMenu(actionsMenu.sections).popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: anchor)
-    }
-}
-
-struct ThreadActionsMenuAnchor: NSViewRepresentable {
-    let presenter: ThreadActionsMenuPresenter
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        presenter.anchor = view
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        presenter.anchor = nsView
+        .background { ActionMenuAnchor(presenter: presenter) }
     }
 }
 

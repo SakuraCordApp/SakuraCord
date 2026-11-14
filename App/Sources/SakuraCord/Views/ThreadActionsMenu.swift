@@ -14,10 +14,6 @@ struct ThreadActionsMenu {
 
     let sections: [[ActionMenuEntry]]
 
-    init(sections: [[ActionMenuEntry]]) {
-        self.sections = sections
-    }
-
     /// Menus outlive the state they were built from, so every action rechecks
     /// the thread's current policy when it is invoked.
     private static func guarded(
@@ -153,49 +149,40 @@ struct ThreadActionsMenu {
         let settings = thread.notificationSettings
         let isPending = model.isForumNotificationMutationPending(thread.id)
         let isMuted = SidebarThreadPolicy.isMuted(thread, now: .now)
-        let mute: ActionMenuEntry = if isMuted {
-            ActionMenuEntry(
-                id: "mute", title: "Unmute \(noun)", systemImage: "bell.fill",
-                subtitle: ChannelContextMenuSubtitle.muteRemaining(until: settings?.muteConfiguration?.endTime),
-                isEnabled: !isPending,
+        let mute = if isMuted {
+            NotificationMenuItems.unmuteEntry(
+                "Unmute \(noun)", until: settings?.muteConfiguration?.endTime, isEnabled: !isPending,
                 content: Self.guarded(model, thread, \.canChangeNotifications) {
                     model.setThreadMute(thread, isMuted: false, until: nil)
                 }
             )
         } else {
-            ActionMenuEntry(
-                id: "mute", title: "Mute \(noun)", systemImage: "bell.slash.fill", isEnabled: !isPending,
-                content: .submenu(ChannelMuteDuration.allCases.map { duration in
-                    ActionMenuEntry(
-                        id: "mute-\(duration.title)", title: duration.title,
-                        content: Self.guarded(model, thread, \.canChangeNotifications) {
-                            model.setThreadMute(thread, isMuted: true, until: duration.endDate())
-                        }
-                    )
-                })
-            )
+            NotificationMenuItems.muteEntry("Mute \(noun)", isEnabled: !isPending) { duration in
+                Self.guarded(model, thread, \.canChangeNotifications) {
+                    model.setThreadMute(thread, isMuted: true, until: duration.endDate())
+                }
+            }
         }
         let inherited = model.inheritedForumPostNotificationLevel(ForumPost(thread: thread))
         let configured = settings?.notificationLevel ?? .inherit
         // Default clears the thread's override so the parent's level applies again.
         let levels: [MessageNotificationLevel] = [.inherit, .allMessages, .onlyMentions, .nothing]
-        let notifications = ActionMenuEntry(
-            id: "notifications", title: "Notification Settings", systemImage: "bell.badge.fill",
-            subtitle: ChannelContextMenuSubtitle.notificationSelection(configured: configured, inherited: inherited),
+        let notifications = NotificationMenuItems.settingsEntry(
+            selection: ChannelContextMenuSubtitle.notificationSelection(configured: configured, inherited: inherited),
             isEnabled: !isPending,
-            content: .submenu(levels.map { level in
-                ActionMenuEntry(
-                    id: "notifications-\(level.rawValue)",
+            levels: levels.map { level in
+                NotificationMenuItems.levelEntry(
+                    level,
                     // Named for its source with the inherited level beneath,
                     // as the channel menu presents its default.
                     title: level == .inherit ? "Use Channel Default" : level.menuTitle,
                     subtitle: level == .inherit ? inherited.menuTitle : nil,
-                    isChecked: configured == level,
+                    selected: configured,
                     content: Self.guarded(model, thread, \.canChangeNotifications) {
                         model.setThreadNotificationLevel(thread, level: level)
                     }
                 )
-            })
+            }
         )
         return [mute, notifications]
     }

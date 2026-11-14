@@ -119,6 +119,49 @@ enum NotificationMenuItems {
         item.state = selected == level ? .on : .off
         return item
     }
+
+    // The same items as action menu entries, for menus built from sections.
+
+    static func unmuteEntry(
+        _ title: String, until endTime: Date?, isEnabled: Bool, content: ActionMenuEntry.Content
+    ) -> ActionMenuEntry {
+        ActionMenuEntry(
+            id: "mute", title: title, systemImage: "bell.fill",
+            subtitle: ChannelContextMenuSubtitle.muteRemaining(until: endTime),
+            isEnabled: isEnabled, content: content
+        )
+    }
+
+    static func muteEntry(
+        _ title: String, isEnabled: Bool, content: (ChannelMuteDuration) -> ActionMenuEntry.Content
+    ) -> ActionMenuEntry {
+        ActionMenuEntry(
+            id: "mute", title: title, systemImage: "bell.slash.fill", isEnabled: isEnabled,
+            content: .submenu(ChannelMuteDuration.allCases.map { duration in
+                ActionMenuEntry(id: "mute-\(duration.title)", title: duration.title, content: content(duration))
+            })
+        )
+    }
+
+    static func settingsEntry(selection: String, isEnabled: Bool, levels: [ActionMenuEntry]) -> ActionMenuEntry {
+        ActionMenuEntry(
+            id: "notifications", title: "Notification Settings", systemImage: "bell.badge.fill",
+            subtitle: selection, isEnabled: isEnabled, content: .submenu(levels)
+        )
+    }
+
+    static func levelEntry(
+        _ level: MessageNotificationLevel,
+        title: String,
+        subtitle: String?,
+        selected: MessageNotificationLevel,
+        content: ActionMenuEntry.Content
+    ) -> ActionMenuEntry {
+        ActionMenuEntry(
+            id: "notifications-\(level.rawValue)", title: title, subtitle: subtitle,
+            isChecked: selected == level, content: content
+        )
+    }
 }
 
 nonisolated enum ChannelNotificationInheritanceSource: Equatable, Sendable {

@@ -12,9 +12,9 @@ import Testing
         isModerated: true
     )
     let menu = ForumPostMenuBuilder().makeMenu(
-        actionsMenu: ThreadActionsMenu(sections: [[
+        sections: [[
             ActionMenuEntry(id: ThreadActionsMenu.tagsSlotID, title: "Tags", content: .slot),
-        ]]),
+        ]],
         tags: [ordinary, moderated],
         appliedTagIDs: [moderated.id],
         customEmojiURLsByID: [:],

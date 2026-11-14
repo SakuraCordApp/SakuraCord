@@ -30,7 +30,6 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
 
     @MainActor final class Coordinator: NSObject {
         var bridge: ThreadContextMenuBridge
-        private let renderer = ActionMenuRenderer()
 
         init(_ bridge: ThreadContextMenuBridge) { self.bridge = bridge }
 
@@ -42,9 +41,9 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
                 surface: .channelList,
                 isUnread: row.isUnread || row.mentionCount > 0
             )
-            guard let favoriteItems = bridge.favoriteItems?() else { return renderer.makeMenu(actions.sections) }
+            guard let favoriteItems = bridge.favoriteItems?() else { return ActionMenuRenderer.makeMenu(actions.sections) }
             // Inside Favorites the favourite's own actions replace Add/Remove.
-            let menu = renderer.makeMenu(actions.sections.filter {
+            let menu = ActionMenuRenderer.makeMenu(actions.sections.filter {
                 !$0.contains { $0.id == ThreadActionsMenu.favoriteID }
             })
             if let separator = menu.items.firstIndex(where: \.isSeparatorItem) {
