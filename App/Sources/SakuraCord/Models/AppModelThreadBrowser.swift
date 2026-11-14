@@ -53,9 +53,7 @@ extension AppModel {
         threadBrowser.recordsTask = startAccountChildTask(account: accountSession()) { model, account in
             let active = await account.provider.activeThreads(in: parentID)
             guard !Task.isCancelled, model.threadBrowser.generation == generation else { return }
-            for post in model.threadBrowser.reconciling(active, since: since) where model.threadBrowser.records[post.id] == nil {
-                model.threadBrowser.records[post.id] = post
-            }
+            model.threadBrowser.applyActiveRecords(active, since: since)
         }
         if threadBrowser.listing?.hasLoadedFirstPage != true {
             loadMoreArchivedThreads()

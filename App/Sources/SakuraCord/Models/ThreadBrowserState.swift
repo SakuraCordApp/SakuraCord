@@ -205,6 +205,14 @@ final class ThreadBrowserState {
         }
     }
 
+    /// Adds the parent's active threads the browser has not yet seen; a
+    /// thread it already holds keeps its record.
+    func applyActiveRecords(_ posts: [ForumPost], since sequence: UInt64) {
+        for post in reconciling(posts, since: sequence) where records[post.id] == nil {
+            records[post.id] = post
+        }
+    }
+
     /// Applies the archived page requested at `offset`. True when the page
     /// should be requested again at the listing's current offset.
     func applyArchivedPage(
