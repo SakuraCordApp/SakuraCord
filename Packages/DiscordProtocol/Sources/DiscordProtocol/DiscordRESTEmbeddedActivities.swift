@@ -58,6 +58,11 @@ public extension DiscordRESTProvider {
     }
 
     /// The Gateway session that owns this account's Activity participation.
+    /// An application's icon or cover image on Discord's CDN.
+    static func applicationImageURL(_ id: ApplicationID, image: String, size: Int) -> URL? {
+        URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\(image).png?size=\(size)")
+    }
+
     func embeddedActivitySessionID() async throws -> String {
         try await interactionSessionID()
     }
@@ -436,12 +441,12 @@ private struct ActivityShelfDTO: Decodable {
                 // Discord keys assets by name, so the last of a repeated name wins.
                 let cover = assets?[application.id]?.elements.last { $0.name == "embedded_cover" }
                     .flatMap { URL(string: "https://cdn.discordapp.com/app-assets/\(id)/\($0.id).png?size=512") }
-                    ?? application.coverImage.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=512") }
+                    ?? application.coverImage.flatMap { DiscordRESTProvider.applicationImageURL(id, image: $0, size: 512) }
                 return EmbeddedActivityApplication(
                     id: id,
                     name: application.name,
                     description: application.description ?? "",
-                    iconURL: application.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=128") },
+                    iconURL: application.icon.flatMap { DiscordRESTProvider.applicationImageURL(id, image: $0, size: 128) },
                     coverURL: cover,
                     tags: application.tags ?? [],
                     maximumParticipants: application.maxParticipants.flatMap { $0 > 0 ? $0 : nil },

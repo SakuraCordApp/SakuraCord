@@ -255,8 +255,8 @@ private struct ServerInviteDTO: Decodable {
                 ApplicationID(application.id).map { id in
                     ServerInvite.Activity(
                         applicationID: id, name: application.name,
-                        iconURL: application.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=128") },
-                        coverURL: application.coverImage.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=512") },
+                        iconURL: application.icon.flatMap { DiscordRESTProvider.applicationImageURL(id, image: $0, size: 128) },
+                        coverURL: application.coverImage.flatMap { DiscordRESTProvider.applicationImageURL(id, image: $0, size: 512) },
                         channelName: channel?.name
                     )
                 }

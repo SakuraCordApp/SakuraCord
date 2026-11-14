@@ -1198,8 +1198,7 @@ extension DiscordRESTProvider {
 
     public func sendTyping(in channelID: ChannelID) async throws {
         try requireGuildCommunication(in: channelID)
-        let channel = cachedChannels.values.lazy.flatMap(\.self).first { $0.id == channelID }
-        guard let channel else { throw ChatProviderError.channelNotFound }
+        guard let channel = cachedChannel(channelID) else { throw ChatProviderError.channelNotFound }
         guard channel.kind != .voice, channel.kind != .forum, channel.kind != .unknown else {
             throw ChatProviderError.invalidRequest("Typing is unavailable in this channel.")
         }
@@ -1276,7 +1275,7 @@ extension DiscordRESTProvider {
     public func acknowledgeBulk(
         _ readStates: [BulkReadStateAcknowledgement]
     ) async throws {
-        for (index, batch) in readStates.chunked(maximumCount: 100).enumerated() {
+        for (index, batch) in readStates.chunked(into: 100).enumerated() {
             if index > 0 {
                 // Discord's BULK_ACK queue spaces successful batches by one second.
                 try await Task.sleep(for: .seconds(1))
@@ -1362,14 +1361,5 @@ extension DiscordRESTProvider {
             guildID: guildID,
             settings: [setting.key: setting.value]
         )
-    }
-}
-
-private extension Array {
-    func chunked(maximumCount: Int) -> [[Element]] {
-        guard maximumCount > 0 else { return [] }
-        return stride(from: 0, to: count, by: maximumCount).map { start in
-            Array(self[start ..< Swift.min(start + maximumCount, count)])
-        }
     }
 }

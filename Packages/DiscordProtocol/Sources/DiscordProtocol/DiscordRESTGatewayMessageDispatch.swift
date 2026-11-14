@@ -96,8 +96,7 @@ extension DiscordRESTProvider {
             // still identifies the guild that later component actions need.
             if message.guildID == nil {
                 message.guildID = cachedJoinedThreads[message.channelID]?.guildID
-                    ?? cachedChannels.values.lazy.flatMap(\.self)
-                    .first { $0.id == message.channelID }?.guildID
+                    ?? cachedChannel(message.channelID)?.guildID
             }
             attachKnownThread(to: &message)
             attachKnownStarterPreview(to: &message)
@@ -206,7 +205,7 @@ extension DiscordRESTProvider {
         let guildID = cachedMessages[messageID]?.guildID
             ?? cachedJoinedThreads[channelID]?.guildID
             ?? cachedForumPosts.values.lazy.compactMap { $0[channelID]?.thread.guildID }.first
-            ?? cachedChannels.values.lazy.flatMap(\.self).first { $0.id == channelID }?.guildID
+            ?? cachedChannel(channelID)?.guildID
         guard var update = dto.domain(guildID: guildID) else { return }
         attachKnownStartedThread(to: &update)
         if var message = cachedMessages[messageID] {

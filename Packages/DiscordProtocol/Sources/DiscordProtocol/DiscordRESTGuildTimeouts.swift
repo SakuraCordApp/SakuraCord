@@ -45,7 +45,7 @@ extension DiscordRESTProvider {
     func requireGuildCommunication(in channelID: ChannelID, guildID: GuildID? = nil, now: Date = .now) throws {
         let guildID = guildID
             ?? cachedJoinedThreads[channelID]?.guildID
-            ?? cachedChannels.values.lazy.flatMap(\.self).first(where: { $0.id == channelID })?.guildID
+            ?? cachedChannel(channelID)?.guildID
             ?? cachedForumPosts.values.lazy.compactMap { $0[channelID]?.thread.guildID }.first
             ?? cachedMessages.values.lazy.compactMap { $0.channelID == channelID ? $0.guildID : nil }.first
         guard let guildID, let userID = currentUser?.id,

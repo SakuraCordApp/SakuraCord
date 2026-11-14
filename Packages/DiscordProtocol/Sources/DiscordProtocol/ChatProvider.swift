@@ -1358,4 +1358,26 @@ public extension ChatProvider {
     func refreshAttachmentURL(_ url: URL) async throws -> URL? {
         throw ChatProviderError.invalidRequest("Opening attachment links is unavailable.")
     }
+
+    func scheduledMessages() async throws -> [ScheduledMessage] { [] }
+
+    func scheduleMessage(_ draft: SendMessageDraft, at date: Date) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func rescheduleMessage(_ id: ScheduledMessageID, at date: Date) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func editScheduledMessage(_ id: ScheduledMessageID, content: String, flags: MessageFlags) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func sendScheduledMessageNow(_ id: ScheduledMessageID) async throws {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func cancelScheduledMessage(_ id: ScheduledMessageID) async throws {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
 }

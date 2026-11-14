@@ -23,7 +23,7 @@ public extension DiscordRESTProvider {
                 "channel_id": .string(draft.channelID.description),
                 "message_id": .string(replyTo.description),
             ]
-            if let guildID = cachedChannels.values.lazy.flatMap(\.self).first(where: { $0.id == draft.channelID })?.guildID
+            if let guildID = cachedChannel(draft.channelID)?.guildID
                 ?? cachedJoinedThreads[draft.channelID]?.guildID
             {
                 reference["guild_id"] = .string(guildID.description)
@@ -144,28 +144,4 @@ private struct ScheduledMessageDTO: Decodable {
 private struct ScheduledMessageReferenceDTO: Decodable {
     var messageID: MessageID?
     enum CodingKeys: String, CodingKey { case messageID = "message_id" }
-}
-
-public extension ChatProvider {
-    func scheduledMessages() async throws -> [ScheduledMessage] { [] }
-
-    func scheduleMessage(_ draft: SendMessageDraft, at date: Date) async throws -> ScheduledMessage {
-        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
-    }
-
-    func rescheduleMessage(_ id: ScheduledMessageID, at date: Date) async throws -> ScheduledMessage {
-        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
-    }
-
-    func editScheduledMessage(_ id: ScheduledMessageID, content: String, flags: MessageFlags) async throws -> ScheduledMessage {
-        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
-    }
-
-    func sendScheduledMessageNow(_ id: ScheduledMessageID) async throws {
-        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
-    }
-
-    func cancelScheduledMessage(_ id: ScheduledMessageID) async throws {
-        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
-    }
 }

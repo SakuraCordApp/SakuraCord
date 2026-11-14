@@ -218,9 +218,7 @@ extension DiscordRESTProvider {
 
     func performForward(_ draft: ForwardMessageDraft) async throws -> Message {
         try requireGuildCommunication(in: draft.destinationChannelID)
-        let isKnownChannel = cachedChannels.values.lazy.flatMap(\.self).contains(where: {
-            $0.id == draft.destinationChannelID
-        })
+        let isKnownChannel = cachedChannel(draft.destinationChannelID) != nil
         let isKnownThread = cachedForumPosts.values.contains { posts in
             posts[draft.destinationChannelID] != nil
         }
