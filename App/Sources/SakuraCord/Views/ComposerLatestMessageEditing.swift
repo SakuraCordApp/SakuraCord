@@ -1,8 +1,5 @@
 import AppKit
-import MessageRendering
-import Observation
 import SakuraCordModels
-import SwiftUI
 
 nonisolated enum ComposerLatestMessageEditingPolicy {
     static func shouldRequest(

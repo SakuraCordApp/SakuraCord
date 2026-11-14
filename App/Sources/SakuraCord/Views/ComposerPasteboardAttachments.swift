@@ -1,8 +1,4 @@
 import AppKit
-import MessageRendering
-import Observation
-import SakuraCordModels
-import SwiftUI
 
 @MainActor
 enum ComposerPasteboardAttachments {
