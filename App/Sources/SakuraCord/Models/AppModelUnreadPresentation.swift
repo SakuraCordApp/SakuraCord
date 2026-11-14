@@ -29,65 +29,34 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
     var observesAppScrollWorkGate: Bool
 
     func prepare() -> PreparedUnreadPresentation? {
-        let signposter = AppPerformanceSignposts.signposter
-        let preparation = signposter.beginInterval(
-            "UnreadPresentationPreparation"
-        )
-        defer {
-            signposter.endInterval(
-                "UnreadPresentationPreparation",
-                preparation
-            )
-        }
-        let readInterval = signposter.beginInterval("UnreadStateProjection")
-        guard let unread = readState.projection(
-            cancellationCheck: {
-                Task.isCancelled
-                    || (observesAppScrollWorkGate
-                        && AppScrollWorkGate.isActive)
+        AppPerformanceSignposts.measureSync("UnreadPresentationPreparation") {
+            guard let unread = AppPerformanceSignposts.measureSync("UnreadStateProjection", operation: {
+                readState.projection(cancellationCheck: { isCancelled })
+            }),
+                let channelProjection = AppPerformanceSignposts.measureSync("UnreadChannelProjection", operation: {
+                    prepareChannels(unread: unread)
+                }),
+                let guildProjection = AppPerformanceSignposts.measureSync("UnreadGuildProjection", operation: {
+                    prepareGuilds(unread: unread)
+                }),
+                !isCancelled
+            else {
+                return nil
             }
-        ) else {
-            signposter.endInterval("UnreadStateProjection", readInterval)
-            return nil
-        }
-        signposter.endInterval("UnreadStateProjection", readInterval)
-
-        let channelInterval = signposter.beginInterval(
-            "UnreadChannelProjection"
-        )
-        guard let channelProjection = prepareChannels(unread: unread) else {
-            signposter.endInterval(
-                "UnreadChannelProjection",
-                channelInterval
+            let serverRailGuildsByID = AppPerformanceSignposts.measureSync("UnreadServerRailProjection") {
+                Dictionary(uniqueKeysWithValues: guildProjection.guilds.map { ($0.id, $0) })
+            }
+            return PreparedUnreadPresentation(
+                unread: unread,
+                channels: channelProjection,
+                guilds: guildProjection,
+                serverRailGuildsByID: serverRailGuildsByID
             )
-            return nil
         }
-        signposter.endInterval("UnreadChannelProjection", channelInterval)
+    }
 
-        let guildInterval = signposter.beginInterval("UnreadGuildProjection")
-        guard let guildProjection = prepareGuilds(unread: unread) else {
-            signposter.endInterval("UnreadGuildProjection", guildInterval)
-            return nil
-        }
-        signposter.endInterval("UnreadGuildProjection", guildInterval)
-        guard !Task.isCancelled,
-              !observesAppScrollWorkGate || !AppScrollWorkGate.isActive
-        else {
-            return nil
-        }
-        let railInterval = signposter.beginInterval(
-            "UnreadServerRailProjection"
-        )
-        let serverRailGuildsByID = Dictionary(
-            uniqueKeysWithValues: guildProjection.guilds.map { ($0.id, $0) }
-        )
-        signposter.endInterval("UnreadServerRailProjection", railInterval)
-        return PreparedUnreadPresentation(
-            unread: unread,
-            channels: channelProjection,
-            guilds: guildProjection,
-            serverRailGuildsByID: serverRailGuildsByID
-        )
+    private var isCancelled: Bool {
+        Task.isCancelled || (observesAppScrollWorkGate && AppScrollWorkGate.isActive)
     }
 
     private func prepareChannels(
@@ -98,11 +67,7 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
         visibleChannels.reserveCapacity(visibleChannelCapacity)
         var changed = false
         for index in projected.indices {
-            if index.isMultiple(of: 64),
-               Task.isCancelled
-                   || (observesAppScrollWorkGate
-                       && AppScrollWorkGate.isActive)
-            {
+            if index.isMultiple(of: 64), isCancelled {
                 return nil
             }
             if projected[index].applyUnread(unread) {
@@ -130,11 +95,7 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
         var projected = guilds
         var changed = false
         for index in projected.indices {
-            if index.isMultiple(of: 64),
-               Task.isCancelled
-                   || (observesAppScrollWorkGate
-                       && AppScrollWorkGate.isActive)
-            {
+            if index.isMultiple(of: 64), isCancelled {
                 return nil
             }
             if projected[index].applyUnread(unread) {
