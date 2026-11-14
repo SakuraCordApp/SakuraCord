@@ -321,15 +321,98 @@ extension AppModel {
         }
         return try await provider.forumPosts(
             in: channelID,
-            query: ForumPostQuery(
-                scope: scope,
-                sortOrder: forumSortOrder,
-                selectedTagIDs: forumSelectedTagIDs,
-                tagMatch: forumTagMatch,
-                offset: reset ? 0 : (forumNextOffset ?? 0),
-                limit: 25
-            )
+            query: currentForumQuery(scope: scope, offset: reset ? 0 : (forumNextOffset ?? 0))
         )
+    }
+
+    /// A page of the selected forum under its current sort and tag filter.
+    func currentForumQuery(scope: ForumPostScope, offset: Int) -> ForumPostQuery {
+        ForumPostQuery(
+            scope: scope,
+            sortOrder: forumSortOrder,
+            selectedTagIDs: forumSelectedTagIDs,
+            tagMatch: forumTagMatch,
+            offset: offset,
+            limit: 25
+        )
+    }
+
+    /// Whether the selected conversation is this forum's board.
+    func presentsForum(_ channelID: ChannelID?) -> Bool {
+        channelID == selectedChannelID && selectedChannel?.kind == .forum
+    }
+
+    func mergeAndPresentForumPosts(_ posts: [ForumPost]) {
+        mergeForumCatalogue(posts)
+        applyForumPresentation()
+    }
+
+    func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
+        threadBrowser.receive(parentID: channelID, records: posts)
+        reconcileInboxForumPosts(channelID: channelID, posts: posts, replacesAll: true)
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "ForumPostsChanged"
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "ForumPostsChanged",
+                interval
+            )
+        }
+        let threads = AppPerformanceSignposts.measureSync(
+            "ForumThreadProjection"
+        ) {
+            posts.map(\.thread)
+        }
+        AppPerformanceSignposts.measureSync(
+            "ForumForwardDestinationReplacement"
+        ) {
+            replaceForwardDestinationThreads(
+                parentID: channelID,
+                with: threads
+            )
+        }
+        AppPerformanceSignposts.measureSync(
+            "ForumReadStateReplacement"
+        ) {
+            readState.replaceThreads(parentID: channelID, with: threads)
+        }
+        AppPerformanceSignposts.measureSync("ForumUnreadRefreshRequest") {
+            requestCoalescedUnreadPresentationRefresh()
+        }
+        refreshTimelineThreadCards(parentID: channelID, posts: posts)
+        guard presentsForum(channelID) else { return }
+        // Omission from the provider's catalogue is not deletion; the open post
+        // closes only through `.threadDeleted`, lost access or the user.
+        replaceForumCatalogue(with: posts)
+        applyForumPresentation()
+    }
+
+    func consumeForumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost]) {
+        refreshTimelineThreadCards(parentID: channelID, posts: posts, replacesAll: false)
+        reconcileInboxForumPosts(channelID: channelID, posts: posts, replacesAll: false)
+        mergeForwardDestinationThreads(posts.map(\.thread))
+        for post in posts { readState.merge(thread: post.thread) }
+        requestCoalescedUnreadPresentationRefresh()
+        guard presentsForum(channelID) else { return }
+        mergeAndPresentForumPosts(posts)
+    }
+
+    func consumeForumPageLoaded(
+        channelID: ChannelID,
+        query: ForumPostQuery,
+        page: ForumPostPage
+    ) {
+        for post in page.posts { readState.merge(thread: post.thread) }
+        requestCoalescedUnreadPresentationRefresh()
+        guard presentsForum(channelID),
+              forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              query == currentForumQuery(scope: .active, offset: 0)
+        else { return }
+        replaceForumCatalogue(with: page.posts)
+        applyForumPresentation()
+        forumNextOffset = page.nextOffset
+        hasMoreForumPosts = page.hasMore
     }
 
     func applyForumPage(
@@ -538,8 +621,7 @@ extension AppModel {
             }
             guard isCurrentAccountSession(session) else { return false }
             recordMessageEmojiUsage(draft.content)
-            mergeForumCatalogue([post])
-            applyForumPresentation()
+            mergeAndPresentForumPosts([post])
             open(post)
             return true
         } catch {
@@ -563,8 +645,7 @@ extension AppModel {
                 mutation: .tags(tagIDs)
             )
             guard isCurrentAccountSession(session) else { return }
-            mergeForumCatalogue([updated])
-            applyForumPresentation()
+            mergeAndPresentForumPosts([updated])
             if openThread?.id == updated.id { openThread = updated.thread }
         } catch {
             guard isCurrentAccountSession(session) else { return }

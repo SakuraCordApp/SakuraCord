@@ -240,9 +240,8 @@ extension AppModel {
     /// selected forum; the provider's publication updates the other projections.
     func reconcileMutatedThread(_ updated: ForumPost) {
         if openThread?.id == updated.id { openThread = updated.thread }
-        if selectedChannelID == updated.thread.parentID, selectedChannel?.kind == .forum {
-            mergeForumCatalogue([updated])
-            applyForumPresentation()
+        if presentsForum(updated.thread.parentID) {
+            mergeAndPresentForumPosts([updated])
         }
     }
 
