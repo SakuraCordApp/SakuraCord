@@ -225,26 +225,18 @@ extension DiscordRESTProvider {
         let ((data, response), challengeDismissed) = try await performAnsweringChallenge(
             path, method: method, query: [], body: body, headers: headers, maximumAttempts: 1
         )
-        guard !(200 ..< 300).contains(response.statusCode) else { return }
         // Another session already removed it; Gateway reconciles the list.
         if response.statusCode == 404, method == "DELETE" { return }
-        if response.statusCode == 401 {
-            authorizationValue = nil
-            throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
-        }
-        if method == "POST", path == "/users/@me/relationships",
-           let fields = try? JSONDecoder().decode([String: JSONValue].self, from: data), fields["note"] != nil {
-            throw RelationshipActionError.failed(FriendRequestNote.validationMessage)
-        }
-        if quietWhenChallengeClosed, challengeDismissed { throw CancellationError() }
-        let code = Self.discordErrorCode(from: data)
-        if explainsEveryFailure || [400, 403, 429].contains(response.statusCode) {
-            guard let message = failure(code, response.statusCode) else {
-                throw RelationshipActionError.strangerConfirmationRequired
+        try validateEmptyResponse(data, response) { status, code in
+            if status == 401 { return nil }
+            if method == "POST", path == "/users/@me/relationships",
+               let fields = try? JSONDecoder().decode([String: JSONValue].self, from: data), fields["note"] != nil {
+                return RelationshipActionError.failed(FriendRequestNote.validationMessage)
             }
-            throw RelationshipActionError.failed(message)
+            if quietWhenChallengeClosed, challengeDismissed { return CancellationError() }
+            guard explainsEveryFailure || [400, 403, 429].contains(status) else { return nil }
+            return failure(code, status).map(RelationshipActionError.failed) ?? RelationshipActionError.strangerConfirmationRequired
         }
-        throw unexplainedFailure(data, response)
     }
 
     // Official stable633029 module395422 `vU` and module717398 HTTP 429 copy.

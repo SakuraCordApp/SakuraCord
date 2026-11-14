@@ -316,14 +316,7 @@ extension DiscordRESTProvider {
         let isMessageHistoryRequest = method == "GET"
             && path.hasPrefix("/channels/")
             && path.hasSuffix("/messages")
-        guard (200 ..< 300).contains(response.statusCode) else {
-            if let error = mapFailure(response.statusCode, Self.discordErrorCode(from: data)) { throw error }
-            if response.statusCode == 401 {
-                authorizationValue = nil
-                throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
-            }
-            throw unexplainedFailure(data, response)
-        }
+        try validateEmptyResponse(data, response, mapFailure: mapFailure)
         do {
             let decodeName: StaticString = isMessageHistoryRequest
                 ? "MessageHistoryResponseDecode"
