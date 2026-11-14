@@ -71,7 +71,7 @@ extension NativeTimelineCanvasView {
         let layout = row.layout
         let size = NSSize(width: width, height: layout.height)
         guard let scale = fadePictureScale(for: size) else { return nil }
-        return NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
+        return NativeTimelineSnapshotRenderer.render(size: size, scale: scale) {
             effectiveAppearance.performAsCurrentDrawingAppearance {
                 NativeTimelineRowPainter.draw(
                     item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,

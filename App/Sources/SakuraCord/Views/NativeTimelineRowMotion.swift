@@ -1,6 +1,91 @@
 import AppKit
 import SakuraCordModels
 
+/// A cubic Bézier curve the transcript can glide on, readable at any moment
+/// so a glide that is interrupted continues from where its rows are drawn.
+struct NativeTimelineGlideCurve {
+    let x1: Float
+    let y1: Float
+    let x2: Float
+    let y2: Float
+    let duration: CFTimeInterval
+
+    var timingFunction: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: x1, y1, x2, y2)
+    }
+
+    /// The curve's progress after `fraction` of the duration.
+    func progress(at fraction: Double) -> Double {
+        guard fraction > 0 else { return 0 }
+        guard fraction < 1 else { return 1 }
+        func bezier(_ parameter: Double, _ first: Float, _ second: Float) -> Double {
+            let inverse = 1 - parameter
+            return 3 * inverse * inverse * parameter * Double(first)
+                + 3 * inverse * parameter * parameter * Double(second)
+                + parameter * parameter * parameter
+        }
+        var lower = 0.0
+        var upper = 1.0
+        for _ in 0 ..< 24 {
+            let middle = (lower + upper) / 2
+            if bezier(middle, x1, x2) < fraction {
+                lower = middle
+            } else {
+                upper = middle
+            }
+        }
+        return bezier((lower + upper) / 2, y1, y2)
+    }
+}
+
+/// Renders transition snapshots in the timeline's flipped coordinates.
+@MainActor
+enum NativeTimelineSnapshotRenderer {
+    static func render(size: CGSize, scale: CGFloat, draw: () -> Void) -> NSImage? {
+        let scale = max(1, scale)
+        guard size.width > 0, size.height > 0,
+              let representation = NSBitmapImageRep(
+                  bitmapDataPlanes: nil,
+                  pixelsWide: max(1, Int(ceil(size.width * scale))),
+                  pixelsHigh: max(1, Int(ceil(size.height * scale))),
+                  bitsPerSample: 8,
+                  samplesPerPixel: 4,
+                  hasAlpha: true,
+                  isPlanar: false,
+                  colorSpaceName: .deviceRGB,
+                  bytesPerRow: 0,
+                  bitsPerPixel: 0
+              ),
+              let graphics = NSGraphicsContext(bitmapImageRep: representation)
+        else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        let context = graphics.cgContext
+        context.scaleBy(x: scale, y: scale)
+        context.translateBy(x: 0, y: size.height)
+        context.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        draw()
+        NSGraphicsContext.restoreGraphicsState()
+        representation.size = size
+        let image = NSImage(size: size)
+        image.addRepresentation(representation)
+        return image
+    }
+}
+
+/// Easing curves timeline motions and fades share.
+nonisolated enum NativeTimelineEasing {
+    static func easeOut(_ progress: CGFloat) -> CGFloat {
+        let progress = min(max(progress, 0), 1)
+        return 1 - pow(1 - progress, 3)
+    }
+
+    static func easeInOut(_ progress: CGFloat) -> CGFloat {
+        let progress = min(max(progress, 0), 1)
+        return progress < 0.5 ? 4 * pow(progress, 3) : 1 - pow(2 - 2 * progress, 3) / 2
+    }
+}
+
 /// One update's rows changing height, such as reaction lines opening or
 /// closing or an edit or deletion. Rows keep the places they
 /// had on screen before the update and ease onto the static layout: rows up to
@@ -583,5 +668,89 @@ extension NativeTimelineCanvasView {
     /// The part of a row's height change that has not happened on screen yet.
     func rowMotionRemainingHeight(at index: Int) -> CGFloat {
         reactionMotionRemainingHeights[index] ?? 0
+    }
+
+    /// The row with this identifier. `hint` is where it last was.
+    func rowIndex(forIdentifier identifier: NativeMessageTimelineItem.Identifier, hint: Int? = nil) -> Int? {
+        if let hint, items.indices.contains(hint), items[hint].identifier == identifier { return hint }
+        return items.lastIndex { $0.identifier == identifier }
+    }
+
+    func redrawForRowMotion(invalidating rect: CGRect? = nil) {
+        // Hover regions are cached at the rows' displaced positions.
+        clearPointerRegionCaches()
+        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, rowMotions.isEmpty,
+           !suppressesHoverPresentation {
+            // The motion has landed: tracking areas and cursor rects follow the rows.
+            updateTrackingAreas()
+            window?.invalidateCursorRects(for: self)
+        }
+        if let rect { setNeedsDisplay(rect) } else { invalidateVisibleContent() }
+        reconcileInboxHeaders()
+        positionAnimatedMediaOverlays()
+        positionInlineVideoOverlays()
+        // The copy button can't follow its block as rows move and clip, so
+        // it leaves until the pointer next moves over a block.
+        if !(rowDisclosure?.isFinished ?? true) || unreadDividerGap != nil { setHoveredCodeBlock(nil) }
+        reconcileVoiceMessageOverlay()
+        reconcileActivityIndicators()
+        positionSpoilerOverlays()
+        positionReactionBandViews()
+        maskDisclosureSubviews()
+    }
+
+    var editingHeightDelta: CGFloat {
+        guard let index = editingRowIndex,
+              let editingRowHeight
+        else { return 0 }
+        return editingRowHeight - storage.layouts[index].height
+    }
+
+    var transientContentOriginY: CGFloat {
+        NativeTimelineTransientRowGeometry.contentOriginY(
+            base: baseContentOriginY,
+            heightDelta: editingHeightDelta,
+            minimum: ChatDetailLayoutPolicy.timelineTopPadding
+        )
+    }
+
+    var displayedContentHeight: CGFloat {
+        contentOriginY
+            + NativeTimelineTransientRowGeometry.contentHeight(
+                base: contentHeight,
+                replacementHeight: editingRowHeight,
+                baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
+            )
+            + bottomSpacerHeight
+    }
+
+    func displayedRowOrigin(at index: Int) -> CGFloat {
+        contentOriginY
+            + (index >= disclosureRange.upperBound ? disclosureShiftAfter
+                : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
+            + unreadDividerGapShift(at: index)
+            + rowMotionOffset(at: index)
+            + transientRowOrigin(at: index)
+    }
+
+    /// A row's top within the content with the edited row at its editing
+    /// height, before any motion.
+    func transientRowOrigin(at index: Int) -> CGFloat {
+        NativeTimelineTransientRowGeometry.rowOrigin(
+            base: rowOrigins[index],
+            rowIndex: index,
+            replacementIndex: editingRowIndex,
+            replacementHeight: editingRowHeight,
+            baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
+        )
+    }
+
+    func displayedRowHeight(at index: Int) -> CGFloat {
+        NativeTimelineTransientRowGeometry.rowHeight(
+            base: layouts[index].height,
+            rowIndex: index,
+            replacementIndex: editingRowIndex,
+            replacementHeight: editingRowHeight
+        ) - rowMotionRemainingHeight(at: index)
     }
 }

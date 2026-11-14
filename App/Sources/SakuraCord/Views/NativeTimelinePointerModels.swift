@@ -126,7 +126,7 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
     /// Long enough, eased at both ends, that a round button's growth reads
     /// as motion rather than a snap.
     static let hoverAnimationDuration: TimeInterval = 0.2
-    /// `easeInOut`'s cubic curve, for hovers Core Animation runs.
+    /// `NativeTimelineEasing.easeInOut`'s cubic curve, for hovers Core Animation runs.
     static var hoverTimingFunction: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.65, 0, 0.35, 1) }
 
     static func scale(pressProgress: CGFloat) -> CGFloat {
@@ -155,16 +155,6 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
     static func roundButtonScale(hover: CGFloat, press: CGFloat, growth: CGFloat = 0.06) -> CGFloat {
         1 + growth * hover * (1 - press)
     }
-
-    static func easeOut(_ progress: CGFloat) -> CGFloat {
-        let progress = min(max(progress, 0), 1)
-        return 1 - pow(1 - progress, 3)
-    }
-
-    static func easeInOut(_ progress: CGFloat) -> CGFloat {
-        let progress = min(max(progress, 0), 1)
-        return progress < 0.5 ? 4 * pow(progress, 3) : 1 - pow(2 - 2 * progress, 3) / 2
-    }
 }
 
 /// A round button's hover easing in or out from wherever it was, with the
@@ -176,7 +166,7 @@ nonisolated struct NativeTimelineHoverFade {
 
     func progress(at time: TimeInterval) -> CGFloat {
         let elapsed = (time - start) / NativeTimelineComponentButtonVisualState.hoverAnimationDuration
-        return from + (to - from) * NativeTimelineComponentButtonVisualState.easeInOut(elapsed)
+        return from + (to - from) * NativeTimelineEasing.easeInOut(elapsed)
     }
 
     func isSettled(at time: TimeInterval) -> Bool {

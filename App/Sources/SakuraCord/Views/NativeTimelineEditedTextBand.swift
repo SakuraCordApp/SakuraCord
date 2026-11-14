@@ -76,7 +76,7 @@ extension NativeTimelineCanvasView {
         let startHeight = running.map { shownHeight(of: $0, at: index) + runningOffset } ?? oldHeight
         let size = NSSize(width: width, height: startHeight)
         let picture = slidingTextOrigin != nil ? nil : fadePictureScale(for: size).flatMap { scale in
-            NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
+            NativeTimelineSnapshotRenderer.render(size: size, scale: scale) {
                 guard let context = NSGraphicsContext.current?.cgContext else { return }
                 let progress = running.map { progress(of: $0, shown: startHeight - runningOffset) } ?? 1
                 if let picture = running?.picture {

@@ -348,61 +348,6 @@ extension NativeTimelineCanvasView {
 
 #endif
 
-    var editingHeightDelta: CGFloat {
-        guard let index = editingRowIndex,
-              let editingRowHeight
-        else { return 0 }
-        return editingRowHeight - storage.layouts[index].height
-    }
-
-    var transientContentOriginY: CGFloat {
-        NativeTimelineTransientRowGeometry.contentOriginY(
-            base: baseContentOriginY,
-            heightDelta: editingHeightDelta,
-            minimum: ChatDetailLayoutPolicy.timelineTopPadding
-        )
-    }
-
-    var displayedContentHeight: CGFloat {
-        contentOriginY
-            + NativeTimelineTransientRowGeometry.contentHeight(
-                base: contentHeight,
-                replacementHeight: editingRowHeight,
-                baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
-            )
-            + bottomSpacerHeight
-    }
-
-    func displayedRowOrigin(at index: Int) -> CGFloat {
-        contentOriginY
-            + (index >= disclosureRange.upperBound ? disclosureShiftAfter
-                : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
-            + unreadDividerGapShift(at: index)
-            + rowMotionOffset(at: index)
-            + transientRowOrigin(at: index)
-    }
-
-    /// A row's top within the content with the edited row at its editing
-    /// height, before any motion.
-    func transientRowOrigin(at index: Int) -> CGFloat {
-        NativeTimelineTransientRowGeometry.rowOrigin(
-            base: rowOrigins[index],
-            rowIndex: index,
-            replacementIndex: editingRowIndex,
-            replacementHeight: editingRowHeight,
-            baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
-        )
-    }
-
-    func displayedRowHeight(at index: Int) -> CGFloat {
-        NativeTimelineTransientRowGeometry.rowHeight(
-            base: layouts[index].height,
-            rowIndex: index,
-            replacementIndex: editingRowIndex,
-            replacementHeight: editingRowHeight
-        ) - rowMotionRemainingHeight(at: index)
-    }
-
     /// Rows after the edited one move with it even when the content origin
     /// stays, so their overlays and pointer regions follow every change.
     func resizeForEditingChange(by delta: CGFloat) {

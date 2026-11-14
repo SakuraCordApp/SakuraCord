@@ -526,8 +526,8 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         func value(at time: TimeInterval) -> CGFloat {
             let elapsed = min(max((time - start) / duration, 0), 1)
             let eased = easesInOut
-                ? NativeTimelineComponentButtonVisualState.easeInOut(elapsed)
-                : NativeTimelineComponentButtonVisualState.easeOut(elapsed)
+                ? NativeTimelineEasing.easeInOut(elapsed)
+                : NativeTimelineEasing.easeOut(elapsed)
             return from + (to - from) * eased
         }
     }

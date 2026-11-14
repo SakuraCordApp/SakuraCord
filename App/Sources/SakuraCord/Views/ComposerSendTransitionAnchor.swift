@@ -243,7 +243,7 @@ final class ComposerSendTransitionAnchor {
             x: origin.x + firstLine.minX + glyphLocation.x,
             y: origin.y + firstLine.minY + glyphLocation.y
         )
-        guard let image = NativeTimelineSendTransitionSnapshot.render(
+        guard let image = NativeTimelineSnapshotRenderer.render(
             size: drawRect.size,
             scale: window.backingScaleFactor,
             draw: {

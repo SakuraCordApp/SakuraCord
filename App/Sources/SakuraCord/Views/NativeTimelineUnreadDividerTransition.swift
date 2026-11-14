@@ -288,12 +288,6 @@ extension NativeTimelineCanvasView {
         return (source.identifier, frame)
     }
 
-    /// The row with this identifier. `hint` is where it last was.
-    func rowIndex(forIdentifier identifier: NativeMessageTimelineItem.Identifier, hint: Int? = nil) -> Int? {
-        if let hint, items.indices.contains(hint), items[hint].identifier == identifier { return hint }
-        return items.lastIndex { $0.identifier == identifier }
-    }
-
     /// Opens or closes the divider's gap and fades the line inside it. Where
     /// the gap cannot move rows, an arriving divider simply fades in; a
     /// removed one is dropped, since the next message already fills its slot,

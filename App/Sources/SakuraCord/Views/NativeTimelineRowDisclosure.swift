@@ -368,31 +368,8 @@ extension NativeTimelineCanvasView {
         disclosureRelativeClipMaxY = .greatestFiniteMagnitude
     }
 
-    func redrawForRowMotion(invalidating rect: CGRect? = nil) {
-        // Hover regions are cached at the rows' displaced positions.
-        clearPointerRegionCaches()
-        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, rowMotions.isEmpty,
-           !suppressesHoverPresentation {
-            // The motion has landed: tracking areas and cursor rects follow the rows.
-            updateTrackingAreas()
-            window?.invalidateCursorRects(for: self)
-        }
-        if let rect { setNeedsDisplay(rect) } else { invalidateVisibleContent() }
-        reconcileInboxHeaders()
-        positionAnimatedMediaOverlays()
-        positionInlineVideoOverlays()
-        // The copy button can't follow its block as rows move and clip, so
-        // it leaves until the pointer next moves over a block.
-        if !(rowDisclosure?.isFinished ?? true) || unreadDividerGap != nil { setHoveredCodeBlock(nil) }
-        reconcileVoiceMessageOverlay()
-        reconcileActivityIndicators()
-        positionSpoilerOverlays()
-        positionReactionBandViews()
-        maskDisclosureSubviews()
-    }
-
     /// Hosted views inside the group follow the same clip as its drawn rows.
-    private func maskDisclosureSubviews() {
+    func maskDisclosureSubviews() {
         for view in disclosureMaskedViews { view.layer?.mask = nil }
         disclosureMaskedViews = []
         guard rowDisclosure != nil, !disclosureRange.isEmpty else { return }
