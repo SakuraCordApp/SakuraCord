@@ -309,9 +309,8 @@ extension AppModel {
             replyPreview: nil,
             stickers: [presentedSticker]
         )
-        appendOutgoingMessage(optimistic)
+        admitToOutbox(optimistic, draft: draft)
         let advancedLocally = advanceTimelineForLocalSend(channelID: channelID)
-        composer.outbox.draftsByNonce[draft.nonce] = draft
         let didSend = await performOutgoingSend(draft, isRetry: false)
         if didSend {
             completeConfirmedSend(channelID: channelID, advancedLocally: advancedLocally)
