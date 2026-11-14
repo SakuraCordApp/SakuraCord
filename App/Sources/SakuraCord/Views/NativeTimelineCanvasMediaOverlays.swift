@@ -1501,3 +1501,289 @@ extension NativeTimelineCanvasView {
         }
     }
 }
+
+extension NativeTimelineCanvasView {
+    func animatedMediaKeys(
+        for row: MessageRowPresentation,
+        layout: NativeTimelineRowLayout
+    ) -> Set<MediaImageKey> {
+        var keys: Set<MediaImageKey> = []
+        appendAnimatedAvatarKeys(for: row, layout: layout, into: &keys)
+        appendAnimatedContentKeys(for: row, layout: layout, into: &keys)
+        appendAnimatedComponentKeys(for: row, layout: layout, into: &keys)
+        appendAnimatedStickerAndReactionKeys(for: row, layout: layout, into: &keys)
+        return keys
+    }
+
+    private func appendAnimatedAvatarKeys(
+        for row: MessageRowPresentation,
+        layout: NativeTimelineRowLayout,
+        into keys: inout Set<MediaImageKey>
+    ) {
+        let message = row.message
+        let author =
+            model?.authorPresentation(for: message).user
+            ?? message.author
+        if layout.avatarFrame != nil {
+            if let url =
+                author.avatarURL
+                    ?? message.author.avatarURL,
+               UserAvatarPresentation
+                .shouldDecodeAnimation(for: url)
+            {
+                keys.insert(.avatar(url))
+            }
+            if let url =
+                author.avatarDecorationURL
+            {
+                // Discord serves both static PNG and animated APNG decoration
+                // assets from this route. Decode only for visible rows; the
+                // media store discards single-frame results from overlay use.
+                keys.insert(.avatarDecoration(url))
+            }
+        }
+        if layout.replyFrame != nil,
+           let url = row.replyPreview?.author.avatarURL,
+           UserAvatarPresentation
+            .shouldDecodeAnimation(for: url)
+        {
+            keys.insert(.avatar(url))
+        }
+        if layout.commandInvocationRegion?.avatarFrame != nil,
+           let url = message.interactionMetadata?.user?.avatarURL,
+           UserAvatarPresentation
+            .shouldDecodeAnimation(for: url)
+        {
+            keys.insert(.avatar(url))
+        }
+        for reaction in layout.reactionRegions {
+            for avatar in reaction.avatarRegions {
+                if let url = avatar.reactor.avatarURL,
+                   UserAvatarPresentation
+                    .shouldDecodeAnimation(for: url)
+                {
+                    keys.insert(.avatar(url))
+                }
+            }
+        }
+    }
+
+    private func appendAnimatedContentKeys(
+        for row: MessageRowPresentation,
+        layout: NativeTimelineRowLayout,
+        into keys: inout Set<MediaImageKey>
+    ) {
+        let message = row.message
+        for region in layout.linkedImageRegions
+        where Self.isPotentiallyAnimated(region.reference.displayURL) {
+            keys.insert(.media(
+                region.reference.displayURL,
+                maximumPixelDimension: region.reference.isEmoji ? 96 : 720
+            ))
+        }
+        for attachment in message.attachments
+        where attachment.mediaKind == .animatedImage {
+            if !NativeTimelineSpoilerConcealmentPolicy
+                .isConcealed(
+                    messageID: message.id,
+                    contentID:
+                        NativeTimelineComponentRevealKey
+                            .attachmentComponentID(attachment.id),
+                    isSpoiler: attachment.isSpoiler,
+                    store: spoilerRevealStore
+                ) {
+                if let key = MediaImageKey.attachment(attachment) {
+                    keys.insert(key)
+                }
+            }
+        }
+        if let value = layout.attributedContent {
+            appendAnimatedInlineKeys(
+                from: value,
+                revealedSpoilerLocations: revealedTextSpoilerLocations(
+                    messageID: message.id,
+                    region: .content,
+                    value: value,
+                    layout: layout
+                ),
+                into: &keys
+            )
+        }
+        for region in layout.embedRegions {
+            for image in region.imageRegions
+            where Self.isPotentiallyAnimated(image.url) {
+                keys.insert(.media(
+                    image.url,
+                    maximumPixelDimension: image.maximumPixelDimension
+                ))
+            }
+            if !region.mediaIsVideo,
+               let url = region.mediaURL,
+               Self.isPotentiallyAnimated(url)
+            {
+                keys.insert(.media(url))
+            }
+            for (textIndex, textRegion) in region.textRegions.enumerated() {
+                appendAnimatedInlineKeys(
+                    from: textRegion.text.value,
+                    revealedSpoilerLocations: revealedTextSpoilerLocations(
+                        messageID: message.id,
+                        region: .embed(
+                            embedID: region.embedID,
+                            textIndex: textIndex
+                        ),
+                        value: textRegion.text.value,
+                        layout: layout
+                    ),
+                    into: &keys
+                )
+            }
+        }
+    }
+
+    private func appendAnimatedComponentKeys(
+        for row: MessageRowPresentation,
+        layout: NativeTimelineRowLayout,
+        into keys: inout Set<MediaImageKey>
+    ) {
+        let message = row.message
+        for (componentIndex, component) in layout.componentLayouts.enumerated() {
+            let hiddenContainerFrames =
+                NativeTimelineSpoilerConcealmentPolicy
+                    .hiddenContainerFrames(
+                        in: component,
+                        messageID: message.id,
+                        store: spoilerRevealStore
+                    )
+            for image in component.images
+            where Self.isPotentiallyAnimated(image.displayURL)
+                && !NativeTimelineSpoilerConcealmentPolicy
+                    .isInsideHiddenContainer(
+                        image.frame,
+                        hiddenContainerFrames: hiddenContainerFrames
+                    )
+                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    messageID: message.id,
+                    contentID: image.componentID,
+                    isSpoiler: image.isSpoiler,
+                    store: spoilerRevealStore
+                ) {
+                keys.insert(.media(
+                    image.displayURL,
+                    maximumPixelDimension: image.maximumPixelDimension
+                ))
+            }
+            for media in component.media
+            where Self.isPotentiallyAnimated(media.displayURL)
+                && !NativeTimelineSpoilerConcealmentPolicy
+                    .isInsideHiddenContainer(
+                        media.frame,
+                        hiddenContainerFrames: hiddenContainerFrames
+                    )
+                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    messageID: message.id,
+                    contentID: media.componentID,
+                    isSpoiler: media.isSpoiler,
+                    store: spoilerRevealStore
+                ) {
+                keys.insert(.media(media.displayURL))
+            }
+            for button in component.buttons {
+                guard !NativeTimelineSpoilerConcealmentPolicy
+                    .isInsideHiddenContainer(
+                        button.frame,
+                        hiddenContainerFrames: hiddenContainerFrames
+                    )
+                else { continue }
+                guard let emoji = button.emoji,
+                      emoji.isAnimated,
+                      let url = emoji.imageURL(size: 32)
+                else { continue }
+                keys.insert(.media(url, maximumPixelDimension: 64))
+            }
+            for (textIndex, textRegion) in component.textRegions.enumerated() {
+                guard !NativeTimelineSpoilerConcealmentPolicy
+                    .isInsideHiddenContainer(
+                        textRegion.frame,
+                        hiddenContainerFrames: hiddenContainerFrames
+                    )
+                else { continue }
+                appendAnimatedInlineKeys(
+                    from: textRegion.text.value,
+                    revealedSpoilerLocations: revealedTextSpoilerLocations(
+                        messageID: message.id,
+                        region: .component(
+                            layoutIndex: componentIndex,
+                            textIndex: textIndex
+                        ),
+                        value: textRegion.text.value,
+                        layout: layout
+                    ),
+                    into: &keys
+                )
+            }
+        }
+    }
+
+    private func appendAnimatedStickerAndReactionKeys(
+        for row: MessageRowPresentation,
+        layout: NativeTimelineRowLayout,
+        into keys: inout Set<MediaImageKey>
+    ) {
+        let message = row.message
+        for sticker in message.stickers
+        where sticker.format?.isAnimated == true {
+            if let url = sticker.mediaURL {
+                keys.insert(.media(url, maximumPixelDimension: 384))
+            }
+        }
+        for region in layout.reactionRegions {
+            let reference = region.reaction.emojiReference
+            guard reference.isAnimated,
+                  let url = reference.id.flatMap({
+                      model?.customEmojiURLsByID[$0]
+                  }) ?? reference.imageURL(size: 64)
+            else { continue }
+            keys.insert(.media(url, maximumPixelDimension: 64))
+        }
+    }
+
+    /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
+    func appendAnimatedInlineKeys(
+        from value: NSAttributedString,
+        revealedSpoilerLocations: Set<Int>,
+        into keys: inout Set<MediaImageKey>
+    ) {
+        let range = NSRange(location: 0, length: value.length)
+        let hiddenSpoilerRanges = NativeTimelineTextSpoilers.hiddenRanges(
+            in: value,
+            revealedLocations: revealedSpoilerLocations
+        )
+        value.enumerateAttribute(
+            .discordEmojiToken,
+            in: range
+        ) { rawValue, tokenRange, _ in
+            guard let rawToken = rawValue as? String,
+                  !hiddenSpoilerRanges.contains(where: {
+                      NSLocationInRange(tokenRange.location, $0)
+                  })
+            else { return }
+            let reference = EmojiReference(rawToken: rawToken)
+            guard reference.isAnimated,
+                  let url = reference.id.flatMap({
+                      model?.customEmojiURLsByID[$0]
+                  }) ?? reference.imageURL(size: 64)
+            else { return }
+            keys.insert(.media(url, maximumPixelDimension: 64))
+        }
+    }
+
+    static func isPotentiallyAnimated(_ url: URL) -> Bool {
+        switch url.pathExtension.lowercased() {
+        case "gif", "apng", "webp":
+            true
+        default:
+            false
+        }
+    }
+}

@@ -363,3 +363,413 @@ extension NativeTimelineCanvasView {
         }
     }
 }
+
+extension NativeTimelineCanvasView {
+    override func menu(for event: NSEvent) -> NSMenu? {
+        dismissHoverLabel()
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return nil }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let index = rowIndex(at: point.y),
+              layouts.indices.contains(index),
+              case let .message(row, _, _) = items[index]
+        else { return nil }
+        let interactionMode = MessageOutboxPresentation.interactionMode(
+            for: row.message
+        )
+        guard interactionMode.allowsMessageContextMenu else { return nil }
+        let localPoint = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
+        if let menu = userContextMenu(for: row, index: index, localPoint: localPoint) {
+            return menu
+        }
+        let imageItem = NativeTimelineImageContextMenuPlan.item(
+            in: row.message,
+            layout: layouts[index],
+            at: localPoint,
+            isRevealed: { [spoilerRevealStore] componentID in
+                spoilerRevealStore.isMediaRevealed(
+                    NativeTimelineComponentRevealKey(
+                        messageID: row.message.id,
+                        componentID: componentID
+                    )
+                )
+            }
+        )
+        let gif = NativeTimelineGIFContextMenuPlan.result(
+            in: row.message,
+            layout: layouts[index],
+            at: localPoint
+        )
+        if interactionMode.allowsMediaContextMenu,
+           let gif
+        {
+            return GIFContextMenuBuilder.make(
+                actions: gifContextMenuActions(for: gif)
+            )
+        }
+        if interactionMode.allowsMediaContextMenu,
+           let imageItem
+        {
+            return MediaImageContextMenuBuilder.make(
+                actions: imageContextMenuActions(for: imageItem)
+            )
+        }
+        guard let actions,
+              TimelineContextMenuHitTesting.contains(
+                  point,
+                  rowOrigin: displayedRowOrigin(at: index),
+                  highlightFrame: layouts[index].highlightFrame
+              )
+        else { return nil }
+        guard let menu = messageContextMenu(
+            for: row,
+            at: index,
+            targetsAuthor: NativeTimelineAuthorProfileGeometry.hitFrame(
+                at: localPoint,
+                avatarFrame: layouts[index].avatarFrame,
+                authorFrame: layouts[index].authorFrame
+            ) != nil,
+            lookupPoint: point,
+            actions: actions,
+            failedMediaActions: interactionMode == .failed
+                ? imageItem.map(imageContextMenuActions(for:))
+                : nil
+        ) else { return nil }
+        prependTextLinkActions(to: menu, row: row, index: index, localPoint: localPoint)
+        return menu
+    }
+
+    /// `targetsAuthor` offers user commands instead of message commands in
+    /// the Apps submenu, as when the author's avatar or name was clicked.
+    func messageContextMenu(
+        for row: MessageRowPresentation,
+        at index: Int,
+        targetsAuthor: Bool,
+        lookupPoint: CGPoint? = nil,
+        actions: NativeTimelineRowActions,
+        failedMediaActions: MediaImageContextMenuActions?
+    ) -> NSMenu? {
+        guard MessageOutboxPresentation.interactionMode(for: row.message).allowsMessageContextMenu else { return nil }
+        let canEdit = model?.canEditMessage(row.message) == true
+        let canDelete = model?.canDeleteMessage(row.message) == true
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        if let lookupPoint, let lookup = dictionaryLookupAction(at: lookupPoint, usesSelection: true) {
+            menu.addItem(actionItem("Look Up", systemImage: "character.book.closed", action: lookup))
+            menu.addItem(.separator())
+        }
+        var insertedFailedMediaActions = false
+        for entry in NativeTimelineMessageMenuPolicy.entries(
+            canEdit: canEdit,
+            canDelete: canDelete,
+            canRetry: row.message.canRetrySending,
+            isFailed: row.message.outboxState == .failed,
+            canReply: actions.reply != nil
+                && model?.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil
+                && MessageReplyPresentationPolicy.allowsReplyAction(
+                    for: row.message
+                ),
+            canEndPoll: row.message.outboxState == .confirmed && row.message.author.id == model?.currentUser?.id && row.message.poll?.isClosed() == false,
+            canForward: actions.forward != nil && model?.canForward(row.message) == true,
+            threadAction: row.message.thread != nil
+                ? .viewThread
+                : (model?.canCreateThread(from: row.message) == true ? .createThread : nil),
+            canPin: model?.canManagePins(for: row.message) == true,
+            isPinned: row.message.isPinned,
+            translationTitle: row.isResource ? nil : model?.messageTranslationMenuTitle(for: row.message),
+            canCopyTranslation: !row.isResource && model?.translatedMessageText(row.message) != nil,
+            context: messageInteractionContext
+        ) {
+            guard case let .action(
+                action,
+                title,
+                systemImage,
+                isDestructive
+            ) = entry
+            else {
+                menu.addItem(.separator())
+                if !insertedFailedMediaActions,
+                   let failedMediaActions
+                {
+                    MediaImageContextMenuBuilder.appendImageActions(
+                        to: menu,
+                        actions: failedMediaActions,
+                        includesLinkActions: false
+                    )
+                    menu.addItem(.separator())
+                    insertedFailedMediaActions = true
+                }
+                continue
+            }
+            if case .addReaction = action, model?.canCreateReactions(on: row.message) != true { continue }
+            let handler = messageMenuHandler(
+                action: action,
+                row: row,
+                index: index,
+                actions: actions
+            )
+            menu.addItem(
+                actionItem(
+                    title,
+                    systemImage: systemImage,
+                    isDestructive: isDestructive,
+                    action: handler
+                )
+            )
+        }
+        appendApplicationCommandMenu(to: menu, row: row, targetsAuthor: targetsAuthor)
+        return menu
+    }
+
+    private func userContextMenu(
+        for row: MessageRowPresentation, index: Int, localPoint: CGPoint
+    ) -> NSMenu? {
+        guard let model, row.message.outboxState == .confirmed else { return nil }
+        let message = row.message
+        let textHit = textPointerHit(in: layouts[index], point: localPoint)
+        if let textHit, let spoilerRange = textHit.hit.spoilerRange,
+           let key = textSpoilerRevealKey(itemIdentifier: items[index].identifier,
+                                         region: textHit.region, rangeLocation: spoilerRange.location),
+           !spoilerRevealStore.isTextRevealed(key) { return nil }
+        let user: User?
+        if NativeTimelineAuthorProfileGeometry.hitFrame(at: localPoint,
+            avatarFrame: layouts[index].avatarFrame, authorFrame: layouts[index].authorFrame) != nil {
+            user = message.author
+        } else if let mention = textHit?.hit.mention,
+                  mention.isInteractive, case let .user(userID) = mention.target {
+            user = model.systemMessageUser(userID: userID, sourceMessage: message)
+        } else if let url = textHit?.hit.url,
+                  url.scheme == "sakuracord-action", url.host == "profile", let userID = UserID(url.lastPathComponent) {
+            user = model.systemMessageUser(userID: userID, sourceMessage: message)
+        } else { return nil }
+        guard let user else { return nil }
+        return UserContextMenu.make(for: user,
+            context: .init(guildID: model.messagePresentationGuildID(for: message), channelID: message.channelID,
+                           isLocalIdentity: user.id == message.author.id && (message.webhookID != nil || DiscordBuiltInCommands.isClydeMessage(message))), model: model)
+    }
+
+    /// Discord's Apps submenu: message commands for the message, or user
+    /// commands when the author's avatar or name was right-clicked.
+    private func appendApplicationCommandMenu(
+        to menu: NSMenu,
+        row: MessageRowPresentation,
+        targetsAuthor: Bool
+    ) {
+        let message = row.message
+        guard let model, messageInteractionContext == .conversation,
+              message.outboxState == .confirmed, !message.flags.contains(.ephemeral),
+              model.supportsCapability(.slashCommands)
+        else { return }
+        let type: ApplicationCommandType = targetsAuthor ? .user : .message
+        let targetID = targetsAuthor ? message.author.id.description : message.id.description
+        let destination = model.commandDestination(in: message.channelID)
+        model.ensureApplicationCommandsLoaded(in: destination)
+        let commandComposer = model.commandComposer(for: destination)
+        guard !commandComposer.contextMenuCommands(of: type).isEmpty
+            || commandComposer.isLoading
+        else { return }
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        // Rebuilt whenever the submenu opens, so a catalog that finishes
+        // loading while the menu is up replaces the loading row.
+        let populator = ApplicationCommandAppsMenuPopulator(model: model, type: type, targetID: targetID, channelID: message.channelID)
+        submenu.delegate = populator
+        let apps = NSMenuItem(title: "Apps", action: nil, keyEquivalent: "")
+        ContextMenuItemSupport.configure(apps, title: "Apps", systemImage: SakuraCordSystemSymbol.applicationCommands)
+        apps.submenu = submenu
+        apps.representedObject = populator
+        // Discord puts Apps at the end of the reply/pin group, before Mark Unread.
+        let insertion = menu.items.firstIndex { $0.title == "Mark Unread" } ?? 0
+        menu.insertItem(apps, at: insertion)
+    }
+
+    func messageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        index: Int,
+        actions: NativeTimelineRowActions
+    ) -> () -> Void {
+        switch action {
+        case .pinMessage, .unpinMessage:
+            return { actions.togglePin(row.message) }
+        case .toggleTranslation:
+            return { [weak model] in model?.toggleMessageTranslation(row.message) }
+        default:
+            return nonPinMessageMenuHandler(
+                action: action,
+                row: row,
+                index: index,
+                actions: actions
+            )
+        }
+    }
+
+    private func threadMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        actions: NativeTimelineRowActions
+    ) -> (() -> Void)? {
+        switch action {
+        case .createThread:
+            { [weak model] in model?.beginThreadCreation(from: row.message) }
+        case .viewThread:
+            {
+                guard let thread = row.message.thread else { return }
+                actions.openThread(thread)
+            }
+        default:
+            nil
+        }
+    }
+
+    private func nonPinMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        index: Int,
+        actions: NativeTimelineRowActions
+    ) -> () -> Void {
+        if let handler = copyMessageMenuHandler(action: action, row: row)
+            ?? threadMessageMenuHandler(action: action, row: row, actions: actions)
+        {
+            return handler
+        }
+        return switch action {
+        case .jumpToMessage:
+            { actions.openMessage?(row.message) }
+        case .retrySending:
+            { actions.retry(row.message) }
+        case .addReaction:
+            { [weak self] in self?.showReactionPicker(forMessageRow: row.message) }
+        case .viewReactions:
+            { [weak self] in self?.showMessageReactions(row.message) }
+        case .reply:
+            {
+                guard let reply = actions.reply else { return }
+                reply(row.message)
+            }
+        case .forward:
+            {
+                guard let forward = actions.forward else { return }
+                forward(row.message)
+            }
+        case .dismissInboxMention:
+            { [weak model] in model?.dismissInboxMention(row.message) }
+        case .markUnread:
+            { actions.markUnread(row.message) }
+        case .endPoll:
+            { [weak self] in self?.requestEndPoll(row.message) }
+        case .editMessage:
+            { [weak self] in self?.beginEditing(row: row, at: index) }
+        case .deleteMessage, .discardFailedMessage:
+            deletionMenuHandler(action: action, message: row.message)
+        default:
+            {}
+        }
+    }
+
+    private func copyMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation
+    ) -> (() -> Void)? {
+        switch action {
+        case .copyTranslation:
+            { [weak model] in
+                if let text = model?.translatedMessageText(row.message) { Pasteboard.copy(text) }
+            }
+        case .copyText:
+            { Pasteboard.copy(row.message.content) }
+        case .copyLink:
+            { [weak self] in
+                guard let self else { return }
+                Pasteboard.copy(self.messageLink(for: row.message))
+            }
+        case .copyMessageID:
+            { Pasteboard.copy(row.message.id.description) }
+        case .copyAuthorID:
+            { Pasteboard.copy(row.message.author.id.description) }
+        default:
+            nil
+        }
+    }
+
+    func deletionMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        message: Message
+    ) -> () -> Void {
+        if action == .discardFailedMessage {
+            return { [weak self] in self?.requestDiscardFailed(message) }
+        }
+        return { [weak self] in self?.requestDelete(message) }
+    }
+
+    func imageContextMenuActions(
+        for item: RichMediaItem
+    ) -> MediaImageContextMenuActions {
+        MediaImageContextMenuActions(
+            copyImage: { [weak self] in
+                Task { @MainActor [weak self] in
+                    do {
+                        try await MediaViewerActionService.copyImage(
+                            from: item.url
+                        )
+                    } catch {
+                        self?.presentActionError(error)
+                    }
+                }
+            },
+            save: MediaSaveMenuActions(
+                saveAs: { [weak self] in
+                    self?.saveMedia(item, to: .saveAs)
+                },
+                saveToDefaultFolder: { [weak self] in
+                    self?.saveMedia(item, to: .defaultFolder)
+                }
+            ),
+            copyLink: {
+                Pasteboard.copy(item.url.absoluteString)
+            },
+            openLink: {
+                MediaViewerActionService.openInBrowser(item.url)
+            }
+        )
+    }
+
+    private func saveMedia(
+        _ item: RichMediaItem,
+        to destination: MediaSaveDestination
+    ) {
+        Task { @MainActor [weak self] in
+            do {
+                _ = try await MediaViewerActionService.save(
+                    item,
+                    to: destination
+                )
+            } catch {
+                self?.presentActionError(error)
+            }
+        }
+    }
+
+    func gifContextMenuActions(
+        for gif: GIFSearchResult
+    ) -> GIFContextMenuActions {
+        let isFavorite = model?.favoriteGIFs.contains(where: {
+            $0.url == gif.url
+        }) == true
+        return GIFContextMenuActions(
+            isFavorite: isFavorite,
+            isFavoriteMutationPending: model?.gifFavoriteMutationURL != nil,
+            toggleFavorite: { [weak self] in
+                self?.model?.setGIFFavorite(
+                    gif,
+                    isFavorite: !isFavorite
+                )
+            },
+            copyMediaLink: {
+                Pasteboard.copy(gif.url.absoluteString)
+            }
+        )
+    }
+}

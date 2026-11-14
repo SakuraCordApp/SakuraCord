@@ -331,3 +331,66 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         }
     }
 }
+
+extension NativeTimelineCanvasView {
+    func reveal(
+        _ key: NativeTimelineComponentRevealKey
+    ) {
+        guard let rowIndex = items.firstIndex(where: {
+            $0.messageID == key.messageID
+        }) else { return }
+        reveal(key, rowIndex: rowIndex)
+    }
+
+    func reveal(
+        _ key: NativeTimelineComponentRevealKey,
+        rowIndex: Int
+    ) {
+        guard items.indices.contains(rowIndex),
+              items[rowIndex].messageID == key.messageID,
+              !spoilerRevealStore.isMediaRevealed(key)
+        else { return }
+        if let cover = spoilerOverlays[key] {
+            fadeOutSpoilerCover(
+                [cover.frame],
+                cornerRadius: cover.cornerRadius,
+                duration: SpoilerAppearance.mediaRevealDuration,
+                dropsPill: true
+            )
+        }
+        spoilerRevealStore.revealMedia(key)
+    }
+
+    func installSpoilerRevealStore(
+        _ store: NativeTimelineSpoilerRevealStore
+    ) {
+        guard spoilerRevealStore !== store else { return }
+        if let spoilerRevealObserverID {
+            spoilerRevealStore.removeObserver(spoilerRevealObserverID)
+        }
+        spoilerRevealStore = store
+        spoilerRevealObserverID = store.observe { [weak self] messageID in
+            self?.spoilerRevealStateDidChange(messageID: messageID)
+        }
+    }
+
+    func spoilerRevealStateDidChange(messageID: MessageID) {
+        // A forum post's starter message shares the post's ID with the
+        // beginning row above it, so a message row takes precedence.
+        guard let rowIndex = items.firstIndex(where: { $0.messageID == messageID })
+            ?? items.firstIndex(where: { $0.beginning?.id.rawValue == messageID.rawValue })
+        else { return }
+        let identifier = items[rowIndex].identifier
+        visibleMediaProjection = nil
+        mediaKeysByIdentifier[identifier] = nil
+        invalidateBitmap(identifier)
+        requestMedia(for: items[rowIndex], at: rowIndex)
+        setNeedsDisplay(rowFrame(at: rowIndex))
+        window?.invalidateCursorRects(for: self)
+        reconcileAnimatedMedia()
+        reconcileSpoilerOverlays()
+        // A reset reveal store hides a video playing in place again.
+        reconcileInlinePlayers()
+        rebuildAccessibilityProxy(for: identifier)
+    }
+}
