@@ -17,13 +17,7 @@ extension ProviderRequestContractTests {
 
     @Test func `category settings use one scoped bulk mutation per action`() async throws {
         RateLimitURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let guildID = GuildID(rawValue: 100)
         let categoryID = ChannelID(rawValue: 190)
 

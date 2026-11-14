@@ -7,13 +7,7 @@ import Testing
 struct MessageForwardingContractTests {
     @Test func `forward uses one exact message mutation and decodes its immutable snapshot`() async throws {
         ForwardingURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ForwardingURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "forwarding-contract-session", handles: [CredentialHandle(accountID: "forwarding")]),
-            handle: CredentialHandle(accountID: "forwarding"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ForwardingURLProtocol.self, token: "forwarding-contract-session", accountID: "forwarding")
         await provider.seedPrivateChannelsForTesting([
             Channel(
                 id: ChannelID(rawValue: 41),
@@ -64,13 +58,7 @@ struct MessageForwardingContractTests {
 
     @Test func `forward mutation never retries a server rate limit`() async throws {
         ForwardingURLProtocol.reset(status: 429)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ForwardingURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "forwarding-contract-session", handles: [CredentialHandle(accountID: "forwarding")]),
-            handle: CredentialHandle(accountID: "forwarding"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ForwardingURLProtocol.self, token: "forwarding-contract-session", accountID: "forwarding")
         await provider.seedPrivateChannelsForTesting([
             Channel(
                 id: ChannelID(rawValue: 41),
@@ -95,13 +83,7 @@ struct MessageForwardingContractTests {
 
     @Test func `missing user destination creates one coalesced private channel`() async throws {
         ForwardingURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ForwardingURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "forwarding-contract-session", handles: [CredentialHandle(accountID: "forwarding")]),
-            handle: CredentialHandle(accountID: "forwarding"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ForwardingURLProtocol.self, token: "forwarding-contract-session", accountID: "forwarding")
         let userID = UserID(rawValue: 2)
 
         async let first = provider.ensurePrivateChannel(for: userID)

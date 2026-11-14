@@ -10,7 +10,7 @@ import Testing
 struct FavoritesSettingsContractTests {
     @Test func `favourite edits send the complete Favorites message the official client sends`() async throws {
         FavoritesURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(FavoritesURLProtocol.self)
         // A forum, a categorised text channel, its category and a thread.
         try await receiveReady(provider, settings: "emUKEwlHEIIOUAitFRIIEAEYAyoCCA8KGgkkEID+Ny01FRIPEAEYAiEAAIDYPGHJFSoAChkJAACA2DxhyRUSDgoIQ2hhbm5lbHMQAhgBChMJVRACzNCbxxUSCBABGAQqAggLGgIIAQ==")
         let stored = try #require(await provider.favoritesSettings())
@@ -34,7 +34,7 @@ struct FavoritesSettingsContractTests {
 
     @Test func `the Favorites server toggle writes guild_visible and is off by default`() async throws {
         FavoritesURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(FavoritesURLProtocol.self)
         try await receiveReady(provider, settings: "CgMYnzA=")
         #expect(await provider.favoritesSettings() == FavoritesSettings())
         #expect(FavoritesSettings().isEnabled == false)
@@ -52,7 +52,7 @@ struct FavoritesSettingsContractTests {
     @Test func `edits during an in-flight save coalesce into one save of the newest state`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = makeProvider()
+        let provider = stubbedProvider(FavoritesURLProtocol.self)
         try await receiveReady(provider, settings: "CgMYnzA=")
         try await provider.updateFavorites([.setVisible(true)])
         #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
@@ -70,7 +70,7 @@ struct FavoritesSettingsContractTests {
 
     @Test func `pruning and adding at the limit send one save that never exceeds it`() async throws {
         FavoritesURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(FavoritesURLProtocol.self)
         let stored = FavoritesSettings(entries: (1 ... 3).map {
             FavoritesSettings.Entry(id: ChannelID(rawValue: UInt64($0)), position: UInt32($0), channelType: 0)
         }, storedVisibility: true)
@@ -152,7 +152,7 @@ struct FavoritesSettingsContractTests {
     @Test func `reset after a pending dismissal clears bit 807 in the same write`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = makeProvider()
+        let provider = stubbedProvider(FavoritesURLProtocol.self)
         let userContent = DiscordSettingsProto.protoLengthDelimitedField(1, Data([0x01]))
         try await receiveReady(provider, settings: (
             DiscordSettingsProto.protoLengthDelimitedField(DiscordUserContentProto.settingsField, userContent)
@@ -180,7 +180,7 @@ struct FavoritesSettingsContractTests {
         for fails in [true, false] {
             FavoritesURLProtocol.reset()
             FavoritesURLProtocol.holdResponses()
-            let provider = makeProvider()
+            let provider = stubbedProvider(FavoritesURLProtocol.self)
             var dismissed = [UInt8](repeating: 0, count: 101)
             dismissed[100] = 0x80
             try await receiveReady(provider, settings: (
@@ -219,7 +219,7 @@ struct FavoritesSettingsContractTests {
     @Test func `a dismissal made while a Reset is queued is what the follow-up save sends`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = makeProvider()
+        let provider = stubbedProvider(FavoritesURLProtocol.self)
         var dismissed = [UInt8](repeating: 0, count: 101)
         dismissed[100] = 0x80
         try await receiveReady(provider, settings: (
@@ -251,7 +251,7 @@ struct FavoritesSettingsContractTests {
     @Test func `a favourite queued behind a failed dismissal is rolled back`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = makeProvider()
+        let provider = stubbedProvider(FavoritesURLProtocol.self)
         try await receiveReady(provider, settings: (
             DiscordSettingsProto.protoLengthDelimitedField(
                 DiscordUserContentProto.settingsField, DiscordSettingsProto.protoLengthDelimitedField(1, Data([0x01]))
@@ -273,7 +273,7 @@ struct FavoritesSettingsContractTests {
     @Test func `a Reset after a queued dismissal still restores suggestions`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = makeProvider()
+        let provider = stubbedProvider(FavoritesURLProtocol.self)
         var dismissed = [UInt8](repeating: 0, count: 101)
         dismissed[100] = 0x80
         try await receiveReady(provider, settings: (
@@ -319,16 +319,6 @@ struct FavoritesSettingsContractTests {
             "guilds": .array([]),
             "user_settings_proto": .string(settings),
         ]))
-    }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FavoritesURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

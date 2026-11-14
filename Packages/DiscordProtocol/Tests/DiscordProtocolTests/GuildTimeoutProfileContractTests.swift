@@ -7,12 +7,7 @@ extension DirectMessageProviderContractTests {
     @Test(.timeLimit(.minutes(1)), arguments: ["profile", "nickname"])
     func `delayed server identity responses retain a newer membership timeout`(operation: String) async throws {
         DirectMessageURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DirectMessageURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "dm-contract-session", handles: [CredentialHandle(accountID: "dm-contract")]), handle: CredentialHandle(accountID: "dm-contract"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         let account: JSONValue = .object([
             "id": .string("2"), "username": .string("maya"), "global_name": .string("Maya"),
         ])

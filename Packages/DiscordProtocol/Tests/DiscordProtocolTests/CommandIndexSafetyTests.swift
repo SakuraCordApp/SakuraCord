@@ -82,11 +82,7 @@ struct CommandIndexSafetyTests {
     private func makeProvider() -> DiscordRESTProvider {
         CommandIndexSafetyURLProtocol.paths.withLock { $0.removeAll() }
         CommandIndexSafetyURLProtocol.rejection.withLock { $0 = nil }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [CommandIndexSafetyURLProtocol.self]
-        return DiscordRESTProvider(credentials: TestCredentialStore(),
-                                   handle: CredentialHandle(accountID: "command-index-safety"),
-                                   session: URLSession(configuration: configuration))
+        return stubbedProvider(CommandIndexSafetyURLProtocol.self, accountID: "command-index-safety")
     }
 }
 

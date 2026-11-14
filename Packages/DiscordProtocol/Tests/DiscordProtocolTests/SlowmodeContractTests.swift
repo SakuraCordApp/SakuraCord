@@ -16,12 +16,7 @@ func `thread decoding preserves slowmode and resets an omitted setting`(_ field:
 
 @Test func `slowmode rejection surfaces its retry interval without replaying the message`() async throws {
     SlowmodeURLProtocol.requestCount.withLock { $0 = 0 }
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [SlowmodeURLProtocol.self]
-    let provider = DiscordRESTProvider(
-        credentials: TestCredentialStore(), handle: CredentialHandle(accountID: "1"),
-        session: URLSession(configuration: configuration)
-    )
+    let provider = stubbedProvider(SlowmodeURLProtocol.self)
     do {
         // Exercise the same central transport as send, with retries explicitly
         // available so a generic 429 replay cannot accidentally pass this test.

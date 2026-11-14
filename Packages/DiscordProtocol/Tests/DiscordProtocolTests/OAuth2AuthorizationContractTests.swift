@@ -9,7 +9,7 @@ struct OAuth2AuthorizationContractTests {
 
     @Test func `authorization reads consent details then authorizes once without following the redirect`() async throws {
         let accountID = UUID().uuidString
-        let provider = makeProvider(accountID)
+        let provider = stubbedProvider(OAuth2URLProtocol.self, token: accountID, accountID: accountID)
         let grant = try await provider.authorizeOAuth2(.init(
             clientID: "1530180517155176458", scopes: ["identify"], redirectURI: Self.redirect, state: "granted"
         ))
@@ -41,7 +41,7 @@ struct OAuth2AuthorizationContractTests {
     @Test(arguments: ["rejected", "foreign", "denied", "forged"])
     func `rejected or mismatched authorizations never produce a code or a second write`(state: String) async throws {
         let accountID = UUID().uuidString
-        let provider = makeProvider(accountID)
+        let provider = stubbedProvider(OAuth2URLProtocol.self, token: accountID, accountID: accountID)
         await #expect(throws: OAuth2AuthorizationError.self) {
             _ = try await provider.authorizeOAuth2(.init(
                 clientID: "1530180517155176458", scopes: ["identify"], redirectURI: Self.redirect, state: state
@@ -51,15 +51,6 @@ struct OAuth2AuthorizationContractTests {
         #expect(writes.count == (state == "rejected" || state == "foreign" ? 0 : 1))
         #expect(await !provider.requestSafetyCircuitIsOpen)
         await provider.disconnect()
-    }
-
-    private func makeProvider(_ accountID: String) -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [OAuth2URLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(token: accountID), handle: .init(accountID: accountID),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

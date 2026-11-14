@@ -9,7 +9,7 @@ import Testing
 struct ScheduledMessageContractTests {
     @Test func `schedule, list, edit, send now and cancel send the official requests`() async throws {
         ScheduledURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(ScheduledURLProtocol.self, token: "scheduled-contract-session", accountID: "scheduled-contract")
         await provider.seedGuildChannelForTesting(Channel(id: ChannelID(rawValue: 41), guildID: GuildID(rawValue: 5), name: "general"))
         let date = try #require(DiscordDate.parse("2026-11-11T08:00:00.000Z"))
         let draft = SendMessageDraft(
@@ -72,23 +72,13 @@ struct ScheduledMessageContractTests {
 
     @Test func `the scheduled message limit is its own error`() async throws {
         ScheduledURLProtocol.reset(rejectsCreate: true)
-        let provider = makeProvider()
+        let provider = stubbedProvider(ScheduledURLProtocol.self, token: "scheduled-contract-session", accountID: "scheduled-contract")
         let draft = SendMessageDraft(channelID: ChannelID(rawValue: 41), content: "later")
 
         await #expect(throws: ChatProviderError.scheduledMessageLimitReached) {
             try await provider.scheduleMessage(draft, at: .now.addingTimeInterval(3600))
         }
         #expect(ScheduledURLProtocol.requests.count == 1)
-    }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ScheduledURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "scheduled-contract-session", handles: []),
-            handle: CredentialHandle(accountID: "scheduled-contract"),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

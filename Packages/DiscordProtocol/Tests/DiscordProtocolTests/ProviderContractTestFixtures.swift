@@ -7,12 +7,13 @@ import Testing
 /// Serves one fixed session credential; suites give theirs a distinct value
 /// to tell their requests apart.
 actor TestCredentialStore: CredentialStore {
+    static let defaultToken = "test-session-credential-value"
     private let token: String
     private let storedHandles: [CredentialHandle]
     private(set) var credentialReadCount = 0
 
     init(
-        token: String = "test-session-credential-value",
+        token: String = defaultToken,
         handles: [CredentialHandle] = [CredentialHandle(accountID: "1")]
     ) {
         self.token = token
@@ -32,6 +33,18 @@ actor TestCredentialStore: CredentialStore {
     func handles() async throws -> [CredentialHandle] {
         storedHandles
     }
+}
+
+/// A provider whose REST requests are served by `protocolClass`.
+func stubbedProvider(
+    _ protocolClass: URLProtocol.Type, token: String = TestCredentialStore.defaultToken, accountID: String = "1"
+) -> DiscordRESTProvider {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [protocolClass]
+    return DiscordRESTProvider(
+        credentials: TestCredentialStore(token: token), handle: CredentialHandle(accountID: accountID),
+        session: URLSession(configuration: configuration)
+    )
 }
 
 struct UnavailableGatewayTransport: GatewayTransport {

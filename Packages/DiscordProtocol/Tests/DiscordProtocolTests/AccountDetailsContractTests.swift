@@ -28,12 +28,7 @@ struct AccountDetailsContractTests {
     @Test(arguments: [true, false])
     func `account reads reuse READY and follow observed device contract without mutations`(completeReady: Bool) async throws {
         AccountReadURLProtocol.requests.withLock { $0 = [] }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [AccountReadURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(), handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(AccountReadURLProtocol.self)
         let privateFields = completeReady ? #","email":"nova@example.com","phone":null,"mfa_enabled":true"# : ""
         let ready = try JSONDecoder().decode(JSONValue.self, from: Data("""
         {"user":{"id":"1","username":"nova"\(privateFields)},

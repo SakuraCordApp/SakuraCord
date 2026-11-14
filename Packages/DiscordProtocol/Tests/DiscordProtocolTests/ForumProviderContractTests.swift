@@ -316,13 +316,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
 struct ThreadCreationContractTests {
     @Test func `forum creation sends one nested thread payload with stable tag order`() async throws {
         ForumPostCreationURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ForumPostCreationURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "forum-create"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ForumPostCreationURLProtocol.self, accountID: "forum-create")
         let firstTag = ForumTag(id: ForumTagID(rawValue: 8_001), name: "First")
         let secondTag = ForumTag(id: ForumTagID(rawValue: 8_002), name: "Second")
         let channel = Channel(
@@ -375,13 +369,7 @@ struct ThreadCreationContractTests {
         expectedType: Int
     ) async throws {
         ForumPostCreationURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ForumPostCreationURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "thread-create"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ForumPostCreationURLProtocol.self, accountID: "thread-create")
         let channel = Channel(id: ChannelID(rawValue: 7), guildID: GuildID(rawValue: 1), name: "general", kind: kind)
         await provider.seedForumChannelForTesting(channel)
 

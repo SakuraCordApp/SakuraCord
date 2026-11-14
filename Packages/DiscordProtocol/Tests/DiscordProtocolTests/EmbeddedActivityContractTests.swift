@@ -15,7 +15,7 @@ struct EmbeddedActivityContractTests {
     @Test func `authorization reads the grant then authorizes once in the voice channel`() async throws {
         let accountID = UUID().uuidString
         let recorder = RequestRecorder(ActivityURLProtocol.captured, id: accountID)
-        let provider = makeProvider(accountID)
+        let provider = stubbedProvider(ActivityURLProtocol.self, token: accountID, accountID: accountID)
         let request = authorization(state: "granted")
         #expect(try await provider.embeddedActivityAuthorizationPreview(request).isAuthorized)
         #expect(try await provider.authorizeEmbeddedActivity(request, granted: true) == "one-time-code")
@@ -40,7 +40,7 @@ struct EmbeddedActivityContractTests {
     @Test func `a refused consent is recorded once and yields no code`() async throws {
         let accountID = UUID().uuidString
         let recorder = RequestRecorder(ActivityURLProtocol.captured, id: accountID)
-        let provider = makeProvider(accountID)
+        let provider = stubbedProvider(ActivityURLProtocol.self, token: accountID, accountID: accountID)
         await #expect(throws: OAuth2AuthorizationError.self) {
             _ = try await provider.authorizeEmbeddedActivity(authorization(state: "refused"), granted: false)
         }
@@ -53,7 +53,8 @@ struct EmbeddedActivityContractTests {
     }
 
     @Test func `a forged authorization state yields no code`() async throws {
-        let provider = makeProvider(UUID().uuidString)
+        let accountID = UUID().uuidString
+        let provider = stubbedProvider(ActivityURLProtocol.self, token: accountID, accountID: accountID)
         await #expect(throws: OAuth2AuthorizationError.self) {
             _ = try await provider.authorizeEmbeddedActivity(authorization(state: "forged"), granted: true)
         }
@@ -63,7 +64,8 @@ struct EmbeddedActivityContractTests {
     @Test func `a rejected Activity token leaves the account session running`() async throws {
         let token = UUID().uuidString
         let recorder = RequestRecorder(ActivityURLProtocol.captured, id: "Bearer \(token)")
-        let provider = makeProvider(UUID().uuidString)
+        let accountID = UUID().uuidString
+        let provider = stubbedProvider(ActivityURLProtocol.self, token: accountID, accountID: accountID)
         await #expect(throws: OAuth2AuthorizationError.self) {
             _ = try await provider.authenticateEmbeddedActivity(ApplicationID("880218394199220334")!, accessToken: token)
         }
@@ -75,15 +77,6 @@ struct EmbeddedActivityContractTests {
     private func authorization(state: String) -> EmbeddedActivityAuthorizationRequest {
         .init(applicationID: ApplicationID("880218394199220334")!, scopes: ["identify", "guilds"], state: state,
               location: Self.location, channelType: 2)
-    }
-
-    private func makeProvider(_ accountID: String) -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ActivityURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(token: accountID), handle: .init(accountID: accountID),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

@@ -531,7 +531,7 @@ import Testing
         capturesPayloadDetails: true
     )
     let provider = DiscordRESTProvider(
-        credentials: DiagnosticsCredentialStore(),
+        credentials: TestCredentialStore(token: "diagnostics-test-token", handles: []),
         handle: CredentialHandle(accountID: "diagnostics-test"),
         session: URLSession(configuration: configuration),
         apiDiagnostics: diagnostics
@@ -564,20 +564,6 @@ private func decodedJSONObject(
     return try #require(
         JSONSerialization.jsonObject(with: data) as? [String: Any]
     )
-}
-
-private actor DiagnosticsCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for _: CredentialHandle) async throws -> Data {
-        Data("diagnostics-test-token".utf8)
-    }
-
-    func remove(_: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private final class DiagnosticsURLProtocol: URLProtocol, @unchecked Sendable {
@@ -633,7 +619,7 @@ func `blocked REST loads panic save transport and decoding failures`(path: Strin
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [DiagnosticsURLProtocol.self]
     let provider = DiscordRESTProvider(
-        credentials: DiagnosticsCredentialStore(),
+        credentials: TestCredentialStore(token: "diagnostics-test-token", handles: []),
         handle: CredentialHandle(accountID: "diagnostics-test"),
         session: URLSession(configuration: configuration),
         apiDiagnostics: store

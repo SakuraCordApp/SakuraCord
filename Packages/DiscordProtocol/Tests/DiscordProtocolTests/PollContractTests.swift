@@ -7,7 +7,7 @@ struct PollContractTests {
     @Test(arguments: [false, true])
     func `poll expiry fails once without stopping subsequent requests`(ending: Bool) async throws {
         let capture = RequestRecorder(PollURLProtocol.capturedRequest)
-        let provider = makeProvider(accountID: capture.id)
+        let provider = stubbedProvider(PollURLProtocol.self, token: capture.id, accountID: capture.id)
         await #expect(throws: ChatProviderError.self) {
             if ending {
                 _ = try await provider.endPoll(messageID: .init(rawValue: 998), channelID: .init(rawValue: 200))
@@ -24,7 +24,7 @@ struct PollContractTests {
 
     @Test func `poll creation and voting match fresh official desktop captures`() async throws {
         let capture = RequestRecorder(PollURLProtocol.capturedRequest)
-        let provider = makeProvider(accountID: capture.id)
+        let provider = stubbedProvider(PollURLProtocol.self, token: capture.id, accountID: capture.id)
         let draft = PollDraft(question: "A question 🌸", answers: [
             .init(id: 1, text: "Україна", emoji: .init(rawToken: "✅")),
             .init(id: 2, text: "日本語", emoji: .init(rawToken: "<:flower:55>")),
@@ -53,7 +53,7 @@ struct PollContractTests {
 
     @Test func `voter pagination and ending use captured routes without mutation retries`() async throws {
         let capture = RequestRecorder(PollURLProtocol.capturedRequest)
-        let provider = makeProvider(accountID: capture.id)
+        let provider = stubbedProvider(PollURLProtocol.self, token: capture.id, accountID: capture.id)
         let voters = try await provider.pollVoters(messageID: .init(rawValue: 300), channelID: .init(rawValue: 200),
                                                     answerID: 2, after: .init(rawValue: 9), limit: 100)
         #expect(voters.users.first?.username == "tester")
@@ -148,7 +148,8 @@ struct PollContractTests {
     }
 
     @Test func `gateway vote batches and individual changes reconcile the same cached poll`() async throws {
-        let provider = makeProvider()
+        let accountID = UUID().uuidString
+        let provider = stubbedProvider(PollURLProtocol.self, token: accountID, accountID: accountID)
         let message = try JSONDecoder().decode(MessageDTO.self, from: Data(PollURLProtocol.message.utf8)).domain()
         await provider.seedPrivateChannelsForTesting([], currentUser: message.author)
         await provider.seedMessageForTesting(message)
@@ -192,12 +193,6 @@ struct PollContractTests {
         #expect(draft.validationError == nil)
         draft.answers[0].text = " "
         #expect(draft.validationError != nil)
-    }
-
-    private func makeProvider(accountID: String = UUID().uuidString) -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [PollURLProtocol.self]
-        return DiscordRESTProvider(credentials: TestCredentialStore(token: accountID), handle: CredentialHandle(accountID: accountID), session: URLSession(configuration: configuration))
     }
 }
 

@@ -6,7 +6,7 @@ import Testing
 extension ProviderRequestContractTests {
     @Test func `bulk read acknowledgement preserves the first party body pacing and request budget`() async throws {
         RateLimitURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let readStates = (0 ..< 201).map { offset in
             BulkReadStateAcknowledgement(
                 channelID: ChannelID(rawValue: UInt64(200 + offset)),
@@ -35,7 +35,7 @@ extension ProviderRequestContractTests {
     func `bulk read acknowledgement stops at a rejected batch without replay`(status: Int) async throws {
         RateLimitURLProtocol.reset()
         RateLimitURLProtocol.bulkAckStatuses = [204, status]
-        let provider = makeProvider()
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let readStates = (0 ..< 101).map { offset in
             BulkReadStateAcknowledgement(
                 channelID: ChannelID(rawValue: UInt64(200 + offset)),
@@ -51,7 +51,7 @@ extension ProviderRequestContractTests {
 
     @Test func `guild notification mutations use one partial bulk settings entry`() async throws {
         RateLimitURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let guildID = GuildID(rawValue: 100)
 
         try await provider.updateGuildNotificationLevel(
@@ -120,16 +120,6 @@ extension ProviderRequestContractTests {
             )
         }
         #expect(RateLimitURLProtocol.guildNotificationRequestCount == 12)
-    }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

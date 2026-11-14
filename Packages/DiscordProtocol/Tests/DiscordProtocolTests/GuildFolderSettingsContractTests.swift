@@ -7,7 +7,7 @@ import Testing
 struct GuildFolderSettingsContractTests {
     @Test func `server rail edits save one guild folders subtree and roll back a rejected save`() async throws {
         GuildFolderURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(GuildFolderURLProtocol.self)
         func field(_ number: Int, _ payload: [UInt8], wireType: Int = 2) -> [UInt8] {
             encodeProtoVarint(UInt64(number << 3 | wireType))
                 + (wireType == 2 ? encodeProtoVarint(UInt64(payload.count)) : []) + payload
@@ -85,16 +85,6 @@ struct GuildFolderSettingsContractTests {
             if case .guildLayoutSaveFailed = event { received.append(nil) }
         }
         #expect(received == [moved, nil])
-    }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [GuildFolderURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

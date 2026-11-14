@@ -7,7 +7,7 @@ import Testing
 struct GIFProviderContractTests {
     @Test func `GIF picker uses exact current Discord landing search and trending routes`() async throws {
         GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(GIFURLProtocol.self, token: "gif-contract-session", accountID: "gif-contract")
 
         let landing = try await provider.gifPickerLanding()
         let searched = try await provider.searchGIFs(query: "hello")
@@ -49,7 +49,7 @@ struct GIFProviderContractTests {
 
     @Test func `GIF favourites share one settings read and use one changed-field proto patch per action`() async throws {
         GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(GIFURLProtocol.self, token: "gif-contract-session", accountID: "gif-contract")
         let gif = GIFSearchResult(
             id: "one",
             title: "Hello",
@@ -84,7 +84,7 @@ struct GIFProviderContractTests {
 
     @Test func `emoji favourites patch only field 5 and consume the stored response`() async throws {
         GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(GIFURLProtocol.self, token: "gif-contract-session", accountID: "gif-contract")
 
         let initial = try await provider.emojiUserSettings()
         let added = try await provider.setEmojiFavorite("wave", isFavorite: true)
@@ -109,7 +109,7 @@ struct GIFProviderContractTests {
 
     @Test func `emoji usage saves both histories with a favorite in one partial patch`() async throws {
         GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(GIFURLProtocol.self, token: "gif-contract-session", accountID: "gif-contract")
         let message = DiscordFrecencyHistory(entries: [.init(key: "turtle", totalUses: 3, recentUses: [1, 2, 3], frecency: 300, score: 300)])
         let reaction = DiscordFrecencyHistory(entries: [.init(key: "snake", totalUses: 1, recentUses: [4], frecency: 80, score: 100)])
         let stored = try await provider.saveEmojiFrecency(message, reactions: reaction, favoriteKey: "turtle", isFavorite: true)
@@ -126,7 +126,7 @@ struct GIFProviderContractTests {
 
     @Test func `other type two saves include and acknowledge pending emoji usage in the same request`() async throws {
         GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(GIFURLProtocol.self, token: "gif-contract-session", accountID: "gif-contract")
         let history = DiscordFrecencyHistory(entries: [.init(key: "turtle", totalUses: 2, recentUses: [1, 2])])
         let acknowledgement = EmojiSaveAcknowledgement()
         let sessionProvider: any ChatProvider = provider
@@ -149,7 +149,7 @@ struct GIFProviderContractTests {
 
     @Test func `soundboard defaults native send and favorites use exact contracts`() async throws {
         GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(GIFURLProtocol.self, token: "gif-contract-session", accountID: "gif-contract")
         let defaults = try await provider.defaultSoundboardSounds()
         let custom = SoundboardSound(
             id: "9002",
@@ -223,16 +223,6 @@ struct GIFProviderContractTests {
 
         #expect(favorite.mediaURL == media)
         #expect(favorite.mediaKind == .video)
-    }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [GIFURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "gif-contract-session", handles: []),
-            handle: CredentialHandle(accountID: "gif-contract"),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

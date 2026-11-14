@@ -131,7 +131,7 @@ extension ProviderRequestContractTests {
     @Test func `message search retries indexing responses within a six request budget`() async throws {
         RateLimitURLProtocol.reset()
         RateLimitURLProtocol.messageSearchStatuses = [202, 202, 200]
-        let provider = makeMessageSearchProvider()
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
 
         let page = try await provider.searchMessages(
             MessageSearchQuery(
@@ -147,7 +147,7 @@ extension ProviderRequestContractTests {
     @Test func `message search stops after six indexing responses`() async {
         RateLimitURLProtocol.reset()
         RateLimitURLProtocol.messageSearchStatuses = Array(repeating: 202, count: 6)
-        let provider = makeMessageSearchProvider()
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
 
         await #expect(throws: ChatProviderError.self) {
             try await provider.searchMessages(
@@ -181,16 +181,6 @@ extension ProviderRequestContractTests {
 
     private func messageSearchProvider() -> DiscordRESTProvider {
         RateLimitURLProtocol.reset()
-        return makeMessageSearchProvider()
-    }
-
-    private func makeMessageSearchProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        return stubbedProvider(RateLimitURLProtocol.self)
     }
 }

@@ -7,7 +7,7 @@ import Testing
 struct PinnedMessagesContractTests {
     @Test func `pin page uses observed cursor contract and preserves pin metadata`() async throws {
         PinURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(PinURLProtocol.self, token: "pins-contract-session", accountID: "pins-contract")
         let before = try #require(DiscordDate.parse("2026-08-30T01:02:03.456Z"))
 
         let page = try await provider.pinnedMessages(
@@ -32,7 +32,7 @@ struct PinnedMessagesContractTests {
 
     @Test func `pin and unpin use current idempotent mutation routes`() async throws {
         PinURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(PinURLProtocol.self, token: "pins-contract-session", accountID: "pins-contract")
 
         try await provider.setMessagePinned(
             true,
@@ -64,16 +64,6 @@ struct PinnedMessagesContractTests {
         let explicit = Data(#"{"id":"300","channel_id":"200","pinned":false}"#.utf8)
         try JSONDecoder().decode(MessageUpdateDTO.self, from: explicit).apply(to: &message)
         #expect(!message.isPinned)
-    }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [PinURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "pins-contract-session", handles: []),
-            handle: CredentialHandle(accountID: "pins-contract"),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

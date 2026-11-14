@@ -5,7 +5,7 @@ import Testing
 
 struct InboxContractTests {
     @Test func `mentions preserve the raw page cursor when a message cannot decode`() async throws {
-        let provider = makeProvider()
+        let provider = stubbedProvider(InboxContractURLProtocol.self, token: "inbox-contract", accountID: "inbox-contract")
         let page = try await provider.inboxMentions(
             InboxMentionQuery(guildID: GuildID(rawValue: 100), includesRoles: false, includesEveryone: true),
             before: MessageID(rawValue: 500)
@@ -34,7 +34,7 @@ struct InboxContractTests {
     }
 
     @Test func `gateway mention dismissal is independent of a channel read acknowledgement`() async throws {
-        let provider = makeProvider()
+        let provider = stubbedProvider(InboxContractURLProtocol.self, token: "inbox-contract", accountID: "inbox-contract")
         let pair = SessionEventBuffer<ClientEvent>(overflowEvent: .connectionChanged(.disconnected))
         await provider.installInboxTestEvents(pair)
         _ = await provider.handleGatewayMessageEvent(name: "RECENT_MENTION_DELETE", body: .object(["message_id": .string("300")]))
@@ -49,7 +49,7 @@ struct InboxContractTests {
     }
 
     @Test func `event acknowledgements and interest use their distinct captured routes`() async throws {
-        let provider = makeProvider()
+        let provider = stubbedProvider(InboxContractURLProtocol.self, token: "inbox-contract", accountID: "inbox-contract")
         let guildID = GuildID(rawValue: 100)
         let eventID = ScheduledEventID(rawValue: 500)
         let event = InboxScheduledEvent(id: eventID, guildID: guildID, name: "Fixture", startTime: .now)
@@ -64,7 +64,7 @@ struct InboxContractTests {
     }
 
     @Test func `READY event read states use last acked ID and badge count rather than channel fields`() async throws {
-        let provider = makeProvider()
+        let provider = stubbedProvider(InboxContractURLProtocol.self, token: "inbox-contract", accountID: "inbox-contract")
         let ready = try JSONDecoder().decode(JSONValue.self, from: Data(#"""
         {"guilds":[],"read_state":{"version":17444,"entries":[
           {"id":"100","read_state_type":1,"last_acked_id":"500","badge_count":2},
@@ -81,7 +81,7 @@ struct InboxContractTests {
 
     @Test(arguments: [false, true])
     func `fresh Inbox forum pages cannot complete from a partial cache`(fails: Bool) async throws {
-        let provider = makeProvider()
+        let provider = stubbedProvider(InboxContractURLProtocol.self, token: "inbox-contract", accountID: "inbox-contract")
         let channel = Channel(id: ChannelID(rawValue: fails ? 401 : 400), guildID: GuildID(rawValue: 100), name: "Forum", kind: .forum)
         let cached = ForumPost(thread: MessageThreadSummary(id: ChannelID(rawValue: 410), guildID: channel.guildID, parentID: channel.id, name: "Already read"))
         await provider.seedForumChannelForTesting(channel, posts: [cached])
@@ -95,16 +95,6 @@ struct InboxContractTests {
             #expect(fails)
         }
         await provider.disconnect()
-    }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [InboxContractURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "inbox-contract", handles: []),
-            handle: CredentialHandle(accountID: "inbox-contract"),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 

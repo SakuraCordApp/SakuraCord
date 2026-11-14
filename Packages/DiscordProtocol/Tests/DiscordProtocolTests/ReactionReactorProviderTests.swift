@@ -7,12 +7,7 @@ import Testing
 struct ReactionReactorProviderTests {
     @Test func `reaction details page every distinct normal and super reactor without expanding previews`() async throws {
         ReactionReactorURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReactionReactorURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "reaction-test-session"), handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ReactionReactorURLProtocol.self, token: "reaction-test-session")
         let first = try await provider.reactionUsers(
             for: "<a:party_blob:123>", messageID: MessageID(rawValue: 301), channelID: ChannelID(rawValue: 200), after: nil, limit: 999
         )
@@ -39,13 +34,7 @@ struct ReactionReactorProviderTests {
 
     @Test func `reactor reads use the documented bounded contract and coalesce by reaction state`() async throws {
         ReactionReactorURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReactionReactorURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "reaction-test-session"),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ReactionReactorURLProtocol.self, token: "reaction-test-session")
 
         async let first = provider.reactionReactors(
             for: "<:party_blob:123>",
@@ -92,13 +81,7 @@ struct ReactionReactorProviderTests {
 
     @Test func `nonpositive reaction counts never produce a request`() async throws {
         ReactionReactorURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReactionReactorURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "reaction-test-session"),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ReactionReactorURLProtocol.self, token: "reaction-test-session")
 
         let reactors = try await provider.reactionReactors(
             for: "✅",
@@ -112,12 +95,7 @@ struct ReactionReactorProviderTests {
 
     @Test func `reaction changes invalidate pending and same-count cached previews`() async throws {
         ReactionReactorURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReactionReactorURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "reaction-test-session"), handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ReactionReactorURLProtocol.self, token: "reaction-test-session")
         let received = AsyncStream<Void>.makeStream()
         let release = AsyncStream<Void>.makeStream()
         defer {

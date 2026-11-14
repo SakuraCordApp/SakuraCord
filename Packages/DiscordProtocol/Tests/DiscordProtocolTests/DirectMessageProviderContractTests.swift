@@ -8,7 +8,7 @@ import Testing
 struct DirectMessageProviderContractTests {
     @Test func `widget game search coalesces normalized requests and retains failed query cooldown`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(name: "READY", data: .object([
             "user": .object(["id": .string("2"), "username": .string("maya")]), "guilds": .array([])
         ]))
@@ -29,7 +29,7 @@ struct DirectMessageProviderContractTests {
 
     @Test func `similar games hide restricted entries and each game is read once per session`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(name: "READY", data: .object([
             "user": .object(["id": .string("2"), "username": .string("maya"), "nsfw_allowed": .bool(false)]), "guilds": .array([])
         ]))
@@ -56,7 +56,7 @@ struct DirectMessageProviderContractTests {
 
     @Test func `widget image upload is gated before reservation and the storage upload carries no credentials`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data([1, 2, 3]).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
@@ -79,7 +79,7 @@ struct DirectMessageProviderContractTests {
 
     @Test func `profile save acknowledges successful identity before metadata failure and retries only remaining changes`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(name: "READY", data: .object([
             "user": user(id: "2", username: "maya", globalName: "Maya"), "guilds": .array([])
         ]))
@@ -108,7 +108,7 @@ struct DirectMessageProviderContractTests {
 
     @Test func `solid and pop defaults pass save validation and reconcile their distinct palettes`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(name: "READY", data: .object([
             "user": .object(["id": .string("2"), "username": .string("maya"), "premium_type": .number(2)]),
             "guilds": .array([])
@@ -141,7 +141,7 @@ struct DirectMessageProviderContractTests {
 
     @Test func `successful but malformed profile response is acknowledged and requires a reload`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(name: "READY", data: .object([
             "user": user(id: "2", username: "maya", globalName: "Maya"), "guilds": .array([])
         ]))
@@ -166,7 +166,7 @@ struct DirectMessageProviderContractTests {
     @Test(arguments: [ProfileEditingScope.main, .server(GuildID(rawValue: 10))])
     func `server tag save sends one account request from either editor`(origin: ProfileEditingScope) async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(name: "READY", data: .object([
             "user": user(id: "2", username: "maya", globalName: "Maya"), "guilds": .array([])
         ]))
@@ -186,7 +186,7 @@ struct DirectMessageProviderContractTests {
 
     @Test func `main profile saves from a server editor preload write metadata and widgets to the account routes`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(name: "READY", data: widgetEligibleReady())
         let scope = ProfileEditingScope.server(GuildID(rawValue: 10))
         _ = try await provider.profileEditingSnapshot(in: scope)
@@ -215,7 +215,7 @@ struct DirectMessageProviderContractTests {
 
     @Test func `widget connection reads preserve repeated query keys and reconcile grants without another request`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(name: "READY", data: .object([
             "user": user(id: "2", username: "maya", globalName: "Maya"), "guilds": .array([])
         ]))
@@ -247,7 +247,7 @@ struct DirectMessageProviderContractTests {
 extension DirectMessageProviderContractTests {
     @Test func `DM popout profile requests and retains mutual friend list data`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
 
         let profile = try await provider.profile(for: UserID(rawValue: 2), in: nil)
 
@@ -266,7 +266,7 @@ extension DirectMessageProviderContractTests {
     @Test func `profile effects use only the current collectibles product route`() async throws {
         DirectMessageURLProtocol.reset()
         DirectMessageURLProtocol.profileHasEffect = true
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
 
         async let firstProfile = provider.profile(for: UserID(rawValue: 2), in: nil)
         async let secondProfile = provider.profile(for: UserID(rawValue: 2), in: nil)
@@ -281,7 +281,7 @@ extension DirectMessageProviderContractTests {
     }
 
     @Test func `new and reopened private channels sort by last activity like Ready`() async {
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(
             name: "READY",
             data: .object([
@@ -322,13 +322,13 @@ extension DirectMessageProviderContractTests {
 
     @Test func `guildless voice move evicts the participant from the previous call`() async throws {
         try await assertGuildlessVoiceMoveReconciliation(
-            provider: makeProvider()
+            provider: stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         )
     }
 
     @Test func `private call ring and stop-ringing send bounded bodies and never replay a rejected ring`() async throws {
         DirectMessageURLProtocol.reset()
-        let provider = makeProvider()
+        let provider = stubbedProvider(DirectMessageURLProtocol.self, token: "dm-contract-session", accountID: "dm-contract")
         await provider.receiveGatewayDispatchForTesting(
             name: "CALL_CREATE",
             data: privateCallPayload(channelID: "41", messageID: "501", voiceState: nil)
@@ -379,16 +379,6 @@ extension DirectMessageProviderContractTests {
             "global_name": .string(globalName),
             "avatar": .null,
         ])
-    }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DirectMessageURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(token: "dm-contract-session", handles: [CredentialHandle(accountID: "dm-contract")]),
-            handle: CredentialHandle(accountID: "dm-contract"),
-            session: URLSession(configuration: configuration)
-        )
     }
 }
 
