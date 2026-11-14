@@ -188,9 +188,13 @@ extension AppModel {
         await loadForumPosts(reset: false)
     }
 
+    var trimmedForumSearchText: String {
+        forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func updateForumSearch(_ text: String) {
         if text != forumSearchText { forumViewMemory.cancelPendingRestore() }
-        let previousSearch = forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previousSearch = trimmedForumSearchText
         let nextSearch = text.trimmingCharacters(in: .whitespacesAndNewlines)
         forumSearchText = text
         forumPostError = nil
@@ -225,7 +229,7 @@ extension AppModel {
                 return
             }
             guard let self, !Task.isCancelled,
-                  forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == nextSearch
+                  trimmedForumSearchText == nextSearch
             else { return }
             await loadForumPosts(reset: true)
         }
@@ -239,7 +243,7 @@ extension AppModel {
         else { return }
         let session = accountSession()
         await AppPerformanceSignposts.measure("ForumPostsLoad") {
-            let trimmedSearch = forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedSearch = trimmedForumSearchText
             let isSearch = !trimmedSearch.isEmpty
             if isSearch { isSearchingForumPosts = true }
             if reset {
@@ -251,6 +255,11 @@ extension AppModel {
                 forumPaginationError = nil
             }
             let requestGeneration = forumLoadGeneration
+            func isCurrentRequest() -> Bool {
+                isCurrentAccountSession(session)
+                    && selectedChannelID == channelID
+                    && forumLoadGeneration == requestGeneration
+            }
             let loadingIndicatorTask: Task<Void, Never>? =
                 reset && !hasLoadedForumPosts
                     ? Task { [weak self] in
@@ -265,10 +274,7 @@ extension AppModel {
                     : nil
             defer {
                 loadingIndicatorTask?.cancel()
-                if isCurrentAccountSession(session),
-                   selectedChannelID == channelID,
-                   forumLoadGeneration == requestGeneration
-                {
+                if isCurrentRequest() {
                     isLoadingForumPosts = false
                     isLoadingMoreForumPosts = false
                     if isSearch { isSearchingForumPosts = false }
@@ -285,20 +291,11 @@ extension AppModel {
                         query: currentForumQuery(scope: scope, offset: reset ? 0 : (forumNextOffset ?? 0))
                     )
                 }
-                guard !Task.isCancelled,
-                      isCurrentAccountSession(session),
-                      selectedChannelID == channelID,
-                      forumLoadGeneration == requestGeneration
-                else { return }
+                guard !Task.isCancelled, isCurrentRequest() else { return }
                 applyForumPage(page, isSearch: isSearch, reset: reset, channelID: channelID)
             } catch {
                 guard !Self.isForumLoadCancellation(error) else { return }
-                guard isCurrentAccountSession(session),
-                      selectedChannelID == channelID,
-                      forumLoadGeneration == requestGeneration
-                else {
-                    return
-                }
+                guard isCurrentRequest() else { return }
                 applyForumLoadError(error, isSearch: isSearch, reset: reset)
             }
         }
@@ -374,7 +371,7 @@ extension AppModel {
         for post in page.posts { readState.merge(thread: post.thread) }
         requestCoalescedUnreadPresentationRefresh()
         guard presentsForum(channelID),
-              forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              trimmedForumSearchText.isEmpty,
               query == currentForumQuery(scope: .active, offset: 0)
         else { return }
         replaceForumCatalogue(with: page.posts)
@@ -390,9 +387,7 @@ extension AppModel {
         channelID: ChannelID
     ) {
         AppPerformanceSignposts.measureSync("ForumCatalogueUpdate") {
-            if isSearch {
-                mergeForumCatalogue(page.posts)
-            } else if reset {
+            if reset, !isSearch {
                 replaceForumCatalogue(with: page.posts)
             } else {
                 mergeForumCatalogue(page.posts)

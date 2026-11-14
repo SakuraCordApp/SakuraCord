@@ -66,7 +66,7 @@ struct ForumChannelView: View {
                   !model.isSearchingForumPosts, !model.isLoadingForumPosts
         {
             let isFiltering =
-                !model.forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                !model.trimmedForumSearchText.isEmpty
                     || !model.forumSelectedTagIDs.isEmpty
             ForumEmptyState(
                 title: isFiltering ? "No matching posts" : "No posts yet",
@@ -90,7 +90,7 @@ struct ForumChannelView: View {
         ForumBoardSnapshot(
             query: ForumBoardSnapshot.Query(
                 channelID: channel.id,
-                searchText: model.forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
+                searchText: model.trimmedForumSearchText,
                 tagIDs: model.forumSelectedTagIDs,
                 tagMatch: model.forumTagMatch,
                 sortOrder: model.forumSortOrder
