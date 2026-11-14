@@ -29,7 +29,7 @@ public extension DiscordRESTProvider {
         let revision = privateChannelRevisions[channelID, default: 0]
         let path = "/channels/\(channelID)"
         let (data, response) = try await perform(
-            path, method: "PATCH", query: [], body: body,
+            path, method: "PATCH", body: body,
             headers: ["X-Context-Properties": DiscordClientMetadata.groupDirectMessageMenuContextHeader]
         )
         if response.statusCode == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path) {

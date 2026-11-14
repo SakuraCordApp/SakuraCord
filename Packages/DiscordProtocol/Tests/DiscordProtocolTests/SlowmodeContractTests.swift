@@ -26,7 +26,7 @@ func `thread decoding preserves slowmode and resets an omitted setting`(_ field:
         // Exercise the same central transport as send, with retries explicitly
         // available so a generic 429 replay cannot accidentally pass this test.
         _ = try await provider.perform(
-            "/channels/200/messages", method: "POST", query: [], body: ["content": .string("test")],
+            "/channels/200/messages", method: "POST", body: ["content": .string("test")],
             maximumAttempts: 2
         )
         Issue.record("Slowmode must be returned to the local composer")

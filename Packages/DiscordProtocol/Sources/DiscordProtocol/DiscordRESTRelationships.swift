@@ -101,7 +101,7 @@ extension DiscordRESTProvider {
         let userRevisions = cachedUserRevisions
         let rows: [GatewayRelationshipDTO]
         do {
-            let (data, response) = try await perform("/users/@me/relationships", method: "GET", query: [], body: nil)
+            let (data, response) = try await perform("/users/@me/relationships", method: "GET")
             guard (200 ..< 300).contains(response.statusCode) else {
                 throw unexplainedFailure(data, response)
             }
@@ -280,7 +280,7 @@ extension DiscordRESTProvider {
         let generation = profileEditingGeneration
         let path = "/users/@me/relationships/\(userID)"
         let (data, response) = try await perform(
-            path, method: "PATCH", query: [], body: ["nickname": value.map(JSONValue.string) ?? .null]
+            path, method: "PATCH", body: ["nickname": value.map(JSONValue.string) ?? .null]
         )
         try validateEmptyResponse(data, response) { status, _ in
             guard status == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path)

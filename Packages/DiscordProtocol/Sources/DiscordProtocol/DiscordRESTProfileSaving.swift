@@ -54,7 +54,7 @@ extension DiscordRESTProvider {
         let revision = memberPresentationRevisions[memberKey, default: 0]
         let generation = profileEditingGeneration
         let path = "/guilds/\(guildID)/members/\(userID)"
-        let (data, response) = try await perform(path, method: "PATCH", query: [], body: ["nick": .string(nickname)])
+        let (data, response) = try await perform(path, method: "PATCH", body: ["nick": .string(nickname)])
         if response.statusCode == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path) {
             throw apiDiagnostics.coalescing(error, with: response)
         }
@@ -182,7 +182,7 @@ extension DiscordRESTProvider {
 
     private func performProfileSaveRequest(_ request: ProfileEditingRequest) async throws -> Data {
         let (data, response) = try await perform(
-            request.path, method: request.method, query: [], body: request.body, headers: request.headers
+            request.path, method: request.method, body: request.body, headers: request.headers
         )
         try validateEmptyResponse(data, response) { status, _ in
             guard status == 400, let error = Self.profileValidationError(data: data, method: request.method, path: request.path)

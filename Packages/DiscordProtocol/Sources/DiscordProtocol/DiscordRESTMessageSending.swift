@@ -83,7 +83,6 @@ extension DiscordRESTProvider {
         let (data, response) = try await perform(
             path,
             method: "POST",
-            query: [],
             body: body,
             headers: ["X-Context-Properties": draft.contextHeader],
             maximumAttempts: Self.maximumMessageSendAttempts

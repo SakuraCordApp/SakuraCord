@@ -78,7 +78,7 @@ public extension DiscordRESTProvider {
             if let guildID { body["guild_id"] = .string(guildID.description) }
             try Task.checkCancellation()
             let (data, response) = try await perform(
-                "/activities/\(channelID)/\(applicationID)", method: "POST", query: [], body: body
+                "/activities/\(channelID)/\(applicationID)", method: "POST", body: body
             )
             guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
             return
@@ -101,7 +101,7 @@ public extension DiscordRESTProvider {
         if let shelfSection { body["section_name"] = .string(shelfSection) }
         // A launch superseded while its command was looked up stops here.
         try Task.checkCancellation()
-        let (data, response) = try await perform("/interactions", method: "POST", query: [], body: body)
+        let (data, response) = try await perform("/interactions", method: "POST", body: body)
         guard response.statusCode == 204 else { throw interactionTransportError(data, response) }
     }
 
@@ -110,7 +110,7 @@ public extension DiscordRESTProvider {
         let path = "/applications/\(instance.applicationID)/activities/\(instance.location.id)"
             + "/instances/\(instance.instanceID)/leave"
         let (data, response) = try await perform(
-            path, method: "POST", query: [], body: ["session_id": .string(sessionID)]
+            path, method: "POST", body: ["session_id": .string(sessionID)]
         )
         guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
     }
@@ -152,7 +152,7 @@ public extension DiscordRESTProvider {
         _ disclosures: [EmbeddedActivityDisclosure], applicationID: ApplicationID
     ) async throws {
         let (data, response) = try await perform(
-            "/applications/\(applicationID)/disclosures", method: "POST", query: [],
+            "/applications/\(applicationID)/disclosures", method: "POST",
             body: ["disclosures": .array(disclosures.map { .number(Double($0.rawValue)) })]
         )
         guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
@@ -233,7 +233,7 @@ public extension DiscordRESTProvider {
         accessToken: String
     ) async throws -> JSONValue {
         let (data, response) = try await perform(
-            "/oauth2/@me", method: "GET", query: [], body: nil,
+            "/oauth2/@me", method: "GET",
             headers: ["Authorization": "Bearer \(accessToken)"]
         )
         guard (200 ..< 300).contains(response.statusCode),

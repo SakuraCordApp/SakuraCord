@@ -79,7 +79,7 @@ extension DiscordRESTProvider {
             }
         for attempt in 0 ..< 3 {
             let (data, response) = try await perform(
-                path, method: "GET", query: [], body: nil, maximumAttempts: 1
+                path, method: "GET", maximumAttempts: 1
             )
             if response.statusCode == 202 {
                 guard attempt < 2 else {
@@ -142,7 +142,7 @@ extension DiscordRESTProvider {
         }
         do {
             let (data, response) = try await perform(
-                "/interactions", method: "POST", query: [], body: body
+                "/interactions", method: "POST", body: body
             )
             guard response.statusCode == 204 else {
                 forgetAutocomplete(nonce: request.nonce)
@@ -202,7 +202,7 @@ extension DiscordRESTProvider {
         )
         progress(.submitting(nonce: invocation.nonce))
         let (data, response) = try await perform(
-            "/interactions", method: "POST", query: [], body: body
+            "/interactions", method: "POST", body: body
         )
         guard response.statusCode == 204 else {
             throw interactionTransportError(data, response)
@@ -246,7 +246,7 @@ extension DiscordRESTProvider {
             nonce: submission.nonce
         )
         let (responseData, response) = try await perform(
-            "/interactions", method: "POST", query: [], body: body
+            "/interactions", method: "POST", body: body
         )
         guard response.statusCode == 204 else {
             throw interactionTransportError(responseData, response)
@@ -296,7 +296,7 @@ extension DiscordRESTProvider {
             nonce: submission.nonce
         )
         let (responseData, response) = try await perform(
-            "/interactions", method: "POST", query: [], body: body
+            "/interactions", method: "POST", body: body
         )
         if response.statusCode == 400,
            let rejection = ModalSubmissionPayloadBuilder.rejection(

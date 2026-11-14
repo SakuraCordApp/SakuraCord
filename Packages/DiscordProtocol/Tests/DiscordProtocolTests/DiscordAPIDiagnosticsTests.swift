@@ -540,8 +540,6 @@ import Testing
     let (_, response) = try await provider.perform(
         "/channels/111111111111111111/messages",
         method: "GET",
-        query: [],
-        body: nil,
         maximumAttempts: 1
     )
     #expect(response.statusCode == 200)

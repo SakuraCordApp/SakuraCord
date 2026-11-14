@@ -349,8 +349,7 @@ extension DiscordRESTProvider {
         query: [URLQueryItem] = [],
         body: [String: JSONValue]? = nil
     ) async throws {
-        let (data, response) = try await perform(
-            path, method: method, query: query, body: body, headers: [:])
+        let (data, response) = try await perform(path, method: method, query: query, body: body)
         try validateEmptyResponse(data, response)
     }
 

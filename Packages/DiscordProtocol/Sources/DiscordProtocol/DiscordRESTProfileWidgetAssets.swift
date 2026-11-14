@@ -143,7 +143,7 @@ public extension DiscordRESTProvider {
             for attempt in 0 ... 5 {
                 try validateProfileWidgetSession(userID: userID, generation: generation)
                 let (data, response) = try await perform("/games/autocomplete", method: "GET",
-                                                        query: [URLQueryItem(name: "q", value: query)], body: nil, maximumAttempts: 1)
+                                                        query: [URLQueryItem(name: "q", value: query)], maximumAttempts: 1)
                 try validateProfileWidgetSession(userID: userID, generation: generation)
                 if (200 ..< 300).contains(response.statusCode) {
                     let records = try JSONDecoder().decode([ProfileGameDTO].self, from: data)

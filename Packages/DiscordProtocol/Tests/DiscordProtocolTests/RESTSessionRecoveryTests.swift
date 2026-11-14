@@ -13,9 +13,7 @@ struct RESTSessionRecoveryTests {
 
         let (_, response) = try await provider.perform(
             "/transport-recovery",
-            method: "GET",
-            query: [],
-            body: nil
+            method: "GET"
         )
 
         #expect(response.statusCode == 200)
@@ -33,16 +31,12 @@ struct RESTSessionRecoveryTests {
         await #expect(throws: URLError.self) {
             try await provider.perform(
                 "/transport-recovery",
-                method: "POST",
-                query: [],
-                body: nil
+                method: "POST"
             )
         }
         let (_, response) = try await provider.perform(
             "/transport-recovery",
-            method: "GET",
-            query: [],
-            body: nil
+            method: "GET"
         )
 
         #expect(response.statusCode == 200)
@@ -58,7 +52,6 @@ struct RESTSessionRecoveryTests {
         let (_, response) = try await provider.perform(
             "/users/@me/messages/search/tabs",
             method: "POST",
-            query: [],
             body: ["tabs": .object([:])]
         )
 
