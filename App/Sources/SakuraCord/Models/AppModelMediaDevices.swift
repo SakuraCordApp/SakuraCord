@@ -37,10 +37,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return false }
-            voiceDeviceStatusMessage = "The microphone could not be changed."
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            reportVoiceFailure(error, status: "The microphone could not be changed.")
             return false
         }
     }
@@ -62,10 +59,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return false }
-            voiceDeviceStatusMessage = "The speaker could not be changed."
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            reportVoiceFailure(error, status: "The speaker could not be changed.")
             return false
         }
     }
@@ -157,9 +151,11 @@ extension AppModel {
             voiceDeviceStatusMessage = recoveryMessages.isEmpty
                 ? nil : recoveryMessages.joined(separator: " ")
         } catch {
-            voiceDeviceStatusMessage = "An audio device changed, but its route could not be restored."
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
+            reportVoiceFailure(
+                error,
+                status: "An audio device changed, but its route could not be restored.",
+                alerts: false
+            )
         }
     }
 

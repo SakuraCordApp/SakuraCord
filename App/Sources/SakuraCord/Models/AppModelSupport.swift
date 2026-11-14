@@ -166,20 +166,6 @@ extension AppModel {
         )
     }
 
-    func isCurrentVoiceOperation(
-        _ account: AppModelAccountSession,
-        identity: AppModelVoiceOperationIdentity
-    ) -> Bool {
-        guard isCurrentAccountSession(account),
-              voiceMigrationGeneration == identity.generation,
-              activeVoiceChannel?.id == identity.channelID
-        else { return false }
-        if let expectedSession = identity.session {
-            return voiceSession === expectedSession
-        }
-        return voiceSession == nil
-    }
-
     func observePrivateCall(
         in channel: Channel,
         account: AppModelAccountSession

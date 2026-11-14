@@ -86,9 +86,7 @@ extension AppModel {
                 channelID: channel.id
             ) else { return }
             voiceSessionState = .failed
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            reportVoiceFailure(error)
             try? await account.provider.updateVoiceState(
                 channelID: nil,
                 guildID: channel.guildID,
@@ -156,7 +154,7 @@ extension AppModel {
             )
         } catch {
             guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
-            reportPrivateCallFailure(error)
+            reportVoiceFailure(error)
         }
     }
 
@@ -188,7 +186,7 @@ extension AppModel {
             endLocalOutgoingPrivateCallRing(channelID: channel.id)
             // Joining succeeded and is not replayed. Surface the bounded
             // ring failure without turning it into a second call action.
-            reportPrivateCallFailure(error)
+            reportVoiceFailure(error)
         }
     }
 
@@ -224,7 +222,7 @@ extension AppModel {
             }
         } catch {
             guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
-            reportPrivateCallFailure(error)
+            reportVoiceFailure(error)
         }
     }
 
@@ -274,7 +272,7 @@ extension AppModel {
             }
         } catch {
             guard isCurrentPrivateCallAction(channelID: call.channelID, generation: generation, account: session) else { return }
-            reportPrivateCallFailure(error)
+            reportVoiceFailure(error)
         }
     }
 
@@ -304,16 +302,37 @@ extension AppModel {
             && privateCallActionChannelIDs.contains(channelID)
     }
 
-    /// `operation` keeps naming the call action that failed in diagnostics.
-    private func reportPrivateCallFailure(_ error: any Error, operation: StaticString = #function) {
+    /// `status` replaces the device status line; `alerts` also raises the app-wide error.
+    /// `operation` keeps naming the voice action that failed in diagnostics.
+    func reportVoiceFailure(
+        _ error: any Error,
+        status: String? = nil,
+        alerts: Bool = true,
+        operation: StaticString = #function
+    ) {
+        if let status { voiceDeviceStatusMessage = status }
         DiscordAPIDiagnosticStore.shared.recordClientFailure(error, operation: operation)
         voiceErrorMessage = error.localizedDescription
-        errorMessage = error.localizedDescription
+        if alerts { errorMessage = error.localizedDescription }
     }
 
     func resetPrivateCallActions() {
         privateCallActionGeneration &+= 1
         privateCallActionChannelIDs = []
+    }
+
+    func isCurrentVoiceOperation(
+        _ account: AppModelAccountSession,
+        identity: AppModelVoiceOperationIdentity
+    ) -> Bool {
+        guard isCurrentAccountSession(account),
+              voiceMigrationGeneration == identity.generation,
+              activeVoiceChannel?.id == identity.channelID
+        else { return false }
+        if let expectedSession = identity.session {
+            return voiceSession === expectedSession
+        }
+        return voiceSession == nil
     }
 
     func isCurrentVoiceOperation(
@@ -618,9 +637,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            reportVoiceFailure(error)
         }
     }
 
@@ -645,10 +662,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return false }
-            voiceDeviceStatusMessage = "The camera could not be changed."
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            reportVoiceFailure(error, status: "The camera could not be changed.")
             return false
         }
     }
@@ -694,8 +708,7 @@ extension AppModel {
             guard isCurrentAccountSession(account),
                   generation == voiceMigrationGeneration
             else { return }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
+            reportVoiceFailure(error, alerts: false)
         }
     }
 
@@ -835,9 +848,7 @@ extension AppModel {
                   generation == voiceMigrationGeneration
             else { return }
             voiceSessionState = .failed
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            reportVoiceFailure(error)
             recordVoiceServerMigrationFailed(error)
         }
     }
