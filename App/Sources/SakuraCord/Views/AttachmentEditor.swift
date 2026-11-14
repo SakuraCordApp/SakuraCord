@@ -7,9 +7,9 @@ import UniformTypeIdentifiers
 /// 24-point corners stay concentric with it, as the 40-point footer capsules
 /// do with its 12-point inset.
 struct AttachmentEditor: View {
-    let attachment: ForumPostAttachment
+    let attachment: StagedAttachment
     let cancel: () -> Void
-    let save: (ForumPostAttachment) -> Void
+    let save: (StagedAttachment) -> Void
     @State private var filename: String
     @State private var description: String
     @State private var isSpoiler: Bool
@@ -21,7 +21,7 @@ struct AttachmentEditor: View {
     private enum Field { case filename, description }
     private static let descriptionLimit = 1_024
 
-    init(attachment: ForumPostAttachment, cancel: @escaping () -> Void, save: @escaping (ForumPostAttachment) -> Void) {
+    init(attachment: StagedAttachment, cancel: @escaping () -> Void, save: @escaping (StagedAttachment) -> Void) {
         self.attachment = attachment
         self.cancel = cancel
         self.save = save

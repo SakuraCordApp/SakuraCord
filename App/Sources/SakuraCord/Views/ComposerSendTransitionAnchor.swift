@@ -36,7 +36,7 @@ final class ComposerSendTransitionAnchor {
     func source(
         channelID: ChannelID,
         content: String,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         uploads: AttachmentUploadProgressStore
     ) -> NativeTimelineSendTransitionSource? {
         fieldSource(
@@ -48,7 +48,7 @@ final class ComposerSendTransitionAnchor {
     }
 
     /// Lets the media viewer zoom a staged file out of its tile and back.
-    func mediaViewerSource(for attachment: ForumPostAttachment) -> MediaViewerTransitionSource? {
+    func mediaViewerSource(for attachment: StagedAttachment) -> MediaViewerTransitionSource? {
         guard let view = attachmentPreviews[attachment.id]?.view,
               let image = tileImage(for: attachment)
         else { return nil }
@@ -141,7 +141,7 @@ final class ComposerSendTransitionAnchor {
     /// icon flies on its own, except under a spoiler, which flies covered
     /// as its tile shows it.
     private func attachmentSnapshot(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         uploadFraction: Double?
     ) -> NativeTimelineSendTransitionSource.Attachment? {
         let flysIcon = !attachment.isVisualMedia && !attachment.isSpoiler
@@ -175,7 +175,7 @@ final class ComposerSendTransitionAnchor {
 
     /// What a staged attachment's tile shows: an image or video thumbnail,
     /// or another file's icon and type, under its spoiler cover if it has one.
-    private func tileImage(for attachment: ForumPostAttachment, isLabelOnly: Bool = false) -> NSImage? {
+    private func tileImage(for attachment: StagedAttachment, isLabelOnly: Bool = false) -> NSImage? {
         guard let preview = attachmentPreviews[attachment.id],
               let view = preview.view,
               let window = view.window

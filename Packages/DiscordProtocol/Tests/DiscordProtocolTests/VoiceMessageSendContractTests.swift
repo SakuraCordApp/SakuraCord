@@ -17,7 +17,7 @@ struct VoiceMessageSendContractTests {
         let draft = SendMessageDraft(
             channelID: ChannelID(rawValue: 200),
             content: "",
-            attachments: [ForumPostAttachment(url: recording, filename: "recording.ogg")],
+            attachments: [StagedAttachment(url: recording, filename: "recording.ogg")],
             voiceMessage: metadata
         )
 

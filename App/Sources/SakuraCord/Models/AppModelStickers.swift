@@ -218,7 +218,7 @@ extension AppModel {
     ) async -> Bool {
         let session = accountSession()
         guard let remoteURL = sticker.pickerImageLink else { return false }
-        var attachment: ForumPostAttachment?
+        var attachment: StagedAttachment?
         // Held until it is stored, so no other composer's cleanup removes it.
         defer { attachment.map { endUsingOwnedPromisedFiles([$0.url]) } }
         return await schedulePickedMessage(content: "", in: destination) {
@@ -238,12 +238,12 @@ extension AppModel {
     /// The sticker's promised file; a send leaves it empty until its turn in the queue.
     private func makeStickerUploadAttachment(
         for sticker: MessageSticker, contents: Data = Data()
-    ) throws -> ForumPostAttachment {
+    ) throws -> StagedAttachment {
         let filename = "sticker-\(sticker.id).webp"
         guard let batch = ComposerPromisedFileStorage.makeBatch(writing: contents, named: filename),
               let url = adoptPromisedFileBatch(batch).first
         else { throw CocoaError(.fileWriteUnknown) }
-        return ForumPostAttachment(url: url, filename: filename)
+        return StagedAttachment(url: url, filename: filename)
     }
 
     private func stickerImage(from sourceURL: URL) async throws -> Data {

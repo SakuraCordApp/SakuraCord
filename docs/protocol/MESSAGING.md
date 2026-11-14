@@ -639,7 +639,7 @@ Observed in official web build `b70721f9bc10ca0b` (desktop host 0.0.411) on
 [ThreadPolicies.swift](../../Packages/SakuraCordModels/Sources/SakuraCordModels/ThreadPolicies.swift)
 owns the action, creation and naming rules;
 [DiscordRESTThreadActions.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTThreadActions.swift)
-and [DiscordRESTForumAndMessaging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTForumAndMessaging.swift)
+and [DiscordRESTForums.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTForums.swift)
 own the requests. Each mutation is attempted once. These contracts follow
 official web build 641004 (desktop host 0.0.411), observed on 2026-10-19.
 

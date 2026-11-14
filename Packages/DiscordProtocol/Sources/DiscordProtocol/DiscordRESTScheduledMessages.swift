@@ -37,7 +37,7 @@ public extension DiscordRESTProvider {
             body["sticker_ids"] = .array(draft.stickerIDs.map(JSONValue.string))
         }
         body["attachments"] = try await .array(
-            uploadForumAttachments(draft.attachments, channelID: draft.channelID, progress: { _ in })
+            uploadStagedAttachments(draft.attachments, channelID: draft.channelID, progress: { _ in })
         )
         // As for a send, a stored file the post refers to can no longer be stopped.
         postingAttachmentUploads.formUnion(draft.attachments.map(\.id))

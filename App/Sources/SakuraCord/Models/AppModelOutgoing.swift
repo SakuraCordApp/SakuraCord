@@ -125,7 +125,7 @@ extension AppModel {
     }
 
     func submitComposerMessage(
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) async -> ComposerSubmissionResult {
         guard let channelID = selectedChannelID, selectedConversationAccess.canSend else {
             return .rejected
@@ -173,7 +173,7 @@ extension AppModel {
         replyTo: MessageID?,
         mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview?,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         clearsComposer: Bool,
         poll: PollDraft? = nil,
         isTTS: Bool = false,
@@ -201,7 +201,7 @@ extension AppModel {
         replyTo: MessageID?,
         mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview?,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         clearsComposer: Bool,
         poll: PollDraft? = nil,
         isTTS: Bool = false,

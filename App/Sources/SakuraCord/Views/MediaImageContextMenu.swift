@@ -74,8 +74,8 @@ struct MediaImageContextMenuBridge: NSViewRepresentable {
         Coordinator(actions: actions)
     }
 
-    func makeNSView(context: Context) -> MediaImageContextMenuHitView {
-        let view = MediaImageContextMenuHitView()
+    func makeNSView(context: Context) -> ContextClickMenuHitView {
+        let view = ContextClickMenuHitView()
         view.menuProvider = { [weak coordinator = context.coordinator] in
             coordinator?.makeMenu()
         }
@@ -83,7 +83,7 @@ struct MediaImageContextMenuBridge: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ nsView: MediaImageContextMenuHitView,
+        _ nsView: ContextClickMenuHitView,
         context: Context
     ) {
         context.coordinator.actions = actions
@@ -100,26 +100,6 @@ struct MediaImageContextMenuBridge: NSViewRepresentable {
         func makeMenu() -> NSMenu {
             MediaImageContextMenuBuilder.make(actions: actions)
         }
-    }
-}
-
-@MainActor
-final class MediaImageContextMenuHitView: NSView {
-    var menuProvider: (() -> NSMenu?)?
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point), let event = NSApp.currentEvent else {
-            return nil
-        }
-        return event.isContextClick ? self : nil
-    }
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        menuProvider?()
-    }
-
-    override func isAccessibilityElement() -> Bool {
-        false
     }
 }
 

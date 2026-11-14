@@ -294,7 +294,7 @@ extension DiscordRESTProvider {
         }
         if !draft.attachments.isEmpty {
             message["attachments"] = try await .array(
-                uploadForumAttachments(
+                uploadStagedAttachments(
                     draft.attachments, channelID: draft.channelID, progress: progress
                 )
             )

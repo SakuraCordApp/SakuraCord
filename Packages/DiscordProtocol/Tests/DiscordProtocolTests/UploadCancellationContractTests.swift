@@ -84,7 +84,7 @@ struct UploadCancellationContractTests {
         let directory = try fixture.directory(containing: ["first.bin", "second.bin"])
         defer { try? FileManager.default.removeItem(at: directory) }
         let attachments = ["first.bin", "second.bin"].map {
-            ForumPostAttachment(url: directory.appending(path: $0), filename: $0)
+            StagedAttachment(url: directory.appending(path: $0), filename: $0)
         }
         let provider = fixture.provider(holdsEveryUpload: false)
         let send = Task {
@@ -103,7 +103,7 @@ struct UploadCancellationContractTests {
         let fixture = HeldStorageFixture()
         let directory = try fixture.directory(containing: ["kept.bin"])
         defer { try? FileManager.default.removeItem(at: directory) }
-        let attachment = ForumPostAttachment(url: directory.appending(path: "kept.bin"), filename: "kept.bin")
+        let attachment = StagedAttachment(url: directory.appending(path: "kept.bin"), filename: "kept.bin")
         let provider = fixture.provider(holdsEveryUpload: false)
         let channelID = ChannelID(rawValue: 200)
         #expect(await provider.preuploadAttachment(attachment, channelID: channelID, progress: { _ in }))
@@ -127,7 +127,7 @@ struct UploadCancellationContractTests {
         let directory = try fixture.directory(containing: ["kept.bin", "removed.bin"])
         defer { try? FileManager.default.removeItem(at: directory) }
         let attachments = ["kept.bin", "removed.bin"].map {
-            ForumPostAttachment(url: directory.appending(path: $0), filename: $0)
+            StagedAttachment(url: directory.appending(path: $0), filename: $0)
         }
         let provider = fixture.provider(holdsEveryUpload: false)
         let channelID = ChannelID(rawValue: 200)
@@ -137,7 +137,7 @@ struct UploadCancellationContractTests {
         await provider.discardPreuploadedAttachment(attachments[1].id)
         #expect(fixture.events.requests.last == "DELETE /api/v9/attachments/removed-upload")
         let requestCount = fixture.events.requests.count
-        let uploaded = try await provider.uploadForumAttachments([attachments[0]], channelID: channelID, progress: { _ in })
+        let uploaded = try await provider.uploadStagedAttachments([attachments[0]], channelID: channelID, progress: { _ in })
         #expect(fixture.events.requests.count == requestCount)
         guard case let .object(payload) = uploaded.first, uploaded.count == 1 else { Issue.record("Missing kept attachment"); return }
         #expect(payload["uploaded_filename"] == .string("kept-upload"))

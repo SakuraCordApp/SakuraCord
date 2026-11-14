@@ -1519,7 +1519,7 @@ private extension ComposerView {
         model.replyMentionsAuthor(in: conversation)
     }
 
-    var attachments: [ForumPostAttachment] {
+    var attachments: [StagedAttachment] {
         model.composerAttachments(for: conversation)
     }
 
@@ -1553,7 +1553,7 @@ private extension ComposerView {
     /// as plain text; it consumes this when the optimistic row arrives.
     func registerSendTransition(
         channelID: ChannelID,
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) {
         // A send from older history first loads the newest messages, so
         // the field stays editable and nothing arrives to take it over yet.

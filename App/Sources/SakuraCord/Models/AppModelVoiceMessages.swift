@@ -72,7 +72,7 @@ extension AppModel {
             content: "",
             replyTo: replyTo?.id,
             mentionsRepliedUser: mentionsRepliedUser,
-            attachments: [ForumPostAttachment(url: recording.fileURL, filename: VoiceMessageMetadata.filename)],
+            attachments: [StagedAttachment(url: recording.fileURL, filename: VoiceMessageMetadata.filename)],
             voiceMessage: recording.metadata
         )
         guard let delivery = enqueueMessage(

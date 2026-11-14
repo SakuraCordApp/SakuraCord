@@ -83,7 +83,7 @@ extension AppModel {
                 content: "",
                 replyTo: nil,
                 replyPreview: nil,
-                attachments: [ForumPostAttachment(url: url)],
+                attachments: [StagedAttachment(url: url)],
                 clearsComposer: false
             )
         } catch {

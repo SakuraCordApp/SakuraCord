@@ -529,82 +529,11 @@ public enum ThreadMembershipLocation: String, Hashable, Sendable {
     case markUnread = "Mark Unread"
 }
 
-public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
-    public let id: UUID
-    public var url: URL
-    public var filename: String
-    public var description: String
-    /// Discord treats a `SPOILER_` file name as a spoiler, so a file named
-    /// that way stages as one, and unmarking it drops the prefix.
-    public var isSpoiler: Bool {
-        didSet {
-            guard !isSpoiler else { return }
-            filename = Self.droppingSpoilerPrefix(filename)
-            filenameBeforeAnonymising = filenameBeforeAnonymising.map(Self.droppingSpoilerPrefix)
-        }
-    }
-    private var filenameBeforeAnonymising: String?
-    private var hasChosenFilenamePrivacy = false
-
-    public var isFilenameAnonymised: Bool { filenameBeforeAnonymising != nil }
-
-    public mutating func setFilenameAnonymised(_ enabled: Bool) {
-        hasChosenFilenamePrivacy = true
-        if enabled {
-            guard filenameBeforeAnonymising == nil else { return }
-            filenameBeforeAnonymising = filename
-            filename = UploadFilename.anonymised(filename)
-        } else if let original = filenameBeforeAnonymising {
-            filename = original
-            filenameBeforeAnonymising = nil
-        }
-    }
-
-    public func applyingFilenamePrivacy(_ enabled: Bool) -> Self {
-        guard enabled, !hasChosenFilenamePrivacy else { return self }
-        var attachment = self
-        attachment.setFilenameAnonymised(true)
-        return attachment
-    }
-
-    public mutating func rename(_ name: String) {
-        setFilenameAnonymised(false)
-        filename = name
-    }
-
-    public init(
-        id: UUID = UUID(),
-        url: URL,
-        filename: String? = nil,
-        description: String = "",
-        isSpoiler: Bool = false
-    ) {
-        self.id = id
-        self.url = url
-        self.filename = filename ?? url.lastPathComponent
-        self.description = description
-        self.isSpoiler = isSpoiler || self.filename.hasPrefix(UploadFilename.spoilerPrefix)
-    }
-
-    private static func droppingSpoilerPrefix(_ name: String) -> String {
-        name.hasPrefix(UploadFilename.spoilerPrefix) ? String(name.dropFirst(UploadFilename.spoilerPrefix.count)) : name
-    }
-
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.url == rhs.url
-            && lhs.filename == rhs.filename
-            && lhs.description == rhs.description
-            && lhs.isSpoiler == rhs.isSpoiler
-            && lhs.filenameBeforeAnonymising == rhs.filenameBeforeAnonymising
-            && lhs.hasChosenFilenamePrivacy == rhs.hasChosenFilenamePrivacy
-    }
-}
-
 public struct CreateForumPostDraft: Equatable, Sendable {
     public var channelID: ChannelID
     public var title: String
     public var content: String
-    public var attachments: [ForumPostAttachment]
+    public var attachments: [StagedAttachment]
     public var appliedTagIDs: [ForumTagID]
     public var autoArchiveDuration: Int
 
@@ -612,7 +541,7 @@ public struct CreateForumPostDraft: Equatable, Sendable {
         channelID: ChannelID,
         title: String,
         content: String,
-        attachments: [ForumPostAttachment] = [],
+        attachments: [StagedAttachment] = [],
         appliedTagIDs: [ForumTagID] = [],
         autoArchiveDuration: Int = ThreadAutoArchive.defaultDuration
     ) {

@@ -20,8 +20,8 @@ final class MessageComposerState {
     /// effective ping without changing the user's persisted choice.
     private(set) var replyMentionsAuthorChoice: Bool
     @ObservationIgnored private let preferences: SettingsPreferenceStore?
-    var channelAttachments: [ForumPostAttachment] = []
-    var threadAttachments: [ForumPostAttachment] = []
+    var channelAttachments: [StagedAttachment] = []
+    var threadAttachments: [StagedAttachment] = []
     /// Left conversations' files and slash commands, by conversation.
     @ObservationIgnored var keptDrafts: [ChannelID: KeptComposerDraft] = [:]
     var isSendQueueFullAlertPresented = false
@@ -143,7 +143,7 @@ struct KeptComposerDraft {
     /// The channel whose loss drops the draft: the conversation's own
     /// channel, or a thread's parent.
     var channelID: ChannelID
-    var attachments: [ForumPostAttachment]
+    var attachments: [StagedAttachment]
     var command: ApplicationCommandDraft?
 
     var isEmpty: Bool { attachments.isEmpty && command == nil }

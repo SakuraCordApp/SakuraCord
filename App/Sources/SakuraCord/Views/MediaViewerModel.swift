@@ -357,7 +357,7 @@ struct MediaViewerPresentation: Identifiable {
 
 enum MediaViewerPlan {
     static func composerAttachments(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         selectedAttachmentID: UUID,
         author: User
     ) -> MediaViewerPresentation? {

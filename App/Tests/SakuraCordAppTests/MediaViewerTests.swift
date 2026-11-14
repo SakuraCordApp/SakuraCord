@@ -101,17 +101,17 @@ struct MediaViewerTests {
         let secondID = UUID()
         let textID = UUID()
         let attachments = [
-            ForumPostAttachment(
+            StagedAttachment(
                 id: firstID,
                 url: URL(fileURLWithPath: "/tmp/first.png"),
                 filename: "first.png"
             ),
-            ForumPostAttachment(
+            StagedAttachment(
                 id: textID,
                 url: URL(fileURLWithPath: "/tmp/readme.txt"),
                 filename: "readme.txt"
             ),
-            ForumPostAttachment(
+            StagedAttachment(
                 id: secondID,
                 url: URL(fileURLWithPath: "/tmp/second.gif"),
                 filename: "second.gif"

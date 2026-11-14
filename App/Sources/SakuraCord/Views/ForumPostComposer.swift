@@ -457,7 +457,7 @@ private extension ForumPostComposer {
         Binding { draft[keyPath: keyPath] } set: { draft[keyPath: keyPath] = $0 }
     }
 
-    var attachments: [ForumPostAttachment] { draft.attachments }
+    var attachments: [StagedAttachment] { draft.attachments }
 
     /// Pasted data is held by the model, which deletes it once no draft or
     /// post uses it.
@@ -478,7 +478,7 @@ private extension ForumPostComposer {
         }
         openSecurityScopes(urls)
         let staged = urls.map {
-            ForumPostAttachment(url: $0).applyingFilenamePrivacy(model.privacySafetySettings.anonymisesFileNames)
+            StagedAttachment(url: $0).applyingFilenamePrivacy(model.privacySafetySettings.anonymisesFileNames)
         }
         draft.attachments.append(contentsOf: staged)
         draft.checkingAttachmentIDs.formUnion(staged.map(\.id))
@@ -488,13 +488,13 @@ private extension ForumPostComposer {
     /// Removes any of `staged` over Discord's size limit. The check gives up
     /// if the selected conversation changes or the composer closes first;
     /// the files then stay pending and are checked when it next appears.
-    func checkAttachments(_ staged: [ForumPostAttachment]) async {
+    func checkAttachments(_ staged: [StagedAttachment]) async {
         guard let allowedURLs = await model.checkedAttachmentURLsWithinDiscordLimit(staged.map(\.url)).map(Set.init) else { return }
         draft.checkingAttachmentIDs.subtract(staged.map(\.id))
         removeAttachments(Set(staged.filter { !allowedURLs.contains($0.url) }.map(\.id)))
     }
 
-    func updateAttachment(_ id: UUID, _ change: (inout ForumPostAttachment) -> Void) {
+    func updateAttachment(_ id: UUID, _ change: (inout StagedAttachment) -> Void) {
         guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
         change(&draft.attachments[index])
     }

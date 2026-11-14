@@ -5,7 +5,7 @@ import Testing
 @testable import DiscordProtocol
 
 @Test func `forum attachment edits preserve official upload metadata`() {
-    let attachment = ForumPostAttachment(
+    let attachment = StagedAttachment(
         url: URL(fileURLWithPath: "/tmp/original.png"),
         filename: "renamed.png",
         description: "A pink SakuraCord flower",
@@ -400,7 +400,7 @@ struct ThreadCreationContractTests {
 
 @Test func `blank forum attachment edits fall back without extra metadata`() {
     let file = DiscordRESTProvider.forumUploadFile(
-        ForumPostAttachment(
+        StagedAttachment(
             url: URL(fileURLWithPath: "/tmp/original.png"),
             filename: "  ",
             description: "  "

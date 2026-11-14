@@ -221,7 +221,7 @@ public protocol ChatProvider: Sendable {
     /// Stores a staged file before its message is sent; returns whether
     /// storage accepted it. Its message then posts it as it is.
     func preuploadAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async -> Bool
@@ -861,7 +861,7 @@ public extension ChatProvider {
     func cancelAttachmentUpload(_ attachmentID: UUID) async -> Bool { false }
 
     func preuploadAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async -> Bool { false }

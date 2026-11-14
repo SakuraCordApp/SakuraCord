@@ -84,8 +84,8 @@ extension DiscordRESTProvider {
         )
     }
 
-    func uploadForumAttachments(
-        _ attachments: [ForumPostAttachment],
+    func uploadStagedAttachments(
+        _ attachments: [StagedAttachment],
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async throws -> [JSONValue] {
@@ -98,7 +98,7 @@ extension DiscordRESTProvider {
     }
 
     nonisolated static func forumUploadFile(
-        _ attachment: ForumPostAttachment
+        _ attachment: StagedAttachment
     ) -> AttachmentUploadFile {
         let chosenName = attachment.filename.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = attachment.description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -241,7 +241,7 @@ extension DiscordRESTProvider {
     /// composer does on attach, so Send has only the message left to post.
     /// Returns whether storage accepted the file.
     public func preuploadAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async -> Bool {

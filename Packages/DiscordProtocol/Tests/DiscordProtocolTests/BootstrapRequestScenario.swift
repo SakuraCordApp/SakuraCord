@@ -398,7 +398,7 @@ struct BootstrapRequestScenario {
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-upload-test.txt")
         try Data("attachment".utf8).write(to: fileURL)
         defer { try? FileManager.default.removeItem(at: fileURL) }
-        var previewAttachment = ForumPostAttachment(url: fileURL).applyingFilenamePrivacy(anonymisesFileNames)
+        var previewAttachment = StagedAttachment(url: fileURL).applyingFilenamePrivacy(anonymisesFileNames)
         _ = try await provider.send(SendMessageDraft(
             channelID: ChannelID(rawValue: 200),
             content: "with file",

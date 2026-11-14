@@ -3408,7 +3408,7 @@ func `quit warning tracks Discord attachment sends until success or failure`(fai
     let draft = SendMessageDraft(
         channelID: provider.channelID,
         content: "attachment",
-        attachments: [ForumPostAttachment(url: URL(filePath: "/tmp/quit-warning-fixture.txt"))]
+        attachments: [StagedAttachment(url: URL(filePath: "/tmp/quit-warning-fixture.txt"))]
     )
     #expect(!model.generalQuitActivities.contains(.upload))
     let send = Task { await model.performOutgoingSend(draft, isRetry: false) }

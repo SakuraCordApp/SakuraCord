@@ -4,7 +4,7 @@ import SakuraCordModels
 extension AppModel {
     func composerAttachments(
         for destination: MessageComposerDestination
-    ) -> [ForumPostAttachment] {
+    ) -> [StagedAttachment] {
         switch destination {
         case .channel: channelComposerAttachments
         case .thread: threadComposerAttachments
@@ -55,12 +55,12 @@ extension AppModel {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
-            await sendAttachmentsImmediately(acceptedURLs.map { ForumPostAttachment(url: $0) }, to: destination)
+            await sendAttachmentsImmediately(acceptedURLs.map { StagedAttachment(url: $0) }, to: destination)
         case let (.owned(batch), true):
             let acceptedURLs = await preparePromisedAttachmentsForImmediateSend(batch, to: destination)
             guard !acceptedURLs.isEmpty else { return }
             defer { endUsingOwnedPromisedFiles(acceptedURLs) }
-            await sendAttachmentsImmediately(acceptedURLs.map { ForumPostAttachment(url: $0) }, to: destination)
+            await sendAttachmentsImmediately(acceptedURLs.map { StagedAttachment(url: $0) }, to: destination)
         }
     }
 
@@ -133,7 +133,7 @@ extension AppModel {
         // can take a while, so it finishes behind the tiles, and anything it
         // rejects leaves again. Uploading prepares each file afresh; until
         // the check ends, the tiles only hold sending back.
-        let staged = urls.map { ForumPostAttachment(url: $0) }
+        let staged = urls.map { StagedAttachment(url: $0) }
         let stagedIDs = Set(staged.map(\.id))
         let context = attachmentComposerContext(for: destination)
         setComposerAttachments(composerAttachments(for: destination) + staged, for: destination)
@@ -174,7 +174,7 @@ extension AppModel {
         guard isComposerDropEligible(destination), !Task.isCancelled else { return false }
         var attachments = composerAttachments(for: destination)
         if attachmentBatchFits(urls.count, besides: attachments.count) {
-            let added = urls.map { ForumPostAttachment(url: $0) }
+            let added = urls.map { StagedAttachment(url: $0) }
             attachments.append(contentsOf: added)
             setComposerAttachments(attachments, for: destination)
             let addedIDs = Set(added.map(\.id))
@@ -211,7 +211,7 @@ extension AppModel {
     }
 
     func updateComposerAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         in destination: MessageComposerDestination
     ) {
         var attachments = composerAttachments(for: destination)
@@ -245,7 +245,7 @@ extension AppModel {
     /// removal off, files wait for Send: turning it on before then must still
     /// strip them, and a stored file cannot be prepared again.
     func preuploadComposerAttachments(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         in context: AttachmentComposerContext?
     ) {
         guard privacySafetySettingsStore.load().removesMediaMetadata,
@@ -283,7 +283,7 @@ extension AppModel {
     }
 
     func restoreComposerAttachments(
-        _ restoredAttachments: [ForumPostAttachment],
+        _ restoredAttachments: [StagedAttachment],
         to destination: MessageComposerDestination
     ) {
         let current = composerAttachments(for: destination)
@@ -299,7 +299,7 @@ extension AppModel {
     /// Puts back the files of a send that did not take them, unless their
     /// conversation was left meanwhile, which drops their early uploads.
     func returnUnsentComposerAttachments(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         to destination: MessageComposerDestination,
         from conversationID: ChannelID?
     ) {
@@ -312,7 +312,7 @@ extension AppModel {
 
     @discardableResult
     func sendAttachmentsImmediately(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         to destination: MessageComposerDestination
     ) async -> Bool {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
@@ -358,7 +358,7 @@ extension AppModel {
     }
 
     func setComposerAttachments(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         for destination: MessageComposerDestination
     ) {
         let attachments = attachments.map {
@@ -397,7 +397,7 @@ extension AppModel {
 extension AppModel {
     /// Opens a staged file in the media viewer, which zooms it out of its
     /// tile and back into it.
-    func openComposerAttachment(_ id: UUID, in attachments: [ForumPostAttachment], from anchor: ComposerSendTransitionAnchor) {
+    func openComposerAttachment(_ id: UUID, in attachments: [StagedAttachment], from anchor: ComposerSendTransitionAnchor) {
         guard let currentUser,
               let presentation = MediaViewerPlan.composerAttachments(
                   attachments,

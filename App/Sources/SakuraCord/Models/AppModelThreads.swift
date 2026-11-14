@@ -447,7 +447,7 @@ extension AppModel {
     }
 
     func submitThreadComposerMessage(
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) async -> ComposerSubmissionResult {
         if let threadCreation {
             return await submitThreadCreation(threadCreation, attachments: attachments)
@@ -496,7 +496,7 @@ extension AppModel {
         replyTo: MessageID? = nil,
         mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview? = nil,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         thread: MessageThreadSummary,
         clearsComposer: Bool
     ) async -> Bool {
@@ -518,7 +518,7 @@ extension AppModel {
         replyTo: MessageID? = nil,
         mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview? = nil,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         thread: MessageThreadSummary,
         clearsComposer: Bool
     ) -> Task<Bool, Never>? {
@@ -622,7 +622,7 @@ extension AppModel {
     /// another thread.
     func submitThreadCreation(
         _ creation: ThreadCreationDraft,
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) async -> ComposerSubmissionResult {
         guard threadCreation === creation, !creation.isSubmitting else { return .rejected }
         let originalDraft = threadDraft

@@ -253,7 +253,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
     model.updateDraft("keep editing this")
     await model.addComposerAttachments([staged], to: .channel)
 
-    #expect(await model.sendAttachmentsImmediately([ForumPostAttachment(url: instant)], to: .channel))
+    #expect(await model.sendAttachmentsImmediately([StagedAttachment(url: instant)], to: .channel))
     #expect(model.draft == "keep editing this")
     #expect(model.channelComposerAttachments.map(\.url) == [staged])
     #expect(model.messages.last?.attachments.map(\.url) == [instant])
@@ -374,7 +374,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let channelID = try #require(model.selectedChannelID)
-    let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/synthetic-automod.txt"))
+    let attachment = StagedAttachment(url: URL(fileURLWithPath: "/tmp/synthetic-automod.txt"))
     await provider.failNextSend()
     await provider.suspendNextSend()
     let delivery = try #require(model.enqueueChannelMessage(
@@ -467,7 +467,7 @@ func `profile send retains a Gateway receipt across timeout and history eviction
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     await provider.timeOutNextSend()
-    let attachment = ForumPostAttachment(
+    let attachment = StagedAttachment(
         url: URL(fileURLWithPath: "/tmp/sakuracord-retry-image.png"),
         filename: "renamed-image.png",
         description: "exact attachment description",
@@ -536,7 +536,7 @@ func `timeout during thread creation preserves its unsent message without replac
     creation.name = "Thread"
     model.sideConversations.thread = .threadCreation(creation)
     let originalDraft = "  Keep this first message\n"
-    let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/thread-timeout-draft.txt"))
+    let attachment = StagedAttachment(url: URL(fileURLWithPath: "/tmp/thread-timeout-draft.txt"))
     model.threadDraft = originalDraft
     model.threadComposerAttachments = [attachment]
 
@@ -548,7 +548,7 @@ func `timeout during thread creation preserves its unsent message without replac
     let otherThread = MessageThreadSummary(
         id: ChannelID(rawValue: 31), guildID: guild.id, parentID: channelID, name: "Other"
     )
-    let otherAttachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/other-thread-draft.txt"))
+    let otherAttachment = StagedAttachment(url: URL(fileURLWithPath: "/tmp/other-thread-draft.txt"))
     if navigatesAway {
         model.open(otherThread)
         model.threadDraft = "Other thread draft"
@@ -786,7 +786,7 @@ private actor TypingTestProvider: ChatProvider {
     }
 
     func preuploadAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async -> Bool {

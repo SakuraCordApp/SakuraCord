@@ -564,7 +564,7 @@ private func verifyAnimatedAndCommandFixtures(
         channelID: ChannelID(rawValue: 210),
         content: "",
         attachments: [
-            ForumPostAttachment(
+            StagedAttachment(
                 url: original,
                 filename: "renamed.png",
                 description: "Alt text",
@@ -575,7 +575,7 @@ private func verifyAnimatedAndCommandFixtures(
 
     #expect(draft.attachmentURLs == [original])
     draft.attachmentURLs = [replacement]
-    #expect(draft.attachments == [ForumPostAttachment(url: replacement)])
+    #expect(draft.attachments == [StagedAttachment(url: replacement)])
     draft.attachments[0].filename = "replacement-name.png"
     #expect(draft.attachmentURLs == [replacement])
 }

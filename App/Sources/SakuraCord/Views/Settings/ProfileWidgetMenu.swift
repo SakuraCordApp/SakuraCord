@@ -19,7 +19,7 @@ struct ProfileWidgetMenu: NSViewRepresentable {
             button.action = #selector(Coordinator.showMenu(_:))
             return button
         }
-        let view = MediaImageContextMenuHitView()
+        let view = ContextClickMenuHitView()
         view.menuProvider = { [weak coordinator = context.coordinator, weak view] in
             guard let view, WindowModalCoordinator.allowsInput(for: view) else { return nil }
             return coordinator?.makeMenu()

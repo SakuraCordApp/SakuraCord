@@ -15,7 +15,7 @@ struct ComposerAttachmentTray: View {
 
     @AppStorage(PrivacySafetySettingsStore.anonymiseFileNamesKey) private var anonymisesFileNames = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let attachments: [ForumPostAttachment]
+    let attachments: [StagedAttachment]
     /// Files still being checked; they show at once but cannot be sent yet.
     var checkingIDs: Set<UUID> = []
     let uploads: AttachmentUploadProgressStore
@@ -25,7 +25,7 @@ struct ComposerAttachmentTray: View {
     let model: AppModel
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
-    let update: (ForumPostAttachment) -> Void
+    let update: (StagedAttachment) -> Void
     let remove: (UUID) -> Void
     @State private var editingTarget: ComposerAttachmentEditorTarget?
 
@@ -103,7 +103,7 @@ struct ComposerAttachmentTray: View {
         )
     }
 
-    private func toggleFilenamePrivacy(_ attachment: ForumPostAttachment) {
+    private func toggleFilenamePrivacy(_ attachment: StagedAttachment) {
         var updated = attachment
         updated.setFilenameAnonymised(!attachment.isFilenameAnonymised)
         update(updated)
@@ -111,7 +111,7 @@ struct ComposerAttachmentTray: View {
 }
 
 private struct ComposerAttachmentTile: View {
-    let attachment: ForumPostAttachment
+    let attachment: StagedAttachment
     let isChecking: Bool
     let uploads: AttachmentUploadProgressStore
     let anonymisesFileNames: Bool
@@ -119,7 +119,7 @@ private struct ComposerAttachmentTile: View {
     let isMediaViewerSource: Bool
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
-    let toggleFilenamePrivacy: (ForumPostAttachment) -> Void
+    let toggleFilenamePrivacy: (StagedAttachment) -> Void
     let edit: (UUID) -> Void
     let remove: (UUID) -> Void
     @State private var isHovered = false
@@ -391,7 +391,7 @@ struct ComposerAttachmentFileFace: View {
     }
 }
 
-extension ForumPostAttachment {
+extension StagedAttachment {
     /// Images and videos, which fill their tile and fly as their thumbnail.
     var isVisualMedia: Bool {
         let type = UTType(filenameExtension: url.pathExtension)

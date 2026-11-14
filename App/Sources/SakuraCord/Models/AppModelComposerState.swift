@@ -76,11 +76,11 @@ extension AppModel {
         case .thread: threadDraft
         }
     }
-    var channelComposerAttachments: [ForumPostAttachment] {
+    var channelComposerAttachments: [StagedAttachment] {
         get { composer.channelAttachments }
         set { composer.channelAttachments = newValue }
     }
-    var threadComposerAttachments: [ForumPostAttachment] {
+    var threadComposerAttachments: [StagedAttachment] {
         get { composer.threadAttachments }
         set { composer.threadAttachments = newValue }
     }

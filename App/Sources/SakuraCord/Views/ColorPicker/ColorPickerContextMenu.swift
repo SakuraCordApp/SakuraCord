@@ -10,15 +10,15 @@ struct ColorPickerContextMenuBridge: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(bridge: self) }
 
-    func makeNSView(context: Context) -> MediaImageContextMenuHitView {
-        let view = MediaImageContextMenuHitView()
+    func makeNSView(context: Context) -> ContextClickMenuHitView {
+        let view = ContextClickMenuHitView()
         view.menuProvider = { [weak coordinator = context.coordinator] in
             coordinator?.makeMenu()
         }
         return view
     }
 
-    func updateNSView(_ nsView: MediaImageContextMenuHitView, context: Context) {
+    func updateNSView(_ nsView: ContextClickMenuHitView, context: Context) {
         context.coordinator.bridge = self
     }
 

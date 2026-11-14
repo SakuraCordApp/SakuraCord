@@ -8,7 +8,7 @@ struct ForumPostComposerDraft: Equatable {
     var title = ""
     var content = ""
     var tagIDs: Set<ForumTagID> = []
-    var attachments: [ForumPostAttachment] = []
+    var attachments: [StagedAttachment] = []
     /// Attachments still being size-checked, which hold Post back.
     var checkingAttachmentIDs: Set<UUID> = []
 

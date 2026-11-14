@@ -97,7 +97,7 @@ extension AppModel {
     /// until Discord accepts it, so a refusal loses nothing.
     func scheduleComposerMessage(
         in destination: MessageComposerDestination,
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) async {
         let content = draft(in: destination).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty, attachmentBatchFits(attachments.count),
@@ -115,7 +115,7 @@ extension AppModel {
         content: String,
         stickerIDs: [String] = [],
         in destination: MessageComposerDestination,
-        attachments: () async -> [ForumPostAttachment]? = { [] }
+        attachments: () async -> [StagedAttachment]? = { [] }
     ) async -> Bool {
         guard let (outgoing, reply) = scheduledDraft(content: content, stickerIDs: stickerIDs, in: destination),
               await submitSchedule(outgoing, attachments: attachments)
@@ -127,7 +127,7 @@ extension AppModel {
     /// The composer's reply goes with whatever it schedules.
     private func scheduledDraft(
         content: String,
-        attachments: [ForumPostAttachment] = [],
+        attachments: [StagedAttachment] = [],
         stickerIDs: [String] = [],
         in destination: MessageComposerDestination
     ) -> (SendMessageDraft, reply: Message?)? {
@@ -154,7 +154,7 @@ extension AppModel {
     /// nothing else takes its send time meanwhile.
     private func submitSchedule(
         _ outgoing: SendMessageDraft,
-        attachments: () async -> [ForumPostAttachment]? = { [] }
+        attachments: () async -> [StagedAttachment]? = { [] }
     ) async -> Bool {
         var outgoing = outgoing
         let channelID = outgoing.channelID
