@@ -311,14 +311,7 @@ extension NativeTimelineCanvasView {
             in: message,
             selectedReferenceID: region.reference.id
         ) {
-            model?.mediaViewerPresentation = mediaViewerPresentation(
-                presentation,
-                sourceFrame: region.frame,
-                rowIndex: rowIndex,
-                mediaKey: region.mediaKey,
-                cornerRadius: region.cornerRadius,
-                fillsFrame: region.fillsFrame
-            )
+            model?.mediaViewerPresentation = mediaViewerPresentation(presentation, rowIndex: rowIndex)
         } else {
             NSWorkspace.shared.open(region.reference.url)
         }
@@ -332,13 +325,7 @@ extension NativeTimelineCanvasView {
     ) -> Bool {
         if NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore) {
             reveal(.attachment(messageID: message.id, attachmentID: attachment.id), rowIndex: rowIndex)
-        } else if !openAttachmentInViewer(
-            attachment,
-            sourceFrame: layouts[rowIndex].attachmentRegions.first { $0.attachment.id == attachment.id }?.frame ?? .zero,
-            message: message,
-            layout: layouts[rowIndex],
-            rowIndex: rowIndex
-        ) {
+        } else if !openAttachmentInViewer(attachment, message: message, rowIndex: rowIndex) {
             NSWorkspace.shared.open(attachment.url)
         }
         return true
@@ -349,8 +336,7 @@ extension NativeTimelineCanvasView {
         in message: Message,
         rowIndex: Int
     ) -> Bool {
-        let region = layouts[rowIndex].embedRegions.first { $0.embedID == id }
-        if openEmbedMediaInViewer(id: id, region: region, message: message, rowIndex: rowIndex) { return true }
+        if openEmbedMediaInViewer(id: id, message: message, rowIndex: rowIndex) { return true }
         guard let region = layouts.lazy
             .flatMap(\.embedRegions)
             .first(where: { $0.embedID == id }),

@@ -711,16 +711,14 @@ extension NativeTimelineCanvasView {
                 frame: attachmentRegion.frame, rowIndex: rowIndex
             ) { [weak self, attachmentID = attachment.id] index, layout, message in
                 guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
-                _ = self?.openAttachmentInViewer(
-                    region.attachment, sourceFrame: region.frame, message: message, layout: layout, rowIndex: index
-                )
+                _ = self?.openAttachmentInViewer(region.attachment, message: message, rowIndex: index)
             }
             return true
         }
         if let embedRegion = layout.embedRegions.first(where: {
             $0.mediaFrame?.contains(point) == true
         }) {
-            if !openEmbedMediaInViewer(id: embedRegion.embedID, region: embedRegion, message: row.message, rowIndex: rowIndex),
+            if !openEmbedMediaInViewer(id: embedRegion.embedID, message: row.message, rowIndex: rowIndex),
                let mediaURL = embedRegion.mediaURL
             {
                 NSWorkspace.shared.open(mediaURL)
@@ -1561,9 +1559,7 @@ extension NativeTimelineCanvasView {
     /// Returns false when the attachment has no viewer presentation.
     func openAttachmentInViewer(
         _ attachment: Attachment,
-        sourceFrame: CGRect,
         message: Message,
-        layout: NativeTimelineRowLayout,
         rowIndex: Int
     ) -> Bool {
         guard let presentation = MediaViewerPlan.attachments(
@@ -1571,34 +1567,19 @@ extension NativeTimelineCanvasView {
             selectedAttachmentID: attachment.id,
             isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
         ) else { return false }
-        model?.mediaViewerPresentation = mediaViewerPresentation(
-            presentation,
-            sourceFrame: sourceFrame,
-            rowIndex: rowIndex,
-            mediaKey: MediaImageKey.attachment(attachment),
-            cornerRadius: InterfaceScale.metric(8),
-            fillsFrame: MediaGalleryImagePresentation.fillsFrame(itemCount: layout.mediaGalleryItemCount)
-        )
+        model?.mediaViewerPresentation = mediaViewerPresentation(presentation, rowIndex: rowIndex)
         return true
     }
 
-    /// Opens an embed's media in the viewer, zooming from `region` when it
+    /// Opens an embed's media in the viewer, zooming from its card when it
     /// is on screen; false when the embed has nothing the viewer shows.
     func openEmbedMediaInViewer(
         id: String,
-        region: NativeTimelineRowLayout.EmbedRegion?,
         message: Message,
         rowIndex: Int
     ) -> Bool {
         guard let presentation = MediaViewerPlan.embed(in: message, id: id) else { return false }
-        model?.mediaViewerPresentation = mediaViewerPresentation(
-            presentation,
-            sourceFrame: region?.mediaFrame ?? .zero,
-            rowIndex: rowIndex,
-            mediaKey: region?.mediaURL.map { MediaImageKey.media($0) },
-            cornerRadius: InterfaceScale.metric(8),
-            fillsFrame: region?.mediaFillsFrame ?? false
-        )
+        model?.mediaViewerPresentation = mediaViewerPresentation(presentation, rowIndex: rowIndex)
         return true
     }
 }

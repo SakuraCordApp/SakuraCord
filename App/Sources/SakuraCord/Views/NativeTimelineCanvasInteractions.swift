@@ -70,11 +70,7 @@ extension NativeTimelineCanvasView {
             selectedComponentID: id,
             isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
         ) {
-            model?.mediaViewerPresentation = mediaViewerPresentation(
-                presentation,
-                componentID: id,
-                rowIndex: rowIndex
-            )
+            model?.mediaViewerPresentation = mediaViewerPresentation(presentation, rowIndex: rowIndex)
         } else {
             NSWorkspace.shared.open(region.openURL)
         }
