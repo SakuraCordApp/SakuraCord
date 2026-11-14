@@ -596,54 +596,6 @@ extension AppModel {
         }
     }
 
-    /// Replaces the selected channel's window with one `around` a message.
-    /// Returns false when the selection changed or the read failed.
-    func loadSelectedMessageWindow(
-        around messageID: MessageID,
-        channelID: ChannelID,
-        session: AppModelAccountSession
-    ) async -> Bool {
-        // Gateway edits and deletions that land while the read is in flight
-        // are replayed onto its older response.
-        let refreshRevision = beginScopedConversationRefresh(in: channelID)
-        defer { endScopedConversationRefresh(refreshRevision) }
-        do {
-            let page = try await session.provider.messages(
-                in: channelID,
-                anchoredAt: .around(messageID),
-                limit: DiscordHistoryFetchLimit.aroundLimit
-            )
-            guard !Task.isCancelled,
-                  isCurrentAccountSession(session),
-                  selectedChannelID == channelID
-            else { return false }
-            // Unconfirmed sends keep their rows, including failed ones
-            // awaiting Retry or Discard, whichever window is presented.
-            replaceSelectedMessages(with: Self.merging(
-                current: messages.filter { $0.outboxState != .confirmed },
-                fresh: Self.applyingConversationRefreshMutations(
-                    scopedConversationRefreshMutations(refreshRevision),
-                    to: page.messages,
-                    within: MessageHistorySpan(page: page)
-                )
-            ))
-            hasMoreMessages = page.hasMoreBefore
-            hasMoreLaterMessages = page.hasMoreAfter
-            hasMoreCache[channelID] = page.hasMoreBefore
-            contiguousHistoryBoundaries[channelID] = nil
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            guard isCurrentAccountSession(session),
-                  selectedChannelID == channelID
-            else { return false }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            errorMessage = error.localizedDescription
-            return false
-        }
-    }
-
     func navigate(from notification: NotificationDeepLink) async {
         if readState.accountID != notification.accountID {
             let handles = try? await credentialStore.handles()

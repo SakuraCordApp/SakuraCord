@@ -757,18 +757,7 @@ extension AppModel {
                   isCurrentAccountSession(session),
                   selectedChannelID == channelID
             else { return false }
-            replaceSelectedMessages(with: Self.merging(
-                current: messages.filter { $0.outboxState != .confirmed },
-                fresh: Self.applyingConversationRefreshMutations(
-                    scopedConversationRefreshMutations(refreshRevision),
-                    to: page.messages,
-                    within: MessageHistorySpan(page: page)
-                )
-            ))
-            hasMoreMessages = page.hasMoreBefore
-            hasMoreLaterMessages = false
-            hasMoreCache[channelID] = page.hasMoreBefore
-            contiguousHistoryBoundaries[channelID] = nil
+            replaceSelectedMessageWindow(with: page, refreshRevision: refreshRevision, in: channelID)
             requestNewestMessagePresentation(channelID: channelID)
             return true
         } catch is CancellationError {
@@ -781,6 +770,64 @@ extension AppModel {
             messageLoadError = error.localizedDescription
             return false
         }
+    }
+
+    /// Replaces the selected channel's window with one `around` a message.
+    /// Returns false when the selection changed or the read failed.
+    func loadSelectedMessageWindow(
+        around messageID: MessageID,
+        channelID: ChannelID,
+        session: AppModelAccountSession
+    ) async -> Bool {
+        // Gateway edits and deletions that land while the read is in flight
+        // are replayed onto its older response.
+        let refreshRevision = beginScopedConversationRefresh(in: channelID)
+        defer { endScopedConversationRefresh(refreshRevision) }
+        do {
+            let page = try await session.provider.messages(
+                in: channelID,
+                anchoredAt: .around(messageID),
+                limit: DiscordHistoryFetchLimit.aroundLimit
+            )
+            guard !Task.isCancelled,
+                  isCurrentAccountSession(session),
+                  selectedChannelID == channelID
+            else { return false }
+            replaceSelectedMessageWindow(with: page, refreshRevision: refreshRevision, in: channelID)
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            guard isCurrentAccountSession(session),
+                  selectedChannelID == channelID
+            else { return false }
+            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Replaces the selected channel's window with `page`, replaying the
+    /// Gateway edits and deletions journaled since `refreshRevision`.
+    private func replaceSelectedMessageWindow(
+        with page: MessagePage,
+        refreshRevision: UInt64,
+        in channelID: ChannelID
+    ) {
+        // Unconfirmed sends keep their rows, including failed ones
+        // awaiting Retry or Discard, whichever window is presented.
+        replaceSelectedMessages(with: Self.merging(
+            current: messages.filter { $0.outboxState != .confirmed },
+            fresh: Self.applyingConversationRefreshMutations(
+                scopedConversationRefreshMutations(refreshRevision),
+                to: page.messages,
+                within: MessageHistorySpan(page: page)
+            )
+        ))
+        hasMoreMessages = page.hasMoreBefore
+        hasMoreLaterMessages = page.hasMoreAfter
+        hasMoreCache[channelID] = page.hasMoreBefore
+        contiguousHistoryBoundaries[channelID] = nil
     }
 
     func requestNewestMessagePresentation(channelID: ChannelID) {
