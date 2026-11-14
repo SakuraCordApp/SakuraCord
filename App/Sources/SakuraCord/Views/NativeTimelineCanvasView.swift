@@ -315,6 +315,9 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     /// rows after it are displaced.
     var rowMotionShift: CGFloat = 0
     var rowMotionSteps: [(index: Int, cumulative: CGFloat)] = []
+    /// Each step's offset, then their running totals, while the geometry is
+    /// refreshed: kept between refreshes so they reuse its storage.
+    var rowMotionStepScratch: [(index: Int, value: CGFloat)] = []
     var rowMotionRemainingHeights: [Int: CGFloat] = [:]
     /// The part of each row's remaining height that its edited text's band still has to glide.
     var rowMotionTextRemainingHeights: [Int: CGFloat] = [:]

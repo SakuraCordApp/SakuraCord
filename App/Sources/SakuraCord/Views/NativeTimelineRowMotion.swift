@@ -566,42 +566,53 @@ extension NativeTimelineCanvasView {
             motion.steps.contains { rowIndex(forIdentifier: $0.identifier, hint: $0.rowIndex) == nil }
         }
         var shift: CGFloat = 0
-        var steps: [(index: Int, offset: CGFloat)] = []
-        var textRemaining: [Int: CGFloat] = [:]
-        for motionIndex in rowMotions.indices {
-            let motion = rowMotions[motionIndex]
+        rowMotionStepScratch.removeAll(keepingCapacity: true)
+        rowMotionTextRemainingHeights.removeAll(keepingCapacity: true)
+        func add(_ motion: inout NativeTimelineRowMotion) {
             let left = 1 - motion.progress(at: uptime)
             shift += motion.shift * left
             for stepIndex in motion.steps.indices {
                 let step = motion.steps[stepIndex]
                 guard let index = rowIndex(forIdentifier: step.identifier, hint: step.rowIndex) else { continue }
-                rowMotions[motionIndex].steps[stepIndex].rowIndex = index
-                steps.append((index, step.delta * left))
-                if step.movesText { textRemaining[index, default: 0] += step.delta * left }
+                if index != step.rowIndex { motion.steps[stepIndex].rowIndex = index }
+                rowMotionStepScratch.append((index, step.delta * left))
+                if step.movesText { rowMotionTextRemainingHeights[index, default: 0] += step.delta * left }
             }
         }
+        for motionIndex in rowMotions.indices { add(&rowMotions[motionIndex]) }
+        return storeRowMotionSteps(shift: shift)
+    }
+
+    /// Sums the step offsets just collected into the displacement rows read,
+    /// on whole device pixels so moving rows stay sharp. Works in place, so a
+    /// running motion allocates nothing per frame. True when any row moved.
+    private func storeRowMotionSteps(shift: CGFloat) -> Bool {
         let scale = window?.backingScaleFactor ?? 2
         func snapped(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
-        steps.sort { $0.index < $1.index }
+        rowMotionStepScratch.sort { $0.index < $1.index }
+        // Offsets at one index become one running total.
+        var count = 0
         var total: CGFloat = 0
-        var cumulative: [(index: Int, cumulative: CGFloat)] = []
-        for step in steps {
-            total += step.offset
-            if cumulative.last?.index == step.index { cumulative.removeLast() }
-            cumulative.append((step.index, snapped(total)))
+        for position in rowMotionStepScratch.indices {
+            let step = rowMotionStepScratch[position]
+            total += step.value
+            if count > 0, rowMotionStepScratch[count - 1].index == step.index { count -= 1 }
+            rowMotionStepScratch[count] = (step.index, snapped(total))
+            count += 1
         }
-        // A row's hidden height is the step its own change adds.
-        var remaining: [Int: CGFloat] = [:]
-        for (position, step) in cumulative.enumerated() {
-            remaining[step.index] = step.cumulative - (position > 0 ? cumulative[position - 1].cumulative : 0)
-        }
+        rowMotionStepScratch.removeLast(rowMotionStepScratch.count - count)
         let snappedShift = snapped(shift)
         let moved = snappedShift != rowMotionShift
-            || !cumulative.elementsEqual(rowMotionSteps) { $0.index == $1.index && $0.cumulative == $1.cumulative }
-        rowMotionSteps = cumulative
+            || !rowMotionStepScratch.elementsEqual(rowMotionSteps) { $0.index == $1.index && $0.value == $1.cumulative }
         rowMotionShift = snappedShift
-        rowMotionRemainingHeights = remaining
-        rowMotionTextRemainingHeights = textRemaining
+        rowMotionSteps.removeAll(keepingCapacity: true)
+        rowMotionRemainingHeights.removeAll(keepingCapacity: true)
+        for position in rowMotionStepScratch.indices {
+            let step = rowMotionStepScratch[position]
+            rowMotionSteps.append((step.index, step.value))
+            // A row's hidden height is the step its own change adds.
+            rowMotionRemainingHeights[step.index] = step.value - (position > 0 ? rowMotionStepScratch[position - 1].value : 0)
+        }
         return moved
     }
 
