@@ -324,95 +324,55 @@ extension NativeTimelineCanvasView {
             }
             if let index = event.trackingArea?.userInfo?[
                 "nativeTimelineRowIndex"
-            ] as? Int,
-               hoveredRow == index
-            {
-                setHoveredRow(nil)
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int,
-               hoveredCompactTimestampRow == index
-            {
-                setHoveredCompactTimestampRow(nil)
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int,
-               items.indices.contains(index),
-               items[index].messageID == hoveredAuthorMessageID
-            {
-                setHoveredAuthorMessageID(nil)
-            }
-            if let index = event.trackingArea?.userInfo?["nativeTimelineRowIndex"] as? Int,
-               items.indices.contains(index), items[index].messageID == hoveredServerTagMessageID {
-                setHoveredServerTagMessageID(nil)
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int,
-               items.indices.contains(index),
-               hoveredMention?.itemIdentifier == items[index].identifier
-            {
-                setHoveredMention(nil)
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int,
-               items.indices.contains(index),
-               hoveredTextLink?.itemIdentifier == items[index].identifier
-            {
-                setHoveredTextLink(nil)
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int,
-               items.indices.contains(index),
-               hoveredTextSpoiler?.itemIdentifier
-                    == items[index].identifier
-            {
-                setHoveredTextSpoiler(nil)
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int,
-               items.indices.contains(index),
-               hoveredCodeBlock?.itemIdentifier
-                    == items[index].identifier
-            {
-                setHoveredCodeBlock(nil)
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int,
-               items.indices.contains(index),
-               items[index].messageID
-                    == hoveredComponentButton?.messageID
-            {
-                setHoveredComponentButton(nil)
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int,
-               items.indices.contains(index),
-               items[index].messageID == hoveredForwardedSourceMessageID
-            {
-                setHoveredForwardedSourceMessageID(nil)
-            }
-            if let index = event.trackingArea?.userInfo?["nativeTimelineRowIndex"] as? Int,
-               items.indices.contains(index),
-               items[index].messageID == hoveredThreadMessageID {
-                setHoveredThreadMessageID(nil)
-            }
-            if let index = event.trackingArea?.userInfo?["nativeTimelineRowIndex"] as? Int,
-               items.indices.contains(index),
-               items[index].messageID == hoveredFooterAction?.messageID {
-                setHoveredFooterAction(nil)
+            ] as? Int {
+                clearHoverTargets(leavingRow: index)
             }
             return
         }
         if kind == "canvas" {
             clearPointerHoverTargets()
+        }
+    }
+
+    /// Clears the hover targets in a row the pointer's tracking area left.
+    private func clearHoverTargets(leavingRow index: Int) {
+        if hoveredRow == index {
+            setHoveredRow(nil)
+        }
+        if hoveredCompactTimestampRow == index {
+            setHoveredCompactTimestampRow(nil)
+        }
+        guard items.indices.contains(index) else { return }
+        let item = items[index]
+        if item.messageID == hoveredAuthorMessageID {
+            setHoveredAuthorMessageID(nil)
+        }
+        if item.messageID == hoveredServerTagMessageID {
+            setHoveredServerTagMessageID(nil)
+        }
+        if hoveredMention?.itemIdentifier == item.identifier {
+            setHoveredMention(nil)
+        }
+        if hoveredTextLink?.itemIdentifier == item.identifier {
+            setHoveredTextLink(nil)
+        }
+        if hoveredTextSpoiler?.itemIdentifier == item.identifier {
+            setHoveredTextSpoiler(nil)
+        }
+        if hoveredCodeBlock?.itemIdentifier == item.identifier {
+            setHoveredCodeBlock(nil)
+        }
+        if item.messageID == hoveredComponentButton?.messageID {
+            setHoveredComponentButton(nil)
+        }
+        if item.messageID == hoveredForwardedSourceMessageID {
+            setHoveredForwardedSourceMessageID(nil)
+        }
+        if item.messageID == hoveredThreadMessageID {
+            setHoveredThreadMessageID(nil)
+        }
+        if item.messageID == hoveredFooterAction?.messageID {
+            setHoveredFooterAction(nil)
         }
     }
 
