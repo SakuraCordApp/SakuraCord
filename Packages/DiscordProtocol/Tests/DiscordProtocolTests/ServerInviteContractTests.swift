@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 import Testing
 import SakuraCordModels
 @testable import DiscordProtocol
@@ -7,7 +6,7 @@ import SakuraCordModels
 struct ServerInviteContractTests {
     @Test(arguments: ["valid", "onboarding"])
     func `invite preview and acceptance retain profile and use current Gateway context`(code: String) async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         let reference = try #require(ServerInviteReference(code))
         let preview = try await provider.serverInvite(reference)
@@ -36,7 +35,7 @@ struct ServerInviteContractTests {
 
     @Test(arguments: ["invalid", "banned", "limited", "revoked"])
     func `invite restrictions and failures stay bounded and keep account networking alive`(code: String) async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         let reference = try #require(ServerInviteReference(code))
         await #expect(throws: ServerInviteError.self) {
@@ -50,7 +49,7 @@ struct ServerInviteContractTests {
     }
 
     @Test func `members never accept again and only confirmed nonowners can leave`() async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         let guildID = GuildID(rawValue: 900)
         await provider.seedInviteGuild(owner: true)
@@ -69,7 +68,7 @@ struct ServerInviteContractTests {
     }
 
     @Test func `invite CAPTCHA resumes the original request once without stopping account traffic`() async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         let reference = try #require(ServerInviteReference("captcha"))
         await provider.setCaptchaHandler { challenge in
@@ -102,7 +101,7 @@ struct ServerInviteContractTests {
     @Test(arguments: ["captchaCancel", "captchaEmpty", "captchaDisconnect", "captchaSessionReplaced", "captchaRepeated", "captchaLimited",
                       "captchaTimeout", "captchaNoHandler"])
     func `cancelled stale or rejected CAPTCHA cannot cause an automatic join loop`(code: String) async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let socket = ReadyGatewaySocket()
         let provider = try await makeProvider(capture.id, socket: socket)
         let reference = try #require(ServerInviteReference(code))
@@ -136,7 +135,7 @@ struct ServerInviteContractTests {
     }
 
     @Test func `discoverable profile join sends one full membership request and resumes CAPTCHA once`() async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         #expect(try await !provider.joinDiscoverableGuild(.init(rawValue: 950)))
         let request = try #require(capture.requests.last)
@@ -168,7 +167,7 @@ struct ServerInviteContractTests {
     }
 
     @Test func `profiles limited to members are private without stopping account traffic`() async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         await #expect(throws: GuildProfileError.restricted) { _ = try await provider.guildProfile(in: .init(rawValue: 953)) }
         #expect(capture.requests.last?.url?.path == "/api/v9/guilds/953/profile")
@@ -196,7 +195,7 @@ struct ServerInviteContractTests {
     }
 
     @Test func `invite creation sends the observed settings once and keeps limit failures local`() async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         let settings = ServerInviteSettings(maxAge: .oneHour, maxUses: .five)
         let created = try await provider.createServerInvite(in: .init(rawValue: 901), guildID: .init(rawValue: 900), settings: settings)
@@ -246,7 +245,7 @@ struct ServerInviteContractTests {
     }
 
     @Test func `an application echoes Discord's fields once with each answer in its wire type`() async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         let guildID = GuildID(rawValue: 900)
         // Accepting the invite started the application; Gateway reported it before the form opened.
@@ -287,7 +286,7 @@ struct ServerInviteContractTests {
     }
 
     @Test func `an application whose questions changed since the editor read them is not sent`() async throws {
-        let capture = InviteRequestCapture()
+        let capture = RequestRecorder(InviteURLProtocol.captured)
         let provider = try await makeProvider(capture.id)
         let guildID = GuildID(rawValue: 900)
         var form = try await provider.guildJoinApplicationForm(guildID, inviteCode: "apply")
@@ -300,7 +299,7 @@ struct ServerInviteContractTests {
     }
 
     @Test func `moderators never adopt other people's join requests as their own`() async throws {
-        let provider = try await makeProvider(InviteRequestCapture().id)
+        let provider = try await makeProvider(RequestRecorder(InviteURLProtocol.captured).id)
         let guildID = GuildID(rawValue: 900)
         await provider.seedCurrentUser(id: 7)
         func event(_ name: String, user: String, status: String = "SUBMITTED") async {
@@ -331,7 +330,7 @@ struct ServerInviteContractTests {
         ]), sequence: 1, eventName: "READY"))
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [InviteURLProtocol.self]
-        let provider = DiscordRESTProvider(credentials: InviteCredentialStore(), handle: .init(accountID: accountID),
+        let provider = DiscordRESTProvider(credentials: TestCredentialStore(token: accountID), handle: .init(accountID: accountID),
             session: URLSession(configuration: configuration), gatewayTransport: ReadyGatewayTransport(socket: socket),
             installationID: "fixture-installation")
         try await provider.startGateway()
@@ -351,29 +350,6 @@ private extension DiscordRESTProvider {
         cachedGuilds[.init(rawValue: 900)] = Guild(id: .init(rawValue: 900), name: "Test", isOwnedByCurrentUser: owner,
                                                features: community ? ["COMMUNITY"] : [])
     }
-}
-
-private actor InviteCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle { .init(accountID: accountID) }
-    func credential(for handle: CredentialHandle) async throws -> Data { Data(handle.accountID.utf8) }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
-}
-
-private final class InviteRequestCapture {
-    let id = UUID().uuidString
-    private final class Storage: Sendable { let requests = Mutex<[URLRequest]>([]) }
-    private let storage = Storage()
-    private var observer: (any NSObjectProtocol)?
-    init() {
-        let storage = storage, id = id
-        observer = NotificationCenter.default.addObserver(forName: InviteURLProtocol.captured, object: nil, queue: nil) { notification in
-            guard let request = notification.object as? URLRequest, request.value(forHTTPHeaderField: "Authorization") == id else { return }
-            storage.requests.withLock { $0.append(request) }
-        }
-    }
-    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
-    var requests: [URLRequest] { storage.requests.withLock { $0 } }
 }
 
 private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {

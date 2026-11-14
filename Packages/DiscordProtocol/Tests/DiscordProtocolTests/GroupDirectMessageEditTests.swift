@@ -270,12 +270,5 @@ private final class GroupEditURLProtocol: URLProtocol, @unchecked Sendable {
         respond(status: 200, body: (try? JSONEncoder().encode(response)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}")
     }
 
-    private func respond(status: Int, body: String) {
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
-                                                            httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
-    }
-
     override func stopLoading() {}
 }

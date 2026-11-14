@@ -57,17 +57,10 @@ struct OAuth2AuthorizationContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OAuth2URLProtocol.self]
         return DiscordRESTProvider(
-            credentials: OAuth2CredentialStore(), handle: .init(accountID: accountID),
+            credentials: TestCredentialStore(token: accountID), handle: .init(accountID: accountID),
             session: URLSession(configuration: configuration)
         )
     }
-}
-
-private actor OAuth2CredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle { .init(accountID: accountID) }
-    func credential(for handle: CredentialHandle) async throws -> Data { Data(handle.accountID.utf8) }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private final class OAuth2URLProtocol: URLProtocol, @unchecked Sendable {

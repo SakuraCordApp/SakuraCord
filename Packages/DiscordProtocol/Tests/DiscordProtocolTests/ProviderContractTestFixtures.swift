@@ -1,6 +1,7 @@
 @testable import DiscordProtocol
 import Foundation
 import SakuraCordModels
+import Synchronization
 import Testing
 
 /// Serves one fixed session credential; suites give theirs a distinct value
@@ -228,6 +229,30 @@ actor RestrictionGatewaySocket: GatewaySocket {
     }
 }
 
+/// Collects the requests one test sends through a URL protocol that posts each
+/// materialized request as `notification`. A unique `id` in `header`, the
+/// session credential by default, tells concurrent tests apart.
+final class RequestRecorder {
+    let id: String
+    private final class Storage: Sendable { let requests = Mutex<[URLRequest]>([]) }
+    private let storage: Storage
+    private let observer: any NSObjectProtocol
+
+    init(_ notification: Notification.Name, header: String = "Authorization", id: String = UUID().uuidString) {
+        self.id = id
+        let storage = Storage()
+        self.storage = storage
+        observer = NotificationCenter.default.addObserver(forName: notification, object: nil, queue: nil) { note in
+            guard let request = note.object as? URLRequest, request.value(forHTTPHeaderField: header) == id else { return }
+            storage.requests.withLock { $0.append(request) }
+        }
+    }
+
+    deinit { NotificationCenter.default.removeObserver(observer) }
+
+    var requests: [URLRequest] { storage.requests.withLock { $0 } }
+}
+
 actor ReactionProjectionEventRecorder {
     private(set) var reactionUpdateCount = 0
     private(set) var forumCataloguePublishCount = 0
@@ -319,5 +344,9 @@ extension URLProtocol {
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
+    }
+
+    func respond(status: Int, body: String) {
+        respond(status: status, body: Data(body.utf8))
     }
 }

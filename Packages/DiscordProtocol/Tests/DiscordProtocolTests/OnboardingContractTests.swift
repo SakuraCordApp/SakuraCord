@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 import Testing
 import SakuraCordModels
 @testable import DiscordProtocol
@@ -7,7 +6,7 @@ import SakuraCordModels
 struct OnboardingContractTests {
     @Test(arguments: ["complete", "unconfirmed", "failed", "edit"])
     func `answer writes are bounded and initial completion requires confirmed membership`(scenario: String) async throws {
-        let capture = OnboardingRequestCapture()
+        let capture = RequestRecorder(OnboardingURLProtocol.captured, header: "X-Onboarding-Test")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OnboardingURLProtocol.self]
         configuration.httpAdditionalHeaders = ["X-Onboarding-Test": capture.id, "X-Onboarding-Scenario": scenario]
@@ -76,7 +75,7 @@ struct OnboardingContractTests {
 
     @Test(arguments: ["guide", "empty-progress", "wrong-user", "unconfirmed", "empty-confirmation"])
     func `guide reads are nonmutating and task completion requires matching confirmed state`(scenario: String) async throws {
-        let capture = OnboardingRequestCapture()
+        let capture = RequestRecorder(OnboardingURLProtocol.captured, header: "X-Onboarding-Test")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OnboardingURLProtocol.self]
         configuration.httpAdditionalHeaders = ["X-Onboarding-Test": capture.id, "X-Onboarding-Scenario": scenario]
@@ -108,7 +107,7 @@ struct OnboardingContractTests {
     }
 
     @Test func `channel selection batches preserve unrelated bits and require a confirmed guild`() async throws {
-        let capture = OnboardingRequestCapture()
+        let capture = RequestRecorder(OnboardingURLProtocol.captured, header: "X-Onboarding-Test")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OnboardingURLProtocol.self]
         configuration.httpAdditionalHeaders = ["X-Onboarding-Test": capture.id, "X-Onboarding-Scenario": "channels"]
@@ -156,23 +155,6 @@ private extension DiscordRESTProvider {
         currentUser = User(id: .init(rawValue: 1), username: "one", displayName: "One")
         cachedGuilds[.init(rawValue: 100)] = Guild(id: .init(rawValue: 100), name: "Test")
     }
-}
-
-private final class OnboardingRequestCapture {
-    let id = UUID().uuidString
-    private final class Storage: Sendable { let requests = Mutex<[URLRequest]>([]) }
-    private let storage = Storage()
-    private var observer: NSObjectProtocol?
-    init() {
-        let id = id, storage = storage
-        observer = NotificationCenter.default.addObserver(forName: OnboardingURLProtocol.captured, object: nil, queue: nil) { note in
-            guard let request = note.object as? URLRequest,
-                  request.value(forHTTPHeaderField: "X-Onboarding-Test") == id else { return }
-            storage.requests.withLock { $0.append(request) }
-        }
-    }
-    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
-    var requests: [URLRequest] { storage.requests.withLock { $0 } }
 }
 
 private final class OnboardingURLProtocol: URLProtocol, @unchecked Sendable {

@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 import Testing
 import SakuraCordModels
 @testable import DiscordProtocol
@@ -15,7 +14,7 @@ struct EmbeddedActivityContractTests {
 
     @Test func `authorization reads the grant then authorizes once in the voice channel`() async throws {
         let accountID = UUID().uuidString
-        let recorder = ActivityRequestRecorder(authorization: accountID)
+        let recorder = RequestRecorder(ActivityURLProtocol.captured, id: accountID)
         let provider = makeProvider(accountID)
         let request = authorization(state: "granted")
         #expect(try await provider.embeddedActivityAuthorizationPreview(request).isAuthorized)
@@ -40,7 +39,7 @@ struct EmbeddedActivityContractTests {
 
     @Test func `a refused consent is recorded once and yields no code`() async throws {
         let accountID = UUID().uuidString
-        let recorder = ActivityRequestRecorder(authorization: accountID)
+        let recorder = RequestRecorder(ActivityURLProtocol.captured, id: accountID)
         let provider = makeProvider(accountID)
         await #expect(throws: OAuth2AuthorizationError.self) {
             _ = try await provider.authorizeEmbeddedActivity(authorization(state: "refused"), granted: false)
@@ -63,7 +62,7 @@ struct EmbeddedActivityContractTests {
 
     @Test func `a rejected Activity token leaves the account session running`() async throws {
         let token = UUID().uuidString
-        let recorder = ActivityRequestRecorder(authorization: "Bearer \(token)")
+        let recorder = RequestRecorder(ActivityURLProtocol.captured, id: "Bearer \(token)")
         let provider = makeProvider(UUID().uuidString)
         await #expect(throws: OAuth2AuthorizationError.self) {
             _ = try await provider.authenticateEmbeddedActivity(ApplicationID("880218394199220334")!, accessToken: token)
@@ -82,37 +81,10 @@ struct EmbeddedActivityContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ActivityURLProtocol.self]
         return DiscordRESTProvider(
-            credentials: ActivityCredentialStore(), handle: .init(accountID: accountID),
+            credentials: TestCredentialStore(token: accountID), handle: .init(accountID: accountID),
             session: URLSession(configuration: configuration)
         )
     }
-}
-
-private actor ActivityCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle { .init(accountID: accountID) }
-    func credential(for handle: CredentialHandle) async throws -> Data { Data(handle.accountID.utf8) }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
-}
-
-/// Collects the requests one test sends, told apart by their Authorization header.
-private final class ActivityRequestRecorder {
-    private final class Storage: Sendable { let requests = Mutex<[URLRequest]>([]) }
-    private let storage = Storage()
-    private var observer: (any NSObjectProtocol)?
-
-    init(authorization: String) {
-        let storage = storage
-        observer = NotificationCenter.default.addObserver(forName: ActivityURLProtocol.captured, object: nil, queue: nil) { notification in
-            guard let request = notification.object as? URLRequest,
-                  request.value(forHTTPHeaderField: "Authorization") == authorization else { return }
-            storage.requests.withLock { $0.append(request) }
-        }
-    }
-
-    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
-
-    var requests: [URLRequest] { storage.requests.withLock { $0 } }
 }
 
 private final class ActivityURLProtocol: URLProtocol, @unchecked Sendable {

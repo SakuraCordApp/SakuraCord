@@ -44,7 +44,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ForumPostDeletionURLProtocol.self]
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-delete"),
         session: URLSession(configuration: configuration)
     )
@@ -70,7 +70,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ForumThreadResolutionURLProtocol.self]
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-link"),
         session: URLSession(configuration: configuration)
     )
@@ -89,7 +89,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
 
 @Test func `thread create advances the forum parent last message boundary`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-thread-create")
     )
     let forum = Channel(
@@ -128,7 +128,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
 
 @Test func `thread list sync advances the forum parent last message boundary`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-thread-list-sync")
     )
     let forum = Channel(
@@ -234,7 +234,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
 
 @Test func `joined thread snapshot preserves gateway source order`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-joined-thread-order")
     )
     await provider.receiveGatewayDispatchForTesting(
@@ -271,7 +271,7 @@ func `attachment content types match the desktop client`(pathExtension: String, 
 /// then THREAD_MEMBER_UPDATE carrying the join timestamp the sidebar orders by.
 @Test func `created thread joins on the following member update`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "joined-thread-create")
     )
     await provider.receiveGatewayDispatchForTesting(
@@ -319,7 +319,7 @@ struct ThreadCreationContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ForumPostCreationURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ForumPostDeletionCredentialStore(),
+            credentials: TestCredentialStore(),
             handle: CredentialHandle(accountID: "forum-create"),
             session: URLSession(configuration: configuration)
         )
@@ -378,7 +378,7 @@ struct ThreadCreationContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ForumPostCreationURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ForumPostDeletionCredentialStore(),
+            credentials: TestCredentialStore(),
             handle: CredentialHandle(accountID: "thread-create"),
             session: URLSession(configuration: configuration)
         )
@@ -750,7 +750,7 @@ private func retentionPost(
 /// without `channel_ids` or members. Every official thread store only merges it.
 @Test func `thread list sync adds threads without evicting omitted posts or memberships`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-thread-retention")
     )
     let forum = Channel(
@@ -818,7 +818,7 @@ private func retentionReadyPayload() -> JSONValue {
 
 @Test func `fresh ready retains public REST known posts while their parent is listed`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-ready-retention")
     )
     await provider.seedForumChannelForTesting(
@@ -855,7 +855,7 @@ func `a delayed thread lookup cannot override newer gateway evidence`(event: Str
         ThreadLookupFixture.Answer(includesMember: index == 0, isGated: index == 0)
     }
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-lookup-\(event)"),
         session: URLSession(configuration: fixture.configuration)
     )
@@ -930,7 +930,7 @@ func `a delayed thread lookup cannot override newer gateway evidence`(event: Str
         ThreadLookupFixture.Answer(status: index == 0 ? 404 : 200)
     }
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-access-retry"),
         session: URLSession(configuration: fixture.configuration)
     )
@@ -1137,7 +1137,7 @@ private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
 
 @Test func `superseded forum catalogue refreshes leave only the latest query active`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-refresh-cancellation"),
         session: .shared
     )
@@ -1173,7 +1173,7 @@ private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
 
 @Test func `switching forums cancels the previous catalogue refresh`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-switch-cancellation"),
         session: .shared
     )
@@ -1223,7 +1223,7 @@ private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
 
 @Test func `new incoming forum replies mark only the affected post unread`() async throws {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-unread"),
         session: .shared
     )
@@ -1301,7 +1301,7 @@ private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
 
 @Test func `forum preview messages enter the shared reaction message cache`() async {
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "forum-preview-cache"),
         session: .shared
     )
@@ -1332,22 +1332,6 @@ private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
 
     #expect(await provider.cachedMessageForTesting(messageID: message.id) == message)
     await provider.disconnect()
-}
-
-private actor ForumPostDeletionCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("forum-delete-test-session".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "forum-delete")]
-    }
 }
 
 private final class ForumPostDeletionURLProtocol: URLProtocol, @unchecked Sendable {
@@ -1561,7 +1545,7 @@ private final class ForumPostCreationURLProtocol: URLProtocol, @unchecked Sendab
     #expect(try record.forumPost(fallbackGuildID: nil).mostRecentMessage?.content == "Guild record")
 
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "thread-card"),
         session: URLSession(configuration: .ephemeral)
     )
@@ -1611,7 +1595,7 @@ private final class ForumPostCreationURLProtocol: URLProtocol, @unchecked Sendab
 
 @Test(arguments: [false, true])
 func `deleted messages cannot return through cached thread previews`(bulk: Bool) async throws {
-    let provider = DiscordRESTProvider(credentials: ForumPostDeletionCredentialStore(), handle: CredentialHandle(accountID: "deleted-thread-preview"))
+    let provider = DiscordRESTProvider(credentials: TestCredentialStore(), handle: CredentialHandle(accountID: "deleted-thread-preview"))
     let parent = Channel(id: ChannelID(rawValue: 7), guildID: GuildID(rawValue: 1), name: "parent", kind: .text)
     let thread = MessageThreadSummary(id: ChannelID(rawValue: 200), parentID: parent.id, name: "thread")
     let author = User(id: UserID(rawValue: 1), username: "author", displayName: "Author")
@@ -1639,7 +1623,7 @@ func `deleted messages cannot return through cached thread previews`(bulk: Bool)
         ])])
     ]))
     let provider = DiscordRESTProvider(
-        credentials: ForumPostDeletionCredentialStore(),
+        credentials: TestCredentialStore(),
         handle: CredentialHandle(accountID: "thread-members")
     )
     let guildID = GuildID(rawValue: 1)
