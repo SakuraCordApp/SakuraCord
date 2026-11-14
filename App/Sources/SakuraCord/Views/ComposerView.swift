@@ -61,7 +61,6 @@ struct ComposerView: View {
     var body: some View {
         @Bindable var model = model
         let appearance = model.appearanceSettings.composerBarAppearance
-        let accessoryButtonSize = appearance.accessoryButtonSize
         let chrome = ComposerChromeLayout(
             appearance: appearance,
             focus: { isFocused = true },
@@ -263,53 +262,23 @@ struct ComposerView: View {
                             switch icon {
                             case .gif:
                                 if model.supportedCapabilities.contains(.gifs), !isCreatingThread {
-                                    ComposerIconView(icon: .gif, appearance: appearance) {
-                                        toggleGIFPicker()
-                                    }
-                                    .fixedSize()
-                                    .background {
-                                        StableReactionPickerPresenter(
-                                            isPresented: $showGIFPicker,
-                                            preferredEdge: .maxY,
-                                            accessibilityIdentifier: "composer-gif-picker"
-                                        ) {
-                                            composerGIFPicker
-                                        }
-                                        .frame(width: accessoryButtonSize, height: accessoryButtonSize)
-                                    }
+                                    pickerIcon(
+                                        .gif, appearance: appearance, isPresented: $showGIFPicker,
+                                        identifier: "composer-gif-picker", toggle: toggleGIFPicker
+                                    ) { composerGIFPicker }
                                 }
                             case .sticker:
                                 if model.supportedCapabilities.contains(.stickers), !isCreatingThread {
-                                    ComposerIconView(icon: .sticker, appearance: appearance) {
-                                        toggleStickerPicker()
-                                    }
-                                    .fixedSize()
-                                    .background {
-                                        StableReactionPickerPresenter(
-                                            isPresented: $showStickerPicker,
-                                            preferredEdge: .maxY,
-                                            accessibilityIdentifier: "composer-sticker-picker"
-                                        ) {
-                                            composerStickerPicker
-                                        }
-                                        .frame(width: accessoryButtonSize, height: accessoryButtonSize)
-                                    }
+                                    pickerIcon(
+                                        .sticker, appearance: appearance, isPresented: $showStickerPicker,
+                                        identifier: "composer-sticker-picker", toggle: toggleStickerPicker
+                                    ) { composerStickerPicker }
                                 }
                             case .emoji:
-                                ComposerIconView(icon: .emoji, appearance: appearance) {
-                                    toggleEmojiPicker()
-                                }
-                                .fixedSize()
-                                .background {
-                                    StableReactionPickerPresenter(
-                                        isPresented: $showEmojiPicker,
-                                        preferredEdge: .maxY,
-                                        accessibilityIdentifier: "composer-emoji-picker"
-                                    ) {
-                                        composerEmojiPicker
-                                    }
-                                    .frame(width: accessoryButtonSize, height: accessoryButtonSize)
-                                }
+                                pickerIcon(
+                                    .emoji, appearance: appearance, isPresented: $showEmojiPicker,
+                                    identifier: "composer-emoji-picker", toggle: toggleEmojiPicker
+                                ) { composerEmojiPicker }
                             }
                         }
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -1698,6 +1667,28 @@ struct ComposerActionLabelStyle: LabelStyle {
 }
 
 private extension ComposerView {
+    /// An accessory icon that toggles its picker, which opens above it.
+    func pickerIcon(
+        _ icon: ComposerIcon,
+        appearance: ComposerBarAppearance,
+        isPresented: Binding<Bool>,
+        identifier: String,
+        toggle: @escaping () -> Void,
+        @ViewBuilder picker: @escaping () -> some View
+    ) -> some View {
+        ComposerIconView(icon: icon, appearance: appearance, action: toggle)
+            .fixedSize()
+            .background {
+                StableReactionPickerPresenter(
+                    isPresented: isPresented,
+                    preferredEdge: .maxY,
+                    accessibilityIdentifier: identifier,
+                    content: picker
+                )
+                .frame(width: appearance.accessoryButtonSize, height: appearance.accessoryButtonSize)
+            }
+    }
+
     /// A pane reused from the pool left the window still marked focused, so
     /// focusing it again would change nothing.
     func clearFocusOfReusedPane() async {
