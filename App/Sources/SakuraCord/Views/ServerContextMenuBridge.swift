@@ -3,20 +3,10 @@ import SakuraCordModels
 import SwiftUI
 
 struct ServerContextMenuBridge: NSViewRepresentable {
-    let isUnread: Bool
+    let guild: Guild
     let isMutationPending: Bool
     let notificationSettings: GuildNotificationSettings
-    let markRead: () -> Void
-    var canInvite: () -> Bool = { false }
-    var invite: () -> Void = {}
-    let mute: (ChannelMuteDuration) -> Void
-    let unmute: () -> Void
-    let setNotificationLevel: (MessageNotificationLevel) -> Void
-    let setNotificationToggle: (GuildNotificationToggle, Bool) -> Void
-    let copyServerID: () -> Void
-    var leaveServer: (() -> Void)?
-    var showsAllChannels: () -> Bool? = { nil }
-    var setShowsAllChannels: (Bool) -> Void = { _ in }
+    let actions: ServerRailContextMenuActions
 
     func makeCoordinator() -> Coordinator {
         Coordinator(from: self)
@@ -52,14 +42,16 @@ struct ServerContextMenuBridge: NSViewRepresentable {
         func makeMenu() -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
+            let guild = bridge.guild
+            let actions = bridge.actions
             let canMutate = !bridge.isMutationPending
             menu.addItem(
-                ContextMenuItemSupport.item("Mark as Read", systemImage: "envelope.open.fill", isEnabled: bridge.isUnread && canMutate) {
-                    self.bridge.markRead()
+                ContextMenuItemSupport.item("Mark as Read", systemImage: "envelope.open.fill", isEnabled: guild.unreadCount > 0 && canMutate) {
+                    self.bridge.actions.markRead(self.bridge.guild.id)
                 }
             )
             menu.addItem(.separator())
-            menu.addItem(ContextMenuItemSupport.item("Invite to Server", systemImage: "person.badge.plus.fill", isEnabled: bridge.canInvite()) { self.bridge.invite() })
+            menu.addItem(ContextMenuItemSupport.item("Invite to Server", systemImage: "person.badge.plus.fill", isEnabled: actions.canInvite(guild)) { self.bridge.actions.invite(self.bridge.guild) })
             menu.addItem(.separator())
 
             let settings = bridge.notificationSettings
@@ -69,10 +61,10 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                         "Unmute Server",
                         until: settings.muteConfiguration?.endTime,
                         isEnabled: canMutate
-                    ) { self.bridge.unmute() }
+                    ) { self.bridge.actions.unmute(self.bridge.guild) }
                 )
             } else {
-                menu.addItem(NotificationMenuItems.mute("Mute Server", isEnabled: canMutate) { self.bridge.mute($0) })
+                menu.addItem(NotificationMenuItems.mute("Mute Server", isEnabled: canMutate) { self.bridge.actions.mute(self.bridge.guild, $0) })
             }
 
             menu.addItem(
@@ -84,27 +76,27 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             )
 
             let hideMutedItem = ContextMenuItemSupport.item("Hide Muted Channels", systemImage: "eye.slash.fill", isEnabled: canMutate) {
-                self.bridge.setNotificationToggle(.hideMutedChannels, !self.bridge.notificationSettings.hideMutedChannels)
+                self.bridge.actions.setNotificationToggle(self.bridge.guild, .hideMutedChannels, !self.bridge.notificationSettings.hideMutedChannels)
             }
             hideMutedItem.state = settings.hideMutedChannels ? .on : .off
             menu.addItem(hideMutedItem)
 
-            if let all = bridge.showsAllChannels() {
+            if let all = actions.showsAllChannels(guild) {
                 let allItem = ContextMenuItemSupport.item("Show All Channels", systemImage: "list.bullet") {
-                    guard let all = self.bridge.showsAllChannels() else { return }
-                    self.bridge.setShowsAllChannels(!all)
+                    guard let all = self.bridge.actions.showsAllChannels(self.bridge.guild) else { return }
+                    self.bridge.actions.setShowsAllChannels(self.bridge.guild, !all)
                 }
                 allItem.state = all ? .on : .off
                 menu.addItem(allItem)
             }
 
             menu.addItem(.separator())
-            menu.addItem(ContextMenuItemSupport.item("Copy Server ID", systemImage: "number.square.fill") { self.bridge.copyServerID() })
-            if bridge.leaveServer != nil {
+            menu.addItem(ContextMenuItemSupport.item("Copy Server ID", systemImage: "number.square.fill") { Pasteboard.copy(self.bridge.guild.id.description) })
+            if guild.isOwnedByCurrentUser == false, !guild.isUnavailable {
                 menu.addItem(.separator())
                 menu.addItem(
                     ContextMenuItemSupport.item("Leave Server", systemImage: "rectangle.portrait.and.arrow.right", isDestructive: true) {
-                        self.bridge.leaveServer?()
+                        self.bridge.actions.leaveServer(self.bridge.guild)
                     }
                 )
             }
@@ -121,7 +113,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 menu.addItem(
                     NotificationMenuItems.level(
                         level, title: level.menuTitle, selected: settings.messageNotifications, isEnabled: isEnabled
-                    ) { self.bridge.setNotificationLevel($0) }
+                    ) { self.bridge.actions.setNotificationLevel(self.bridge.guild, $0) }
                 )
             }
             menu.addItem(.separator())
@@ -130,7 +122,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                     menu.addItem(.separator())
                 }
                 let toggleItem = ContextMenuItemSupport.item(toggle.menuTitle, isEnabled: isEnabled) {
-                    self.bridge.setNotificationToggle(toggle, !self.bridge.notificationSettings.isEnabled(toggle))
+                    self.bridge.actions.setNotificationToggle(self.bridge.guild, toggle, !self.bridge.notificationSettings.isEnabled(toggle))
                 }
                 toggleItem.state = settings.isEnabled(toggle) ? .on : .off
                 menu.addItem(toggleItem)

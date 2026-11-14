@@ -684,17 +684,17 @@ struct ServerRailMentionBadge: View {
 
 struct ServerRailContextMenuActions {
     let markRead: (GuildID) -> Void
-    var canInvite: (Guild) -> Bool = { _ in false }
-    var invite: (Guild) -> Void = { _ in }
+    let canInvite: (Guild) -> Bool
+    let invite: (Guild) -> Void
     let mute: (Guild, ChannelMuteDuration) -> Void
     let unmute: (Guild) -> Void
     let setNotificationLevel: (Guild, MessageNotificationLevel) -> Void
     let setNotificationToggle: (Guild, GuildNotificationToggle, Bool) -> Void
-    var leaveServer: (Guild) -> Void = { _ in }
-    var showsAllChannels: (Guild) -> Bool? = { _ in nil }
-    var setShowsAllChannels: (Guild, Bool) -> Void = { _, _ in }
-    var markFolderRead: ([GuildID]) -> Void = { _ in }
-    var openFolderSettings: (GuildFolder) -> Void = { _ in }
+    let leaveServer: (Guild) -> Void
+    let showsAllChannels: (Guild) -> Bool?
+    let setShowsAllChannels: (Guild, Bool) -> Void
+    let markFolderRead: ([GuildID]) -> Void
+    let openFolderSettings: (GuildFolder) -> Void
 }
 
 private struct ServerRailItemView: View {
@@ -809,32 +809,10 @@ struct GuildRailButton: View {
         .buttonStyle(ServerRailButtonStyle())
         .overlay {
             ServerContextMenuBridge(
-                isUnread: guild.unreadCount > 0,
-                isMutationPending:
-                    presentation.isNotificationMutationPending,
+                guild: guild,
+                isMutationPending: presentation.isNotificationMutationPending,
                 notificationSettings: presentation.notificationSettings,
-                markRead: { contextMenuActions.markRead(guild.id) },
-                canInvite: { contextMenuActions.canInvite(guild) },
-                invite: { contextMenuActions.invite(guild) },
-                mute: { contextMenuActions.mute(guild, $0) },
-                unmute: { contextMenuActions.unmute(guild) },
-                setNotificationLevel: {
-                    contextMenuActions.setNotificationLevel(guild, $0)
-                },
-                setNotificationToggle: { toggle, isEnabled in
-                    contextMenuActions.setNotificationToggle(
-                        guild,
-                        toggle,
-                        isEnabled
-                    )
-                },
-                copyServerID: {
-                    Pasteboard.copy(guild.id.description)
-                },
-                leaveServer: guild.isOwnedByCurrentUser == false && !guild.isUnavailable
-                    ? { contextMenuActions.leaveServer(guild) } : nil,
-                showsAllChannels: { contextMenuActions.showsAllChannels(guild) },
-                setShowsAllChannels: { contextMenuActions.setShowsAllChannels(guild, $0) }
+                actions: contextMenuActions
             )
         }
         .accessibilityLabel(displayName)
