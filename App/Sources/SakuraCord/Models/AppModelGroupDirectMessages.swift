@@ -91,10 +91,10 @@ extension AppModel {
         _ channel: Channel, verb: String, request: @escaping @MainActor (any ChatProvider) async throws -> Void
     ) {
         let store = groupDirectMessageLeave
-        guard !accountTransitionIsActive, store.leaving.insert(channel.id).inserted else { return }
+        guard !accountTransitionIsActive, store.exitingChannelIDs.insert(channel.id).inserted else { return }
         startAccountChildTask(account: accountSession(allowsTransition: true)) { model, session in
             defer {
-                if model.isCurrentAccountSession(session) { store.leaving.remove(channel.id) }
+                if model.isCurrentAccountSession(session) { store.exitingChannelIDs.remove(channel.id) }
             }
             guard !model.accountTransitionIsActive else { return }
             do {

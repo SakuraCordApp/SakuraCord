@@ -704,7 +704,7 @@ private actor ProfileEditorCacheProvider: ChatProvider {
     #expect(selected != groupID)
     #expect(model.snapshot?.channels.contains { $0.id == selected && $0.guildID == nil } == true)
     #expect(model.errorMessage == nil)
-    #expect(store.leaving.isEmpty)
+    #expect(store.exitingChannelIDs.isEmpty)
 }
 
 @MainActor

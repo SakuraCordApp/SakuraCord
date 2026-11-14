@@ -309,7 +309,7 @@ extension AppModel {
         store.session = session
         if channel.kind == .voice, activeVoiceChannel?.id != channel.id {
             await joinVoice(channel)
-            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            guard isCurrentLaunch(session, account: account) else { return }
             guard activeVoiceChannel?.id == channel.id else {
                 store.endSession()
                 return
@@ -317,7 +317,7 @@ extension AppModel {
         }
         // A rejoin must not race the leave Discord has not yet seen.
         for leave in store.pendingLeaves.values { await leave.value }
-        guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+        guard isCurrentLaunch(session, account: account) else { return }
         store.forgetFailedLeaves(of: application.id, in: channel.id)
         // Like Discord's client, an instance of the Activity already running
         // in the channel is joined rather than started again.
@@ -342,7 +342,7 @@ extension AppModel {
             try await launch.value
         } catch {
             // The instance update can arrive before a lost launch response.
-            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID,
+            guard isCurrentLaunch(session, account: account),
                   store.session?.instance == nil else { return }
             // The person declined to install the application.
             if error is CancellationError {
@@ -352,7 +352,7 @@ extension AppModel {
             store.session?.phase = .failed(error.localizedDescription)
             return
         }
-        guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+        guard isCurrentLaunch(session, account: account) else { return }
         if let instance = store.instances.values.first(where: { isOwnInstance($0, application: application.id, location: location) }) {
             consumeEmbeddedActivity(instance)
         }
@@ -363,6 +363,12 @@ extension AppModel {
             else { return }
             store?.session?.phase = .failed("\(application.name) did not start. Try again.")
         }
+    }
+
+    /// Whether `session` is still the launch in progress for the account
+    /// that started it.
+    private func isCurrentLaunch(_ session: EmbeddedActivityStore.Session, account: AppModelAccountSession) -> Bool {
+        isCurrentAccountSession(account) && embeddedActivities.session?.launchID == session.launchID
     }
 
     /// Discord opens a contextless Activity on its own rather than in the
@@ -380,7 +386,7 @@ extension AppModel {
         store.session = session
         do {
             let ticket = try await account.provider.embeddedActivityProxyTicket(application.id, channelID: nil)
-            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            guard isCurrentLaunch(session, account: account) else { return }
             // The channel only places the Activity and names where its grant is asked.
             let frame = EmbeddedActivityInstance(
                 applicationID: application.id, instanceID: "", compositeInstanceID: "example-cl-instance",
@@ -394,7 +400,7 @@ extension AppModel {
             // Recents count each Activity opened; a failed save only loses that count.
             try? await account.provider.recordEmbeddedActivityLaunch(application.id)
         } catch {
-            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            guard isCurrentLaunch(session, account: account) else { return }
             store.session?.phase = .failed(error.localizedDescription)
         }
     }
