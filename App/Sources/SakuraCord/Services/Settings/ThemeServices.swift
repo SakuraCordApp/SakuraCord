@@ -196,6 +196,23 @@ nonisolated struct SakuraCordThemeRGB: Hashable, Sendable {
         return Self(oklab: source + (target.oklab - source) * fraction)
     }
 
+    /// The colour `lightness` CIELAB L* steps brighter, keeping its a* and b*.
+    func cielabBrightened(by lightness: Double) -> Self {
+        func labTransform(_ value: Double) -> Double { value > 0.008856 ? pow(value, 1 / 3.0) : 7.787 * value + 16 / 116.0 }
+        func inverse(_ value: Double) -> Double { pow(value, 3) > 0.008856 ? pow(value, 3) : (value - 16 / 116.0) / 7.787 }
+        let linearRed = Self.linear(red), linearGreen = Self.linear(green), linearBlue = Self.linear(blue)
+        let labX = labTransform((0.4124564 * linearRed + 0.3575761 * linearGreen + 0.1804375 * linearBlue) / 0.95047)
+        let labY = labTransform(0.2126729 * linearRed + 0.7151522 * linearGreen + 0.0721750 * linearBlue)
+        let labZ = labTransform((0.0193339 * linearRed + 0.1191920 * linearGreen + 0.9503041 * linearBlue) / 1.08883)
+        let newY = labY + lightness / 116
+        let xx = 0.95047 * inverse(labX + newY - labY), yy = inverse(newY), zz = 1.08883 * inverse(labZ + newY - labY)
+        return Self(
+            red: Self.encoded(3.2404542 * xx - 1.5371385 * yy - 0.4985314 * zz),
+            green: Self.encoded(-0.9692660 * xx + 1.8760108 * yy + 0.0415560 * zz),
+            blue: Self.encoded(0.0556434 * xx - 0.2040259 * yy + 1.0572252 * zz)
+        )
+    }
+
     private var oklab: SIMD3<Double> {
         let linear = SIMD3(Self.linear(red), Self.linear(green), Self.linear(blue))
         let roots = SIMD3(

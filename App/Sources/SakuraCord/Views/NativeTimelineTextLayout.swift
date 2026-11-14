@@ -471,7 +471,7 @@ nonisolated enum NativeTimelineCoreText {
                 paragraphFont = paragraphFont ?? font
                 lineHeight = max(
                     lineHeight,
-                    ceil(font.ascender - font.descender + font.leading)
+                    ceil(font.lineHeight)
                 )
             }
             if let existing, existing.maximumLineHeight > 0, existing.minimumLineHeight == existing.maximumLineHeight {

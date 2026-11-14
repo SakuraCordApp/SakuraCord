@@ -1,7 +1,7 @@
 import AppKit
 
-/// Discord's code and quote chrome, which the timeline, the composer and
-/// Markdown documents draw alike.
+/// Discord's code, quote and list-marker chrome, which the timeline, the
+/// composer and Markdown documents draw alike.
 enum MarkdownBlockChrome {
     /// Discord's code chrome, which inline code and code blocks share.
     static func drawCode(in rect: CGRect) {
@@ -18,6 +18,18 @@ enum MarkdownBlockChrome {
     static func drawQuoteBar(in bar: CGRect) {
         NSColor.tertiaryLabelColor.setFill()
         NSBezierPath(roundedRect: bar, xRadius: bar.width / 2, yRadius: bar.width / 2).fill()
+    }
+
+    /// Discord's list marker: a disc, or a 1 px ring once nested.
+    nonisolated static func drawListMarker(in disc: CGRect, color: NSColor, isHollow: Bool) {
+        color.set()
+        if isHollow {
+            let ring = NSBezierPath(ovalIn: disc.insetBy(dx: 0.5, dy: 0.5))
+            ring.lineWidth = 1
+            ring.stroke()
+        } else {
+            NSBezierPath(ovalIn: disc).fill()
+        }
     }
 
     /// Discord tints code with its blurple and outlines it in a translucent

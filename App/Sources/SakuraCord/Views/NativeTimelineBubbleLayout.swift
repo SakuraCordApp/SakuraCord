@@ -369,8 +369,7 @@ extension AppModel {
             : messagePresentationChannelsByID[message.channelID]
         return NativeTimelineBubbleLayout.Context(
             isEnabled: isEnabled,
-            isOutgoing: isEnabled
-                && message.author.id == currentUser?.id,
+            isOutgoing: message.author.id == currentUser?.id,
             showsAvatar: NativeTimelineBubbleLayout.showsAvatar(in: channel)
         )
     }

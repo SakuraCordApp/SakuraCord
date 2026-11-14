@@ -110,7 +110,7 @@ final class ForumCardCanvas {
                     text: $0.text,
                     font: $0.font as CTFont,
                     textColor: $0.textColor.cgColor,
-                    textLineHeight: ForumBoardMetrics.lineHeight(of: $0.font)
+                    textLineHeight: $0.font.lineHeight
                 )
             }
         )))

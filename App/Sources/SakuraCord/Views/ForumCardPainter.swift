@@ -441,7 +441,7 @@ enum ForumCardPainter {
             cursorX += size + InterfaceScale.metric(4)
         }
         let color: NSColor = style == .overMedia ? .white : .labelColor
-        let lineHeight = ForumBoardMetrics.lineHeight(of: fonts.semibold)
+        let lineHeight = fonts.semibold.lineHeight
         canvas.text(
             text,
             in: CGRect(x: cursorX, y: frame.midY - lineHeight / 2, width: max(0, frame.maxX - padding - cursorX), height: lineHeight),
@@ -649,7 +649,7 @@ enum ForumCardPainter {
         on canvas: ForumCardCanvas
     ) {
         let size = InterfaceScale.metric(isCompact ? 22 : 30)
-        let lineHeight = ForumBoardMetrics.lineHeight(of: fonts.regular)
+        let lineHeight = fonts.regular.lineHeight
         let total = size + InterfaceScale.metric(7) + lineHeight * 2
         let top = frame.midY - total / 2
         canvas.symbol(
@@ -679,7 +679,7 @@ enum ForumCardPainter {
             drawStatusIcon(symbol, at: CGPoint(x: trailing, y: frame.midY), size: iconSize, on: canvas)
             trailing -= InterfaceScale.metric(6)
         }
-        let lineHeight = ForumBoardMetrics.lineHeight(of: fonts.regular)
+        let lineHeight = fonts.regular.lineHeight
         let textY = frame.midY - lineHeight / 2
         var cursorX = frame.minX
         let posted = presentation.relativeTimeText(isGallery: true)
@@ -695,7 +695,7 @@ enum ForumCardPainter {
                 cursorX += dotSize + InterfaceScale.metric(4)
             }
             let nameWidth = min(available, ceil(NativeTimelineRowLayout.measuredTextWidth(author.name, font: font)) + 1)
-            let nameHeight = ForumBoardMetrics.lineHeight(of: font)
+            let nameHeight = font.lineHeight
             canvas.text(
                 author.name,
                 in: CGRect(x: cursorX, y: frame.midY - nameHeight / 2, width: nameWidth, height: nameHeight),
@@ -767,7 +767,7 @@ enum ForumCardPainter {
             }
         }
         if let frame = regions.countFrame {
-            let lineHeight = ForumBoardMetrics.lineHeight(of: fonts.regular)
+            let lineHeight = fonts.regular.lineHeight
             let iconSize = InterfaceScale.metric(13)
             canvas.symbol(
                 "bubble.left.fill",
@@ -794,7 +794,7 @@ enum ForumCardPainter {
             }
         }
         if let frame = regions.footerSeparatorFrame {
-            let lineHeight = ForumBoardMetrics.lineHeight(of: fonts.regular)
+            let lineHeight = fonts.regular.lineHeight
             canvas.text(
                 bullet,
                 in: CGRect(x: frame.minX, y: frame.midY - lineHeight / 2, width: frame.width, height: lineHeight),
@@ -805,7 +805,7 @@ enum ForumCardPainter {
             )
         }
         if let frame = regions.timestampFrame {
-            let lineHeight = ForumBoardMetrics.lineHeight(of: fonts.regular)
+            let lineHeight = fonts.regular.lineHeight
             canvas.text(
                 presentation.relativeTimeText(isGallery: false),
                 in: CGRect(x: frame.minX, y: frame.midY - lineHeight / 2, width: frame.width, height: lineHeight),
@@ -819,7 +819,7 @@ enum ForumCardPainter {
 
     static func drawSectionHeader(_ title: String, in frame: CGRect, on canvas: ForumCardCanvas) {
         let font = NSFont.interfaceSystemFont(ofSize: 11, weight: .bold)
-        let lineHeight = ForumBoardMetrics.lineHeight(of: font)
+        let lineHeight = font.lineHeight
         canvas.text(
             title.uppercased(),
             in: CGRect(x: frame.minX + InterfaceScale.metric(2), y: frame.maxY - lineHeight - InterfaceScale.metric(4), width: frame.width, height: lineHeight),
@@ -847,8 +847,8 @@ enum ForumCardPainter {
         let retry = paginationRetryFrame(in: frame)
         let textX = frame.minX + InterfaceScale.metric(12) + iconSize + InterfaceScale.metric(10)
         let titleFont = NSFont.interfaceSystemFont(ofSize: 13, weight: .semibold)
-        let titleHeight = ForumBoardMetrics.lineHeight(of: titleFont)
-        let detailHeight = ForumBoardMetrics.lineHeight(of: fonts.regular)
+        let titleHeight = titleFont.lineHeight
+        let detailHeight = fonts.regular.lineHeight
         let top = frame.midY - (titleHeight + detailHeight) / 2
         canvas.text(
             "Couldn’t load more posts",
@@ -863,7 +863,7 @@ enum ForumCardPainter {
             color: .secondaryLabelColor
         )
         canvas.fill(retry, cornerRadius: retry.height / 2, color: NSColor.labelColor.withAlphaComponent(isRetryHovered ? 0.16 : 0.1))
-        let lineHeight = ForumBoardMetrics.lineHeight(of: fonts.retry)
+        let lineHeight = fonts.retry.lineHeight
         canvas.text(
             "Try Again",
             in: CGRect(x: retry.minX, y: retry.midY - lineHeight / 2, width: retry.width, height: lineHeight),

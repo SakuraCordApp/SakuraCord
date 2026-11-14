@@ -67,11 +67,6 @@ enum SelectionFieldRenderer {
         )
     }
 
-    /// SwiftUI centres a text line by its line box, not the font's glyph bounds.
-    static func lineHeight(of font: NSFont) -> CGFloat {
-        ceil(font.ascender - font.descender + font.leading)
-    }
-
     static func drawText(
         _ value: String,
         in frame: CGRect,
@@ -80,7 +75,8 @@ enum SelectionFieldRenderer {
     ) {
         guard !value.isEmpty else { return }
         let font = SelectionFieldLayoutMetrics.placeholderFont
-        let lineHeight = lineHeight(of: font)
+        // SwiftUI centres a text line by its line box, not the font's glyph bounds.
+        let lineHeight = ceil(font.lineHeight)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         (value as NSString).draw(
@@ -183,7 +179,7 @@ enum SelectionFieldRenderer {
                 )
                 contentX = rect.maxX + 8
             }
-            let textHeight = lineHeight(of: labelFont)
+            let textHeight = ceil(labelFont.lineHeight)
             let textY = ((height - textHeight) / 2).rounded()
             let paragraph = NSMutableParagraphStyle()
             paragraph.lineBreakMode = .byTruncatingTail

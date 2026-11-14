@@ -363,15 +363,9 @@ struct MarkdownBlockLayout {
         let isHollow = depth > 1
         let attachment = NSTextAttachment()
         attachment.image = NSImage(size: size, flipped: false) { _ in
-            let disc = NSRect(x: 0, y: 0, width: diameter, height: diameter)
-            color.set()
-            if isHollow {
-                let ring = NSBezierPath(ovalIn: disc.insetBy(dx: 0.5, dy: 0.5))
-                ring.lineWidth = 1
-                ring.stroke()
-            } else {
-                NSBezierPath(ovalIn: disc).fill()
-            }
+            MarkdownBlockChrome.drawListMarker(
+                in: NSRect(x: 0, y: 0, width: diameter, height: diameter), color: color, isHollow: isHollow
+            )
             return true
         }
         attachment.bounds = CGRect(origin: CGPoint(x: 0, y: (MarkdownInlineStyle.font(for: .paragraph).xHeight - diameter) / 2), size: size)

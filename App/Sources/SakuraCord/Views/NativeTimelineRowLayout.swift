@@ -443,13 +443,8 @@ struct NativeTimelineBeginningLayout {
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: font]
         )
-        let intrinsicLineHeight = ceil(
-            font.ascender - font.descender + font.leading
-        )
-        let measuredLineHeight = max(
-            1,
-            font.ascender - font.descender + font.leading
-        )
+        let intrinsicLineHeight = ceil(font.lineHeight)
+        let measuredLineHeight = max(1, font.lineHeight)
         let lineCount = max(
             1,
             Int(ceil(bounds.height / measuredLineHeight))

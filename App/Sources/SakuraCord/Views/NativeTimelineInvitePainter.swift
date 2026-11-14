@@ -137,7 +137,7 @@ extension NativeTimelineRowPainter {
     static func inviteGradient(_ hex: UInt32, in frame: CGRect, context: CGContext? = nil) {
         guard let context = context ?? NSGraphicsContext.current?.cgContext, frame.height > 0 else { return }
         let base = NSColor(hex: hex)
-        let bright = inviteBrightColor(base)
+        let bright = NSColor(SakuraCordThemeRGB(base).cielabBrightened(by: 31.5))
         guard let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
                                         colors: [bright.cgColor, base.cgColor] as CFArray, locations: [0.2065, 0.8516]) else { return }
         context.saveGState()
@@ -147,21 +147,5 @@ extension NativeTimelineRowPainter {
         context.drawRadialGradient(gradient, startCenter: .zero, startRadius: 0,
                                    endCenter: .zero, endRadius: 1, options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
         context.restoreGState()
-    }
-
-    private static func inviteBrightColor(_ color: NSColor) -> NSColor {
-        func linear(_ value: CGFloat) -> CGFloat { value > 0.04045 ? pow((value + 0.055) / 1.055, 2.4) : value / 12.92 }
-        func labTransform(_ value: CGFloat) -> CGFloat { value > 0.008856 ? pow(value, 1 / 3.0) : 7.787 * value + 16 / 116.0 }
-        func inverse(_ value: CGFloat) -> CGFloat { pow(value, 3) > 0.008856 ? pow(value, 3) : (value - 16 / 116.0) / 7.787 }
-        func gamma(_ value: CGFloat) -> CGFloat { min(1, max(0, value <= 0.0031308 ? 12.92 * value : 1.055 * pow(value, 1 / 2.4) - 0.055)) }
-        let red = linear(color.redComponent), green = linear(color.greenComponent), blue = linear(color.blueComponent)
-        let labX = labTransform((0.4124564 * red + 0.3575761 * green + 0.1804375 * blue) / 0.95047)
-        let labY = labTransform(0.2126729 * red + 0.7151522 * green + 0.0721750 * blue)
-        let labZ = labTransform((0.0193339 * red + 0.1191920 * green + 0.9503041 * blue) / 1.08883)
-        let newY = labY + 31.5 / 116
-        let xx = 0.95047 * inverse(labX + newY - labY), yy = inverse(newY), zz = 1.08883 * inverse(labZ + newY - labY)
-        return NSColor(srgbRed: gamma(3.2404542 * xx - 1.5371385 * yy - 0.4985314 * zz),
-                       green: gamma(-0.9692660 * xx + 1.8760108 * yy + 0.0415560 * zz),
-                       blue: gamma(0.0556434 * xx - 0.2040259 * yy + 1.0572252 * zz), alpha: 1)
     }
 }

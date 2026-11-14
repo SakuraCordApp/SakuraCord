@@ -515,7 +515,6 @@ extension NativeTimelineRowPainter {
     /// starts one 16 px gutter after the marker, and hollows nested ones.
     private static func drawListMarkerDecorations(_ markers: [ListMarker]) {
         for marker in markers {
-            (marker.isQuoted ? NSColor.secondaryLabelColor : NSColor.labelColor).set()
             let diameter = 5.5 * marker.em
             let disc = CGRect(
                 x: marker.frame.minX + 4 * marker.em - diameter / 2,
@@ -523,13 +522,9 @@ extension NativeTimelineRowPainter {
                 width: diameter,
                 height: diameter
             )
-            if marker.isNested {
-                let ring = NSBezierPath(ovalIn: disc.insetBy(dx: 0.5, dy: 0.5))
-                ring.lineWidth = 1
-                ring.stroke()
-            } else {
-                NSBezierPath(ovalIn: disc).fill()
-            }
+            MarkdownBlockChrome.drawListMarker(
+                in: disc, color: marker.isQuoted ? .secondaryLabelColor : .labelColor, isHollow: marker.isNested
+            )
         }
     }
 

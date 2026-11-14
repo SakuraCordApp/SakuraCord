@@ -586,7 +586,7 @@ extension NativeTimelineRowLayout {
                 result.contentFrame = CGRect(x: contentX, y: verticalOffset, width: contentWidth, height: textHeight)
                 if message.flags.contains(.loading) {
                     let font = NSFont.interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize)
-                    let lineHeight = font.ascender - font.descender + font.leading
+                    let lineHeight = font.lineHeight
                     let dots = InteractionLoadingDots.size
                     result.activityIndicators.append(.init(
                         frame: CGRect(
@@ -678,10 +678,9 @@ extension NativeTimelineRowLayout {
 
         private mutating func appendAttachments() {
             if !usesComponentsV2, (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) {
-                let voiceY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                 if let region = NativeTimelineVoiceMessageRegion.make(
                     message: message,
-                    origin: CGPoint(x: contentX, y: voiceY),
+                    origin: CGPoint(x: contentX, y: richContentY),
                     maximumWidth: inlineMediaMaximumWidth,
                     style: voiceMessageStyle
                 ) {
@@ -759,6 +758,11 @@ extension NativeTimelineRowLayout {
             }
         }
 
+        /// Where the next rich block starts: 8 points below any before it.
+        private var richContentY: CGFloat {
+            verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
+        }
+
         /// The surface voice messages and audio files draw on.
         private var voiceMessageStyle: NativeTimelineVoiceMessageRegion.Style {
             usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
@@ -796,7 +800,7 @@ extension NativeTimelineRowLayout {
 
         /// A server or Activity invite card, or the card of an Activity's launch message.
         private mutating func appendInviteCard(reference: ServerInviteReference?, preview: NativeServerCardContent?, index: Int) {
-            let origin = CGPoint(x: contentX, y: verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0))
+            let origin = CGPoint(x: contentX, y: richContentY)
             let activityCard = NativeTimelineInviteLayout.activityContent(reference: reference, preview: preview, source: source)
             var region = activityCard.flatMap { content in
                 content.activity.map {
@@ -823,14 +827,11 @@ extension NativeTimelineRowLayout {
                     appendInviteCard(reference: nil, preview: NativeServerCardContent(activityMessage: message),
                                      index: row.serverInvites.count)
                 }
-            }
-            if !usesComponentsV2 {
                 for (index, deepLink) in row.sakuraCordDeepLinks.enumerated() {
-                    let deepLinkY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                     var region = NativeTimelineSakuraCordDeepLinkLayout.make(
                         deepLink,
                         componentIndex: index,
-                        origin: CGPoint(x: contentX, y: deepLinkY),
+                        origin: CGPoint(x: contentX, y: richContentY),
                         maximumWidth: inlineMediaMaximumWidth, integratesWithBubble: usesBubbles
                     )
                     region.drawsTopSeparator = drawsTopSeparator(at: region.frame)
@@ -838,13 +839,11 @@ extension NativeTimelineRowLayout {
                     verticalOffset = region.frame.maxY
                     hasRichContent = true
                 }
-            }
-            if !usesComponentsV2 {
                 let visibleEmbeds = MessageEmbedPresentation.visibleEmbeds(for: message)
                 result.embedRegions.reserveCapacity(visibleEmbeds.count)
                 for embeds in MessageEmbedPresentation.groupedEmbeds(visibleEmbeds) {
                     let embed = embeds[0]
-                    let embedY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
+                    let embedY = richContentY
                     if embed.type == "components" {
                         if let region = NativeTimelineComponentLayout.make(
                             message: message,
@@ -878,11 +877,10 @@ extension NativeTimelineRowLayout {
             }
             result.embedFrames = result.embedRegions.map(\.frame)
 
-            let componentY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
             if let componentLayout = NativeTimelineComponentLayout.make(
                 message: message,
                 source: source,
-                origin: CGPoint(x: contentX, y: componentY),
+                origin: CGPoint(x: contentX, y: richContentY),
                 maximumWidth: componentsMaximumWidth,
                 integratesWithBubble: usesBubbles,
                 drawsTopSeparator: usesBubbles && hasRichContent
