@@ -396,10 +396,7 @@ extension NativeTimelineRowPainter {
         let hoveredTextLink = input.interaction.hoveredTextLink
         let textSpoilerHover = input.interaction.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
-        if let frame = layout.contentFrame,
-           let attributedContent = layout.attributedContent,
-           let contentFramesetter = layout.contentFramesetter
-        {
+        if let frame = layout.contentFrame, let contentText = layout.contentText {
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current?.cgContext.setAlpha(
                 CGFloat(
@@ -413,8 +410,7 @@ extension NativeTimelineRowPainter {
             let drawingFrame = NativeTimelineTextGeometry
                 .messageContentDrawingFrame(frame)
             attributedText(
-                attributedContent,
-                framesetter: contentFramesetter,
+                contentText,
                 in: drawingFrame,
                 model: model,
                 bubble: layout.bubbleRegion,

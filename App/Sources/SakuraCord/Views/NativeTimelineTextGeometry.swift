@@ -563,21 +563,6 @@ enum NativeTimelineTextHitTester {
         return result
     }
 
-    static func mentionAnchorFrame(
-        box: NativeTimelineAttributedTextBox,
-        frame: CGRect,
-        characterIndex: Int,
-        rawToken: String
-    ) -> CGRect? {
-        return mentionAnchorFrame(
-            value: box.value,
-            framesetter: box.framesetter,
-            frame: box.drawingFrame(frame),
-            characterIndex: characterIndex,
-            rawToken: rawToken
-        )
-    }
-
     static func rangeFrame(
         value: NSAttributedString,
         framesetter: CTFramesetter,

@@ -13,17 +13,16 @@ enum NativeTimelineTextPresentation {
     }
 
     struct Value {
-        let attributedContent: NSAttributedString?
-        let framesetter: CTFramesetter
+        let content: NativeTimelineAttributedTextBox?
         let linkedImages: [LinkedImageReference]
     }
 
     static func outgoingBubble(_ value: Value) -> Value {
-        guard let attributedContent = value.attributedContent else {
+        guard let content = value.content else {
             return value
         }
         let resolved = NSMutableAttributedString(
-            attributedString: attributedContent
+            attributedString: content.value
         )
         let range = NSRange(location: 0, length: resolved.length)
         let label = NSColor.sakuraCordLabelOnAccentColor
@@ -39,22 +38,20 @@ enum NativeTimelineTextPresentation {
             )
         }
         return Value(
-            attributedContent: resolved,
-            framesetter: CTFramesetterCreateWithAttributedString(resolved),
+            content: NativeTimelineAttributedTextBox(resolved),
             linkedImages: value.linkedImages
         )
     }
 
     /// Discord shows an unanswered interaction as red text behind an alert glyph.
     static func interactionFailure(_ value: Value) -> Value {
-        guard let attributedContent = value.attributedContent, attributedContent.length > 0 else { return value }
-        let resolved = NSMutableAttributedString(attributedString: attributedContent)
+        guard let content = value.content, content.value.length > 0 else { return value }
+        let resolved = NSMutableAttributedString(attributedString: content.value)
         let attributes = resolved.attributes(at: 0, effectiveRange: nil)
         resolved.insert(NSAttributedString(string: "⚠\u{FE0E} ", attributes: attributes), at: 0)
         resolved.addAttribute(.foregroundColor, value: NSColor.systemRed, range: NSRange(location: 0, length: resolved.length))
         return Value(
-            attributedContent: resolved,
-            framesetter: CTFramesetterCreateWithAttributedString(resolved),
+            content: NativeTimelineAttributedTextBox(resolved),
             linkedImages: value.linkedImages
         )
     }
@@ -70,23 +67,13 @@ enum NativeTimelineTextPresentation {
             .foregroundColor: NSColor.secondaryLabelColor,
             .paragraphStyle: paragraph,
         ])
-        return Value(
-            attributedContent: resolved,
-            framesetter: CTFramesetterCreateWithAttributedString(resolved),
-            linkedImages: []
-        )
+        return Value(content: NativeTimelineAttributedTextBox(resolved), linkedImages: [])
     }
 
     static var interactionLoadingTextIndent: CGFloat { InteractionLoadingDots.size.width + InterfaceScale.metric(4) }
 
     static func empty(linkedImages: [LinkedImageReference] = []) -> Value {
-        Value(
-            attributedContent: nil,
-            framesetter: CTFramesetterCreateWithAttributedString(
-                NSAttributedString()
-            ),
-            linkedImages: linkedImages
-        )
+        Value(content: nil, linkedImages: linkedImages)
     }
 
     static func make(
@@ -134,22 +121,14 @@ enum NativeTimelineTextPresentation {
         if let preparedBox = plan.attributedText,
            resolvedBaseFontSize == plan.baseFontSize
         {
-            return Value(
-                attributedContent: preparedBox.value,
-                framesetter: preparedBox.framesetter,
-                linkedImages: plan.linkedImages
-            )
+            return Value(content: preparedBox, linkedImages: plan.linkedImages)
         }
         // Preserve system-message styling and actions at every size, including bubbles.
         if message.type.hasGeneratedContent, let preparedBox = plan.attributedText {
             let scaled = preparedBox.value.scalingTypography(
                 by: resolvedBaseFontSize / plan.baseFontSize
             )
-            return Value(
-                attributedContent: scaled,
-                framesetter: CTFramesetterCreateWithAttributedString(scaled),
-                linkedImages: plan.linkedImages
-            )
+            return Value(content: NativeTimelineAttributedTextBox(scaled), linkedImages: plan.linkedImages)
         }
 
         guard let preparation = preparation(
@@ -161,12 +140,7 @@ enum NativeTimelineTextPresentation {
         ) else {
             return empty(linkedImages: plan.linkedImages)
         }
-        let box = resolvedBox(for: preparation)
-        return Value(
-            attributedContent: box.value,
-            framesetter: box.framesetter,
-            linkedImages: plan.linkedImages
-        )
+        return Value(content: resolvedBox(for: preparation), linkedImages: plan.linkedImages)
     }
 
     static func preparation(

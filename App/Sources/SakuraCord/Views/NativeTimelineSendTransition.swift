@@ -1444,14 +1444,13 @@ extension NativeTimelineCanvasView {
     /// coordinates, matching the painter's CoreText frame.
     private static func firstBaseline(of layout: NativeTimelineRowLayout) -> CGPoint? {
         guard let contentFrame = layout.contentFrame,
-              let attributedContent = layout.attributedContent,
-              attributedContent.length > 0,
-              let framesetter = layout.contentFramesetter
+              let contentText = layout.contentText,
+              contentText.value.length > 0
         else { return nil }
         let drawingFrame = NativeTimelineTextGeometry.messageContentDrawingFrame(contentFrame)
         let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: attributedContent.length),
+            contentText.framesetter,
+            CFRange(location: 0, length: contentText.value.length),
             CGPath(rect: CGRect(origin: .zero, size: drawingFrame.size), transform: nil),
             nil
         )

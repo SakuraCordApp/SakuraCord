@@ -225,55 +225,15 @@ extension NativeTimelineRowPainter {
         spoilerHoverProgress: [Int: CGFloat] = [:],
         revealedSpoilerLocations: Set<Int> = []
     ) {
-        attributedText(
-            box.value,
-            framesetter: box.framesetter,
-            in: box.drawingFrame(frame),
-            model: model,
-            bubble: bubble,
-            selectionRange: selectionRange,
-            hoveredMentionCharacterIndex:
-                hoveredMentionCharacterIndex,
-            hoveredLinkCharacterIndex:
-                hoveredLinkCharacterIndex,
-            spoilerHoverProgress:
-                spoilerHoverProgress,
-            revealedSpoilerLocations: revealedSpoilerLocations
-        )
-    }
-
-    static func attributedText(
-        _ value: NSAttributedString,
-        in frame: CGRect,
-        model: AppModel?
-    ) {
-        attributedText(
-            value,
-            framesetter: CTFramesetterCreateWithAttributedString(value),
-            in: frame,
-            model: model
-        )
-    }
-
-    static func attributedText(
-        _ value: NSAttributedString,
-        framesetter: CTFramesetter,
-        in frame: CGRect,
-        model: AppModel?,
-        bubble: NativeTimelineBubbleRegion? = nil,
-        selectionRange: NSRange? = nil,
-        hoveredMentionCharacterIndex: Int? = nil,
-        hoveredLinkCharacterIndex: Int? = nil,
-        spoilerHoverProgress: [Int: CGFloat] = [:],
-        revealedSpoilerLocations: Set<Int> = []
-    ) {
+        let value = box.value
+        let frame = box.drawingFrame(frame)
         guard frame.width > 0, frame.height > 0,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
         let isOutgoingBubble = bubble?.isOutgoing == true
         var (drawingValue, drawingFramesetter) = preparedDrawingText(
             value,
-            framesetter: framesetter,
+            framesetter: box.framesetter,
             hoveredLinkCharacterIndex: hoveredLinkCharacterIndex,
             underlinesLinks: model?.accessibilitySettings.underlinesLinks == true,
             revealedSpoilerLocations: revealedSpoilerLocations

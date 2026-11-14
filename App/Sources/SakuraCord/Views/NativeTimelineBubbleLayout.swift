@@ -63,12 +63,12 @@ enum NativeTimelineBubbleLayout {
         let minimumWidth: CGFloat = InterfaceScale.metric(28)
         let maximumWidth = maximumContentWidth(availableWidth: availableWidth)
         var preferredWidth = message.hasPoll ? min(InterfaceScale.metric(456), maximumWidth) : minimumWidth
-        if let attributedContent = content.attributedContent {
+        if let text = content.content {
             preferredWidth = max(
                 preferredWidth,
                 measuredTextWidth(
-                    content.framesetter,
-                    value: attributedContent,
+                    text.framesetter,
+                    value: text.value,
                     maximumWidth: maximumWidth
                 )
             )

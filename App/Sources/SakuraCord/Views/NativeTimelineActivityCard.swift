@@ -178,7 +178,7 @@ extension NativeTimelineRowPainter {
             systemSymbol("speaker.wave.2.fill", in: symbolFrame, color: secondary, inset: 0)
         }
         for label in card.labels {
-            attributedText(label.attributedText(color: label.secondary ? secondary : foreground), in: label.frame, model: nil)
+            attributedText(NativeTimelineAttributedTextBox(label.attributedText(color: label.secondary ? secondary : foreground)), in: label.frame, model: nil)
         }
         for avatar in card.playerAvatars.reversed() {
             // Each face is cut out of the card so the stack reads as separate circles.

@@ -101,10 +101,10 @@ extension NativeTimelineRowLayout {
             else { return nil }
             var extent = InterfaceScale.metric(28)
             // The message's own text, which an inline edit hides from the layout.
-            if let attributedContent = contentPresentation.attributedContent {
+            if let content = contentPresentation.content {
                 extent = max(extent, NativeTimelineBubbleLayout.measuredTextWidth(
-                    contentPresentation.framesetter,
-                    value: attributedContent,
+                    content.framesetter,
+                    value: content.value,
                     maximumWidth: contentWidth
                 ))
             }
@@ -574,14 +574,13 @@ extension NativeTimelineRowLayout {
             )
             if let editingTextHeight {
                 appendEditingText(height: editingTextHeight)
-            } else if let attributedContent = contentPresentation.attributedContent {
-                result.attributedContent = attributedContent
-                result.contentFramesetter = contentPresentation.framesetter
-                verticalOffset += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributedContent)
+            } else if let content = contentPresentation.content {
+                result.contentText = content
+                verticalOffset += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: content.value)
                 let textHeight = NativeTimelineRowLayout.measuredTextHeight(
-                    contentPresentation.framesetter,
-                    value: attributedContent,
-                    length: attributedContent.length,
+                    content.framesetter,
+                    value: content.value,
+                    length: content.value.length,
                     width: contentWidth
                 )
                 result.contentFrame = CGRect(x: contentX, y: verticalOffset, width: contentWidth, height: textHeight)
@@ -636,10 +635,10 @@ extension NativeTimelineRowLayout {
         private mutating func appendEditingText(height: CGFloat) {
             // The row follows the draft as it grows and shrinks. Until the
             // editor has measured it, the text keeps its own height.
-            let height = height > 0 ? height : contentPresentation.attributedContent.map { value in
-                NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: value)
+            let height = height > 0 ? height : contentPresentation.content.map { content in
+                NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: content.value)
                     + NativeTimelineRowLayout.measuredTextHeight(
-                        contentPresentation.framesetter, value: value, length: value.length, width: contentWidth
+                        content.framesetter, value: content.value, length: content.value.length, width: contentWidth
                     )
             } ?? 0
             result.contentFrame = CGRect(

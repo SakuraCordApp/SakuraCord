@@ -478,21 +478,19 @@ extension NativeTimelineCanvasView {
                 fillsFrame: fillsFrame
             )
         }
-        if let contentFrame = layout.contentFrame,
-           let attributedContent = layout.attributedContent,
-           let framesetter = layout.contentFramesetter {
+        if let contentFrame = layout.contentFrame, let contentText = layout.contentText {
             accumulator.appendInlineEmoji(
                 row: identifier,
                 role: { _, location in .messageEmoji(location) },
-                value: attributedContent,
-                framesetter: framesetter,
+                value: contentText.value,
+                framesetter: contentText.framesetter,
                 frame: NativeTimelineTextGeometry.messageContentDrawingFrame(contentFrame),
                 selectionRange: textSelection?.itemIdentifier == identifier
                     && textSelection?.region == .content ? textSelection?.range : nil,
                 revealedSpoilerLocations: revealedTextSpoilerLocations(
                     messageID: row.message.id,
                     region: .content,
-                    value: attributedContent,
+                    value: contentText.value,
                     layout: layout
                 )
             )

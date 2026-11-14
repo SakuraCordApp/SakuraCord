@@ -203,8 +203,7 @@ struct NativeTimelineRowLayout {
     var systemIconFrame: CGRect?
     var suppressedHeader: NativeTimelineSuppressedHeaderLayout?
     var contentFrame: CGRect?
-    var attributedContent: NSAttributedString?
-    var contentFramesetter: CTFramesetter?
+    var contentText: NativeTimelineAttributedTextBox?
     var forwardedHeaderFrame: CGRect?
     var forwardedBarFrame: CGRect?
     var forwardedSourceRegion: ForwardedSourceRegion?

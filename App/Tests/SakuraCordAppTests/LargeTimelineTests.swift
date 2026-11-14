@@ -2364,7 +2364,7 @@ func `native timeline does not auto load third party linked images`() throws {
     #expect(presentation.images.isEmpty)
     #expect(presentation.visibleText == content)
     #expect(layout.linkedImageRegions.isEmpty)
-    #expect(layout.attributedContent?.string.contains("invoice") == true)
+    #expect(layout.contentText?.value.string.contains("invoice") == true)
 }
 
 @MainActor @Test
@@ -2397,9 +2397,9 @@ func `timeline mention text prewarms off main without changing its resolved pres
         source: nil
     )
 
-    #expect(presentation.attributedContent === prewarmed.value)
+    #expect(presentation.content?.value === prewarmed.value)
     let mention = try #require(
-        presentation.attributedContent?.attribute(
+        presentation.content?.value.attribute(
             .nativeTimelineMention,
             at: 6,
             effectiveRange: nil

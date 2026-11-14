@@ -131,26 +131,22 @@ extension NativeTimelineCanvasView {
             }
             return result
         }
-        if let frame = layout.contentFrame,
-           let value = layout.attributedContent,
-           let framesetter = layout.contentFramesetter
-        {
+        if let frame = layout.contentFrame, let text = layout.contentText {
             result.append(SelectableTextRegion(
                 region: .content,
                 frame: NativeTimelineTextGeometry
                     .messageContentDrawingFrame(frame),
                 interactionFrame: frame,
-                value: value,
-                framesetter: framesetter
+                value: text.value,
+                framesetter: text.framesetter
             ))
         }
         if let translation = layout.translationRegion,
-           let frame = translation.textFrame, let value = translation.attributedText,
-           let framesetter = translation.framesetter {
+           let frame = translation.textFrame, let text = translation.text {
             result.append(SelectableTextRegion(
                 region: translation.regionID,
                 frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame),
-                interactionFrame: frame, value: value, framesetter: framesetter
+                interactionFrame: frame, value: text.value, framesetter: text.framesetter
             ))
         }
         for embed in layout.embedRegions {

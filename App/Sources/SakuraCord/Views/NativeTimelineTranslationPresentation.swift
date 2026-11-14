@@ -58,7 +58,7 @@ struct NativeTimelineTranslationPresentation {
             captionWidth += 8 + NativeTimelineRowLayout.measuredTextWidth("•", font: font)
                 + NativeTimelineRowLayout.measuredTextWidth(actionTitle, font: font)
         }
-        guard let attributed = text?.attributedContent, attributed.length > 0 else {
+        guard let attributed = text?.content?.value, attributed.length > 0 else {
             return min(maximumWidth, captionWidth)
         }
         let line = CTLineCreateWithAttributedString(attributed)
@@ -81,8 +81,7 @@ extension NativeTimelineRowLayout {
         let actionTitle: String?
         let actionFrame: CGRect?
         let textFrame: CGRect?
-        let attributedText: NSAttributedString?
-        let framesetter: CTFramesetter?
+        let text: NativeTimelineAttributedTextBox?
     }
 
     static var translationCaptionFont: NSFont {
@@ -117,9 +116,9 @@ extension NativeTimelineRowLayout {
         }
         var textFrame: CGRect?
         var bottom = origin.y + InterfaceScale.metric(15)
-        if let attributed = presentation.text?.attributedContent, let framesetter = presentation.text?.framesetter {
-            let height = measuredTextHeight(framesetter, value: attributed, length: attributed.length, width: width)
-            bottom += 2 + NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributed)
+        if let text = presentation.text?.content {
+            let height = measuredTextHeight(text.framesetter, value: text.value, length: text.value.length, width: width)
+            bottom += 2 + NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: text.value)
             textFrame = CGRect(x: origin.x, y: bottom, width: width, height: height)
             bottom += height
         }
@@ -136,8 +135,7 @@ extension NativeTimelineRowLayout {
             actionTitle: presentation.actionTitle,
             actionFrame: actionFrame,
             textFrame: textFrame,
-            attributedText: presentation.text?.attributedContent,
-            framesetter: presentation.text?.framesetter
+            text: presentation.text?.content
         )
     }
 }
@@ -157,13 +155,9 @@ extension NativeTimelineRowPainter {
         if let actionTitle = region.actionTitle, let actionFrame = region.actionFrame {
             text(actionTitle, in: actionFrame, font: font, color: accent, isInteractiveHovered: input.interaction.isTranslationActionHovered)
         }
-        guard let textFrame = region.textFrame,
-              let attributed = region.attributedText,
-              let framesetter = region.framesetter
-        else { return }
+        guard let textFrame = region.textFrame, let text = region.text else { return }
         attributedText(
-            attributed,
-            framesetter: framesetter,
+            text,
             in: NativeTimelineTextGeometry.messageContentDrawingFrame(textFrame),
             model: input.model,
             bubble: input.layout.bubbleRegion,

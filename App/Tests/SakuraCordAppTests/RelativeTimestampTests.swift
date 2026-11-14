@@ -98,7 +98,7 @@ private func timestampAttachment(in text: NSAttributedString) -> MentionTextAtta
     let oldHeight = coordinator.rowHeights[index]
     coordinator.scroll(toDocumentY: coordinator.rowOrigins[2], scrollView: scrollView)
     let oldAnchor = try #require(coordinator.visibleAnchor())
-    let first = try #require(nativeTimestampLabel(in: coordinator.layouts[index].attributedContent))
+    let first = try #require(nativeTimestampLabel(in: coordinator.layouts[index].contentText?.value))
     // A stale recent-conversation layout must not win over the clock refresh.
     let key = NativeMessageTimelineCoordinator.CachedItemLayoutKey(
         identifier: coordinator.items[index].identifier,
@@ -106,7 +106,7 @@ private func timestampAttachment(in text: NSAttributedString) -> MentionTextAtta
     )
     coordinator.cachedItemLayouts[key] = .init(item: coordinator.items[index], layout: coordinator.layouts[index])
     coordinator.refreshTimestampLayouts(at: after)
-    let second = try #require(nativeTimestampLabel(in: coordinator.layouts[index].attributedContent))
+    let second = try #require(nativeTimestampLabel(in: coordinator.layouts[index].contentText?.value))
     #expect(first != second)
     #expect(second == DiscordTimestampToken(seconds: 1_000_000, style: .relative).formatted(relativeTo: after))
     #expect(coordinator.cachedItemLayouts[key] == nil)

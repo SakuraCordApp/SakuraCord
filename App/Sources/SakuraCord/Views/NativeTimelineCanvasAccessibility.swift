@@ -733,13 +733,10 @@ extension NativeTimelineCanvasView {
         parent: NSAccessibilityElement
     ) {
         // Loading dots are decorative; the status text beside them is read.
-        if let frame = layout.contentFrame,
-           let value = layout.attributedContent,
-           let framesetter = layout.contentFramesetter
-        {
+        if let frame = layout.contentFrame, let text = layout.contentText {
             appendTextAccessibility(to: &children, input: .init(
-                value: value,
-                framesetter: framesetter,
+                value: text.value,
+                framesetter: text.framesetter,
                 drawingFrame: NativeTimelineTextGeometry
                     .messageContentDrawingFrame(frame),
                 accessibilityFrame: frame,

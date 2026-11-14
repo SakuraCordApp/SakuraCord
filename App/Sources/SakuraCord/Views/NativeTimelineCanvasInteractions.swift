@@ -185,11 +185,9 @@ extension NativeTimelineCanvasView {
         point: CGPoint
     ) -> TextPointerHit? {
         if let frame = layout.contentFrame,
-           let value = layout.attributedContent,
-           let framesetter = layout.contentFramesetter,
+           let contentText = layout.contentText,
            let hit = NativeTimelineTextHitTester.hit(
-               value: value,
-               framesetter: framesetter,
+               box: contentText,
                frame: NativeTimelineTextGeometry
                    .messageContentDrawingFrame(frame),
                point: point
@@ -201,10 +199,9 @@ extension NativeTimelineCanvasView {
             return TextPointerHit(hit: hit, region: .content)
         }
         if let translation = layout.translationRegion,
-           let frame = translation.textFrame, let value = translation.attributedText,
-           let framesetter = translation.framesetter,
+           let frame = translation.textFrame, let text = translation.text,
            let hit = NativeTimelineTextHitTester.hit(
-               value: value, framesetter: framesetter,
+               box: text,
                frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame), point: point
            ), hit.mention != nil || hit.url != nil || hit.spoilerRange != nil {
             return TextPointerHit(hit: hit, region: translation.regionID)
@@ -402,71 +399,17 @@ extension NativeTimelineCanvasView {
         guard let index = items.firstIndex(where: {
             $0.identifier == rowIdentifier
         }),
-           layouts.indices.contains(index)
+           layouts.indices.contains(index),
+           let text = linkPointerTextRegions(for: items[index], layout: layouts[index])
+               .first(where: { $0.region == region })
         else { return nil }
-        let layout = layouts[index]
-        let localFrame: CGRect?
-        switch region {
-        case .beginningTitle:
-            return nil
-        case .beginningDescription:
-            guard let beginning = layout.beginningLayout else { return nil }
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                box: beginning.descriptionBox,
-                frame: beginning.descriptionFrame,
-                characterIndex: characterIndex,
-                rawToken: rawToken
-            )
-        case .content:
-            guard let value = layout.attributedContent,
-                  let framesetter = layout.contentFramesetter,
-                  let frame = layout.contentFrame
-            else { return nil }
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                value: value,
-                framesetter: framesetter,
-                frame: NativeTimelineTextGeometry
-                    .messageContentDrawingFrame(frame),
-                characterIndex: characterIndex,
-                rawToken: rawToken
-            )
-        case .translation:
-            guard let translation = layout.translationRegion, translation.regionID == region,
-                  let value = translation.attributedText, let framesetter = translation.framesetter,
-                  let frame = translation.textFrame else { return nil }
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                value: value, framesetter: framesetter,
-                frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame),
-                characterIndex: characterIndex, rawToken: rawToken
-            )
-        case let .embed(embedID, textIndex):
-            guard let embed = layout.embedRegions.first(where: {
-                $0.embedID == embedID
-            }),
-               embed.textRegions.indices.contains(textIndex)
-            else { return nil }
-            let text = embed.textRegions[textIndex]
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                box: text.text,
-                frame: text.frame,
-                characterIndex: characterIndex,
-                rawToken: rawToken
-            )
-        case let .component(layoutIndex, textIndex):
-            guard layout.componentLayouts.indices.contains(layoutIndex),
-                  layout.componentLayouts[layoutIndex]
-                      .textRegions.indices.contains(textIndex)
-            else { return nil }
-            let text = layout.componentLayouts[layoutIndex]
-                .textRegions[textIndex]
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                box: text.text,
-                frame: text.frame,
-                characterIndex: characterIndex,
-                rawToken: rawToken
-            )
-        }
-        return localFrame?.offsetBy(
+        return NativeTimelineTextHitTester.mentionAnchorFrame(
+            value: text.value,
+            framesetter: text.framesetter,
+            frame: text.frame,
+            characterIndex: characterIndex,
+            rawToken: rawToken
+        )?.offsetBy(
             dx: 0,
             dy: displayedRowOrigin(at: index)
         )
