@@ -47,6 +47,12 @@ struct ThreadWindowOwnership {
     var upperCursor: MessageID?
     /// The cursors of cached thread windows, restored when they reopen.
     var cachedCursors: [ChannelID: (lower: MessageID?, upper: MessageID?)] = [:]
+
+    /// Forgets the closed window, keeping the revision count and the cached
+    /// windows' cursors.
+    mutating func resetOpenWindow() {
+        self = ThreadWindowOwnership(revision: revision, cachedCursors: cachedCursors)
+    }
 }
 
 /// Thread history is one contiguous window. A newest-backed window follows
@@ -258,13 +264,7 @@ extension AppModel {
         }
         threadWindow.upperCursor = page.messages.map(\.id).max() ?? threadWindow.upperCursor
         establishThreadNewestEdge(hasMoreAfter: false, historyEpoch: request.historyEpoch)
-        threadErrorMessage = nil
-        threadErrorScope = nil
-        isLoadingThread = false
-        threadWindow.initialLoadTarget = nil
-        hasCompletedInitialThreadLoad = true
-        readState.observeLoadedMessages(channelID: threadID, messages: threadMessages)
-        reportConversationHistoryLoaded(channelID: threadID)
+        completeThreadWindowLoad(threadID)
     }
 
     /// Presents `page` as the whole window, as distant navigation does.
@@ -295,6 +295,10 @@ extension AppModel {
             // reports otherwise, nothing may be acknowledged.
             _ = readState.updatePresentation(channelID: threadID, hasReachedReadBoundary: false)
         }
+        completeThreadWindowLoad(threadID)
+    }
+
+    private func completeThreadWindowLoad(_ threadID: ChannelID) {
         threadErrorMessage = nil
         threadErrorScope = nil
         isLoadingThread = false

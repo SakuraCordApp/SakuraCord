@@ -382,15 +382,7 @@ extension AppModel {
         threadLoadTask?.cancel()
         threadLoadTask = nil
         threadLoadGeneration &+= 1
-        threadWindow.activeRevision = nil
-        threadWindow.revalidationPending = false
-        threadWindow.lowerCursor = nil
-        threadWindow.upperCursor = nil
-        threadWindow.isNewestUnverified = false
-        threadWindow.failedInitialTarget = nil
-        threadWindow.nearestJumpTarget = nil
-        threadWindow.initialLoadTarget = nil
-        threadWindow.newestReadRevision = nil
+        threadWindow.resetOpenWindow()
         openThreadResolutionTask?.cancel()
         openThreadResolutionTask = nil
         openThreadResolution = nil
