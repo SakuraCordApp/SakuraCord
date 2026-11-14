@@ -487,7 +487,7 @@ extension NativeTimelineRowPainter {
 
     private static func drawInlineCodeDecorations(_ rects: [CGRect]) {
         for inlineRect in rects {
-            drawCodeChrome(in: inlineRect.insetBy(dx: 0, dy: InterfaceScale.metric(1)))
+            MarkdownBlockChrome.drawCode(in: inlineRect.insetBy(dx: 0, dy: InterfaceScale.metric(1)))
         }
     }
 
@@ -507,19 +507,8 @@ extension NativeTimelineRowPainter {
         _ codeBlocks: [NativeTimelineCodeBlockRegion]
     ) {
         for codeBlock in codeBlocks {
-            drawCodeChrome(in: codeBlock.backgroundFrame)
+            MarkdownBlockChrome.drawCode(in: codeBlock.backgroundFrame)
         }
-    }
-
-    /// Discord's code chrome, which inline code and code blocks share.
-    static func drawCodeChrome(in rect: CGRect) {
-        let radius = NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
-        discordCodeBackgroundColor.setFill()
-        NSBezierPath(concentricRoundedRect: rect, cornerRadius: radius).fill()
-        discordCodeBorderColor.setStroke()
-        let border = NSBezierPath(concentricRoundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: radius)
-        border.lineWidth = 1
-        border.stroke()
     }
 
     /// Discord centers its 5.5 px disc 12 px before the item text, which
@@ -545,30 +534,7 @@ extension NativeTimelineRowPainter {
     }
 
     private static func drawQuoteDecorations(_ bars: [CGRect]) {
-        bars.forEach(drawQuoteBar(in:))
-    }
-
-    /// Discord's fully rounded quote bar.
-    static func drawQuoteBar(in bar: CGRect) {
-        NSColor.tertiaryLabelColor.setFill()
-        NSBezierPath(roundedRect: bar, xRadius: bar.width / 2, yRadius: bar.width / 2).fill()
-    }
-
-    /// Discord tints code with its blurple and outlines it in a translucent
-    /// gray, so both read on any background and in either appearance.
-    static let discordCodeBackgroundColor = NSColor(name: nil) { appearance in
-        appearance.isDark
-            ? NSColor(srgbRed: 89 / 255, green: 102 / 255, blue: 242 / 255, alpha: 0.08)
-            : NSColor(srgbRed: 77 / 255, green: 102 / 255, blue: 230 / 255, alpha: 0.04)
-    }
-
-    static let discordCodeBorderColor = NSColor(name: nil) { appearance in
-        NSColor(
-            srgbRed: 150 / 255,
-            green: 150 / 255,
-            blue: 160 / 255,
-            alpha: appearance.isDark ? 0.2 : 0.4
-        )
+        bars.forEach(MarkdownBlockChrome.drawQuoteBar(in:))
     }
 
     enum InlineAttachmentDraw {

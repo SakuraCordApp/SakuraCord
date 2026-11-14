@@ -133,7 +133,7 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
         // AppKit draws text on the main thread.
         MainActor.assumeIsolated {
             for (rect, isCode) in blocks {
-                if isCode { NativeTimelineRowPainter.drawCodeChrome(in: rect) } else { NativeTimelineRowPainter.drawQuoteBar(in: rect) }
+                if isCode { MarkdownBlockChrome.drawCode(in: rect) } else { MarkdownBlockChrome.drawQuoteBar(in: rect) }
             }
             // A draft's spoilers stay readable, as a revealed one does.
             SpoilerAppearance.revealedTextColor.setFill()
