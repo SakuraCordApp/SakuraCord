@@ -32,9 +32,7 @@ extension NativeTimelineCanvasView {
             control = .votes; frame = layout.votesFrame
         } else if !poll.isClosed(), layout.revealFrame.contains(local), poll.selectedAnswerIDs.isEmpty {
             control = .reveal; frame = layout.revealFrame
-        } else if !poll.isClosed(), layout.submitFrame.contains(local),
-                  model?.canUpdatePollVote(on: row.message, removing: !poll.selectedAnswerIDs.isEmpty) == true,
-                  !poll.selectedAnswerIDs.isEmpty || (!state.showsResults(for: poll) && !state.selected.isEmpty) {
+        } else if layout.submitFrame.contains(local), canSubmitPollVote(row.message, poll: poll, state: state) {
             control = .submit; frame = layout.submitFrame
         } else { return nil }
         return PollPointerHit(target: .init(messageID: row.id, control: control), message: row.message,
@@ -165,8 +163,7 @@ extension NativeTimelineCanvasView {
 
     private func submitPollVote(_ message: Message, poll: MessagePoll, state: NativeTimelinePollPresentation, model: AppModel) {
         let removing = !poll.selectedAnswerIDs.isEmpty
-        guard model.canUpdatePollVote(on: message, removing: !poll.selectedAnswerIDs.isEmpty), !poll.isClosed(), poll.layoutType == 1,
-              removing || (!state.showsResults(for: poll) && !state.selected.isEmpty) else { return }
+        guard canSubmitPollVote(message, poll: poll, state: state), poll.layoutType == 1 else { return }
         // The model applies the vote before the request; unknown tallies show
         // results while they load.
         pollStates[message.id] = .init(revealsResults: !removing && poll.results == nil)
@@ -197,18 +194,28 @@ extension NativeTimelineCanvasView {
         var frames = layout.answers.map(\.frame) + [layout.votesFrame]
         if !poll.isClosed() {
             if poll.selectedAnswerIDs.isEmpty { frames.append(layout.revealFrame) }
-            let state = pollPresentation(for: row.id)
-            if model?.canUpdatePollVote(on: row.message, removing: !poll.selectedAnswerIDs.isEmpty) == true,
-               !poll.selectedAnswerIDs.isEmpty || (!state.showsResults(for: poll) && !state.selected.isEmpty) {
+            if canSubmitPollVote(row.message, poll: poll, state: pollPresentation(for: row.id)) {
                 frames.append(layout.submitFrame)
             }
         }
         for frame in frames { addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand) }
     }
 
+    /// Whether Vote or Remove Vote does anything now: the poll is open, the
+    /// user may change their vote, and there is a vote to send or remove.
+    func canSubmitPollVote(_ message: Message, poll: MessagePoll, state: NativeTimelinePollPresentation) -> Bool {
+        let removing = !poll.selectedAnswerIDs.isEmpty
+        return !poll.isClosed() && model?.canUpdatePollVote(on: message, removing: removing) == true
+            && (removing || (!state.showsResults(for: poll) && !state.selected.isEmpty))
+    }
+
+    /// Whether the user can end the poll: it is theirs, sent and still open.
+    func canEndPoll(_ message: Message) -> Bool {
+        message.outboxState == .confirmed && message.author.id == model?.currentUser?.id && message.poll?.isClosed() == false
+    }
+
     func requestEndPoll(_ message: Message) {
-        guard let model, let window, message.outboxState == .confirmed,
-              message.author.id == model.currentUser?.id, message.poll?.isClosed() == false else { return }
+        guard let model, let window, canEndPoll(message) else { return }
         let alert = NSAlert()
         alert.messageText = "End this poll now?"
         alert.informativeText = "This will close the poll immediately and reveal the results."

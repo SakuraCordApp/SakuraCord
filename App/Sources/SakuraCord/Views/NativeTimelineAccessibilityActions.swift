@@ -91,7 +91,7 @@ extension NativeTimelineCanvasView {
             self?.actions?.markUnread(message)
             return self != nil
         })
-        if message.outboxState == .confirmed, message.author.id == model?.currentUser?.id, message.poll?.isClosed() == false {
+        if canEndPoll(message) {
             result.append(NSAccessibilityCustomAction(name: "End Poll Now") { [weak self] in
                 self?.requestEndPoll(message)
                 return self != nil

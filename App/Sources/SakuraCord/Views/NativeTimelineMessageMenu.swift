@@ -437,7 +437,7 @@ extension NativeTimelineCanvasView {
                 && MessageReplyPresentationPolicy.allowsReplyAction(
                     for: row.message
                 ),
-            canEndPoll: row.message.outboxState == .confirmed && row.message.author.id == model?.currentUser?.id && row.message.poll?.isClosed() == false,
+            canEndPoll: canEndPoll(row.message),
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
             threadAction: row.message.thread != nil
                 ? .viewThread
