@@ -242,10 +242,12 @@ private struct CurrentUserCapsule: View {
         {
             ProfilePresentationContent(
                 presentation: presentation,
+                layout: .popover,
                 maximumPopoverHeight: InterfaceScale.metric(720),
                 showsRoles: false,
                 openProfile: model.expandProfile,
                 userMenu: { UserContextMenu.make(for: presentation.member.user, context: .init(guildID: presentation.guildID), model: model) },
+                sendMessage: nil,
             footer: {
                 YouPopoverOptions(
                     currentStatus: currentStatus,

@@ -12,22 +12,22 @@ struct ProfilePresentationContent<Footer: View>: View {
     @Environment(\.serverTagCardModel) private var model
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     let presentation: ProfilePresentationState
-    var layout: ProfilePresentationLayout = .popover
-    var maximumPopoverHeight: CGFloat = InterfaceScale.metric(560)
-    var showsRoles = true
+    let layout: ProfilePresentationLayout
+    let maximumPopoverHeight: CGFloat
+    let showsRoles: Bool
     let footer: Footer
-    var openProfile: ((ProfilePresentationState) -> Void)?
-    var userMenu: (() -> NSMenu?)?
-    var sendMessage: ((UserID, String, String) async -> Bool)?
+    let openProfile: ((ProfilePresentationState) -> Void)?
+    let userMenu: (() -> NSMenu?)?
+    let sendMessage: ((UserID, String, String) async -> Bool)?
 
     init(
         presentation: ProfilePresentationState,
-        layout: ProfilePresentationLayout = .popover,
-        maximumPopoverHeight: CGFloat = InterfaceScale.metric(560),
-        showsRoles: Bool = true,
-        openProfile: ((ProfilePresentationState) -> Void)? = nil,
-        userMenu: (() -> NSMenu?)? = nil,
-        sendMessage: ((UserID, String, String) async -> Bool)? = nil,
+        layout: ProfilePresentationLayout,
+        maximumPopoverHeight: CGFloat,
+        showsRoles: Bool,
+        openProfile: ((ProfilePresentationState) -> Void)?,
+        userMenu: (() -> NSMenu?)?,
+        sendMessage: ((UserID, String, String) async -> Bool)?,
         @ViewBuilder footer: () -> Footer
     ) {
         self.presentation = presentation
