@@ -854,30 +854,6 @@ private struct ChatRootView: View {
     }
 
     @ToolbarContentBuilder
-    private var threadsToolbarItem: some ToolbarContent {
-        ToolbarItem(id: "threads") {
-            Button(action: model.toggleThreadBrowser) {
-                Label {
-                    Text("Threads")
-                } icon: {
-                    SakuraCordSystemSymbol.swiftUIImage(named: SakuraCordSystemSymbol.thread)
-                }
-            }
-            .help("Threads")
-            .background {
-                StableAnchoredPopoverPresenter(
-                    isPresented: model.threadBrowser.isPresented,
-                    configuration: .toolbarPanel,
-                    onDismiss: model.dismissThreadBrowser,
-                    onWillDismiss: model.dismissThreadBrowser
-                ) { ThreadBrowserPopoverView(model: model) }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .visibilityPriority(.high)
-    }
-
-    @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
         if usesWorkspaceTitlebar {
             ToolbarSpacer(.flexible)
@@ -932,33 +908,6 @@ private struct ChatRootView: View {
                 }
             }
 
-            if model.isInboxAvailable {
-                if hasToolbarActionBeforeInbox {
-                    ToolbarSpacer(.fixed)
-                }
-
-                ToolbarItem(id: "inbox") {
-                    Button {
-                        if model.inbox.isPresented { model.dismissInbox() } else { model.presentInbox() }
-                    } label: {
-                        Label("Inbox", systemImage: model.inbox.isPresented ? "tray.fill" : "tray")
-                            .symbolVariant(.none)
-                            .animation(.smooth(duration: 0.24), value: model.inbox.isPresented)
-                    }
-                    .help("Inbox")
-                    .background {
-                        StableAnchoredPopoverPresenter(
-                            isPresented: model.inbox.isPresented,
-                            configuration: .toolbarPanel,
-                            onDismiss: model.dismissInbox,
-                            onWillDismiss: model.dismissInbox
-                        ) { InboxPopoverView(model: model) }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-                .visibilityPriority(.high)
-            }
-
             if let pinsChannelID = toolbarPinsChannelID {
                 ToolbarSpacer(.fixed)
 
@@ -992,7 +941,8 @@ private struct ChatRootView: View {
 
             if showsThreadsToolbarItem {
                 ToolbarSpacer(.fixed)
-                threadsToolbarItem
+                ToolbarItem(id: "threads") { ThreadsToolbarButton(model: model) }
+                    .visibilityPriority(.high)
             }
 
             if let conversation = model.workspacePresentation.paneSideConversation {
@@ -1000,35 +950,27 @@ private struct ChatRootView: View {
             }
         }
 
-        if showsMemberInspectorToolbarItem {
-            if !model.isSwitchingAccounts {
-                ToolbarSpacer(.fixed)
-            }
-
-            // A stable identity lets the toolbar keep the item when a side
-            // chat closes instead of inserting a new one.
+        // Otherwise a conversation's Members button is in its titlebar.
+        if model.isSwitchingAccounts {
             ToolbarItem(id: "member-inspector") {
+                // The hidden button keeps the placeholder at the button's width.
                 ZStack {
                     Button {
                         model.toggleMemberInspector()
                     } label: {
                         inspectorToolbarLabel
                     }
-                    .disabled(model.isSwitchingAccounts)
-                    .opacity(model.isSwitchingAccounts ? 0 : 1)
+                    .disabled(true)
+                    .opacity(0)
 
-                    if model.isSwitchingAccounts {
-                        SkeletonShimmerTimeline {
-                            SkeletonShape(cornerRadius: 6)
-                                .frame(width: 20, height: 20)
-                        }
-                        .accessibilityHidden(true)
+                    SkeletonShimmerTimeline {
+                        SkeletonShape(cornerRadius: 6)
+                            .frame(width: 20, height: 20)
                     }
+                    .accessibilityHidden(true)
                 }
             }
             .visibilityPriority(.high)
-
-            fullWidthThreadActions
 
             ToolbarSpacer(.fixed)
                 .contentMarginsRemoved(true)
@@ -1211,12 +1153,6 @@ private struct ChatRootView: View {
         return model.selectedChannel
     }
 
-    private var showsMemberInspectorToolbarItem: Bool {
-        model.isSwitchingAccounts
-            || (model.showsConversationWorkspace
-                && model.workspacePresentation.paneSideConversation == nil && selectedVoiceChannel == nil)
-    }
-
     /// A full-width thread's actions end the trailing button group, as a
     /// toolbar's overflow item does.
     @ToolbarContentBuilder
@@ -1228,11 +1164,6 @@ private struct ChatRootView: View {
             }
             .visibilityPriority(.high)
         }
-    }
-
-    private var hasToolbarActionBeforeInbox: Bool {
-        selectedPrivateChannel != nil
-            || (selectedVoiceChannel != nil && !model.isVoiceChatOpen)
     }
 
     private var toolbarPinsChannelID: ChannelID? {
@@ -1283,12 +1214,6 @@ private struct ChatRootView: View {
         let paneThread = conversation.isThread ? model.openThread : nil
         let showsFollow = paneThread.map { ForumPostFollowToolbarButton.isOffered(model: model, thread: $0) } ?? false
         let actionCount = 1 + (showsAddToChannelList ? 1 : 0) + (paneThread != nil ? 1 : 0) + (showsFollow ? 1 : 0)
-        if model.isInboxAvailable {
-            // Keep the primary column's last action inset from the pane edge.
-            ToolbarSpacer(.fixed)
-            ToolbarSpacer(.fixed)
-        }
-
         ToolbarItem(id: "side-conversation-title") {
             SideConversationToolbarTitle(label: label, width: sideConversationTitleWidth(actionCount: actionCount))
                 .workspaceMotionProbe("toolbarTitle")
@@ -1394,8 +1319,6 @@ private struct ChatRootView: View {
         return supplementaryPaneFrame.minX - columnEdges.detailMinX >= required
     }
 
-    /// Inbox belongs beside a text conversation, not on a server's own
-    /// pages, Friends or a voice channel.
     private var selectedGuild: Guild? {
         model.selectedGuild
     }
