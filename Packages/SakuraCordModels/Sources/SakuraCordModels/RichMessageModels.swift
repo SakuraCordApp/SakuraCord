@@ -632,6 +632,21 @@ public indirect enum MessageComponent: Identifiable, Codable, Hashable, Sendable
     }
 }
 
+public extension MessageComponent {
+    /// The text of this component's Text Displays, including nested ones.
+    var textDisplayContents: [String] {
+        switch self {
+        case .textDisplay(_, let content): [content]
+        case .actionRow(_, let children), .container(_, _, _, let children):
+            children.flatMap(\.textDisplayContents)
+        case .section(_, let children, let accessory):
+            children.flatMap(\.textDisplayContents) + (accessory?.textDisplayContents ?? [])
+        case .button, .select, .thumbnail, .mediaGallery, .file, .separator, .unsupported:
+            []
+        }
+    }
+}
+
 public enum GIFMediaKind: String, Codable, Hashable, Sendable {
     case image
     case video
