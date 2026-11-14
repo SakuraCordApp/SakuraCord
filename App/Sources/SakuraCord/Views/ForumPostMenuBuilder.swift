@@ -27,13 +27,16 @@ final class ForumPostMenuBuilder: NSObject {
         return renderer.makeMenu(actionsMenu.sections) { [self] entry in
             guard entry.id == ThreadActionsMenu.tagsSlotID else { return nil }
             preloadCustomTagImages(for: tags, customEmojiURLsByID: customEmojiURLsByID)
-            return tagsMenuItem(tags: tags, appliedTagIDs: appliedTagIDs, canToggle: canToggle)
+            return tagsMenuItem(
+                tags: tags, appliedTagIDs: appliedTagIDs, customEmojiURLsByID: customEmojiURLsByID, canToggle: canToggle
+            )
         }
     }
 
     private func tagsMenuItem(
         tags: [ForumTag],
         appliedTagIDs: [ForumTagID],
+        customEmojiURLsByID: CustomEmojiImageURLs,
         canToggle: (ForumTag) -> Bool
     ) -> NSMenuItem {
         let tagsItem = NSMenuItem(title: "Tags", action: nil, keyEquivalent: "")
@@ -50,7 +53,7 @@ final class ForumPostMenuBuilder: NSObject {
             item.isEnabled = canToggle(tag)
             item.state = appliedTagIDs.contains(tag.id) ? .on : .off
             item.representedObject = NSNumber(value: tag.id.rawValue)
-            item.image = menuImage(for: tag)
+            item.image = menuImage(for: tag, customEmojiURLsByID: customEmojiURLsByID)
             item.preferredImageVisibility = .visible
             tagsMenu.addItem(item)
         }
@@ -75,28 +78,13 @@ final class ForumPostMenuBuilder: NSObject {
         }
     }
 
-    private func menuImage(for tag: ForumTag) -> NSImage? {
-        if tag.emojiID != nil {
-            return customTagImages[tag.id]
-                ?? symbolImage("tag", accessibilityDescription: tag.name)
+    private func menuImage(for tag: ForumTag, customEmojiURLsByID: CustomEmojiImageURLs) -> NSImage? {
+        let symbol = { ContextMenuItemSupport.symbolImage("tag", accessibilityDescription: tag.name) }
+        return switch ForumTagEmojiPresentation(tag: tag, customEmojiURLsByID: customEmojiURLsByID) {
+        case .custom: customTagImages[tag.id] ?? symbol()
+        case let .unicode(name): nativeEmojiImage(name)
+        case nil: symbol()
         }
-        if let emoji = tag.emojiName, !emoji.isEmpty {
-            return nativeEmojiImage(emoji)
-        }
-        return symbolImage("tag", accessibilityDescription: tag.name)
-    }
-
-    private func symbolImage(
-        _ name: String,
-        accessibilityDescription: String
-    ) -> NSImage? {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-        let image = NSImage(
-            systemSymbolName: name,
-            accessibilityDescription: accessibilityDescription
-        )?.withSymbolConfiguration(configuration)
-        image?.isTemplate = true
-        return image
     }
 
     private func nativeEmojiImage(_ emoji: String) -> NSImage {

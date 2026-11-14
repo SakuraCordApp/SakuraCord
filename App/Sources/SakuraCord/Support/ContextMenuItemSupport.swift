@@ -15,6 +15,20 @@ enum ContextMenuItemSupport {
         systemImage: String,
         isDestructive: Bool = false
     ) {
+        if let image = symbolImage(systemImage, accessibilityDescription: title, isDestructive: isDestructive) {
+            item.image = image
+        }
+        item.preferredImageVisibility = .visible
+        if isDestructive {
+            item.attributedTitle = NSAttributedString(
+                string: title,
+                attributes: [.foregroundColor: NSColor.systemRed]
+            )
+        }
+    }
+
+    /// A menu item's symbol at the menu's size; red for a destructive item.
+    static func symbolImage(_ name: String, accessibilityDescription: String, isDestructive: Bool = false) -> NSImage? {
         let baseConfiguration = NSImage.SymbolConfiguration(
             pointSize: 13,
             weight: .regular
@@ -26,20 +40,12 @@ enum ContextMenuItemSupport {
                 )
             )
             : baseConfiguration
-        if let image = SakuraCordSystemSymbol.image(
-            named: systemImage,
-            accessibilityDescription: title
-        )?.withSymbolConfiguration(configuration) {
-            image.isTemplate = !isDestructive
-            item.image = image
-        }
-        item.preferredImageVisibility = .visible
-        if isDestructive {
-            item.attributedTitle = NSAttributedString(
-                string: title,
-                attributes: [.foregroundColor: NSColor.systemRed]
-            )
-        }
+        let image = SakuraCordSystemSymbol.image(
+            named: name,
+            accessibilityDescription: accessibilityDescription
+        )?.withSymbolConfiguration(configuration)
+        image?.isTemplate = !isDestructive
+        return image
     }
 
     /// An item that runs `action`, with its symbol when it has one. Without an
