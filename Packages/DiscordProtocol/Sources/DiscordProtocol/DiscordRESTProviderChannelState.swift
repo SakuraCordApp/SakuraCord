@@ -216,14 +216,7 @@ extension DiscordRESTProvider {
         if let clientStatus = update.clientStatus {
             member.isMobileOnly = clientStatus.isMobileOnly
         }
-        if let activities = update.activities {
-            let primaryActivity = activities.memberListActivity
-            member.customStatus = activities.first(where: { $0.type == 4 })?.displayText
-            member.activityText =
-                primaryActivity?.displayText
-                    ?? member.customStatus
-            member.isListeningToMusic = primaryActivity?.type == 2
-        }
+        if let activities = update.activities { member.applyActivities(activities) }
         cachedPrivateMembersByID[userID] = member
     }
 

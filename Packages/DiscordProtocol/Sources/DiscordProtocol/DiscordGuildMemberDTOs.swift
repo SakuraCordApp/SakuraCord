@@ -70,9 +70,12 @@ struct GuildActivityDTO: Decodable {
     }
 }
 
-extension [GuildActivityDTO] {
-    var memberListActivity: GuildActivityDTO? {
-        first(where: { $0.type == 2 }) ?? first(where: { $0.type != 4 })
+extension Member {
+    mutating func applyActivities(_ activities: [GuildActivityDTO]) {
+        let primaryActivity = activities.first(where: { $0.type == 2 }) ?? activities.first(where: { $0.type != 4 })
+        customStatus = activities.first(where: { $0.type == 4 })?.displayText
+        activityText = primaryActivity?.displayText ?? customStatus
+        isListeningToMusic = primaryActivity?.type == 2
     }
 }
 
@@ -182,10 +185,7 @@ struct GuildMemberDTO: Decodable {
                 .sorted { $0.position > $1.position }
                 .compactMap(\.domain)
         }
-        let activities = (overridePresence ?? presence)?.activities ?? []
-        let customStatus = activities.first(where: { $0.type == 4 })?.displayText
-        let primaryActivity = activities.memberListActivity
-        return Member(
+        var member = Member(
             user: domainUser,
             roleName: categoryRole?.name ?? "Member",
             status: status,
@@ -198,9 +198,6 @@ struct GuildMemberDTO: Decodable {
             globalDisplayName: globalDisplayName,
             guildNickname: nick,
             guildProfileCosmetics: cosmetics,
-            activityText: primaryActivity?.displayText ?? customStatus,
-            customStatus: customStatus,
-            isListeningToMusic: primaryActivity?.type == 2,
             isMobileOnly: (overridePresence ?? presence)?.clientStatus?.isMobileOnly ?? false,
             isPending: pending,
             flags: flags,
@@ -208,6 +205,8 @@ struct GuildMemberDTO: Decodable {
                 ? communicationDisabledUntil.flatMap(DiscordDate.parse) : previousCommunicationDisabledUntil,
             joinedAt: joinedAt.flatMap(DiscordDate.parse)
         )
+        member.applyActivities((overridePresence ?? presence)?.activities ?? [])
+        return member
     }
 
     private func guildAvatarURL(guildID: GuildID?, userID: UserID) -> URL? {

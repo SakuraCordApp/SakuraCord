@@ -304,14 +304,7 @@ extension DiscordRESTProvider {
         if let clientStatus = update.clientStatus {
             members[index].isMobileOnly = clientStatus.isMobileOnly
         }
-        if let activities = update.activities {
-            let primaryActivity = activities.memberListActivity
-            members[index].customStatus = activities.first(where: { $0.type == 4 })?.displayText
-            members[index].activityText =
-                primaryActivity?.displayText
-                    ?? members[index].customStatus
-            members[index].isListeningToMusic = primaryActivity?.type == 2
-        }
+        if let activities = update.activities { members[index].applyActivities(activities) }
         cachedMembers[guildID] = members
         if guildID == pendingMemberGuildID {
             publishMembers(
