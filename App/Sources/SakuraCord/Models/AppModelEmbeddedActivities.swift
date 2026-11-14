@@ -185,10 +185,8 @@ final class EmbeddedActivityStore {
         instances = [:]
         shelves = [:]
         installedActivities = [:]
-        installedLoads.values.forEach { $0.cancel() }
-        installedLoads = [:]
-        shelfLoads.values.forEach { $0.cancel() }
-        shelfLoads = [:]
+        installedLoads.cancelAll()
+        shelfLoads.cancelAll()
         cardShelfRequests = []
         shelfErrors = [:]
         gatewaySessionID = nil

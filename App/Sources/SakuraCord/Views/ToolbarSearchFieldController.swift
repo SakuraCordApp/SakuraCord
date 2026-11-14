@@ -258,7 +258,7 @@ struct ToolbarSearchFieldMetrics: Equatable {
 
 /// Reads SwiftUI's native toolbar search geometry and bridges its public
 /// end-search delegate event without duplicating the field or its layout.
-struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
+struct ToolbarSearchFieldController: NSViewRepresentable {
     @Binding var searchText: String
     @Binding var searchTokens: [MessageSearchToken]
     @Binding var isSearchFocused: Bool

@@ -207,10 +207,8 @@ final class InboxState {
 
     func clear(notifying model: AnyObject) {
         cancelLoad()
-        metadataTasks.values.forEach { $0.cancel() }
-        metadataTasks = [:]
-        mutationTasks.values.forEach { $0.cancel() }
-        mutationTasks = [:]
+        metadataTasks.cancelAll()
+        mutationTasks.cancelAll()
         settingsTask?.cancel()
         settingsTask = nil
         settingsSyncTask?.cancel()
@@ -228,10 +226,8 @@ final class InboxState {
         selectedEvent = nil
         ageRestrictedGuildID = nil
         ageRestrictedAction = nil
-        eventMutationTasks.values.forEach { $0.cancel() }
-        eventMutationTasks = [:]
-        eventInterestTasks.values.forEach { $0.cancel() }
-        eventInterestTasks = [:]
+        eventMutationTasks.cancelAll()
+        eventInterestTasks.cancelAll()
         pendingEventAcknowledgements = [:]
         locallyUndoneEventGuilds = []
         mentions = []

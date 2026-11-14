@@ -781,49 +781,38 @@ private struct ChatRootView: View {
 
     @ViewBuilder
     private func privateCallButtons(_ channel: Channel) -> some View {
-        Button {
-            Task {
-                if model.joinablePrivateCall(in: channel.id) != nil {
-                    await model.joinPrivateCall(in: channel)
-                } else {
-                    await model.startPrivateCall(in: channel)
-                }
-            }
-        } label: {
-            Label(
-                model.joinablePrivateCall(in: channel.id) == nil
-                    ? "Start Voice Call" : "Join Voice Call",
-                systemImage: "phone.fill"
-            )
-        }
-        .disabled(
-            model.activeVoiceChannel?.id == channel.id
-                || model.isPrivateCallActionInFlight(in: channel.id)
+        let joinsCall = model.joinablePrivateCall(in: channel.id) != nil
+        privateCallButton(
+            channel, withVideo: false,
+            title: joinsCall ? "Join Voice Call" : "Start Voice Call",
+            help: joinsCall ? "Join Ongoing Call" : "Start Voice Call"
         )
-        .help(
-            model.joinablePrivateCall(in: channel.id) == nil
-                ? "Start Voice Call" : "Join Ongoing Call"
+        privateCallButton(
+            channel, withVideo: true,
+            title: "Start Video Call",
+            help: joinsCall ? "Join Ongoing Call with Video" : "Start Video Call"
         )
+    }
 
+    private func privateCallButton(
+        _ channel: Channel, withVideo: Bool, title: LocalizedStringKey, help: LocalizedStringKey
+    ) -> some View {
         Button {
             Task {
                 if model.joinablePrivateCall(in: channel.id) != nil {
-                    await model.joinPrivateCall(in: channel, withVideo: true)
+                    await model.joinPrivateCall(in: channel, withVideo: withVideo)
                 } else {
-                    await model.startPrivateCall(in: channel, withVideo: true)
+                    await model.startPrivateCall(in: channel, withVideo: withVideo)
                 }
             }
         } label: {
-            Label("Start Video Call", systemImage: "video.fill")
+            Label(title, systemImage: withVideo ? "video.fill" : "phone.fill")
         }
         .disabled(
             model.activeVoiceChannel?.id == channel.id
                 || model.isPrivateCallActionInFlight(in: channel.id)
         )
-        .help(
-            model.joinablePrivateCall(in: channel.id) == nil
-                ? "Start Video Call" : "Join Ongoing Call with Video"
-        )
+        .help(help)
     }
 
     private func openVoiceChatButton(_ channel: Channel) -> some View {
@@ -1368,7 +1357,7 @@ private struct MessageSearchToolbarBridge: View {
         @Bindable var friends = model.friends
         let friendsSearch = model.isFriendsSearchActive
         let local = friendsSearch || model.isBrowsingGuildChannels
-        ToolbarSearchFieldGeometryReader(
+        ToolbarSearchFieldController(
             searchText: friendsSearch ? $model.friendsSearchText : local ? $onboarding.channelSearch : $model.messageSearchInputText,
             searchTokens: local ? .constant([]) : $search.tokens,
             isSearchFocused: friendsSearch ? $friends.isSearchFocused

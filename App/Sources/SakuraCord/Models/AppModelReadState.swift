@@ -94,12 +94,22 @@ extension AppModel {
         }
     }
 
+    /// Whether `channelID` is one of the two conversations whose messages are loaded.
+    func isSelectedOrOpenThread(_ channelID: ChannelID) -> Bool {
+        channelID == selectedChannelID || channelID == openThread?.id
+    }
+
+    /// The loaded messages of the open thread or the selected channel.
+    private func loadedMessages(for channelID: ChannelID) -> [Message] {
+        channelID == openThread?.id ? threadMessages : messages
+    }
+
     /// Jumps to the newest message as soon as a send appends its local row.
     /// Returns false on an older page (reloading would replace the local row)
     /// or before the initial position (a backlog hold can still appear); those
     /// sends advance on confirmation instead.
     func advanceTimelineForLocalSend(channelID: ChannelID) -> Bool {
-        guard channelID == selectedChannelID || channelID == openThread?.id,
+        guard isSelectedOrOpenThread(channelID),
               !(channelID == selectedChannelID && hasMoreLaterMessages),
               readState.presentations[channelID]?.initialPositionEstablished == true
         else { return false }
@@ -123,7 +133,7 @@ extension AppModel {
     /// on confirmation, and acknowledges only at the read boundary, so messages
     /// that arrived out of view stay unread.
     private func acknowledgeConfirmedLocalSend(channelID: ChannelID) {
-        guard channelID == selectedChannelID || channelID == openThread?.id,
+        guard isSelectedOrOpenThread(channelID),
               readState.canAcknowledge(channelID)
         else { return }
         markConversationRead(channelID: channelID)
@@ -131,7 +141,7 @@ extension AppModel {
     }
 
     func completeConversationReadingAndAdvance(channelID: ChannelID) {
-        guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        guard isSelectedOrOpenThread(channelID) else { return }
         if channelID == selectedChannelID, hasMoreLaterMessages {
             let account = accountSession()
             startAccountChildTask(account: account) { model, account in
@@ -187,8 +197,7 @@ extension AppModel {
               summary.isLowerBound
         else { return false }
         guard let divider = unreadDividerMessageIDs[channelID] else { return true }
-        let loaded = channelID == openThread?.id ? threadMessages : messages
-        return !loaded.contains { $0.id == divider }
+        return !loadedMessages(for: channelID).contains { $0.id == divider }
     }
 
     private func presentedUnreadSummary(
@@ -217,12 +226,11 @@ extension AppModel {
     func markMessageAndFollowingUnread(_ message: Message) {
         guard !runsChatPerformanceBenchmark else { return }
         let channelID = message.channelID
-        guard channelID == selectedChannelID || channelID == openThread?.id,
+        guard isSelectedOrOpenThread(channelID),
               message.id.rawValue > 0,
               let currentUserID = snapshot?.currentUser.id
         else { return }
-        let conversationMessages =
-            channelID == openThread?.id ? threadMessages : messages
+        let conversationMessages = loadedMessages(for: channelID)
         let mentionCount = readState.mentionCountForManualUnread(
             channelID: channelID,
             messages: conversationMessages,
@@ -503,32 +511,25 @@ extension AppModel {
         allServersReadTask?.cancel()
         allServersReadTask = nil
         isMarkingAllServersRead = false
-        acknowledgementTasks.values.forEach { $0.cancel() }
-        acknowledgementTasks.removeAll()
+        acknowledgementTasks.cancelAll()
         acknowledgementProcessorTask?.cancel()
         acknowledgementProcessorTask = nil
-        guildAcknowledgementTasks.values.forEach { $0.cancel() }
-        guildAcknowledgementTasks.removeAll()
+        guildAcknowledgementTasks.cancelAll()
         queuedAcknowledgements.removeAll()
     }
 
     func resetChannelNotificationMutations() {
         channelNotificationMutationGeneration &+= 1
-        guildNotificationMutationTasks.values.forEach { $0.cancel() }
-        guildNotificationMutationTasks.removeAll()
+        guildNotificationMutationTasks.cancelAll()
         guildNotificationSettingsRevisions.removeAll()
-        channelNotificationMutationTasks.values.forEach { $0.cancel() }
-        channelNotificationMutationTasks.removeAll()
-        categoryCollapseMutationTasks.values.forEach { $0.cancel() }
-        categoryCollapseMutationTasks.removeAll()
+        channelNotificationMutationTasks.cancelAll()
+        categoryCollapseMutationTasks.cancelAll()
         categoryCollapseMutationStates.removeAll()
         optimisticCategoryCollapsedByID.removeAll()
-        channelPinMutationTasks.values.forEach { $0.cancel() }
-        channelPinMutationTasks.removeAll()
+        channelPinMutationTasks.cancelAll()
         channelPinMutationStates.removeAll()
         optimisticChannelPinnedByID.removeAll()
-        forumNotificationMutationTasks.values.forEach { $0.cancel() }
-        forumNotificationMutationTasks.removeAll()
+        forumNotificationMutationTasks.cancelAll()
     }
 
     /// Reads a server Mark as Read's conversations locally before Discord

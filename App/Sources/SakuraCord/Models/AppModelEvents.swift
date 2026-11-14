@@ -575,7 +575,7 @@ extension AppModel {
             // read and stops the selected conversation acknowledging
             // automatically until the selection changes.
             cancelDebouncedAcknowledgement(for: channelID)
-            if channelID == selectedChannelID || channelID == openThread?.id {
+            if isSelectedOrOpenThread(channelID) {
                 readState.holdUntilSelectionChange(channelID: channelID)
                 unreadDividerMessageIDs[channelID] = nil
             }

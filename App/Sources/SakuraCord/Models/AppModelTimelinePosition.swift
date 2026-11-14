@@ -217,7 +217,7 @@ extension AppModel {
     }
 
     func reportConversationHistoryLoaded(channelID: ChannelID) {
-        guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        guard isSelectedOrOpenThread(channelID) else { return }
         AppPerformanceSignposts.reportConversationHistoryReady(
             channelID: channelID
         )
