@@ -484,12 +484,7 @@ struct UserProfileDTO: Decodable {
         let displayName =
             guildMember?.nick.flatMap { $0.isEmpty ? nil : $0 } ?? domainUser.displayName
         let guildAvatarURL = guildID.flatMap { guildID in
-            guildMember?.avatar.flatMap { hash in
-                URL(
-                    string:
-                    "https://cdn.discordapp.com/guilds/\(guildID)/users/\(domainUser.id)/avatars/\(hash).webp?size=256&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                )
-            }
+            guildMember?.avatar.flatMap { DiscordCDN.guildMemberAvatar(guildID, userID: domainUser.id, hash: $0, size: 256) }
         }
         let defaultAvatarURL = DiscordProfileImageAssets.defaultAvatarURL(userID: user.id, discriminator: user.discriminator)
         let avatarURL = guildAvatarURL ?? domainUser.avatarURL ?? defaultAvatarURL

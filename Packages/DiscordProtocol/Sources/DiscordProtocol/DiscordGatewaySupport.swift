@@ -859,12 +859,7 @@ struct GatewayReadyGuildsDTO: Decodable {
 
         func domain(currentUserID: UserID?) -> Guild? {
             guard let id = GuildID(id), let name else { return nil }
-            let iconURL = icon.flatMap { hash in
-                URL(
-                    string:
-                        "https://cdn.discordapp.com/icons/\(id)/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                )
-            }
+            let iconURL = icon.flatMap { DiscordCDN.guildIcon(id, hash: $0) }
             let isOwnedByCurrentUser = owner
                 ?? ownerID.map { $0 == currentUserID?.description }
             return Guild(

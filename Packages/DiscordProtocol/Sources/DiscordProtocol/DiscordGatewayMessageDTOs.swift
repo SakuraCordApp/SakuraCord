@@ -274,12 +274,7 @@ struct MessageDTO: Decodable {
         func domain(guildID: GuildID?, userID: UserID) -> MessageGuildMember {
             let nickname = nick?.trimmingCharacters(in: .whitespacesAndNewlines)
             let avatarURL = avatar.flatMap { hash in
-                guildID.flatMap {
-                    URL(
-                        string:
-                        "https://cdn.discordapp.com/guilds/\($0)/users/\(userID)/avatars/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                    )
-                }
+                guildID.flatMap { DiscordCDN.guildMemberAvatar($0, userID: userID, hash: hash) }
             }
             return MessageGuildMember(
                 nickname: nickname?.isEmpty == false ? nickname : nil,

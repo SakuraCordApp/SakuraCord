@@ -65,9 +65,7 @@ public struct GuildProfile: Decodable, Equatable, Sendable {
     public var isDiscoverable: Bool { features.contains("DISCOVERABLE") }
 
     public var iconURL: URL? {
-        iconHash.flatMap {
-            URL(string: "https://cdn.discordapp.com/icons/\(id)/\($0).webp?size=128&animated=\($0.hasPrefix("a_") ? "true" : "false")")
-        }
+        iconHash.flatMap { DiscordCDN.guildIcon(id, hash: $0) }
     }
 
     /// The first-party card shows the custom banner only for discoverable servers.

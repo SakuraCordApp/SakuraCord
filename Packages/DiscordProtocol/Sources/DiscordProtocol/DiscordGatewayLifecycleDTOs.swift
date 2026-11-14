@@ -161,12 +161,7 @@ struct GatewayGuildPatchDTO: Decodable {
         }
         let resolvedIconURL: URL?
         if containsIcon {
-            resolvedIconURL = icon.flatMap { hash in
-                URL(
-                    string:
-                    "https://cdn.discordapp.com/icons/\(guildID)/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                )
-            }
+            resolvedIconURL = icon.flatMap { DiscordCDN.guildIcon(guildID, hash: $0) }
         } else {
             resolvedIconURL = existing?.iconURL
         }

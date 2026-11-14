@@ -24,12 +24,7 @@ struct GuildDTO: Decodable {
         guard let id = GuildID(id) else {
             throw ChatProviderError.invalidRequest("Discord returned an invalid guild identifier.")
         }
-        let iconURL = icon.flatMap { hash in
-            URL(
-                string:
-                "https://cdn.discordapp.com/icons/\(id)/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-            )
-        }
+        let iconURL = icon.flatMap { DiscordCDN.guildIcon(id, hash: $0) }
         return Guild(
             id: id,
             name: name,
@@ -217,10 +212,7 @@ struct GuildMemberDTO: Decodable {
 
     private func guildAvatarURL(guildID: GuildID?, userID: UserID) -> URL? {
         guard let avatar, let guildID else { return nil }
-        return URL(
-            string:
-            "https://cdn.discordapp.com/guilds/\(guildID)/users/\(userID)/avatars/\(avatar).webp?size=128&animated=\(avatar.hasPrefix("a_") ? "true" : "false")"
-        )
+        return DiscordCDN.guildMemberAvatar(guildID, userID: userID, hash: avatar)
     }
 }
 
