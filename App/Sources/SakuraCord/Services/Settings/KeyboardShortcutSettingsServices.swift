@@ -181,7 +181,7 @@ final class KeyboardShortcutSettingsStore {
     }
 
     func resetAll() {
-        preferences.reset(scope: .appWide, page: .keyboardShortcuts)
+        preferences.reset(page: .keyboardShortcuts)
         reload()
     }
 

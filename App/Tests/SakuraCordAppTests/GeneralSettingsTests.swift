@@ -166,11 +166,11 @@ import Testing
     store.set(.bool(false), for: .confirmQuitActiveWork)
 
     #expect(
-        store.export(scope: .appWide, page: .general).values[
+        store.export(page: .general)[
             SettingsControlID.launchDestination.rawValue
         ] == .string(SettingsLaunchDestination.accountPicker.rawValue)
     )
-    store.reset(scope: .appWide, page: .general)
+    store.reset(page: .general)
     #expect(
         store.value(for: .launchDestination)
             == .string(SettingsLaunchDestination.lastVisitedConversation.rawValue)
@@ -276,13 +276,13 @@ private enum GeneralSettingsTestError: LocalizedError {
     value.usesSmartQuotes = true
     store.save(value)
     #expect(store.load() == value)
-    let export = preferences.export(scope: .appWide, page: .general)
-    #expect(export.values[SettingsControlID.sendWithReturn.rawValue] == .bool(false))
-    #expect(export.values[SettingsControlID.spellCheck.rawValue] == .bool(true))
-    #expect(export.values[SettingsControlID.emojiSkinTone.rawValue] == .string("dark"))
-    #expect(export.values[SettingsControlID.privacyTypingIndicators.rawValue] == nil)
+    let export = preferences.export(page: .general)
+    #expect(export[SettingsControlID.sendWithReturn.rawValue] == .bool(false))
+    #expect(export[SettingsControlID.spellCheck.rawValue] == .bool(true))
+    #expect(export[SettingsControlID.emojiSkinTone.rawValue] == .string("dark"))
+    #expect(export[SettingsControlID.privacyTypingIndicators.rawValue] == nil)
 
-    preferences.reset(scope: .appWide, page: .general)
+    preferences.reset(page: .general)
     #expect(store.load() == .defaults)
     #expect(!privacyStore.load().sendsTypingIndicators)
 }

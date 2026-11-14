@@ -107,7 +107,7 @@ struct VoiceVideoSettingsPage: View {
 
     private func resetPreferences() {
         tests.stopAll()
-        SettingsPreferenceStore.shared.reset(scope: .appWide, page: .voiceVideo)
+        SettingsPreferenceStore.shared.reset(page: .voiceVideo)
         model.voiceVideoPreferences.reload()
         Task {
             _ = await model.selectInputDevice(nil)

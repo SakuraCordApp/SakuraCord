@@ -16,16 +16,16 @@ import UserNotifications
     value.notifiesMentions = false
     value.groupsByConversation = true
     let store = SettingsPreferenceStore(defaults: defaults)
-    let export = store.export(scope: .appWide, page: .notifications)
+    let export = store.export(page: .notifications)
     #expect(
-        export.values[SettingsControlID.notificationMentions.rawValue] == .bool(false)
+        export[SettingsControlID.notificationMentions.rawValue] == .bool(false)
     )
     #expect(
-        export.values[SettingsControlID.notificationGroupBursts.rawValue] == .bool(true)
+        export[SettingsControlID.notificationGroupBursts.rawValue] == .bool(true)
     )
-    #expect(export.values[SettingsControlID.launchDestination.rawValue] == nil)
+    #expect(export[SettingsControlID.launchDestination.rawValue] == nil)
 
-    store.reset(scope: .appWide, page: .notifications)
+    store.reset(page: .notifications)
     value.reload()
     #expect(value.dockBadgeStyle == .mentions)
     #expect(value.notifiesMentions)
@@ -39,12 +39,12 @@ import UserNotifications
     preferences.setSoundID(NotificationSoundLibrary.systemID(for: "Glass"), for: .message)
     preferences.setCustomSound(bookmark: Data([1]), name: "", for: .call)
 
-    let export = SettingsPreferenceStore(defaults: defaults).export(scope: .appWide, page: .notifications)
+    let export = SettingsPreferenceStore(defaults: defaults).export(page: .notifications)
     #expect(
-        export.values[SettingsControlID.notificationMessageSound.rawValue]
+        export[SettingsControlID.notificationMessageSound.rawValue]
             == .string("system:Glass")
     )
-    #expect(export.values[SettingsControlID.notificationCallRingtone.rawValue] == nil)
+    #expect(export[SettingsControlID.notificationCallRingtone.rawValue] == nil)
 }
 
 @MainActor

@@ -92,7 +92,7 @@ func `Public beta accents migrate into native-surface single-color themes`(
 
     #expect(actual == expected)
 
-    preferences.reset(scope: .appWide, page: .appearance)
+    preferences.reset(page: .appearance)
     let reset = SakuraCordThemeSettingsStore(preferences: preferences).load()
     #expect(reset == .defaultTheme)
 }
@@ -132,24 +132,24 @@ func `Public beta accents migrate into native-surface single-color themes`(
     store.save(selected)
 
     #expect(AppearanceSettingsStore(preferences: SettingsPreferenceStore(defaults: defaults)).load() == selected)
-    let appearanceExport = preferences.export(scope: .appWide, page: .appearance)
+    let appearanceExport = preferences.export(page: .appearance)
     #expect(
-        appearanceExport.values[SettingsControlID.appColorScheme.rawValue]
+        appearanceExport[SettingsControlID.appColorScheme.rawValue]
             == .string(AppColorScheme.light.rawValue)
     )
-    let interfaceExport = preferences.export(scope: .appWide, page: .interface)
+    let interfaceExport = preferences.export(page: .interface)
     #expect(
-        interfaceExport.values[SettingsControlID.composerBarAppearance.rawValue]
+        interfaceExport[SettingsControlID.composerBarAppearance.rawValue]
             == .string(ComposerBarAppearance.legacy.rawValue)
     )
     #expect(
-        interfaceExport.values[SettingsControlID.messageAppearance.rawValue]
+        interfaceExport[SettingsControlID.messageAppearance.rawValue]
             == .string(MessageAppearance.bubbles.rawValue)
     )
-    #expect(interfaceExport.values[SettingsControlID.directMessageAppearance.rawValue] == .string("bubbles"))
-    #expect(interfaceExport.values[SettingsControlID.groupMessageAppearance.rawValue] == .string("default"))
+    #expect(interfaceExport[SettingsControlID.directMessageAppearance.rawValue] == .string("bubbles"))
+    #expect(interfaceExport[SettingsControlID.groupMessageAppearance.rawValue] == .string("default"))
     #expect(
-        interfaceExport.values[SettingsControlID.messageDensity.rawValue]
+        interfaceExport[SettingsControlID.messageDensity.rawValue]
             == .double(12)
     )
 
@@ -159,9 +159,9 @@ func `Public beta accents migrate into native-surface single-color themes`(
     #expect(report.unsupportedKeys.isEmpty)
     #expect(AppearanceSettingsStore(preferences: importedPreferences).load() == selected)
 
-    preferences.reset(scope: .appWide, page: .interface)
+    preferences.reset(page: .interface)
     #expect(store.load().colorScheme == .light)
-    preferences.reset(scope: .appWide, page: .appearance)
+    preferences.reset(page: .appearance)
     #expect(store.load() == .defaults)
 }
 
@@ -183,9 +183,9 @@ func `Public beta accents migrate into native-surface single-color themes`(
     let restored = SakuraCordThemeStore(persistence: persistence)
     #expect(restored.activeTheme == expected)
 
-    let export = preferences.export(scope: .appWide, page: .appearance)
+    let export = preferences.export(page: .appearance)
     #expect(
-        export.values[SettingsControlID.themeDesigner.rawValue]
+        export[SettingsControlID.themeDesigner.rawValue]
             == .string(expected.storageValue)
     )
 }
@@ -879,7 +879,7 @@ private final class ThemeIntermediateFrameProbe {
     #expect(migrated.serverMessageAppearance == .bubbles)
     #expect(defaults.object(forKey: "settings.appearance.messages") == nil)
 
-    preferences.reset(scope: .appWide, page: .interface)
+    preferences.reset(page: .interface)
     let restored = AppearanceSettingsStore(preferences: SettingsPreferenceStore(defaults: defaults))
     #expect(restored.load() == .defaults)
 }

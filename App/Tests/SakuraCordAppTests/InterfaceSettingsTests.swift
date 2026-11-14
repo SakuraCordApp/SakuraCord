@@ -107,14 +107,14 @@ import Testing
     loaded.includesTimestampSeconds = true
     store.save(loaded)
     #expect(store.load() == loaded)
-    let export = preferences.export(scope: .appWide, page: .interface)
+    let export = preferences.export(page: .interface)
     #expect(
-        export.values[SettingsControlID.timestampFormat.rawValue]
+        export[SettingsControlID.timestampFormat.rawValue]
             == .string(InterfaceTimestampFormat.twentyFourHour.rawValue)
     )
-    #expect(export.values[SettingsControlID.launchDestination.rawValue] == nil)
+    #expect(export[SettingsControlID.launchDestination.rawValue] == nil)
 
-    preferences.reset(scope: .appWide, page: .interface)
+    preferences.reset(page: .interface)
     #expect(store.load() == .defaults)
 }
 

@@ -54,7 +54,7 @@ func `Existing lists are seeded once and subsequent edits survive store reconstr
     let emptiedStore = PrivacySafetySettingsStore(preferences: SettingsPreferenceStore(defaults: defaults))
     #expect(emptiedStore.load().trustedDomains.isEmpty)
 
-    reopened.reset(scope: .appWide, page: .privacySafety)
+    reopened.reset(page: .privacySafety)
     #expect(emptiedStore.load().trustedDomains == ExternalLinkTrustedDomain.defaults)
     #expect(PrivacySafetySettingsStore(preferences: SettingsPreferenceStore(defaults: defaults)).load() == .defaults)
 }

@@ -159,8 +159,8 @@ final class GeneralWindowRestorationStore {
     }
 
     private static func visibilityKey(for context: InspectorContext) -> String {
-        guard case let .appWide(key)? = SettingsPreferenceRegistry.foundation.registration(context.controlID)?.storage
-        else { preconditionFailure("Each sidebar context has an app-wide preference.") }
+        guard let key = SettingsPreferenceRegistry.foundation.registration(context.controlID)?.key
+        else { preconditionFailure("Each sidebar context has a registered preference.") }
         return key
     }
 
