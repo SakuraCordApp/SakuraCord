@@ -4,6 +4,7 @@ import SakuraCordModels
 struct FriendsProjection {
     let query: String
     private let section: FriendsSection
+    private let headerTitle: String
     private(set) var sections: [MemberSection]
     let pendingIDs: Set<UserID>
     let count: Int
@@ -12,6 +13,7 @@ struct FriendsProjection {
     init(section: FriendsSection, query: String, groups: [FriendsListGroup], revealed: Set<UserID>) {
         self.query = query
         self.section = section
+        headerTitle = groups.first?.title ?? ""
         count = groups.reduce(0) { $0 + $1.rows.count }
         pendingIDs = section == .pending ? Set(groups.flatMap(\.rows).map(\.id)) : []
         var positions: [UserID: (section: Int, row: Int)] = [:]
@@ -19,7 +21,7 @@ struct FriendsProjection {
             for (rowIndex, row) in group.rows.enumerated() { positions[row.id] = (index, rowIndex) }
             return MemberSection(
                 id: .role(name: "Friends \(section) \(index)", position: index),
-                title: section == .pending ? (group.rows.first?.relationship.type == .incomingRequest ? "Received" : "Sent") : "",
+                title: section == .pending ? group.title : "",
                 colorHex: nil, totalCount: group.rows.count,
                 members: group.rows.map { Self.member($0, revealed: revealed.contains($0.id)) }
             )
@@ -33,15 +35,9 @@ struct FriendsProjection {
         // only repeat.
         guard count > 0 else { return [] }
         if section == .pending { return sections }
-        let title = switch section {
-        case .online: "Online"
-        case .all: "All Friends"
-        case .pending: "Pending"
-        case .addFriend: ""
-        }
         let header = MemberSection(
             id: .role(name: "Friends category", position: -1),
-            title: title, colorHex: nil, totalCount: count, members: []
+            title: headerTitle, colorHex: nil, totalCount: count, members: []
         )
         return [header] + sections
     }
