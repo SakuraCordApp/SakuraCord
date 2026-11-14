@@ -606,6 +606,13 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// Drops a relaid row's bitmap and pointer region caches.
+    func invalidateRowLayout(_ identifier: NativeMessageTimelineItem.Identifier) {
+        invalidateBitmap(identifier)
+        mentionPointerRegionCache[identifier] = nil
+        codeBlockPointerRegionCache[identifier] = nil
+    }
+
     func invalidateBitmap(
         _ identifier: NativeMessageTimelineItem.Identifier
     ) {

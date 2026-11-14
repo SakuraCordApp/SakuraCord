@@ -116,9 +116,7 @@ extension NativeMessageTimelineCoordinator {
             let updatedLayout = layout(for: item, width: width)
             layouts[index] = updatedLayout
             rowHeights[index] = updatedLayout.height
-            canvas?.invalidateBitmap(item.identifier)
-            canvas?.mentionPointerRegionCache[item.identifier] = nil
-            canvas?.codeBlockPointerRegionCache[item.identifier] = nil
+            canvas?.invalidateRowLayout(item.identifier)
             didMutateItems = true
             dirtyItemIndexes.insert(index)
             if abs(previousHeight - updatedLayout.height) >= 0.5 {

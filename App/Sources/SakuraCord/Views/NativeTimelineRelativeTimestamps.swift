@@ -67,9 +67,7 @@ extension NativeMessageTimelineCoordinator {
             changesHeight = changesHeight || abs(updated.height - rowHeights[index]) >= 0.5
             layouts[index] = updated
             rowHeights[index] = updated.height
-            canvas.invalidateBitmap(items[index].identifier)
-            canvas.mentionPointerRegionCache[items[index].identifier] = nil
-            canvas.codeBlockPointerRegionCache[items[index].identifier] = nil
+            canvas.invalidateRowLayout(items[index].identifier)
             canvas.accessibilityProxies.remove(items[index].identifier)
             changed.insert(index)
         }
