@@ -1553,91 +1553,30 @@ extension NativeTimelineCanvasView {
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout
     ) -> Set<MediaImageKey> {
+        let identifier = NativeMessageTimelineItem.Identifier.message(row.identity)
         var accumulator = AnimatedMediaAccumulator(canvas: self, collectsKeys: true)
         appendAnimatedAvatars(
             row: row,
-            identifier: .message(row.identity),
+            identifier: identifier,
+            layout: layout,
+            accumulator: &accumulator
+        )
+        appendAnimatedMessageContent(
+            row: row,
+            identifier: identifier,
+            layout: layout,
+            accumulator: &accumulator
+        )
+        appendAnimatedEmbeds(
+            message: row.message,
+            identifier: identifier,
             layout: layout,
             accumulator: &accumulator
         )
         var keys = accumulator.keys
-        appendAnimatedContentKeys(for: row, layout: layout, into: &keys)
         appendAnimatedComponentKeys(for: row, layout: layout, into: &keys)
         appendAnimatedStickerAndReactionKeys(for: row, layout: layout, into: &keys)
         return keys
-    }
-
-    private func appendAnimatedContentKeys(
-        for row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        into keys: inout Set<MediaImageKey>
-    ) {
-        let message = row.message
-        for region in layout.linkedImageRegions
-        where Self.isPotentiallyAnimated(region.reference.displayURL) {
-            keys.insert(.media(
-                region.reference.displayURL,
-                maximumPixelDimension: region.reference.isEmoji ? 96 : 720
-            ))
-        }
-        for attachment in message.attachments
-        where attachment.mediaKind == .animatedImage {
-            if !NativeTimelineSpoilerConcealmentPolicy
-                .isConcealed(
-                    messageID: message.id,
-                    contentID:
-                        NativeTimelineComponentRevealKey
-                            .attachmentComponentID(attachment.id),
-                    isSpoiler: attachment.isSpoiler,
-                    store: spoilerRevealStore
-                ) {
-                if let key = MediaImageKey.attachment(attachment) {
-                    keys.insert(key)
-                }
-            }
-        }
-        if let value = layout.attributedContent {
-            appendAnimatedInlineKeys(
-                from: value,
-                revealedSpoilerLocations: revealedTextSpoilerLocations(
-                    messageID: message.id,
-                    region: .content,
-                    value: value,
-                    layout: layout
-                ),
-                into: &keys
-            )
-        }
-        for region in layout.embedRegions {
-            for image in region.imageRegions
-            where Self.isPotentiallyAnimated(image.url) {
-                keys.insert(.media(
-                    image.url,
-                    maximumPixelDimension: image.maximumPixelDimension
-                ))
-            }
-            if !region.mediaIsVideo,
-               let url = region.mediaURL,
-               Self.isPotentiallyAnimated(url)
-            {
-                keys.insert(.media(url))
-            }
-            for (textIndex, textRegion) in region.textRegions.enumerated() {
-                appendAnimatedInlineKeys(
-                    from: textRegion.text.value,
-                    revealedSpoilerLocations: revealedTextSpoilerLocations(
-                        messageID: message.id,
-                        region: .embed(
-                            embedID: region.embedID,
-                            textIndex: textIndex
-                        ),
-                        value: textRegion.text.value,
-                        layout: layout
-                    ),
-                    into: &keys
-                )
-            }
-        }
     }
 
     private func appendAnimatedComponentKeys(

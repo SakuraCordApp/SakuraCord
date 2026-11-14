@@ -648,7 +648,6 @@ func `animated attachment and component spoilers start only after their own reve
                 isAnimated: true
             ),
         ],
-        flags: [.isComponentsV2],
         components: [
             .container(
                 id: "hidden-container",
