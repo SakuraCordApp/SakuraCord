@@ -101,11 +101,8 @@ extension DiscordRESTProvider {
         let userRevisions = cachedUserRevisions
         let rows: [GatewayRelationshipDTO]
         do {
-            let (data, response) = try await perform("/users/@me/relationships", method: "GET")
-            guard (200 ..< 300).contains(response.statusCode) else {
-                throw unexplainedFailure(data, response)
-            }
-            rows = try JSONDecoder().decode(LossyList<GatewayRelationshipDTO>.self, from: data).elements
+            let list: LossyList<GatewayRelationshipDTO> = try await request("/users/@me/relationships")
+            rows = list.elements
         } catch {
             // A later explicit selection may read again on this connection.
             if relationshipLoadGeneration == generation { relationshipLoadGeneration = nil }

@@ -77,10 +77,7 @@ public extension DiscordRESTProvider {
             var body: [String: JSONValue] = ["session_id": .string(sessionID)]
             if let guildID { body["guild_id"] = .string(guildID.description) }
             try Task.checkCancellation()
-            let (data, response) = try await perform(
-                "/activities/\(channelID)/\(applicationID)", method: "POST", body: body
-            )
-            guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
+            try await requestEmpty("/activities/\(channelID)/\(applicationID)", method: "POST", body: body)
             return
         }
         let invocation = ApplicationCommandInvocation(command: command, channelID: channelID, guildID: guildID, values: [])
@@ -109,10 +106,7 @@ public extension DiscordRESTProvider {
         let sessionID = try await interactionSessionID()
         let path = "/applications/\(instance.applicationID)/activities/\(instance.location.id)"
             + "/instances/\(instance.instanceID)/leave"
-        let (data, response) = try await perform(
-            path, method: "POST", body: ["session_id": .string(sessionID)]
-        )
-        guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
+        try await requestEmpty(path, method: "POST", body: ["session_id": .string(sessionID)])
     }
 
     /// A short-lived ticket that authenticates the Activity to Discord's proxy.
@@ -151,11 +145,10 @@ public extension DiscordRESTProvider {
     func acknowledgeEmbeddedActivityDisclosures(
         _ disclosures: [EmbeddedActivityDisclosure], applicationID: ApplicationID
     ) async throws {
-        let (data, response) = try await perform(
+        try await requestEmpty(
             "/applications/\(applicationID)/disclosures", method: "POST",
             body: ["disclosures": .array(disclosures.map { .number(Double($0.rawValue)) })]
         )
-        guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
     }
 
     /// Grants the Activity an authorization code, or records the person's
