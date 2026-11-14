@@ -57,7 +57,7 @@ private struct ProfileImageMenuButton: NSViewRepresentable {
     let open: (ProfileEditorPicker) -> Void
     @Environment(\.isEnabled) private var isEnabled
 
-    func makeCoordinator() -> Coordinator { Coordinator(editor: editor, target: target, open: open) }
+    func makeCoordinator() -> Coordinator { Coordinator(bridge: self) }
 
     func makeNSView(context: Context) -> MenuButton {
         let button = MenuButton(title: "", target: context.coordinator, action: #selector(Coordinator.showMenu(_:)))
@@ -69,9 +69,7 @@ private struct ProfileImageMenuButton: NSViewRepresentable {
     }
 
     func updateNSView(_ button: MenuButton, context: Context) {
-        context.coordinator.editor = editor
-        context.coordinator.target = target
-        context.coordinator.open = open
+        context.coordinator.bridge = self
         button.editBounds = editBounds
         button.isEnabled = isEnabled
         button.setAccessibilityLabel(target == .avatar ? String(localized: "Edit Avatar and Decoration", bundle: #bundle) : String(localized: "Edit Banner and Effect", bundle: #bundle))
@@ -107,28 +105,21 @@ private struct ProfileImageMenuButton: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject {
-        var editor: ProfileEditorState
-        var target: ProfileEditorImageMenu.Target
-        var open: (ProfileEditorPicker) -> Void
-        private var actions: [() -> Void] = []
+        var bridge: ProfileImageMenuButton
         private var isTrackingMenu = false
 
-        init(editor: ProfileEditorState, target: ProfileEditorImageMenu.Target, open: @escaping (ProfileEditorPicker) -> Void) {
-            self.editor = editor
-            self.target = target
-            self.open = open
+        init(bridge: ProfileImageMenuButton) {
+            self.bridge = bridge
         }
 
         @objc func showMenu(_ sender: MenuButton) {
+            let editor = bridge.editor
+            let open = bridge.open
             guard sender.isEnabled, !editor.isSaving, !editor.requiresReload, !isTrackingMenu else { return }
             isTrackingMenu = true
-            defer {
-                isTrackingMenu = false
-                actions.removeAll()
-            }
-            actions.removeAll()
+            defer { isTrackingMenu = false }
             let menu = NSMenu()
-            switch target {
+            switch bridge.target {
             case .avatar:
                 if editor.scope == .main || editor.isNitro {
                     add(String(localized: "Change Avatar", bundle: #bundle), to: menu, systemImage: "person.crop.circle") { [open] in open(.avatar) }
@@ -157,17 +148,11 @@ private struct ProfileImageMenuButton: NSViewRepresentable {
         }
 
         private func add(_ title: String, to menu: NSMenu, systemImage: String = "trash", destructive: Bool = false, action: @escaping () -> Void) {
-            let item = NSMenuItem(title: title, action: #selector(activate(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = actions.count
-            ContextMenuItemSupport.configure(item, title: title, systemImage: systemImage, isDestructive: destructive)
-            actions.append(action)
-            menu.addItem(item)
-        }
-
-        @objc private func activate(_ item: NSMenuItem) {
-            guard !editor.isSaving, !editor.isLoading, !editor.requiresReload, actions.indices.contains(item.tag) else { return }
-            actions[item.tag]()
+            menu.addItem(ContextMenuItemSupport.item(title, systemImage: systemImage, isDestructive: destructive) { [self] in
+                let editor = bridge.editor
+                guard !editor.isSaving, !editor.isLoading, !editor.requiresReload else { return }
+                action()
+            })
         }
     }
 }

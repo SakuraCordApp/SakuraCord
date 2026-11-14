@@ -11,7 +11,7 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
     let open: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(configuration)
+        Coordinator(bridge: self)
     }
 
     func makeNSView(context: Context) -> MediaViewerMenuNSControl {
@@ -27,39 +27,15 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
         _ nsView: MediaViewerMenuNSControl,
         context: Context
     ) {
-        context.coordinator.update(configuration)
-    }
-
-    private var configuration: Configuration {
-        Configuration(
-            item: item,
-            copyImage: copyImage,
-            copyLink: copyLink,
-            copyAttachmentID: copyAttachmentID,
-            saveActions: saveActions,
-            open: open
-        )
-    }
-
-    struct Configuration {
-        let item: RichMediaItem
-        let copyImage: () -> Void
-        let copyLink: () -> Void
-        let copyAttachmentID: () -> Void
-        let saveActions: MediaSaveMenuActions
-        let open: () -> Void
+        context.coordinator.bridge = self
     }
 
     @MainActor
     final class Coordinator: NSObject {
-        private var configuration: Configuration
+        var bridge: MediaViewerMoreMenuButton
 
-        init(_ configuration: Configuration) {
-            self.configuration = configuration
-        }
-
-        func update(_ configuration: Configuration) {
-            self.configuration = configuration
+        init(bridge: MediaViewerMoreMenuButton) {
+            self.bridge = bridge
         }
 
         @objc func showMenu(_ sender: NSControl) {
@@ -73,79 +49,51 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
         func makeMenu() -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            if case .image = configuration.item.kind {
-                menu.addItem(
-                    menuItem(
-                        "Copy Image",
-                        systemImage: "document.on.document.fill",
-                        action: #selector(copyImageFromMenu)
-                    )
-                )
+            if case .image = bridge.item.kind {
+                menu.addItem(ContextMenuItemSupport.item("Copy Image", systemImage: "document.on.document.fill") { [self] in
+                    bridge.copyImage()
+                })
             }
-            menu.addItem(
-                menuItem(
-                    "Copy Media Link",
-                    systemImage: "link",
-                    action: #selector(copyLinkFromMenu)
-                )
-            )
-            menu.addItem(
-                menuItem(
-                    "Copy Attachment ID",
-                    systemImage: "number.square.fill",
-                    action: #selector(copyAttachmentIDFromMenu)
-                )
-            )
+            menu.addItem(ContextMenuItemSupport.item("Copy Media Link", systemImage: "link") { [self] in
+                bridge.copyLink()
+            })
+            menu.addItem(ContextMenuItemSupport.item("Copy Attachment ID", systemImage: "number.square.fill") { [self] in
+                bridge.copyAttachmentID()
+            })
             menu.addItem(.separator())
-            let detailsItem = menuItem(
-                "View Details",
-                systemImage: "info.circle",
-                action: nil
-            )
+            let detailsItem = ContextMenuItemSupport.item("View Details", systemImage: "info.circle", action: nil)
             detailsItem.submenu = detailsMenu()
             menu.addItem(detailsItem)
             menu.addItem(.separator())
-            if configuration.item.canSave {
+            if bridge.item.canSave {
                 menu.addItem(
                     MediaSaveMenuBuilder.submenuItem(
                         "Save Media",
                         systemImage: "arrow.down.to.line",
-                        actions: configuration.saveActions
+                        actions: bridge.saveActions
                     )
                 )
             }
-            menu.addItem(
-                menuItem(
-                    "Open in Browser",
-                    systemImage: "arrow.up.forward.app",
-                    action: #selector(openFromMenu)
-                )
-            )
+            menu.addItem(ContextMenuItemSupport.item("Open in Browser", systemImage: "arrow.up.forward.app") { [self] in
+                perform(#selector(performDeferredOpen), with: nil, afterDelay: 0)
+            })
             return menu
         }
 
         private func detailsMenu() -> NSMenu {
             let menu = NSMenu(title: "View Details")
             menu.autoenablesItems = false
-            menu.addItem(
-                detailItem(
-                    title: "Filename",
-                    subtitle: filenameDescription,
-                    action: #selector(copyFilenameFromMenu)
-                )
-            )
-            menu.addItem(
-                detailItem(
-                    title: "Size",
-                    subtitle: sizeDescription,
-                    action: #selector(copySizeFromMenu)
-                )
-            )
+            let filename = ContextMenuItemSupport.item("Filename") { [self] in Pasteboard.copy(filenameDescription) }
+            filename.subtitle = filenameDescription
+            menu.addItem(filename)
+            let size = ContextMenuItemSupport.item("Size") { [self] in Pasteboard.copy(sizeDescription) }
+            size.subtitle = sizeDescription
+            menu.addItem(size)
             return menu
         }
 
         private var sizeDescription: String {
-            let item = configuration.item
+            let item = bridge.item
             let dimensions: String? = if let width = item.width,
                                          let height = item.height,
                                          width > 0,
@@ -169,81 +117,15 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
         }
 
         private var filenameDescription: String {
-            let title = configuration.item.title
+            let title = bridge.item.title
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return title.isEmpty
-                ? configuration.item.url.lastPathComponent
+                ? bridge.item.url.lastPathComponent
                 : title
         }
 
-        private func detailItem(
-            title: String,
-            subtitle: String,
-            action: Selector
-        ) -> NSMenuItem {
-            let item = NSMenuItem(
-                title: title,
-                action: action,
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.subtitle = subtitle
-            item.isEnabled = true
-            return item
-        }
-
-        private func menuItem(
-            _ title: String,
-            systemImage: String? = nil,
-            action: Selector?
-        ) -> NSMenuItem {
-            let item = NSMenuItem(
-                title: title,
-                action: action,
-                keyEquivalent: ""
-            )
-            item.target = action == nil ? nil : self
-            item.isEnabled = true
-            if let systemImage {
-                ContextMenuItemSupport.configure(
-                    item,
-                    title: title,
-                    systemImage: systemImage
-                )
-            }
-            return item
-        }
-
-        @objc private func copyImageFromMenu() {
-            configuration.copyImage()
-        }
-
-        @objc private func copyLinkFromMenu() {
-            configuration.copyLink()
-        }
-
-        @objc private func copyAttachmentIDFromMenu() {
-            configuration.copyAttachmentID()
-        }
-
-        @objc private func copyFilenameFromMenu() {
-            Pasteboard.copy(filenameDescription)
-        }
-
-        @objc private func copySizeFromMenu() {
-            Pasteboard.copy(sizeDescription)
-        }
-
-        @objc private func openFromMenu() {
-            perform(
-                #selector(performDeferredOpen),
-                with: nil,
-                afterDelay: 0
-            )
-        }
-
         @objc private func performDeferredOpen() {
-            configuration.open()
+            bridge.open()
         }
     }
 }

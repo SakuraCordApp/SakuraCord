@@ -23,7 +23,7 @@ struct ColorPickerContextMenuBridge: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject {
+    final class Coordinator {
         var bridge: ColorPickerContextMenuBridge
 
         init(bridge: ColorPickerContextMenuBridge) { self.bridge = bridge }
@@ -31,47 +31,27 @@ struct ColorPickerContextMenuBridge: NSViewRepresentable {
         func makeMenu() -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            menu.addItem(item(
+            menu.addItem(ContextMenuItemSupport.item(
                 String(localized: "Input Hex Code…", bundle: #bundle),
-                image: "number",
-                action: #selector(inputHexCode),
+                systemImage: "number",
                 isEnabled: bridge.canInputColor
-            ))
+            ) { [self] in
+                guard bridge.canInputColor else { return }
+                bridge.input()
+            })
             if bridge.canRemoveColor, bridge.remove != nil {
                 menu.addItem(.separator())
-                menu.addItem(item(
+                menu.addItem(ContextMenuItemSupport.item(
                     String(localized: "Remove Color", bundle: #bundle),
-                    image: "trash",
-                    action: #selector(removeColor),
+                    systemImage: "trash",
                     isEnabled: bridge.canRemoveColor,
                     isDestructive: true
-                ))
+                ) { [self] in
+                    guard bridge.canRemoveColor else { return }
+                    bridge.remove?()
+                })
             }
             return menu
-        }
-
-        private func item(
-            _ title: String,
-            image: String,
-            action: Selector,
-            isEnabled: Bool,
-            isDestructive: Bool = false
-        ) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            item.isEnabled = isEnabled
-            ContextMenuItemSupport.configure(item, title: title, systemImage: image, isDestructive: isDestructive)
-            return item
-        }
-
-        @objc private func inputHexCode() {
-            guard bridge.canInputColor else { return }
-            bridge.input()
-        }
-
-        @objc private func removeColor() {
-            guard bridge.canRemoveColor else { return }
-            bridge.remove?()
         }
     }
 }

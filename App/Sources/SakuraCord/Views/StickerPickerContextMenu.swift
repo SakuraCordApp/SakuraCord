@@ -7,7 +7,7 @@ struct StickerPickerContextMenuBridge: NSViewRepresentable {
     let isFavorite: Bool
     let toggleFavorite: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(from: self) }
+    func makeCoordinator() -> Coordinator { Coordinator(bridge: self) }
 
     func makeNSView(context: Context) -> MediaImageContextMenuHitView {
         let view = MediaImageContextMenuHitView()
@@ -18,68 +18,38 @@ struct StickerPickerContextMenuBridge: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: MediaImageContextMenuHitView, context: Context) {
-        context.coordinator.update(from: self)
+        context.coordinator.bridge = self
         nsView.menuProvider = { [weak coordinator = context.coordinator] in
             coordinator?.makeMenu()
         }
     }
 
     @MainActor
-    final class Coordinator: NSObject {
-        private var sticker: MessageSticker
-        private var isFavorite: Bool
-        private var toggleFavorite: () -> Void
+    final class Coordinator {
+        var bridge: StickerPickerContextMenuBridge
 
-        init(from bridge: StickerPickerContextMenuBridge) {
-            sticker = bridge.sticker
-            isFavorite = bridge.isFavorite
-            toggleFavorite = bridge.toggleFavorite
-        }
-
-        func update(from bridge: StickerPickerContextMenuBridge) {
-            sticker = bridge.sticker
-            isFavorite = bridge.isFavorite
-            toggleFavorite = bridge.toggleFavorite
+        init(bridge: StickerPickerContextMenuBridge) {
+            self.bridge = bridge
         }
 
         func makeMenu() -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            menu.addItem(item(
-                isFavorite ? "Remove from Favorites" : "Add to Favorites",
-                image: isFavorite ? "star" : "star.fill",
-                action: #selector(toggleFavoriteFromMenu)
+            menu.addItem(ContextMenuItemSupport.item(
+                bridge.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                systemImage: bridge.isFavorite ? "star" : "star.fill",
+                action: { [self] in bridge.toggleFavorite() }
             ))
             menu.addItem(.separator())
-            menu.addItem(item(
-                "Copy Sticker ID",
-                image: "number.square.fill",
-                action: #selector(copyStickerID)
-            ))
-            if sticker.pickerImageLink != nil {
-                menu.addItem(item(
-                    "Copy Sticker Image Link",
-                    image: "link",
-                    action: #selector(copyStickerImageLink)
-                ))
+            menu.addItem(ContextMenuItemSupport.item("Copy Sticker ID", systemImage: "number.square.fill") { [self] in
+                Pasteboard.copy(bridge.sticker.id)
+            })
+            if bridge.sticker.pickerImageLink != nil {
+                menu.addItem(ContextMenuItemSupport.item("Copy Sticker Image Link", systemImage: "link") { [self] in
+                    bridge.sticker.pickerImageLink.map { Pasteboard.copy($0.absoluteString) }
+                })
             }
             return menu
-        }
-
-        private func item(_ title: String, image: String, action: Selector) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            item.isEnabled = true
-            ContextMenuItemSupport.configure(item, title: title, systemImage: image)
-            return item
-        }
-
-        @objc private func toggleFavoriteFromMenu() { toggleFavorite() }
-        @objc private func copyStickerID() { copy(sticker.id) }
-        @objc private func copyStickerImageLink() { copy(sticker.pickerImageLink?.absoluteString) }
-
-        private func copy(_ value: String?) {
-            value.map(Pasteboard.copy)
         }
     }
 }
