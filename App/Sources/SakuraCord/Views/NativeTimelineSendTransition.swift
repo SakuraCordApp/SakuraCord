@@ -922,7 +922,7 @@ extension NativeTimelineCanvasView {
             return
         }
         // The flight aims at the row's static place.
-        finishReactionTransitions()
+        finishRowMotions()
         guard let window,
               let (geometry, bubbleInWindow) = sendTransitionGeometry(
                   from: pending, rowIndex: index, in: window
@@ -1640,7 +1640,7 @@ extension NativeMessageTimelineCoordinator {
             // Starting the flight ends any running row motion, so rows it still
             // holds away from their places, such as above a preview unrolling,
             // glide there with the transcript instead of jumping.
-            let held = anchorIndex.map(canvas.reactionMotionOffset(at:)) ?? 0
+            let held = anchorIndex.map(canvas.rowMotionOffset(at:)) ?? 0
             canvas.beginSendTransition(from: pending, rowIndex: index, transcriptShift: shift() + held)
         } else if anchor.isSending, parent.model.animatesMessageSending {
             // The composer resizing as it clears moves the transcript too.

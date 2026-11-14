@@ -50,7 +50,7 @@ extension NativeTimelineCanvasView {
         // After the content origin settles: an expansion measures where its
         // rows landed the header.
         refreshDisclosureGeometry()
-        refreshReactionMotionGeometry()
+        refreshRowMotionGeometry()
         positionReactionBandViews()
         reconcileServerTagCardPresentation()
         contentOriginMoved =
@@ -82,9 +82,9 @@ extension NativeTimelineCanvasView {
         }
         // Rows laid out at another width no longer match the chips' frames
         // or the fading pictures.
-        if !reactionTransitions.isEmpty || !reactionRowMotions.isEmpty || !departedRuns.isEmpty,
+        if !reactionTransitions.isEmpty || !rowMotions.isEmpty || !departedRuns.isEmpty,
            abs(reactionTransitionWidth - max(1, viewportWidth)) >= 0.5 {
-            finishReactionTransitions()
+            finishRowMotions()
         }
         let size = NSSize(
             width: max(1, viewportWidth),
@@ -297,7 +297,7 @@ extension NativeTimelineCanvasView {
         finishSendTransitions()
         cancelTranscriptGlide()
         finishUnreadDividerFades()
-        finishReactionTransitions()
+        finishRowMotions()
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = nil
         visibleMediaRequestTask?.cancel()
@@ -590,7 +590,7 @@ extension NativeTimelineCanvasView {
             )
             clearBitmapCache(keepingCapacity: false)
             removeReactionMouseMonitor()
-            finishReactionTransitions()
+            finishRowMotions()
             animatedMediaReconcileTask?.cancel()
             animatedMediaReconcileTask = nil
             animatedMediaRows.removeAll()
@@ -867,7 +867,7 @@ extension NativeTimelineCanvasView {
         let reactionBandTop = reactionBandTop(for: item, rowFrame: rowFrame)
         if let reactionBandTop, dirtyRect.maxY > reactionBandTop { drawReactionBand(at: index, rowFrame: rowFrame) }
         // A deleted run fading below the row keeps its own part of the gap.
-        let motionClipMaxY = reactionMotionRemainingHeight(at: index) == 0
+        let motionClipMaxY = rowMotionRemainingHeight(at: index) == 0
             ? nil : rowFrame.maxY - departedGapHeight(below: item.identifier)
         let clipMaxY = [reactionBandTop, motionClipMaxY].compactMap(\.self).min()
         if let clipMaxY {

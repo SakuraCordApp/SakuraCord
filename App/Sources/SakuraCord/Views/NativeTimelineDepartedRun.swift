@@ -13,7 +13,7 @@ struct NativeTimelineDepartedRun {
         /// The motion whose step closes this piece's height.
         let motionID: Int
         var startUptime: TimeInterval?
-        var timing = NativeTimelineRowMotionTiming.chips
+        var timing = NativeTimelineRowMotionTiming.quart
         /// How far through the motion the piece is fully faded, which a
         /// header taking its place in the next row waits for.
         var fadeEnd: CGFloat = 1
@@ -62,7 +62,7 @@ struct NativeTimelineDepartedRun {
 extension NativeTimelineCanvasView {
     /// A row's picture as it was, for a fade that outlives its layout: the
     /// cached bitmap when it had one, otherwise a fresh raster.
-    func rowFadeImage(_ row: NativeTimelineReactionBaseline.Row, width: CGFloat) -> NSImage? {
+    func rowFadeImage(_ row: NativeTimelineRowMotionBaseline.Row, width: CGFloat) -> NSImage? {
         if let cached = row.bitmap, cached.item == row.item, abs(cached.width - width) < 0.5,
            cached.appearanceName == effectiveAppearance.name, let picture = cached.images[-1] {
             return picture

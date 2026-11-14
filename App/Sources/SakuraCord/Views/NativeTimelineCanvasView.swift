@@ -307,10 +307,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
-    var pendingReactionBaseline: NativeTimelineReactionBaseline?
+    var pendingReactionBaseline: NativeTimelineRowMotionBaseline?
     var reactionTransitions: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionTransition] = [:]
-    var reactionRowMotions: [NativeTimelineReactionRowMotion] = []
-    /// Per-frame geometry of `reactionRowMotions`: the displacement of rows up
+    var rowMotions: [NativeTimelineRowMotion] = []
+    /// Per-frame geometry of `rowMotions`: the displacement of rows up
     /// to the first changed one, and how much less each changed row and the
     /// rows after it are displaced.
     var reactionMotionShift: CGFloat = 0
@@ -336,8 +336,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
 
     /// By deleted row, for the update that deleted it to place.
     var handOvers: [NativeMessageTimelineItem.Identifier: HandOver] = [:]
-    var nextReactionMotionID = 1
-    let reactionTicker = DisplayLinkTicker()
+    var nextRowMotionID = 1
+    let rowMotionTicker = DisplayLinkTicker()
     /// When the reaction ticker last stepped, to tell a late frame.
     var reactionStepUptime: TimeInterval?
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
@@ -500,7 +500,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         super.viewDidChangeEffectiveAppearance()
         // In-flight copies were rendered for the previous appearance.
         finishSendTransitions(reconcilesHeldMedia: true)
-        finishReactionTransitions()
+        finishRowMotions()
         invalidatePresentationCaches()
         reconcileBeginningSelectionOverlay()
         reconcileHistorySkeletonShimmer()
@@ -514,7 +514,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         guard backing != reactionBacking else { return }
         reactionBacking = backing
         // Moving chips were drawn for the previous display's scale and colours.
-        finishReactionTransitions()
+        finishRowMotions()
     }
 
     deinit {
@@ -532,7 +532,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             transcriptGlideFinishTask?.cancel()
             unreadDividerGapTicker.stop()
             authorHoverTicker.stop()
-            reactionTicker.stop()
+            rowMotionTicker.stop()
             for fade in unreadDividerFades.values {
                 fade.finishTask?.cancel()
                 fade.overlay.removeFromSuperview()

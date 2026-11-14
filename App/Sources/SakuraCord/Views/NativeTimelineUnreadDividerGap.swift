@@ -213,7 +213,7 @@ extension NativeTimelineCanvasView {
             progress: 0
         )
         // Two row motions would fight over the same displacement.
-        finishReactionTransitions()
+        finishRowMotions()
         unreadDividerGap = NativeTimelineUnreadDividerGap(
             identifier: source.identifier,
             isAppearing: appearing,

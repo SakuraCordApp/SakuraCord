@@ -34,7 +34,7 @@ extension NativeTimelineCanvasView {
     /// from the side that has text. Nil for any other change, which moves
     /// as one piece.
     func editedTextBand(
-        from old: NativeTimelineReactionBaseline.Row,
+        from old: NativeTimelineRowMotionBaseline.Row,
         at index: Int,
         width: CGFloat,
         motionID: Int
@@ -173,7 +173,7 @@ extension NativeTimelineCanvasView {
             // of the row still gliding does not speed up.
             let frame = paintFrame.offsetBy(dx: 0, dy: shown - band.newHeight)
             // A band is dropped with its motion, so the motion is running.
-            guard let motion = reactionRowMotions.first(where: { $0.id == band.motionID }) else {
+            guard let motion = rowMotions.first(where: { $0.id == band.motionID }) else {
                 preconditionFailure("A text band outlived its motion")
             }
             let handoff = motion.progress(at: rowMotionUptime)

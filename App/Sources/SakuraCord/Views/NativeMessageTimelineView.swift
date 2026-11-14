@@ -609,7 +609,7 @@ extension NativeMessageTimelineCoordinator {
                 || timestampDayChanged
             // The coordinator mutates the storage it shares with the canvas.
             if parent.rowsRevision != rowsRevision, !conversationChanged {
-                canvas.captureReactionBaseline()
+                canvas.captureRowMotionBaseline()
             }
             let oldItemCount = items.count
             let oldRowCount = rowCount
@@ -979,7 +979,7 @@ extension NativeMessageTimelineCoordinator {
             // longer holds that row's growth back.
             canvas.reconcileSendTransitions()
             // Reaction changes move rows from where the scroll position just settled.
-            canvas.beginReactionTransitions()
+            canvas.beginRowMotions()
         }
 
         func finishTimelineUpdate(

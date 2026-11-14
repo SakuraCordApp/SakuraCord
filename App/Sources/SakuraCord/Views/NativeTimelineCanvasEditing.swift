@@ -27,7 +27,7 @@ extension NativeTimelineCanvasView {
             endEditing(commit: nil)
             guard editingMessageID == nil else { return }
         }
-        finishReactionTransitions()
+        finishRowMotions()
         removeActionCapsule()
         setTextSelection(nil)
         textSelectionGesture = nil
@@ -272,9 +272,9 @@ extension NativeTimelineCanvasView {
             self.editing.savedEditTimestamp = saved.editedTimestamp ?? .distantPast
             // Outside a timeline update, the hand-off from the editor to the
             // row eases here, as the update's would.
-            self.captureReactionBaseline()
+            self.captureRowMotionBaseline()
             self.reconcileEditingRow()
-            self.beginReactionTransitions()
+            self.beginRowMotions()
         }
     }
 
@@ -380,7 +380,7 @@ extension NativeTimelineCanvasView {
             + (index >= disclosureRange.upperBound ? disclosureShiftAfter
                 : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
             + unreadDividerGapShift(at: index)
-            + reactionMotionOffset(at: index)
+            + rowMotionOffset(at: index)
             + transientRowOrigin(at: index)
     }
 
@@ -402,7 +402,7 @@ extension NativeTimelineCanvasView {
             rowIndex: index,
             replacementIndex: editingRowIndex,
             replacementHeight: editingRowHeight
-        ) - reactionMotionRemainingHeight(at: index)
+        ) - rowMotionRemainingHeight(at: index)
     }
 
     /// Rows after the edited one move with it even when the content origin
