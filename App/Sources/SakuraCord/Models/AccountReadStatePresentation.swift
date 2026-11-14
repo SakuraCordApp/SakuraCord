@@ -313,14 +313,13 @@ extension AccountReadStateModel {
             let categoryOverride = parentIsConversation
                 ? ancestorOverride
                 : parentOverride
-            let guildMuted = guildSettings?.isMuted == true
-                && (guildSettings?.muteConfiguration?.isActive(at: now) ?? true)
-            let directMuted = activeMute(directOverride, now: now)
-            let parentMuted = activeMute(parentOverride, now: now)
+            let guildMuted = guildSettings?.isActivelyMuted(at: now) == true
+            let directMuted = directOverride?.isActivelyMuted(at: now) == true
+            let parentMuted = parentOverride?.isActivelyMuted(at: now) == true
             let inheritedChannelMuted = directMuted
                 || parentMuted
-                || activeMute(ancestorOverride, now: now)
-            let categoryMuted = activeMute(categoryOverride, now: now)
+                || ancestorOverride?.isActivelyMuted(at: now) == true
+            let categoryMuted = categoryOverride?.isActivelyMuted(at: now) == true
             let guildDefault = isDirectMessage
                 ? .allMessages
                 : (entry.guildID.flatMap {
@@ -471,14 +470,6 @@ extension AccountReadStateModel {
             let parentFlags = entry.parentID.flatMap { channelByID[$0] }?.flags
                 ?? 0
             return parentFlags & resourceFlag != 0
-        }
-
-        private func activeMute(
-            _ override: ChannelNotificationOverride?,
-            now: Date
-        ) -> Bool {
-            override?.isMuted == true
-                && (override?.muteConfiguration?.isActive(at: now) ?? true)
         }
     }
 

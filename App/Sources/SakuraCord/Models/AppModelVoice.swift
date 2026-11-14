@@ -454,11 +454,7 @@ extension AppModel {
         if snapshot?.channels.first(where: { $0.id == call.channelID })?.isMuted == true {
             return DiscordMuteConfiguration()
         }
-        guard let override = readState.notificationOverride(channelID: call.channelID, guildID: nil),
-              override.isMuted
-        else { return nil }
-        let mute = override.muteConfiguration ?? DiscordMuteConfiguration()
-        return mute.isActive(at: date) ? mute : nil
+        return readState.notificationOverride(channelID: call.channelID, guildID: nil)?.activeMute(at: date)
     }
 
     /// A timed mute that ends while its call still rings lets it ring then.

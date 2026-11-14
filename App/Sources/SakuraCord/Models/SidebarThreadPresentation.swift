@@ -34,10 +34,7 @@ nonisolated enum SidebarThreadPolicy {
     }
 
     static func isMuted(_ thread: MessageThreadSummary, now: Date) -> Bool {
-        guard let settings = thread.notificationSettings, settings.isMuted else {
-            return false
-        }
-        return settings.muteConfiguration?.isActive(at: now) ?? true
+        thread.notificationSettings?.isActivelyMuted(at: now) == true
     }
 
     /// A thread stays relevant until its auto-archive window has elapsed since

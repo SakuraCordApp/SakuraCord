@@ -238,8 +238,7 @@ extension AppModel {
                entry.guildID == nil || !readState.usesAllMessagesUnreadSetting(for: entry) { continue }
             let channel = channels[entry.channelID]
             let thread = threads[entry.channelID]
-            if let settings = thread?.notificationSettings, settings.isMuted,
-               settings.muteConfiguration?.isActive(at: now) ?? true { continue }
+            if thread?.notificationSettings?.isActivelyMuted(at: now) == true { continue }
             if let context = channel ?? entry.parentID.flatMap({ channels[$0] }),
                let permissions = effectiveMessagePermissions(in: context),
                permissions & DiscordPermissionBits.readMessageHistory == 0 { continue }

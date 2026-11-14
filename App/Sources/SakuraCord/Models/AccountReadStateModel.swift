@@ -648,8 +648,7 @@ extension AccountReadStateModel {
         guard let override = directOverride else {
             return false
         }
-        return override.isMuted
-            && (override.muteConfiguration?.isActive(at: date) ?? true)
+        return override.isActivelyMuted(at: date)
     }
 
     func inheritedNotificationLevel(for channel: Channel) -> MessageNotificationLevel {
@@ -797,16 +796,10 @@ extension AccountReadStateModel {
         var mutedGuildIDs = Set<GuildID>()
         var mutedOverrideIDs = Set<ChannelID>()
         for (guildID, settings) in settingsByGuild {
-            if let guildID,
-               settings.isMuted,
-               settings.muteConfiguration?.isActive(at: now) ?? true
-            {
+            if let guildID, settings.isActivelyMuted(at: now) {
                 mutedGuildIDs.insert(guildID)
             }
-            for override in settings.channelOverrides
-                where override.isMuted
-                    && (override.muteConfiguration?.isActive(at: now) ?? true)
-            {
+            for override in settings.channelOverrides where override.isActivelyMuted(at: now) {
                 mutedOverrideIDs.insert(override.channelID)
             }
         }
@@ -821,9 +814,7 @@ extension AccountReadStateModel {
                 }
                 let ancestorID = entry.parentID.flatMap { channelByID[$0]?.categoryID }
                 let threadMuted = entry.threadNotificationSettings.map {
-                    ($0.isMuted
-                        && ($0.muteConfiguration?.isActive(at: now) ?? true))
-                        || $0.notificationLevel == .nothing
+                    $0.isActivelyMuted(at: now) || $0.notificationLevel == .nothing
                 } ?? false
                 if entry.guildID.map(mutedGuildIDs.contains) == true
                     || mutedOverrideIDs.contains(entry.channelID)
@@ -1190,8 +1181,7 @@ extension AccountReadStateModel {
             else { return false }
             guard activeJoinedThreadIDs.contains(entry.channelID) else { return entry.isUnread }
             let settings = entry.threadNotificationSettings
-            let isMuted = settings?.isMuted == true
-                && (settings?.muteConfiguration?.isActive(at: now) ?? true)
+            let isMuted = settings?.isActivelyMuted(at: now) == true
             return entry.mentionCount > 0 || (entry.isUnread && !isMuted)
         }
     }

@@ -17,7 +17,7 @@ extension AppModel {
         (snapshot?.guilds ?? []).compactMap { guild in
             let settings = snapshot?.notificationSettings.first { $0.guildID == guild.id }
             guard settings?.muteScheduledEvents != true,
-                  !(settings?.isMuted == true && (settings?.muteConfiguration?.isActive() ?? true)),
+                  settings?.isActivelyMuted() != true,
                   let state = inbox.scheduledEvents.readStates[guild.id], let newest = state.latestID else { return nil }
             let boundary = state.lastAcknowledgedID ?? guild.joinedAt.map(ScheduledEventID.init(timestamp:))
             guard let boundary, boundary < newest else { return nil }

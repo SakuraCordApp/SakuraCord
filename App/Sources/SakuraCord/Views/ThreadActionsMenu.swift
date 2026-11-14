@@ -173,7 +173,7 @@ struct ThreadActionsMenu {
     ) -> [ThreadMenuEntry] {
         let settings = thread.notificationSettings
         let isPending = model.isForumNotificationMutationPending(thread.id)
-        let isMuted = settings?.isMuted == true && (settings?.muteConfiguration?.isActive() ?? true)
+        let isMuted = SidebarThreadPolicy.isMuted(thread, now: .now)
         let mute: ThreadMenuEntry = if isMuted {
             ThreadMenuEntry(
                 id: "mute", title: "Unmute \(noun)", systemImage: "bell.fill",

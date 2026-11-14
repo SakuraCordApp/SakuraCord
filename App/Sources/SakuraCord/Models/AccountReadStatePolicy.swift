@@ -59,8 +59,7 @@ extension AccountReadStateModel {
             channelID: categoryID,
             guildID: guildID
         ) else { return false }
-        return override.isMuted
-            && (override.muteConfiguration?.isActive(at: date) ?? true)
+        return override.isActivelyMuted(at: date)
     }
 
     func isCategoryCollapsed(categoryID: ChannelID, guildID: GuildID) -> Bool {

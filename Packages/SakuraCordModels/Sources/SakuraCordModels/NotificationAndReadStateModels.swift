@@ -19,6 +19,30 @@ public struct DiscordMuteConfiguration: Codable, Hashable, Sendable {
     }
 }
 
+/// Settings Discord can mute, optionally until a set time.
+public protocol DiscordMutableSettings {
+    var isMuted: Bool { get }
+    var muteConfiguration: DiscordMuteConfiguration? { get }
+}
+
+public extension DiscordMutableSettings {
+    /// Muted, by a mute that has not ended at `date`.
+    func isActivelyMuted(at date: Date = .now) -> Bool {
+        isMuted && (muteConfiguration?.isActive(at: date) ?? true)
+    }
+
+    /// The mute in effect at `date`, untimed when it has no end; nil when not muted.
+    func activeMute(at date: Date) -> DiscordMuteConfiguration? {
+        guard isMuted else { return nil }
+        let mute = muteConfiguration ?? DiscordMuteConfiguration()
+        return mute.isActive(at: date) ? mute : nil
+    }
+}
+
+extension ThreadNotificationSettings: DiscordMutableSettings {}
+extension ChannelNotificationOverride: DiscordMutableSettings {}
+extension GuildNotificationSettings: DiscordMutableSettings {}
+
 public struct ThreadNotificationSettings: Codable, Hashable, Sendable {
     public static let hasInteractedFlag: UInt64 = 1 << 0
     public static let allMessagesFlag: UInt64 = 1 << 1

@@ -194,8 +194,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
         @objc private func inviteFromMenu() { invite() }
 
         private var isDirectlyMuted: Bool {
-            notificationSettings.isMuted
-                && (notificationSettings.muteConfiguration?.isActive() ?? true)
+            notificationSettings.isActivelyMuted()
         }
 
         private func notificationMenu() -> NSMenu {

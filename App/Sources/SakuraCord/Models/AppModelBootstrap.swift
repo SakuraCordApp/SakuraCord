@@ -567,12 +567,10 @@ extension AppModel {
             value.notificationSettings.last { $0.guildID == guild.id }
         }
         let firstGuildMuteIsActive =
-            firstGuildSettings?.isMuted == true
-            && (firstGuildSettings?.muteConfiguration?.isActive() ?? true)
+            firstGuildSettings?.isActivelyMuted() == true
         let firstGuildMutedOverrideCount =
             firstGuildSettings?.channelOverrides.count { override in
-                override.isMuted
-                    && (override.muteConfiguration?.isActive() ?? true)
+                override.isActivelyMuted()
             } ?? 0
         Self.unreadDiagnosticsLogger.info(
             """

@@ -853,8 +853,7 @@ struct GuildRailButton: View {
                 ? ServerRailHoverItem(
                     name: displayName,
                     guildID: guild.id,
-                    isMuted: presentation.notificationSettings.isMuted
-                        && (presentation.notificationSettings.muteConfiguration?.isActive() ?? true),
+                    isMuted: presentation.notificationSettings.isActivelyMuted(),
                     bounds: bounds
                 )
                 : nil

@@ -427,8 +427,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         }
 
         private var isDirectlyMuted: Bool {
-            directOverride?.isMuted == true
-                && (directOverride?.muteConfiguration?.isActive() ?? true)
+            directOverride?.isActivelyMuted() == true
         }
 
         private func notificationMenu() -> NSMenu {
