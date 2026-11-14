@@ -421,14 +421,7 @@ extension AppModel {
             markInboxEventGroupRead(group)
             return
         }
-        let boundary = Self.inboxAcknowledgementTarget(for: group, now: .now)
-        let metadata = readState.acknowledgementMetadata(channelID: channelID)
-        let lastViewed = readState[channelID]?.lastViewed
-        discardPendingAcknowledgement(for: channelID)
-        readState.acknowledge(channelID: channelID, messageID: boundary)
-        enqueueAcknowledgement(channelID: channelID, mutation: ReadStateMutation(
-            messageID: boundary, flags: metadata.flags, lastViewed: lastViewed
-        ))
+        acknowledgeInboxConversation(channelID, through: Self.inboxAcknowledgementTarget(for: group, now: .now))
         if readState[channelID]?.isUnread != true {
             cancelNativeNotifications(channelID: channelID)
         }
@@ -443,16 +436,22 @@ extension AppModel {
             undoInboxEventRead(group)
             return
         }
-        let metadata = readState.acknowledgementMetadata(channelID: group.id)
-        let lastViewed = readState[group.id]?.lastViewed
-        discardPendingAcknowledgement(for: group.id)
-        readState.acknowledge(channelID: group.id, messageID: boundary)
-        enqueueAcknowledgement(channelID: group.id, mutation: ReadStateMutation(
-            messageID: boundary, flags: metadata.flags, lastViewed: lastViewed
-        ))
+        acknowledgeInboxConversation(group.id, through: boundary)
         restoreInboxGroup(group)
         refreshUnreadPresentation()
         publishInbox()
+    }
+
+    /// Moves a conversation's read boundary locally and queues its
+    /// acknowledgement, keeping its read-state flags and last viewed day.
+    private func acknowledgeInboxConversation(_ channelID: ChannelID, through boundary: MessageID) {
+        let metadata = readState.acknowledgementMetadata(channelID: channelID)
+        let lastViewed = readState[channelID]?.lastViewed
+        discardPendingAcknowledgement(for: channelID)
+        readState.acknowledge(channelID: channelID, messageID: boundary)
+        enqueueAcknowledgement(channelID: channelID, mutation: ReadStateMutation(
+            messageID: boundary, flags: metadata.flags, lastViewed: lastViewed
+        ))
     }
 
     func restoreInboxGroup(_ group: InboxUnreadGroup) {
