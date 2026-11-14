@@ -1241,15 +1241,7 @@ extension NativeTimelineCanvasView {
         failedMediaActions: MediaImageContextMenuActions?
     ) -> NSMenu? {
         guard MessageOutboxPresentation.interactionMode(for: row.message).allowsMessageContextMenu else { return nil }
-        // Discord does not allow editing voice messages.
-        let canEdit =
-            row.message.author.id == model?.currentUser?.id
-                && !row.message.hasPoll
-                && !row.message.flags.contains(.voiceMessage)
-                && model?.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil
-                && MessageReplyPresentationPolicy.allowsReplyAction(
-                    for: row.message
-                )
+        let canEdit = model?.canEditMessage(row.message) == true
         let canDelete = model?.canDeleteMessage(row.message) == true
         let menu = NSMenu()
         menu.autoenablesItems = false

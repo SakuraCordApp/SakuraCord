@@ -62,10 +62,7 @@ extension NativeTimelineCanvasView {
     ) -> [NSAccessibilityCustomAction] {
         let message = row.message
         guard MessageOutboxPresentation.interactionMode(for: message).allowsMessageContextMenu else { return [] }
-        let canEdit = !message.hasPoll && !message.flags.contains(.voiceMessage)
-            && message.author.id == model?.currentUser?.id
-            && model?.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
-            && MessageReplyPresentationPolicy.allowsReplyAction(for: message)
+        let canEdit = model?.canEditMessage(message) == true
         let canDelete = model?.canDeleteMessage(message) == true
         if messageInteractionContext != .conversation {
             return accessibilityInboxOrSearchActions(message, canDelete: canDelete)

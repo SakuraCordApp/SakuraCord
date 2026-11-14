@@ -106,6 +106,16 @@ extension AppModel {
         !message.flags.contains(.ephemeral) && canManagePins(in: message.channelID)
     }
 
+    /// The author may edit a message while they can still post where it is,
+    /// except a poll or voice message, which Discord does not edit.
+    func canEditMessage(_ message: Message) -> Bool {
+        message.author.id == currentUser?.id
+            && !message.hasPoll
+            && !message.flags.contains(.voiceMessage)
+            && guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
+            && MessageReplyPresentationPolicy.allowsReplyAction(for: message)
+    }
+
     func canDeleteMessage(_ message: Message) -> Bool {
         guard message.outboxState == .confirmed, !message.flags.contains(.ephemeral) else { return false }
         if !message.type.hasGeneratedContent,
