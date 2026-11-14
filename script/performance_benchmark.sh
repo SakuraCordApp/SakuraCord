@@ -457,6 +457,27 @@ export_trace_tables() {
         --output "$output/activity-monitor-ledger.xml" >/dev/null 2>&1 || true
 }
 
+# Scenarios that drive a timeline or member-list auto-scroll.
+is_scroll_scenario() {
+    case "$1" in
+        authenticated-scroll|offline-pins-scroll|offline-chat-scroll|offline-chat-voice-scroll|authenticated-member-list-scroll)
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# Scenarios whose process CPU, energy, network and footprint are sampled.
+samples_process_resources() {
+    is_scroll_scenario "$1" && return 0
+    case "$1" in
+        authenticated-gesture-scroll|authenticated-loading-scroll-overlap|authenticated-navigation|authenticated-account-switch|authenticated-history-pagination|authenticated-search|authenticated-search-pagination|authenticated-search-scroll)
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
+}
+
 ensure_rusage_sampler() {
     local tool_dir="$root/.build/performance-tools"
     local sampler="$tool_dir/performance-rusage"
@@ -754,20 +775,7 @@ record_launch() (
         sleep 0.25
     fi
     kill -CONT "$pid"
-    if [[ ( "$scenario" == "authenticated-scroll" \
-            || "$scenario" == "offline-pins-scroll" \
-            || "$scenario" == "offline-chat-scroll" \
-            || "$scenario" == "offline-chat-voice-scroll" \
-            || "$scenario" == "authenticated-member-list-scroll" \
-            || "$scenario" == "authenticated-gesture-scroll" \
-            || "$scenario" == "authenticated-loading-scroll-overlap" \
-            || "$scenario" == "authenticated-navigation" \
-            || "$scenario" == "authenticated-account-switch" \
-            || "$scenario" == "authenticated-history-pagination" \
-            || "$scenario" == "authenticated-search" \
-            || "$scenario" == "authenticated-search-pagination" \
-            || "$scenario" == "authenticated-search-scroll" ) \
-          && -n "$pid" ]]; then
+    if samples_process_resources "$scenario" && [[ -n "$pid" ]]; then
         top -pid "$pid" -l "$seconds" -s 1 \
             -stats pid,cpu,mem,threads,power -o cpu \
             >"$output/activity-monitor.txt" &
@@ -786,20 +794,7 @@ record_launch() (
     wait "$trace_pid" || trace_status=$?
     trace_pid=""
     (( trace_status == 0 )) || exit "$trace_status"
-    if [[ ( "$scenario" == "authenticated-scroll" \
-            || "$scenario" == "offline-pins-scroll" \
-            || "$scenario" == "offline-chat-scroll" \
-            || "$scenario" == "offline-chat-voice-scroll" \
-            || "$scenario" == "authenticated-member-list-scroll" \
-            || "$scenario" == "authenticated-gesture-scroll" \
-            || "$scenario" == "authenticated-loading-scroll-overlap" \
-            || "$scenario" == "authenticated-navigation" \
-            || "$scenario" == "authenticated-account-switch" \
-            || "$scenario" == "authenticated-history-pagination" \
-            || "$scenario" == "authenticated-search" \
-            || "$scenario" == "authenticated-search-pagination" \
-            || "$scenario" == "authenticated-search-scroll" ) \
-          && -n "$pid" ]]; then
+    if samples_process_resources "$scenario" && [[ -n "$pid" ]]; then
         wait "$top_pid" || true
         wait "$energy_pid" || true
         wait "$nettop_pid" || true
@@ -982,14 +977,8 @@ summarize_recording() {
             --app-only \
             --limit 50 \
             >"$output/measurement-outline-list-time-profile.txt"
-        if [[ ( "$scenario" == "authenticated-scroll" \
-                || "$scenario" == "offline-pins-scroll" \
-                || "$scenario" == "offline-chat-scroll" \
-                || "$scenario" == "offline-chat-voice-scroll" \
-            || "$scenario" == "offline-chat-scroll" \
-            || "$scenario" == "offline-chat-voice-scroll" \
-                || "$scenario" == "authenticated-member-list-scroll" ) \
-              && -s "$output/benchmark-result.tsv" \
+        if is_scroll_scenario "$scenario" \
+            && [[ -s "$output/benchmark-result.tsv" \
               && -n "$(awk -F '\t' '$1 == "delayed_tick_samples_offset_ms_interval_ms" { print $2 }' "$output/benchmark-result.tsv")" ]]; then
             python3 "$root/script/time_profile_hotspots.py" \
                 "$output/time-profile.xml" \
@@ -1344,13 +1333,13 @@ outline_list_profile_sampled_ms = time_profile_sampled_milliseconds.call(
 delayed_frame_profile_sampled_ms = time_profile_sampled_milliseconds.call(
   "delayed-frame-time-profile.txt"
 )
-scroll_benchmark = [
+timeline_scroll_scenarios = [
   "authenticated-scroll",
   "offline-pins-scroll",
   "offline-chat-scroll",
   "offline-chat-voice-scroll",
-  "authenticated-member-list-scroll",
-].include?(scenario)
+]
+scroll_benchmark = (timeline_scroll_scenarios + ["authenticated-member-list-scroll"]).include?(scenario)
 navigation_benchmark = scenario == "authenticated-navigation"
 account_switch_benchmark = scenario == "authenticated-account-switch"
 history_pagination_benchmark = scenario == "authenticated-history-pagination"
@@ -1399,7 +1388,7 @@ navigation_static_decode_overlap_ms = 0.0
 navigation_static_decode_overlap_maximum_ms = 0.0
 loading_scroll_overlap_metrics = {}
 measurement_interval = case scenario
-                       when "authenticated-scroll", "offline-pins-scroll", "offline-chat-scroll", "offline-chat-voice-scroll"
+                       when *timeline_scroll_scenarios
                          "MessageTimelineAutoScrollBenchmark"
                        when "authenticated-member-list-scroll"
                          "MemberListAutoScrollBenchmark"
