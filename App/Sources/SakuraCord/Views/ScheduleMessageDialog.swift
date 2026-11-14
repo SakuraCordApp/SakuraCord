@@ -54,8 +54,11 @@ struct ScheduleMessageDialog: View {
                         if let issue {
                             Label(issue, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
                         } else {
-                            Label("Sends \(date.formatted(.dateTime.weekday(.wide).day().month(.wide))) at \(ScheduleTimeText.time(date, format: timeFormat))", systemImage: "paperplane")
-                                .foregroundStyle(.secondary)
+                            Label(
+                                "Sends \(ScheduleTimeText.dayAndTime(date, format: timeFormat, day: .dateTime.weekday(.wide).day().month(.wide)))",
+                                systemImage: "paperplane"
+                            )
+                            .foregroundStyle(.secondary)
                         }
                     }
                     .font(.callout)
