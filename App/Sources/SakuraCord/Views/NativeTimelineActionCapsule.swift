@@ -330,3 +330,167 @@ extension NativeTimelineCanvasView {
         actionCapsuleMessageID = nil
     }
 }
+
+@MainActor
+final class NativeTimelineActionCapsuleState: ObservableObject {
+    /// The hovered message; the canvas replaces it when the row changes so
+    /// reaction-dependent controls stay current while the capsule is shown.
+    @Published var message: Message
+
+    let controlCount: Int
+    let shiftActionCount: Int
+    let allowsQuickReactions: Bool
+    let isGuildTimedOut: Bool
+    @Published var showsQuickReactions = false
+    @Published private var fitsShiftActions = false
+    @Published var isShiftHeld = false
+    /// Pins the capsule's leading edge instead of its trailing edge, so a
+    /// variant change grows and shrinks the pill away from the clamped side.
+    @Published var pinsLeadingEdge = false
+
+    init(message: Message, controlCount: Int, shiftActionCount: Int, allowsQuickReactions: Bool, isGuildTimedOut: Bool) {
+        self.message = message
+        self.controlCount = controlCount
+        self.shiftActionCount = shiftActionCount
+        self.allowsQuickReactions = allowsQuickReactions
+        self.isGuildTimedOut = isGuildTimedOut
+    }
+
+    var showsShiftActions: Bool {
+        isShiftHeld && fitsShiftActions
+    }
+
+    private var quickReactionPillSize: CGSize {
+        HoverActionPillMetrics.size(
+            controlCount: controlCount + (showsQuickReactions ? QuickReactionPolicy.limit : 0),
+            dividerCount: showsQuickReactions ? 1 : 0
+        )
+    }
+
+    private var shiftPillSize: CGSize {
+        HoverActionPillMetrics.size(controlCount: controlCount + shiftActionCount)
+    }
+
+    var actionSize: CGSize {
+        showsShiftActions ? shiftPillSize : quickReactionPillSize
+    }
+
+    /// Sized for the widest variant, so switching variants animates the
+    /// pill inside a fixed host instead of resizing the host mid-animation.
+    var hostSize: CGSize {
+        let size = quickReactionPillSize
+        guard fitsShiftActions else { return size }
+        return CGSize(width: max(size.width, shiftPillSize.width), height: size.height)
+    }
+
+    func updateAvailableWidth(_ width: CGFloat) {
+        let usableWidth = width - InterfaceScale.metric(16)
+        let showsQuickReactions = allowsQuickReactions
+            && HoverActionPillMetrics.size(controlCount: controlCount + QuickReactionPolicy.limit, dividerCount: 1).width
+            <= usableWidth
+        if self.showsQuickReactions != showsQuickReactions {
+            self.showsQuickReactions = showsQuickReactions
+        }
+        let fitsShiftActions = shiftActionCount > 0 && shiftPillSize.width <= usableWidth
+        if self.fitsShiftActions != fitsShiftActions {
+            self.fitsShiftActions = fitsShiftActions
+        }
+    }
+
+    @Published var isReactionPickerPresented = false {
+        didSet {
+            guard oldValue != isReactionPickerPresented else { return }
+            presentationDidChange?(isReactionPickerPresented)
+        }
+    }
+
+    var isPresentationActive: Bool {
+        isReactionPickerPresented
+    }
+
+    var presentationDidChange: ((Bool) -> Void)?
+}
+
+struct NativeTimelineActionCapsuleOverlay: View {
+    let model: AppModel
+    let canEdit: Bool
+    let canDelete: Bool
+    @ObservedObject var state: NativeTimelineActionCapsuleState
+    let jumpToMessage: (() -> Void)?
+    let unpinMessage: (() -> Void)?
+    let dismissInboxMention: (() -> Void)?
+    let retry: (() -> Void)?
+    let edit: () -> Void
+    let reply: (() -> Void)?
+    let forward: (() -> Void)?
+    let react: (String) -> Void
+    let copy: () -> Void
+    let copyLink: () -> Void
+    let copyMessageID: () -> Void
+    let markUnread: () -> Void
+    let togglePin: (() -> Void)?
+    let showMoreActions: () -> Void
+    let delete: () -> Void
+
+    var body: some View {
+        Group {
+            if let jumpToMessage {
+                HoverActionPill {
+                    HoverActionButton(
+                        systemImage: NativeTimelineSearchResultPresentation
+                            .jumpToMessageSystemImage,
+                        help: "Jump to Message",
+                        action: jumpToMessage
+                    )
+                    if let dismissInboxMention {
+                        HoverActionButton(
+                            systemImage: "envelope.open",
+                            help: "Mark as Read",
+                            action: dismissInboxMention
+                        )
+                    }
+                    if let unpinMessage {
+                        HoverActionButton(
+                            systemImage: "pin.slash",
+                            help: "Unpin Message",
+                            action: unpinMessage
+                        )
+                    }
+                }
+            } else {
+                MessageActionCapsule(
+                    model: model,
+                    message: state.message,
+                    canEdit: canEdit,
+                    canDelete: canDelete,
+                    canReact: state.allowsQuickReactions,
+                    showsQuickReactions: state.showsQuickReactions,
+                    showsShiftActions: state.showsShiftActions,
+                    isReactionPickerPresented: $state.isReactionPickerPresented,
+                    retry: retry,
+                    edit: edit,
+                    reply: reply,
+                    forward: forward,
+                    react: react,
+                    copy: copy,
+                    copyLink: copyLink,
+                    copyMessageID: copyMessageID,
+                    markUnread: markUnread,
+                    togglePin: togglePin,
+                    showMoreActions: showMoreActions,
+                    delete: delete
+                )
+            }
+        }
+        .fixedSize()
+        // The host fits the widest variant; keep the pill against the edge
+        // the canvas anchors so variant changes grow away from it.
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: state.pinsLeadingEdge ? .leading : .trailing
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Message actions")
+    }
+}

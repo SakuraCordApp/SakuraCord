@@ -217,3 +217,221 @@ struct MessageMentionResolver {
         }
     }
 }
+
+extension MessageMentionResolver {
+    private func member(_ id: UserID) -> Member? {
+        sourceGuildID.flatMap { model.membersByGuildID[$0]?[id] }
+            ?? (sourceGuildID == model.selectedGuildID ? model.membersByID[id] ?? model.knownMentionMembers[id] : nil)
+    }
+
+    func user(_ userID: UserID) -> User? {
+        member(userID)?.user
+            ?? message?.mentionedUsers.first { $0.id == userID }
+            ?? model.messages.first { $0.author.id == userID }?.author
+            ?? model.threadMessages.first { $0.author.id == userID }?.author
+            ?? (model.currentUser?.id == userID ? model.currentUser : nil)
+    }
+
+    func presentation(_ mention: RenderedMention) -> MentionPresentation {
+        switch mention.kind {
+        case .guildNavigation: guildNavigationPresentation(mention)
+        case .user: userPresentation(mention)
+        case .role: rolePresentation(mention)
+        case .game: gamePresentation(mention)
+        case .broadcast, .timestamp, .command: MentionPresentation.fallback(for: mention)
+        case .channel: channelPresentation(mention)
+        case .channelLink: channelLinkPresentation(mention)
+        case .message: messagePresentation(mention)
+        }
+    }
+
+    /// Media discovery only needs images carried by user and game mentions.
+    /// Resolving every mention kind would perform unrelated channel and role
+    /// lookups for presentations that cannot contribute a media key.
+    func avatarURL(_ mention: RenderedMention) -> URL? {
+        if mention.kind == .game {
+            return model.gameMentions.gamesByID[mention.id].flatMap(\.artworkURL)
+        }
+        guard mention.kind == .user,
+              let userID = UserID(mention.id)
+        else { return nil }
+        let member = member(userID)
+        return member?.guildAvatarURL ?? user(userID)?.avatarURL
+    }
+
+    private func gamePresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let game = model.gameMentions.gamesByID[mention.id] else {
+            model.requestGameMentionDetails(id: mention.id)
+            return MentionPresentation.fallback(for: mention)
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: game.name,
+            target: .game(game.id),
+            avatarURL: game.artworkURL,
+            systemImage: game.artworkURL == nil ? "gamecontroller.fill" : nil
+        )
+    }
+
+    private func userPresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let userID = UserID(mention.id) else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let member = member(userID)
+        let value = user(userID)
+        let topColor = member.flatMap {
+            MessageAuthorPresentation.topRoleColor(in: $0.roles)
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: "@\((sourceGuildID == nil ? model.friendNickname(for: userID) : nil) ?? member?.user.displayName ?? value?.displayName ?? "unknown-user")",
+            target: .user(userID),
+            avatarURL: member?.guildAvatarURL ?? value?.avatarURL,
+            colorHex: topColor
+        )
+    }
+
+    func role(_ roleID: RoleID) -> GuildRole? {
+        let roles = sourceGuildID.flatMap { model.guildRolesByGuildID[$0] }
+            ?? (sourceGuildID == model.selectedGuildID ? model.guildRoles : [])
+        return roles.first { $0.id == roleID }
+    }
+
+    private func rolePresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let roleID = RoleID(mention.id) else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let role = role(roleID)
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: "@\(role?.name ?? "unknown-role")",
+            target: .role(roleID),
+            colorHex: role?.colorHex
+        )
+    }
+
+    private func guildNavigationPresentation(_ mention: RenderedMention) -> MentionPresentation {
+        var presentation = MentionPresentation.fallback(for: mention)
+        if let destination = GuildNavigationMention(rawValue: mention.id),
+           let guildID = sourceGuildID,
+           model.hasGuildNavigationDestination(destination, in: guildID) {
+            presentation = MentionPresentation(
+                rawToken: mention.rawToken, label: destination.title,
+                target: .guildNavigation(guildID: guildID, destination: destination),
+                systemImage: presentation.systemImage
+            )
+        }
+        return presentation
+    }
+
+    private func channelPresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let channelID = ChannelID(mention.id) else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let channel = channel(channelID)
+        if channel == nil, let thread = model.messagePresentationThread(channelID) {
+            return threadPresentation(thread, mention: mention)
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: channel.map { qualifiedLabel($0.name, guildID: $0.guildID) } ?? "unknown-channel",
+            target: .channel(channelID),
+            systemImage: ChannelIconPresentation.systemImage(
+                for: channel?.kind ?? .unknown,
+                isHidden: false
+            )
+        )
+    }
+
+    private func channelLinkPresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let channelID = ChannelID(mention.id) else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let guildID = mention.messageGuildID.flatMap(GuildID.init)
+        if let channel = channel(channelID) {
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: qualifiedLabel(channel.name, guildID: channel.guildID),
+                target: .channel(channelID),
+                systemImage: ChannelIconPresentation.systemImage(
+                    for: channel.kind,
+                    isHidden: false
+                )
+            )
+        }
+        if let thread = model.messagePresentationThread(channelID) {
+            return threadPresentation(thread, mention: mention, linkGuildID: guildID)
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: MentionPresentation.unknownChannelLinkLabel,
+            target: .linkedChannel(guildID: guildID, channelID: channelID),
+            systemImage: ChannelIconPresentation.systemImage(for: .unknown, isHidden: false)
+        )
+    }
+
+    /// A conversation's name, after its server's when the mention points
+    /// into another server.
+    private func qualifiedLabel(_ name: String, guildID: GuildID?) -> String {
+        guard crossesGuild(targetGuildID: guildID),
+              let guildName = guildID.flatMap({ model.serverRailGuildsByID[$0]?.name })
+        else { return name }
+        return "\(guildName) / \(name)"
+    }
+
+    /// A known thread or forum post, which opens like a thread link.
+    private func threadPresentation(
+        _ thread: MessageThreadSummary,
+        mention: RenderedMention,
+        linkGuildID: GuildID? = nil
+    ) -> MentionPresentation {
+        let guildID = thread.guildID ?? linkGuildID
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: qualifiedLabel(thread.name, guildID: guildID),
+            target: .linkedChannel(guildID: guildID, channelID: thread.id),
+            systemImage: ChannelIconPresentation.systemImage(forThreadInForum: model.isForumPost(thread))
+        )
+    }
+
+    private func messagePresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let rawChannelID = mention.messageChannelID,
+              let channelID = ChannelID(rawChannelID),
+              let messageID = MessageID(mention.id)
+        else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let guildID = mention.messageGuildID.flatMap(GuildID.init)
+        // A message in a thread or forum post is labeled with that thread.
+        let name = channel(channelID)?.name ?? model.messagePresentationThread(channelID)?.name
+        let channelLabel = "\(name.map { qualifiedLabel($0, guildID: guildID) } ?? MentionPresentation.unknownChannelLinkLabel) ›"
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: channelLabel,
+            target: .message(
+                guildID: guildID,
+                channelID: channelID,
+                messageID: messageID
+            ),
+            systemImage: "bubble.left.fill"
+        )
+    }
+
+    private func channel(_ channelID: ChannelID) -> Channel? {
+        model.messagePresentationChannel(channelID)
+    }
+
+    private var sourceGuildID: GuildID? {
+        if let guildID = message?.guildID { return guildID }
+        // REST thread messages, such as a forum card's starter, omit their guild.
+        if let channelID = message?.channelID {
+            return channel(channelID)?.guildID ?? model.messagePresentationThread(channelID)?.guildID
+        }
+        return model.selectedGuildID
+    }
+
+    private func crossesGuild(targetGuildID: GuildID?) -> Bool {
+        guard let targetGuildID, let sourceGuildID else { return false }
+        return targetGuildID != sourceGuildID
+    }
+}
