@@ -397,13 +397,6 @@ enum NativeEmojiCatalogDiagnostics {
         NativeEmojiCatalog.items.first(where: { $0.value == value })?.shortcodes ?? []
     }
 
-    static func searchMatches(value: String, query: String) -> Bool {
-        guard let emoji = NativeEmojiCatalog.items.first(where: { $0.value == value }) else {
-            return false
-        }
-        return EmojiSearchMatcher.matches(emoji.searchText, query: query)
-    }
-
     static var emojiCountWithDiscordShortcodes: Int {
         NativeEmojiCatalog.items.count { !$0.shortcodes.isEmpty }
     }
@@ -553,9 +546,5 @@ enum EmojiPickerPerformanceDiagnostics {
 
     static var nativeSectionIDs: [String] {
         NativeEmojiCategory.allCases.map { EmojiDocumentSection.native($0).id }
-    }
-
-    static func nativeSidebarIsVisible(bounds: CGRect?, viewportHeight: CGFloat) -> Bool {
-        bounds.map { $0.maxY > 0 && $0.minY < viewportHeight } ?? false
     }
 }

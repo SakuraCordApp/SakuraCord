@@ -14,50 +14,43 @@ struct ConversationRefreshMutations {
     var updatedUsers: [UserID: User] = [:]
 }
 
-extension ConversationRefreshMutations {
-    init(_ journal: ConversationRefreshJournal) {
-        self.init(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
-    }
-}
-
 struct ConversationRefreshJournal {
     let revision: UInt64
-    var mutationsByMessageID: [MessageID: ConversationRefreshMutation] = [:]
-    var updatedUsers: [UserID: User] = [:]
+    var mutations = ConversationRefreshMutations()
 
     mutating func record(_ mutation: ConversationRefreshMutation, messageID: MessageID) {
         if case .patch(let update) = mutation {
-            switch mutationsByMessageID[messageID] {
+            switch mutations.messages[messageID] {
             case .upsert(var message):
                 update.apply(to: &message)
-                mutationsByMessageID[messageID] = .upsert(message)
+                mutations.messages[messageID] = .upsert(message)
             case .patch(var previous):
                 previous.merge(update)
-                mutationsByMessageID[messageID] = .patch(previous)
+                mutations.messages[messageID] = .patch(previous)
             case .delete:
                 break
             case nil:
-                mutationsByMessageID[messageID] = mutation
+                mutations.messages[messageID] = mutation
             }
         } else {
-            mutationsByMessageID[messageID] = mutation
+            mutations.messages[messageID] = mutation
         }
     }
 
     mutating func recordIdentityUpdate(_ user: User) {
-        updatedUsers[user.id] = user
+        mutations.updatedUsers[user.id] = user
         // Fold the event into earlier mutations, including messages whose
         // history page has not been published in any retained projection yet.
-        for (messageID, mutation) in mutationsByMessageID {
+        for (messageID, mutation) in mutations.messages {
             switch mutation {
             case .upsert(var message):
                 message.applyIdentityUpdate(user)
-                mutationsByMessageID[messageID] = .upsert(message)
+                mutations.messages[messageID] = .upsert(message)
             case .patch(var patch):
                 var identity = MessageUpdate(messageID: messageID, channelID: patch.channelID)
                 identity.updatedUsers[user.id] = user
                 patch.merge(identity)
-                mutationsByMessageID[messageID] = .patch(patch)
+                mutations.messages[messageID] = .patch(patch)
             case .delete:
                 break
             }
@@ -864,7 +857,7 @@ extension AppModel {
         guard let journal = conversationRefreshJournals[channelID],
               journal.revision == revision
         else { return .init() }
-        return ConversationRefreshMutations(journal)
+        return journal.mutations
     }
 
     func endConversationRefresh(
@@ -894,7 +887,7 @@ extension AppModel {
 
     func scopedConversationRefreshMutations(_ revision: UInt64) -> ConversationRefreshMutations {
         guard let journal = scopedRefreshJournals[revision]?.journal else { return .init() }
-        return ConversationRefreshMutations(journal)
+        return journal.mutations
     }
 
     func endScopedConversationRefresh(_ revision: UInt64) {

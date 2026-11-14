@@ -959,8 +959,6 @@ final class AppModel {
     @ObservationIgnored var mentionMemberSearchCache:
         [CommandMemberQuery: MentionMemberSearchCacheEntry] = [:]
     @ObservationIgnored var roleMemberTask: Task<Void, Never>?
-    @ObservationIgnored var stickerLoadTasks: [GuildID: Task<Void, Never>] = [:]
-    @ObservationIgnored var stickerLoadGeneration: UInt64 = 0
     @ObservationIgnored var interactionDeadlineTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var pendingInteractions: [String: PendingInteractionRecord] = [:]
     @ObservationIgnored var pendingInteractionOrder: [String] = []

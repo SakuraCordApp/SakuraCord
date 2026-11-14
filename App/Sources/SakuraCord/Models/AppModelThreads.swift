@@ -479,18 +479,6 @@ extension AppModel {
         startAccountChildTask(account: accountSession(), operation: operation)
     }
 
-    @discardableResult
-    func sendThreadMessage(attachments: [URL] = []) async -> Bool {
-        await sendThreadComposerMessage(
-            attachments: attachments.map { ForumPostAttachment(url: $0) }
-        )
-    }
-
-    @discardableResult
-    func sendThreadComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
-        await submitThreadComposerMessage(attachments: attachments).serverConfirmation()
-    }
-
     func submitThreadComposerMessage(
         attachments: [ForumPostAttachment]
     ) async -> ComposerSubmissionResult {
@@ -522,7 +510,7 @@ extension AppModel {
             clearsComposer = composer.threadDraftRevision == draftRevision && threadReplyingTo?.id == reply?.id
         }
         guard allowSlowmodeSubmission(in: destination.id) else { return .rejected }
-        guard validateAttachmentCount(attachments), allowOutgoingQueueSubmission() else { return .rejected }
+        guard attachmentBatchFits(attachments.count), allowOutgoingQueueSubmission() else { return .rejected }
         guard let delivery = enqueueThreadMessage(
             content: content,
             replyTo: reply?.id,
@@ -696,7 +684,7 @@ extension AppModel {
                 : selectedChannelThreadCreationPermissions.canCreatePublic
         }
         guard isAllowed, let name = creation.nameToCreate, !content.isEmpty || !attachments.isEmpty,
-              validateAttachmentCount(attachments),
+              attachmentBatchFits(attachments.count),
               allowOnboardingSubmission(in: creation.parentID)
         else { return .rejected }
         guard let reservation = composer.outbox.reserveSubmission() else {

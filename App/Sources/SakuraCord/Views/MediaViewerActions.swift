@@ -93,10 +93,7 @@ enum MediaViewerActionService {
         return nil
     }
 
-    private static func savePanelDestination(
-        for item: RichMediaItem,
-        directory: URL? = nil
-    ) async -> URL? {
+    private static func savePanelDestination(for item: RichMediaItem) async -> URL? {
         let panel = NSSavePanel()
         panel.title = "Save Media"
         panel.prompt = "Save"
@@ -107,7 +104,6 @@ enum MediaViewerActionService {
             sourceURL: item.url,
             contentType: item.contentType
         )
-        panel.directoryURL = directory
         if let type = MediaViewerFilePolicy.contentType(
             title: item.title,
             sourceURL: item.url

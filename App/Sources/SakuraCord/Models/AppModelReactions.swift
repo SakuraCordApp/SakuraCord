@@ -10,45 +10,6 @@ extension AppModel {
         }
     }
 
-    /// The message as saved, or nil when the edit failed.
-    @discardableResult
-    func edit(_ message: Message, content: String) async -> Message? {
-        guard !message.hasPoll, !message.flags.contains(.voiceMessage),
-              guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
-        else { return nil }
-        let session = accountSession()
-        do {
-            let updated = try await session.provider.edit(message, content: content)
-            guard isCurrentAccountSession(session) else { return nil }
-            invalidateMessageTranslation(updated.id, content: updated.content)
-            let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)
-            recordAuthoritativeMessageUpsert(reconciled)
-            return reconciled
-        } catch {
-            guard isCurrentAccountSession(session) else { return nil }
-            errorMessage = error.localizedDescription
-            return nil
-        }
-    }
-
-    func delete(_ message: Message) async {
-        let session = accountSession()
-        do {
-            try await session.provider.delete(
-                messageID: message.id,
-                channelID: message.channelID
-            )
-            guard isCurrentAccountSession(session) else { return }
-            consumeMessageDeleted(
-                channelID: message.channelID,
-                messageID: message.id
-            )
-        } catch {
-            guard isCurrentAccountSession(session) else { return }
-            errorMessage = error.localizedDescription
-        }
-    }
-
     func dismissEphemeralMessage(_ message: Message) {
         guard message.flags.contains(.ephemeral) else { return }
         invalidateMessageTranslation(message.id)

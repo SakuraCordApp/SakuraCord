@@ -65,17 +65,11 @@ final class VoiceMessageComposerState {
 
     func start(inputDeviceID: AudioDeviceID?) {
         guard phase == .idle else { return }
+        reset()
         phase = .starting
         errorMessage = nil
         stopRequestedWhileStarting = false
-        liveBars = []
-        currentLevel = 0
-        peakLevel = 0
-        loudnessGain = 1
-        elapsed = 0
-        totalBars = 0
         elapsedSampledAt = .now
-        startGeneration += 1
         let generation = startGeneration
         Task {
             guard await VoiceMessageRecorder.requestMicrophonePermission() else {

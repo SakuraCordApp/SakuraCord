@@ -14,10 +14,10 @@ enum ColonAutocompleteSuggestionFactory {
         query: String,
         customEmojis: [DiscordEmoji],
         customValue: (DiscordEmoji) -> String,
-        customSource: (DiscordEmoji) -> String? = { _ in nil },
-        discordFavoriteKeys: Set<String> = [],
-        discordUsageScores: [String: Int] = [:],
-        discordSettingsAreLoaded: Bool? = nil
+        customSource: (DiscordEmoji) -> String?,
+        discordFavoriteKeys: Set<String>,
+        discordUsageScores: [String: Int],
+        discordSettingsAreLoaded: Bool
     ) -> [ColonAutocompleteSuggestion] {
         let normalizedQuery = DiscordEmojiAutocompleteRanking.searchNormalized(query)
         var values = NativeEmojiAutocompleteCatalog.search(query).map { result in
@@ -73,14 +73,12 @@ enum ColonAutocompleteSuggestionFactory {
             )
         })
 
-        let usesDiscordSettings = discordSettingsAreLoaded
-            ?? !discordUsageScores.isEmpty
         let boundaryExpression = DiscordEmojiAutocompleteRanking.boundaryExpression(query: query)
         let ranked = values.map { suggestion in
             let isFavorite = suggestion.discordUsageKeys.contains(
                 where: discordFavoriteKeys.contains
             )
-            let frecency = usesDiscordSettings
+            let frecency = discordSettingsAreLoaded
                 ? suggestion.discordUsageKeys.compactMap { discordUsageScores[$0] }.max()
                 : nil
             var score = DiscordEmojiAutocompleteRanking.relevance(

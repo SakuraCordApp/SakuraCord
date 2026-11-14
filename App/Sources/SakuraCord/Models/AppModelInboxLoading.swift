@@ -8,8 +8,8 @@ extension AppModel {
         // Inbox membership comes from its endpoint/captured unread boundary.
         // Replay changes to those messages without inserting unrelated upserts.
         let mutations = ConversationRefreshMutations(
-            messages: journal?.mutationsByMessageID.filter { ids.contains($0.key) } ?? [:],
-            updatedUsers: journal?.updatedUsers ?? [:]
+            messages: journal?.mutations.messages.filter { ids.contains($0.key) } ?? [:],
+            updatedUsers: journal?.mutations.updatedUsers ?? [:]
         )
         return Self.applyingConversationRefreshMutations(mutations, to: messages).map {
             pollVotePresentationPreserving(reactionPresentationPreserving($0))

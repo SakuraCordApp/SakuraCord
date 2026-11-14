@@ -475,7 +475,7 @@ func `profile send retains a Gateway receipt across timeout and history eviction
     )
 
     model.updateDraft("retry this exact message")
-    #expect(!(await model.sendComposerMessage(attachments: [attachment])))
+    #expect(!(await model.submitComposerMessage(attachments: [attachment]).serverConfirmation()))
     let failed = try #require(model.messages.first {
         $0.content == "retry this exact message"
     })
@@ -573,7 +573,7 @@ func `timeout during thread creation preserves its unsent message without replac
     await model.start()
     await provider.timeOutNextSend()
     model.updateDraft("ambiguous send")
-    #expect(!(await model.sendComposerMessage(attachments: [])))
+    #expect(!(await model.submitComposerMessage(attachments: []).serverConfirmation()))
     let failed = try #require(model.messages.first { $0.content == "ambiguous send" })
 
     await provider.suspendNextSend()
@@ -609,7 +609,7 @@ func `Gateway confirmation wins before or after a send timeout`(confirmsBeforeTi
     await provider.timeOutNextSend()
     await provider.suspendNextSend()
     model.updateDraft("confirmed through Gateway")
-    let send = Task { await model.send() }
+    let send = Task { await model.submitComposerMessage(attachments: []).serverConfirmation() }
     await provider.waitUntilSendStarts()
     let pending = try #require(model.messages.last { $0.content == "confirmed through Gateway" })
     let nonce = try #require(pending.nonce)
@@ -988,7 +988,7 @@ func `a late translation cannot repopulate a draft that was already sent`(comple
     }
     #expect(await provider.sendCount == 0)
     #expect(await provider.editCount == 0)
-    #expect(await model.send())
+    #expect(await model.submitComposerMessage(attachments: []).serverConfirmation())
     if !completesBeforeSend {
         translator.complete(0, text: "Late translation")
         await translationTask.value

@@ -100,7 +100,7 @@ extension AppModel {
         attachments: [ForumPostAttachment]
     ) async {
         let content = (destination == .channel ? draft : threadDraft).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty || !attachments.isEmpty, validateAttachmentCount(attachments),
+        guard !content.isEmpty || !attachments.isEmpty, attachmentBatchFits(attachments.count),
               let (outgoing, reply) = scheduledDraft(content: content, attachments: attachments, in: destination),
               await submitSchedule(outgoing)
         else { return }

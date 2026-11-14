@@ -197,7 +197,7 @@ extension AppModel {
 
 extension AppModel {
     func messageSearchPagePreservingPollVotes(_ incoming: MessageSearchPage, search: MessageSearchState? = nil) -> MessageSearchPage {
-        let mutations = (search ?? messageSearch).pollRefreshJournal?.mutationsByMessageID ?? [:]
+        let mutations = (search ?? messageSearch).pollRefreshJournal?.mutations.messages ?? [:]
         guard !pollVoteMutations.isEmpty || !mutations.isEmpty else { return incoming }
         var page = incoming
         for resultIndex in page.results.indices {
@@ -283,7 +283,7 @@ extension AppModel {
                 guard !Task.isCancelled, isCurrentAccountSession(session),
                       let journal = pollResultRefreshJournals[message.id], journal.revision == revision,
                       let fetched = page.messages.first(where: { $0.id == message.id }) else { return }
-                let mutations = ConversationRefreshMutations(journal)
+                let mutations = journal.mutations
                 guard let poll = Self.applyingConversationRefreshMutations(mutations, to: [fetched]).first?.poll else { return }
                 if poll.results == nil, fetched.poll?.results != nil {
                     guard attempt == 0 else {

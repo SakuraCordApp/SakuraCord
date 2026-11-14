@@ -135,18 +135,6 @@ extension AppModel {
         return resolved
     }
 
-    @discardableResult
-    func send(attachments: [URL] = []) async -> Bool {
-        await sendComposerMessage(
-            attachments: attachments.map { ForumPostAttachment(url: $0) }
-        )
-    }
-
-    @discardableResult
-    func sendComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
-        await submitComposerMessage(attachments: attachments).serverConfirmation()
-    }
-
     /// Refuses a new submission while the outbox is full, before it consumes a draft.
     func allowOutgoingQueueSubmission() -> Bool {
         guard composer.outbox.isDeliveryQueueFull else { return true }
@@ -163,7 +151,7 @@ extension AppModel {
         guard allowSlowmodeSubmission(in: channelID) else { return .rejected }
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return .rejected }
-        guard validateAttachmentCount(attachments) else { return .rejected }
+        guard attachmentBatchFits(attachments.count) else { return .rejected }
         guard allowOutgoingQueueSubmission() else { return .rejected }
         let session = accountSession()
         let replyTo = replyingTo?.id

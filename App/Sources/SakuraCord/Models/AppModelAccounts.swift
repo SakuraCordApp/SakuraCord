@@ -545,11 +545,6 @@ extension AppModel {
         inspectorProfileTask = nil
         contextualProfileTask?.cancel()
         contextualProfileTask = nil
-        for task in stickerLoadTasks.values {
-            task.cancel()
-        }
-        stickerLoadTasks = [:]
-        stickerLoadGeneration &+= 1
         stickersByGuild = [:]
         standardStickerPacks = []
         stickerUserSettings = StickerUserSettings()

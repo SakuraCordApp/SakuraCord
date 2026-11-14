@@ -298,10 +298,7 @@ extension AppModel {
                 // A read from before a Gateway gap cannot reach the live tail.
                 let isStale = requestEpoch != model.historyEpoch
                 let hasMore = (page.hasMoreAfter && cursor > anchor) || isStale
-                let mutations = ConversationRefreshMutations(
-                    messages: current.refreshJournal?.mutationsByMessageID ?? [:],
-                    updatedUsers: current.refreshJournal?.updatedUsers ?? [:]
-                )
+                let mutations = current.refreshJournal?.mutations ?? ConversationRefreshMutations()
                 let refreshed = Self.applyingConversationRefreshMutations(mutations, to: preparedRows.map(\.message))
                 let preparedByID = Dictionary(uniqueKeysWithValues: preparedRows.map { ($0.id, $0) })
                 // Keep the loaded prefix contiguous until REST reaches the live tail.

@@ -416,7 +416,7 @@ import UserNotifications
     #expect(model.supportsCapability(.components))
     let before = model.messages.count
     model.updateDraft("hello from test")
-    await model.send()
+    _ = await model.submitComposerMessage(attachments: []).serverConfirmation()
     #expect(model.messages.count == before + 1)
     #expect(model.messages.last?.content == "hello from test")
 }
@@ -2003,7 +2003,7 @@ func `authoritative thread deletion removes open cached and resource conversatio
     let previousRevision = model.threadMessageRowsRevision
     model.threadDraft = "one thread timeline mutation"
 
-    #expect(await model.sendThreadComposerMessage(attachments: []))
+    #expect(await model.submitThreadComposerMessage(attachments: []).serverConfirmation())
     #expect(
         await until {
             model.threadMessages.count == previousCount + 1
@@ -3271,7 +3271,7 @@ private extension DiscordRESTProvider {
     #expect(model.messages.first?.content == "replacement account value")
     #expect(
         model.conversationRefreshJournals.values.allSatisfy {
-            $0.mutationsByMessageID.isEmpty
+            $0.mutations.messages.isEmpty
         }
     )
 }
@@ -3733,7 +3733,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     #expect(model.replyingTo?.id == target.id)
 
     model.updateDraft("reply from test")
-    await model.send()
+    _ = await model.submitComposerMessage(attachments: []).serverConfirmation()
 
     #expect(model.messages.last?.replyTo == target.id)
     #expect(model.messageRows.last?.replyPreview?.messageID == target.id)
@@ -3791,7 +3791,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
     model.setReplyMentionsAuthor(false, in: .thread)
     model.updateDraft("unpinged reply")
-    try #require(await model.send())
+    try #require(await model.submitComposerMessage(attachments: []).serverConfirmation())
     #expect(model.replyingTo == nil)
     #expect(model.messages.last?.mentionedUsers.contains(where: { $0.id == target.author.id }) == false)
     #expect(!model.threadReplyMentionsAuthor)
@@ -3908,7 +3908,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     #expect(model.replyingTo == nil)
 
     model.threadDraft = "forum reply from test"
-    #expect(await model.sendThreadComposerMessage(attachments: []))
+    #expect(await model.submitThreadComposerMessage(attachments: []).serverConfirmation())
     #expect(
         await until {
             model.threadMessages.last?.replyTo == target.id

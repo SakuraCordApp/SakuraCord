@@ -131,12 +131,6 @@ public enum MediaDeviceCatalog {
         return AVCaptureDevice(uniqueID: uid)
     }
 
-    public static func selectInput(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
-        try engine.inputNode.withAudioUnit { audioUnit throws(MediaDeviceError) in
-            try select(deviceID, on: audioUnit)
-        }
-    }
-
     public static func selectOutput(
         _ deviceID: AudioDeviceID,
         on engine: AVAudioEngine,
@@ -166,10 +160,6 @@ public enum MediaDeviceCatalog {
 
     public static func defaultOutputSampleRate() -> Double? {
         try? AudioHardwareSystem.shared.defaultOutputDevice?.nominalSampleRate
-    }
-
-    public static func defaultInputDeviceID() -> AudioDeviceID? {
-        try? AudioHardwareSystem.shared.defaultInputDevice?.id
     }
 
     private static func select(_ deviceID: AudioDeviceID, on audioUnit: AudioUnit?) throws(MediaDeviceError) {

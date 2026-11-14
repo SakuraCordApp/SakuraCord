@@ -318,7 +318,7 @@ extension AppModel {
         to destination: MessageComposerDestination
     ) async -> Bool {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
-              validateAttachmentCount(attachments), allowOutgoingQueueSubmission()
+              attachmentBatchFits(attachments.count), allowOutgoingQueueSubmission()
         else { return false }
         // A thread still being created has no upload destination yet.
         if destination == .thread, openThread == nil {
@@ -378,15 +378,6 @@ extension AppModel {
     /// Like Discord, rejects the whole batch rather than keeping the files that fit.
     func attachmentBatchFits(_ count: Int, besides existingCount: Int = 0) -> Bool {
         guard existingCount + count <= SendMessageDraft.maximumAttachmentCount else {
-            errorMessage =
-                "You can attach up to \(SendMessageDraft.maximumAttachmentCount) files to one message."
-            return false
-        }
-        return true
-    }
-
-    func validateAttachmentCount(_ attachments: [ForumPostAttachment]) -> Bool {
-        guard attachments.count <= SendMessageDraft.maximumAttachmentCount else {
             errorMessage =
                 "You can attach up to \(SendMessageDraft.maximumAttachmentCount) files to one message."
             return false
