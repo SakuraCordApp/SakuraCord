@@ -71,7 +71,7 @@ extension DiscordSettingsProto {
         return StickerSettingsUpdate(
             data: updated,
             settings: stickerSettings(from: updated),
-            patch: stickerLengthDelimitedField(3, payload)
+            patch: protoLengthDelimitedField(3, payload)
         )
     }
 
@@ -83,7 +83,7 @@ extension DiscordSettingsProto {
         guard let numericStickerID = UInt64(stickerID) else {
             throw ChatProviderError.invalidRequest("The sticker identifier is invalid.")
         }
-        let currentPayload = stickerLengthDelimitedPayload(4, in: data) ?? Data()
+        let currentPayload = ProtoReader.fields(data).last { $0.field == 4 && $0.wireType == 2 }?.payload ?? Data()
         let payload = recordingStickerUse(
             numericStickerID,
             in: currentPayload,
@@ -93,7 +93,7 @@ extension DiscordSettingsProto {
         return StickerSettingsUpdate(
             data: updated,
             settings: stickerSettings(from: updated, nowMilliseconds: timestamp),
-            patch: stickerLengthDelimitedField(4, payload)
+            patch: protoLengthDelimitedField(4, payload)
         )
     }
 
@@ -122,9 +122,9 @@ extension DiscordSettingsProto {
         guard !ids.isEmpty else { return Data() }
         var packed = Data()
         for id in ids.compactMap(UInt64.init) {
-            packed.append(stickerFixed64(id))
+            packed.append(protoFixed64(id))
         }
-        return stickerLengthDelimitedField(1, packed)
+        return protoLengthDelimitedField(1, packed)
     }
 
     private static func stickerUsage(from data: Data) -> (
@@ -186,27 +186,12 @@ extension DiscordSettingsProto {
         return DiscordFrecencyUsage(totalUses: totalUses, recentUses: Array(recentUses.prefix(10)))
     }
 
-    private static func stickerLengthDelimitedPayload(_ fieldNumber: Int, in data: Data) -> Data? {
-        var reader = ProtoReader(data: data)
-        var payload: Data?
-        while let field = reader.readRawField() {
-            if field.field == fieldNumber, field.wireType == 2 {
-                payload = field.payload
-            }
-        }
-        return payload
-    }
-
     private static func recordingStickerUse(
         _ stickerID: UInt64,
         in data: Data,
         timestamp: UInt64
     ) -> Data {
-        var reader = ProtoReader(data: data)
-        var fields: [RawProtoField] = []
-        while let field = reader.readRawField() {
-            fields.append(field)
-        }
+        let fields = ProtoReader.fields(data)
         let matchingIndex = fields.indices.last { index in
             guard fields[index].field == 1,
                   fields[index].wireType == 2,
@@ -224,14 +209,14 @@ extension DiscordSettingsProto {
                 result.append(fields[index].raw)
                 continue
             }
-            result.append(stickerLengthDelimitedField(
+            result.append(protoLengthDelimitedField(
                 1,
                 updatedStickerUsageEntry(entry, timestamp: timestamp)
             ))
         }
         if matchingIndex == nil {
             let entry = StickerUsageEntry(id: stickerID, value: nil, unknownFields: Data())
-            result.append(stickerLengthDelimitedField(
+            result.append(protoLengthDelimitedField(
                 1,
                 updatedStickerUsageEntry(entry, timestamp: timestamp)
             ))
@@ -252,9 +237,7 @@ extension DiscordSettingsProto {
         var unknownFields = Data()
         while let field = reader.readRawField() {
             if field.field == 1, field.wireType == 1 {
-                var fieldReader = ProtoReader(data: field.raw)
-                guard fieldReader.readTag() != nil else { continue }
-                id = fieldReader.readFixed64()
+                id = field.fixed64
             } else if field.field == 2, field.wireType == 2 {
                 value = field.payload
             } else {
@@ -275,14 +258,14 @@ extension DiscordSettingsProto {
         usage.recentUses.insert(timestamp, at: 0)
         let sampled = Array(usage.recentUses.prefix(10))
 
-        var value = stickerVarintField(1, UInt64(clamping: usage.totalUses))
+        var value = protoVarintField(1, UInt64(clamping: usage.totalUses))
         var packed = Data()
-        for recentUse in sampled { packed.append(stickerVarint(recentUse)) }
-        value.append(stickerLengthDelimitedField(2, packed))
+        for recentUse in sampled { packed.append(protoVarint(recentUse)) }
+        value.append(protoLengthDelimitedField(2, packed))
         let weights = stickerWeightSum(sampled, nowMilliseconds: timestamp)
         let frecency = Int(ceil(Double(usage.totalUses) * Double(weights) / Double(sampled.count)))
-        value.append(stickerVarintField(3, UInt64(clamping: frecency)))
-        value.append(stickerVarintField(4, UInt64(clamping: weights)))
+        value.append(protoVarintField(3, UInt64(clamping: frecency)))
+        value.append(protoVarintField(4, UInt64(clamping: weights)))
         if let currentValue = entry.value {
             var valueReader = ProtoReader(data: currentValue)
             while let field = valueReader.readRawField() {
@@ -292,8 +275,8 @@ extension DiscordSettingsProto {
             }
         }
 
-        var result = stickerFixed64Field(1, entry.id)
-        result.append(stickerLengthDelimitedField(2, value))
+        var result = protoFixed64Field(1, entry.id)
+        result.append(protoLengthDelimitedField(2, value))
         result.append(entry.unknownFields)
         return result
     }
@@ -327,41 +310,5 @@ extension DiscordSettingsProto {
             }
             result += weight
         }
-    }
-
-    private static func stickerFixed64Field(_ field: Int, _ value: UInt64) -> Data {
-        var data = stickerVarint(UInt64(field << 3 | 1))
-        data.append(stickerFixed64(value))
-        return data
-    }
-
-    private static func stickerFixed64(_ value: UInt64) -> Data {
-        var littleEndian = value.littleEndian
-        return withUnsafeBytes(of: &littleEndian) { Data($0) }
-    }
-
-    private static func stickerLengthDelimitedField(_ field: Int, _ value: Data) -> Data {
-        var data = stickerVarint(UInt64(field << 3 | 2))
-        data.append(stickerVarint(UInt64(value.count)))
-        data.append(value)
-        return data
-    }
-
-    private static func stickerVarintField(_ field: Int, _ value: UInt64) -> Data {
-        var data = stickerVarint(UInt64(field << 3))
-        data.append(stickerVarint(value))
-        return data
-    }
-
-    private static func stickerVarint(_ source: UInt64) -> Data {
-        var value = source
-        var data = Data()
-        repeat {
-            var byte = UInt8(value & 0x7f)
-            value >>= 7
-            if value != 0 { byte |= 0x80 }
-            data.append(byte)
-        } while value != 0
-        return data
     }
 }

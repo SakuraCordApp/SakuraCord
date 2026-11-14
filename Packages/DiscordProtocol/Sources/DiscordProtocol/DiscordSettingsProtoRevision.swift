@@ -3,16 +3,12 @@ import Foundation
 extension DiscordSettingsProto {
     /// PreloadedUserSettings `versions` (field 1) `data_version` (field 3).
     static func dataVersion(in root: Data) -> UInt32? {
-        var reader = ProtoReader(data: root)
-        var result: UInt32?
-        while let field = reader.readRawField() {
-            guard field.field == 1, let payload = field.payload else { continue }
-            var versions = ProtoReader(data: payload)
-            while let version = versions.readRawField() {
-                if version.field == 3, let value = version.varint { result = UInt32(truncatingIfNeeded: value) }
-            }
-        }
-        return result
+        ProtoReader.fields(root)
+            .filter { $0.field == 1 }
+            .compactMap(\.payload)
+            .flatMap(ProtoReader.fields)
+            .last { $0.field == 3 && $0.varint != nil }?.varint
+            .map { UInt32(truncatingIfNeeded: $0) }
     }
 
     /// The field an encoded settings update carries, if the update applies:

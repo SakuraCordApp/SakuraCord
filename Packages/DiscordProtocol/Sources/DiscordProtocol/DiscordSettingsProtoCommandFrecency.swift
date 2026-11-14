@@ -14,17 +14,10 @@ extension DiscordSettingsProto {
     }
 
     static func frecencyHistory(from data: Data, field fieldNumber: Int) -> DiscordFrecencyHistory? {
-        var reader = ProtoReader(data: data)
-        var payload: Data?
-        var found = false
-        while let field = reader.readRawField() {
-            if field.field == fieldNumber, field.wireType == 2 {
-                payload = field.payload
-                found = true
-            }
+        guard let field = ProtoReader.fields(data).last(where: { $0.field == fieldNumber && $0.wireType == 2 }) else {
+            return nil
         }
-        guard found else { return nil }
-        return frecencyHistory(mapPayload: payload ?? Data())
+        return frecencyHistory(mapPayload: field.payload ?? Data())
     }
 
     static func frecencyHistory(mapPayload data: Data) -> DiscordFrecencyHistory {
@@ -116,21 +109,21 @@ extension DiscordSettingsProto {
         var map = preserved.container
         for entry in entries {
             var value = preserved.values[entry.key] ?? Data()
-            if entry.totalUses != 0 { value.append(frecencyVarintField(1, UInt64(UInt32(truncatingIfNeeded: entry.totalUses)))) }
+            if entry.totalUses != 0 { value.append(protoVarintField(1, UInt64(UInt32(truncatingIfNeeded: entry.totalUses)))) }
             let recent = entry.recentUses.filter { $0 > 0 }
             if !recent.isEmpty {
                 var packed = Data()
-                recent.forEach { packed.append(frecencyVarint($0)) }
-                value.append(frecencyLengthDelimitedField(2, packed))
+                recent.forEach { packed.append(protoVarint($0)) }
+                value.append(protoLengthDelimitedField(2, packed))
             }
-            if entry.frecency != 0 { value.append(frecencyVarintField(3, UInt64(bitPattern: Int64(entry.frecency)))) }
-            if entry.score != 0 { value.append(frecencyVarintField(4, UInt64(bitPattern: Int64(entry.score)))) }
+            if entry.frecency != 0 { value.append(protoVarintField(3, UInt64(bitPattern: Int64(entry.frecency)))) }
+            if entry.score != 0 { value.append(protoVarintField(4, UInt64(bitPattern: Int64(entry.score)))) }
             var mapEntry = preserved.entries[entry.key] ?? Data()
-            mapEntry.append(frecencyLengthDelimitedField(1, Data(entry.key.utf8)))
-            mapEntry.append(frecencyLengthDelimitedField(2, value))
-            map.append(frecencyLengthDelimitedField(1, mapEntry))
+            mapEntry.append(protoLengthDelimitedField(1, Data(entry.key.utf8)))
+            mapEntry.append(protoLengthDelimitedField(2, value))
+            map.append(protoLengthDelimitedField(1, mapEntry))
         }
-        return frecencyLengthDelimitedField(field, map)
+        return protoLengthDelimitedField(field, map)
     }
 
     private struct FrecencyUnknownFields {
@@ -180,30 +173,5 @@ extension DiscordSettingsProto {
             if areInIncreasingOrder(right.element, left.element) { return false }
             return left.offset < right.offset
         }.map(\.element)
-    }
-
-    private static func frecencyLengthDelimitedField(_ field: Int, _ value: Data) -> Data {
-        var data = frecencyVarint(UInt64(field << 3 | 2))
-        data.append(frecencyVarint(UInt64(value.count)))
-        data.append(value)
-        return data
-    }
-
-    private static func frecencyVarintField(_ field: Int, _ value: UInt64) -> Data {
-        var data = frecencyVarint(UInt64(field << 3))
-        data.append(frecencyVarint(value))
-        return data
-    }
-
-    private static func frecencyVarint(_ source: UInt64) -> Data {
-        var value = source
-        var data = Data()
-        repeat {
-            var byte = UInt8(value & 0x7f)
-            value >>= 7
-            if value != 0 { byte |= 0x80 }
-            data.append(byte)
-        } while value != 0
-        return data
     }
 }
