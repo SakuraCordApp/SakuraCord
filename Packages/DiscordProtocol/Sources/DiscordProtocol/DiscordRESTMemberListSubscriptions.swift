@@ -79,7 +79,7 @@ extension DiscordRESTProvider {
                 else { return }
                 // A newer cooldown can arrive while this refresh waits in the
                 // guild queue. A local refusal must not spend its wire attempt.
-                if let cooldown = gatewayOpcodeRateLimitDates[37], cooldown > Date.now {
+                if memberListSubscriptionCooldown != nil {
                     scheduleMemberListRefreshRetry(guildID: guildID)
                     return
                 }
@@ -170,7 +170,7 @@ extension DiscordRESTProvider {
               let memberListID = memberListState.selectedIDs[guildID],
               let refresh = memberListState.listsNeedingRefresh[guildID]?[memberListID],
               !memberListSubscriptionsForRefresh(guildID: guildID, memberListID: memberListID).isEmpty,
-              let cooldown = gatewayOpcodeRateLimitDates[37], cooldown > Date.now,
+              let cooldown = memberListSubscriptionCooldown,
               memberListRefreshRetryAttempts[guildID]?.contains(memberListID) != true
         else { return }
         memberListState.refreshRetryTasks[guildID]?.cancel()
@@ -226,20 +226,30 @@ extension DiscordRESTProvider {
 }
 
 extension DiscordRESTProvider {
-    /// Recovery covers committed ranges, the latest viewport, and an active
-    /// send whose viewport selection has changed. Publication still requires
-    /// a committed subscription through isMemberListAccessible's default lookup.
+    /// The active opcode-37 (member-list subscription) cooldown, if any.
+    var memberListSubscriptionCooldown: Date? {
+        gatewayOpcodeRateLimitDates[37].flatMap { $0 > Date.now ? $0 : nil }
+    }
+
+    /// A list's committed ranges, the latest viewport, and an active send
+    /// whose viewport selection has changed.
+    func memberListSubscriptions(guildID: GuildID, memberListID: String) -> [DiscordMemberListSubscription] {
+        let viewport = memberListState.viewportRequests[guildID]
+        let inFlight = memberListInFlightRequests[guildID]
+        return [
+            memberListState.subscriptions[guildID]?[memberListID],
+            viewport?.memberListID == memberListID ? viewport?.subscription : nil,
+            inFlight?.memberListID == memberListID ? inFlight?.subscription : nil,
+        ].compactMap { $0 }
+    }
+
+    /// Recovery covers every subscription the list holds. Publication still
+    /// requires a committed subscription through isMemberListAccessible's
+    /// default lookup.
     func memberListSubscriptionsForRefresh(
         guildID: GuildID, memberListID: String
     ) -> [DiscordMemberListSubscription] {
-        var subscriptions = memberListState.subscriptions[guildID]?[memberListID].map { [$0] } ?? []
-        if let viewport = memberListState.viewportRequests[guildID], viewport.memberListID == memberListID {
-            subscriptions.append(viewport.subscription)
-        }
-        if let inFlight = memberListInFlightRequests[guildID], inFlight.memberListID == memberListID {
-            subscriptions.append(inFlight.subscription)
-        }
-        return subscriptions.filter {
+        memberListSubscriptions(guildID: guildID, memberListID: memberListID).filter {
             isMemberListAccessible(guildID: guildID, memberListID: memberListID, subscription: $0)
         }
     }
@@ -304,11 +314,7 @@ extension DiscordRESTProvider {
             let requested = memberListState.viewportRequests[guildID].flatMap {
                 $0.memberListID == memberListID ? $0.subscription : nil
             }
-            let subscriptions = [
-                memberListState.subscriptions[guildID]?[memberListID], requested,
-                inFlight.flatMap { $0.memberListID == memberListID ? $0.subscription : nil },
-            ].compactMap { $0 }
-            guard subscriptions.contains(where: {
+            guard memberListSubscriptions(guildID: guildID, memberListID: memberListID).contains(where: {
                 !isMemberListAccessible(guildID: guildID, memberListID: memberListID, subscription: $0)
             }) else { continue }
             discardedSubscription = true
@@ -370,7 +376,7 @@ extension DiscordRESTProvider {
         }
         // One restore attempt waits out an already-known cooldown, including
         // a desired viewport whose first subscription has not committed.
-        if let cooldown = gatewayOpcodeRateLimitDates[37], cooldown > Date.now {
+        if let cooldown = memberListSubscriptionCooldown {
             try? await Task.sleep(for: .seconds(max(0, cooldown.timeIntervalSinceNow)))
         }
         guard !Task.isCancelled, gatewayReady, guildSubscriptionGenerations[guildID] == generation,
