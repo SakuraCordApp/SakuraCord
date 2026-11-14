@@ -249,7 +249,7 @@ extension AppModel {
         return source.filter { channel in
             (guildID == nil || channel.guildID == guildID)
                 && (channelTypes.isEmpty
-                    || channelTypes.contains(channel.discordCommandType))
+                    || channel.discordChannelType.map { channelTypes.contains($0) } == true)
         }.sorted {
             if $0.categoryPosition != $1.categoryPosition {
                 return $0.categoryPosition < $1.categoryPosition

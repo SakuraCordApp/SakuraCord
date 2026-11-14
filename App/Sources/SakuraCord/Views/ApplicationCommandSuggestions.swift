@@ -153,7 +153,7 @@ enum ApplicationCommandSuggestionFactory {
         case .channel:
             content.title = matchingTitle("Channels", query: query)
             content.suggestions = channels.filter { channel in
-                (option.channelTypes.isEmpty || option.channelTypes.contains(channel.discordCommandType))
+                (option.channelTypes.isEmpty || channel.discordChannelType.map { option.channelTypes.contains($0) } == true)
                     && (matches(channel.name, query: query) || matches(channel.category, query: query))
             }.prefix(limit).map { channel in
                 ApplicationCommandSuggestion(

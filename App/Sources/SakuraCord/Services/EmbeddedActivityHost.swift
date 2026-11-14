@@ -357,7 +357,7 @@ final class EmbeddedActivityHost: NSObject {
 
     /// Discord's type for the hosting channel.
     private var channelType: Int {
-        model?.embeddedActivities.session?.channel.discordCommandType ?? 0
+        model?.embeddedActivities.session.map { $0.channel.discordChannelType ?? -1 } ?? 0
     }
 
     private func channelPayload(model: AppModel) -> [String: Any] {

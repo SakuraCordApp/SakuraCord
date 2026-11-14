@@ -213,16 +213,16 @@ extension AppModel {
     /// carries; a thread that can't be read stays stored but unlisted.
     func loadFavoriteThreads() {
         let missing = (displayedFavorites?.entries ?? []).filter {
-            (10 ... 12).contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
+            DiscordChannelType.threads.contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
                 && sidebarThread($0.id) == nil && favorites.requestedThreadIDs.insert($0.id).inserted
         }
         // Discord loads favourited threads before its daily prune of read ones.
         guard !missing.isEmpty else { return pruneReadFavoriteThreads() }
         startAccountChildTask(account: accountSession()) { model, account in
             for entry in missing {
-                // A private thread (type 12) always asks Discord, whose answer
-                // states the current membership; others may come from cache.
-                let post = try? await (entry.channelType == 12
+                // A private thread always asks Discord, whose answer states
+                // the current membership; others may come from cache.
+                let post = try? await (entry.channelType == DiscordChannelType.privateThread
                     ? account.provider.resolveThreadAccess(threadID: entry.id)
                     : account.provider.forumPost(threadID: entry.id))
                 guard model.isCurrentAccountSession(account) else { return }
@@ -231,7 +231,7 @@ extension AppModel {
                     model.favorites.requestedThreadIDs.remove(entry.id)
                     // A private thread Discord no longer confirms stops listing,
                     // and an open one is withheld until Discord confirms it again.
-                    if entry.channelType == 12 {
+                    if entry.channelType == DiscordChannelType.privateThread {
                         model.favorites.threads[entry.id] = nil
                         if model.openThread?.id == entry.id { model.beginOpenThreadResolution() }
                     }
@@ -309,7 +309,7 @@ extension AppModel {
             // Discord prunes favourites the account can no longer see before it
             // counts, so a deleted or hidden channel never blocks an addition.
             var counted = settings
-            counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
+            counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !DiscordChannelType.threads.contains($0.channelType ?? 0) }
             let category = resolvesCategory ? categoryName.flatMap(settings.category(named:)) : nil
             let newCategoryName = resolvesCategory && category == nil ? categoryName : nil
             // Discord's list takes the favourite only with room for it and any new category.
@@ -445,25 +445,41 @@ extension AppModel {
 }
 
 extension AppModel {
-    /// The Discord channel type a favourited thread records: 10 under an
-    /// announcement channel, 12 when private, otherwise 11.
+    /// The Discord channel type a favourited thread records.
     func favoriteChannelType(for thread: MessageThreadSummary) -> Int {
-        if thread.isPrivate { return 12 }
-        return thread.parentID.flatMap(knownRootChannel)?.kind == .announcement ? 10 : 11
+        if thread.isPrivate { return DiscordChannelType.privateThread }
+        return thread.parentID.flatMap(knownRootChannel)?.kind == .announcement
+            ? DiscordChannelType.announcementThread : DiscordChannelType.publicThread
     }
 }
 
+/// Discord's numeric channel types that SakuraCord's channel kinds do not name.
+nonisolated enum DiscordChannelType {
+    static let directMessage = 1
+    static let announcementThread = 10
+    static let publicThread = 11
+    static let privateThread = 12
+    static let stageVoice = 13
+    static let threads = announcementThread ... privateThread
+}
+
 extension Channel {
+    /// Discord's type for the channel's kind; nil when the kind is unknown.
+    var discordChannelType: Int? {
+        switch kind {
+        case .text: 0
+        case .directMessage: DiscordChannelType.directMessage
+        case .voice: 2
+        case .groupDirectMessage: 3
+        case .announcement: 5
+        case .forum: 15
+        case .unknown: nil
+        }
+    }
+
     /// The Discord channel type a new favourite records when the provider
     /// has not cached the server's own value.
     var favoriteChannelType: Int {
-        switch kind {
-        case .directMessage: 1
-        case .groupDirectMessage: 3
-        case .voice: 2
-        case .announcement: 5
-        case .forum: 15
-        case .text, .unknown: 0
-        }
+        discordChannelType ?? 0
     }
 }

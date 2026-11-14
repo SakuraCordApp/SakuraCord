@@ -142,7 +142,7 @@ private struct FavoriteRow: View {
             DirectMessageAvatar(channel: channel, size: InterfaceScale.metric(20), status: nil, animates: false)
         } else {
             Image(systemName: favorite.thread != nil ? "text.bubble.fill"
-                : favorite.entry.channelType == 13 ? "person.wave.2.fill"
+                : favorite.entry.channelType == DiscordChannelType.stageVoice ? "person.wave.2.fill"
                 : ChannelIconPresentation.systemImage(
                     for: channel, isHidden: false,
                     rulesChannelID: channel.guildID.flatMap { model.serverRailGuildsByID[$0]?.rulesChannelID }

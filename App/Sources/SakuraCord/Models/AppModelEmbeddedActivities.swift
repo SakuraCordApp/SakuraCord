@@ -429,7 +429,7 @@ extension AppModel {
         guard let scopes = try await account.provider.embeddedActivityInstallScopes(application.id, in: channel) else { return }
         let request = EmbeddedActivityAuthorizationRequest(
             applicationID: application.id, scopes: scopes, state: UUID().uuidString,
-            location: .of(channel), channelType: channel.discordCommandType
+            location: .of(channel), channelType: channel.discordChannelType ?? -1
         )
         guard try await embeddedActivityConsent(to: request, launchID: launchID, account: account) else {
             // The launch ends now; Discord answers the refusal with access_denied.

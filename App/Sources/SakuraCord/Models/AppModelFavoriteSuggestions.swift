@@ -212,7 +212,7 @@ extension AppModel {
                 additions.append(FavoriteAddition(id: thread.id, channelType: favoriteChannelType(for: thread)))
             case .user(let user, let directMessage):
                 if let directMessage {
-                    additions.append(FavoriteAddition(id: directMessage.id, channelType: 1))
+                    additions.append(FavoriteAddition(id: directMessage.id, channelType: DiscordChannelType.directMessage))
                 } else {
                     usersWithoutDirectMessage.append(user.id)
                 }
@@ -225,7 +225,7 @@ extension AppModel {
             var failed = false
             for userID in usersWithoutDirectMessage {
                 if let channel = try? await account.provider.ensurePrivateChannel(for: userID) {
-                    additions.append(FavoriteAddition(id: channel.id, channelType: 1))
+                    additions.append(FavoriteAddition(id: channel.id, channelType: DiscordChannelType.directMessage))
                 } else {
                     failed = true
                 }
