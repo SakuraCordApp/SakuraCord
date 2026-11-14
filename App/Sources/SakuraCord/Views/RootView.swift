@@ -896,8 +896,8 @@ private struct ChatRootView: View {
         ToolbarSpacer(.flexible)
 
         if showsCustomizationModePicker {
-            // In the toolbar's centre, as before side chats. It keeps its
-            // label, which the overflow menu shows.
+            // In the toolbar's centre. It keeps its label, which the overflow
+            // menu shows.
             ToolbarItem(id: "customization-mode", placement: .principal) {
                 Picker("Channels & Roles", selection: Binding(
                     get: { model.isBrowsingGuildChannels },
@@ -1251,7 +1251,7 @@ private struct ChatRootView: View {
         }
         if let conversation = model.presentedSideConversation, conversation.isFullWidth {
             // One line with the thread symbol for threads and forum posts
-            // alike, as before side chats were unified.
+            // alike.
             let label = model.sideConversationLabel(conversation)
             return .init(title: label.title, systemImage: SakuraCordSystemSymbol.thread)
         }

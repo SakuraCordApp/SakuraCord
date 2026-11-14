@@ -275,8 +275,6 @@ extension AppModel {
             removeInboxMessage(messageID, mentionsOnly: false)
         case .channelPinsInvalidated(let channelID):
             invalidatePinnedMessages(in: channelID)
-        case .readStateSnapshot(let states, _):
-            consumeReadStateSnapshot(states)
         case .readStateChanged(let state):
             consumeReadStateChange(state)
         default:
@@ -650,30 +648,6 @@ extension AppModel {
         } else {
             messageCache[channelID]?.removeAll { $0.id == messageID }
         }
-    }
-
-    func consumeReadStateSnapshot(_ states: [ChannelReadState]) {
-        Self.unreadDiagnosticsLogger.info("Read-state snapshot received; states=\(states.count)")
-        for channelID in readState.replaceReadStates(states) { cancelNativeNotifications(channelID: channelID) }
-        if let selectedChannelID {
-            _ = readState.updatePresentation(
-                channelID: selectedChannelID,
-                isPresented: isConversationPresented(selectedChannelID),
-                initialHistoryLoaded: !isLoadingMessages && messageLoadError == nil,
-                windowIsActive: mainWindowIsActive
-            )
-        }
-        if let threadID = openThread?.id {
-            _ = readState.updatePresentation(
-                channelID: threadID,
-                isPresented: isConversationPresented(threadID),
-                initialHistoryLoaded: !isLoadingThread && threadErrorMessage == nil,
-                windowIsActive: mainWindowIsActive
-            )
-        }
-        refreshUnreadPresentation()
-        if let selectedChannelID { acknowledgeIfEligible(channelID: selectedChannelID) }
-        if let threadID = openThread?.id { acknowledgeIfEligible(channelID: threadID) }
     }
 
     func consumeReadStateChange(_ state: ChannelReadState) {

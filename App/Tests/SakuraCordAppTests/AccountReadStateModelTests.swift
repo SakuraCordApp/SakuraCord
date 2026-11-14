@@ -1162,7 +1162,6 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
     await model.acknowledgementTasks[channelID]?.value
     await model.acknowledgementProcessorTask?.value
     let previousRequests = await provider.acknowledgementRequests.count
-    let acknowledged = model.readState.entries[channelID]?.lastAcknowledgedMessageID
 
     if page == .guide { model.openGuildGuide(in: guildID) }
     else { model.openChannelsAndRoles(in: guildID) }
@@ -1172,12 +1171,10 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
         author: User(id: UserID(rawValue: 2), username: "sender", displayName: "Sender"),
         content: "Arrived behind the guild page", guildID: guildID)
     model.consumeImmediately(.messageCreated(incoming))
-    // A late load, old viewport callback, reconnect, or window activation must
+    // A late load, old viewport callback, or window activation must
     // not restore the presentation of a conversation hidden by a guild page.
     model.reportConversationHistoryLoaded(channelID: channelID)
     model.reportTimelineInitialPosition(channelID: channelID, hasReachedReadBoundary: true)
-    model.consumeReadStateSnapshot([ChannelReadState(channelID: channelID,
-        lastAcknowledgedMessageID: acknowledged)])
     model.reportMainWindowActive(false)
     model.reportMainWindowActive(true)
     await model.acknowledgementTasks[channelID]?.value
@@ -1294,49 +1291,6 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
     guard chainedRequests.count == 2 else { return }
     #expect(chainedRequests[1].channelID == nextChannelID)
     #expect(chainedRequests[1].token == "mock-ack-token")
-}
-
-@MainActor
-@Test func `ready read state arriving after timeline setup still permits automatic acknowledgement`() async
-    throws
-{
-    let provider = MockChatProvider()
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: provider,
-        readAcknowledgementTiming: .init(debounce: .milliseconds(10))
-    )
-    await model.start()
-    let channelID = ChannelID(rawValue: 212)
-    model.selectedChannelID = channelID
-    #expect(await until { !model.isLoadingMessages && model.selectedChannelID == channelID })
-    let previousAcknowledgement = model.readState.entries[channelID]?.lastAcknowledgedMessageID
-    model.reportMainWindowActive(true)
-    model.reportTimelineInitialPosition(
-        channelID: channelID,
-        hasReachedReadBoundary: true
-    )
-
-    let newest = Message(
-        id: MessageID(rawValue: UInt64.max - 2),
-        channelID: channelID,
-        author: User(id: UserID(rawValue: 2), username: "sender", displayName: "Sender"),
-        content: "new",
-        guildID: GuildID(rawValue: 100)
-    )
-    await provider.emit(.messageCreated(newest))
-    await provider.emit(.readStateSnapshot([
-        ChannelReadState(
-            channelID: channelID,
-            lastAcknowledgedMessageID: previousAcknowledgement
-        )
-    ]))
-
-    #expect(await eventually { await provider.acknowledgementRequests.count == 1 })
-    let request = try #require(await provider.acknowledgementRequests.first)
-    #expect(request.channelID == channelID)
-    #expect(request.messageID == newest.id)
-    #expect(!request.manual)
 }
 
 @MainActor

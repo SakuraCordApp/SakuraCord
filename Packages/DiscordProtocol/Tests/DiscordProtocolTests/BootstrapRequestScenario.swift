@@ -13,7 +13,6 @@ func readyWorkspaceReplayEvents(
         }
         switch event {
         case .snapshotChanged,
-             .readStateSnapshot,
              .notificationModeChanged,
              .notificationSettingsChanged,
              .channelsChanged:

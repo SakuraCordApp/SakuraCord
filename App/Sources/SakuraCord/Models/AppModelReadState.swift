@@ -370,8 +370,6 @@ extension AppModel {
                     mutation: self.readStateMutation(channelID: channelID, messageID: messageID)
                 )
                 self.acknowledgementTasks[channelID] = nil
-            } catch is CancellationError {
-                return
             } catch {
                 return
             }

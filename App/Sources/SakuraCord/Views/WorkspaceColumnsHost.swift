@@ -256,8 +256,8 @@ final class WorkspaceColumnsView: NSView {
 
     /// Takes a column out. The last side chat pane stays, out of the window,
     /// for the next one: a pane built from nothing costs most of a motion's
-    /// first frame. Out of the window, as a closed pane was before pooling,
-    /// it takes no events and plays no media; `apply` puts it back.
+    /// first frame. Out of the window it takes no events and plays no media;
+    /// `apply` puts it back.
     private func remove(_ island: Island) {
         if island.column.isSideConversation, !island.column.isFullWidth, pooledPane == nil {
             island.view.removeFromSuperview()

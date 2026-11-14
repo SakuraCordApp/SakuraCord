@@ -170,14 +170,14 @@ extension AppModel {
         displayedFavorites?.sections.flatMap(\.entries).compactMap(favoriteConversation) ?? []
     }
 
-    /// Unknown or hidden channels stay stored but unlisted, like Discord's
-    /// list; a favourited thread shows once the account knows it and can
-    /// view its parent.
     /// A favourited thread as the sidebar or Favorites' own fetch knows it.
     func favoriteThread(_ id: ChannelID) -> MessageThreadSummary? {
         sidebarThread(id) ?? favorites.threads[id]
     }
 
+    /// Unknown or hidden channels stay stored but unlisted, like Discord's
+    /// list; a favourited thread shows once the account knows it and can
+    /// view its parent.
     func favoriteConversation(_ entry: FavoritesSettings.Entry) -> FavoriteConversation? {
         if let channel = knownRootChannel(entry.id) {
             guard conversationAccess(for: channel) != .hidden else { return nil }

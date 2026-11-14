@@ -21,7 +21,6 @@ public enum ClientEvent: Equatable, Sendable {
     /// The current user just joined a thread, or left one; Favorites follows both.
     case currentUserThreadMembershipChanged(threadID: ChannelID, isJoined: Bool)
     case inboxScheduledEventsChanged(InboxScheduledEvents)
-    case readStateSnapshot([ChannelReadState], version: Int? = nil)
     case readStateChanged(ChannelReadState)
     case notificationModeChanged(usesNewNotifications: Bool)
     case notificationSettingsChanged(GuildNotificationSettings)

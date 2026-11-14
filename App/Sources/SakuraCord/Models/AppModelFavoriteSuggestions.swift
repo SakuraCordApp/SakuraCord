@@ -182,15 +182,11 @@ extension AppModel {
     }
 
     func dismissFavoriteSuggestions() {
-        setFavoriteSuggestionsDismissed(true)
-    }
-
-    func setFavoriteSuggestionsDismissed(_ isDismissed: Bool) {
-        favorites.suggestionsDismissed = isDismissed
+        favorites.suggestionsDismissed = true
         refreshFavoriteSuggestions()
         startAccountChildTask(account: accountSession()) { model, account in
             do {
-                try await account.provider.setFavoritesSuggestionsDismissed(isDismissed)
+                try await account.provider.setFavoritesSuggestionsDismissed(true)
             } catch {
                 guard model.isCurrentAccountSession(account) else { return }
                 model.errorMessage = error.localizedDescription
@@ -205,7 +201,7 @@ extension AppModel {
 
     /// Adds picked or suggested conversations at once; a person without a
     /// DM gets one first, as Discord opens it before favouriting.
-    func addFavoriteDestinations(_ destinations: [ForwardDestination], parentID: ChannelID? = nil, categoryName: String? = nil) {
+    func addFavoriteDestinations(_ destinations: [ForwardDestination], categoryName: String? = nil) {
         var additions: [FavoriteAddition] = []
         var usersWithoutDirectMessage: [UserID] = []
         for destination in destinations {
@@ -223,7 +219,7 @@ extension AppModel {
             }
         }
         guard !usersWithoutDirectMessage.isEmpty else {
-            return addFavorites(additions, parentID: parentID, categoryName: categoryName)
+            return addFavorites(additions, categoryName: categoryName)
         }
         startAccountChildTask(account: accountSession()) { model, account in
             var failed = false
@@ -237,7 +233,7 @@ extension AppModel {
             guard model.isCurrentAccountSession(account) else { return }
             // The others are still added.
             if failed { model.errorMessage = "Oops, something went wrong..." }
-            model.addFavorites(additions, parentID: parentID, categoryName: categoryName)
+            model.addFavorites(additions, categoryName: categoryName)
         }
     }
 

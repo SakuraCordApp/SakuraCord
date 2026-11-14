@@ -342,11 +342,9 @@ struct ServerFolderRailHeader: View {
                         ConcentricRectangle(cornerRadius: InterfaceScale.metric(17), style: .continuous)
                             .fill(folderColor)
                             .overlay {
-                                if !isExpanded {
-                                    ConcentricRectangle(cornerRadius: InterfaceScale.metric(15), style: .continuous)
-                                        .stroke(folderColor, lineWidth: InterfaceScale.metric(4))
-                                        .padding(InterfaceScale.metric(2))
-                                }
+                                ConcentricRectangle(cornerRadius: InterfaceScale.metric(15), style: .continuous)
+                                    .stroke(folderColor, lineWidth: InterfaceScale.metric(4))
+                                    .padding(InterfaceScale.metric(2))
                             }
                             .compositingGroup()
                             .opacity(0.18)

@@ -4298,8 +4298,6 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
     #expect(model.messages == loadedMessages)
     #expect(!model.isLoadingMessages)
-    model.consumeReadStateSnapshot([])
-    #expect(model.readState.presentations[channelID]?.initialHistoryLoaded == true)
 
     await model.channelLoadTask?.value
     #expect(await provider.requestCount(for: channelID) == 2)

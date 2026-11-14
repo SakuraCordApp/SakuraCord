@@ -1443,10 +1443,6 @@ extension AccountReadStateModel {
         }
     }
 
-    func folderUnread(_ guildIDs: [GuildID], now: Date = .now) -> Bool {
-        guildIDs.contains { guildUnread($0, now: now) }
-    }
-
     func directMessageUnread(now: Date = .now) -> Bool {
         entries.values.contains { entry in
             (entry.kind == .directMessage || entry.kind == .groupDirectMessage)
