@@ -151,16 +151,9 @@ extension NativeMemberListCanvasView {
     static func draw(image: CGImage, aspectFitIn rect: CGRect, context: CGContext) {
         let imageSize = CGSize(width: image.width, height: image.height)
         guard imageSize.width > 0, imageSize.height > 0 else { return }
-        let scale = min(rect.width / imageSize.width, rect.height / imageSize.height)
-        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
         draw(
             image: image,
-            in: CGRect(
-                x: rect.midX - size.width / 2,
-                y: rect.midY - size.height / 2,
-                width: size.width,
-                height: size.height
-            ),
+            in: aspectRect(for: imageSize, in: rect, fillsFrame: false),
             context: context,
             fills: false
         )

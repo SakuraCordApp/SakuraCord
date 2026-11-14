@@ -148,7 +148,7 @@ final class ForumCardCanvas {
         guard frame.width > 0, frame.height > 0, image.size.width > 0, image.size.height > 0,
               let cgImage = cache.cgImage(for: image)
         else { return }
-        let destination = NativeTimelineRowPainter.aspectRect(for: image.size, in: frame, fillsFrame: fillsFrame)
+        let destination = aspectRect(for: image.size, in: frame, fillsFrame: fillsFrame)
         let clip = NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).cgPath
         operations.append(.image(cgImage, destination: destination, clip: clip))
     }

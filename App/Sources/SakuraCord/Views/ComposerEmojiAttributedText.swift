@@ -304,14 +304,7 @@ final class ComposerEmojiImageStore {
               bounds.height > 0
         else { return bounds }
 
-        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
-        let size = NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
-        return NSRect(
-            x: bounds.midX - size.width / 2,
-            y: bounds.midY - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
+        return aspectRect(for: imageSize, in: bounds, fillsFrame: false)
     }
 
     static func preparedForInlineDisplay(_ source: NSImage) -> NSImage {

@@ -158,7 +158,7 @@ struct SakuraCordColorPicker: View {
                 let elapsed = start.duration(to: clock.now).components
                 let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
                 let progress = min(seconds / SakuraCordThemeStore.randomizationDurationSeconds, 1)
-                palette = source.interpolated(to: target, progress: 1 - pow(1 - progress, 3))
+                palette = source.interpolated(to: target, progress: Double(NativeTimelineEasing.easeOut(CGFloat(progress))))
                 if progress >= 1 { break }
                 try? await clock.sleep(for: .milliseconds(8))
             }
