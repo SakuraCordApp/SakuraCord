@@ -27,13 +27,12 @@ extension NativeMessageTimelineCoordinator {
                     )
                 }
             }
-            // Benchmark launch used to spend its warm-up interval as an
-            // ordinary interactive timeline. That installed tracking and
-            // accessibility proxies beneath a stationary pointer, then
-            // tore them down on the first measured scroll frame. Besides
-            // producing a visible hover/highlight phase, the transition
-            // made the beginning of every run materially colder than the
-            // rest. Enter the scrolling presentation before warm-up.
+            // Enter the scrolling presentation before warm-up. Warming up as
+            // an ordinary interactive timeline installs tracking and
+            // accessibility proxies beneath the stationary pointer that the
+            // first measured scroll frame tears down, which shows a
+            // hover/highlight phase and makes the start of every run
+            // materially colder than the rest.
             //
             // Do not eagerly rasterize rows here. During active scrolling
             // the canvas deliberately paints uncached rows directly; a
@@ -56,12 +55,11 @@ extension NativeMessageTimelineCoordinator {
             canvas: NativeTimelineCanvasView
         ) async {
                 do {
-                    // A fixed delay can expire before AppKit has presented even
-                    // one timeline frame. Starting in that state leaves the
-                    // ordinary hover/tracking presentation installed and the
-                    // bottom overlay clipped until the first real display
-                    // transaction arrives. Gate on frames actually delivered
-                    // by this view, then require a brief responsive interval.
+                    // Gate on frames actually delivered by this view, then
+                    // require a brief responsive interval: starting before
+                    // AppKit presents a timeline frame leaves the ordinary
+                    // hover/tracking presentation installed and the bottom
+                    // overlay clipped until the first real display transaction.
                     let startupDeadline =
                         ProcessInfo.processInfo.systemUptime + 3
                     while !NativeTimelineBenchmarkStartupPolicy.isReady(
@@ -81,11 +79,10 @@ extension NativeMessageTimelineCoordinator {
                       self.canvas === canvas
                 else { return }
                 // The bottom spacer deliberately keeps the newest message
-                // above the floating composer. Starting the benchmark at that
-                // exact edge made its first frames look clipped at a hard
-                // footer line; only after consuming the spacer did rows travel
-                // beneath the overlay like the rest of the run. Move past the
-                // spacer before telemetry and live-arrival stress begin.
+                // above the floating composer. Move past it before telemetry
+                // and live-arrival stress begin, so the first frames already
+                // carry rows beneath the overlay instead of looking clipped
+                // at a hard footer line.
                 startup.phase = "position-shift"
                 let initialRect = scrollView.contentView.bounds
                 let scrollsTowardLater =

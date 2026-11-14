@@ -18,10 +18,9 @@ nonisolated enum NativeTimelineBenchmarkStartupPolicy {
 }
 
 nonisolated enum NativeTimelineBenchmarkScrollPolicy {
-    // Keep the authenticated workload continuously moving at a speed that is
-    // representative of reading/skim scrolling. The former 9,600 pt/s target
-    // crossed roughly 160 points per 60 Hz frame, exhausting live history far
-    // faster than a person could inspect it and obscuring account-scale costs.
+    // Keep the authenticated workload continuously moving at reading or
+    // skimming speed. Much faster runs exhaust live history sooner than a
+    // person could read it, which hides account-scale costs.
     /// Run for one fixed wall-clock interval at a refresh-independent target
     /// speed. Delayed frames remain part of the result: the step cap avoids
     /// measuring a stall twice, while the artifact records the resulting
