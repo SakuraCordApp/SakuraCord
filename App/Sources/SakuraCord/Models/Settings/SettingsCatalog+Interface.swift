@@ -103,3 +103,9 @@ nonisolated extension SettingsCatalog {
         ),
     ]
 }
+
+nonisolated extension SettingsControlID {
+    static let memberListVisibility = Self(rawValue: "interface.member-list-visible")
+    static let directMessageProfileVisibility = Self(rawValue: "interface.direct-message-profile-visible")
+    static let groupDirectMessageMembersVisibility = Self(rawValue: "interface.group-direct-message-members-visible")
+}

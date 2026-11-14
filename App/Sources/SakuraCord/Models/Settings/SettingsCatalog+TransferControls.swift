@@ -16,6 +16,12 @@ nonisolated extension SettingsSectionID {
 }
 
 nonisolated extension SettingsCatalog {
+    static let importExportPage = page(
+        .importExport, group: .sakuraCord, title: "Import & Export", image: "arrow.up.arrow.down",
+        help: "Save your local SakuraCord settings or restore them from a settings file.",
+        keywords: ["backup", "restore", "transfer", "import", "export", "sakurasettings"]
+    )
+
     static let transferControls: [SettingsControlMetadata] = [
         control(.settingsExport, page: .importExport, section: .settingsTransfer,
                 label: "Export Settings", help: "Save selected local settings to a file.", keywords: [],
