@@ -140,7 +140,7 @@ final class AccountReadStateModel {
     private var activeJoinedThreadIDs: Set<ChannelID> = []
     private var forumPostArchivedByID: [ChannelID: Bool] = [:]
     private var usesNewNotifications = true
-    private var currentUserID: UserID?
+    var currentUserID: UserID?
 }
 
 extension AccountReadStateModel {
@@ -678,10 +678,6 @@ extension AccountReadStateModel {
 
     func updateCurrentUserRoles(_ roleIDs: Set<RoleID>, guildID: GuildID) {
         currentUserRoleIDsByGuild[guildID] = roleIDs
-    }
-
-    func setAccessible(_ isAccessible: Bool, channelID: ChannelID) {
-        applyAccessibility([channelID: isAccessible])
     }
 
     /// Applies resolved channel accessibility and propagates each value to the
@@ -1586,10 +1582,6 @@ extension AccountReadStateModel {
         let guildID = message.guildID ?? self[message.channelID]?.guildID
         return query.includesRoles && !message.flags.contains(.failedToMentionRoles)
             && guildID.flatMap { currentUserRoleIDsByGuild[$0] }.map { !$0.isDisjoint(with: message.mentionedRoleIDs) } == true
-    }
-
-    func setCurrentUserID(_ userID: UserID?) {
-        currentUserID = userID
     }
 }
 

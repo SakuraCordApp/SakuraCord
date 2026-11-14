@@ -4,16 +4,8 @@ import OSLog
 import SakuraCordModels
 
 extension AppModel {
-    func channelMentionCount(_ channelID: ChannelID) -> Int {
-        readState.mentions(channelID: channelID)
-    }
-
     var directMessageUnread: Bool {
         readState.directMessageUnread()
-    }
-
-    var directMessageMentionCount: Int {
-        readState.directMessageMentions
     }
 
     func unreadDividerMessageID(channelID: ChannelID) -> MessageID? {

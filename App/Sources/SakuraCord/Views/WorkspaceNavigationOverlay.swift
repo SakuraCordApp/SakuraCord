@@ -1011,16 +1011,3 @@ private final class KeyHandlingTextField: NSTextField {
         super.keyDown(with: event)
     }
 }
-
-private func overlayHeader(title: String, subtitle: String) -> some View {
-    HStack {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(3)) {
-            Text(title).font(.interface(.title2).weight(.semibold))
-            Text(subtitle).font(.interface(.callout)).foregroundStyle(.secondary)
-        }
-        Spacer()
-    }
-    .padding(.horizontal, InterfaceScale.metric(20))
-    .padding(.top, InterfaceScale.metric(18))
-    .padding(.bottom, InterfaceScale.metric(14))
-}

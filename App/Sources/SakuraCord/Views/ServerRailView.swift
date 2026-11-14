@@ -141,24 +141,24 @@ struct ServerRailView: View {
     let sidebarWidth: CGFloat
     let items: [ServerRailPresentationItem]
     let directMessages: [ServerRailDirectMessageEntry]
-    var joinRequests: [ServerRailJoinRequestEntry] = []
-    var joinRequestsExpanded: Binding<Bool> = .constant(false)
-    var showsSubmittedTip: Binding<Bool> = .constant(false)
-    var selectJoinRequest: (GuildID?) -> Void = { _ in }
+    let joinRequests: [ServerRailJoinRequestEntry]
+    let joinRequestsExpanded: Binding<Bool>
+    let showsSubmittedTip: Binding<Bool>
+    let selectJoinRequest: (GuildID?) -> Void
     let home: ServerRailHomeEntry
     let selectHome: () -> Void
-    var favoritesModel: AppModel?
+    let favoritesModel: AppModel?
     let selectDirectMessage: (ChannelID) -> Void
     let selectGuild: (GuildID?) -> Void
-    var joinServer: () -> Void = {}
-    var showsReadAllButton = false
-    var isReadingAll = false
-    var hasUnreadServers: () -> Bool = { false }
-    var readAll: () -> Void = {}
-    var moveItems: ([GuildRailItem.RailIdentifier], GuildRailDestination) -> Void = { _, _ in }
-    var combineGuilds: (GuildID, GuildID) -> Void = { _, _ in }
-    var voicePreview: (GuildID) -> ServerRailVoicePreview? = { _ in nil }
-    var resolveVoiceParticipants: (GuildID, [UserID]) async -> Void = { _, _ in }
+    let joinServer: () -> Void
+    let showsReadAllButton: Bool
+    let isReadingAll: Bool
+    let hasUnreadServers: () -> Bool
+    let readAll: () -> Void
+    let moveItems: ([GuildRailItem.RailIdentifier], GuildRailDestination) -> Void
+    let combineGuilds: (GuildID, GuildID) -> Void
+    let voicePreview: (GuildID) -> ServerRailVoicePreview?
+    let resolveVoiceParticipants: (GuildID, [UserID]) async -> Void
     let contextMenuActions: ServerRailContextMenuActions
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion

@@ -1,16 +1,10 @@
-import CoreAudio
-import CoreText
 import DiscordProtocol
 import Foundation
-import ImageIO
 import MediaPipeline
-import MessageRendering
 import OSLog
 import Observation
 import SakuraCordModels
 import SakuraCordPersistence
-import UniformTypeIdentifiers
-import UserNotifications
 
 enum ServerRailNavigationDestination: Equatable {
     case directMessages
@@ -580,15 +574,6 @@ final class AppModel {
     var isInspectorProfilePresented = false
     var selectedMember: Member? {
         inspectorProfilePresentation?.member
-    }
-    var selectedProfile: UserProfile? {
-        inspectorProfilePresentation?.profile
-    }
-    var isLoadingProfile: Bool {
-        inspectorProfilePresentation?.isLoading ?? false
-    }
-    var profileErrorMessage: String? {
-        inspectorProfilePresentation?.errorMessage
     }
     var activeVoiceChannel: Channel? {
         didSet {

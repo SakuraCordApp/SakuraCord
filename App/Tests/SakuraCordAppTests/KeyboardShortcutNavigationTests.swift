@@ -62,7 +62,7 @@ struct KeyboardShortcutNavigationTests {
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: true) == ChannelID(rawValue: 20))
         model.hiddenChannelIDs = [ChannelID(rawValue: 20)]
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: true) == ChannelID(rawValue: 30))
-        model.readState.setAccessible(false, channelID: ChannelID(rawValue: 30))
+        model.readState.applyAccessibility([ChannelID(rawValue: 30): false])
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: true) == ChannelID(rawValue: 10))
 
         model.selectedGuildID = GuildID(rawValue: 3)
@@ -107,7 +107,7 @@ struct KeyboardShortcutNavigationTests {
         model.selectedChannelID = ChannelID(rawValue: 10)
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: true, mentionsOnly: true) == ChannelID(rawValue: 20))
         #expect(model.keyboardShortcutConversationDestination(direction: -1, unreadOnly: true, mentionsOnly: true) == ChannelID(rawValue: 20))
-        model.readState.setAccessible(false, channelID: ChannelID(rawValue: 20))
+        model.readState.applyAccessibility([ChannelID(rawValue: 20): false])
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: true, mentionsOnly: true) == nil)
     }
 

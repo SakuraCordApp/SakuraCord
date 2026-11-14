@@ -508,7 +508,7 @@ import UserNotifications
     #expect(privateChannel.map(model.conversationAccess(for:)) == .hidden)
     #expect(model.hiddenChannelIDs.contains(privateChannelID))
     #expect(!model.isChannelUnread(privateChannelID))
-    #expect(model.channelMentionCount(privateChannelID) == 0)
+    #expect(model.readState.mentions(channelID: privateChannelID) == 0)
 
     model.selectedChannelID = privateChannelID
     #expect(await until {
@@ -4361,28 +4361,6 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     #expect(model.voiceSessionState == .idle)
     #expect(model.voiceStates[snapshot.currentUser.id] == replacementState)
     #expect(await provider.voiceStateUpdateRequestCount == 0)
-}
-
-@MainActor
-@Test func `unchanged unread projection does not republish the account snapshot`() async throws {
-    let snapshot = try await MockChatProvider().bootstrap()
-    #expect(
-        !UnreadPresentationPublicationPolicy.shouldPublish(
-            snapshot: snapshot,
-            channels: snapshot.channels,
-            guilds: snapshot.guilds
-        )
-    )
-
-    var changedChannels = snapshot.channels
-    changedChannels[0].unreadCount += 1
-    #expect(
-        UnreadPresentationPublicationPolicy.shouldPublish(
-            snapshot: snapshot,
-            channels: changedChannels,
-            guilds: snapshot.guilds
-        )
-    )
 }
 
 @MainActor

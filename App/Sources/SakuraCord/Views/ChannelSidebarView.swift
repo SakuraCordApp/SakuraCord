@@ -24,13 +24,6 @@ final class ChannelSidebarSelectionCommitter<Selection: Equatable> {
         return selection
     }
 
-    var hasPendingSelection: Bool {
-        if case .value = pendingSelectionState {
-            return true
-        }
-        return false
-    }
-
     func presentedSelection(fallback: Selection?) -> Selection? {
         guard case let .value(selection) = pendingSelectionState else {
             return fallback

@@ -101,7 +101,7 @@ struct AccountReadStateModelTests {
             incremental.merge(thread: thread)
         }
         incremental.replaceActiveJoinedThreads(threads)
-        incremental.setCurrentUserID(currentUser.id)
+        incremental.currentUserID = currentUser.id
 
         let batched = AccountReadStateModel()
         batched.applyInitialState(AccountReadStateModel.makeInitialState(.init(
@@ -235,7 +235,7 @@ struct AccountReadStateModelTests {
         let latestMessageID = MessageID(rawValue: 2 << 22)
         let model = AccountReadStateModel()
         model.reset(accountID: "account")
-        model.setCurrentUserID(currentUser.id)
+        model.currentUserID = currentUser.id
         model.configure(
             accountID: "account",
             guilds: [
@@ -362,7 +362,7 @@ struct AccountReadStateModelTests {
             )
         )
 
-        model.setAccessible(false, channelID: channelID)
+        model.applyAccessibility([channelID: false])
 
         #expect(!model.unread(channelID: channelID))
         #expect(!model.unread(channelID: threadID))
@@ -980,7 +980,7 @@ struct AccountReadStateModelTests {
     ) -> AccountReadStateModel {
         let model = AccountReadStateModel()
         model.reset(accountID: "account")
-        model.setCurrentUserID(currentUser.id)
+        model.currentUserID = currentUser.id
         model.configure(
             accountID: "account",
             guilds: [
@@ -1664,7 +1664,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
     #expect(await eventually {
         model.readState.entries[channelID]?.lastAcknowledgedMessageID == request.messageID
     })
-    #expect(model.channelMentionCount(channelID) == expectedMentions)
+    #expect(model.readState.mentions(channelID: channelID) == expectedMentions)
     #expect(model.readState.holdsAutomaticAcknowledgement(channelID))
     #expect(model.unreadDividerMessageID(channelID: channelID) == selectedMessage.id)
     // As in Discord, only a selection change or a read ends the hold.
@@ -1697,7 +1697,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
     await unsent.value
 
     #expect(model.readState.entries[channelID]?.lastAcknowledgedMessageID == boundary)
-    #expect(model.channelMentionCount(channelID) == 1)
+    #expect(model.readState.mentions(channelID: channelID) == 1)
     #expect(model.readState.holdsAutomaticAcknowledgement(channelID))
     #expect(await provider.acknowledgementRequests.isEmpty)
 }

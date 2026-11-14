@@ -370,16 +370,6 @@ enum ProfilePresentationDestination {
     case expanded
 }
 
-nonisolated enum UnreadPresentationPublicationPolicy {
-    static func shouldPublish(
-        snapshot: BootstrapSnapshot,
-        channels: [Channel],
-        guilds: [Guild]
-    ) -> Bool {
-        snapshot.channels != channels || snapshot.guilds != guilds
-    }
-}
-
 nonisolated struct ForumPostPresentation: Sendable {
     var posts: [ForumPost]
     var recentCount: Int
