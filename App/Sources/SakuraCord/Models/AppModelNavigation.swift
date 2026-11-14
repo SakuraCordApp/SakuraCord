@@ -195,19 +195,7 @@ extension AppModel {
                   selectedGuildID == request.guildID,
                   selectedChannelID == request.channelID
             else { return }
-            do {
-                try await session.provider.updateMemberListViewport(
-                    in: request.guildID,
-                    channelID: request.channelID,
-                    visibleRange: request.visibleRange
-                )
-            } catch {
-                guard isCurrentAccountSession(session) else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                AppModel.memberListLogger.debug(
-                    "Member-list viewport subscription failed: \(error.localizedDescription, privacy: .public)"
-                )
-            }
+            await sendMemberListViewport(request, account: session, purpose: "subscription")
         }
     }
 
@@ -229,6 +217,15 @@ extension AppModel {
             visibleRange: visibleRange
         )
         memberListViewportRequest = request
+        await sendMemberListViewport(request, account: session, purpose: "replay")
+    }
+
+    /// Sends `request`, recording a failure while its account is current.
+    private func sendMemberListViewport(
+        _ request: MemberListViewportRequest,
+        account session: AppModelAccountSession,
+        purpose: StaticString
+    ) async {
         do {
             try await session.provider.updateMemberListViewport(
                 in: request.guildID,
@@ -239,7 +236,7 @@ extension AppModel {
             guard isCurrentAccountSession(session) else { return }
             DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
             AppModel.memberListLogger.debug(
-                "Member-list viewport replay failed: \(error.localizedDescription, privacy: .public)"
+                "Member-list viewport \(purpose.description, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
             )
         }
     }
