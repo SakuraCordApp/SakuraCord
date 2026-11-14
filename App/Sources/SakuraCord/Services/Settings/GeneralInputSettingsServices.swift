@@ -47,10 +47,7 @@ final class GeneralInputSettingsStore {
         if let saved = preferences.bool(.smartDashes) {
             value.usesSmartDashes = saved
         }
-        if let saved = preferences.string(.emojiSkinTone),
-           let tone = NativeEmojiSkinTone(rawValue: saved) {
-            value.emojiSkinTone = tone
-        }
+        value.emojiSkinTone = preferences.rawValue(.emojiSkinTone) ?? value.emojiSkinTone
         return value
     }
 

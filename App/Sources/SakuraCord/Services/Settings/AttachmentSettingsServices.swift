@@ -32,14 +32,10 @@ final class AttachmentSettingsStore {
 
     func load() -> AttachmentSettingsSnapshot {
         var value = AttachmentSettingsSnapshot()
-        if let raw = preferences.string(.attachmentCompactionPrompt),
-           let saved = AttachmentHandlingPolicy(rawValue: raw) { value.compactionPolicy = saved }
-        if let raw = preferences.string(.attachmentExternalUploadPrompt),
-           let saved = AttachmentHandlingPolicy(rawValue: raw) { value.externalUploadPolicy = saved }
-        if let raw = preferences.string(.attachmentExternalProvider),
-           let saved = ExternalAttachmentHostingService(rawValue: raw) { value.externalProvider = saved }
-        if let raw = preferences.string(.attachmentCompactionQuality),
-           let saved = AttachmentCompactionOptions.Quality(rawValue: raw) { value.compaction.quality = saved }
+        value.compactionPolicy = preferences.rawValue(.attachmentCompactionPrompt) ?? value.compactionPolicy
+        value.externalUploadPolicy = preferences.rawValue(.attachmentExternalUploadPrompt) ?? value.externalUploadPolicy
+        value.externalProvider = preferences.rawValue(.attachmentExternalProvider) ?? value.externalProvider
+        value.compaction.quality = preferences.rawValue(.attachmentCompactionQuality) ?? value.compaction.quality
         return value
     }
 

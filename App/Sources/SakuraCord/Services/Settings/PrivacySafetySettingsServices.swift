@@ -91,11 +91,8 @@ final class PrivacySafetySettingsStore {
         if let saved = preferences.bool(.privacyTypingIndicators) {
             value.sendsTypingIndicators = saved
         }
-        if let rawValue = preferences.string(.externalLinkProtection),
-           let policy = ExternalLinkConfirmationPolicy(rawValue: rawValue)
-        {
-            value.externalLinkConfirmationPolicy = policy
-        }
+        value.externalLinkConfirmationPolicy = preferences.rawValue(.externalLinkProtection)
+            ?? value.externalLinkConfirmationPolicy
         if case let .strings(domains) = preferences.value(for: .trustedDomains) {
             value.trustedDomains = ExternalLinkTrustedDomain.normalizedList(domains)
         }

@@ -14,15 +14,8 @@ struct GeneralSettingsPage: View {
         self.state = state
         self.launchAtLogin = launchAtLogin
         let preferences = SettingsPreferenceStore.shared
-        let destination = if let value = preferences.string(.launchDestination) {
-            SettingsLaunchDestination(rawValue: value) ?? .lastVisitedConversation
-        } else {
-            SettingsLaunchDestination.lastVisitedConversation
-        }
-        _launchDestination = State(initialValue: destination)
-        _confirmsQuitActiveWork = State(
-            initialValue: preferences.value(for: .confirmQuitActiveWork) != .bool(false)
-        )
+        _launchDestination = State(initialValue: preferences.rawValue(.launchDestination) ?? .lastVisitedConversation)
+        _confirmsQuitActiveWork = State(initialValue: preferences.bool(.confirmQuitActiveWork) != false)
     }
 
     var body: some View {
