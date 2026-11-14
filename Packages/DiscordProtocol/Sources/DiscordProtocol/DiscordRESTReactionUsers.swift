@@ -66,7 +66,7 @@ extension DiscordRESTProvider {
         let method = reacted ? "PUT" : "DELETE"
         let (data, response) = try await perform(
             Self.reactionPath(apiEmoji, messageID: messageID, channelID: channelID) + "/@me",
-            method: method, query: [], body: nil
+            method: method
         )
         if response.statusCode == 429 {
             throw apiDiagnostics.coalescing(ChatProviderError.rateLimited(

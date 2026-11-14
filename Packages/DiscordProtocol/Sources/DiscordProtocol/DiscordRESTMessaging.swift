@@ -121,15 +121,7 @@ public extension DiscordRESTProvider {
             messageSendTasks[key] = nil
             postingAttachmentUploads.subtract(draft.attachments.map(\.id))
         }
-        let message: Message
-        do {
-            message = try await task.value
-        } catch {
-            settlePreuploads(of: draft, after: error)
-            throw error
-        }
-        settlePreuploads(of: draft)
-        return message
+        return try await settlingPreuploads(of: draft) { try await task.value }
     }
 
     func edit(_ message: Message, content: String) async throws -> Message {

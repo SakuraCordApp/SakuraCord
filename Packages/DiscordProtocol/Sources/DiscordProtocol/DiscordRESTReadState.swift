@@ -55,7 +55,6 @@ public extension DiscordRESTProvider {
         let (data, response) = try await perform(
             "/channels/\(channelID)/messages/\(messageID)/ack",
             method: "POST",
-            query: [],
             body: body
         )
         try validateEmptyResponse(data, response)

@@ -148,8 +148,7 @@ extension DiscordRESTProvider {
         let (data, response) = try await perform(
             "/channels/\(threadID)/thread-members/@me",
             method: isJoined ? "POST" : "DELETE",
-            query: [URLQueryItem(name: "location", value: location.rawValue)],
-            body: nil
+            query: [URLQueryItem(name: "location", value: location.rawValue)]
         )
         if Self.discordErrorCode(from: data) == 30033 { throw ChatProviderError.threadMemberLimitReached }
         try validateEmptyResponse(data, response)

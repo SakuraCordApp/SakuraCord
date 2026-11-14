@@ -36,7 +36,7 @@ extension DiscordRESTProvider {
         let path = "/users/@me/settings-proto/1"
         var retries = retriesRateLimit ? 1 : 0
         while true {
-            let (data, response) = try await perform(path, method: "PATCH", query: [], body: body, statusSave: statusSave)
+            let (data, response) = try await perform(path, method: "PATCH", body: body, statusSave: statusSave)
             if response.statusCode == 429, retries > 0,
                Self.retryAfter(from: data, response: response, addsSafetyMargin: false) <= 30 {
                 retries -= 1

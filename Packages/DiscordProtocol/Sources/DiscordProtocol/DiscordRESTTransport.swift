@@ -313,12 +313,9 @@ extension DiscordRESTProvider {
         path: String,
         mapFailure: (_ status: Int, _ discordCode: Int?) -> (any Error)? = { _, _ in nil }
     ) throws -> Response {
-        let isMessageHistoryRequest = method == "GET"
-            && path.hasPrefix("/channels/")
-            && path.hasSuffix("/messages")
         try validateEmptyResponse(data, response, mapFailure: mapFailure)
         do {
-            let decodeName: StaticString = isMessageHistoryRequest
+            let decodeName: StaticString = Self.isMessageHistoryRequest(method: method, path: path)
                 ? "MessageHistoryResponseDecode"
                 : "RESTResponseDecode"
             let decode = discordPerformanceSignposter.beginInterval(
@@ -340,6 +337,10 @@ extension DiscordRESTProvider {
             )
             throw error
         }
+    }
+
+    static func isMessageHistoryRequest(method: String, path: String) -> Bool {
+        method == "GET" && path.hasPrefix("/channels/") && path.hasSuffix("/messages")
     }
 
     func requestEmpty(
@@ -395,9 +396,7 @@ extension DiscordRESTProvider {
         let routeKey = Self.rateLimitRouteKey(method: method, path: path)
         let majorParameter = Self.rateLimitMajorParameter(path: path)
         let requestRateLimitKey = "\(routeKey) [\(majorParameter)]"
-        let isMessageHistoryRequest = method == "GET"
-            && path.hasPrefix("/channels/")
-            && path.hasSuffix("/messages")
+        let isMessageHistoryRequest = Self.isMessageHistoryRequest(method: method, path: path)
         let canRetryAsRead = Self.canRetryAsRead(method: method, path: path)
         let maximumAttempts = requestedMaximumAttempts ?? (canRetryAsRead ? 2 : 1)
         let context = DiscordRESTRequestContext(
@@ -701,8 +700,8 @@ extension DiscordRESTProvider {
     func perform(
         _ path: String,
         method: String,
-        query: [URLQueryItem],
-        body: [String: JSONValue]?,
+        query: [URLQueryItem] = [],
+        body: [String: JSONValue]? = nil,
         headers: [String: String] = [:],
         maximumAttempts requestedMaximumAttempts: Int? = nil,
         statusSave: StatusSettingsSaveContext? = nil

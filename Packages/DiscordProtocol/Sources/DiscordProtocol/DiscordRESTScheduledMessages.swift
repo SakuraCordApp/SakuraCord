@@ -43,14 +43,9 @@ public extension DiscordRESTProvider {
         postingAttachmentUploads.formUnion(draft.attachments.map(\.id))
         defer { postingAttachmentUploads.subtract(draft.attachments.map(\.id)) }
         let path = "/users/@me/scheduled-messages"
-        let dto: ScheduledMessageDTO
-        do {
-            dto = try await request(path, method: "POST", body: body, mapFailure: Self.scheduledMessageFailure)
-        } catch {
-            settlePreuploads(of: draft, after: error)
-            throw error
+        let dto: ScheduledMessageDTO = try await settlingPreuploads(of: draft) {
+            try await request(path, method: "POST", body: body, mapFailure: Self.scheduledMessageFailure)
         }
-        settlePreuploads(of: draft)
         return dto.domain
     }
 

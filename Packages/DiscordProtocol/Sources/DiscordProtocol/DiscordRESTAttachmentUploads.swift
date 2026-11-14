@@ -57,6 +57,21 @@ extension DiscordRESTProvider {
         }
     }
 
+    /// Awaits a post that refers to the draft's stored files, then settles them.
+    func settlingPreuploads<Value>(
+        of draft: SendMessageDraft, _ post: () async throws -> Value
+    ) async throws -> Value {
+        let result: Value
+        do {
+            result = try await post()
+        } catch {
+            settlePreuploads(of: draft, after: error)
+            throw error
+        }
+        settlePreuploads(of: draft)
+        return result
+    }
+
     func uploadAttachments(
         _ urls: [URL], channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void

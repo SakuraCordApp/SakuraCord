@@ -7,7 +7,7 @@ public extension DiscordRESTProvider {
             "/invites/\(reference.code)", method: "GET",
             query: ["with_counts", "with_expiration", "with_permissions"].map {
                 URLQueryItem(name: $0, value: "true")
-            }, body: nil
+            }
         )
         try checkInviteResponse(data, response)
         return try Self.inviteDecoder().decode(ServerInviteDTO.self, from: data).domain(reference: reference)
@@ -35,7 +35,7 @@ public extension DiscordRESTProvider {
         var body: [String: JSONValue] = ["session_id": .string(sessionID)]
         if let messageID { body["invite_instance_id"] = .string("\(messageID):\(reference.code)") }
         let (data, response) = try await perform(
-            "/invites/\(reference.code)", method: "POST", query: [], body: body,
+            "/invites/\(reference.code)", method: "POST", body: body,
             headers: ["X-Context-Properties": contextData.base64EncodedString()]
         )
         try checkInviteResponse(data, response)
@@ -94,7 +94,7 @@ public extension DiscordRESTProvider {
         let location = settings.targetApplicationID == nil ? "Guild Context Menu" : "Stream Invite"
         let context = try JSONSerialization.data(withJSONObject: ["location": location])
         let (data, response) = try await perform(
-            "/channels/\(channelID)/invites", method: "POST", query: [], body: body,
+            "/channels/\(channelID)/invites", method: "POST", body: body,
             headers: ["X-Context-Properties": context.base64EncodedString()]
         )
         if !(200 ..< 300).contains(response.statusCode) {
@@ -142,7 +142,7 @@ public extension DiscordRESTProvider {
             throw ServerInviteError.failed("The server owner must transfer ownership in Discord before leaving.")
         }
         let (data, response) = try await perform(
-            "/users/@me/guilds/\(guildID)", method: "DELETE", query: [],
+            "/users/@me/guilds/\(guildID)", method: "DELETE",
             body: ["lurking": .bool(false)]
         )
         try checkInviteResponse(data, response)
