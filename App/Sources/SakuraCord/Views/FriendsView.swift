@@ -210,7 +210,7 @@ private struct AddFriendView: View {
 
             if let error = friends.addFriendError {
                 Text(error)
-                    .foregroundStyle(Color(hex: 0xF23F43))
+                    .foregroundStyle(Color(hex: MentionRed.hex))
                     .accessibilityAddTraits(.isStaticText)
             } else if let username = friends.addFriendSuccess {
                 Text("Success! Your friend request to **\(username)** was sent.")
@@ -319,7 +319,7 @@ private struct AddFriendView: View {
     }
 
     private func borderColor(_ friends: FriendsState) -> Color {
-        if friends.addFriendError != nil { return Color(hex: 0xF23F43) }
+        if friends.addFriendError != nil { return Color(hex: MentionRed.hex) }
         if friends.addFriendSuccess != nil { return Color(hex: 0x23A55A) }
         return focusedField == nil ? .clear : SakuraCordAccentColor.focusRing
     }
