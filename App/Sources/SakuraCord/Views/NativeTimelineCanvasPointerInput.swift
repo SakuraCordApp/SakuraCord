@@ -250,8 +250,6 @@ extension NativeTimelineCanvasView {
     func suppressPointerInteractions() {
         // A press begun before the rows moved must not activate on release.
         clearPointerTargets()
-        pressedPollTarget = nil
-        hoveredPollTarget = nil
         textSelectionGesture = nil
         if let press = voiceMessagePress {
             voiceMessagePress = nil

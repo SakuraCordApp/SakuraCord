@@ -359,6 +359,8 @@ extension NativeTimelineCanvasView {
     /// cancelled press redraws its button and returns its live emoji to rest.
     func clearPointerTargets() {
         hoveredReaction = nil
+        hoveredPollTarget = nil
+        pressedPollTarget = nil
         guard let button = pointer.clearHoverAndPressTargets() else { return }
         invalidateComponentButton(button)
         positionComponentButtonEmoji(button)

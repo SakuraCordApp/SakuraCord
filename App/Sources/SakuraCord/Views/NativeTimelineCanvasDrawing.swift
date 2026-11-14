@@ -410,8 +410,6 @@ extension NativeTimelineCanvasView {
         self.mediaViewerHighlightedMessageID =
             mediaViewerHighlightedMessageID
         if isBlocked {
-            pressedPollTarget = nil
-            hoveredPollTarget = nil
             pollPopover?.close()
             reactionDetailsPopover?.close()
             clearPointerTargets()
