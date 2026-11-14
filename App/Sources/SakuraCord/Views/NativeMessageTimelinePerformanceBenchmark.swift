@@ -399,3 +399,116 @@ extension NativeMessageTimelineCoordinator {
         }
 
 }
+
+@MainActor
+final class NativeTimelineBenchmarkStartupState {
+    let ticker = DisplayLinkTicker()
+    let startedAt = ProcessInfo.processInfo.systemUptime
+    var previousTickUptime = ProcessInfo.processInfo.systemUptime
+    var maximumTickInterval = 0.0
+    var delayedTicks = 0
+    var completedTicks = 0
+    var phase = "initial-render"
+    var lastDelayedTickUptime = ProcessInfo.processInfo.systemUptime
+
+    func recordTick(at uptime: TimeInterval) -> TimeInterval {
+        let interval = uptime - previousTickUptime
+        previousTickUptime = uptime
+        completedTicks += 1
+        maximumTickInterval = max(maximumTickInterval, interval)
+        if interval > 0.033 {
+            delayedTicks += 1
+            lastDelayedTickUptime = uptime
+        }
+        return interval
+    }
+}
+
+@MainActor
+final class NativeTimelineBenchmarkRunState {
+    let startedAt = ProcessInfo.processInfo.systemUptime
+    let mainThreadCPUTimeAtStart = NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
+    let ticker = DisplayLinkTicker()
+    let scrollsTowardLater: Bool
+    let closeMeasurement: () -> Void
+    var controller: NativeTimelineBenchmarkScrollController
+    var previousTickUptime: TimeInterval
+    var maximumTickInterval = 0.0
+    var maximumScrollWork = 0.0
+    var completedTicks = 0
+    var delayedTicks = 0
+    var tickIntervals: [TimeInterval] = []
+    var delayedTickSamples: [NativeTimelineBenchmarkArtifact.DelayedTick] = []
+    var maximumTickItemCount: Int
+    var maximumTickDocumentY = 0.0
+    var historyStarvedTicks = 0
+    var consecutiveHistoryStarvedTicks = 0
+    var maximumHistoryStarvedTicks = 0
+    var didFinish = false
+
+    init(
+        scrollsTowardLater: Bool,
+        initialItemCount: Int,
+        closeMeasurement: @escaping () -> Void
+    ) {
+        self.scrollsTowardLater = scrollsTowardLater
+        self.closeMeasurement = closeMeasurement
+        controller = NativeTimelineBenchmarkScrollController(startedAt: startedAt)
+        previousTickUptime = startedAt
+        maximumTickItemCount = initialItemCount
+        tickIntervals.reserveCapacity(1_500)
+        delayedTickSamples.reserveCapacity(64)
+    }
+
+    func recordTick(at uptime: TimeInterval, itemCount: Int, documentY: CGFloat) -> TimeInterval {
+        let interval = uptime - previousTickUptime
+        previousTickUptime = uptime
+        completedTicks += 1
+        tickIntervals.append(interval)
+        if interval > 0.033 {
+            delayedTicks += 1
+            delayedTickSamples.append(
+                .init(offset: uptime - startedAt, interval: interval)
+            )
+        }
+        if interval > maximumTickInterval {
+            maximumTickInterval = interval
+            maximumTickItemCount = itemCount
+            maximumTickDocumentY = documentY
+        }
+        return interval
+    }
+
+    func recordHistoryProgress(didAdvance: Bool, hasMoreHistory: Bool) {
+        if !didAdvance, hasMoreHistory {
+            historyStarvedTicks += 1
+            consecutiveHistoryStarvedTicks += 1
+            maximumHistoryStarvedTicks = max(
+                maximumHistoryStarvedTicks,
+                consecutiveHistoryStarvedTicks
+            )
+        } else {
+            consecutiveHistoryStarvedTicks = 0
+        }
+    }
+
+    @discardableResult
+    func finish(
+        now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        endActivity: () -> Void = { AppScrollWorkGate.endActivity() },
+        beforeMeasurementClose: () -> Void,
+        performBookkeeping: (_ elapsed: TimeInterval) -> Void
+    ) -> TimeInterval? {
+        guard !didFinish else { return nil }
+        didFinish = true
+        endActivity()
+        ticker.stop()
+        beforeMeasurementClose()
+        return NativeTimelineBenchmarkFinishSequence.run(
+            startedAt: startedAt,
+            now: now,
+            closeMeasurement: closeMeasurement,
+            performBookkeeping: performBookkeeping
+        )
+    }
+}
