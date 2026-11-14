@@ -252,17 +252,10 @@ nonisolated enum NativeTimelineTextSelectionGeometry {
         fitsGlyphs: Bool = false
     ) -> [CGRect] {
         guard range.length > 0 else { return [] }
-        let lines = CTFrameGetLines(textFrame) as NSArray
+        let layout = CoreTextFrameLayout(textFrame: textFrame)
+        let lines = layout.lines
         guard lines.count > 0 else { return [] }
-        var origins = Array(
-            repeating: CGPoint.zero,
-            count: lines.count
-        )
-        CTFrameGetLineOrigins(
-            textFrame,
-            CFRange(location: 0, length: lines.count),
-            &origins
-        )
+        let origins = layout.origins
         let selectionStart = range.location
         let selectionEnd = NSMaxRange(range)
         var result: [CGRect] = []
@@ -585,18 +578,10 @@ enum NativeTimelineTextHitTester {
               frame.width > 0,
               frame.height > 0
         else { return [] }
-        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
-        let lines = CTFrameGetLines(textFrame) as NSArray
+        let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
+        let lines = layout.lines
         guard lines.count > 0 else { return [] }
-        var origins = Array(
-            repeating: CGPoint.zero,
-            count: lines.count
-        )
-        CTFrameGetLineOrigins(
-            textFrame,
-            CFRange(location: 0, length: lines.count),
-            &origins
-        )
+        let origins = layout.origins
         var result: [NativeTimelineMentionHitRegion] = []
         for index in 0 ..< lines.count {
             let line = coreTextLine(lines[index])
@@ -660,15 +645,10 @@ enum NativeTimelineTextHitTester {
               frame.width > 0,
               frame.height > 0
         else { return nil }
-        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
-        let lines = CTFrameGetLines(textFrame) as NSArray
+        let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
+        let lines = layout.lines
         guard lines.count > 0 else { return nil }
-        var origins = Array(repeating: CGPoint.zero, count: lines.count)
-        CTFrameGetLineOrigins(
-            textFrame,
-            CFRange(location: 0, length: lines.count),
-            &origins
-        )
+        let origins = layout.origins
         var result: CGRect?
         for lineIndex in 0 ..< lines.count {
             let line = coreTextLine(lines[lineIndex])
@@ -740,15 +720,10 @@ enum NativeTimelineTextHitTester {
             effectiveRange.length > 0
         else { return nil }
 
-        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
-        let lines = CTFrameGetLines(textFrame) as NSArray
+        let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
+        let lines = layout.lines
         guard lines.count > 0 else { return nil }
-        var origins = Array(repeating: CGPoint.zero, count: lines.count)
-        CTFrameGetLineOrigins(
-            textFrame,
-            CFRange(location: 0, length: lines.count),
-            &origins
-        )
+        let origins = layout.origins
         var anchor: CGRect?
         for lineIndex in 0 ..< lines.count {
             let line = coreTextLine(lines[lineIndex])
@@ -828,12 +803,6 @@ enum NativeTimelineTextHitTester {
         )
     }
 
-    private struct CoreTextFrameLayout {
-        let frame: CTFrame
-        let lines: NSArray
-        let origins: [CGPoint]
-    }
-
     static func hit(
         value: NSAttributedString,
         framesetter: CTFramesetter,
@@ -846,7 +815,7 @@ enum NativeTimelineTextHitTester {
               frame.height > 0,
               frame.contains(point)
         else { return nil }
-        let layout = coreTextFrameLayout(value: value, framesetter: framesetter, frame: frame)
+        let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
         guard !layout.origins.isEmpty else { return nil }
         // Lookup needs the pointed character, rather than the start of a
         // clickable link or spoiler region.
@@ -899,22 +868,6 @@ enum NativeTimelineTextHitTester {
         }
         let hit = textLineHit(value: value, layout: layout, frame: frame, point: point)
         return hit?.spoilerRange == nil ? hit : nil
-    }
-
-    private static func coreTextFrameLayout(
-        value: NSAttributedString,
-        framesetter: CTFramesetter,
-        frame: CGRect
-    ) -> CoreTextFrameLayout {
-        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
-        let lines = CTFrameGetLines(textFrame) as NSArray
-        var origins = Array(repeating: CGPoint.zero, count: lines.count)
-        CTFrameGetLineOrigins(
-            textFrame,
-            CFRange(location: 0, length: lines.count),
-            &origins
-        )
-        return CoreTextFrameLayout(frame: textFrame, lines: lines, origins: origins)
     }
 
     private static func inlineAttachmentHit(
@@ -1101,7 +1054,7 @@ enum NativeTimelineTextHitTester {
               frame.height > 0,
               clampsToText || frame.contains(point)
         else { return nil }
-        let layout = coreTextFrameLayout(value: value, framesetter: framesetter, frame: frame)
+        let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
         guard !layout.origins.isEmpty else { return nil }
         let local = CGPoint(
             x: point.x - frame.minX,
@@ -1224,11 +1177,30 @@ enum NativeTimelineTextHitTester {
 }
 
 /// The framesetter's frame for the whole text at a size.
-private nonisolated func coreTextFrame(value: NSAttributedString, framesetter: CTFramesetter, size: CGSize) -> CTFrame {
+nonisolated func coreTextFrame(value: NSAttributedString, framesetter: CTFramesetter, size: CGSize) -> CTFrame {
     CTFramesetterCreateFrame(
         framesetter,
         CFRange(location: 0, length: value.length),
         CGPath(rect: CGRect(origin: .zero, size: size), transform: nil),
         nil
     )
+}
+
+/// A Core Text frame with its lines and their origins.
+nonisolated struct CoreTextFrameLayout {
+    let frame: CTFrame
+    let lines: NSArray
+    let origins: [CGPoint]
+
+    init(value: NSAttributedString, framesetter: CTFramesetter, size: CGSize) {
+        self.init(textFrame: coreTextFrame(value: value, framesetter: framesetter, size: size))
+    }
+
+    init(textFrame: CTFrame) {
+        frame = textFrame
+        lines = CTFrameGetLines(textFrame) as NSArray
+        var origins = Array(repeating: CGPoint.zero, count: lines.count)
+        CTFrameGetLineOrigins(textFrame, CFRange(location: 0, length: lines.count), &origins)
+        self.origins = origins
+    }
 }

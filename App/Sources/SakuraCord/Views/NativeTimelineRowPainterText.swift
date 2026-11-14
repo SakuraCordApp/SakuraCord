@@ -256,16 +256,10 @@ extension NativeTimelineRowPainter {
         in frame: CGRect,
         context: CGContext
     ) {
-        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: 0),
-            path,
-            nil
+        let textFrame = coreTextFrame(
+            value: attributed as NSAttributedString,
+            framesetter: CTFramesetterCreateWithAttributedString(attributed),
+            size: frame.size
         )
         context.saveGState()
         context.translateBy(x: frame.minX, y: frame.maxY)
@@ -355,13 +349,7 @@ extension NativeTimelineRowPainter {
             drawingValue = selected
             drawingFramesetter = CTFramesetterCreateWithAttributedString(selected)
         }
-        let path = CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil)
-        let textFrame = CTFramesetterCreateFrame(
-            drawingFramesetter,
-            CFRange(location: 0, length: drawingValue.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: drawingValue, framesetter: drawingFramesetter, size: frame.size)
         drawMarkdownBlocks(
             in: textFrame,
             outerFrame: frame,
@@ -745,14 +733,10 @@ extension NativeTimelineRowPainter {
         model: AppModel?,
         selectionRange: NSRange?
     ) -> [InlineAttachmentDraw] {
-        let lines = CTFrameGetLines(textFrame) as NSArray
+        let layout = CoreTextFrameLayout(textFrame: textFrame)
+        let lines = layout.lines
         guard lines.count > 0 else { return [] }
-        var origins = Array(repeating: CGPoint.zero, count: lines.count)
-        CTFrameGetLineOrigins(
-            textFrame,
-            CFRange(location: 0, length: lines.count),
-            &origins
-        )
+        let origins = layout.origins
         var draws: [InlineAttachmentDraw] = []
         draws.reserveCapacity(4)
         let context = InlineAttachmentContext(

@@ -22,10 +22,10 @@ nonisolated enum NativeTimelineTextSpoilerGeometry {
     }
 
     static func rects(in textFrame: CTFrame, outerFrame: CGRect, range: NSRange) -> [CGRect] {
-        let lines = CTFrameGetLines(textFrame) as NSArray
+        let layout = CoreTextFrameLayout(textFrame: textFrame)
+        let lines = layout.lines
         guard range.length > 0, lines.count > 0 else { return [] }
-        var origins = Array(repeating: CGPoint.zero, count: lines.count)
-        CTFrameGetLineOrigins(textFrame, CFRange(location: 0, length: lines.count), &origins)
+        let origins = layout.origins
         let lineBounds = (0 ..< lines.count).map { index -> CGRect in
             var ascent: CGFloat = 0
             var descent: CGFloat = 0

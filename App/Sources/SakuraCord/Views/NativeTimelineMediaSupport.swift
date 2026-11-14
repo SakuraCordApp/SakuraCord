@@ -538,24 +538,11 @@ enum NativeTimelineInlineEmojiGeometry {
             in: value,
             revealedLocations: revealedSpoilerLocations
         )
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: value.length),
-            path,
-            nil
-        )
-        let lines = CTFrameGetLines(textFrame) as NSArray
+        let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
+        let textFrame = layout.frame
+        let lines = layout.lines
         guard lines.count > 0 else { return [] }
-        var origins = Array(repeating: CGPoint.zero, count: lines.count)
-        CTFrameGetLineOrigins(
-            textFrame,
-            CFRange(location: 0, length: lines.count),
-            &origins
-        )
+        let origins = layout.origins
         var result: [NativeTimelineInlineEmojiRegion] = []
         for lineIndex in 0 ..< lines.count {
             let line = coreTextLine(lines[lineIndex])

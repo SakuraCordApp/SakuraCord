@@ -1440,11 +1440,10 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
             nil
         ).width
         guard NativeTimelineCodeBlockGeometry.containsCodeBlock(value) else { return width }
-        let frame = CTFramesetterCreateFrame(
-            framesetter,
-            range,
-            CGPath(rect: CGRect(x: 0, y: 0, width: max(1, maximumWidth), height: 1_000_000), transform: nil),
-            nil
+        let frame = coreTextFrame(
+            value: value,
+            framesetter: framesetter,
+            size: CGSize(width: max(1, maximumWidth), height: 1_000_000)
         )
         for line in CTFrameGetLines(frame) as? [CTLine] ?? [] {
             let location = CTLineGetStringRange(line).location
