@@ -798,7 +798,7 @@ extension NativeTimelineCanvasView {
         anchor: CGRect
     ) {
         guard let model else { return }
-        closeMentionPopover()
+        closeInlinePopover()
         closeServerTagPopover()
         // One webhook can post with different names and avatars in adjacent messages.
         let presentationIdentity = sourceMessage.webhookID != nil && user.isWebhookIdentity
@@ -849,7 +849,7 @@ extension NativeTimelineCanvasView {
         guard let model else { return }
         closeMessageProfilePopover()
         let requestID = model.showProfile(for: user, sourceMessage: sourceMessage)
-        showMentionPopover(
+        showInlinePopover(
             AnyView(
                 MessageProfilePopoverContent(
                     model: model,
@@ -872,7 +872,7 @@ extension NativeTimelineCanvasView {
         closeServerTagPopover()
         let guildID = sourceMessage.flatMap { model.messagePresentationGuildID(for: $0) } ?? model.selectedGuildID
         model.showMembers(withRole: roleID, in: guildID)
-        showMentionPopover(
+        showInlinePopover(
             AnyView(
                 RoleMembersPopover(
                     model: model,
@@ -884,29 +884,29 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    func showMentionPopover(
+    func showInlinePopover(
         _ content: AnyView,
         anchor: StablePopoverAnchor,
         configuration: StablePopoverConfiguration = .interactive,
         presentationIdentity: AnyHashable? = nil
     ) {
-        activeMentionPopoverAnchor = anchor
-        mentionPopoverCoordinator.update(
+        activeInlinePopoverAnchor = anchor
+        inlinePopoverCoordinator.update(
             anchor: anchor,
             anchorSnapshot: nil,
             isPresented: true,
             configuration: configuration,
             onDismiss: { [weak self] in
-                self?.activeMentionPopoverAnchor = nil
+                self?.activeInlinePopoverAnchor = nil
             },
             presentationIdentity: presentationIdentity,
             content: content
         )
     }
 
-    func closeMentionPopover() {
-        mentionPopoverCoordinator.close()
-        activeMentionPopoverAnchor = nil
+    func closeInlinePopover() {
+        inlinePopoverCoordinator.close()
+        activeInlinePopoverAnchor = nil
     }
 
     func currentMouseLocationInCanvas() -> CGPoint {

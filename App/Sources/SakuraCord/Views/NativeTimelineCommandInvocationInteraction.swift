@@ -16,8 +16,8 @@ extension NativeTimelineCanvasView {
     func showCommandInvocation(for message: Message) {
         guard let model else { return }
         let identity = AnyHashable(message.id)
-        if mentionPopoverCoordinator.isPresenting(identity: identity) {
-            closeMentionPopover()
+        if inlinePopoverCoordinator.isPresenting(identity: identity) {
+            closeInlinePopover()
             return
         }
         closeMessageProfilePopover()
@@ -30,7 +30,7 @@ extension NativeTimelineCanvasView {
             else { return nil }
             return pill.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
         }
-        showMentionPopover(
+        showInlinePopover(
             AnyView(CommandInvocationPopover(model: model, message: message)),
             anchor: anchor,
             configuration: .commandInvocation,

@@ -54,8 +54,8 @@ extension NativeTimelineCanvasView {
         reconcileServerTagCardPresentation()
         contentOriginMoved =
             abs(previousContentOriginY - self.contentOriginY) >= 0.5
-        if activeMentionPopoverAnchor?.sourceRect() == nil {
-            closeMentionPopover()
+        if activeInlinePopoverAnchor?.sourceRect() == nil {
+            closeInlinePopover()
         }
         if let selection = textSelection {
             let selectionValue = storage.items.firstIndex(where: {
@@ -416,7 +416,7 @@ extension NativeTimelineCanvasView {
             closeHoverTooltips()
             closeMessageProfilePopover()
             closeServerTagPopover()
-            closeMentionPopover()
+            closeInlinePopover()
             closeComponentChoiceOverlay()
             updateCodeCopyControl()
         }
@@ -552,7 +552,7 @@ extension NativeTimelineCanvasView {
             closeMessageProfilePopover()
             closeServerTagPopover()
             closeComponentChoiceOverlay()
-            closeMentionPopover()
+            closeInlinePopover()
             reactionPickerSource.frame = .zero
             clearPointerTargets()
             removeAccessibilityProxies()

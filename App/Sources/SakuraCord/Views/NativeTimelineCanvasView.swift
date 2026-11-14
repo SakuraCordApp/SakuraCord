@@ -294,9 +294,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
 
     var componentChoiceOverlay: ComponentChoiceOverlayController?
     var activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
-    let mentionPopoverCoordinator =
+    /// Mention profiles, role members and command invocations, anchored to
+    /// what was clicked inside a message.
+    let inlinePopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()
-    var activeMentionPopoverAnchor: StablePopoverAnchor?
+    var activeInlinePopoverAnchor: StablePopoverAnchor?
     let accessibilityProxies =
         NativeTimelineAccessibilityProxyStore<
             NativeMessageTimelineItem.Identifier,

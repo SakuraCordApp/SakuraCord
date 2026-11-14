@@ -55,7 +55,7 @@ extension NativeTimelineCanvasView {
             return
         }
         closeMessageProfilePopover()
-        closeMentionPopover()
+        closeInlinePopover()
         closeServerTagPopover()
         let presentation = ServerTagCardPresentation(requestID: UUID(), messageID: messageID,
                                                    identity: tag.presentation.identity, account: account)
