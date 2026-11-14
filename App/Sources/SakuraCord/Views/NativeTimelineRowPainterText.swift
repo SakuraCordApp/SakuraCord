@@ -9,18 +9,6 @@ import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineRowPainter {
-    private struct SingleLineTextInput {
-        let sourceLine: CTLine
-        let sourceWidth: CGFloat
-        let frame: CGRect
-        let font: NSFont
-        let color: NSColor
-        let alignment: NSTextAlignment
-        let lineBreakMode: NSLineBreakMode
-        let concealedSpoilerRanges: [NSRange]
-        let context: CGContext
-    }
-
     static func mediaPlayGlyph(in frame: CGRect) {
         let diameter: CGFloat = 50
         let circle = CGRect(
@@ -87,17 +75,24 @@ extension NativeTimelineRowPainter {
         let usesSingleLine = !value.contains("\n")
             && (lineBreakMode != .byWordWrapping || sourceWidth <= frame.width)
         if usesSingleLine {
-            drawSingleLineText(SingleLineTextInput(
-                sourceLine: sourceLine,
-                sourceWidth: sourceWidth,
-                frame: frame,
-                font: font,
-                color: color,
-                alignment: alignment,
-                lineBreakMode: lineBreakMode,
-                concealedSpoilerRanges: concealedSpoilerRanges,
-                context: context
-            ))
+            let line = CoreTextLinePlacement.truncating(
+                sourceLine,
+                width: sourceWidth,
+                to: frame.width,
+                truncation: truncation(for: lineBreakMode)
+            ) {
+                CTLineCreateWithAttributedString(CFAttributedStringCreate(
+                    nil,
+                    "…" as CFString,
+                    [
+                        kCTFontAttributeName: font as CTFont,
+                        kCTForegroundColorAttributeName: color.cgColor,
+                    ] as CFDictionary
+                )!)
+            }
+            let placement = CoreTextLinePlacement(line, in: frame, alignment: coreTextAlignment(alignment))
+            drawConcealedSpoilers(concealedSpoilerRanges, in: sourceLine, placement: placement, frame: frame)
+            placement.draw(in: frame, context: context)
         } else {
             drawMultilineText(attributed, in: frame, context: context)
         }
@@ -111,13 +106,7 @@ extension NativeTimelineRowPainter {
         lineBreakMode: NSLineBreakMode,
         isInteractiveHovered: Bool
     ) -> CFAttributedString {
-        var textAlignment: CTTextAlignment = switch alignment {
-        case .center: .center
-        case .right: .right
-        case .justified: .justified
-        case .natural: .natural
-        default: .left
-        }
+        var textAlignment = coreTextAlignment(alignment)
         var breakMode: CTLineBreakMode = switch lineBreakMode {
         case .byCharWrapping: .byCharWrapping
         case .byClipping: .byClipping
@@ -163,45 +152,43 @@ extension NativeTimelineRowPainter {
         )!
     }
 
-    private static func drawSingleLineText(_ input: SingleLineTextInput) {
-        let sourceLine = input.sourceLine
-        let sourceWidth = input.sourceWidth
-        let frame = input.frame
-        let font = input.font
-        let color = input.color
-        let alignment = input.alignment
-        let lineBreakMode = input.lineBreakMode
-        let context = input.context
-        let line = truncatedLine(
-            sourceLine,
-            sourceWidth: sourceWidth,
-            maximumWidth: frame.width,
-            font: font,
-            color: color,
-            lineBreakMode: lineBreakMode
-        )
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
-        let horizontalPosition: CGFloat = switch alignment {
-        case .center: max(0, (frame.width - lineWidth) / 2)
-        case .right: max(0, frame.width - lineWidth)
-        default: 0
+    private static func coreTextAlignment(_ alignment: NSTextAlignment) -> CTTextAlignment {
+        switch alignment {
+        case .center: .center
+        case .right: .right
+        case .justified: .justified
+        case .natural: .natural
+        default: .left
         }
-        let baseline = max(descent, (frame.height - ascent - descent - leading) / 2 + descent)
-        for range in input.concealedSpoilerRanges {
+    }
+
+    private static func truncation(for lineBreakMode: NSLineBreakMode) -> CTLineTruncationType? {
+        switch lineBreakMode {
+        case .byTruncatingHead: .start
+        case .byTruncatingMiddle: .middle
+        case .byTruncatingTail: .end
+        default: nil
+        }
+    }
+
+    private static func drawConcealedSpoilers(
+        _ ranges: [NSRange],
+        in sourceLine: CTLine,
+        placement: CoreTextLinePlacement,
+        frame: CGRect
+    ) {
+        for range in ranges {
             let startX = CTLineGetOffsetForStringIndex(sourceLine, range.location, nil)
             let endX = min(
                 CTLineGetOffsetForStringIndex(sourceLine, NSMaxRange(range), nil),
-                lineWidth
+                placement.width
             )
             guard endX > startX else { continue }
             let fragment = CGRect(
-                x: frame.minX + horizontalPosition + startX,
-                y: frame.maxY - baseline - ascent,
+                x: frame.minX + placement.horizontalPosition + startX,
+                y: frame.maxY - placement.baseline - placement.ascent,
                 width: endX - startX,
-                height: ascent + descent
+                height: placement.ascent + placement.descent
             )
             let box = NativeTimelineTextSpoilerGeometry.coverFrame(fragment, clippedTo: frame)
             guard !box.isNull else { continue }
@@ -212,43 +199,6 @@ extension NativeTimelineRowPainter {
                 yRadius: SpoilerAppearance.textCornerRadius
             ).fill()
         }
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        context.textPosition = CGPoint(x: horizontalPosition, y: baseline)
-        CTLineDraw(line, context)
-        context.restoreGState()
-    }
-
-    private static func truncatedLine(
-        _ sourceLine: CTLine,
-        sourceWidth: CGFloat,
-        maximumWidth: CGFloat,
-        font: NSFont,
-        color: NSColor,
-        lineBreakMode: NSLineBreakMode
-    ) -> CTLine {
-        guard sourceWidth > maximumWidth,
-              lineBreakMode == .byTruncatingHead
-                || lineBreakMode == .byTruncatingMiddle
-                || lineBreakMode == .byTruncatingTail
-        else { return sourceLine }
-        let token = CTLineCreateWithAttributedString(CFAttributedStringCreate(
-            nil,
-            "…" as CFString,
-            [
-                kCTFontAttributeName: font as CTFont,
-                kCTForegroundColorAttributeName: color.cgColor,
-            ] as CFDictionary
-        )!)
-        let truncation: CTLineTruncationType = switch lineBreakMode {
-        case .byTruncatingHead: .start
-        case .byTruncatingMiddle: .middle
-        default: .end
-        }
-        return CTLineCreateTruncatedLine(sourceLine, Double(maximumWidth), truncation, token)
-            ?? sourceLine
     }
 
     private static func drawMultilineText(
@@ -261,12 +211,7 @@ extension NativeTimelineRowPainter {
             framesetter: CTFramesetterCreateWithAttributedString(attributed),
             size: frame.size
         )
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        CTFrameDraw(textFrame, context)
-        context.restoreGState()
+        context.drawCoreText(in: frame) { CTFrameDraw(textFrame, $0) }
     }
 
     static func attributedText(
@@ -366,12 +311,7 @@ extension NativeTimelineRowPainter {
             outerFrame: frame,
             attributedText: drawingValue
         )
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        CTFrameDraw(textFrame, context)
-        context.restoreGState()
+        context.drawCoreText(in: frame) { CTFrameDraw(textFrame, $0) }
         drawInlineAttachments(
             in: textFrame,
             outerFrame: frame,
