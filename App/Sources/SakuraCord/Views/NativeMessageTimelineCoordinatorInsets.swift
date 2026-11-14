@@ -16,15 +16,14 @@ extension NativeMessageTimelineCoordinator {
             return
         }
         let wasAtTop = scrollView.contentView.bounds.minY <= clampedDocumentY(-.greatestFiniteMagnitude, scrollView: scrollView) + 0.5
-        let wasNearBottom = lastReportedState?.isNearBottom ?? scrollState().isNearBottom
-        let anchor = wasAtTop || wasNearBottom ? nil : visibleAnchor()
         isApplyingUpdate = true
-        updateInsets()
-        if wasAtTop || wasNearBottom {
-            let keepsTop = wasAtTop && (!wasNearBottom || parent.conversation.alignsUnderfilledContentToTop)
+        if wasAtTop {
+            let wasNearBottom = lastReportedState?.isNearBottom ?? scrollState().isNearBottom
+            let keepsTop = !wasNearBottom || parent.conversation.alignsUnderfilledContentToTop
+            updateInsets()
             scroll(toDocumentY: keepsTop ? -.greatestFiniteMagnitude : .greatestFiniteMagnitude, scrollView: scrollView)
-        } else if let anchor {
-            restore(anchor)
+        } else {
+            preservingReadingPosition { updateInsets() }
         }
         positionViewportCanvas()
         isApplyingUpdate = false

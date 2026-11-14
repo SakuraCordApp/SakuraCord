@@ -52,18 +52,31 @@ extension NativeMessageTimelineCoordinator {
             return identifier
         })
         guard !changedIdentifiers.isEmpty else { return }
-        cachedItemLayouts = cachedItemLayouts.filter { !changedIdentifiers.contains($0.key.identifier) }
+        isApplyingUpdate = true
+        defer { isApplyingUpdate = false }
+        relayRows(
+            where: { changedIdentifiers.contains($0.identifier) },
+            on: canvas, in: scrollView,
+            // Deliberately bypass layoutPreparation and recent-conversation caches.
+            layout: { NativeTimelineRowLayout.make(item: $0, width: layoutWidth, source: parent.model, relativeTo: date) }
+        )
+    }
+
+    /// Lays out the rows `matches` selects again, keeping the reader in place
+    /// when their heights change.
+    func relayRows(
+        where matches: (NativeMessageTimelineItem) -> Bool,
+        on canvas: NativeTimelineCanvasView,
+        in scrollView: NSScrollView,
+        layout makeLayout: (NativeMessageTimelineItem) -> NativeTimelineRowLayout
+    ) {
+        cachedItemLayouts = cachedItemLayouts.filter { !matches($0.value.item) }
         let wasNearBottom = scrollState().isNearBottom
         let anchor = visibleAnchor()
         var changed = IndexSet()
         var changesHeight = false
-        isApplyingUpdate = true
-        defer { isApplyingUpdate = false }
-        for index in items.indices where changedIdentifiers.contains(items[index].identifier) {
-            // Deliberately bypass layoutPreparation and recent-conversation caches.
-            let updated = NativeTimelineRowLayout.make(
-                item: items[index], width: layoutWidth, source: parent.model, relativeTo: date
-            )
+        for index in items.indices where matches(items[index]) {
+            let updated = makeLayout(items[index])
             changesHeight = changesHeight || abs(updated.height - rowHeights[index]) >= 0.5
             layouts[index] = updated
             rowHeights[index] = updated.height

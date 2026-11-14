@@ -231,53 +231,35 @@ extension NativeMessageTimelineCoordinator {
 
         func updateDocumentSize(_ proposedSize: NSSize) {
             guard let documentView, let scrollView else { return }
-            let preservesEstablishedPosition =
-                !isApplyingUpdate
-                && initialPositionConversation == parent.conversation
-            let wasNearBottom =
-                preservesEstablishedPosition
-                && (
-                    lastReportedState?.isNearBottom
-                        ?? scrollState().isNearBottom
+            let resize = { [self] in
+                let viewport = scrollView.contentView.bounds
+                let size = NSSize(
+                    // Row layout may deliberately retain its previous width
+                    // while a resize is coalesced, but this remains a vertical-
+                    // only document. Pinning the document to the viewport keeps
+                    // that transient backing width from becoming a real
+                    // horizontal scroll range.
+                    width: max(1, viewport.width),
+                    height: max(1, max(proposedSize.height, viewport.height))
                 )
-            let anchor =
-                preservesEstablishedPosition && !wasNearBottom
-                ? visibleAnchor()
-                : nil
-            if preservesEstablishedPosition {
-                isApplyingUpdate = true
+                if documentView.frame.size != size {
+                    documentView.setFrameSize(size)
+                }
+                let showsVerticalScroller =
+                    size.height > viewport.height + 0.5
+                if scrollView.hasVerticalScroller
+                    != showsVerticalScroller
+                {
+                    scrollView.hasVerticalScroller =
+                        showsVerticalScroller
+                }
+                positionViewportCanvas()
             }
-            let viewport = scrollView.contentView.bounds
-            let size = NSSize(
-                // Row layout may deliberately retain its previous width
-                // while a resize is coalesced, but this remains a vertical-
-                // only document. Pinning the document to the viewport keeps
-                // that transient backing width from becoming a real
-                // horizontal scroll range.
-                width: max(1, viewport.width),
-                height: max(1, max(proposedSize.height, viewport.height))
-            )
-            if documentView.frame.size != size {
-                documentView.setFrameSize(size)
+            guard !isApplyingUpdate, initialPositionConversation == parent.conversation else {
+                return resize()
             }
-            let showsVerticalScroller =
-                size.height > viewport.height + 0.5
-            if scrollView.hasVerticalScroller
-                != showsVerticalScroller
-            {
-                scrollView.hasVerticalScroller =
-                    showsVerticalScroller
-            }
-            positionViewportCanvas()
-            guard preservesEstablishedPosition else { return }
-            if wasNearBottom {
-                scroll(
-                    toDocumentY: .greatestFiniteMagnitude,
-                    scrollView: scrollView
-                )
-            } else if let anchor {
-                restore(anchor)
-            }
+            isApplyingUpdate = true
+            preservingReadingPosition(resize)
             isApplyingUpdate = false
             reportScrollState(force: true)
         }
@@ -594,45 +576,28 @@ extension NativeMessageTimelineCoordinator {
             lastViewportSize = viewportSize
             guard !isApplyingUpdate else { return true }
 
-            let preservesEstablishedPosition =
-                initialPositionConversation == parent.conversation
-            let wasNearBottom =
-                preservesEstablishedPosition
-                && (
-                    lastReportedState?.isNearBottom
-                        ?? scrollState().isNearBottom
-                )
-            let anchor = preservesEstablishedPosition && !wasNearBottom
-                ? visibleAnchor() : nil
-
             isApplyingUpdate = true
-            if reflowsWidth {
-                applyImmediateWidthRelayout(
-                    width, preparedLayouts: preparedLayouts,
-                    to: canvas, in: scrollView
-                )
-            } else if previewChanged || previewNeedsRows {
-                // Keep the visible AppKit rows and their backing canvas in
-                // step with SwiftUI's animated pane width. Reflow the rest of
-                // a large history once the width settles.
-                applyVisibleWidthPreview(
-                    width, resetsRows: previewChanged,
-                    to: canvas, in: scrollView
-                )
-            } else if restoresPreview {
-                previewLayoutWidth = nil
-                restorePreviewedRows()
-                applySnapshot(to: canvas, in: scrollView)
-            }
-            updateInsets()
-            updateHistorySkeletonPresentation()
-            if wasNearBottom {
-                scroll(
-                    toDocumentY: .greatestFiniteMagnitude,
-                    scrollView: scrollView
-                )
-            } else if let anchor {
-                restore(anchor)
+            preservingReadingPosition {
+                if reflowsWidth {
+                    applyImmediateWidthRelayout(
+                        width, preparedLayouts: preparedLayouts,
+                        to: canvas, in: scrollView
+                    )
+                } else if previewChanged || previewNeedsRows {
+                    // Keep the visible AppKit rows and their backing canvas in
+                    // step with SwiftUI's animated pane width. Reflow the rest of
+                    // a large history once the width settles.
+                    applyVisibleWidthPreview(
+                        width, resetsRows: previewChanged,
+                        to: canvas, in: scrollView
+                    )
+                } else if restoresPreview {
+                    previewLayoutWidth = nil
+                    restorePreviewedRows()
+                    applySnapshot(to: canvas, in: scrollView)
+                }
+                updateInsets()
+                updateHistorySkeletonPresentation()
             }
             positionViewportCanvas()
             // A resize can move or reflow a row whose message is in flight.
@@ -1006,6 +971,22 @@ extension NativeMessageTimelineCoordinator {
                 messageID: result.0,
                 offsetFromViewportTop: result.1
             )
+        }
+
+        /// Applies `change`, then returns the reader to the end when they were
+        /// near it, otherwise to the row they were reading. Until the
+        /// conversation's initial position is established there is no place
+        /// to keep.
+        func preservingReadingPosition(_ change: () -> Void) {
+            guard initialPositionConversation == parent.conversation, let scrollView else { return change() }
+            let wasNearBottom = lastReportedState?.isNearBottom ?? scrollState().isNearBottom
+            let anchor = wasNearBottom ? nil : visibleAnchor()
+            change()
+            if wasNearBottom {
+                scroll(toDocumentY: .greatestFiniteMagnitude, scrollView: scrollView)
+            } else if let anchor {
+                restore(anchor)
+            }
         }
 
         func restore(_ anchor: VisibleAnchor) {
