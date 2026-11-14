@@ -242,6 +242,14 @@ extension AppModel {
         presentProfile(for: .friend(row.user, presence: row.presence), in: nil, destination: .expanded)
     }
 
+    /// Adds a private channel the provider opened to the snapshot, unless
+    /// the snapshot already lists it.
+    func mergeOpenedPrivateChannel(_ channel: Channel) {
+        guard snapshot?.channels.contains(where: { $0.id == channel.id }) == false else { return }
+        snapshot?.channels.append(channel)
+        forwardSearchSourceRevision &+= 1
+    }
+
     /// Opens the existing conversation, or creates it through the provider.
     func openDirectMessage(with user: User) {
         if let channel = snapshot?.channels.first(where: {
@@ -254,10 +262,7 @@ extension AppModel {
             do {
                 let channel = try await session.provider.ensurePrivateChannel(for: user.id)
                 guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
-                if model.snapshot?.channels.contains(where: { $0.id == channel.id }) == false {
-                    model.snapshot?.channels.append(channel)
-                    model.forwardSearchSourceRevision &+= 1
-                }
+                model.mergeOpenedPrivateChannel(channel)
                 if model.selectedGuildID != nil { await model.activateGuild(nil, account: session) }
                 guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
                 model.recordForwardDestinationVisit(channel.id)

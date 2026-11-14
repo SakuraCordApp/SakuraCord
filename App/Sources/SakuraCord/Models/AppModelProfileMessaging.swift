@@ -33,10 +33,7 @@ extension AppModel {
                 channel = try await session.provider.ensurePrivateChannel(for: userID)
             }
             guard !Task.isCancelled, isCurrentAccountSession(session) else { return false }
-            if snapshot?.channels.contains(where: { $0.id == channel.id }) == false {
-                snapshot?.channels.append(channel)
-                forwardSearchSourceRevision &+= 1
-            }
+            mergeOpenedPrivateChannel(channel)
             if outgoingState(nonce: nonce, channelID: channel.id) == .confirmed {
                 releaseProfileMessage(nonce: nonce)
                 return true
