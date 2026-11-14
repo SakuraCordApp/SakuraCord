@@ -73,8 +73,7 @@ actor DiscordSessionAuthenticator {
     private let session: URLSession
     private let fingerprints: any DiscordFingerprintStoring
     private let apiDiagnostics: DiscordAPIDiagnosticStore
-    private var pendingCaptchaRequest: PendingCaptchaRequest?
-    private var pendingRemoteAuthCaptchaRequest: PendingRemoteAuthCaptchaRequest?
+    private var pendingCaptchaRequests: [PendingCaptchaRequest.Flow: PendingCaptchaRequest] = [:]
 
     init(
         session: URLSession? = nil,
@@ -116,12 +115,14 @@ actor DiscordSessionAuthenticator {
             maximumRetries: 2
         )
         if let captcha = DiscordCaptchaChallenge(data: data, status: response.statusCode) {
-            pendingCaptchaRequest = PendingCaptchaRequest(
+            pendingCaptchaRequests[.login] = PendingCaptchaRequest(
                 challengeID: captcha.id,
                 path: "/auth/login",
                 body: body,
                 fingerprint: identifiers.fingerprint,
                 installationID: identifiers.installationID,
+                requestContext: .login,
+                maximumRetries: 2,
                 replayDelay: Self.paicordRetryDelay(response: response, retriesSoFar: 0) ?? 0
             )
             return .captcha(captcha)
@@ -134,41 +135,12 @@ actor DiscordSessionAuthenticator {
         challenge: DiscordCaptchaChallenge,
         solutionToken: String
     ) async throws -> DiscordNativeAuthenticationStep {
-        guard let pending = pendingCaptchaRequest,
-              pending.challengeID == challenge.id,
-              !solutionToken.isEmpty
-        else {
-            throw AuthenticationError.invalidCaptchaSolution
-        }
-        pendingCaptchaRequest = nil
-        if pending.replayDelay > 0 {
-            try await Task.sleep(for: .seconds(pending.replayDelay))
-        }
-        let (data, response) = try await send(
-            path: pending.path,
-            method: "POST",
-            body: pending.body,
-            fingerprint: pending.fingerprint,
-            installationID: pending.installationID,
-            additionalHeaders: challenge.replayHeaders(solution: solutionToken),
-            retriesAlreadyPerformed: 1,
-            requestContext: .login,
-            maximumRetries: 2
-        )
-        if DiscordCaptchaChallenge(data: data, status: response.statusCode) != nil {
-            throw AuthenticationError.captchaRequired
-        }
-        try validateAuthenticationResponse(data: data, response: response)
+        let data = try await replayCaptcha(.login, challenge: challenge, solutionToken: solutionToken)
         return try authenticationStep(from: JSONDecoder().decode(LoginResponse.self, from: data))
     }
 
     func cancelCaptcha(challengeID: UUID) {
-        if pendingCaptchaRequest?.challengeID == challengeID {
-            pendingCaptchaRequest = nil
-        }
-        if pendingRemoteAuthCaptchaRequest?.challengeID == challengeID {
-            pendingRemoteAuthCaptchaRequest = nil
-        }
+        pendingCaptchaRequests = pendingCaptchaRequests.filter { $0.value.challengeID != challengeID }
     }
 
     func completeMFA(
@@ -235,10 +207,14 @@ actor DiscordSessionAuthenticator {
             installationID: installationID
         )
         if let captcha = DiscordCaptchaChallenge(data: data, status: response.statusCode) {
-            pendingRemoteAuthCaptchaRequest = PendingRemoteAuthCaptchaRequest(
+            pendingCaptchaRequests[.remoteAuth] = PendingCaptchaRequest(
                 challengeID: captcha.id,
+                path: "/users/@me/remote-auth/login",
                 body: body,
+                fingerprint: nil,
                 installationID: installationID,
+                requestContext: .standardREST,
+                maximumRetries: 3,
                 replayDelay: Self.paicordRetryDelay(response: response, retriesSoFar: 0) ?? 0
             )
             return .captcha(captcha)
@@ -253,29 +229,41 @@ actor DiscordSessionAuthenticator {
         challenge: DiscordCaptchaChallenge,
         solutionToken: String
     ) async throws -> String {
-        guard let pending = pendingRemoteAuthCaptchaRequest,
+        let data = try await replayCaptcha(.remoteAuth, challenge: challenge, solutionToken: solutionToken)
+        return try decodeRemoteAuthEncryptedToken(data)
+    }
+
+    private func replayCaptcha(
+        _ flow: PendingCaptchaRequest.Flow,
+        challenge: DiscordCaptchaChallenge,
+        solutionToken: String
+    ) async throws -> Data {
+        guard let pending = pendingCaptchaRequests[flow],
               pending.challengeID == challenge.id,
               !solutionToken.isEmpty
         else {
             throw AuthenticationError.invalidCaptchaSolution
         }
-        pendingRemoteAuthCaptchaRequest = nil
+        pendingCaptchaRequests[flow] = nil
         if pending.replayDelay > 0 {
             try await Task.sleep(for: .seconds(pending.replayDelay))
         }
         let (data, response) = try await send(
-            path: "/users/@me/remote-auth/login",
+            path: pending.path,
             method: "POST",
             body: pending.body,
+            fingerprint: pending.fingerprint,
             installationID: pending.installationID,
             additionalHeaders: challenge.replayHeaders(solution: solutionToken),
-            retriesAlreadyPerformed: 1
+            retriesAlreadyPerformed: 1,
+            requestContext: pending.requestContext,
+            maximumRetries: pending.maximumRetries
         )
         if DiscordCaptchaChallenge(data: data, status: response.statusCode) != nil {
             throw AuthenticationError.captchaRequired
         }
         try validateAuthenticationResponse(data: data, response: response)
-        return try decodeRemoteAuthEncryptedToken(data)
+        return data
     }
 
     func acceptRemoteAuthToken(_ token: String) throws -> PendingDiscordCredential {
@@ -562,18 +550,18 @@ actor DiscordSessionAuthenticator {
 }
 
 private nonisolated struct PendingCaptchaRequest: Sendable {
+    enum Flow {
+        case login
+        case remoteAuth
+    }
+
     let challengeID: UUID
     let path: String
     let body: Data
-    let fingerprint: String
+    let fingerprint: String?
     let installationID: String?
-    let replayDelay: TimeInterval
-}
-
-private nonisolated struct PendingRemoteAuthCaptchaRequest: Sendable {
-    let challengeID: UUID
-    let body: Data
-    let installationID: String?
+    let requestContext: DiscordAuthenticationRequestContext
+    let maximumRetries: Int
     let replayDelay: TimeInterval
 }
 
