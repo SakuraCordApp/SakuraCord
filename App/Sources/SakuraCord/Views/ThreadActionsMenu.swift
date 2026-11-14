@@ -38,7 +38,7 @@ struct ThreadActionsMenu {
         let thread = model.currentThreadSummary(thread)
         let policy = model.threadActionPolicy(thread)
         let isForumPost = model.isForumThread(thread)
-        let noun = isForumPost ? "Post" : "Thread"
+        let noun = AppModel.threadNoun(isForumPost: isForumPost)
         let isJoined = thread.notificationSettings != nil
         var sections: [[ActionMenuEntry]] = []
 

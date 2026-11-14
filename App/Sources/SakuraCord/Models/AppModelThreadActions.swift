@@ -3,6 +3,11 @@ import DiscordProtocol
 import SakuraCordModels
 
 extension AppModel {
+    /// A forum's threads are called posts wherever the user reads the name.
+    static func threadNoun(isForumPost: Bool) -> String {
+        isForumPost ? "Post" : "Thread"
+    }
+
     func loadThreadMembers(_ thread: MessageThreadSummary) async throws {
         guard openThread?.id == thread.id, openThreadAccess.isReadable, !thread.isArchived else { return }
         let account = accountSession()
@@ -71,7 +76,7 @@ extension AppModel {
             try await account.provider.setThreadMembership(threadID: thread.id, isJoined: isJoined, location: location)
         } catch ChatProviderError.threadMemberLimitReached {
             guard isCurrentAccountSession(account) else { return }
-            let noun = isForumThread(thread) ? "post" : "thread"
+            let noun = Self.threadNoun(isForumPost: isForumThread(thread)).lowercased()
             errorMessage = "Cannot join \(noun). This \(noun) has reached its member limit."
         } catch {
             guard isCurrentAccountSession(account) else { return }
@@ -201,7 +206,7 @@ extension AppModel {
         }
         let thread = currentThreadSummary(presentation.thread)
         guard threadActionPolicy(thread).canRename else {
-            store.error = "You no longer have permission to rename this \(presentation.isForumPost ? "post" : "thread")."
+            store.error = "You no longer have permission to rename this \(Self.threadNoun(isForumPost: presentation.isForumPost).lowercased())."
             return
         }
         let post = forumPost(for: thread)
