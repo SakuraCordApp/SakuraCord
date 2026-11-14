@@ -214,103 +214,22 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        guard !glideBlocksPointer else { return }
-        guard !isPointerCovered(at: event.locationInWindow) else {
-            updateHoverTargets(at: nil)
-            return
-        }
-        guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        guard tracksHover,
-              !overlayBlocksInteractions,
-              event.trackingArea?.userInfo?["nativeTimelineTrackingKind"]
-                as? String == "row",
-              let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-              ] as? Int
-        else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions and badge stop being hovered.
-            setHoveredMention(nil)
-            setHoveredSilentBadgeMessageID(nil)
-            return
-        }
-        guard !hoversEditingOverlay(at: point) else { return }
-        setHoveredRow(index)
-        setHoveredPollTarget(pollPointerHit(at: point)?.target)
-        setHoveredCompactTimestampRow(
-            compactTimestampRowIndex(at: point)
-        )
-        setHoveredAuthorMessageID(
-            authorNamePointerHit(at: point)
-        )
-        setHoveredServerTagMessageID(serverTagPointerHit(at: point))
-        setHoveredSilentBadgeMessageID(silentBadgePointerHit(at: point))
-        setHoveredCommandPillMessageID(commandPillPointerHit(at: point))
-        setHoveredMention(
-            mentionPointerHit(at: point)
-        )
-        setHoveredTextLink(
-            textLinkPointerHit(at: point)
-        )
-        setHoveredTextSpoiler(
-            textSpoilerPointerHit(at: point)
-        )
-        setHoveredCodeBlock(
-            codeBlockPointerHit(at: point)
-        )
-        setHoveredComponentButton(
-            componentButtonPointerHit(at: point)?.target
-        )
-        setHoveredForwardedSourceMessageID(
-            forwardedSourcePointerHit(at: point)
-        )
-        setHoveredThreadMessageID(threadCardPointerHit(at: point))
-        setHoveredFooterAction(footerActionPointerHit(at: point))
+        // Entering a row's tracking area hovers the row it was installed for.
+        followPointer(event, row: event.trackingArea?.userInfo?["nativeTimelineRowIndex"] as? Int)
     }
 
     override func mouseMoved(with event: NSEvent) {
+        followPointer(event)
+    }
+
+    private func followPointer(_ event: NSEvent, row: Int? = nil) {
         guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
             updateHoverTargets(at: nil)
             return
         }
-        guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        guard tracksHover, !overlayBlocksInteractions else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions and badge stop being hovered.
-            setHoveredMention(nil)
-            setHoveredSilentBadgeMessageID(nil)
-            return
-        }
-        guard !hoversEditingOverlay(at: point) else { return }
-        setHoveredPollTarget(pollPointerHit(at: point)?.target)
-        updateVoiceMessageHover(at: point)
-        synchronizeHoveredRow(at: point)
-        setHoveredCompactTimestampRow(
-            compactTimestampRowIndex(at: point)
-        )
-        setHoveredAuthorMessageID(authorNamePointerHit(at: point))
-        setHoveredServerTagMessageID(serverTagPointerHit(at: point))
-        setHoveredSilentBadgeMessageID(silentBadgePointerHit(at: point))
-        setHoveredCommandPillMessageID(commandPillPointerHit(at: point))
-        setHoveredMention(mentionPointerHit(at: point))
-        setHoveredTextLink(textLinkPointerHit(at: point))
-        setHoveredTextSpoiler(textSpoilerPointerHit(at: point))
-        setHoveredCodeBlock(codeBlockPointerHit(at: point))
-        setHoveredComponentButton(
-            componentButtonPointerHit(at: point)?.target
-        )
-        setHoveredForwardedSourceMessageID(
-            forwardedSourcePointerHit(at: point)
-        )
-        setHoveredThreadMessageID(threadCardPointerHit(at: point))
-        setHoveredFooterAction(footerActionPointerHit(at: point))
-        setHoveredReaction(
-            reactionPointerHit(at: point),
-            mouseLocationInScreen: NSEvent.mouseLocation
-        )
+        guard WindowModalCoordinator.allowsInput(for: self), tracksHover, !overlayBlocksInteractions else { return }
+        updateHoverTargets(at: convert(event.locationInWindow, from: nil), row: row)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -1219,63 +1138,7 @@ extension NativeTimelineCanvasView {
         guard WindowModalCoordinator.allowsInput(for: self), !overlayBlocksInteractions, tracksHover,
               window?.isKeyWindow == true
         else { return }
-        let point = currentMouseLocationInCanvas()
-        guard !actionCapsuleContains(point) else {
-            // The capsule covers the row's text, so its mentions and badge stop being hovered.
-            setHoveredMention(nil)
-            setHoveredSilentBadgeMessageID(nil)
-            return
-        }
-        guard !hoversEditingOverlay(at: point) else { return }
-        synchronizeHoveredRow(at: point)
-        setHoveredPollTarget(visibleRect.contains(point) ? pollPointerHit(at: point)?.target : nil)
-        updateVoiceMessageHover(at: visibleRect.contains(point) ? point : nil, measuresDuration: false)
-        setHoveredCompactTimestampRow(
-            visibleRect.contains(point)
-                ? compactTimestampRowIndex(at: point)
-                : nil
-        )
-        setHoveredAuthorMessageID(
-            visibleRect.contains(point)
-                ? authorNamePointerHit(at: point)
-                : nil
-        )
-        setHoveredServerTagMessageID(visibleRect.contains(point) ? serverTagPointerHit(at: point) : nil)
-        setHoveredSilentBadgeMessageID(visibleRect.contains(point) ? silentBadgePointerHit(at: point) : nil)
-        setHoveredCommandPillMessageID(visibleRect.contains(point) ? commandPillPointerHit(at: point) : nil)
-        setHoveredMention(
-            visibleRect.contains(point)
-                ? mentionPointerHit(at: point)
-                : nil
-        )
-        setHoveredTextLink(
-            visibleRect.contains(point)
-                ? textLinkPointerHit(at: point)
-                : nil
-        )
-        setHoveredTextSpoiler(
-            visibleRect.contains(point)
-                ? textSpoilerPointerHit(at: point)
-                : nil
-        )
-        setHoveredCodeBlock(
-            visibleRect.contains(point)
-                ? codeBlockPointerHit(at: point)
-                : nil
-        )
-        setHoveredComponentButton(
-            visibleRect.contains(point)
-                ? componentButtonPointerHit(at: point)?.target
-                : nil
-        )
-        setHoveredThreadMessageID(visibleRect.contains(point) ? threadCardPointerHit(at: point) : nil)
-        setHoveredFooterAction(
-            visibleRect.contains(point) ? footerActionPointerHit(at: point) : nil
-        )
-        setHoveredReaction(
-            reactionPointerHit(at: point),
-            mouseLocationInScreen: NSEvent.mouseLocation
-        )
+        updateHoverTargets(at: currentMouseLocationInCanvas(), measuresVoiceDuration: false)
     }
 
     /// The editor and its suggestions cover the rows under them, so
@@ -1294,14 +1157,6 @@ extension NativeTimelineCanvasView {
     func actionCapsuleContains(_ point: CGPoint) -> Bool {
         guard let host = actionCapsuleHost else { return false }
         return (host.interactiveFrame ?? host.frame).contains(point)
-    }
-
-    func synchronizeHoveredRow(at point: CGPoint) {
-        setHoveredRow(
-            visibleRect.contains(point)
-                ? hoveredRowIndex(at: point)
-                : nil
-        )
     }
 
     func mentionPointerHit(
