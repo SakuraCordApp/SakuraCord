@@ -187,7 +187,7 @@ private final class ReactionReactorURLProtocol: URLProtocol, @unchecked Sendable
     override func startLoading() {
         Self.requestCount += 1
         Self.method = request.httpMethod
-        Self.path = request.url?.path ?? ""
+        Self.path = request.path
         let queryItems = request.url.flatMap {
             URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems
         }

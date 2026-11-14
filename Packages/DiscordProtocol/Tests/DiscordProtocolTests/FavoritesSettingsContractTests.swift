@@ -10,7 +10,8 @@ import Testing
 struct FavoritesSettingsContractTests {
     @Test func `favourite edits send the complete Favorites message the official client sends`() async throws {
         FavoritesURLProtocol.reset()
-        let provider = stubbedProvider(FavoritesURLProtocol.self)
+        let capture = RequestRecorder(FavoritesURLProtocol.captured)
+        let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
         // A forum, a categorised text channel, its category and a thread.
         try await receiveReady(provider, settings: "emUKEwlHEIIOUAitFRIIEAEYAyoCCA8KGgkkEID+Ny01FRIPEAEYAiEAAIDYPGHJFSoAChkJAACA2DxhyRUSDgoIQ2hhbm5lbHMQAhgBChMJVRACzNCbxxUSCBABGAQqAggLGgIIAQ==")
         let stored = try #require(await provider.favoritesSettings())
@@ -22,10 +23,10 @@ struct FavoritesSettingsContractTests {
         try await provider.updateFavorites([.add(ChannelID(rawValue: 1_466_495_335_391_297_617), channelType: 1)])
         await provider.favoritesSaveTask?.value
 
-        #expect(FavoritesURLProtocol.requests.map(\.method) == ["PATCH", "PATCH"])
-        #expect(FavoritesURLProtocol.requests.map(\.path) == Array(repeating: "/api/v9/users/@me/settings-proto/1", count: 2))
-        #expect(FavoritesURLProtocol.requests.map { $0.body.keys.sorted() } == [["settings"], ["settings"]])
-        #expect(FavoritesURLProtocol.requests.map { $0.body["settings"] as? String } == [
+        #expect(capture.requests.map(\.method) == ["PATCH", "PATCH"])
+        #expect(capture.requests.map(\.path) == Array(repeating: "/api/v9/users/@me/settings-proto/1", count: 2))
+        #expect(capture.requests.map { $0.jsonBody?.keys.sorted() } == [["settings"], ["settings"]])
+        #expect(capture.requests.map { $0.jsonBody?["settings"] as? String } == [
             "elAKEwlHEIIOUAitFRIIEAEYAyoCCA8KGgkkEID+Ny01FRIPEAEYAiEAAIDYPGHJFSoAChkJAACA2DxhyRUSDgoIQ2hhbm5lbHMQAhgBGgIIAQ==",
             "emUKEwlHEIIOUAitFRIIEAEYAyoCCA8KGgkkEID+Ny01FRIPEAEYAiEAAIDYPGHJFSoAChkJAACA2DxhyRUSDgoIQ2hhbm5lbHMQAhgBChMJUQDE2rwJWhQSCBABGAQqAggBGgIIAQ==",
         ])
@@ -34,7 +35,8 @@ struct FavoritesSettingsContractTests {
 
     @Test func `the Favorites server toggle writes guild_visible and is off by default`() async throws {
         FavoritesURLProtocol.reset()
-        let provider = stubbedProvider(FavoritesURLProtocol.self)
+        let capture = RequestRecorder(FavoritesURLProtocol.captured)
+        let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
         try await receiveReady(provider, settings: "CgMYnzA=")
         #expect(await provider.favoritesSettings() == FavoritesSettings())
         #expect(FavoritesSettings().isEnabled == false)
@@ -44,7 +46,7 @@ struct FavoritesSettingsContractTests {
         try await provider.updateFavorites([.setVisible(false)])
         await provider.favoritesSaveTask?.value
 
-        #expect(FavoritesURLProtocol.requests.map { $0.body["settings"] as? String } == ["egQaAggB", "egIaAA=="])
+        #expect(capture.requests.map { $0.jsonBody?["settings"] as? String } == ["egQaAggB", "egIaAA=="])
         #expect(await provider.favoritesSettings()?.isEnabled == false)
         await provider.disconnect()
     }
@@ -52,7 +54,8 @@ struct FavoritesSettingsContractTests {
     @Test func `edits during an in-flight save coalesce into one save of the newest state`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = stubbedProvider(FavoritesURLProtocol.self)
+        let capture = RequestRecorder(FavoritesURLProtocol.captured)
+        let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
         try await receiveReady(provider, settings: "CgMYnzA=")
         try await provider.updateFavorites([.setVisible(true)])
         #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
@@ -63,14 +66,15 @@ struct FavoritesSettingsContractTests {
         FavoritesURLProtocol.releaseHeldResponses()
         await provider.favoritesSaveTask?.value
 
-        #expect(FavoritesURLProtocol.requests.map { $0.body["settings"] as? String } == ["egQaAggB", "egIaAA=="])
+        #expect(capture.requests.map { $0.jsonBody?["settings"] as? String } == ["egQaAggB", "egIaAA=="])
         #expect(await provider.favoritesSettings()?.isEnabled == false)
         await provider.disconnect()
     }
 
     @Test func `pruning and adding at the limit send one save that never exceeds it`() async throws {
         FavoritesURLProtocol.reset()
-        let provider = stubbedProvider(FavoritesURLProtocol.self)
+        let capture = RequestRecorder(FavoritesURLProtocol.captured)
+        let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
         let stored = FavoritesSettings(entries: (1 ... 3).map {
             FavoritesSettings.Entry(id: ChannelID(rawValue: UInt64($0)), position: UInt32($0), channelType: 0)
         }, storedVisibility: true)
@@ -83,8 +87,8 @@ struct FavoritesSettingsContractTests {
         try await provider.updateFavorites([.remove(ChannelID(rawValue: 3)), .add(ChannelID(rawValue: 4), channelType: 0)])
         await provider.favoritesSaveTask?.value
 
-        let saved = FavoritesURLProtocol.requests.compactMap { request in
-            (request.body["settings"] as? String).flatMap { Data(base64Encoded: $0) }
+        let saved = capture.requests.compactMap { request in
+            (request.jsonBody?["settings"] as? String).flatMap { Data(base64Encoded: $0) }
                 .flatMap(DiscordFavoritesProto.message(inSettings:))
                 .map(DiscordFavoritesProto.settings(from:))
         }
@@ -152,7 +156,8 @@ struct FavoritesSettingsContractTests {
     @Test func `reset after a pending dismissal clears bit 807 in the same write`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = stubbedProvider(FavoritesURLProtocol.self)
+        let capture = RequestRecorder(FavoritesURLProtocol.captured)
+        let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
         let userContent = DiscordSettingsProto.protoLengthDelimitedField(1, Data([0x01]))
         try await receiveReady(provider, settings: (
             DiscordSettingsProto.protoLengthDelimitedField(DiscordUserContentProto.settingsField, userContent)
@@ -164,9 +169,9 @@ struct FavoritesSettingsContractTests {
         FavoritesURLProtocol.releaseHeldResponses()
         try await dismissal.value
         await provider.favoritesSaveTask?.value
-        #expect(FavoritesURLProtocol.requests.count == 2)
+        #expect(capture.requests.count == 2)
 
-        let resetBody = try #require((FavoritesURLProtocol.requests.last?.body["settings"] as? String).flatMap { Data(base64Encoded: $0) })
+        let resetBody = try #require((capture.requests.last?.jsonBody?["settings"] as? String).flatMap { Data(base64Encoded: $0) })
         let savedContent = try #require(DiscordUserContentProto.message(inSettings: resetBody))
         #expect(!DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: savedContent))
         #expect(DiscordFavoritesProto.message(inSettings: resetBody) == Data())
@@ -180,7 +185,8 @@ struct FavoritesSettingsContractTests {
         for fails in [true, false] {
             FavoritesURLProtocol.reset()
             FavoritesURLProtocol.holdResponses()
-            let provider = stubbedProvider(FavoritesURLProtocol.self)
+            let capture = RequestRecorder(FavoritesURLProtocol.captured)
+            let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
             var dismissed = [UInt8](repeating: 0, count: 101)
             dismissed[100] = 0x80
             try await receiveReady(provider, settings: (
@@ -199,8 +205,8 @@ struct FavoritesSettingsContractTests {
                 await provider.favoritesSaveTask?.value
             }
 
-            #expect(FavoritesURLProtocol.requests.count == 2)
-            let lastBody = try #require((FavoritesURLProtocol.requests.last?.body["settings"] as? String).flatMap { Data(base64Encoded: $0) })
+            #expect(capture.requests.count == 2)
+            let lastBody = try #require((capture.requests.last?.jsonBody?["settings"] as? String).flatMap { Data(base64Encoded: $0) })
             let savedContent = DiscordUserContentProto.message(inSettings: lastBody)
             if fails {
                 #expect(savedContent == nil)
@@ -219,7 +225,8 @@ struct FavoritesSettingsContractTests {
     @Test func `a dismissal made while a Reset is queued is what the follow-up save sends`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = stubbedProvider(FavoritesURLProtocol.self)
+        let capture = RequestRecorder(FavoritesURLProtocol.captured)
+        let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
         var dismissed = [UInt8](repeating: 0, count: 101)
         dismissed[100] = 0x80
         try await receiveReady(provider, settings: (
@@ -238,8 +245,8 @@ struct FavoritesSettingsContractTests {
         try await dismissal.value
         await provider.favoritesSaveTask?.value
 
-        let sentContent = FavoritesURLProtocol.requests.dropFirst().compactMap { request in
-            (request.body["settings"] as? String).flatMap { Data(base64Encoded: $0) }.flatMap(DiscordUserContentProto.message(inSettings:))
+        let sentContent = capture.requests.dropFirst().compactMap { request in
+            (request.jsonBody?["settings"] as? String).flatMap { Data(base64Encoded: $0) }.flatMap(DiscordUserContentProto.message(inSettings:))
         }
         #expect(sentContent.count == 1)
         #expect(sentContent.allSatisfy { DiscordUserContentProto.isDismissed(807, in: $0) })
@@ -251,7 +258,8 @@ struct FavoritesSettingsContractTests {
     @Test func `a favourite queued behind a failed dismissal is rolled back`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = stubbedProvider(FavoritesURLProtocol.self)
+        let capture = RequestRecorder(FavoritesURLProtocol.captured)
+        let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
         try await receiveReady(provider, settings: (
             DiscordSettingsProto.protoLengthDelimitedField(
                 DiscordUserContentProto.settingsField, DiscordSettingsProto.protoLengthDelimitedField(1, Data([0x01]))
@@ -263,7 +271,7 @@ struct FavoritesSettingsContractTests {
         FavoritesURLProtocol.releaseHeldResponses(failing: true)
         await provider.favoritesSaveTask?.value
 
-        #expect(FavoritesURLProtocol.requests.count == 1)
+        #expect(capture.requests.count == 1)
         #expect(await provider.favoritesSettings()?.contains(ChannelID(rawValue: 9)) == false)
         await provider.disconnect()
     }
@@ -273,7 +281,8 @@ struct FavoritesSettingsContractTests {
     @Test func `a Reset after a queued dismissal still restores suggestions`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
-        let provider = stubbedProvider(FavoritesURLProtocol.self)
+        let capture = RequestRecorder(FavoritesURLProtocol.captured)
+        let provider = stubbedProvider(FavoritesURLProtocol.self, token: capture.id)
         var dismissed = [UInt8](repeating: 0, count: 101)
         dismissed[100] = 0x80
         try await receiveReady(provider, settings: (
@@ -285,14 +294,14 @@ struct FavoritesSettingsContractTests {
         #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
         try await provider.setFavoritesSuggestionsDismissed(true)
         FavoritesURLProtocol.releaseHeldResponsesKeepingHold()
-        #expect(await eventually { FavoritesURLProtocol.requests.count == 2 && FavoritesURLProtocol.hasHeldResponse })
+        #expect(await eventually { capture.requests.count == 2 && FavoritesURLProtocol.hasHeldResponse })
         let shown = try #require(await provider.favoritesSync.userContentMessage)
         #expect(DiscordUserContentProto.isDismissed(807, in: shown))
 
         try await provider.updateFavorites([.reset])
         FavoritesURLProtocol.releaseHeldResponses()
         await provider.favoritesSaveTask?.value
-        let lastBody = try #require((FavoritesURLProtocol.requests.last?.body["settings"] as? String).flatMap { Data(base64Encoded: $0) })
+        let lastBody = try #require((capture.requests.last?.jsonBody?["settings"] as? String).flatMap { Data(base64Encoded: $0) })
         #expect(try !DiscordUserContentProto.isDismissed(807, in: #require(DiscordUserContentProto.message(inSettings: lastBody))))
         await provider.disconnect()
     }
@@ -322,27 +331,17 @@ struct FavoritesSettingsContractTests {
     }
 }
 
-private struct CapturedFavoritesRequest: @unchecked Sendable {
-    var method: String
-    var path: String
-    var body: [String: Any]
-}
-
 /// Records every request and echoes a settings save back, as Discord does.
 private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
+    static let captured = Notification.Name("FavoritesContractCapturedRequest")
     /// Shared by URLSession's loading thread and the test.
     private struct State: Sendable {
-        var requests: [CapturedFavoritesRequest] = []
         var holdsResponses = false
         /// Each held request's completion, which fails it when passed true.
         var heldResponses: [@Sendable (Bool) -> Void] = []
     }
 
     private static let state = Mutex(State())
-
-    static var requests: [CapturedFavoritesRequest] {
-        state.withLock { $0.requests }
-    }
 
     static func reset() {
         state.withLock { $0 = State() }
@@ -377,15 +376,10 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 
     override func startLoading() {
-        let body = Self.requestBody(request).flatMap {
-            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-        } ?? [:]
-        let captured = CapturedFavoritesRequest(
-            method: request.httpMethod ?? "",
-            path: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? "",
-            body: body
-        )
-        Self.state.withLock { $0.requests.append(captured) }
+        var captured = request
+        captured.httpBody = request.bodyData
+        NotificationCenter.default.post(name: Self.captured, object: captured)
+        let body = captured.jsonBody ?? [:]
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
         let payload = try? JSONSerialization.data(withJSONObject: ["settings": body["settings"] as? String ?? ""])
         let finish: @Sendable (Bool) -> Void = { [self] fails in
@@ -402,9 +396,5 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
             return state.holdsResponses
         }
         if !isHeld { finish(false) }
-    }
-
-    private static func requestBody(_ request: URLRequest) -> Data? {
-        request.bodyData
     }
 }

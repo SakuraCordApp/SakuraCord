@@ -211,7 +211,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         let request: URLRequest
 
         var response: StubResponse {
-        let path = request.url?.path ?? ""
+        let path = request.path
         let status: Int
         let json: String
         switch path {
@@ -397,7 +397,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/v9/read-states/ack-bulk":
             RateLimitURLProtocol.bulkAckRequestCount += 1
             RateLimitURLProtocol.bulkAckRequests.withLock {
-                $0.append((request.httpMethod ?? "", .now))
+                $0.append((request.method, .now))
             }
             if let body = RateLimitURLProtocol.requestBody(request),
                let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -436,7 +436,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/v9/channels/500/thread-members/@me/settings",
              "/api/v9/channels/501/thread-members/@me",
              "/api/v9/channels/501/thread-members/@me/settings":
-            RateLimitURLProtocol.threadMemberMethods.append(request.httpMethod ?? "")
+            RateLimitURLProtocol.threadMemberMethods.append(request.method)
             RateLimitURLProtocol.threadMemberPaths.append(path)
             if let body = RateLimitURLProtocol.requestBody(request),
                let object =
@@ -463,7 +463,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             where (path.hasPrefix("/api/v9/channels/200/messages/300/reactions/")
                 || path.hasPrefix("/api/v9/channels/200/messages/350/reactions/"))
                 && path.hasSuffix("/@me"):
-            RateLimitURLProtocol.reactionMethods.append(request.httpMethod ?? "")
+            RateLimitURLProtocol.reactionMethods.append(request.method)
             status = 204
             json = ""
         case "/test":
@@ -573,7 +573,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             RateLimitURLProtocol.messageSearchQueryItems.append(
                 queryItems.map { "\($0.name)=\($0.value ?? "")" }
             )
-            RateLimitURLProtocol.messageSearchMethods.append(request.httpMethod ?? "")
+            RateLimitURLProtocol.messageSearchMethods.append(request.method)
             RateLimitURLProtocol.messageSearchPaths.append(path)
             if let body = RateLimitURLProtocol.requestBody(request),
                let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]

@@ -142,7 +142,7 @@ struct GroupDirectMessageEditTests {
         ]))
         #expect(await provider.privateChannel(id: dmID)?.kind == .directMessage)
         let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" } == ["DELETE https://discord.com/api/v9/channels/402"])
+        #expect(requests.map { "\($0.method) \($0.url?.absoluteString ?? "")" } == ["DELETE https://discord.com/api/v9/channels/402"])
         #expect(requests.first?.httpBody == nil && requests.first?.httpBodyStream == nil)
         await provider.disconnect()
     }

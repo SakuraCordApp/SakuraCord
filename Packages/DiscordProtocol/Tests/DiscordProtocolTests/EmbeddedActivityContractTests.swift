@@ -27,7 +27,7 @@ struct EmbeddedActivityContractTests {
         let previewQuery = URLComponents(url: requests[1].url!, resolvingAgainstBaseURL: false)!.queryItems!
         #expect(previewQuery.contains(URLQueryItem(name: "integration_type", value: "1")))
         #expect(previewQuery.contains(URLQueryItem(name: "scope", value: "identify guilds")))
-        let body = try #require(JSONSerialization.jsonObject(with: requests[2].httpBody!) as? [String: Any])
+        let body = try #require(requests[2].jsonBody)
         #expect(body["authorize"] as? Bool == true)
         #expect(body["integration_type"] as? Int == 1)
         let context = try #require(body["location_context"] as? [String: Any])
@@ -46,7 +46,7 @@ struct EmbeddedActivityContractTests {
         }
         let requests = recorder.requests
         #expect(requests.map(\.httpMethod) == ["POST"])
-        let body = try #require(JSONSerialization.jsonObject(with: requests[0].httpBody!) as? [String: Any])
+        let body = try #require(requests[0].jsonBody)
         #expect(body["authorize"] as? Bool == false)
         #expect(body["permissions"] as? String == "0")
         await provider.disconnect()

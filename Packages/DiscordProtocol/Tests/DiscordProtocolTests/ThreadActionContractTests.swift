@@ -31,7 +31,7 @@ struct ThreadActionContractTests {
         #expect(renamed.thread.name == "New name" && !renamed.thread.isArchived)
         #expect(renamed.thread.notificationSettings == nil)
         #expect(await provider.cachedForumPostForTesting(threadID: archived.id)?.thread.notificationSettings == nil)
-        #expect(fixture.requests.withLock { $0.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" } }
+        #expect(fixture.requests.withLock { $0.map { "\($0.method) \($0.path)" } }
             == ["PATCH /api/v9/channels/42", "PATCH /api/v9/channels/42"])
         #expect(fixture.bodies.withLock { $0 } == [
             .object(["archived": .bool(false)]), .object(["name": .string("New name")]),
@@ -89,7 +89,7 @@ struct ThreadActionContractTests {
 
         #expect(await provider.activeJoinedThreadsForTesting().map(\.id) == [threadID])
         let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" } == [
+        #expect(requests.map { "\($0.method) \($0.url?.absoluteString ?? "")" } == [
             "POST https://discord.com/api/v9/channels/42/thread-members/@me?location=Sidebar%20Overflow",
             "DELETE https://discord.com/api/v9/channels/42/thread-members/@me?location=Toolbar%20Overflow",
             "POST https://discord.com/api/v9/channels/42/thread-members/@me?location=Context%20Menu",

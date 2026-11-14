@@ -125,7 +125,7 @@ private final class ForwardingURLProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         Self.requestCount += 1
         Self.method = request.httpMethod
-        Self.path = request.url?.path ?? ""
+        Self.path = request.path
         Self.context = request.value(forHTTPHeaderField: "X-Context-Properties")
         Self.body = requestBody().flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String: Any]

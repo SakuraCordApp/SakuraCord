@@ -36,7 +36,7 @@ struct OnboardingContractTests {
         let write = try #require(writes.first)
         #expect(write.httpMethod == (initial ? "POST" : "PUT"))
         #expect(write.url?.path == "/api/v9/guilds/100/onboarding-responses")
-        let body = try #require(JSONSerialization.jsonObject(with: write.httpBody!) as? [String: Any])
+        let body = try #require(write.jsonBody)
         #expect(body["onboarding_responses"] as? [String] == ["11"])
         let seen = try #require(body["onboarding_prompts_seen"] as? [String: Double])
         #expect(Set(seen.keys) == (initial ? ["10"] : ["10", "20"]))
@@ -173,7 +173,7 @@ private final class OnboardingURLProtocol: URLProtocol, @unchecked Sendable {
         let write = request.httpMethod != "GET"
         let failed = write && request.value(forHTTPHeaderField: "X-Onboarding-Scenario") == "failed"
         let scenario = request.value(forHTTPHeaderField: "X-Onboarding-Scenario")
-        let route = request.url?.path ?? ""
+        let route = request.path
         let guideBody = #"""
         {"guild_id":"100","enabled":true,"welcome_message":{"author_ids":["1"],"message":"Welcome"},
         "new_member_actions":[{"channel_id":"200","action_type":0,"title":"Read"}],

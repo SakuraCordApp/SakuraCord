@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 import Testing
 import SakuraCordModels
 @testable import DiscordProtocol
@@ -8,18 +7,17 @@ struct OAuth2AuthorizationContractTests {
     private static let redirect = URL(string: "https://sakuracord.app/report/callback")!
 
     @Test func `authorization reads consent details then authorizes once without following the redirect`() async throws {
-        let accountID = UUID().uuidString
-        let provider = stubbedProvider(OAuth2URLProtocol.self, token: accountID, accountID: accountID)
+        let capture = RequestRecorder(OAuth2URLProtocol.captured)
+        let provider = stubbedProvider(OAuth2URLProtocol.self, token: capture.id, accountID: capture.id)
         let grant = try await provider.authorizeOAuth2(.init(
             clientID: "1530180517155176458", scopes: ["identify"], redirectURI: Self.redirect, state: "granted"
         ))
         #expect(grant == .init(code: "one-time-code", applicationName: "SakuraCord"))
-        let requests = OAuth2URLProtocol.requests(for: accountID)
-        #expect(requests.map(\.httpMethod) == ["GET", "POST"])
-        #expect(requests.allSatisfy { $0.url?.path == "/api/v9/oauth2/authorize" })
+        let requests = capture.requests
+        #expect(requests.map(\.method) == ["GET", "POST"])
+        #expect(requests.allSatisfy { $0.path == "/api/v9/oauth2/authorize" })
         for request in requests {
-            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
-            #expect(query == [
+            #expect(request.queryItems == [
                 URLQueryItem(name: "client_id", value: "1530180517155176458"),
                 URLQueryItem(name: "response_type", value: "code"),
                 URLQueryItem(name: "redirect_uri", value: Self.redirect.absoluteString),
@@ -28,7 +26,7 @@ struct OAuth2AuthorizationContractTests {
             ])
         }
         #expect(requests[0].httpBody?.isEmpty ?? true)
-        let body = try #require(JSONSerialization.jsonObject(with: requests[1].httpBody!) as? [String: Any])
+        let body = try #require(requests[1].jsonBody)
         #expect(body["authorize"] as? Bool == true)
         #expect(Set(body.keys) == ["authorize", "location_context"])
         let location = try #require(body["location_context"] as? [String: Any])
@@ -40,14 +38,14 @@ struct OAuth2AuthorizationContractTests {
 
     @Test(arguments: ["rejected", "foreign", "denied", "forged"])
     func `rejected or mismatched authorizations never produce a code or a second write`(state: String) async throws {
-        let accountID = UUID().uuidString
-        let provider = stubbedProvider(OAuth2URLProtocol.self, token: accountID, accountID: accountID)
+        let capture = RequestRecorder(OAuth2URLProtocol.captured)
+        let provider = stubbedProvider(OAuth2URLProtocol.self, token: capture.id, accountID: capture.id)
         await #expect(throws: OAuth2AuthorizationError.self) {
             _ = try await provider.authorizeOAuth2(.init(
                 clientID: "1530180517155176458", scopes: ["identify"], redirectURI: Self.redirect, state: state
             ))
         }
-        let writes = OAuth2URLProtocol.requests(for: accountID).filter { $0.httpMethod == "POST" }
+        let writes = capture.requests.filter { $0.method == "POST" }
         #expect(writes.count == (state == "rejected" || state == "foreign" ? 0 : 1))
         #expect(await !provider.requestSafetyCircuitIsOpen)
         await provider.disconnect()
@@ -55,11 +53,7 @@ struct OAuth2AuthorizationContractTests {
 }
 
 private final class OAuth2URLProtocol: URLProtocol, @unchecked Sendable {
-    private static let captured = Mutex<[URLRequest]>([])
-
-    static func requests(for accountID: String) -> [URLRequest] {
-        captured.withLock { $0.filter { $0.value(forHTTPHeaderField: "Authorization") == accountID } }
-    }
+    static let captured = Notification.Name("OAuth2ContractCapturedRequest")
 
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -68,7 +62,7 @@ private final class OAuth2URLProtocol: URLProtocol, @unchecked Sendable {
         let body = request.bodyData ?? Data()
         var capturedRequest = request
         capturedRequest.httpBody = body
-        Self.captured.withLock { $0.append(capturedRequest) }
+        NotificationCenter.default.post(name: Self.captured, object: capturedRequest)
 
         let state = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
             .queryItems?.first { $0.name == "state" }?.value ?? ""

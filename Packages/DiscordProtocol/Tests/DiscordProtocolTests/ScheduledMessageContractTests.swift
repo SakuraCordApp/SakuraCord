@@ -9,7 +9,8 @@ import Testing
 struct ScheduledMessageContractTests {
     @Test func `schedule, list, edit, send now and cancel send the official requests`() async throws {
         ScheduledURLProtocol.reset()
-        let provider = stubbedProvider(ScheduledURLProtocol.self, token: "scheduled-contract-session", accountID: "scheduled-contract")
+        let capture = RequestRecorder(ScheduledURLProtocol.captured)
+        let provider = stubbedProvider(ScheduledURLProtocol.self, token: capture.id, accountID: "scheduled-contract")
         await provider.seedGuildChannelForTesting(Channel(id: ChannelID(rawValue: 41), guildID: GuildID(rawValue: 5), name: "general"))
         let date = try #require(DiscordDate.parse("2026-11-11T08:00:00.000Z"))
         let draft = SendMessageDraft(
@@ -24,7 +25,7 @@ struct ScheduledMessageContractTests {
         try await provider.sendScheduledMessageNow(scheduled.id)
         try await provider.cancelScheduledMessage(scheduled.id)
 
-        let requests = ScheduledURLProtocol.requests
+        let requests = capture.requests
         #expect(requests.map { "\($0.method) \($0.path)" } == [
             "POST /api/v9/users/@me/scheduled-messages",
             "GET /api/v9/users/@me/scheduled-messages",
@@ -33,8 +34,8 @@ struct ScheduledMessageContractTests {
             "POST /api/v9/users/@me/scheduled-messages/70/send",
             "DELETE /api/v9/users/@me/scheduled-messages/70",
         ])
-        #expect(requests.allSatisfy { $0.context == nil })
-        let create = try #require(requests[0].body)
+        #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-Context-Properties") == nil })
+        let create = try #require(requests[0].jsonBody)
         #expect(Set(create.keys) == [
             "channel_id", "content", "scheduled_timestamp", "flags", "message_reference", "allowed_mentions", "attachments",
         ])
@@ -46,16 +47,16 @@ struct ScheduledMessageContractTests {
         let mentions = try #require(create["allowed_mentions"] as? [String: Any])
         #expect(mentions["parse"] as? [String] == ["users", "roles", "everyone"])
         #expect(mentions["replied_user"] as? Bool == false)
-        #expect(requests[2].body?.keys.sorted() == ["scheduled_timestamp"])
-        #expect(requests[2].body?["scheduled_timestamp"] as? String == "2026-11-11T08:15:00.000Z")
-        #expect(requests[3].body?.keys.sorted() == ["content", "flags"])
-        #expect((requests[3].body?["flags"] as? NSNumber)?.intValue == 4096)
-        #expect(requests[4].body == nil)
+        #expect(requests[2].jsonBody?.keys.sorted() == ["scheduled_timestamp"])
+        #expect(requests[2].jsonBody?["scheduled_timestamp"] as? String == "2026-11-11T08:15:00.000Z")
+        #expect(requests[3].jsonBody?.keys.sorted() == ["content", "flags"])
+        #expect((requests[3].jsonBody?["flags"] as? NSNumber)?.intValue == 4096)
+        #expect(requests[4].jsonBody == nil)
 
         _ = try await provider.scheduleMessage(
             SendMessageDraft(channelID: ChannelID(rawValue: 41), content: "", stickerIDs: ["77"]), at: date
         )
-        let sticker = try #require(ScheduledURLProtocol.requests.last?.body)
+        let sticker = try #require(capture.requests.last?.jsonBody)
         #expect(Set(sticker.keys) == ["channel_id", "content", "scheduled_timestamp", "flags", "sticker_ids", "attachments"])
         #expect(sticker["sticker_ids"] as? [String] == ["77"])
 
@@ -72,56 +73,36 @@ struct ScheduledMessageContractTests {
 
     @Test func `the scheduled message limit is its own error`() async throws {
         ScheduledURLProtocol.reset(rejectsCreate: true)
-        let provider = stubbedProvider(ScheduledURLProtocol.self, token: "scheduled-contract-session", accountID: "scheduled-contract")
+        let capture = RequestRecorder(ScheduledURLProtocol.captured)
+        let provider = stubbedProvider(ScheduledURLProtocol.self, token: capture.id, accountID: "scheduled-contract")
         let draft = SendMessageDraft(channelID: ChannelID(rawValue: 41), content: "later")
 
         await #expect(throws: ChatProviderError.scheduledMessageLimitReached) {
             try await provider.scheduleMessage(draft, at: .now.addingTimeInterval(3600))
         }
-        #expect(ScheduledURLProtocol.requests.count == 1)
+        #expect(capture.requests.count == 1)
     }
-}
-
-private struct CapturedScheduledRequest: @unchecked Sendable {
-    let method: String
-    let path: String
-    let context: String?
-    let body: [String: Any]?
 }
 
 private final class ScheduledURLProtocol: URLProtocol, @unchecked Sendable {
+    static let captured = Notification.Name("ScheduledContractCapturedRequest")
     /// Shared by URLSession's loading thread and the test.
-    private struct State: Sendable {
-        var requests: [CapturedScheduledRequest] = []
-        var rejectsCreate = false
-    }
-
-    private static let state = Mutex(State())
-
-    static var requests: [CapturedScheduledRequest] {
-        state.withLock { $0.requests }
-    }
+    private static let rejectsCreate = Mutex(false)
 
     static func reset(rejectsCreate: Bool = false) {
-        state.withLock { $0 = State(rejectsCreate: rejectsCreate) }
+        self.rejectsCreate.withLock { $0 = rejectsCreate }
     }
 
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let method = request.httpMethod ?? ""
-        let path = request.url?.path ?? ""
-        let captured = CapturedScheduledRequest(
-            method: method,
-            path: path,
-            context: request.value(forHTTPHeaderField: "X-Context-Properties"),
-            body: requestBody().flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        )
-        let rejectsCreate = Self.state.withLock { state in
-            state.requests.append(captured)
-            return state.rejectsCreate
-        }
+        let method = request.method
+        let path = request.path
+        var captured = request
+        captured.httpBody = request.bodyData
+        NotificationCenter.default.post(name: Self.captured, object: captured)
+        let rejectsCreate = Self.rejectsCreate.withLock { $0 }
         let (status, body): (Int, String) = switch (method, path.hasSuffix("/send")) {
         case ("POST", false) where rejectsCreate:
             (400, #"{"message":"You have too many scheduled messages","code":640003}"#)
@@ -140,10 +121,6 @@ private final class ScheduledURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
-
-    private func requestBody() -> Data? {
-        request.bodyData
-    }
 
     private static let scheduled = #"""
     {

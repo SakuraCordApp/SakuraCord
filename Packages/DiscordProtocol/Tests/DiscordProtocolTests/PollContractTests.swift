@@ -208,9 +208,9 @@ private extension RequestRecorder {
     var pollRequests: [PollRequest] {
         requests.map { request in
             let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
-            return PollRequest(method: request.httpMethod ?? "", path: components.path,
+            return PollRequest(method: request.method, path: components.path,
                                context: request.value(forHTTPHeaderField: "X-Context-Properties"),
-                               body: (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any] ?? [:],
+                               body: request.jsonBody ?? [:],
                                query: Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }))
         }
     }

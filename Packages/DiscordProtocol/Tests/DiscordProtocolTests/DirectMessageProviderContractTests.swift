@@ -536,8 +536,8 @@ final class DirectMessageURLProtocol:
         } ?? []
         Self.requests.append(
             CapturedDirectMessageRequest(
-                method: request.httpMethod ?? "",
-                path: request.url?.path ?? "",
+                method: request.method,
+                path: request.path,
                 encodedPath: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? "",
                 query: query,
                 hadAuthorization:

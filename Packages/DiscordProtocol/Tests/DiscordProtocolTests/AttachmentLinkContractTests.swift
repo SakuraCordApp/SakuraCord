@@ -90,8 +90,8 @@ private final class AttachmentRefreshURLProtocol: URLProtocol, @unchecked Sendab
     override func startLoading() {
         let data = request.bodyData ?? Data()
         let captured = CapturedAttachmentRefreshRequest(
-            method: request.httpMethod ?? "",
-            path: request.url?.path ?? "",
+            method: request.method,
+            path: request.path,
             body: (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         )
         let (status, responseBody) = Self.state.withLock {

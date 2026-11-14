@@ -1348,7 +1348,7 @@ private final class ForumPostDeletionURLProtocol: URLProtocol, @unchecked Sendab
     override func startLoading() {
         Self.requestCount += 1
         Self.method = request.httpMethod
-        Self.path = request.url?.path ?? ""
+        Self.path = request.path
         Self.hadAuthorization = request.value(forHTTPHeaderField: "Authorization") != nil
         Self.hadBody = request.httpBody != nil || request.httpBodyStream != nil
 
@@ -1395,7 +1395,7 @@ private final class ForumThreadResolutionURLProtocol: URLProtocol, @unchecked Se
     override func startLoading() {
         Self.requestCount += 1
         Self.method = request.httpMethod
-        Self.path = request.url?.path ?? ""
+        Self.path = request.path
         Self.hadAuthorization = request.value(forHTTPHeaderField: "Authorization") != nil
         Self.hadBody = request.httpBody != nil || request.httpBodyStream != nil
 
@@ -1462,7 +1462,7 @@ private final class ForumPostCreationURLProtocol: URLProtocol, @unchecked Sendab
     override func startLoading() {
         Self.requestCount += 1
         Self.method = request.httpMethod
-        Self.path = request.url?.path ?? ""
+        Self.path = request.path
         Self.query = Dictionary(
             uniqueKeysWithValues: URLComponents(
                 url: request.url ?? URL(fileURLWithPath: "/"),

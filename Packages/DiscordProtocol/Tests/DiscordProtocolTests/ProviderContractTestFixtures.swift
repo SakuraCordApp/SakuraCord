@@ -348,6 +348,17 @@ extension URLRequest {
         }
         return data
     }
+
+    var method: String { httpMethod ?? "" }
+    var path: String { url?.path ?? "" }
+    var queryItems: [URLQueryItem] {
+        url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
+    }
+
+    /// The body as a JSON object; nil when it is absent or not an object.
+    var jsonBody: [String: Any]? {
+        bodyData.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    }
 }
 
 extension URLProtocol {

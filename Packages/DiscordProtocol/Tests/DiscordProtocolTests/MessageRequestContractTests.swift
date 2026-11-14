@@ -62,7 +62,7 @@ struct MessageRequestContractTests {
         #expect(channel?.lastMessageID == MessageID(rawValue: 900))
         #expect(channel?.messageRequest == nil)
         let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" }
+        #expect(requests.map { "\($0.method) \($0.url?.absoluteString ?? "")" }
             == ["PUT https://discord.com/api/v9/channels/501/recipients/@me"])
         #expect(fixture.bodies.withLock { $0 } == [.object(["consent_status": .number(2)])])
         await provider.disconnect()
@@ -86,7 +86,7 @@ struct MessageRequestContractTests {
         #expect(await provider.privateChannel(id: requestID) == nil)
         #expect(await provider.privateChannel(id: friendID) != nil)
         let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" }
+        #expect(requests.map { "\($0.method) \($0.url?.absoluteString ?? "")" }
             == ["DELETE https://discord.com/api/v9/channels/501/recipients/@me"])
         #expect(requests.first?.httpBody == nil && requests.first?.httpBodyStream == nil)
         await provider.disconnect()
