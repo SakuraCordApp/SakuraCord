@@ -81,7 +81,7 @@ enum NativeTimelineEmbedLayout {
                 mediaPreviewURL: mediaPreviewURL,
                 mediaPlaceholder: mediaPlaceholder,
                 mediaIsVideo: embed.video != nil,
-                mediaAutoplaysInline: embed.type?.lowercased() == "gifv",
+                mediaAutoplaysInline: embed.isGIFV,
                 mediaPosterFillsFrame: mediaPosterFillsFrame,
                 accentColor: nil,
                 drawsTopSeparator: false

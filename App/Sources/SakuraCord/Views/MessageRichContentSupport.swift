@@ -729,7 +729,7 @@ struct RichMediaItem: Identifiable, Hashable {
             id: "\(embed.id)-media",
             media: media,
             fallbackTitle: embed.title ?? "Embed media",
-            autoplaysInline: embed.type?.lowercased() == "gifv"
+            autoplaysInline: embed.isGIFV
         )
         if embed.video != nil {
             let preview = embed.thumbnail ?? embed.image

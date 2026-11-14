@@ -130,7 +130,7 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
         }
         guard let image = embed.image ?? embed.thumbnail else { return nil }
         let url = image.proxyURL ?? image.url
-        let animated = embed.type?.lowercased() == "gifv"
+        let animated = embed.isGIFV
             || url?.pathExtension.lowercased() == "gif"
         return ForwardPreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: isSpoiler)
     }

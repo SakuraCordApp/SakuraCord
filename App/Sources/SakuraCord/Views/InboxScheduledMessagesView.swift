@@ -248,7 +248,7 @@ private struct ScheduledMessageCard: View {
             }
             if let media = ForwardMessagePreviewPlan.make(message: preview).media, let url = media.url {
                 // A GIF link's embed plays its looping video over the still, as in the timeline.
-                let video = media.isSpoiler ? nil : preview.embeds.first { $0.type?.lowercased() == "gifv" }?.video
+                let video = media.isSpoiler ? nil : preview.embeds.first(where: \.isGIFV)?.video
                 ZStack {
                     AnimatedRemoteImage(url: url, animates: !media.isSpoiler, maximumPixelDimension: 400, contentMode: .fit)
                     if let videoURL = video.flatMap({ $0.proxyURL ?? $0.url }) {

@@ -43,7 +43,7 @@ enum NativeTimelineGIFContextMenuPlan {
         let embed = message.embeds.first(where: {
             $0.id == region.embedID
         }),
-        embed.type?.lowercased() == "gifv",
+        embed.isGIFV,
         let canonicalURL = embed.url,
         let media = embed.video ?? embed.image,
         let mediaURL = media.url

@@ -297,6 +297,9 @@ public struct MessageEmbed: Identifiable, Codable, Hashable, Sendable {
     public var fields: [MessageEmbedField]
     public var components: [MessageComponent]?
 
+    /// A looping, silent video that Discord plays like a GIF.
+    public var isGIFV: Bool { type?.lowercased() == "gifv" }
+
     public init(
         id: String = UUID().uuidString, title: String? = nil, type: String? = nil,
         description: String? = nil, url: URL? = nil, timestamp: Date? = nil, color: UInt32? = nil,
