@@ -808,12 +808,13 @@ struct GuildRailButton: View {
         }
         .buttonStyle(ServerRailButtonStyle())
         .overlay {
-            ServerContextMenuBridge(
-                guild: guild,
-                isMutationPending: presentation.isNotificationMutationPending,
-                notificationSettings: presentation.notificationSettings,
-                actions: contextMenuActions
-            )
+            ServerRailContextMenuBridge {
+                contextMenuActions.serverMenu(
+                    for: guild,
+                    notificationSettings: presentation.notificationSettings,
+                    isMutationPending: presentation.isNotificationMutationPending
+                )
+            }
         }
         .accessibilityLabel(displayName)
         .accessibilityValue(

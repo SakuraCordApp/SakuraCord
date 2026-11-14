@@ -371,11 +371,7 @@ struct ServerFolderRailHeader: View {
         }
         .buttonStyle(ServerRailButtonStyle())
         .overlay {
-            ServerFolderContextMenuBridge(
-                isUnread: entry.hasUnreadGuild || entry.mentionCount > 0,
-                markRead: { contextMenuActions.markFolderRead(entry.guildEntries.map(\.id)) },
-                openSettings: { contextMenuActions.openFolderSettings(entry.folder) }
-            )
+            ServerRailContextMenuBridge { contextMenuActions.folderMenu(for: entry) }
         }
         .accessibilityLabel(displayName)
         .accessibilityValue(
