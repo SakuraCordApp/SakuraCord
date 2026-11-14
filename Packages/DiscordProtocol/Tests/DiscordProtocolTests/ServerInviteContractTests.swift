@@ -385,17 +385,7 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        var data = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let data = request.bodyData ?? Data()
         var capturedRequest = request
         capturedRequest.httpBody = data
         NotificationCenter.default.post(name: Self.captured, object: capturedRequest)
@@ -409,11 +399,7 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
             {"type":0,"code":"UJJtn3Y","guild_id":"900","channel":{"id":"901","type":0,"name":"general"},"max_age":3600,"max_uses":5,
              "uses":0,"temporary":false,"created_at":"2026-10-01T16:33:23.374696+00:00","expires_at":"2026-10-01T17:33:23+00:00"}
             """
-            let response = HTTPURLResponse(url: request.url!, statusCode: limited ? 400 : 200, httpVersion: "HTTP/1.1",
-                                           headerFields: ["Content-Type": "application/json"])!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: Data(body.utf8))
-            client?.urlProtocolDidFinishLoading(self)
+            respond(status: limited ? 400 : 200, body: Data(body.utf8))
             return
         }
         let code = request.url!.lastPathComponent
@@ -464,11 +450,7 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
               {"field_type":"TERMS","label":"Rules","required":true,"values":["Be kind"]},
               {"field_type":"TEXT_INPUT","label":"Anything else?","required":false}]}
             """
-        let response = HTTPURLResponse(url: request.url!, statusCode: submitted ? 201 : 200, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: submitted ? 201 : 200, body: Data(body.utf8))
     }
 
     private func joinGuild() {
@@ -479,10 +461,7 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
             : guildID == "952" ? (403, #"{"code":40007,"message":"The user is banned from this guild."}"#)
             : guildID == "953" ? (403, #"{"code":50001,"message":"Missing Access"}"#)
             : (200, #"{"id":"\#(guildID)","name":"Parks","features":["DISCOVERABLE"]}"#)
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: Data(body.utf8))
     }
 
     override func stopLoading() {}

@@ -512,17 +512,7 @@ private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func decodedRequestBody() -> JSONValue? {
-        var data = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let data = request.bodyData ?? Data()
         return try? JSONDecoder().decode(JSONValue.self, from: data)
     }
 

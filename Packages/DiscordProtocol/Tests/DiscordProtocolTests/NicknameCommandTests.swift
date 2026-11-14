@@ -274,19 +274,7 @@ private final class NicknameURLProtocol: URLProtocol, @unchecked Sendable {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.requests.withLock { $0.append(request) }
-        let body: Data
-        if let data = request.httpBody { body = data } else if let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var data = Data()
-            var buffer = [UInt8](repeating: 0, count: 1024)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(contentsOf: buffer.prefix(count))
-            }
-            body = data
-        } else { body = Data() }
+        let body = request.bodyData ?? Data()
         if let value = try? JSONDecoder().decode(JSONValue.self, from: body) {
             Self.bodies.withLock { $0.append(value) }
         }

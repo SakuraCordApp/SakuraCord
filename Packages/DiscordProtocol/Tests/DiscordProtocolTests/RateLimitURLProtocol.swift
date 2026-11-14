@@ -649,12 +649,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         let stub = StubResponseBuilder(request: request).response
         let status = stub.status
         let json = stub.json
-        let response = HTTPURLResponse(
-            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(json.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: Data(json.utf8), headers: nil)
     }
 
     override func stopLoading() {}
@@ -685,19 +680,6 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func requestBody(_ request: URLRequest) -> Data? {
-        if let data = request.httpBody {
-            return data
-        }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            data.append(buffer, count: count)
-        }
-        return data
+        request.bodyData
     }
 }

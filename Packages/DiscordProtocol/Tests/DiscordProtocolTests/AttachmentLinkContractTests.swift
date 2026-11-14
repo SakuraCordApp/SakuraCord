@@ -88,17 +88,7 @@ private final class AttachmentRefreshURLProtocol: URLProtocol, @unchecked Sendab
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        var data = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let data = request.bodyData ?? Data()
         let captured = CapturedAttachmentRefreshRequest(
             method: request.httpMethod ?? "",
             path: request.url?.path ?? "",
@@ -108,13 +98,7 @@ private final class AttachmentRefreshURLProtocol: URLProtocol, @unchecked Sendab
             $0.requests.append(captured)
             return ($0.status, $0.responseBody)
         }
-        let response = HTTPURLResponse(
-            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(responseBody.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: Data(responseBody.utf8))
     }
 
     override func stopLoading() {}

@@ -185,17 +185,7 @@ private final class InboxContractURLProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocolDidFinishLoading(self)
     }
     private func requestJSON() -> Any? {
-        var data = request.httpBody ?? Data()
-        if data.isEmpty, let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                guard count > 0 else { break }
-                data.append(buffer, count: count)
-            }
-        }
+        let data = request.bodyData ?? Data()
         return try? JSONSerialization.jsonObject(with: data)
     }
 

@@ -186,16 +186,7 @@ private final class OnboardingURLProtocol: URLProtocol, @unchecked Sendable {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         var request = request
-        if request.httpBody == nil, let stream = request.httpBodyStream {
-            stream.open(); defer { stream.close() }
-            var data = Data(), buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                guard count > 0 else { break }
-                data.append(buffer, count: count)
-            }
-            request.httpBody = data
-        }
+        request.httpBody = request.bodyData
         NotificationCenter.default.post(name: Self.captured, object: request)
         let write = request.httpMethod != "GET"
         let failed = write && request.value(forHTTPHeaderField: "X-Onboarding-Scenario") == "failed"
@@ -232,10 +223,7 @@ private final class OnboardingURLProtocol: URLProtocol, @unchecked Sendable {
         } else {
             body = Self.configuration
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: empty ? 204 : failed ? 500 : 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: empty ? 204 : failed ? 500 : 200, body: Data(body.utf8))
     }
     override func stopLoading() {}
 }

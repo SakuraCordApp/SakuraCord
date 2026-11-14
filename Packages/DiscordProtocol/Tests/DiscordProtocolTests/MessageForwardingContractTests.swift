@@ -154,32 +154,13 @@ private final class ForwardingURLProtocol: URLProtocol, @unchecked Sendable {
         let responseBody = Self.status == 200
             ? successBody
             : #"{"retry_after":0.01,"global":false}"#
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: Self.status,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(responseBody.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: Self.status, body: Data(responseBody.utf8))
     }
 
     override func stopLoading() {}
 
     private func requestBody() -> Data? {
-        if let data = request.httpBody { return data }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4_096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            data.append(buffer, count: count)
-        }
-        return data
+        request.bodyData
     }
 
     private static let successResponse = #"""

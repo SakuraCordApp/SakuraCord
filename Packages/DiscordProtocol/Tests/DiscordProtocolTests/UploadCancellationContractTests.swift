@@ -284,17 +284,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func requestBody(_ request: URLRequest) -> [String: Any]? {
-        var body = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(buffer, count: count)
-            }
-        }
+        let body = request.bodyData ?? Data()
         return try? JSONSerialization.jsonObject(with: body) as? [String: Any]
     }
 }

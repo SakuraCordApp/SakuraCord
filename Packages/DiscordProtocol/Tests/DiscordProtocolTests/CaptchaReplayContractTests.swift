@@ -74,17 +74,7 @@ private final class CaptchaReplayURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
             return
         }
-        var body = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let body = request.bodyData ?? Data()
         fixture.requests.withLock { $0.append(.init(request: request, body: body)) }
         let solved = request.value(forHTTPHeaderField: "X-Captcha-Key") != nil
         let challenged = !solved || fixture.challengesReplay.withLock { $0 }

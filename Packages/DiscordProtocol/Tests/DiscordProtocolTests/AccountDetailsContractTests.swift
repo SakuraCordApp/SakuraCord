@@ -83,10 +83,7 @@ private final class AccountReadURLProtocol: URLProtocol, @unchecked Sendable {
           {"id_hash":"current","approx_last_used_time":"2026-09-18T10:00:00.123456+00:00","client_info":{"os":"Mac OS X","platform":"Discord Client","location":"Example City"}}
         ]}
         """#
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: Data(body.utf8))
     }
 
     override func stopLoading() {}

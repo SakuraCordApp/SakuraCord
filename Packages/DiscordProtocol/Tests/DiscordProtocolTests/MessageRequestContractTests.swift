@@ -143,17 +143,7 @@ private final class MessageRequestURLProtocol: URLProtocol, @unchecked Sendable 
             return
         }
         fixture.requests.withLock { $0.append(request) }
-        var body = request.httpBody ?? Data()
-        if body.isEmpty, let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 1024)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(contentsOf: buffer.prefix(count))
-            }
-        }
+        let body = request.bodyData ?? Data()
         if let value = try? JSONDecoder().decode(JSONValue.self, from: body) {
             fixture.bodies.withLock { $0.append(value) }
         }

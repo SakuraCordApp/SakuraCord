@@ -236,15 +236,7 @@ private final class ReactionReactorURLProtocol: URLProtocol, @unchecked Sendable
             }
             users = "[\(page.joined(separator: ","))]"
         }
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(users.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: Data(users.utf8), headers: nil)
     }
 
     override func stopLoading() {}

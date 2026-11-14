@@ -238,17 +238,7 @@ private final class GroupEditURLProtocol: URLProtocol, @unchecked Sendable {
                 ? #"{"id":"401","type":3,"name":"Friend Group","owner_id":"2"}"#
                 : #"{"code":50013,"message":"Missing Permissions"}"#)
         }
-        var body = request.httpBody ?? Data()
-        if body.isEmpty, let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 1024)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(contentsOf: buffer.prefix(count))
-            }
-        }
+        let body = request.bodyData ?? Data()
         guard case let .object(fields)? = try? JSONDecoder().decode(JSONValue.self, from: body) else {
             return respond(status: 500, body: "{}")
         }

@@ -257,17 +257,7 @@ private final class PollURLProtocol: URLProtocol, @unchecked Sendable {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
-        var data = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let data = request.bodyData ?? Data()
         var captured = request
         captured.httpBody = data
         NotificationCenter.default.post(name: Self.capturedRequest, object: captured)

@@ -292,3 +292,32 @@ func statusEvents(_ events: AsyncStream<ClientEvent>) async -> [PresenceStatus] 
     }
     return received
 }
+
+extension URLRequest {
+    /// The body a test URLProtocol receives, which URLSession usually hands
+    /// over as a stream.
+    var bodyData: Data? {
+        if let httpBody { return httpBody }
+        guard let stream = httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
+}
+
+extension URLProtocol {
+    /// Answers the request with `status` and `body`, then finishes loading.
+    func respond(status: Int, body: Data, headers: [String: String]? = ["Content-Type": "application/json"]) {
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}

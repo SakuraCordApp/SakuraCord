@@ -122,17 +122,7 @@ private final class ActivityURLProtocol: URLProtocol, @unchecked Sendable {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        var body = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let body = request.bodyData ?? Data()
         var capturedRequest = request
         capturedRequest.httpBody = body
         NotificationCenter.default.post(name: Self.captured, object: capturedRequest)
@@ -151,13 +141,7 @@ private final class ActivityURLProtocol: URLProtocol, @unchecked Sendable {
         default:
             (200, #"{"location":"http://127.0.0.1/?iss=https%3A%2F%2Fdiscord.com&code=one-time-code&state=\#(state)"}"#)
         }
-        let response = HTTPURLResponse(
-            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(json.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: Data(json.utf8))
     }
 
     override func stopLoading() {}

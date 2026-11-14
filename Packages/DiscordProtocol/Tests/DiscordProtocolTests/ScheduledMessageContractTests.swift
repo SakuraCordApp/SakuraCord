@@ -152,18 +152,7 @@ private final class ScheduledURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 
     private func requestBody() -> Data? {
-        if let data = request.httpBody { return data }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4_096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            data.append(buffer, count: count)
-        }
-        return data.isEmpty ? nil : data
+        request.bodyData
     }
 
     private static let scheduled = #"""
