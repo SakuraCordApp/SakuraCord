@@ -283,8 +283,7 @@ struct FavoritesSettingsContractTests {
         try await provider.updateFavorites([.reset])
         #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
         try await provider.setFavoritesSuggestionsDismissed(true)
-        FavoritesURLProtocol.releaseHeldResponses()
-        FavoritesURLProtocol.holdResponses()
+        FavoritesURLProtocol.releaseHeldResponsesKeepingHold()
         #expect(await eventually { FavoritesURLProtocol.requests.count == 2 && FavoritesURLProtocol.hasHeldResponse })
         let shown = try #require(await provider.userContentMessage)
         #expect(DiscordUserContentProto.isDismissed(807, in: shown))
@@ -365,8 +364,14 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     static func releaseHeldResponses(failing: Bool = false) {
+        lock.withLock { holdsResponses = false }
+        releaseHeldResponsesKeepingHold(failing: failing)
+    }
+
+    /// Completes the held requests and keeps holding, so the next request is
+    /// held however soon it follows.
+    static func releaseHeldResponsesKeepingHold(failing: Bool = false) {
         let held = lock.withLock {
-            holdsResponses = false
             defer { heldResponses = [] }
             return heldResponses
         }
