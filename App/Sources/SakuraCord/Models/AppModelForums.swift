@@ -657,38 +657,16 @@ extension AppModel {
         _ tagIDs: [ForumTagID],
         for post: ForumPost
     ) -> Bool {
-        let policy = threadActionPolicy(post.thread)
-        guard policy.canEditTags else {
-            forumActionError = "You do not have permission to edit this post’s tags."
-            return false
-        }
-        let uniqueTagIDs = Set(tagIDs)
-        guard uniqueTagIDs.count <= ForumTag.maximumAppliedCount,
-              let channel = selectedChannel,
-              channel.id == post.thread.parentID
-        else {
+        // `toggleForumTag` already allowed the change: permission, the tag
+        // limit, moderated tags and a required tag.
+        guard let channel = selectedChannel, channel.id == post.thread.parentID else {
             forumActionError = "The selected tags are invalid for this forum."
             return false
         }
-        let availableTagsByID = Dictionary(
-            uniqueKeysWithValues: channel.availableTags.map { ($0.id, $0) }
-        )
-        guard uniqueTagIDs.allSatisfy({ availableTagsByID[$0] != nil }) else {
+        let availableTagIDs = Set(channel.availableTags.map(\.id))
+        guard Set(tagIDs).isSubset(of: availableTagIDs) else {
             forumActionError = "One or more selected tags are no longer available."
             return false
-        }
-        guard !channel.requiresForumTag || !uniqueTagIDs.isEmpty else {
-            forumActionError = "This forum requires every post to have at least one tag."
-            return false
-        }
-        if !policy.canManage {
-            let changedTagIDs = uniqueTagIDs.symmetricDifference(post.thread.appliedTagIDs)
-            guard changedTagIDs.allSatisfy({
-                availableTagsByID[$0]?.isModerated == false
-            }) else {
-                forumActionError = "Only moderators can change moderated tags."
-                return false
-            }
         }
         return true
     }
