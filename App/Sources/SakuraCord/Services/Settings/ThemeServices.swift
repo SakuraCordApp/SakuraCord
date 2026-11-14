@@ -885,7 +885,7 @@ final class SakuraCordThemeStore {
             let durationSeconds = Self.randomizationDuration.secondsValue
             let elapsedSeconds = elapsed.secondsValue
             let linearProgress = (elapsedSeconds / durationSeconds).clamped(to: 0 ... 1)
-            let easedProgress = Double(NativeTimelineEasing.easeOut(CGFloat(linearProgress)))
+            let easedProgress = Double(MotionEasing.easeOut(CGFloat(linearProgress)))
             activeTheme = source.interpolated(to: target, progress: easedProgress)
             if linearProgress >= 1 { break }
             try? await clock.sleep(for: .milliseconds(8))

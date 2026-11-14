@@ -341,7 +341,7 @@ extension NativeTimelineCanvasView {
                             .pressAnimationDuration
                 )
                 let progress =
-                    NativeTimelineEasing
+                    MotionEasing
                         .easeOut(linear)
                 self.componentButtonPressProgress =
                     start + (destination - start) * progress

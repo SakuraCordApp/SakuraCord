@@ -278,7 +278,7 @@ extension ForumBoardView {
 
     /// Records an item's drawing for the rasterizer.
     func scene(id: ForumBoardItem.Identifier, size: CGSize, scale: CGFloat) -> ForumCardScene {
-        let colorSpace = window?.colorSpace?.cgColorSpace ?? ForumCardRasterizer.defaultColorSpace
+        let colorSpace = window?.colorSpace?.cgColorSpace ?? CGColorSpace.bitmapDefault
         var scene = ForumCardScene.empty(size: size, scale: scale, colorSpace: colorSpace)
         guard let entry = layoutState?.entry(for: id) else { return scene }
         let bounds = CGRect(origin: .zero, size: size)

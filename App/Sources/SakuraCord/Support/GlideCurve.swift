@@ -1,6 +1,19 @@
 import AppKit
 import SakuraCordModels
 
+/// Cubic easing curves app motions and fades share.
+nonisolated enum MotionEasing {
+    static func easeOut(_ progress: CGFloat) -> CGFloat {
+        let progress = min(max(progress, 0), 1)
+        return 1 - pow(1 - progress, 3)
+    }
+
+    static func easeInOut(_ progress: CGFloat) -> CGFloat {
+        let progress = min(max(progress, 0), 1)
+        return progress < 0.5 ? 4 * pow(progress, 3) : 1 - pow(2 - 2 * progress, 3) / 2
+    }
+}
+
 /// A cubic Bézier curve the transcript can glide on, readable at any moment
 /// so a glide that is interrupted continues from where its rows are drawn.
 struct GlideCurve {

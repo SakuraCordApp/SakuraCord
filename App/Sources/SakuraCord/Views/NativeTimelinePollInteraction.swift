@@ -58,7 +58,7 @@ extension NativeTimelineCanvasView {
         }
         if let animation = pollAnimations[id], let poll = pollSnapshots[id] {
             let progress = min(1, max(0, (CACurrentMediaTime() - animation.start) / NativeTimelinePollPresentation.voteAnimationDuration))
-            let eased = NativeTimelineEasing.easeOut(CGFloat(progress))
+            let eased = MotionEasing.easeOut(CGFloat(progress))
             for answer in poll.answers {
                 let target = poll.totalVotes > 0 ? CGFloat(poll.count(for: answer.id)) / CGFloat(poll.totalVotes) : 0
                 let old = animation.from[answer.id] ?? 0

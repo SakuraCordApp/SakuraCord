@@ -327,7 +327,7 @@ extension NativeTimelineCanvasView {
         let scale = window.backingScaleFactor
         let width = Int((rect.width * scale).rounded(.up)), height = Int((rect.height * scale).rounded(.up))
         guard width > 0, height > 0, let context = CGContext.premultipliedBitmap(
-            width: width, height: height, colorSpace: ForumCardRasterizer.defaultColorSpace
+            width: width, height: height, colorSpace: CGColorSpace.bitmapDefault
         ) else { return nil }
         let layerRect = convertToLayer(rect)
         // The context's origin is at its bottom; the canvas's at its top.

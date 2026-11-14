@@ -111,7 +111,7 @@ enum NativeTimelineSpoilerCover {
             height: height,
             bitsPerComponent: 8,
             bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            space: CGColorSpace.bitmapDefault,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
         bitmap.translateBy(x: 0, y: CGFloat(height))

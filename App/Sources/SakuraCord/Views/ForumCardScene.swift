@@ -71,7 +71,7 @@ nonisolated struct ForumCardScene: @unchecked Sendable {
     static func empty(
         size: CGSize,
         scale: CGFloat,
-        colorSpace: CGColorSpace = ForumCardRasterizer.defaultColorSpace
+        colorSpace: CGColorSpace = CGColorSpace.bitmapDefault
     ) -> ForumCardScene {
         ForumCardScene(size: size, scale: scale, colorSpace: colorSpace, operations: [])
     }
@@ -100,8 +100,6 @@ nonisolated enum ForumCardRasterizer {
         }
         return context.makeImage()
     }
-
-    static let defaultColorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
 
     private static func draw(_ operation: ForumCardScene.Operation, in context: CGContext) {
         switch operation {
