@@ -24,7 +24,7 @@ extension NativeTimelineCanvasView {
     /// The visible file cards in a message row, attachment cards first. A
     /// message still being sent has only local files, which act through
     /// their upload rings, if any, rather than as downloads.
-    private func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
+    func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
         let layout = layouts[index]
         let isLocalSend = items[index].messageRow?.message.isUnconfirmedLocalSend == true
         let attachments = isLocalSend ? [] : layout.fileCards.filter { !isConcealedSpoiler($0.attachment, in: messageID) }
