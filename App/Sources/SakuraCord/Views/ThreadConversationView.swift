@@ -234,7 +234,7 @@ private struct ThreadConversationFooter: View {
                 // Moderators who cannot send unlock from the thread's More menu.
                 if model.openThreadAccess.canSend {
                     ThreadStateBanner(
-                        title: isForumPost ? "Locked post" : "Locked thread",
+                        title: model.isOpenThreadForumPost ? "Locked post" : "Locked thread",
                         message: "Only moderators can send messages.",
                         systemImage: "lock.fill",
                         actionTitle: policy.canManage ? "Unlock" : nil,
@@ -244,7 +244,7 @@ private struct ThreadConversationFooter: View {
                 }
             } else if thread.isArchived {
                 ThreadStateBanner(
-                    title: isForumPost ? "Closed post" : "Archived thread",
+                    title: model.isOpenThreadForumPost ? "Closed post" : "Archived thread",
                     message: "Sending a reply will reopen it.",
                     systemImage: "archivebox.fill",
                     actionTitle: policy.canChangeArchive ? "Reopen" : nil,
@@ -263,10 +263,6 @@ private struct ThreadConversationFooter: View {
         } action: { height in
             footerHeightChanged(height)
         }
-    }
-
-    private var isForumPost: Bool {
-        model.openThreadParentChannel?.kind == .forum
     }
 
     private var policy: ThreadActionPolicy {
@@ -296,7 +292,7 @@ private struct ThreadConversationComposer: View {
                 appearance: model.appearanceSettings.composerBarAppearance,
                 checkingMessage: "Checking thread permissions…",
                 readOnlyMessage: thread.isLocked
-                    ? "This \(model.openThreadParentChannel?.kind == .forum ? "post" : "thread") is locked."
+                    ? "This \(model.isOpenThreadForumPost ? "post" : "thread") is locked."
                     : "You do not have permission to send messages in this channel."
             ) {
                 ComposerView(
@@ -576,7 +572,7 @@ private struct ThreadMessageTimelineView: View {
             title: thread.name,
             starterName: threadStarterName,
             startedAt: model.openThreadStartedAt,
-            isForumPost: model.openThreadParentChannel?.kind == .forum
+            isForumPost: model.isOpenThreadForumPost
         )
     }
 
@@ -624,7 +620,7 @@ private struct ThreadMessageTimelineView: View {
     }
 
     private var unreadPresentation: TimelineUnreadPresentation {
-        let isForumPost = model.openThreadParentChannel?.kind == .forum
+        let isForumPost = model.isOpenThreadForumPost
         return TimelineUnreadPresentation(
             model: model,
             conversationID: model.openThread?.id,

@@ -20,6 +20,10 @@ extension AppModel {
             ?? visibleChannels.first { $0.id == parentID }
     }
 
+    var isOpenThreadForumPost: Bool {
+        openThreadParentChannel?.kind == .forum
+    }
+
     var openThreadAccess: ConversationAccess {
         guard let thread = openThread else { return .checking }
         switch openThreadResolution {
