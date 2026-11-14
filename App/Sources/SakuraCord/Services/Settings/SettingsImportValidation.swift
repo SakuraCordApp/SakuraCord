@@ -35,43 +35,38 @@ nonisolated enum SettingsImportValidation {
         }
     }
 
+    /// What each string setting accepts. Keyboard shortcuts are validated
+    /// as chords; any other string setting accepts any value.
+    private static let stringValidators: [SettingsControlID: @Sendable (String) -> Bool] = [
+        .translationMessageLanguage: { TranslationLanguages.validPreference($0) },
+        .translationDraftLanguage: { TranslationLanguages.validPreference($0) },
+        .launchDestination: { SettingsLaunchDestination(rawValue: $0) != nil },
+        .appColorScheme: { AppColorScheme(rawValue: $0) != nil },
+        .composerBarAppearance: { ComposerBarAppearance(rawValue: $0) != nil },
+        .messageAppearance: { MessageAppearance(rawValue: $0) != nil },
+        .directMessageAppearance: { MessageAppearance(rawValue: $0) != nil },
+        .groupMessageAppearance: { MessageAppearance(rawValue: $0) != nil },
+        .timestampFormat: { InterfaceTimestampFormat(rawValue: $0) != nil },
+        .roleColorDisplay: { RoleColorDisplay(rawValue: $0) != nil },
+        .emojiSkinTone: { NativeEmojiSkinTone(rawValue: $0) != nil },
+        .notificationPreview: { NotificationPreviewStyle(rawValue: $0) != nil },
+        .notificationDockBadge: { NotificationDockBadgeStyle(rawValue: $0) != nil },
+        .voiceScreenShareQuality: { ScreenShareQuality(rawValue: $0) != nil },
+        .externalLinkProtection: { ExternalLinkConfirmationPolicy(rawValue: $0) != nil },
+        .updateReleaseTrack: { AppUpdateReleaseTrack(rawValue: $0) != nil },
+        .attachmentCompactionPrompt: { AttachmentHandlingPolicy(rawValue: $0) != nil },
+        .attachmentExternalUploadPrompt: { AttachmentHandlingPolicy(rawValue: $0) != nil },
+        .attachmentExternalProvider: { ExternalAttachmentHostingService(rawValue: $0) != nil },
+        .attachmentCompactionQuality: { AttachmentCompactionOptions.Quality(rawValue: $0) != nil },
+        .themeDesigner: { SakuraCordGradientTheme(storageValue: $0) != nil },
+        .composerIcons: { (try? JSONDecoder().decode(ComposerIconLayout.self, from: Data($0.utf8))) != nil },
+    ]
+
     private static func acceptsString(_ raw: String, id: SettingsControlID) -> Bool {
-        switch id {
-        case .translationMessageLanguage, .translationDraftLanguage: return TranslationLanguages.validPreference(raw)
-        case .launchDestination: return SettingsLaunchDestination(rawValue: raw) != nil
-        case .appColorScheme: return AppColorScheme(rawValue: raw) != nil
-        case .composerBarAppearance: return ComposerBarAppearance(rawValue: raw) != nil
-        case .messageAppearance, .directMessageAppearance, .groupMessageAppearance: return MessageAppearance(rawValue: raw) != nil
-        case .timestampFormat: return InterfaceTimestampFormat(rawValue: raw) != nil
-        case .roleColorDisplay: return RoleColorDisplay(rawValue: raw) != nil
-        case .emojiSkinTone: return NativeEmojiSkinTone(rawValue: raw) != nil
-        case .notificationPreview: return NotificationPreviewStyle(rawValue: raw) != nil
-        case .notificationDockBadge: return NotificationDockBadgeStyle(rawValue: raw) != nil
-        case .voiceScreenShareQuality: return ScreenShareQuality(rawValue: raw) != nil
-        case .externalLinkProtection: return ExternalLinkConfirmationPolicy(rawValue: raw) != nil
-        case .updateReleaseTrack: return AppUpdateReleaseTrack(rawValue: raw) != nil
-        default: return acceptsAttachmentString(raw, id: id)
-        }
-    }
-
-    private static func acceptsAttachmentString(_ raw: String, id: SettingsControlID) -> Bool {
-        switch id {
-        case .attachmentCompactionPrompt, .attachmentExternalUploadPrompt: return AttachmentHandlingPolicy(rawValue: raw) != nil
-        case .attachmentExternalProvider: return ExternalAttachmentHostingService(rawValue: raw) != nil
-        case .attachmentCompactionQuality: return AttachmentCompactionOptions.Quality(rawValue: raw) != nil
-        default: return acceptsStructuredString(raw, id: id)
-        }
-    }
-
-    private static func acceptsStructuredString(_ raw: String, id: SettingsControlID) -> Bool {
-        switch id {
-        case .themeDesigner: return SakuraCordGradientTheme(storageValue: raw) != nil
-        case .composerIcons: return (try? JSONDecoder().decode(ComposerIconLayout.self, from: Data(raw.utf8))) != nil
-        default:
-            guard let action = KeyboardShortcutAction.allCases.first(where: { $0.controlID == id }) else { return true }
-            if raw.isEmpty { return true }
-            guard let chord = KeyboardShortcutChord(storageValue: raw), chord.modifiers.rawValue < 16 else { return false }
-            return KeyboardShortcutPolicy.validate(chord, for: action, shortcuts: [:]) == .valid
-        }
+        if let validate = stringValidators[id] { return validate(raw) }
+        guard let action = KeyboardShortcutAction.allCases.first(where: { $0.controlID == id }) else { return true }
+        if raw.isEmpty { return true }
+        guard let chord = KeyboardShortcutChord(storageValue: raw), chord.modifiers.rawValue < 16 else { return false }
+        return KeyboardShortcutPolicy.validate(chord, for: action, shortcuts: [:]) == .valid
     }
 }
