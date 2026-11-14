@@ -375,7 +375,7 @@ final class ApplicationCommandComposerModel {
 
     func presentPicker(query: String = "") {
         guard draft == nil else { return }
-        isPickerPresented = true
+        if !isPickerPresented { isPickerPresented = true }
         updatePickerQuery(query)
     }
 
@@ -649,6 +649,16 @@ final class ApplicationCommandComposerModel {
     func resetSuggestions() {
         suggestionIndex = nil
         areSuggestionsDismissed = false
+    }
+
+    /// Applies a chosen suggestion; choosing a file is left to the composer's importer.
+    func accept(_ suggestion: ApplicationCommandSuggestion) {
+        switch suggestion.action {
+        case let .value(value, display): resolveFocusedField(value, display: display)
+        case .chooseAttachment: break
+        case let .addOption(option): addOption(option)
+        }
+        resetSuggestions()
     }
 
     // MARK: Attachments

@@ -906,11 +906,7 @@ struct ComposerView: View {
             activateCommand(command)
             return
         }
-        if !commandComposer.isPickerPresented {
-            commandComposer.presentPicker(query: context.query)
-        } else {
-            commandComposer.updatePickerQuery(context.query)
-        }
+        commandComposer.presentPicker(query: context.query)
         if shouldLoad {
             model.loadApplicationCommands(in: conversation)
         }
@@ -974,16 +970,10 @@ struct ComposerView: View {
     }
 
     private func acceptCommandSuggestion(_ suggestion: ApplicationCommandSuggestion) {
-        let composer = commandComposer
-        switch suggestion.action {
-        case let .value(value, display):
-            composer.resolveFocusedField(value, display: display)
-        case .chooseAttachment:
+        if case .chooseAttachment = suggestion.action {
             showFileImporter = true
-        case let .addOption(option):
-            composer.addOption(option)
         }
-        composer.resetSuggestions()
+        commandComposer.accept(suggestion)
         isFocused = true
     }
 
@@ -1001,10 +991,16 @@ struct ComposerView: View {
             return handleGameMention(command, context: context)
         }
         if let context = mentionAutocompleteContext, !mentionAutocompleteSuggestions.isEmpty {
-            return handleMentionAutocomplete(command, context: context)
+            let suggestions = mentionAutocompleteSuggestions
+            return routeSuggestionList(command, count: suggestions.count) {
+                acceptMentionAutocomplete(suggestions[$0], context: context)
+            }
         }
         guard let context = autocompleteContext, !autocompleteSuggestions.isEmpty else { return false }
-        return handleColonAutocomplete(command, context: context)
+        let suggestions = autocompleteSuggestions
+        return routeSuggestionList(command, count: suggestions.count) {
+            acceptAutocomplete(suggestions[$0], context: context)
+        }
     }
 
     /// Keys while a command is active: the panel takes navigation and
@@ -1062,28 +1058,14 @@ struct ComposerView: View {
         return true
     }
 
-    private func handleMentionAutocomplete(
+    /// Keys for the mention and emoji lists.
+    private func routeSuggestionList(
         _ command: ComposerAutocompleteCommand,
-        context: MentionAutocompleteContext
+        count: Int,
+        accept: (Int) -> Void
     ) -> Bool {
         if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        let suggestions = mentionAutocompleteSuggestions
-        return command.route(&autocompleteIndex, count: suggestions.count) {
-            acceptMentionAutocomplete(suggestions[$0], context: context)
-        } dismiss: {
-            isAutocompleteDismissed = true
-        }
-    }
-
-    private func handleColonAutocomplete(
-        _ command: ComposerAutocompleteCommand,
-        context: ColonAutocompleteContext
-    ) -> Bool {
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        let suggestions = autocompleteSuggestions
-        return command.route(&autocompleteIndex, count: suggestions.count) {
-            acceptAutocomplete(suggestions[$0], context: context)
-        } dismiss: {
+        return command.route(&autocompleteIndex, count: count, accept: accept) {
             isAutocompleteDismissed = true
         }
     }
