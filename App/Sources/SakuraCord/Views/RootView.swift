@@ -1198,8 +1198,7 @@ private struct ChatRootView: View {
     private func sideConversationToolbar(_ conversation: SideConversation) -> some ToolbarContent {
         let label = model.sideConversationLabel(conversation)
         let capabilities = conversation.capabilities
-        let showsAddToChannelList = capabilities.canAddToChannelList
-            && model.customizationPreviewChannel.map { !model.isChannelSelected($0) } == true
+        let showsAddToChannelList = SideConversationAddToChannelListButton.isOffered(model: model, capabilities: capabilities)
         let paneThread = conversation.isThread ? model.openThread : nil
         let showsFollow = paneThread.map { ForumPostFollowToolbarButton.isOffered(model: model, thread: $0) } ?? false
         let actionCount = 1 + (showsAddToChannelList ? 1 : 0) + (paneThread != nil ? 1 : 0) + (showsFollow ? 1 : 0)
@@ -1227,11 +1226,7 @@ private struct ChatRootView: View {
 
         if showsAddToChannelList, let channel = model.customizationPreviewChannel, let guildID = channel.guildID {
             ToolbarItem(id: "side-conversation-add") {
-                Button("Add to Channel List", systemImage: "plus") {
-                    model.setChannelSelected(true, channelID: channel.id, guildID: guildID)
-                }
-                .labelStyle(.iconOnly)
-                .help("Add to Channel List")
+                SideConversationAddToChannelListButton(model: model, channel: channel, guildID: guildID)
             }
             .visibilityPriority(.high)
         }
@@ -1248,14 +1243,7 @@ private struct ChatRootView: View {
         }
 
         ToolbarItem(id: "side-conversation-close") {
-            Button {
-                model.closeSideConversation()
-            } label: {
-                Label("Close conversation", systemImage: "xmark")
-                    .labelStyle(.iconOnly)
-            }
-            .help(capabilities.closeHelp)
-            .keyboardShortcut(model.guildWorkspacePage == .guide ? .cancelAction : nil)
+            SideConversationCloseButton(model: model, capabilities: capabilities)
         }
         .visibilityPriority(.high)
     }

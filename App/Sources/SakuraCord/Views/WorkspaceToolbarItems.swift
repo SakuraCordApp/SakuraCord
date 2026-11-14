@@ -220,13 +220,10 @@ struct SideConversationToolbarActions: View {
         let capabilities = conversation.capabilities
         // One group, as the toolbar draws adjacent items: on one capsule.
         HStack(spacing: 0) {
-            if capabilities.canAddToChannelList, let channel = model.customizationPreviewChannel,
-               !model.isChannelSelected(channel), let guildID = channel.guildID
+            if SideConversationAddToChannelListButton.isOffered(model: model, capabilities: capabilities),
+               let channel = model.customizationPreviewChannel, let guildID = channel.guildID
             {
-                Button("Add to Channel List", systemImage: "plus") {
-                    model.setChannelSelected(true, channelID: channel.id, guildID: guildID)
-                }
-                .help("Add to Channel List")
+                SideConversationAddToChannelListButton(model: model, channel: channel, guildID: guildID)
             }
             if case .thread(let thread, _) = conversation {
                 if ForumPostFollowToolbarButton.isOffered(model: model, thread: thread) {
@@ -234,16 +231,48 @@ struct SideConversationToolbarActions: View {
                 }
                 ThreadActionsToolbarMenu(model: model, thread: thread, surface: .sidePane)
             }
-            Button {
-                model.closeSideConversation()
-            } label: {
-                Label("Close conversation", systemImage: "xmark")
-            }
-            .help(capabilities.closeHelp)
-            .keyboardShortcut(model.guildWorkspacePage == .guide ? .cancelAction : nil)
+            SideConversationCloseButton(model: model, capabilities: capabilities)
         }
         .titlebarButtons(grouped: true)
         .glassEffect(.regular.interactive(), in: Capsule())
+    }
+}
+
+/// Adds the channel a side chat previews to the server's channel list.
+struct SideConversationAddToChannelListButton: View {
+    let model: AppModel
+    let channel: Channel
+    let guildID: GuildID
+
+    /// Offered while the previewed channel isn't in the channel list yet.
+    static func isOffered(model: AppModel, capabilities: SideConversationCapabilities) -> Bool {
+        capabilities.canAddToChannelList
+            && model.customizationPreviewChannel.map { !model.isChannelSelected($0) } == true
+    }
+
+    var body: some View {
+        Button("Add to Channel List", systemImage: "plus") {
+            model.setChannelSelected(true, channelID: channel.id, guildID: guildID)
+        }
+        .labelStyle(.iconOnly)
+        .help("Add to Channel List")
+    }
+}
+
+/// Closes the side chat; Escape closes it over a server guide.
+struct SideConversationCloseButton: View {
+    let model: AppModel
+    let capabilities: SideConversationCapabilities
+
+    var body: some View {
+        Button {
+            model.closeSideConversation()
+        } label: {
+            Label("Close conversation", systemImage: "xmark")
+                .labelStyle(.iconOnly)
+        }
+        .help(capabilities.closeHelp)
+        .keyboardShortcut(model.guildWorkspacePage == .guide ? .cancelAction : nil)
     }
 }
 
