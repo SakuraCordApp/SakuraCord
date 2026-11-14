@@ -266,7 +266,7 @@ extension DiscordRESTProvider {
                 $0.id == everyone.id || roleIDs.contains($0.id)
             }.reduce(0) { $0 | ($1.permissions.flatMap(UInt64.init) ?? 0) }
         }
-        if permissions & (1 << 3) != 0 { return true }
+        if permissions & DiscordPermissionBits.administrator != 0 { return true }
         let overwrites = channel.permissionOverwrites ?? []
         if member == nil, overwrites.contains(where: {
             $0.type == 0 && $0.id != guildID.description
@@ -285,7 +285,7 @@ extension DiscordRESTProvider {
             value &= ~group.reduce(0) { $0 | $1.deny }
             value |= group.reduce(0) { $0 | $1.allow }
         }
-        return value & (1 << 10) != 0
+        return value & DiscordPermissionBits.viewChannel != 0
     }
 
     @discardableResult

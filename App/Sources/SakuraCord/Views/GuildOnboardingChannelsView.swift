@@ -66,7 +66,7 @@ private struct BrowseChannelRow: View {
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(5)) {
                     Label(channel.name, systemImage: ChannelIconPresentation.systemImage(
                         for: channel,
-                        isHidden: channel.permissionOverwrites?.contains { $0.id == channel.guildID?.description && $0.deny & (1 << 10) != 0 } == true,
+                        isHidden: channel.permissionOverwrites?.contains { $0.id == channel.guildID?.description && $0.deny & DiscordPermissionBits.viewChannel != 0 } == true,
                         rulesChannelID: nil
                     ))
                     .font(.interface(.body).weight(.medium))

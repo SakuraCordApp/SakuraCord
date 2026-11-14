@@ -2,10 +2,13 @@
 /// the documented `permissions` bit positions.
 public enum DiscordPermissionBits {
     public static let createInstantInvite: UInt64 = 1 << 0
+    public static let kickMembers: UInt64 = 1 << 1
+    public static let banMembers: UInt64 = 1 << 2
     public static let administrator: UInt64 = 1 << 3
     public static let addReactions: UInt64 = 1 << 6
     public static let viewChannel: UInt64 = 1 << 10
     public static let sendMessages: UInt64 = 1 << 11
+    public static let sendTTSMessages: UInt64 = 1 << 12
     public static let manageMessages: UInt64 = 1 << 13
     public static let embedLinks: UInt64 = 1 << 14
     public static let attachFiles: UInt64 = 1 << 15
@@ -21,9 +24,11 @@ public enum DiscordPermissionBits {
     public static let useExternalStickers: UInt64 = 1 << 37
     public static let sendMessagesInThreads: UInt64 = 1 << 38
     public static let useEmbeddedActivities: UInt64 = 1 << 39
+    public static let moderateMembers: UInt64 = 1 << 40
     public static let useSoundboard: UInt64 = 1 << 42
     public static let sendVoiceMessages: UInt64 = 1 << 46
     public static let useExternalSounds: UInt64 = 1 << 45
+    public static let sendPolls: UInt64 = 1 << 49
     public static let pinMessages: UInt64 = 1 << 51
     public static let bypassSlowmode: UInt64 = 1 << 52
 }

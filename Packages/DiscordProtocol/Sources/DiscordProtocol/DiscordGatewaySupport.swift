@@ -252,22 +252,20 @@ struct DiscordMemberListSubscription: Equatable {
 }
 
 enum DiscordMemberListIdentity {
-    private static let viewChannel: UInt64 = 1 << 10
-
     static func id(for channel: Channel, guildID: GuildID, roles: [GuildRoleDTO]) -> String {
         if let memberListID = channel.memberListID, !memberListID.isEmpty {
             return memberListID
         }
         let everyonePermissions = roles.first(where: { $0.id == guildID.description })
             .flatMap(\.permissions).flatMap(UInt64.init) ?? 0
-        let everyoneCanView = everyonePermissions & viewChannel != 0
+        let everyoneCanView = everyonePermissions & DiscordPermissionBits.viewChannel != 0
         let overwrites = channel.permissionOverwrites ?? []
-        if everyoneCanView, !overwrites.contains(where: { $0.deny & viewChannel != 0 }) {
+        if everyoneCanView, !overwrites.contains(where: { $0.deny & DiscordPermissionBits.viewChannel != 0 }) {
             return "everyone"
         }
         let permissionShape = overwrites.compactMap { overwrite -> String? in
-            if overwrite.allow & viewChannel != 0 { return "allow:\(overwrite.id)" }
-            if overwrite.deny & viewChannel != 0 { return "deny:\(overwrite.id)" }
+            if overwrite.allow & DiscordPermissionBits.viewChannel != 0 { return "allow:\(overwrite.id)" }
+            if overwrite.deny & DiscordPermissionBits.viewChannel != 0 { return "deny:\(overwrite.id)" }
             return nil
         }.sorted().joined(separator: ",")
         return String(murmurHash3(permissionShape.utf8))
