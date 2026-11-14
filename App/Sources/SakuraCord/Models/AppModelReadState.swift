@@ -522,7 +522,6 @@ extension AppModel {
         channelPinMutationTasks.removeAll()
         channelPinMutationStates.removeAll()
         optimisticChannelPinnedByID.removeAll()
-        forumNotificationMutationGeneration &+= 1
         forumNotificationMutationTasks.values.forEach { $0.cancel() }
         forumNotificationMutationTasks.removeAll()
     }
@@ -580,15 +579,14 @@ extension AppModel {
         for guild: Guild
     ) {
         let guildID = guild.id
-        guard !isNotificationMutationPending(.guild(guildID)) else { return }
-        runNotificationMutation(.guild(guildID), failureMessage: "Discord did not accept the server notification setting.") {
+        let started = runNotificationMutation(.guild(guildID), failureMessage: "Discord did not accept the server notification setting.") {
             try await $0.updateGuildNotificationLevel(guildID: guildID, level: level)
         } apply: { model in
             model.updateLocalGuildNotificationSettings(guild: guild) { $0.messageNotifications = level }
         } finish: { model in
             model.refreshServerRailPresentation(guildID: guildID)
         }
-        refreshServerRailPresentation(guildID: guildID)
+        if started { refreshServerRailPresentation(guildID: guildID) }
     }
 
     func setGuildMute(
@@ -597,15 +595,14 @@ extension AppModel {
         for guild: Guild
     ) {
         let guildID = guild.id
-        guard !isNotificationMutationPending(.guild(guildID)) else { return }
-        runNotificationMutation(.guild(guildID), failureMessage: "Discord did not accept the server mute setting.") {
+        let started = runNotificationMutation(.guild(guildID), failureMessage: "Discord did not accept the server mute setting.") {
             try await $0.updateGuildMute(guildID: guildID, isMuted: isMuted, until: until)
         } apply: { model in
             model.updateLocalGuildNotificationSettings(guild: guild) { $0.setMuted(isMuted, until: until) }
         } finish: { model in
             model.refreshServerRailPresentation(guildID: guildID)
         }
-        refreshServerRailPresentation(guildID: guildID)
+        if started { refreshServerRailPresentation(guildID: guildID) }
     }
 
     func setGuildNotificationToggle(
@@ -614,9 +611,8 @@ extension AppModel {
         for guild: Guild
     ) {
         let guildID = guild.id
-        guard !isNotificationMutationPending(.guild(guildID)) else { return }
         let settingsRevision = guildNotificationSettingsRevisions[guildID, default: 0]
-        runNotificationMutation(.guild(guildID), failureMessage: "Discord did not accept the server notification setting.") {
+        let started = runNotificationMutation(.guild(guildID), failureMessage: "Discord did not accept the server notification setting.") {
             try await $0.updateGuildNotificationToggle(guildID: guildID, toggle: toggle, isEnabled: isEnabled)
         } apply: { model in
             // A Gateway echo and a newer change from another client may
@@ -629,7 +625,7 @@ extension AppModel {
         } finish: { model in
             model.refreshServerRailPresentation(guildID: guildID)
         }
-        refreshServerRailPresentation(guildID: guildID)
+        if started { refreshServerRailPresentation(guildID: guildID) }
     }
 
     func setChannelNotificationLevel(
@@ -638,7 +634,6 @@ extension AppModel {
     ) {
         let guildID = channel.guildID
         let channelID = channel.id
-        guard !isNotificationMutationPending(.channel(channelID)) else { return }
         runNotificationMutation(.channel(channelID), failureMessage: "Discord did not accept the channel notification setting.") {
             try await $0.updateChannelNotificationLevel(guildID: guildID, channelID: channelID, level: level)
         } apply: { model in
@@ -653,7 +648,6 @@ extension AppModel {
     ) {
         let guildID = channel.guildID
         let channelID = channel.id
-        guard !isNotificationMutationPending(.channel(channelID)) else { return }
         runNotificationMutation(.channel(channelID), failureMessage: "Discord did not accept the channel mute setting.") {
             try await $0.updateChannelMute(guildID: guildID, channelID: channelID, isMuted: isMuted, until: until)
         } apply: { model in
@@ -666,7 +660,6 @@ extension AppModel {
         guildID: GuildID,
         categoryID: ChannelID
     ) {
-        guard !isNotificationMutationPending(.channel(categoryID)) else { return }
         runNotificationMutation(.channel(categoryID), failureMessage: "Discord did not accept the category notification setting.") {
             try await $0.updateCategoryNotificationLevel(guildID: guildID, categoryID: categoryID, level: level)
         } apply: { model in
@@ -682,7 +675,6 @@ extension AppModel {
         guildID: GuildID,
         categoryID: ChannelID
     ) {
-        guard !isNotificationMutationPending(.channel(categoryID)) else { return }
         runNotificationMutation(.channel(categoryID), failureMessage: "Discord did not accept the category mute setting.") {
             try await $0.updateCategoryMute(guildID: guildID, categoryID: categoryID, isMuted: isMuted, until: until)
         } apply: { model in
@@ -700,50 +692,47 @@ extension AppModel {
         }
     }
 
-    /// Sends one notification change in `slot`. `apply` updates local state
-    /// once Discord accepts it, and a failure shows `failureMessage`. Either
-    /// way the slot frees and `finish` runs, unless the account changed or
-    /// the slot's mutations were reset meanwhile.
+    /// Sends one notification change in `slot`, or returns false while the
+    /// slot already holds one. `apply` updates local state once Discord
+    /// accepts it, and a failure shows `failureMessage`. Either way the slot
+    /// frees and `finish` runs, unless the account changed or notification
+    /// mutations were reset meanwhile.
+    @discardableResult
     func runNotificationMutation(
         _ slot: NotificationMutationSlot,
         failureMessage: String,
         send: @escaping (any ChatProvider) async throws -> Void,
         apply: @escaping (AppModel) -> Void,
         finish: @escaping (AppModel) -> Void = { _ in }
-    ) {
-        let generation = notificationMutationGeneration(for: slot)
+    ) -> Bool {
+        guard !isNotificationMutationPending(slot) else { return false }
+        let generation = channelNotificationMutationGeneration
         let session = accountSession()
         let activeProvider = session.provider
         let task = Task { [weak self] in
             do {
                 try await send(activeProvider)
-                guard let self, self.isCurrentNotificationMutation(slot, generation: generation, session: session)
+                guard let self, self.isCurrentNotificationMutation(generation: generation, session: session)
                 else { return }
                 apply(self)
             } catch is CancellationError {
                 return
             } catch {
-                guard let self, self.isCurrentNotificationMutation(slot, generation: generation, session: session)
+                guard let self, self.isCurrentNotificationMutation(generation: generation, session: session)
                 else { return }
                 self.errorMessage = failureMessage
             }
-            guard let self, self.isCurrentNotificationMutation(slot, generation: generation, session: session)
+            guard let self, self.isCurrentNotificationMutation(generation: generation, session: session)
             else { return }
             self.setNotificationMutationTask(nil, for: slot)
             finish(self)
         }
         setNotificationMutationTask(task, for: slot)
+        return true
     }
 
-    private func notificationMutationGeneration(for slot: NotificationMutationSlot) -> Int {
-        if case .forumPost = slot { return forumNotificationMutationGeneration }
-        return channelNotificationMutationGeneration
-    }
-
-    private func isCurrentNotificationMutation(
-        _ slot: NotificationMutationSlot, generation: Int, session: AppModelAccountSession
-    ) -> Bool {
-        isCurrentAccountSession(session) && notificationMutationGeneration(for: slot) == generation
+    private func isCurrentNotificationMutation(generation: Int, session: AppModelAccountSession) -> Bool {
+        isCurrentAccountSession(session) && channelNotificationMutationGeneration == generation
     }
 
     private func setNotificationMutationTask(_ task: Task<Void, Never>?, for slot: NotificationMutationSlot) {

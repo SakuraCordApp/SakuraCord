@@ -1066,7 +1066,6 @@ final class AppModel {
     @ObservationIgnored var channelNotificationMutationGeneration = 0
     @ObservationIgnored var forumNotificationMutationTasks:
         [ChannelID: Task<Void, Never>] = [:]
-    @ObservationIgnored var forumNotificationMutationGeneration = 0
     @ObservationIgnored var mainWindowIsActive = false
     @ObservationIgnored var applicationIsActive = false
     /// The Dock bounce requested for a call ringing in the background.
