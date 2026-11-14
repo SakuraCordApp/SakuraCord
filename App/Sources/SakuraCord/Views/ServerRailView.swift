@@ -417,12 +417,13 @@ private struct DirectMessageRailButton: View {
         let displayName = channel.name.isEmpty ? "Group Direct Message" : channel.name
 
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
+            ServerRailTileLabel {
                 ServerRailSelectionIndicator(
                     isSelected: entry.isSelected,
                     isHovering: isHovering,
                     hasNotification: true
                 )
+            } icon: {
                 ServerRailBadgedIcon(mentionCount: channel.mentionCount) {
                     DirectMessageAvatar(
                         channel: channel,
@@ -434,8 +435,6 @@ private struct DirectMessageRailButton: View {
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
                 }
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
         .accessibilityLabel(displayName)
@@ -481,16 +480,15 @@ private struct PendingApplicationsRailFolder: View {
                 // rail's implicit animation to the header.
                 withAnimation(reduceMotion ? nil : ServerRailAnimations.folderExpansion) { isExpanded.toggle() }
             } label: {
-                HStack(spacing: InterfaceScale.metric(4)) {
+                ServerRailTileLabel {
                     ServerRailSelectionIndicator(isSelected: !isExpanded && entries.contains(where: \.isSelected),
                                                  isHovering: isHovering && !isExpanded, hasNotification: false)
+                } icon: {
                     Image(systemName: "hourglass")
                         .font(.interfaceSystem(size: 19, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
                 }
-                .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-                .contentShape(Rectangle())
             }
             .buttonStyle(ServerRailButtonStyle())
             .accessibilityLabel("Pending Applications")
@@ -560,8 +558,9 @@ private struct JoinRequestRailButton: View {
     var body: some View {
         let label = "\(entry.name), \(entry.status.membershipDescription)"
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
+            ServerRailTileLabel {
                 ServerRailSelectionIndicator(isSelected: entry.isSelected, isHovering: isHovering, hasNotification: false)
+            } icon: {
                 GuildIconView(name: entry.name, iconURL: entry.iconURL, size: InterfaceScale.metric(44),
                               cornerRadius: InterfaceScale.metric(13), animates: isHovering, isSelected: entry.isSelected)
                     .saturation(0.4)
@@ -571,8 +570,6 @@ private struct JoinRequestRailButton: View {
                     .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: entry.status)
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
         .accessibilityLabel(label)
@@ -778,7 +775,7 @@ struct GuildRailButton: View {
         let hidesIndicator = isDragPreview || drag.draggedID == .guild(guild.id) || drag.flight?.id == .guild(guild.id)
 
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
+            ServerRailTileLabel {
                 ServerRailSelectionIndicator(
                     isSelected: isSelected,
                     isHovering: isHovering,
@@ -786,6 +783,7 @@ struct GuildRailButton: View {
                 )
                 .opacity(hidesIndicator || folderIndicatorsInOverlay ? 0 : 1)
                 .animation(.easeOut(duration: 0.12), value: hidesIndicator)
+            } icon: {
                 ServerRailBadgedIcon(mentionCount: guild.mentionCount) {
                     GuildIconView(
                         name: displayName,
@@ -807,8 +805,6 @@ struct GuildRailButton: View {
                 }
                 .contentShape(Rectangle())
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
         .overlay {
@@ -1032,8 +1028,9 @@ struct ServerRailSymbolButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
+            ServerRailTileLabel(alignment: .leading) {
                 ServerRailSelectionIndicator(isSelected: isSelected, isHovering: isHovering, hasNotification: hasNotification)
+            } icon: {
                 ServerRailBadgedIcon(mentionCount: mentionCount) {
                     Image(systemName: systemImage)
                         .font(.interface(.title2))
@@ -1046,8 +1043,6 @@ struct ServerRailSymbolButton: View {
                         .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
                 }
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .leading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
         .accessibilityLabel(title)
@@ -1056,6 +1051,33 @@ struct ServerRailSymbolButton: View {
         }
         .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
+    }
+}
+
+/// A rail tile's selection indicator beside its icon, filling the rail's
+/// width at the tile's height.
+struct ServerRailTileLabel<Indicator: View, Icon: View>: View {
+    let alignment: Alignment
+    let indicator: Indicator
+    let icon: Icon
+
+    init(
+        alignment: Alignment = .topLeading,
+        @ViewBuilder indicator: () -> Indicator,
+        @ViewBuilder icon: () -> Icon
+    ) {
+        self.alignment = alignment
+        self.indicator = indicator()
+        self.icon = icon()
+    }
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(4)) {
+            indicator
+            icon
+        }
+        .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: alignment)
+        .contentShape(Rectangle())
     }
 }
 
