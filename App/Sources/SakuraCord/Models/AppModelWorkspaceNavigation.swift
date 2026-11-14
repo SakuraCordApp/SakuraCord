@@ -185,14 +185,18 @@ extension AppModel {
     /// field in place beside a thread pane, where it fades out instead of
     /// leaving the toolbar.
     var keepsMessageSearchFieldInPlace: Bool {
-        sessionState == .workspace && onboardingEntryGuildID == nil
-            && guildWorkspacePage == nil && !isFriendsPresented
+        sessionState == .workspace && showsConversationWorkspace
             && MessageSearchSurfacePolicy.showsToolbar(channelKind: selectedChannel?.kind, hasOpenThread: false)
     }
 
     var isMessageSearchVisible: Bool {
-        messageSearch.isPresented && canShowMessageSearch
-            && !isFriendsPresented && onboardingEntryGuildID == nil && guildWorkspacePage == nil
+        messageSearch.isPresented && canShowMessageSearch && showsConversationWorkspace
+    }
+
+    /// Neither server onboarding, a server page nor Friends takes the
+    /// conversation's place.
+    var showsConversationWorkspace: Bool {
+        onboardingEntryGuildID == nil && guildWorkspacePage == nil && !isFriendsPresented
     }
 
     func presentMessageSearch() {

@@ -678,9 +678,7 @@ private struct ChatRootView: View {
     /// A conversation and the side chats beside it own their toolbar items
     /// (`WorkspaceTitlebar`), which move with their columns.
     private var usesWorkspaceTitlebar: Bool {
-        guard !model.isSwitchingAccounts, model.onboardingEntryGuildID == nil,
-              model.guildWorkspacePage == nil, !model.isFriendsPresented
-        else { return false }
+        guard !model.isSwitchingAccounts, model.showsConversationWorkspace else { return false }
         return switch model.workspacePresentation.primary {
         case .channel, .fullWidthThread: true
         case .guildPage, .friends: false
@@ -1215,7 +1213,7 @@ private struct ChatRootView: View {
 
     private var showsMemberInspectorToolbarItem: Bool {
         model.isSwitchingAccounts
-            || (model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil && !model.isFriendsPresented
+            || (model.showsConversationWorkspace
                 && model.workspacePresentation.paneSideConversation == nil && selectedVoiceChannel == nil)
     }
 

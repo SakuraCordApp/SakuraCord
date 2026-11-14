@@ -48,8 +48,7 @@ extension AppModel {
     /// The toolbar offers the Inbox beside text conversations only; voice
     /// channels, Friends, server pages and onboarding have none to open from.
     var isInboxAvailable: Bool {
-        !isSwitchingAccounts && onboardingEntryGuildID == nil && guildWorkspacePage == nil
-            && !isFriendsPresented && selectedChannel?.kind != .voice
+        !isSwitchingAccounts && showsConversationWorkspace && selectedChannel?.kind != .voice
     }
 
     /// Opens the Inbox on its Scheduled tab, as the official limit alert's Manage Messages does.
