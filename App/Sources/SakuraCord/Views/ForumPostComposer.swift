@@ -34,7 +34,7 @@ private enum ForumPostProblem: Equatable {
     var message: LocalizedStringResource {
         switch self {
         case .missingTitle: "Give your post a title."
-        case .titleTooLong: "Titles can be up to 100 characters."
+        case .titleTooLong: "Titles can be up to \(ThreadNamePolicy.maximumLength) characters."
         case .missingContent: "Write something or attach a file."
         case .contentTooLong: "Your post is too long."
         case .missingTag: "This forum needs a tag on every post."
@@ -70,11 +70,6 @@ struct ForumPostComposer: View {
     /// Forum posts keep the standard limit, which the provider enforces for
     /// every account.
     private static let limitPremiumType: Int? = nil
-
-    init(model: AppModel, channel: Channel) {
-        self.model = model
-        self.channel = channel
-    }
 
     /// A field's shake count, held still while motion is reduced.
     private func shakeTrigger(_ field: ForumPostField) -> Int {
@@ -403,7 +398,7 @@ private extension ForumPostComposer {
                     content: draft.content,
                     attachments: attachments,
                     appliedTagIDs: appliedTagIDs,
-                    autoArchiveDuration: channel.defaultAutoArchiveDuration ?? 4_320
+                    autoArchiveDuration: channel.defaultAutoArchiveDuration ?? Channel.defaultThreadAutoArchiveDuration
                 )
             )
             // Cleared even if the composer closed meanwhile.

@@ -402,22 +402,22 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
 
 @Test func `forum posts begin at newest so opening them clears unread replies`() {
     #expect(
-        ThreadTimelinePresentationPolicy.initialScrollTarget(
+        ThreadTimelinePresentationPolicy.opensAtNewest(
             isForumPost: true,
             hasUnreadReplies: true
-        ) == .newest
+        )
     )
     #expect(
-        ThreadTimelinePresentationPolicy.initialScrollTarget(
+        !ThreadTimelinePresentationPolicy.opensAtNewest(
             isForumPost: false,
             hasUnreadReplies: true
-        ) == .firstUnread
+        )
     )
     #expect(
-        ThreadTimelinePresentationPolicy.initialScrollTarget(
+        ThreadTimelinePresentationPolicy.opensAtNewest(
             isForumPost: false,
             hasUnreadReplies: false
-        ) == .newest
+        )
     )
 }
 

@@ -1,17 +1,11 @@
 import SakuraCordModels
 import SwiftUI
 
-nonisolated enum ThreadInitialScrollTarget: Equatable {
-    case firstUnread
-    case newest
-}
-
 nonisolated enum ThreadTimelinePresentationPolicy {
-    static func initialScrollTarget(
-        isForumPost: Bool,
-        hasUnreadReplies: Bool
-    ) -> ThreadInitialScrollTarget {
-        isForumPost || !hasUnreadReplies ? .newest : .firstUnread
+    /// A thread opens at its newest reply unless it has unread replies; a
+    /// forum post always does, which reads it.
+    static func opensAtNewest(isForumPost: Bool, hasUnreadReplies: Bool) -> Bool {
+        isForumPost || !hasUnreadReplies
     }
 }
 
@@ -630,10 +624,7 @@ private struct ThreadMessageTimelineView: View {
             hasCompletedInitialLoad: model.hasCompletedInitialThreadLoad,
             showsSummary: !model.hasMoreLaterThreadMessages,
             prefersNewest: { hasUnread in
-                ThreadTimelinePresentationPolicy.initialScrollTarget(
-                    isForumPost: isForumPost,
-                    hasUnreadReplies: hasUnread
-                ) == .newest
+                ThreadTimelinePresentationPolicy.opensAtNewest(isForumPost: isForumPost, hasUnreadReplies: hasUnread)
             }
         )
     }

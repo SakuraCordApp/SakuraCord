@@ -38,7 +38,7 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
             let row = bridge.row
             let actions = ThreadActionsMenu(
                 model: bridge.model,
-                thread: bridge.model.sidebarThread(row.id) ?? row.thread,
+                thread: row.thread,
                 surface: .channelList,
                 isUnread: row.isUnread || row.mentionCount > 0
             )

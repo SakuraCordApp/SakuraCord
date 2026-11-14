@@ -84,7 +84,7 @@ func `selectable spoiler fragments preserve separate masked identities`(width: C
         mentionPresentations: [:], fontSize: 24, emojiSize: 27, maximumNumberOfLines: 8,
         isEmphasized: false, underlinesLinks: false, prefix: nil), revealStore: store)
     preview.frame = CGRect(origin: .zero, size: preview.measuredSize(proposedWidth: 140))
-    let ranges = NativeTimelineTextSpoilers.ranges(in: preview.content)
+    let ranges = NativeTimelineTextSpoilers.ranges(in: preview.contentForTesting)
     let frames = ranges.flatMap { preview.hiddenSpoilerFrames(for: $0) }
     #expect(frames.count >= ranges.count)
     for (index, frame) in frames.enumerated() {

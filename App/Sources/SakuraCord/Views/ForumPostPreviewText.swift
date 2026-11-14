@@ -12,7 +12,6 @@ struct ForumPostPreviewText: NSViewRepresentable {
     let maximumNumberOfLines: Int
     let isEmphasized: Bool
     var textStyle: NSFont.TextStyle = .body
-    var prefix: ForumPostPreviewTextRenderer.Prefix?
 
     func makeNSView(context _: Context) -> ForumPostPreviewTextView {
         ForumPostPreviewTextView()
@@ -27,7 +26,7 @@ struct ForumPostPreviewText: NSViewRepresentable {
                 maximumNumberOfLines: maximumNumberOfLines,
                 isEmphasized: isEmphasized,
                 underlinesLinks: model.accessibilitySettings.underlinesLinks,
-                prefix: prefix
+                prefix: nil
             ),
             revealStore: model.timelineSpoilerRevealStore
         )
@@ -455,7 +454,9 @@ final class ForumPostPreviewTextView: NSView {
     private let renderer = ForumPostPreviewTextRenderer()
     private var hoverTrackingArea: NSTrackingArea?
 
-    var content: NSAttributedString { renderer.content }
+    #if DEBUG
+        var contentForTesting: NSAttributedString { renderer.content }
+    #endif
 
     override var isFlipped: Bool { true }
 

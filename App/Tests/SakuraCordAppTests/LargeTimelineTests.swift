@@ -1073,7 +1073,7 @@ func `forum previews conceal hidden spoilers and share their reveal with the tim
 
     #expect(preview.accessibilityValue() as? String == "Ada: before Spoiler after")
     let spoiler = try #require(
-        NativeTimelineTextSpoilers.ranges(in: preview.content).first
+        NativeTimelineTextSpoilers.ranges(in: preview.contentForTesting).first
     )
     let spoilerFrame = try #require(preview.hiddenSpoilerFrames(for: spoiler).first)
     let spoilerPoint = CGPoint(x: spoilerFrame.midX, y: spoilerFrame.midY)
