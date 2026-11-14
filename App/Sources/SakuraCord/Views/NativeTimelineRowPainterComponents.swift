@@ -1348,6 +1348,19 @@ extension NativeTimelineRowPainter {
             ?? NativeTimelineMediaStore.shared.image(for: key)
     }
 
+    /// Where an image of `size` lands when it fills or fits `frame`, centred.
+    nonisolated static func aspectRect(for size: CGSize, in frame: CGRect, fillsFrame: Bool) -> CGRect {
+        let scale = fillsFrame
+            ? max(frame.width / size.width, frame.height / size.height)
+            : min(frame.width / size.width, frame.height / size.height)
+        return CGRect(
+            x: frame.midX - size.width * scale / 2,
+            y: frame.midY - size.height * scale / 2,
+            width: size.width * scale,
+            height: size.height * scale
+        )
+    }
+
     static func drawImage(
         _ image: NSImage,
         in frame: CGRect,
@@ -1357,15 +1370,7 @@ extension NativeTimelineRowPainter {
         guard frame.width > 0, frame.height > 0,
               image.size.width > 0, image.size.height > 0
         else { return }
-        let scale = fillsFrame
-            ? max(frame.width / image.size.width, frame.height / image.size.height)
-            : min(frame.width / image.size.width, frame.height / image.size.height)
-        let destination = CGRect(
-            x: frame.midX - image.size.width * scale / 2,
-            y: frame.midY - image.size.height * scale / 2,
-            width: image.size.width * scale,
-            height: image.size.height * scale
-        )
+        let destination = aspectRect(for: image.size, in: frame, fillsFrame: fillsFrame)
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(
             concentricRoundedRect: frame,
