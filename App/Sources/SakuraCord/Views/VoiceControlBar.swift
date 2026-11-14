@@ -805,7 +805,7 @@ private struct VoiceDevicePicker: View {
     var body: some View {
         LabeledContent {
             Picker(title, selection: $selectionUID) {
-                Text(systemDefaultDeviceLabel(devices.first(where: \.isDefault)?.name)).tag("")
+                Text(devices.systemDefaultLabel).tag("")
                 ForEach(devices) { device in
                     Text(device.name).tag(device.uid)
                 }
@@ -830,11 +830,6 @@ private struct VoiceDevicePicker: View {
                 .font(.interface(.callout))
         }
     }
-}
-
-/// A device menu's System Default entry, naming the device it stands for.
-func systemDefaultDeviceLabel(_ defaultDeviceName: String?) -> String {
-    defaultDeviceName.map { "System Default (\($0))" } ?? "System Default"
 }
 
 private struct CameraDevicePicker: View {

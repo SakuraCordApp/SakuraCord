@@ -11,7 +11,7 @@ struct VoiceAudioSettingsSection: View {
     var body: some View {
         Section {
             Picker("Microphone", selection: inputSelection) {
-                Text(systemDefaultDeviceLabel(model.mediaDevices.audioInputs.first(where: \.isDefault)?.name)).tag("")
+                Text(model.mediaDevices.audioInputs.systemDefaultLabel).tag("")
                 ForEach(model.mediaDevices.audioInputs) { device in
                     Text(device.name).tag(device.uid)
                 }
@@ -23,7 +23,7 @@ struct VoiceAudioSettingsSection: View {
                 .settingsControlAnchor(.voiceInputVolume, state: state)
 
             Picker("Speaker", selection: outputSelection) {
-                Text(systemDefaultDeviceLabel(model.mediaDevices.audioOutputs.first(where: \.isDefault)?.name)).tag("")
+                Text(model.mediaDevices.audioOutputs.systemDefaultLabel).tag("")
                 ForEach(model.mediaDevices.audioOutputs) { device in
                     Text(device.name).tag(device.uid)
                 }

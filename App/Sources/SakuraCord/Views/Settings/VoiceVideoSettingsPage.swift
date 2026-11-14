@@ -149,7 +149,7 @@ private struct VoiceCameraSettingsSection: View {
         @Bindable var preferences = model.voiceVideoPreferences
         Section {
             Picker("Camera", selection: cameraSelection) {
-                Text(systemDefaultDeviceLabel(model.mediaDevices.cameras.first(where: \.isDefault)?.name)).tag("")
+                Text(model.mediaDevices.cameras.systemDefaultLabel).tag("")
                 ForEach(model.mediaDevices.cameras) { camera in
                     Text(camera.name).tag(camera.uniqueID)
                 }
