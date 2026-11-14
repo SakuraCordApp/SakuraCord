@@ -59,7 +59,7 @@ struct ForumPostTitleField: NSViewRepresentable {
         }
         // The editor owns text still being composed with an input method.
         if !field.editor.hasMarkedText(), field.stringValue != text { field.stringValue = text }
-        context.coordinator.applyFocus(to: field)
+        context.coordinator.applyFocus(to: field, resigning: field.editor)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView field: TitleField, context: Context) -> CGSize? {
@@ -73,9 +73,10 @@ struct ForumPostTitleField: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTextFieldDelegate {
+    final class Coordinator: NSObject, NSTextFieldDelegate, ComposerFocusSyncing {
         var parent: ForumPostTitleField
-        private var appliedFocus = false
+        var appliedFocus = false
+        var focusBinding: Binding<Bool> { parent.$isFocused }
 
         init(parent: ForumPostTitleField) {
             self.parent = parent
@@ -99,28 +100,6 @@ struct ForumPostTitleField: NSViewRepresentable {
             }
         }
 
-        func firstResponderDidChange(_ isFirstResponder: Bool) {
-            // Publish after AppKit finishes the responder change, never during
-            // a SwiftUI update that triggered it.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                appliedFocus = isFirstResponder
-                if parent.isFocused != isFirstResponder { parent.isFocused = isFirstResponder }
-            }
-        }
-
-        func applyFocus(to field: TitleField) {
-            guard parent.isFocused != appliedFocus else { return }
-            appliedFocus = parent.isFocused
-            if parent.isFocused {
-                Task { @MainActor [weak field] in
-                    guard let field, parent.isFocused else { return }
-                    field.window?.makeFirstResponder(field)
-                }
-            } else if field.window?.firstResponder === field.editor {
-                field.window?.makeFirstResponder(nil)
-            }
-        }
     }
 
     final class TitleField: NSTextField {

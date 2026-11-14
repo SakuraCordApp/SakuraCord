@@ -237,7 +237,7 @@ struct ComposerTextView: NSViewRepresentable {
         // the SwiftUI snapshot, selection, or typing attributes here can
         // replace the uncommitted Japanese text and make it disappear.
         guard !textView.hasMarkedText() else {
-            context.coordinator.applyFocus(to: textView)
+            context.coordinator.applyFocus(to: textView, resigning: textView)
             return
         }
 
@@ -291,7 +291,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.plainTextStyle = textStyle
         textView.restorePlainTypingAttributes()
 
-        context.coordinator.applyFocus(to: textView)
+        context.coordinator.applyFocus(to: textView, resigning: textView)
     }
 
     func sizeThatFits(
@@ -324,25 +324,16 @@ struct ComposerTextView: NSViewRepresentable {
 
     private var textAttributes: [NSAttributedString.Key: Any] { textStyle.attributes }
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, ComposerFocusSyncing {
         var parent: ComposerTextView
-        private var appliedFocus = false
+        var appliedFocus = false
+        var focusBinding: Binding<Bool> { parent.$isFocused }
         private var isNormalizing = false
         private var isMarkedTextActive = false
         private let attachmentImageLoader = InlineAttachmentImageLoader()
 
         init(parent: ComposerTextView) {
             self.parent = parent
-        }
-
-        func firstResponderDidChange(_ isFirstResponder: Bool) {
-            // Publish after AppKit finishes the responder change, never during
-            // a SwiftUI update that triggered it.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                appliedFocus = isFirstResponder
-                if parent.isFocused != isFirstResponder { parent.isFocused = isFirstResponder }
-            }
         }
 
         func textDidEndEditing(_ notification: Notification) {
@@ -427,20 +418,6 @@ struct ComposerTextView: NSViewRepresentable {
                 }
             } else {
                 parent.onCompositionStateChange?(isComposing)
-            }
-        }
-
-        func applyFocus(to textView: NSTextView) {
-            guard parent.isFocused != appliedFocus else { return }
-            appliedFocus = parent.isFocused
-
-            if parent.isFocused {
-                Task { @MainActor [weak textView] in
-                    guard let textView, parent.isFocused else { return }
-                    textView.window?.makeFirstResponder(textView)
-                }
-            } else if textView.window?.firstResponder === textView {
-                textView.window?.makeFirstResponder(nil)
             }
         }
 
