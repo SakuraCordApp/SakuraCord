@@ -186,7 +186,7 @@ struct MemberRow: View {
                                 }
                                 if !cosmeticPolicy.disables(.serverTag, for: member.id),
                                    let identity = member.user.primaryGuild, identity.tag != nil {
-                                    PrimaryGuildTag(identity: identity)
+                                    InteractiveProfileServerTag(identity: identity)
                                 }
                             }
                             let activityContent = member.memberListActivityContent
@@ -389,13 +389,5 @@ struct NameplateBackground: View {
                 endPoint: .trailing
             )
         }
-    }
-}
-
-private struct PrimaryGuildTag: View {
-    let identity: PrimaryGuildIdentity
-
-    var body: some View {
-        InteractiveProfileServerTag(identity: identity)
     }
 }
