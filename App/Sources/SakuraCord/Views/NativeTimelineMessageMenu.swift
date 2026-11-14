@@ -561,53 +561,53 @@ extension NativeTimelineCanvasView {
         let message = row.message
         switch action {
         case .jumpToMessage:
-            { actions.openMessage?(message) }
+            return { actions.openMessage?(message) }
         case .retrySending:
-            { actions.retry(message) }
+            return { actions.retry(message) }
         case .reply:
-            { actions.reply?(message) }
+            return { actions.reply?(message) }
         case .forward:
-            { actions.forward?(message) }
+            return { actions.forward?(message) }
         case .viewThread:
-            {
+            return {
                 guard let thread = message.thread else { return }
                 actions.openThread(thread)
             }
         case .markUnread:
-            { actions.markUnread(message) }
+            return { actions.markUnread(message) }
         case .pinMessage, .unpinMessage:
-            { actions.togglePin(message) }
+            return { actions.togglePin(message) }
         case .copyTranslation:
-            { [weak model] in
+            return { [weak model] in
                 if let text = model?.translatedMessageText(message) { Pasteboard.copy(text) }
             }
         case .copyText:
-            { Pasteboard.copy(message.content) }
+            return { Pasteboard.copy(message.content) }
         case .copyLink:
-            { [weak self] in
+            return { [weak self] in
                 guard let self else { return }
                 Pasteboard.copy(self.messageLink(for: message))
             }
         case .copyMessageID:
-            { Pasteboard.copy(message.id.description) }
+            return { Pasteboard.copy(message.id.description) }
         case .copyAuthorID:
-            { Pasteboard.copy(message.author.id.description) }
+            return { Pasteboard.copy(message.author.id.description) }
         case .addReaction:
-            { [weak self] in self?.showReactionPicker(forMessageRow: message) }
+            return { [weak self] in self?.showReactionPicker(forMessageRow: message) }
         case .viewReactions:
-            { [weak self] in self?.showMessageReactions(message) }
+            return { [weak self] in self?.showMessageReactions(message) }
         case .createThread:
-            { [weak model] in model?.beginThreadCreation(from: message) }
+            return { [weak model] in model?.beginThreadCreation(from: message) }
         case .dismissInboxMention:
-            { [weak model] in model?.dismissInboxMention(message) }
+            return { [weak model] in model?.dismissInboxMention(message) }
         case .endPoll:
-            { [weak self] in self?.requestEndPoll(message) }
+            return { [weak self] in self?.requestEndPoll(message) }
         case .toggleTranslation:
-            { [weak model] in model?.toggleMessageTranslation(message) }
+            return { [weak model] in model?.toggleMessageTranslation(message) }
         case .editMessage:
-            { [weak self] in self?.beginEditing(row: row, at: index) }
+            return { [weak self] in self?.beginEditing(row: row, at: index) }
         case .deleteMessage, .discardFailedMessage:
-            { [weak self] in
+            return { [weak self] in
                 self?.requestDelete(message, through: action == .deleteMessage ? \.delete : \.discardFailed)
             }
         }

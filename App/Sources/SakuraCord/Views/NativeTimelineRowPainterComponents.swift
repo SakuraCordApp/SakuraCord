@@ -643,7 +643,7 @@ extension NativeTimelineRowPainter {
         let fill: NSColor
         let border: NSColor
         let foreground: NSColor
-        if let fills = DiscordComponentButtonAppearance.solidFillHexes(for: region.style)?.compactMap(roleColor) {
+        if let fills = DiscordComponentButtonAppearance.solidFillHexes(for: region.style)?.compactMap { NSColor(discordColor: $0) } {
             let settled = fills[0].blended(withFraction: hover, of: fills[1]) ?? fills[0]
             fill = settled.blended(withFraction: pressProgress, of: fills[2]) ?? settled
             border = NSColor.white.withAlphaComponent(0.08)
