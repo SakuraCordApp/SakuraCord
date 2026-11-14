@@ -1,5 +1,43 @@
 import Foundation
 import SakuraCordModels
+import UniformTypeIdentifiers
+
+nonisolated struct AttachmentUploadFile: Equatable, Sendable {
+    var url: URL
+    let name: String
+    let description: String?
+    let isSpoiler: Bool
+    /// The attached file's type, kept when a prepared copy replaces `url`.
+    let contentType: String
+    /// The draft attachment this file came from, which lets the user stop it alone.
+    let id: UUID?
+
+    init(url: URL, name: String, description: String? = nil, isSpoiler: Bool = false, id: UUID? = nil) {
+        self.url = url
+        self.name = name
+        self.description = description
+        self.isSpoiler = isSpoiler
+        contentType = Self.contentType(forPathExtension: url.pathExtension)
+        self.id = id
+    }
+
+    /// The desktop client's `original_content_type` is Chromium's `File.type`:
+    /// Chromium's own table wins over the platform's, and an unknown type is
+    /// empty rather than omitted.
+    static func contentType(forPathExtension pathExtension: String) -> String {
+        let pathExtension = pathExtension.lowercased()
+        return chromiumContentTypes[pathExtension]
+            ?? UTType(filenameExtension: pathExtension)?.preferredMIMEType ?? ""
+    }
+
+    /// Chromium's hard-coded types where macOS reports another or none,
+    /// as observed from the desktop client (web build 670026).
+    private static let chromiumContentTypes = [
+        "apng": "image/apng", "jfif": "image/jpeg", "m4v": "video/mp4",
+        "mka": "audio/matroska", "mkv": "video/matroska", "wasm": "application/wasm",
+        "wav": "audio/wav", "weba": "audio/webm", "xml": "text/xml",
+    ]
+}
 
 extension DiscordRESTProvider {
     /// Once Discord answers a post, the message holds its stored files. Discord
