@@ -925,7 +925,7 @@ private enum NodeBuilder {
                 count: resolved.count,
                 width: galleryWidth,
                 aspectRatios: resolved.map {
-                    aspectRatio(width: $0.1.width, height: $0.1.height)
+                    RichMediaItem.aspectRatio(width: $0.1.width, height: $0.1.height)
                 },
                 intrinsicSizes: resolved.map {
                     intrinsicSize(width: $0.1.width, height: $0.1.height)
@@ -1263,16 +1263,6 @@ private enum NodeBuilder {
         media.attachmentName.flatMap { name in
             attachments.first { $0.filename == name || $0.id == name }
         }
-    }
-
-    private static func aspectRatio(
-        width: Int?,
-        height: Int?
-    ) -> CGFloat {
-        guard let width, let height, width > 0, height > 0 else {
-            return 16 / 9
-        }
-        return CGFloat(width) / CGFloat(height)
     }
 
     private static func intrinsicSize(

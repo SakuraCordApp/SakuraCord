@@ -793,11 +793,21 @@ struct RichMediaItem: Identifiable, Hashable {
     }
 
     var aspectRatio: CGFloat {
+        Self.aspectRatio(width: width, height: height)
+    }
+
+    var intrinsicSize: CGSize? {
+        Self.knownSize(width: width, height: height)
+    }
+
+    /// Width over height, or 16:9 when either is unknown.
+    nonisolated static func aspectRatio(width: Int?, height: Int?) -> CGFloat {
         guard let width, let height, width > 0, height > 0 else { return 16 / 9 }
         return CGFloat(width) / CGFloat(height)
     }
 
-    var intrinsicSize: CGSize? {
+    /// The size, when both sides are known and positive.
+    nonisolated static func knownSize(width: Int?, height: Int?) -> CGSize? {
         guard let width, let height, width > 0, height > 0 else { return nil }
         return CGSize(width: CGFloat(width), height: CGFloat(height))
     }

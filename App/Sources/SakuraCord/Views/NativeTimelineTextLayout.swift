@@ -1351,10 +1351,7 @@ enum NativeTimelineEmbedLayout {
     /// The media's reported size, when both dimensions are positive. Without
     /// it, embed media is laid out in a fallback 16:9 frame.
     private static func knownSize(of media: MessageEmbedMedia) -> CGSize? {
-        guard let width = media.width, let height = media.height,
-              width > 0, height > 0
-        else { return nil }
-        return CGSize(width: CGFloat(width), height: CGFloat(height))
+        RichMediaItem.knownSize(width: media.width, height: media.height)
     }
 
     private static func mediaSize(
