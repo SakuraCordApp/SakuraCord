@@ -474,15 +474,23 @@ extension AppModel {
         readState.acknowledge(channelID: channelID, messageID: target)
     }
 
+    /// Reads a server Mark as Read's conversations locally before Discord
+    /// confirms, keeping each open timeline's unread divider in place.
+    func acknowledgeServerConversationsLocally(_ targets: [BulkReadStateAcknowledgement]) {
+        for target in targets {
+            preserveUnreadDividerIfNeeded(channelID: target.channelID)
+            acknowledgeExplicitly(channelID: target.channelID, through: target.messageID)
+        }
+    }
+
     func markGuildRead(_ guildID: GuildID) {
         guard !runsChatPerformanceBenchmark else { return }
         guard guildAcknowledgementTasks[guildID] == nil else { return }
         let targets = readState.allServerAcknowledgements(in: [guildID])
         guard !targets.isEmpty else { return }
 
+        acknowledgeServerConversationsLocally(targets)
         for target in targets {
-            preserveUnreadDividerIfNeeded(channelID: target.channelID)
-            acknowledgeExplicitly(channelID: target.channelID, through: target.messageID)
             cancelNativeNotifications(channelID: target.channelID)
         }
         refreshUnreadPresentation()

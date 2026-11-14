@@ -16,10 +16,7 @@ extension AppModel {
         let targets = readState.allServerAcknowledgements(in: Set(snapshot.guilds.filter { !$0.isUnavailable }.map(\.id)))
         guard !targets.isEmpty else { return }
 
-        for target in targets {
-            preserveUnreadDividerIfNeeded(channelID: target.channelID)
-            acknowledgeExplicitly(channelID: target.channelID, through: target.messageID)
-        }
+        acknowledgeServerConversationsLocally(targets)
         isMarkingAllServersRead = true
         refreshUnreadPresentation()
         let generation = acknowledgementGeneration
