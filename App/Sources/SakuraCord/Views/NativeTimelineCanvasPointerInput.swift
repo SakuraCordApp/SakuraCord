@@ -216,7 +216,7 @@ extension NativeTimelineCanvasView {
     override func mouseEntered(with event: NSEvent) {
         guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
-            clearPointerHoverTargets()
+            updateHoverTargets(at: nil)
             return
         }
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
@@ -272,7 +272,7 @@ extension NativeTimelineCanvasView {
     override func mouseMoved(with event: NSEvent) {
         guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
-            clearPointerHoverTargets()
+            updateHoverTargets(at: nil)
             return
         }
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
@@ -330,7 +330,7 @@ extension NativeTimelineCanvasView {
             return
         }
         if kind == "canvas" {
-            clearPointerHoverTargets()
+            updateHoverTargets(at: nil)
         }
     }
 
@@ -1177,29 +1177,43 @@ extension NativeTimelineCanvasView {
             || ComposerOverlayPointerRegion.containsPointer(in: window, at: point)
     }
 
-    private func clearPointerHoverTargets() {
-        setHoveredPollTarget(nil)
-        setHoveredCompactTimestampRow(nil)
-        setHoveredAuthorMessageID(nil)
-        setHoveredServerTagMessageID(nil)
-        setHoveredSilentBadgeMessageID(nil)
-        setHoveredMention(nil)
-        setHoveredTextLink(nil)
-        setHoveredTextSpoiler(nil)
-        setHoveredCodeBlock(nil)
-        setHoveredComponentButton(nil)
-        setHoveredForwardedSourceMessageID(nil)
-        setHoveredThreadMessageID(nil)
-        setHoveredFooterAction(nil)
-        setHoveredReaction(nil)
-        updateVoiceMessageHover(at: nil)
-        setHoveredRow(nil)
+    /// Points every hover target at what lies under `point`, or clears them
+    /// all when it is nil. `row` stands in for the row under `point`, and
+    /// `measuresVoiceDuration` is false when the rows moved, not the pointer.
+    func updateHoverTargets(at point: CGPoint?, row: Int? = nil, measuresVoiceDuration: Bool = true) {
+        if let point {
+            guard !actionCapsuleContains(point) else {
+                // The capsule covers the row's text, so its mentions and badge stop being hovered.
+                setHoveredMention(nil)
+                setHoveredSilentBadgeMessageID(nil)
+                return
+            }
+            guard !hoversEditingOverlay(at: point) else { return }
+        }
+        let point = point.flatMap { visibleRect.contains($0) ? $0 : nil }
+        setHoveredPollTarget(point.flatMap { pollPointerHit(at: $0)?.target })
+        updateVoiceMessageHover(at: point, measuresDuration: measuresVoiceDuration)
+        setHoveredRow(row ?? point.flatMap { hoveredRowIndex(at: $0) })
+        setHoveredCompactTimestampRow(point.flatMap { compactTimestampRowIndex(at: $0) })
+        setHoveredAuthorMessageID(point.flatMap { authorNamePointerHit(at: $0) })
+        setHoveredServerTagMessageID(point.flatMap { serverTagPointerHit(at: $0) })
+        setHoveredSilentBadgeMessageID(point.flatMap { silentBadgePointerHit(at: $0) })
+        setHoveredCommandPillMessageID(point.flatMap { commandPillPointerHit(at: $0) })
+        setHoveredMention(point.flatMap { mentionPointerHit(at: $0) })
+        setHoveredTextLink(point.flatMap { textLinkPointerHit(at: $0) })
+        setHoveredTextSpoiler(point.flatMap { textSpoilerPointerHit(at: $0) })
+        setHoveredCodeBlock(point.flatMap { codeBlockPointerHit(at: $0) })
+        setHoveredComponentButton(point.flatMap { componentButtonPointerHit(at: $0)?.target })
+        setHoveredForwardedSourceMessageID(point.flatMap { forwardedSourcePointerHit(at: $0) })
+        setHoveredThreadMessageID(point.flatMap { threadCardPointerHit(at: $0) })
+        setHoveredFooterAction(point.flatMap { footerActionPointerHit(at: $0) })
+        setHoveredReaction(point.flatMap { reactionPointerHit(at: $0) })
     }
 
     func synchronizeHoverWithCurrentPointer() {
         guard !glideBlocksPointer else { return }
         guard !isPointerCovered() else {
-            clearPointerHoverTargets()
+            updateHoverTargets(at: nil)
             return
         }
         guard WindowModalCoordinator.allowsInput(for: self), !overlayBlocksInteractions, tracksHover,
@@ -1268,8 +1282,7 @@ extension NativeTimelineCanvasView {
     /// pointing at them points at the edited row. True when they do.
     private func hoversEditingOverlay(at point: CGPoint) -> Bool {
         guard editingOverlayContains(point) else { return false }
-        clearPointerHoverTargets()
-        setHoveredRow(editingRowIndex)
+        updateHoverTargets(at: nil, row: editingRowIndex)
         return true
     }
 
