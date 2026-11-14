@@ -32,9 +32,7 @@ extension AppModel {
         let destinations: [ServerRailNavigationDestination] = [.directMessages]
             + orderedNavigationGuildIDs.map { .guild($0) }
         let current = selectedGuildID.map { ServerRailNavigationDestination.guild($0) } ?? .directMessages
-        let start = destinations.firstIndex(of: current) ?? 0
-        let destination = destinations[(start + direction + destinations.count) % destinations.count]
-        return destination == current ? nil : destination
+        return wrappingDestination(in: destinations, from: current, direction: direction)
     }
 
     func keyboardShortcutDirectMessageDestination(direction: Int) -> DirectMessageSidebarSelection? {
@@ -46,6 +44,16 @@ extension AppModel {
         let current: DirectMessageSidebarSelection = isMessageRequestsPresented ? .messageRequests
             : isFriendsPresented ? .friends
             : selectedChannelID.map { .channel($0) } ?? .friends
+        return wrappingDestination(in: destinations, from: current, direction: direction)
+    }
+
+    /// The destination `direction` steps from `current`, wrapping around;
+    /// nil when that is `current` itself.
+    private func wrappingDestination<Destination: Equatable>(
+        in destinations: [Destination],
+        from current: Destination,
+        direction: Int
+    ) -> Destination? {
         let start = destinations.firstIndex(of: current) ?? 0
         let destination = destinations[(start + direction + destinations.count) % destinations.count]
         return destination == current ? nil : destination
