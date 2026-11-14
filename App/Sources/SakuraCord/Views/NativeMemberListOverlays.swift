@@ -162,7 +162,7 @@ extension NativeMemberListCanvasView {
             ).enumerated() {
                 guard overlayCount < NativeMemberListMetrics.maximumVisibleAnimatedEmojiCount,
                       region.reference.isAnimated,
-                      let url = activityEmojiURL(for: region.reference)
+                      let url = region.reference.imageURL(in: customEmojiURLsByID)
                 else { continue }
                 overlayCount += 1
                 let id = ActivityEmojiOverlayID(
@@ -501,7 +501,7 @@ extension NativeMemberListCanvasView {
                 }
                 requests.append(contentsOf: NativeMemberActivityPresentation.references(
                     in: member.memberListActivityContent.displayText
-                ).compactMap(activityEmojiURL).map {
+                ).compactMap { $0.imageURL(in: customEmojiURLsByID) }.map {
                     (url: $0, maximumPixelDimension: 64)
                 })
             case .placeholder:
@@ -593,11 +593,6 @@ extension NativeMemberListCanvasView {
                 }
             }
         }
-    }
-
-    func activityEmojiURL(for reference: EmojiReference) -> URL? {
-        reference.id.flatMap { customEmojiURLsByID[$0] }
-            ?? reference.imageURL(size: 64)
     }
 
     func tearDown() {

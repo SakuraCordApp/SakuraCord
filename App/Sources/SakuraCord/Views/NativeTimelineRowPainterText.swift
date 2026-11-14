@@ -814,17 +814,8 @@ extension NativeTimelineRowPainter {
         token: String,
         model: AppModel?
     ) -> NSImage? {
-        let reference = EmojiReference(rawToken: token)
-        if let url =
-            reference.id.flatMap({ model?.customEmojiURLsByID[$0] })
-                ?? reference.imageURL(size: 64),
-           let image = mediaImage(
-               for: .media(url, maximumPixelDimension: 64)
-           )
-        {
-            return image
-        }
-        return nil
+        MediaImageKey.emoji(EmojiReference(rawToken: token), in: model?.customEmojiURLsByID)
+            .flatMap { mediaImage(for: $0) }
     }
 
     static func measuredTextWidth(

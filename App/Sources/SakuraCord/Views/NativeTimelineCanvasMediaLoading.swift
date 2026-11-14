@@ -359,8 +359,8 @@ extension NativeTimelineCanvasView {
         appendComponentMediaKeys(layouts: layouts[index].componentLayouts, into: &keys)
         appendStickerAndReactionMediaKeys(for: message, layout: layouts[index], into: &keys)
         for answer in message.poll?.answers ?? [] {
-            if let url = answer.emoji?.imageURL(size: 64) {
-                keys.append(.media(url, maximumPixelDimension: 64))
+            if let key = answer.emoji.flatMap({ MediaImageKey.emoji($0) }) {
+                keys.append(key)
             }
         }
         return Set(keys)
@@ -420,12 +420,10 @@ extension NativeTimelineCanvasView {
             for token in row.textPlan.preparedText?.tokens ?? [] {
                 switch token {
                 case let .customEmoji(emoji):
-                    let reference = EmojiReference(rawToken: emoji.rawToken)
-                    guard let url =
-                        reference.id.flatMap({ model.customEmojiURLsByID[$0] })
-                        ?? reference.imageURL(size: 64)
-                    else { continue }
-                    keys.append(.media(url, maximumPixelDimension: 64))
+                    guard let key = MediaImageKey.emoji(
+                        EmojiReference(rawToken: emoji.rawToken), in: model.customEmojiURLsByID
+                    ) else { continue }
+                    keys.append(key)
                 case let .mention(mention):
                     if let url = mentionResolver.avatarURL(mention) {
                         keys.append(.avatar(url))
@@ -503,10 +501,10 @@ extension NativeTimelineCanvasView {
             }
         }
         for region in layout.reactionRegions {
-            if let url = MessageReactionPresentation.emojiURL(
+            if let key = MessageReactionPresentation.emojiMediaKey(
                 for: region.reaction, customEmojiURLsByID: model?.customEmojiURLsByID ?? [:]
             ) {
-                keys.append(.media(url, maximumPixelDimension: 64))
+                keys.append(key)
             }
             for avatar in region.avatarRegions {
                 if let url = avatar.reactor.avatarURL {
@@ -545,15 +543,10 @@ extension NativeTimelineCanvasView {
             .discordEmojiToken,
             in: range
         ) { rawValue, _, _ in
-            guard let rawToken = rawValue as? String else { return }
-            let reference = EmojiReference(rawToken: rawToken)
-            let customURL = reference.id.flatMap { id in
-                model?.customEmojiURLsByID[id]
-            }
-            guard let url = customURL
-                ?? reference.imageURL(size: 64)
+            guard let rawToken = rawValue as? String,
+                  let key = MediaImageKey.emoji(EmojiReference(rawToken: rawToken), in: model?.customEmojiURLsByID)
             else { return }
-            keys.append(.media(url, maximumPixelDimension: 64))
+            keys.append(key)
         }
         value.enumerateAttribute(
             .nativeTimelineMention,

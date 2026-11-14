@@ -98,13 +98,11 @@ nonisolated enum MessageReactionPresentation {
     }
 
     static func emojiURL(for reaction: Reaction, customEmojiURLsByID: CustomEmojiImageURLs) -> URL? {
-        let reference = reaction.emojiReference
-        guard let id = reference.id else { return nil }
-        return customEmojiURLsByID[id] ?? reference.imageURL(size: 64)
+        reaction.emojiReference.imageURL(in: customEmojiURLsByID)
     }
 
     @MainActor static func emojiMediaKey(for reaction: Reaction, customEmojiURLsByID: CustomEmojiImageURLs) -> MediaImageKey? {
-        emojiURL(for: reaction, customEmojiURLsByID: customEmojiURLsByID).map { .media($0, maximumPixelDimension: 64) }
+        .emoji(reaction.emojiReference, in: customEmojiURLsByID)
     }
 
     static func tooltipDescription(for reaction: Reaction) -> String {

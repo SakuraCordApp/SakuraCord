@@ -177,10 +177,7 @@ extension NativeTimelineCanvasView {
                 y: mouseInCanvas.y - hit.frame.minY
             )
         )
-        let reference = reaction.emojiReference
-        let emojiURL = reference.id.flatMap { id in
-            model?.customEmojiURLsByID[id]
-        } ?? reference.imageURL(size: 64)
+        let emojiURL = reaction.emojiReference.imageURL(in: model?.customEmojiURLsByID)
         reactionHoverCoordinator.update(
             anchor: anchor,
             anchorSnapshot: snapshot,

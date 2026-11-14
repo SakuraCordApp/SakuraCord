@@ -47,6 +47,11 @@ struct MediaImageKey: Hashable {
         Self(url: url, fallbackURL: nil, maximumPixelDimension: 128)
     }
 
+    /// Every surface decodes an emoji at one size, so they share its image.
+    static func emoji(_ reference: EmojiReference, in customURLs: CustomEmojiImageURLs? = nil) -> Self? {
+        reference.imageURL(in: customURLs).map { .media($0, maximumPixelDimension: 64) }
+    }
+
     static func media(
         _ url: URL,
         fallbackURL: URL? = nil,

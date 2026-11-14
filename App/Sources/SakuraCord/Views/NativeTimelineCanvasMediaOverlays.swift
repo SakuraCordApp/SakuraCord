@@ -185,11 +185,7 @@ extension NativeTimelineCanvasView {
         }
 
         func animatedEmojiMedia(_ reference: EmojiReference) -> MediaImageKey? {
-            guard reference.isAnimated,
-                  let url = reference.id.flatMap({ canvas.model?.customEmojiURLsByID[$0] })
-                  ?? reference.imageURL(size: 64)
-            else { return nil }
-            return .media(url, maximumPixelDimension: 64)
+            reference.isAnimated ? .emoji(reference, in: canvas.model?.customEmojiURLsByID) : nil
         }
 
         /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
@@ -405,10 +401,10 @@ extension NativeTimelineCanvasView {
             )
         }
         for answer in row.message.poll?.answers ?? [] {
-            guard answer.emoji?.isAnimated == true, let url = answer.emoji?.imageURL(size: 64),
+            guard let emoji = answer.emoji, emoji.isAnimated, let media = MediaImageKey.emoji(emoji),
                   let frame = layout.pollLayout?.answers.first(where: { $0.id == answer.id })?.emojiFrame else { continue }
             accumulator.append(row: identifier, role: .pollAnswer(answer.id),
-                               media: .media(url, maximumPixelDimension: 64), frame: frame,
+                               media: media, frame: frame,
                                cornerRadius: 0, isLooping: true)
         }
         for reaction in layout.reactionRegions where accumulator.walksReactions(in: identifier) {

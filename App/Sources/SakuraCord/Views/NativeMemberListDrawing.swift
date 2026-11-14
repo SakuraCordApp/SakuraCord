@@ -357,7 +357,7 @@ extension NativeMemberListCanvasView {
                 in: visibleActivity,
                 origin: origin
             ) {
-                guard let url = activityEmojiURL(for: region.reference) else { continue }
+                guard let url = region.reference.imageURL(in: customEmojiURLsByID) else { continue }
                 if let image = images[url] {
                     Self.draw(
                         image: image,

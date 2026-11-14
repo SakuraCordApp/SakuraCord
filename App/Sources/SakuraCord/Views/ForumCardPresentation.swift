@@ -121,8 +121,8 @@ enum ForumTagEmojiPresentation: Equatable {
     case custom(URL)
 
     init?(tag: ForumTag, customEmojiURLsByID: CustomEmojiImageURLs) {
-        if let id = tag.emojiID {
-            guard let url = Self.customEmojiURL(for: tag, cached: customEmojiURLsByID[id]) else { return nil }
+        if tag.emojiID != nil {
+            guard let url = Self.customEmojiURL(for: tag, customEmojiURLsByID: customEmojiURLsByID) else { return nil }
             self = .custom(url)
         } else if let name = tag.emojiName, !name.isEmpty {
             self = .unicode(name)
@@ -136,10 +136,8 @@ enum ForumTagEmojiPresentation: Equatable {
         return .media(url, maximumPixelDimension: 64)
     }
 
-    /// A custom tag emoji's image: the account's cached link, else Discord's CDN.
-    static func customEmojiURL(for tag: ForumTag, cached: URL?) -> URL? {
-        guard let id = tag.emojiID else { return nil }
-        return cached ?? EmojiReference(id: id, name: tag.emojiName ?? "emoji").imageURL(size: 64)
+    static func customEmojiURL(for tag: ForumTag, customEmojiURLsByID: CustomEmojiImageURLs) -> URL? {
+        tag.emojiID.flatMap { EmojiReference(id: $0, name: tag.emojiName ?? "emoji").imageURL(in: customEmojiURLsByID) }
     }
 }
 
