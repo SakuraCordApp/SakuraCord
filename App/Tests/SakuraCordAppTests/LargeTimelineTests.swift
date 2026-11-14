@@ -1815,7 +1815,7 @@ func `fitting exact unread run opens at true bottom and reports newest boundary`
     scrollView.tile()
     scrollView.layoutSubtreeIfNeeded()
     coordinator.update(parent: timeline, scrollView: scrollView)
-    coordinator.reconcileViewportGeometryForTesting()
+    coordinator.reconcileViewportGeometryIfNeeded()
     for _ in 0 ..< 4 {
         await Task.yield()
     }
@@ -1834,12 +1834,12 @@ func `fitting exact unread run opens at true bottom and reports newest boundary`
             <= scrollView.contentView.bounds.height + 0.5
     )
     #expect(
-        coordinator.contentHeightForTesting + 76
+        coordinator.contentHeight + 76
             > scrollView.contentView.bounds.height
     )
-    #expect(coordinator.scrollStateForTesting.isNearBottom)
+    #expect(coordinator.scrollState().isNearBottom)
     #expect(
-        coordinator.scrollStateForTesting
+        coordinator.scrollState()
             .hasReachedNewestMessageBoundary
     )
     #expect(initialStates.last?.isNearBottom == true)
@@ -1904,7 +1904,7 @@ func `a moved unread boundary leaves its old row when rows change in the same up
         guard case let .message(row, isUnreadBoundary: true, _) = item else { return nil }
         return row.id
     }
-    #expect(coordinator.performanceUpdatePathForTesting == "append")
+    #expect(coordinator.performanceUpdatePath == "append")
     #expect(boundaryIDs == [reply.id])
     coordinator.stopObserving()
 }
@@ -1955,9 +1955,9 @@ func `scrolling a tall unread timeline to bottom publishes the read boundary`() 
     scrollView.tile()
     scrollView.layoutSubtreeIfNeeded()
     coordinator.update(parent: initialTimeline, scrollView: scrollView)
-    coordinator.reconcileViewportGeometryForTesting()
+    coordinator.reconcileViewportGeometryIfNeeded()
     #expect(
-        !coordinator.scrollStateForTesting
+        !coordinator.scrollState()
             .hasReachedNewestMessageBoundary
     )
 
@@ -1971,9 +1971,9 @@ func `scrolling a tall unread timeline to bottom publishes the read boundary`() 
         await Task.yield()
     }
 
-    #expect(coordinator.scrollStateForTesting.isNearBottom)
+    #expect(coordinator.scrollState().isNearBottom)
     #expect(
-        coordinator.scrollStateForTesting
+        coordinator.scrollState()
             .hasReachedNewestMessageBoundary
     )
     #expect(reportedStates.last?.isNearBottom == true)
@@ -2024,7 +2024,7 @@ func `media rich timeline establishes unread context before display and preserve
     scrollView.tile()
     scrollView.layoutSubtreeIfNeeded()
     coordinator.update(parent: timeline, scrollView: scrollView)
-    coordinator.reconcileViewportGeometryForTesting()
+    coordinator.reconcileViewportGeometryIfNeeded()
 
     let firstOffset = try #require(
         coordinator.messageOffsetFromViewportTopForTesting(
@@ -2039,20 +2039,20 @@ func `media rich timeline establishes unread context before display and preserve
         * TimelineInitialPositionPolicy.unreadViewportAnchor.y
     #expect(coordinator.hasAppliedInitialPositionForTesting)
     #expect(abs(firstOffset - expectedOffset) < 1)
-    #expect(!coordinator.scrollStateForTesting.isNearBottom)
+    #expect(!coordinator.scrollState().isNearBottom)
     #expect(
-        coordinator.scrollStateForTesting
+        coordinator.scrollState()
             .hasEstablishedInitialPosition
     )
     #expect(
-        !coordinator.scrollStateForTesting
+        !coordinator.scrollState()
             .hasReachedNewestMessageBoundary
     )
 
     scrollView.frame.size.height = 650
     scrollView.tile()
     scrollView.layoutSubtreeIfNeeded()
-    coordinator.reconcileViewportGeometryForTesting()
+    coordinator.reconcileViewportGeometryIfNeeded()
 
     let resizedOffset = try #require(
         coordinator.messageOffsetFromViewportTopForTesting(
@@ -2060,7 +2060,7 @@ func `media rich timeline establishes unread context before display and preserve
         )
     )
     #expect(abs(resizedOffset - firstOffset) < 1)
-    #expect(!coordinator.scrollStateForTesting.isNearBottom)
+    #expect(!coordinator.scrollState().isNearBottom)
     coordinator.updateDocumentHeightForTesting(
         (scrollView.documentView?.frame.height ?? 0) + 240
     )
@@ -2070,7 +2070,7 @@ func `media rich timeline establishes unread context before display and preserve
         )
     )
     #expect(abs(settledOffset - resizedOffset) < 1)
-    #expect(!coordinator.scrollStateForTesting.isNearBottom)
+    #expect(!coordinator.scrollState().isNearBottom)
     coordinator.stopObserving()
 }
 
@@ -2133,7 +2133,7 @@ func `completed initial ten message page exposes history reserve before first up
     scrollView.tile()
     scrollView.layoutSubtreeIfNeeded()
     coordinator.update(parent: loadingTimeline, scrollView: scrollView)
-    coordinator.reconcileViewportGeometryForTesting()
+    coordinator.reconcileViewportGeometryIfNeeded()
     let canvas = try #require(coordinator.canvas)
 
     #expect(coordinator.rowCount == 10)
@@ -2271,7 +2271,7 @@ func `completed anchored page exposes the same history reserve below its loaded 
     scrollView.tile()
     scrollView.layoutSubtreeIfNeeded()
     coordinator.update(parent: loadingTimeline, scrollView: scrollView)
-    coordinator.reconcileViewportGeometryForTesting()
+    coordinator.reconcileViewportGeometryIfNeeded()
     let canvas = try #require(coordinator.canvas)
 
     #expect(coordinator.rowCount == 10)

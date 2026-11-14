@@ -1118,18 +1118,6 @@ extension NativeMessageTimelineCoordinator {
         initialPositionConversation == parent.conversation
     }
 
-    var scrollStateForTesting: TimelineScrollState {
-        scrollState()
-    }
-
-    var contentHeightForTesting: CGFloat {
-        contentHeight
-    }
-
-    var performanceUpdatePathForTesting: String {
-        performanceUpdatePath
-    }
-
     func messageOffsetFromViewportTopForTesting(
         _ messageID: MessageID
     ) -> CGFloat? {
@@ -1156,10 +1144,6 @@ extension NativeMessageTimelineCoordinator {
             return nil
         }
         return layouts[index].height
-    }
-
-    func reconcileViewportGeometryForTesting() {
-        _ = reconcileViewportGeometryIfNeeded()
     }
 
     func updateDocumentHeightForTesting(_ height: CGFloat) {
