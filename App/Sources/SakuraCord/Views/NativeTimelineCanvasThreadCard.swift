@@ -5,12 +5,7 @@ import SakuraCordModels
 /// invalidates only the card, not its row.
 extension NativeTimelineCanvasView {
     func threadCardPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = hitRowIndex(at: point.y),
-              let frame = layouts[index].threadFrame,
-              let messageID = items[index].messageID
-        else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        return frame.contains(local) ? messageID : nil
+        messageID(at: point) { layouts[$0].threadFrame }
     }
 
     func setHoveredThreadMessageID(_ value: MessageID?) {

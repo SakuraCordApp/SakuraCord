@@ -62,11 +62,7 @@ extension NativeTimelineCanvasView {
     }
 
     func silentBadgePointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = hitRowIndex(at: point.y),
-              let frame = layouts[index].silentBadgeFrame,
-              frame.contains(CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index)))
-        else { return nil }
-        return items[index].messageID
+        messageID(at: point) { layouts[$0].silentBadgeFrame }
     }
 
     private var hoverLabelTarget: NativeTimelineHoverLabelTarget? {

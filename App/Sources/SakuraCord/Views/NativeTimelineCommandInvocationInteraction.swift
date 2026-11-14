@@ -5,11 +5,7 @@ import SwiftUI
 
 extension NativeTimelineCanvasView {
     func commandPillPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = hitRowIndex(at: point.y),
-              let pill = layouts[index].commandInvocationRegion?.pillFrame
-        else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        return pill.contains(local) ? items[index].messageID : nil
+        messageID(at: point) { layouts[$0].commandInvocationRegion?.pillFrame }
     }
 
     /// Clicking the pill again closes its popover, as in Discord.

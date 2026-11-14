@@ -18,11 +18,9 @@ extension NativeTimelineCanvasView {
     }
 
     func serverTagPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = hitRowIndex(at: point.y),
-              let tag = layouts[index].serverTagRegion, tag.presentation.identity.guildID != nil
-        else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        return tag.frame.contains(local) ? items[index].messageID : nil
+        messageID(at: point) { index in
+            layouts[index].serverTagRegion.flatMap { $0.presentation.identity.guildID == nil ? nil : $0.frame }
+        }
     }
 
     func serverTagPopoverSourceRect(for presentation: ServerTagCardPresentation) -> CGRect? {

@@ -624,6 +624,15 @@ extension NativeTimelineCanvasView {
         return index
     }
 
+    /// The message under `point` when it falls inside the row-local frame
+    /// `frame` picks for the row's index.
+    func messageID(at point: CGPoint, frame: (Int) -> CGRect?) -> MessageID? {
+        guard let index = hitRowIndex(at: point.y), let frame = frame(index),
+              frame.contains(CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index)))
+        else { return nil }
+        return items[index].messageID
+    }
+
     func startMessageJumpHighlight(_ messageID: MessageID) {
         cancelMessageJumpHighlight()
         let highlight = MessageJumpHighlight(

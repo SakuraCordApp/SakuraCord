@@ -360,11 +360,7 @@ extension NativeTimelineCanvasView {
     }
 
     private func forwardedSourcePointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = hitRowIndex(at: point.y),
-              let frame = layouts[index].forwardedSourceRegion?.frame
-        else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        return frame.contains(local) ? items[index].messageID : nil
+        messageID(at: point) { layouts[$0].forwardedSourceRegion?.frame }
     }
     private func footerActionPointerHit(at point: CGPoint) -> NativeTimelineFooterActionTarget? {
         guard let index = hitRowIndex(at: point.y)
@@ -1120,17 +1116,11 @@ extension NativeTimelineCanvasView {
     }
 
     func authorNamePointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = hitRowIndex(at: point.y),
-              case let .message(row, _, _) = items[index],
-              row.startsGroup,
-              !row.message.type.hasGeneratedContent,
-              let authorFrame = layouts[index].authorFrame
-        else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
-        return authorFrame.contains(local) ? row.message.id : nil
+        messageID(at: point) { index in
+            guard case let .message(row, _, _) = items[index], row.startsGroup, !row.message.type.hasGeneratedContent
+            else { return nil }
+            return layouts[index].authorFrame
+        }
     }
 
     func textLinkPointerHit(
