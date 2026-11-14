@@ -301,11 +301,7 @@ struct CustomEmojiRichText: View {
     }
 
     private var mentionPresentations: [String: MentionPresentation] {
-        document.segments.reduce(into: [:]) { values, segment in
-            if case let .mention(mention) = segment {
-                values[mention.rawToken] = mentionPresentation(mention)
-            }
-        }
+        MessageMentionResolver.presentations(in: document, presenting: mentionPresentation)
     }
 
     private func handleMentionClick(

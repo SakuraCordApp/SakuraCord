@@ -196,9 +196,17 @@ struct MessageMentionResolver {
 
     /// Every mention a draft holds, keyed by token, as an editor shows them.
     func presentations(in text: String) -> [String: MentionPresentation] {
-        MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
+        Self.presentations(in: MessageDocumentCache.shared.document(for: text), presenting: presentation)
+    }
+
+    /// Every mention in a document, keyed by token.
+    static func presentations(
+        in document: MessageDocument,
+        presenting: (RenderedMention) -> MentionPresentation
+    ) -> [String: MentionPresentation] {
+        document.segments.reduce(into: [:]) { values, segment in
             if case let .mention(mention) = segment {
-                values[mention.rawToken] = presentation(mention)
+                values[mention.rawToken] = presenting(mention)
             }
         }
     }
