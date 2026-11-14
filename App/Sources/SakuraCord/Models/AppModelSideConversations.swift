@@ -124,8 +124,7 @@ extension AppModel {
         case .thread(let thread, _):
             SideConversationLabel(
                 title: thread.name,
-                systemImage: isOpenThreadForumPost
-                    ? "bubble.left.and.bubble.right.fill" : SakuraCordSystemSymbol.thread
+                systemImage: ChannelIconPresentation.threadSystemImage(isForumPost: isOpenThreadForumPost)
             )
         case .threadCreation:
             SideConversationLabel(title: "New Thread", systemImage: SakuraCordSystemSymbol.thread)

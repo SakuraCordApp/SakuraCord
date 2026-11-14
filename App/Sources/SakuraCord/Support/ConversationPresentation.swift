@@ -110,6 +110,12 @@ nonisolated struct PermissionOverwritePrincipals: Sendable {
 }
 
 nonisolated enum ChannelIconPresentation {
+    /// A thread's title symbol; a forum post shows the forum's conversation
+    /// bubbles.
+    static func threadSystemImage(isForumPost: Bool) -> String {
+        isForumPost ? "bubble.left.and.bubble.right.fill" : SakuraCordSystemSymbol.thread
+    }
+
     static func systemImage(
         for channel: Channel,
         isHidden: Bool,

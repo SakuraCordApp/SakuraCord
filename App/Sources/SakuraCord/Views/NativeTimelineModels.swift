@@ -382,7 +382,7 @@ enum NativeTimelineBeginning: Equatable {
                 return "number"
             }
         case let .thread(_, _, _, _, isForumPost):
-            return isForumPost ? "bubble.left.and.bubble.right.fill" : SakuraCordSystemSymbol.thread
+            return ChannelIconPresentation.threadSystemImage(isForumPost: isForumPost)
         }
     }
 
