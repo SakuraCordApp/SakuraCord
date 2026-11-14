@@ -193,7 +193,7 @@ extension NativeMessageTimelineCoordinator {
                     repeating: nil,
                     count: sourceItems.count
                 )
-                var sliceStart = ProcessInfo.processInfo.systemUptime
+                var slice = MainActorTimeSlice()
                 for index in indexes {
                     guard !Task.isCancelled,
                           self.widthRelayoutGeneration == generation,
@@ -201,16 +201,7 @@ extension NativeMessageTimelineCoordinator {
                           self.parent.conversation == sourceConversation
                     else { return }
                     prepared[index] = self.layout(for: sourceItems[index], width: width, metrics: metrics)
-                    if ProcessInfo.processInfo.systemUptime - sliceStart >= 0.0015 {
-                        // Give AppKit a run-loop turn to draw. Task.yield() can
-                        // immediately resume this main-actor job instead.
-                        do {
-                            try await Task.sleep(for: .milliseconds(1))
-                        } catch {
-                            return
-                        }
-                        sliceStart = ProcessInfo.processInfo.systemUptime
-                    }
+                    guard await slice.pauseIfNeeded() else { return }
                 }
                 guard !Task.isCancelled,
                       self.widthRelayoutGeneration == generation,

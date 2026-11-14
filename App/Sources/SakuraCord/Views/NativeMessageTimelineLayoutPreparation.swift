@@ -95,7 +95,7 @@ extension NativeMessageTimelineCoordinator {
         layoutPreparation = preparation
         layoutPreparationTask = Task { @MainActor [weak self, weak scrollView] in
             guard let self, let scrollView else { return }
-            var sliceStart = ProcessInfo.processInfo.systemUptime
+            var slice = MainActorTimeSlice()
             for item in pendingItems {
                 guard !Task.isCancelled,
                       self.layoutPreparation === preparation
@@ -123,16 +123,7 @@ extension NativeMessageTimelineCoordinator {
                 preparation.layouts[item.identifier] = CachedItemLayout(
                     item: item, layout: prepared
                 )
-                if ProcessInfo.processInfo.systemUptime - sliceStart >= 0.0015 {
-                    // Let AppKit service its display link; yielding alone can
-                    // resume the same job before the run loop services drawing.
-                    do {
-                        try await Task.sleep(for: .milliseconds(1))
-                    } catch {
-                        return
-                    }
-                    sliceStart = ProcessInfo.processInfo.systemUptime
-                }
+                guard await slice.pauseIfNeeded() else { return }
             }
             guard !Task.isCancelled,
                   self.layoutPreparation === preparation
