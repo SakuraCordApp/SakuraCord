@@ -325,40 +325,32 @@ plutil -lint "$ENTITLEMENTS_STAGING" >/dev/null
 codesign --force --sign "$CODE_SIGN_IDENTITY" \
   --entitlements "$ENTITLEMENTS_STAGING" "$APP_BUNDLE" >/dev/null
 
-open_app() {
-  sakuracord_launch_scoped_app "$@"
-}
-open_media_viewer_benchmark() {
-  sakuracord_launch_scoped_app --env SAKURACORD_MEDIA_VIEWER_BENCHMARK=1
-}
-
 case "$MODE" in
   package|package-release) ;;
-  run) open_app ;;
-  run-release) open_app ;;
+  run|run-release) sakuracord_launch_scoped_app ;;
   --debug)
     sakuracord_verify_development_launch
     sakuracord_stop_scoped_app
     lldb -- "$MACOS/$APP_NAME"
     ;;
   --logs)
-    open_app
+    sakuracord_launch_scoped_app
     /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\""
     ;;
   --telemetry)
-    open_app
+    sakuracord_launch_scoped_app
     /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\""
     ;;
   --verify)
     # Verification must never touch a stored Discord credential or the live API.
-    open_app --args --offline
+    sakuracord_launch_scoped_app --args --offline
     sleep 2
     sakuracord_is_scoped_app_running
     ;;
   --offline-forum-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-files-performance|--offline-chat-files-performance-autoscroll|--offline-chat-files-performance-open)
     # Forward the result path, which `open` does not pass on by itself.
-    open_app ${SAKURACORD_PERFORMANCE_RESULT_PATH:+--env "SAKURACORD_PERFORMANCE_RESULT_PATH=$SAKURACORD_PERFORMANCE_RESULT_PATH"} \
+    sakuracord_launch_scoped_app ${SAKURACORD_PERFORMANCE_RESULT_PATH:+--env "SAKURACORD_PERFORMANCE_RESULT_PATH=$SAKURACORD_PERFORMANCE_RESULT_PATH"} \
       --args "$MODE" ${LIVE_TIMELINE_ARGS[@]+"${LIVE_TIMELINE_ARGS[@]}"} ;;
-  --offline*) open_app --args "$MODE" ;;
-  --media-viewer-benchmark) open_media_viewer_benchmark ;;
+  --offline*) sakuracord_launch_scoped_app --args "$MODE" ;;
+  --media-viewer-benchmark) sakuracord_launch_scoped_app --env SAKURACORD_MEDIA_VIEWER_BENCHMARK=1 ;;
 esac
