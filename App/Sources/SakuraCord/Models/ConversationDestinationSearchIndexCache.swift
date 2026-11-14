@@ -209,8 +209,8 @@ final class ConversationDestinationSearchIndexCache {
                 hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
                 currentUserIsPending: member?.isPending == true,
                 currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
-                currentUserRequiresOnboarding: guild.features.contains("GUILD_ONBOARDING") && member?.requiresOnboarding == true,
-                currentUserOnboardingIsKnown: !guild.features.contains("GUILD_ONBOARDING") || member?.flags != nil
+                currentUserRequiresOnboarding: guild.hasOnboarding && member?.requiresOnboarding == true,
+                currentUserOnboardingIsKnown: guild.isOnboardingStateKnown(for: member)
             )
         }
     }

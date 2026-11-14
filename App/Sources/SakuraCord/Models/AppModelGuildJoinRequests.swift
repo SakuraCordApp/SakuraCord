@@ -317,7 +317,7 @@ extension AppModel {
         startAccountChildTask(account: accountSession()) { model, account in
             guard let guild = try? await model.awaitJoinedGuild(guildID, account: account) else { return }
             model.selectGuild(guildID)
-            if guild.features.contains("GUILD_ONBOARDING") { model.openChannelsAndRoles(in: guildID) }
+            if guild.hasOnboarding { model.openChannelsAndRoles(in: guildID) }
         }
     }
 

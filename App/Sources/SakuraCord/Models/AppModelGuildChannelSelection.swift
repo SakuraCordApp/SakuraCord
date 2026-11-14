@@ -28,7 +28,7 @@ extension AppModel {
     func isUncustomizedMember(in guildID: GuildID) -> Bool {
         let settings = presentedGuildChannelSettings(in: guildID)
         return settings.flags & GuildChannelSelection.enabledFlag == 0
-            && (onboardingMember(in: guildID)?.flags ?? 0) & 2 == 0
+            && onboardingMember(in: guildID)?.hasCompletedOnboarding != true
             && !settings.channelOverrides.contains { $0.flags & GuildChannelSelection.selectedFlag != 0 }
     }
 

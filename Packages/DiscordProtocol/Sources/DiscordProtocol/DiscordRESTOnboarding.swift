@@ -20,7 +20,7 @@ public extension DiscordRESTProvider {
               let member = cachedMemberIndex(guildID: guildID)[userID] else {
             throw ChatProviderError.invalidRequest("Discord has not confirmed your server membership. Reconnect and try again.")
         }
-        if cachedGuilds[guildID]?.features.contains("GUILD_ONBOARDING") == true, member.flags == nil {
+        if cachedGuilds[guildID]?.hasOnboarding == true, member.flags == nil {
             throw ChatProviderError.invalidRequest("Discord did not return your onboarding status. Reconnect to verify your membership.")
         }
         publishMemberChange(member, guildID: guildID)

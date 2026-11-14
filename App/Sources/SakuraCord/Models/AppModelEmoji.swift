@@ -9,7 +9,7 @@ extension AppModel {
         guard !emoji.roleIDs.isEmpty else { return true }
         guard let memberRoles = currentUserRoleIDsByGuild[emoji.guildID] else { return false }
         if !memberRoles.isDisjoint(with: emoji.roleIDs) { return true }
-        guard serverRailGuildsByID[emoji.guildID]?.features.contains("ROLE_SUBSCRIPTIONS_ENABLED") == true else { return false }
+        guard serverRailGuildsByID[emoji.guildID]?.features.contains(GuildFeature.roleSubscriptionsEnabled) == true else { return false }
         let roles = guildRolesByGuildID[emoji.guildID] ?? (emoji.guildID == selectedGuildID ? guildRoles : [])
         return roles.contains { $0.isPurchasableSubscription == true && emoji.roleIDs.contains($0.id) }
     }

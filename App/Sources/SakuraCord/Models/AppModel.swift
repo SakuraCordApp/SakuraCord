@@ -745,7 +745,7 @@ final class AppModel {
             currentUserIsPending: onboardingMember(in: guildID)?.isPending == true,
             currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
             currentUserRequiresOnboarding: requiresOnboarding(in: guildID),
-            currentUserOnboardingIsKnown: !guild.features.contains("GUILD_ONBOARDING") || onboardingMember(in: guildID)?.flags != nil
+            currentUserOnboardingIsKnown: guild.isOnboardingStateKnown(for: onboardingMember(in: guildID))
         )
     }
 

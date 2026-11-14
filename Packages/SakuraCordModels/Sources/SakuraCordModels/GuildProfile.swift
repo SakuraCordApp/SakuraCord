@@ -62,7 +62,7 @@ public struct GuildProfile: Decodable, Equatable, Sendable {
         case gameApplicationIDs = "game_application_ids", gameActivity = "game_activity"
     }
 
-    public var isDiscoverable: Bool { features.contains("DISCOVERABLE") }
+    public var isDiscoverable: Bool { features.contains(GuildFeature.discoverable) }
 
     public var iconURL: URL? {
         iconHash.flatMap { DiscordCDN.guildIcon(id, hash: $0) }
@@ -84,8 +84,8 @@ public struct GuildProfile: Decodable, Equatable, Sendable {
 
     /// Manual-approval screening with visibility 3 (`PUBLIC_WITH_RECRUITMENT`): the card offers an application.
     public var acceptsApplications: Bool {
-        visibility == 3 && features.contains("MEMBER_VERIFICATION_GATE_ENABLED")
-            && features.contains("MEMBER_VERIFICATION_MANUAL_APPROVAL")
+        visibility == 3 && features.contains(GuildFeature.memberVerificationGateEnabled)
+            && features.contains(GuildFeature.memberVerificationManualApproval)
     }
 
     /// Without an invite, the first-party card offers Join only for discoverable servers.

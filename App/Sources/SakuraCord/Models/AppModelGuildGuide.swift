@@ -75,7 +75,7 @@ extension AppModel {
         // An empty Favorites server keeps the last server selected but shows none of it.
         guard !favorites.isPresented || selectedChannelID != nil,
               let guildID = selectedGuildID,
-              serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true else { return nil }
+              serverRailGuildsByID[guildID]?.hasOnboarding == true else { return nil }
         let member = onboardingMember(in: guildID)
         return member?.requiresOnboarding == true ? guildID : nil
     }
@@ -87,12 +87,12 @@ extension AppModel {
     }
 
     func hasChannelsAndRoles(in guildID: GuildID) -> Bool {
-        serverRailGuildsByID[guildID]?.features.contains("COMMUNITY") == true
+        serverRailGuildsByID[guildID]?.features.contains(GuildFeature.community) == true
             && (featuresSettings.channelManagement || hasCustomizationQuestions(in: guildID))
     }
 
     func hasCustomizationQuestions(in guildID: GuildID) -> Bool {
-        serverRailGuildsByID[guildID]?.features.isSuperset(of: ["COMMUNITY", "GUILD_ONBOARDING_HAS_PROMPTS"]) == true
+        serverRailGuildsByID[guildID]?.features.isSuperset(of: [GuildFeature.community, GuildFeature.onboardingHasPrompts]) == true
     }
 
     func customizationTitle(in guildID: GuildID?) -> String {
@@ -102,7 +102,7 @@ extension AppModel {
 
     func hasGuildGuide(in guildID: GuildID) -> Bool {
         guard let guild = serverRailGuildsByID[guildID],
-              guild.features.isSuperset(of: ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]) else { return false }
+              guild.features.isSuperset(of: [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]) else { return false }
         // Official navigation uses membership age/action flags and resource
         // channel flags, not GUILD_SERVER_GUIDE alone (READY carries both).
         return hasPendingGuildGuideActions(in: guildID)
@@ -129,7 +129,7 @@ extension AppModel {
 
     func refreshGuildGuide(in guildID: GuildID) {
         guard !accountTransitionIsActive,
-              serverRailGuildsByID[guildID]?.features.contains("GUILD_SERVER_GUIDE") == true,
+              serverRailGuildsByID[guildID]?.features.contains(GuildFeature.serverGuide) == true,
               onboarding.guides[guildID]?.isLoading != true else { return }
         var entry = onboarding.guides[guildID] ?? .init()
         entry.isLoading = true

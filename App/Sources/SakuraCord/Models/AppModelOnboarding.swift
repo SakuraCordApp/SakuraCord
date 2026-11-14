@@ -124,7 +124,7 @@ extension AppModel {
     }
 
     func requiresOnboarding(in guildID: GuildID) -> Bool {
-        serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true
+        serverRailGuildsByID[guildID]?.hasOnboarding == true
             && onboardingMember(in: guildID)?.requiresOnboarding == true
     }
 
@@ -142,7 +142,7 @@ extension AppModel {
 
     func refreshSelectedGuildOnboarding(force: Bool = false) {
         guard let guildID = selectedGuildID, let guild = serverRailGuildsByID[guildID] else { return }
-        if guild.features.contains("GUILD_ONBOARDING") || guild.features.contains("GUILD_ONBOARDING_HAS_PROMPTS") {
+        if guild.hasOnboarding || guild.features.contains(GuildFeature.onboardingHasPrompts) {
             let entry = onboarding.entries[guildID]
             if force || entry?.needsRefresh == true || entry?.refreshedAt.map({ Date.now.timeIntervalSince($0) >= 30 }) != false {
                 refreshOnboarding(in: guildID)
@@ -170,7 +170,7 @@ extension AppModel {
                 let (value, confirmedMember) = try await (configuration, member)
                 guard model.isCurrentAccountSession(account), !Task.isCancelled,
                       store.entries[guildID]?.revision == revision else { return }
-                let initial = confirmedMember.requiresOnboarding && guild.features.contains("GUILD_ONBOARDING")
+                let initial = confirmedMember.requiresOnboarding && guild.hasOnboarding
                 if !initial, let current = store.entries[guildID],
                    current.editRevision != entry.editRevision || current.isSaving {
                     store.entries[guildID]?.isLoading = false
@@ -331,7 +331,7 @@ extension AppModel {
             ?? channelID
         let channel = knownRootChannel(parentID)
         guard let guildID = channel?.guildID else { return true }
-        if requiresOnboarding(in: guildID) || (serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true && onboardingMember(in: guildID)?.flags == nil) {
+        if requiresOnboarding(in: guildID) || serverRailGuildsByID[guildID]?.isOnboardingStateKnown(for: onboardingMember(in: guildID)) == false {
             openChannelsAndRoles(in: guildID)
             return false
         }

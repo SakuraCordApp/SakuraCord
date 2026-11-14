@@ -458,7 +458,7 @@ struct EmojiPickerView: View {
             interaction.synchronize(with: document.selectableCells)
         }
         .onChange(of: Set(model.serverRailGuildsByID.values.filter {
-            $0.features.contains("ROLE_SUBSCRIPTIONS_ENABLED")
+            $0.features.contains(GuildFeature.roleSubscriptionsEnabled)
         }.map(\.id))) { _, _ in
             document.synchronize(with: model, useCase: useCase)
             interaction.synchronize(with: document.selectableCells)

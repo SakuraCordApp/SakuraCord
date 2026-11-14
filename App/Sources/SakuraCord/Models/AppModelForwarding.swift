@@ -321,7 +321,7 @@ extension AppModel {
         else { return true }
         guard let guildID = channel.guildID else { return true }
         guard let guild = serverRailGuildsByID[guildID],
-              !guild.features.contains("FORWARDING_DISABLED"),
+              !guild.features.contains(GuildFeature.forwardingDisabled),
               let permissions = effectiveMessagePermissions(in: channel)
         else { return false }
         return permissions & DiscordPermissionBits.readMessageHistory != 0

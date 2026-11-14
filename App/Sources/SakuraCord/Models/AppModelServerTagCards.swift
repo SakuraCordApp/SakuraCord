@@ -142,7 +142,7 @@ extension AppModel {
             navigateToServerTagGuild(guildID)
             if requiresVerification {
                 openGuildJoinApplication(guildID)
-            } else if guild.features.contains("GUILD_ONBOARDING") {
+            } else if guild.hasOnboarding {
                 openChannelsAndRoles(in: guildID)
             }
             return true

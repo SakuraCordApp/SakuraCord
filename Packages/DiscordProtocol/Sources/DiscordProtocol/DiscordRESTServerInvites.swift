@@ -76,7 +76,7 @@ public extension DiscordRESTProvider {
     }
 
     func createServerInvite(in channelID: ChannelID, guildID: GuildID, settings: ServerInviteSettings) async throws -> CreatedServerInvite {
-        guard settings.maxAge != .never || cachedGuilds[guildID]?.features.contains("COMMUNITY") == true else {
+        guard settings.maxAge != .never || cachedGuilds[guildID]?.features.contains(GuildFeature.community) == true else {
             throw ServerInviteError.failed("Non-expiring invites require a Community server.")
         }
         // Mirrors the official settings-page submission, and an Activity's

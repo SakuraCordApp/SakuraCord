@@ -172,7 +172,7 @@ extension AppModel {
         navigateToInvite(invite)
         if screening {
             openGuildJoinApplication(guild.id, inviteCode: invite.reference.code)
-        } else if guild.features.contains("GUILD_ONBOARDING") {
+        } else if guild.hasOnboarding {
             openChannelsAndRoles(in: guild.id)
         }
         loadServerInvite(invite.reference, refresh: true)
