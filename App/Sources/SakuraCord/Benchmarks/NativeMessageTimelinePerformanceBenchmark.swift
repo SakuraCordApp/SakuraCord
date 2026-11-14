@@ -63,7 +63,7 @@ extension NativeMessageTimelineCoordinator {
                     let startupDeadline =
                         ProcessInfo.processInfo.systemUptime + 3
                     while !NativeTimelineBenchmarkStartupPolicy.isReady(
-                        completedTicks: startup.completedTicks,
+                        completedTicks: startup.ticks.completedTicks,
                         uptime: ProcessInfo.processInfo.systemUptime,
                         lastDelayedTickUptime: startup.lastDelayedTickUptime
                     ),
@@ -101,14 +101,14 @@ extension NativeMessageTimelineCoordinator {
                     )
                 }
                 startup.phase = "settling"
-                let ticksBeforePositionShift = startup.completedTicks
+                let ticksBeforePositionShift = startup.ticks.completedTicks
                 let positionShiftDeadline =
                     ProcessInfo.processInfo.systemUptime + 0.250
                 do {
                     // Do not switch to measured motion until AppKit has
                     // presented the position shift that moves rows beneath the
                     // floating composer.
-                    while startup.completedTicks <= ticksBeforePositionShift,
+                    while startup.ticks.completedTicks <= ticksBeforePositionShift,
                           ProcessInfo.processInfo.systemUptime
                             < positionShiftDeadline
                     {
@@ -122,10 +122,10 @@ extension NativeMessageTimelineCoordinator {
                 Self.performanceLogger.notice(
                     """
                     SakuraCord timeline benchmark startup: \
-                    max handoff tick \(startup.maximumTickInterval * 1_000, format: .fixed(precision: 2), privacy: .public) ms; \
+                    max handoff tick \(startup.ticks.maximumTickInterval * 1_000, format: .fixed(precision: 2), privacy: .public) ms; \
                     max canvas draw \(canvas.maximumDrawDuration * 1_000, format: .fixed(precision: 2), privacy: .public) ms; \
                     max row raster \(canvas.maximumRowRasterDuration * 1_000, format: .fixed(precision: 2), privacy: .public) ms \
-                    over \(startup.completedTicks, privacy: .public) ticks (\(startup.delayedTicks, privacy: .public) above 33 ms)
+                    over \(startup.ticks.completedTicks, privacy: .public) ticks (\(startup.ticks.delayedTicks, privacy: .public) above 33 ms)
                     """
                 )
                 startMeasuredPerformanceBenchmark(
@@ -258,13 +258,13 @@ extension NativeMessageTimelineCoordinator {
                 : parent.hasMoreMessages
             // A still timeline is not starved of history.
             if !NativeTimelineBenchmarkScrollPolicy.isIdle {
-                state.recordHistoryProgress(
+                state.ticks.recordHistoryProgress(
                     didAdvance: didAdvance,
                     hasMoreHistory: hasMoreHistory
                 )
             }
-            state.maximumScrollWork = max(
-                state.maximumScrollWork,
+            state.ticks.maximumScrollWork = max(
+                state.ticks.maximumScrollWork,
                 ProcessInfo.processInfo.systemUptime - workStart
             )
             let outcome = state.controller.recordTick(
@@ -333,15 +333,7 @@ extension NativeMessageTimelineCoordinator {
                 outcome: outcome,
                 completedDistance: state.controller.completedDistance,
                 elapsed: elapsed,
-                completedTicks: state.completedTicks,
-                delayedTicks: state.delayedTicks,
-                tickIntervals: state.tickIntervals,
-                delayedTickSamples: state.delayedTickSamples,
-                maximumTickInterval: state.maximumTickInterval,
-                maximumScrollWork: state.maximumScrollWork,
-                historyStarvedTicks: state.historyStarvedTicks,
-                maximumConsecutiveHistoryStarvedTicks:
-                    state.maximumHistoryStarvedTicks,
+                ticks: state.ticks,
                 renderTelemetry: canvas?.renderTelemetry,
                 mainThreadCPUTime: PerformanceBenchmarkHarness.currentThreadCPUTime()
                     - state.mainThreadCPUTimeAtStart,
@@ -368,17 +360,17 @@ extension NativeMessageTimelineCoordinator {
                         + "(%d above 33 ms; max at %d items, y %.0f); "
                         + "history-starved %d ticks (max %d consecutive); "
                         + "spatial work %.0f / %.0f nominal points in %.2f s",
-                state.maximumTickInterval * 1_000,
-                state.maximumScrollWork * 1_000,
+                state.ticks.maximumTickInterval * 1_000,
+                state.ticks.maximumScrollWork * 1_000,
                 (canvas?.maximumDrawDuration ?? 0) * 1_000,
                 (canvas?.maximumRowRasterDuration ?? 0) * 1_000,
                 canvas?.maximumRowRasterHeight ?? 0,
-                state.completedTicks,
-                state.delayedTicks,
+                state.ticks.completedTicks,
+                state.ticks.delayedTicks,
                 state.maximumTickItemCount,
                 state.maximumTickDocumentY,
-                state.historyStarvedTicks,
-                state.maximumHistoryStarvedTicks,
+                state.ticks.historyStarvedTicks,
+                state.ticks.maximumConsecutiveHistoryStarvedTicks,
                 state.controller.completedDistance,
                 NativeTimelineBenchmarkScrollPolicy.nominalDistance,
                 elapsed
@@ -391,21 +383,13 @@ extension NativeMessageTimelineCoordinator {
 @MainActor
 final class NativeTimelineBenchmarkStartupState {
     let ticker = DisplayLinkTicker()
-    let startedAt = ProcessInfo.processInfo.systemUptime
-    var previousTickUptime = ProcessInfo.processInfo.systemUptime
-    var maximumTickInterval = 0.0
-    var delayedTicks = 0
-    var completedTicks = 0
+    private(set) var ticks = NativeTimelineBenchmarkTickStats()
     var phase = "initial-render"
-    var lastDelayedTickUptime = ProcessInfo.processInfo.systemUptime
+    private(set) var lastDelayedTickUptime = ProcessInfo.processInfo.systemUptime
 
     func recordTick(at uptime: TimeInterval) -> TimeInterval {
-        let interval = uptime - previousTickUptime
-        previousTickUptime = uptime
-        completedTicks += 1
-        maximumTickInterval = max(maximumTickInterval, interval)
+        let interval = ticks.recordTick(at: uptime)
         if interval > 0.033 {
-            delayedTicks += 1
             lastDelayedTickUptime = uptime
         }
         return interval
@@ -420,18 +404,9 @@ final class NativeTimelineBenchmarkRunState {
     let scrollsTowardLater: Bool
     let closeMeasurement: () -> Void
     var controller: NativeTimelineBenchmarkScrollController
-    var previousTickUptime: TimeInterval
-    var maximumTickInterval = 0.0
-    var maximumScrollWork = 0.0
-    var completedTicks = 0
-    var delayedTicks = 0
-    var tickIntervals: [TimeInterval] = []
-    var delayedTickSamples: [NativeTimelineBenchmarkArtifact.DelayedTick] = []
+    var ticks: NativeTimelineBenchmarkTickStats
     var maximumTickItemCount: Int
     var maximumTickDocumentY = 0.0
-    var historyStarvedTicks = 0
-    var consecutiveHistoryStarvedTicks = 0
-    var maximumHistoryStarvedTicks = 0
     var didFinish = false
 
     init(
@@ -442,42 +417,18 @@ final class NativeTimelineBenchmarkRunState {
         self.scrollsTowardLater = scrollsTowardLater
         self.closeMeasurement = closeMeasurement
         controller = NativeTimelineBenchmarkScrollController(startedAt: startedAt)
-        previousTickUptime = startedAt
+        ticks = NativeTimelineBenchmarkTickStats(startedAt: startedAt)
         maximumTickItemCount = initialItemCount
-        tickIntervals.reserveCapacity(1_500)
-        delayedTickSamples.reserveCapacity(64)
     }
 
     func recordTick(at uptime: TimeInterval, itemCount: Int, documentY: CGFloat) -> TimeInterval {
-        let interval = uptime - previousTickUptime
-        previousTickUptime = uptime
-        completedTicks += 1
-        tickIntervals.append(interval)
-        if interval > 0.033 {
-            delayedTicks += 1
-            delayedTickSamples.append(
-                .init(offset: uptime - startedAt, interval: interval)
-            )
-        }
-        if interval > maximumTickInterval {
-            maximumTickInterval = interval
+        let previousMaximum = ticks.maximumTickInterval
+        let interval = ticks.recordTick(at: uptime)
+        if interval > previousMaximum {
             maximumTickItemCount = itemCount
             maximumTickDocumentY = documentY
         }
         return interval
-    }
-
-    func recordHistoryProgress(didAdvance: Bool, hasMoreHistory: Bool) {
-        if !didAdvance, hasMoreHistory {
-            historyStarvedTicks += 1
-            consecutiveHistoryStarvedTicks += 1
-            maximumHistoryStarvedTicks = max(
-                maximumHistoryStarvedTicks,
-                consecutiveHistoryStarvedTicks
-            )
-        } else {
-            consecutiveHistoryStarvedTicks = 0
-        }
     }
 
     @discardableResult

@@ -82,25 +82,68 @@ enum NativeTimelineBenchmarkFinishOutcome: String {
     case paginationFailed
 }
 
-@MainActor
-enum NativeTimelineBenchmarkArtifact {
+/// Display-tick statistics shared by the timeline startup, timeline run and
+/// member-list auto-scroll benchmarks.
+struct NativeTimelineBenchmarkTickStats {
     struct DelayedTick {
         let offset: TimeInterval
         let interval: TimeInterval
     }
 
+    let startedAt: TimeInterval
+    private(set) var previousTickUptime: TimeInterval
+    private(set) var completedTicks = 0
+    private(set) var delayedTicks = 0
+    private(set) var intervals: [TimeInterval] = []
+    private(set) var delayedTickSamples: [DelayedTick] = []
+    private(set) var maximumTickInterval = 0.0
+    var maximumScrollWork = 0.0
+    private(set) var historyStarvedTicks = 0
+    private(set) var maximumConsecutiveHistoryStarvedTicks = 0
+    private var consecutiveHistoryStarvedTicks = 0
+
+    init(startedAt: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        self.startedAt = startedAt
+        previousTickUptime = startedAt
+        intervals.reserveCapacity(1_500)
+        delayedTickSamples.reserveCapacity(64)
+    }
+
+    /// Records a display tick and returns its interval since the previous one.
+    mutating func recordTick(at uptime: TimeInterval) -> TimeInterval {
+        let interval = uptime - previousTickUptime
+        previousTickUptime = uptime
+        completedTicks += 1
+        intervals.append(interval)
+        maximumTickInterval = max(maximumTickInterval, interval)
+        if interval > 0.033 {
+            delayedTicks += 1
+            delayedTickSamples.append(.init(offset: uptime - startedAt, interval: interval))
+        }
+        return interval
+    }
+
+    mutating func recordHistoryProgress(didAdvance: Bool, hasMoreHistory: Bool) {
+        if !didAdvance, hasMoreHistory {
+            historyStarvedTicks += 1
+            consecutiveHistoryStarvedTicks += 1
+            maximumConsecutiveHistoryStarvedTicks = max(
+                maximumConsecutiveHistoryStarvedTicks,
+                consecutiveHistoryStarvedTicks
+            )
+        } else {
+            consecutiveHistoryStarvedTicks = 0
+        }
+    }
+}
+
+@MainActor
+enum NativeTimelineBenchmarkArtifact {
     static func write(
         outcome: NativeTimelineBenchmarkFinishOutcome,
         completedDistance: CGFloat,
         elapsed: TimeInterval,
-        completedTicks: Int? = nil,
-        delayedTicks: Int? = nil,
-        tickIntervals: [TimeInterval]? = nil,
-        delayedTickSamples: [DelayedTick]? = nil,
-        maximumTickInterval: TimeInterval? = nil,
-        maximumScrollWork: TimeInterval? = nil,
-        historyStarvedTicks: Int? = nil,
-        maximumConsecutiveHistoryStarvedTicks: Int? = nil,
+        ticks: NativeTimelineBenchmarkTickStats? = nil,
         renderTelemetry: NativeTimelineRenderTelemetry? = nil,
         mainThreadCPUTime: TimeInterval? = nil,
         timelineUpdates: (count: Int, milliseconds: Double)? = nil
@@ -128,37 +171,32 @@ enum NativeTimelineBenchmarkArtifact {
                     ),
                 ]
             }
-            if let completedTicks,
-               let delayedTicks,
-               let tickIntervals,
-               let delayedTickSamples,
-               let maximumTickInterval,
-               let maximumScrollWork,
-               let historyStarvedTicks,
-               let maximumConsecutiveHistoryStarvedTicks
-            {
-                let sortedTickIntervals = tickIntervals.sorted()
+            if let ticks {
+                let sortedTickIntervals = ticks.intervals.sorted()
                 func percentile(_ fraction: Double) -> Double {
                     PerformanceBenchmarkHarness.nearestRankPercentile(sortedTickIntervals, fraction)
                 }
-                let delayedTickRate = completedTicks > 0
-                    ? Double(delayedTicks) / Double(completedTicks)
+                let delayedTickRate = ticks.completedTicks > 0
+                    ? Double(ticks.delayedTicks) / Double(ticks.completedTicks)
                     : 0
-                let delayedTickSampleText = delayedTickSamples.map { sample in
+                let delayedTickSampleText = ticks.delayedTickSamples.map { sample in
                     "\(sample.offset * 1_000):\(sample.interval * 1_000)"
                 }.joined(separator: ",")
                 fields += [
-                    ("completed_ticks", completedTicks),
-                    ("delayed_ticks_over_33ms", delayedTicks),
+                    ("completed_ticks", ticks.completedTicks),
+                    ("delayed_ticks_over_33ms", ticks.delayedTicks),
                     ("delayed_tick_rate", delayedTickRate),
                     ("median_tick_interval_ms", percentile(0.50) * 1_000),
                     ("p95_tick_interval_ms", percentile(0.95) * 1_000),
                     ("p99_tick_interval_ms", percentile(0.99) * 1_000),
-                    ("maximum_tick_interval_ms", maximumTickInterval * 1_000),
+                    ("maximum_tick_interval_ms", ticks.maximumTickInterval * 1_000),
                     ("delayed_tick_samples_offset_ms_interval_ms", delayedTickSampleText),
-                    ("maximum_scroll_work_ms", maximumScrollWork * 1_000),
-                    ("history_starved_ticks", historyStarvedTicks),
-                    ("maximum_consecutive_history_starved_ticks", maximumConsecutiveHistoryStarvedTicks),
+                    ("maximum_scroll_work_ms", ticks.maximumScrollWork * 1_000),
+                    ("history_starved_ticks", ticks.historyStarvedTicks),
+                    (
+                        "maximum_consecutive_history_starved_ticks",
+                        ticks.maximumConsecutiveHistoryStarvedTicks
+                    ),
                 ]
             }
             if let renderTelemetry {
