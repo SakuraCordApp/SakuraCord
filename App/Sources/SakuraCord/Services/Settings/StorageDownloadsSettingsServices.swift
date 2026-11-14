@@ -35,12 +35,12 @@ final class StorageDownloadsSettingsStore {
 
     func load() -> StorageDownloadsSettingsSnapshot {
         var value = StorageDownloadsSettingsSnapshot.defaults
-        if case let .integer(rawLimit) = preferences.value(for: .localStorageLimit),
+        if let rawLimit = preferences.integer(.localStorageLimit),
            let limit = LocalStorageLimit(rawValue: Int64(rawLimit))
         {
             value.localStorageLimit = limit
         }
-        if case let .bool(reveals) = preferences.value(for: .revealCompletedDownloads) {
+        if let reveals = preferences.bool(.revealCompletedDownloads) {
             value.revealsCompletedDownloads = reveals
         }
         return value
@@ -68,7 +68,7 @@ final class StorageDownloadsSettingsStore {
     }
 
     func resolvedDefaultFolder() throws -> URL? {
-        guard case let .string(encoded) = preferences.value(for: .downloadFolderBookmark),
+        guard let encoded = preferences.string(.downloadFolderBookmark),
               !encoded.isEmpty,
               let data = Data(base64Encoded: encoded)
         else { return nil }
@@ -86,7 +86,7 @@ final class StorageDownloadsSettingsStore {
     }
 
     var defaultFolderName: String? {
-        guard case let .string(value) = preferences.value(for: .downloadFolderName),
+        guard let value = preferences.string(.downloadFolderName),
               !value.isEmpty
         else { return nil }
         return value
@@ -97,7 +97,7 @@ final class StorageDownloadsSettingsStore {
     }
 
     var lastMediaCacheClearDate: Date? {
-        guard case let .double(value) = preferences.value(for: .mediaCacheLastCleared),
+        guard let value = preferences.double(.mediaCacheLastCleared),
               value > 0
         else { return nil }
         return Date(timeIntervalSince1970: value)

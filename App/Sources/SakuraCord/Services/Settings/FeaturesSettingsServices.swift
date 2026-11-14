@@ -27,17 +27,17 @@ final class FeaturesSettingsStore {
 
     func load() -> FeaturesSettingsSnapshot {
         var value = FeaturesSettingsSnapshot.defaults
-        if case let .bool(saved) = preferences.value(for: .readAllButton) { value.readAllButton = saved }
-        if case let .bool(saved) = preferences.value(for: .channelManagement) { value.channelManagement = saved }
-        if case let .bool(saved) = preferences.value(for: .showHiddenChannels) { value.showHiddenChannels = saved }
-        if case let .bool(saved) = preferences.value(for: .fakeNitroEmojis) { value.fakeNitroEmojis = saved }
-        if case let .bool(saved) = preferences.value(for: .fakeNitroStickers) { value.fakeNitroStickers = saved }
-        if case let .bool(saved) = preferences.value(for: .fakeNitroSoundboard) { value.fakeNitroSoundboard = saved }
-        if case let .bool(saved) = preferences.value(for: .fakeNitroStreamQuality) { value.fakeNitroStreamQuality = saved }
-        if case let .bool(saved) = preferences.value(for: .unlimitedFavorites) { value.unlimitedFavorites = saved }
-        if case let .bool(saved) = preferences.value(for: .voiceMessageRecording) { value.voiceMessageRecording = saved }
-        if case let .bool(saved) = preferences.value(for: .messageHoverActions) { value.messageHoverActions = saved }
-        if case let .bool(saved) = preferences.value(for: .scrollToBottomButton) { value.scrollToBottomButton = saved }
+        if let saved = preferences.bool(.readAllButton) { value.readAllButton = saved }
+        if let saved = preferences.bool(.channelManagement) { value.channelManagement = saved }
+        if let saved = preferences.bool(.showHiddenChannels) { value.showHiddenChannels = saved }
+        if let saved = preferences.bool(.fakeNitroEmojis) { value.fakeNitroEmojis = saved }
+        if let saved = preferences.bool(.fakeNitroStickers) { value.fakeNitroStickers = saved }
+        if let saved = preferences.bool(.fakeNitroSoundboard) { value.fakeNitroSoundboard = saved }
+        if let saved = preferences.bool(.fakeNitroStreamQuality) { value.fakeNitroStreamQuality = saved }
+        if let saved = preferences.bool(.unlimitedFavorites) { value.unlimitedFavorites = saved }
+        if let saved = preferences.bool(.voiceMessageRecording) { value.voiceMessageRecording = saved }
+        if let saved = preferences.bool(.messageHoverActions) { value.messageHoverActions = saved }
+        if let saved = preferences.bool(.scrollToBottomButton) { value.scrollToBottomButton = saved }
         return value
     }
 

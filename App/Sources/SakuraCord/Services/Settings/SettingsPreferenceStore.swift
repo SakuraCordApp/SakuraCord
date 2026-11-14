@@ -919,6 +919,31 @@ final class SettingsPreferenceStore {
         }
     }
 
+    func bool(_ id: SettingsControlID) -> Bool? {
+        guard case let .bool(stored) = value(for: id) else { return nil }
+        return stored
+    }
+
+    func integer(_ id: SettingsControlID) -> Int? {
+        guard case let .integer(stored) = value(for: id) else { return nil }
+        return stored
+    }
+
+    func double(_ id: SettingsControlID) -> Double? {
+        guard case let .double(stored) = value(for: id) else { return nil }
+        return stored
+    }
+
+    func string(_ id: SettingsControlID) -> String? {
+        guard case let .string(stored) = value(for: id) else { return nil }
+        return stored
+    }
+
+    /// A stored string as the value it names.
+    func rawValue<Value: RawRepresentable>(_ id: SettingsControlID) -> Value? where Value.RawValue == String {
+        string(id).flatMap(Value.init(rawValue:))
+    }
+
     func containsStoredValue(
         for id: SettingsControlID,
         accountID: String? = nil

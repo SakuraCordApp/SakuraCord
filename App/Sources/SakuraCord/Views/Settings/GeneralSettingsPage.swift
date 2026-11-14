@@ -14,7 +14,7 @@ struct GeneralSettingsPage: View {
         self.state = state
         self.launchAtLogin = launchAtLogin
         let preferences = SettingsPreferenceStore.shared
-        let destination = if case let .string(value) = preferences.value(for: .launchDestination) {
+        let destination = if let value = preferences.string(.launchDestination) {
             SettingsLaunchDestination(rawValue: value) ?? .lastVisitedConversation
         } else {
             SettingsLaunchDestination.lastVisitedConversation

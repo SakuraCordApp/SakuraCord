@@ -199,10 +199,10 @@ final class InterfaceSettingsStore {
 
     func load() -> InterfaceSettingsSnapshot {
         var value = InterfaceSettingsSnapshot.defaults
-        value.timestampFormat = enumValue(.timestampFormat) ?? value.timestampFormat
-        value.includesTimestampSeconds = boolValue(.timestampSeconds)
+        value.timestampFormat = preferences.rawValue(.timestampFormat) ?? value.timestampFormat
+        value.includesTimestampSeconds = preferences.bool(.timestampSeconds)
             ?? value.includesTimestampSeconds
-        value.alwaysShowsTimestamps = boolValue(.alwaysShowTimestamps) ?? false
+        value.alwaysShowsTimestamps = preferences.bool(.alwaysShowTimestamps) ?? false
         return value
     }
 
@@ -210,18 +210,6 @@ final class InterfaceSettingsStore {
         preferences.set(.string(value.timestampFormat.rawValue), for: .timestampFormat)
         preferences.set(.bool(value.includesTimestampSeconds), for: .timestampSeconds)
         preferences.set(.bool(value.alwaysShowsTimestamps), for: .alwaysShowTimestamps)
-    }
-
-    private func boolValue(_ id: SettingsControlID) -> Bool? {
-        guard case let .bool(value) = preferences.value(for: id) else { return nil }
-        return value
-    }
-
-    private func enumValue<Value: RawRepresentable>(
-        _ id: SettingsControlID
-    ) -> Value? where Value.RawValue == String {
-        guard case let .string(value) = preferences.value(for: id) else { return nil }
-        return Value(rawValue: value)
     }
 }
 

@@ -32,13 +32,13 @@ final class AttachmentSettingsStore {
 
     func load() -> AttachmentSettingsSnapshot {
         var value = AttachmentSettingsSnapshot()
-        if case let .string(raw) = preferences.value(for: .attachmentCompactionPrompt),
+        if let raw = preferences.string(.attachmentCompactionPrompt),
            let saved = AttachmentHandlingPolicy(rawValue: raw) { value.compactionPolicy = saved }
-        if case let .string(raw) = preferences.value(for: .attachmentExternalUploadPrompt),
+        if let raw = preferences.string(.attachmentExternalUploadPrompt),
            let saved = AttachmentHandlingPolicy(rawValue: raw) { value.externalUploadPolicy = saved }
-        if case let .string(raw) = preferences.value(for: .attachmentExternalProvider),
+        if let raw = preferences.string(.attachmentExternalProvider),
            let saved = ExternalAttachmentHostingService(rawValue: raw) { value.externalProvider = saved }
-        if case let .string(raw) = preferences.value(for: .attachmentCompactionQuality),
+        if let raw = preferences.string(.attachmentCompactionQuality),
            let saved = AttachmentCompactionOptions.Quality(rawValue: raw) { value.compaction.quality = saved }
         return value
     }

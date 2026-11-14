@@ -34,7 +34,7 @@ final class MessageComposerState {
 
     init(preferences: SettingsPreferenceStore? = nil) {
         self.preferences = preferences
-        if case let .bool(choice) = preferences?.value(for: .replyMentionsAuthor) {
+        if let choice = preferences?.bool(.replyMentionsAuthor) {
             replyMentionsAuthorChoice = choice
         } else {
             replyMentionsAuthorChoice = true

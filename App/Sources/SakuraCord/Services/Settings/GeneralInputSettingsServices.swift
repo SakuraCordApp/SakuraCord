@@ -32,22 +32,22 @@ final class GeneralInputSettingsStore {
 
     func load() -> GeneralInputSettingsSnapshot {
         var value = GeneralInputSettingsSnapshot.defaults
-        if case let .bool(saved) = preferences.value(for: .sendWithReturn) {
+        if let saved = preferences.bool(.sendWithReturn) {
             value.sendsWithReturn = saved
         }
-        if case let .bool(saved) = preferences.value(for: .spellCheck) {
+        if let saved = preferences.bool(.spellCheck) {
             value.checksSpelling = saved
         }
-        if case let .bool(saved) = preferences.value(for: .automaticCorrection) {
+        if let saved = preferences.bool(.automaticCorrection) {
             value.correctsSpellingAutomatically = saved
         }
-        if case let .bool(saved) = preferences.value(for: .smartQuotes) {
+        if let saved = preferences.bool(.smartQuotes) {
             value.usesSmartQuotes = saved
         }
-        if case let .bool(saved) = preferences.value(for: .smartDashes) {
+        if let saved = preferences.bool(.smartDashes) {
             value.usesSmartDashes = saved
         }
-        if case let .string(saved) = preferences.value(for: .emojiSkinTone),
+        if let saved = preferences.string(.emojiSkinTone),
            let tone = NativeEmojiSkinTone(rawValue: saved) {
             value.emojiSkinTone = tone
         }

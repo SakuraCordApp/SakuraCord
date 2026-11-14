@@ -192,7 +192,7 @@ final class KeyboardShortcutSettingsStore {
         let explicitActions = actions.filter { preferences.containsStoredValue(for: $0.controlID) }
         let defaultActions = actions.filter { !preferences.containsStoredValue(for: $0.controlID) }
         for action in explicitActions + defaultActions {
-            guard case let .string(value) = preferences.value(for: action.controlID),
+            guard let value = preferences.string(action.controlID),
                   !value.isEmpty else { continue }
             let shortcut = KeyboardShortcutChord(storageValue: value) ?? action.defaultShortcut
             guard let shortcut,

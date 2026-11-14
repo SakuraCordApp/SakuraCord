@@ -175,23 +175,23 @@ final class AppearanceSettingsStore {
 
     func load() -> AppearanceSettingsSnapshot {
         let colorScheme: AppColorScheme
-        if case let .string(rawValue) = preferences.value(for: .appColorScheme) {
+        if let rawValue = preferences.string(.appColorScheme) {
             colorScheme = AppColorScheme(rawValue: rawValue) ?? .system
         } else {
             colorScheme = .system
         }
         let appearance: ComposerBarAppearance
-        if case let .string(rawValue) = preferences.value(for: .composerBarAppearance) {
+        if let rawValue = preferences.string(.composerBarAppearance) {
             appearance = ComposerBarAppearance(rawValue: rawValue) ?? .defaultStyle
         } else {
             appearance = .defaultStyle
         }
         func messageAppearance(_ id: SettingsControlID) -> MessageAppearance {
-            guard case let .string(rawValue) = preferences.value(for: id) else { return .defaultStyle }
+            guard let rawValue = preferences.string(id) else { return .defaultStyle }
             return MessageAppearance(rawValue: rawValue) ?? .defaultStyle
         }
         let messageSpacing: Double
-        if case let .double(value) = preferences.value(for: .messageDensity) {
+        if let value = preferences.double(.messageDensity) {
             messageSpacing = value
         } else {
             messageSpacing = AppearanceSettingsSnapshot.defaults.messageSpacing
@@ -204,16 +204,16 @@ final class AppearanceSettingsStore {
             serverMessageAppearance: messageAppearance(.messageAppearance),
             messageSpacing: messageSpacing
         )
-        if case let .string(stored) = preferences.value(for: .composerIcons) {
+        if let stored = preferences.string(.composerIcons) {
             value.composerIcons = ComposerIconLayout(storageValue: stored)
         }
-        if case let .double(stored) = preferences.value(for: .windowOpacity) {
+        if let stored = preferences.double(.windowOpacity) {
             value.windowOpacity = stored
         }
-        if case let .double(stored) = preferences.value(for: .interfaceSize) {
+        if let stored = preferences.double(.interfaceSize) {
             value.interfaceSize = stored
         }
-        if case let .double(stored) = preferences.value(for: .messageFontSize) {
+        if let stored = preferences.double(.messageFontSize) {
             value.messageTextSize = stored
         }
         value.normalize()

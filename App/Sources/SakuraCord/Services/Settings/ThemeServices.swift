@@ -720,7 +720,7 @@ final class SakuraCordThemeSettingsStore {
 
     func load() -> SakuraCordGradientTheme {
         if preferences.containsStoredValue(for: .themeDesigner) {
-            if case let .string(rawValue) = preferences.value(for: .themeDesigner),
+            if let rawValue = preferences.string(.themeDesigner),
                let stored = SakuraCordGradientTheme(storageValue: rawValue)
             {
                 return stored
