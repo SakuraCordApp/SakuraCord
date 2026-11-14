@@ -35,12 +35,33 @@ extension AppModel {
 
     func setThreadMute(_ thread: MessageThreadSummary, isMuted: Bool, until: Date?) {
         guard threadActionPolicy(thread).canChangeNotifications else { return }
-        setForumPostMute(isMuted, until: until, for: ForumPost(thread: thread), reportErrorInAlert: true)
+        setForumPostMute(isMuted, until: until, for: ForumPost(thread: thread))
     }
 
     func setThreadNotificationLevel(_ thread: MessageThreadSummary, level: MessageNotificationLevel) {
         guard threadActionPolicy(thread).canChangeNotifications else { return }
-        setForumPostNotificationLevel(level, for: ForumPost(thread: thread), reportErrorInAlert: true)
+        setForumPostNotificationLevel(level, for: ForumPost(thread: thread))
+    }
+
+    private func setForumPostNotificationLevel(_ level: MessageNotificationLevel, for post: ForumPost) {
+        guard !isNotificationMutationPending(.forumPost(post.id)) else { return }
+        runNotificationMutation(.forumPost(post.id), failureMessage: "Discord did not accept the notification setting.") {
+            try await $0.updateForumPostNotificationLevel(post, level: level)
+        } apply: { model in
+            model.updateLocalForumPostNotificationSettings(postID: post.id) { $0.flags = $0.flags(setting: level) }
+        }
+    }
+
+    private func setForumPostMute(_ isMuted: Bool, until: Date?, for post: ForumPost) {
+        guard !isNotificationMutationPending(.forumPost(post.id)) else { return }
+        runNotificationMutation(.forumPost(post.id), failureMessage: "Discord did not accept the mute setting.") {
+            try await $0.updateForumPostMute(post, isMuted: isMuted, until: until)
+        } apply: { model in
+            model.updateLocalForumPostNotificationSettings(postID: post.id) {
+                $0.isMuted = isMuted
+                $0.muteConfiguration = isMuted ? DiscordMuteConfiguration(endTime: until) : nil
+            }
+        }
     }
 
     /// Join (Follow) or Leave (Unfollow). An open thread stays open; the
