@@ -33,7 +33,7 @@ struct GuildDTO: Decodable {
             currentUserPermissions: permissions.flatMap(UInt64.init),
             rulesChannelID: rulesChannelID.flatMap(ChannelID.init),
             features: features ?? [],
-            guideHeaderURL: homeHeader.flatMap { URL(string: "https://cdn.discordapp.com/home-headers/\(id)/\($0).png?size=2048") },
+            guideHeaderURL: homeHeader.flatMap { DiscordCDN.guildHomeHeader(id, hash: $0) },
             profileTag: profile?.domain(guildID: id),
             defaultMessageNotifications:
                 defaultMessageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))

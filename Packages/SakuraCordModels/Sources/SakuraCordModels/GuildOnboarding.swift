@@ -83,7 +83,7 @@ public struct GuildOnboardingOption: Decodable, Identifiable, Equatable, Sendabl
         public var name: String?
         public var animated: Bool?
         public var url: URL? {
-            id.flatMap { URL(string: "https://cdn.discordapp.com/emojis/\($0).\(animated == true ? "gif" : "webp")?size=48") }
+            id.flatMap { DiscordCDN.emoji($0, fileExtension: animated == true ? "gif" : "webp", query: "size=48") }
         }
     }
 

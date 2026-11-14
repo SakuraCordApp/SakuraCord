@@ -246,7 +246,7 @@ private struct ServerInviteDTO: Decodable {
             description: profile?.description ?? guild.description,
             traits: (profile?.traits ?? []).sorted { ($0.position ?? 0) < ($1.position ?? 0) }.map {
                 .init(label: $0.label, emoji: $0.emojiName, emojiURL: $0.emojiId.flatMap {
-                    URL(string: "https://cdn.discordapp.com/emojis/\($0).webp?size=32")
+                    DiscordCDN.emoji($0, fileExtension: "webp", query: "size=32")
                 })
             }, memberCount: approximateMemberCount, onlineCount: approximatePresenceCount,
             expiresAt: expiresAt.flatMap(DiscordRESTProvider.inviteDate),

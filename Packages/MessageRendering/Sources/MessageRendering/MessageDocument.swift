@@ -1,4 +1,5 @@
 import Foundation
+import SakuraCordModels
 
 enum MessageRegularExpression {
     static func make(_ pattern: String) -> NSRegularExpression {
@@ -34,10 +35,7 @@ public struct RenderedEmoji: Codable, Hashable, Sendable {
     }
 
     public var imageURL: URL? {
-        URL(
-            string:
-            "https://cdn.discordapp.com/emojis/\(id).\(isAnimated ? "gif" : "png")?size=96&quality=lossless"
-        )
+        DiscordCDN.emoji(id, fileExtension: isAnimated ? "gif" : "png", query: "size=96&quality=lossless")
     }
 }
 

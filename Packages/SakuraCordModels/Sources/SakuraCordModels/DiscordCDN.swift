@@ -19,6 +19,17 @@ public enum DiscordCDN {
         )
     }
 
+    /// A custom emoji's image in `fileExtension`, with the query each
+    /// surface asks for.
+    public static func emoji(_ id: String, fileExtension: String, query: String? = nil) -> URL? {
+        URL(string: "https://cdn.discordapp.com/emojis/\(id).\(fileExtension)" + (query.map { "?\($0)" } ?? ""))
+    }
+
+    /// A server's home header image.
+    public static func guildHomeHeader(_ guildID: GuildID, hash: String) -> URL? {
+        URL(string: "https://cdn.discordapp.com/home-headers/\(guildID)/\(hash).png?size=2048")
+    }
+
     private static func isAnimated(_ hash: String) -> String {
         hash.hasPrefix("a_") ? "true" : "false"
     }

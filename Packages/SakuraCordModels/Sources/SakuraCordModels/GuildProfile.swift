@@ -25,7 +25,7 @@ public struct GuildProfile: Decodable, Equatable, Sendable {
         public var emojiID: String?
         enum CodingKeys: String, CodingKey { case label, emojiName = "emoji_name", emojiID = "emoji_id" }
 
-        public var emojiURL: URL? { emojiID.flatMap { URL(string: "https://cdn.discordapp.com/emojis/\($0).webp?size=32") } }
+        public var emojiURL: URL? { emojiID.flatMap { DiscordCDN.emoji($0, fileExtension: "webp", query: "size=32") } }
     }
 
     public init(from decoder: any Decoder) throws {

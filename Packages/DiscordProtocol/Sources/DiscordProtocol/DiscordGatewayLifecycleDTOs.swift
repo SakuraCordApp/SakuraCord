@@ -182,7 +182,7 @@ struct GatewayGuildPatchDTO: Decodable {
                 ? rulesChannelID.flatMap(ChannelID.init)
                 : existing?.rulesChannelID,
             features: features ?? existing?.features ?? [],
-            guideHeaderURL: containsHomeHeader ? homeHeader.flatMap { URL(string: "https://cdn.discordapp.com/home-headers/\(guildID)/\($0).png?size=2048") } : existing?.guideHeaderURL,
+            guideHeaderURL: containsHomeHeader ? homeHeader.flatMap { DiscordCDN.guildHomeHeader(guildID, hash: $0) } : existing?.guideHeaderURL,
             profileTag: containsProfile ? profile?.domain(guildID: guildID) : existing?.profileTag,
             defaultMessageNotifications:
                 defaultMessageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
