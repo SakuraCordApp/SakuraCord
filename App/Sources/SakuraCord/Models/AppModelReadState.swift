@@ -407,7 +407,7 @@ extension AppModel {
             let (channelID, mutation) = queuedAcknowledgements.removeFirst()
             let token = readState.acknowledgementToken
             do {
-                logReadAcknowledgementSending(channelID: channelID, mutation: mutation)
+                logReadAcknowledgement(.send, channelID: channelID, mutation: mutation)
                 let response = try await session.provider.acknowledge(
                     channelID: channelID,
                     messageID: mutation.messageID,
@@ -422,12 +422,12 @@ extension AppModel {
                       isCurrentAccountSession(session)
                 else { return }
                 readState.completeAcknowledgement(token: response.token, sentWith: token)
-                logReadAcknowledgementAccepted(channelID: channelID, mutation: mutation)
+                logReadAcknowledgement(.accepted, channelID: channelID, mutation: mutation)
             } catch is CancellationError {
                 return
             } catch {
                 // As in Discord, a failure changes no read state.
-                logReadAcknowledgementFailed(channelID: channelID, mutation: mutation)
+                logReadAcknowledgement(.failed, channelID: channelID, mutation: mutation)
             }
         }
         if generation == acknowledgementGeneration,
@@ -472,6 +472,59 @@ extension AppModel {
         discardPendingAcknowledgement(for: channelID)
         readState.unblockAutomaticAcknowledgement(channelID: channelID)
         readState.acknowledge(channelID: channelID, messageID: target)
+    }
+
+    /// Logs a read acknowledgement's progress; a failure logs as an error.
+    func logReadAcknowledgement(
+        _ stage: ReadAcknowledgementLogStage,
+        channelID: ChannelID,
+        mutation: ReadStateMutation
+    ) {
+        let channel = channelID.rawValue
+        let message = mutation.messageID.rawValue
+        Self.unreadDiagnosticsLogger.log(
+            level: stage == .failed ? .error : .info,
+            "Read ack \(stage.rawValue, privacy: .public) c=\(channel, privacy: .public) m=\(message, privacy: .public)"
+        )
+    }
+
+    func readStateMutation(channelID: ChannelID, messageID: MessageID) -> ReadStateMutation {
+        let metadata = readState.acknowledgementMetadata(channelID: channelID)
+        return ReadStateMutation(messageID: messageID, flags: metadata.flags, lastViewed: metadata.lastViewed)
+    }
+
+    func resetAcknowledgementWork() {
+        acknowledgementGeneration &+= 1
+        allServersReadTask?.cancel()
+        allServersReadTask = nil
+        isMarkingAllServersRead = false
+        acknowledgementTasks.values.forEach { $0.cancel() }
+        acknowledgementTasks.removeAll()
+        acknowledgementProcessorTask?.cancel()
+        acknowledgementProcessorTask = nil
+        guildAcknowledgementTasks.values.forEach { $0.cancel() }
+        guildAcknowledgementTasks.removeAll()
+        queuedAcknowledgements.removeAll()
+    }
+
+    func resetChannelNotificationMutations() {
+        channelNotificationMutationGeneration &+= 1
+        guildNotificationMutationTasks.values.forEach { $0.cancel() }
+        guildNotificationMutationTasks.removeAll()
+        guildNotificationSettingsRevisions.removeAll()
+        channelNotificationMutationTasks.values.forEach { $0.cancel() }
+        channelNotificationMutationTasks.removeAll()
+        categoryCollapseMutationTasks.values.forEach { $0.cancel() }
+        categoryCollapseMutationTasks.removeAll()
+        categoryCollapseMutationStates.removeAll()
+        optimisticCategoryCollapsedByID.removeAll()
+        channelPinMutationTasks.values.forEach { $0.cancel() }
+        channelPinMutationTasks.removeAll()
+        channelPinMutationStates.removeAll()
+        optimisticChannelPinnedByID.removeAll()
+        forumNotificationMutationGeneration &+= 1
+        forumNotificationMutationTasks.values.forEach { $0.cancel() }
+        forumNotificationMutationTasks.removeAll()
     }
 
     /// Reads a server Mark as Read's conversations locally before Discord
@@ -872,4 +925,10 @@ nonisolated enum NotificationMutationSlot: Sendable {
     /// A channel, category or direct message.
     case channel(ChannelID)
     case forumPost(ChannelID)
+}
+
+nonisolated enum ReadAcknowledgementLogStage: String {
+    case send
+    case accepted
+    case failed
 }
