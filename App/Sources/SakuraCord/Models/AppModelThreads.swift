@@ -291,11 +291,8 @@ extension AppModel {
     /// returns its unconfirmed sends, which are not history.
     @discardableResult
     func discardCachedHistory(for channelID: ChannelID) -> [Message] {
-        let pendingSends = messageCache[channelID]?.filter { $0.outboxState != .confirmed } ?? []
-        messageCache[channelID] = nil
-        messageCacheOrder.removeAll { $0 == channelID }
-        messageRowCache[channelID] = nil
-        messageRowCacheOrder.removeAll { $0 == channelID }
+        let pendingSends = takeCachedMessages(for: channelID).filter { $0.outboxState != .confirmed }
+        takeCachedMessageRows(for: channelID)
         hasMoreCache[channelID] = nil
         contiguousHistoryBoundaries[channelID] = nil
         threadWindow.cachedCursors[channelID] = nil
@@ -814,8 +811,7 @@ extension AppModel {
             let preview = transform(cached[index].replyPreview)
             guard preview != cached[index].replyPreview else { continue }
             messageCache[channelID]?[index].replyPreview = preview
-            messageRowCache[channelID] = nil
-            messageRowCacheOrder.removeAll { $0 == channelID }
+            takeCachedMessageRows(for: channelID)
         }
     }
 

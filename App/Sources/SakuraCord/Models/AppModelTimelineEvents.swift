@@ -1043,8 +1043,7 @@ extension AppModel {
         if let cachedRows = messageRowCache[channelID],
            !Self.rows(cachedRows, match: retained)
         {
-            messageRowCache[channelID] = nil
-            messageRowCacheOrder.removeAll { $0 == channelID }
+            takeCachedMessageRows(for: channelID)
         }
         messageCacheOrder.removeAll { $0 == channelID }
         messageCacheOrder.append(channelID)
@@ -1056,8 +1055,7 @@ extension AppModel {
         {
             let evicted = messageCacheOrder.removeFirst()
             messageCache[evicted] = nil
-            messageRowCache[evicted] = nil
-            messageRowCacheOrder.removeAll { $0 == evicted }
+            takeCachedMessageRows(for: evicted)
             hasMoreCache[evicted] = nil
             detachedMessageWindows[evicted] = nil
             if evicted != selectedChannelID, evicted != openThread?.id {
@@ -1073,14 +1071,12 @@ extension AppModel {
     ) {
         guard let cachedMessages = messageCache[channelID]
         else {
-            messageRowCache[channelID] = nil
-            messageRowCacheOrder.removeAll { $0 == channelID }
+            takeCachedMessageRows(for: channelID)
             return
         }
         let retainedRows = Array(rows.suffix(cachedMessages.count))
         guard Self.rows(retainedRows, match: cachedMessages) else {
-            messageRowCache[channelID] = nil
-            messageRowCacheOrder.removeAll { $0 == channelID }
+            takeCachedMessageRows(for: channelID)
             return
         }
         messageRowCache[channelID] = retainedRows
@@ -1099,6 +1095,7 @@ extension AppModel {
         return messageCache.removeValue(forKey: channelID) ?? []
     }
 
+    @discardableResult
     func takeCachedMessageRows(
         for channelID: ChannelID
     ) -> [MessageRowPresentation]? {
