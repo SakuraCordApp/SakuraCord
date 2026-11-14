@@ -191,7 +191,7 @@ struct NativeTimelineComponentLayout {
             }
         }
         if embedComponents == nil, let error = source?.componentError(for: message.id) {
-            let errorBox = NodeBuilder.plainText(
+            let errorBox = NativeTimelineAttributedTextBox.plain(
                 "⚠ \(error)",
                 font: .messageSystemFont(ofSize: 13),
                 color: .systemRed
@@ -1098,25 +1098,6 @@ private enum NodeBuilder {
         }
         result.size = CGSize(width: width, height: verticalOffset)
         return result
-    }
-
-    static func plainText(
-        _ value: String,
-        font: NSFont,
-        color: NSColor
-    ) -> NativeTimelineAttributedTextBox {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byWordWrapping
-        return NativeTimelineAttributedTextBox(
-            NSAttributedString(
-                string: value,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: color,
-                    .paragraphStyle: paragraph,
-                ]
-            )
-        )
     }
 
     static func measuredHeight(

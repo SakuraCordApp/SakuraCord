@@ -692,7 +692,7 @@ enum NativeTimelineEmbedLayout {
             let innerChrome = stripeWidth + cardPadding * 2
             let maximumContentWidth = max(InterfaceScale.metric(80), maximumWidth - innerChrome)
             let author = embed.author.map {
-                NativeTimelineEmbedLayout.plainTextBox(
+                NativeTimelineAttributedTextBox.plain(
                     $0.name,
                     font: .messageSystemFont(ofSize: 14, weight: .medium),
                     color: .labelColor,
@@ -700,7 +700,7 @@ enum NativeTimelineEmbedLayout {
                 )
             }
             let title = embed.title.map {
-                NativeTimelineEmbedLayout.plainTextBox(
+                NativeTimelineAttributedTextBox.plain(
                     $0,
                     font: .messageSystemFont(ofSize: 14, weight: .semibold),
                     color: embed.url == nil ? .labelColor : .linkColor,
@@ -721,7 +721,7 @@ enum NativeTimelineEmbedLayout {
             let fields = embed.fields.enumerated().map { index, field in
                 PreparedField(
                     field: field,
-                    name: NativeTimelineEmbedLayout.plainTextBox(
+                    name: NativeTimelineAttributedTextBox.plain(
                         field.name,
                         font: .messageSystemFont(ofSize: 11, weight: .bold),
                         color: .labelColor
@@ -739,7 +739,7 @@ enum NativeTimelineEmbedLayout {
                 )
             }
             let provider = embed.provider?.name.map {
-                NativeTimelineEmbedLayout.plainTextBox(
+                NativeTimelineAttributedTextBox.plain(
                     $0,
                     font: .messageSystemFont(ofSize: 11),
                     color: .secondaryLabelColor,
@@ -752,7 +752,7 @@ enum NativeTimelineEmbedLayout {
                 settings: source?.interfaceSettings ?? .defaults
             )
             let footer = footerText.map {
-                NativeTimelineEmbedLayout.plainTextBox(
+                NativeTimelineAttributedTextBox.plain(
                     $0,
                     font: .messageSystemFont(ofSize: 11),
                     color: .secondaryLabelColor
@@ -1161,33 +1161,6 @@ enum NativeTimelineEmbedLayout {
                 layoutHeightAdjustment: 1
             )
         }
-    }
-
-    private static func plainTextBox(
-        _ value: String,
-        font: NSFont,
-        color: NSColor,
-        link: URL? = nil
-    ) -> NativeTimelineAttributedTextBox {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byWordWrapping
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: color,
-            .paragraphStyle: paragraph,
-        ]
-        let output = NSMutableAttributedString(
-            string: value,
-            attributes: attributes
-        )
-        if let link {
-            output.addAttribute(
-                .link,
-                value: link,
-                range: NSRange(location: 0, length: output.length)
-            )
-        }
-        return NativeTimelineAttributedTextBox(output)
     }
 
     private static func textColumnIdealWidth(
@@ -1778,4 +1751,25 @@ nonisolated enum NativeTimelineMentionMetrics {
     static var leadingGap: CGFloat { InterfaceScale.metric(4) }
     static var avatarInset: CGFloat { InterfaceScale.metric(6) }
     static var iconInset: CGFloat { InterfaceScale.metric(7) }
+}
+
+extension NativeTimelineAttributedTextBox {
+    /// Word-wrapped text in one font and colour, linking all of it when
+    /// given a link.
+    nonisolated static func plain(
+        _ value: String,
+        font: NSFont,
+        color: NSColor,
+        link: URL? = nil
+    ) -> NativeTimelineAttributedTextBox {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+            .paragraphStyle: paragraph,
+        ]
+        if let link { attributes[.link] = link }
+        return NativeTimelineAttributedTextBox(NSAttributedString(string: value, attributes: attributes))
+    }
 }
