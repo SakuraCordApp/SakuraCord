@@ -60,7 +60,7 @@ extension NativeTimelineCanvasView {
             let progress = min(1, max(0, (CACurrentMediaTime() - animation.start) / NativeTimelinePollPresentation.voteAnimationDuration))
             let eased = MotionEasing.easeOut(CGFloat(progress))
             for answer in poll.answers {
-                let target = poll.totalVotes > 0 ? CGFloat(poll.count(for: answer.id)) / CGFloat(poll.totalVotes) : 0
+                let target = CGFloat(poll.fraction(for: answer.id))
                 let old = animation.from[answer.id] ?? 0
                 state.fractions[answer.id] = old + (target - old) * eased
             }
@@ -89,7 +89,7 @@ extension NativeTimelineCanvasView {
                 let current = pollPresentation(for: row.id)
                 let fractions = Dictionary(uniqueKeysWithValues: previous.answers.map { answer in
                     (answer.id, !wasShowingResults ? 0 : current.fractions[answer.id]
-                        ?? (previous.totalVotes > 0 ? CGFloat(previous.count(for: answer.id)) / CGFloat(previous.totalVotes) : 0))
+                        ?? CGFloat(previous.fraction(for: answer.id)))
                 })
                 pollAnimations[row.id] = (fractions, CACurrentMediaTime())
             }

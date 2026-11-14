@@ -1141,10 +1141,7 @@ extension NativeMessageTimelineCoordinator {
             else {
                 return nil
             }
-            return contentOriginY(
-                viewportHeight: scrollView.contentView.bounds.height
-            )
-                + rowOrigins[index]
+            return documentY(ofRow: index, viewportHeight: scrollView.contentView.bounds.height)
                 - scrollView.contentView.bounds.minY
         }
 

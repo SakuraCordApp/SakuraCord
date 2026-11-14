@@ -362,16 +362,7 @@ final class VoiceMessagePlaybackStore {
 
     private func finish(_ id: VoiceMessagePlaybackID) {
         guard activeID == id else { return }
-        forgetResumePosition(id)
-        if let player, let playerFile, let activeSource { cache(player, file: playerFile, for: activeSource) }
-        player = nil
-        playerFile = nil
-        activeID = nil
-        activeSource = nil
-        activeDuration = nil
-        pausedPosition = 0
-        phase = .paused
-        notify()
+        cancelActive(rememberingPosition: false)
     }
 
     private func cancelActive(rememberingPosition: Bool) {

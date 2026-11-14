@@ -20,6 +20,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         var cost: Int
         let mediaPinOwner: UUID
         let missingMediaKeys: Set<MediaImageKey>
+
+        /// Whether the bitmap still pictures `item` at `width` in `appearanceName`.
+        func matches(_ item: NativeMessageTimelineItem, width: CGFloat, appearanceName: NSAppearance.Name) -> Bool {
+            self.item == item && abs(self.width - width) < 0.5 && self.appearanceName == appearanceName
+        }
     }
 
     struct ReactionPointerHit {

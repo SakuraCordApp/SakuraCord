@@ -171,7 +171,7 @@ extension NativeTimelineRowPainter {
         foreground.withAlphaComponent(outgoing ? (hovered ? 0.18 : 0.10) : (hovered ? 0.08 : 0.045)).setFill()
         path.fill()
         if results {
-            let fraction = state.fractions[answer.id] ?? (poll.totalVotes > 0 ? CGFloat(poll.count(for: answer.id)) / CGFloat(poll.totalVotes) : 0)
+            let fraction = state.fractions[answer.id] ?? CGFloat(poll.fraction(for: answer.id))
             NSGraphicsContext.saveGraphicsState()
             path.addClip()
             ((selected || winner) ? accent.withAlphaComponent(0.25) : foreground.withAlphaComponent(0.12)).setFill()
@@ -226,7 +226,7 @@ extension NativeTimelineRowPainter {
             height: InterfaceScale.metric(20)
         )
         let count = poll.count(for: answer.id)
-        let percentage = poll.totalVotes > 0 ? Int((Double(count) / Double(poll.totalVotes) * 100).rounded()) : 0
+        let percentage = Int((poll.fraction(for: answer.id) * 100).rounded())
         text(poll.results == nil ? "—" : "\(percentage)%", in: percentageFrame,
              font: .interfaceSystemFont(ofSize: 14, weight: .semibold), color: NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion), alignment: .right)
         let countFrame = CGRect(

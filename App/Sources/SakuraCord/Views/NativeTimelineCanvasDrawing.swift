@@ -1444,9 +1444,7 @@ extension NativeTimelineCanvasView {
         tileIndex: Int = -1
     ) -> NSImage? {
         guard let cached = bitmapCache[item.identifier],
-              cached.item == item,
-              abs(cached.width - width) < 0.5,
-              cached.appearanceName == effectiveAppearance.name
+              cached.matches(item, width: width, appearanceName: effectiveAppearance.name)
         else { return nil }
         // Incomplete bitmaps can outlive their load subscriptions when a
         // conversation is detached. Recheck their missing images on reuse.

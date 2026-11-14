@@ -133,10 +133,7 @@ extension NativeMessageTimelineCoordinator {
                   rowOrigins.indices.contains(index)
             else { return true }
             let viewport = scrollView.contentView.bounds
-            let documentOrigin =
-                contentOriginY(viewportHeight: viewport.height)
-                    + rowOrigins[index]
-            return documentOrigin < viewport.maxY
+            return documentY(ofRow: index, viewportHeight: viewport.height) < viewport.maxY
         }
 
         func layout(
@@ -245,14 +242,7 @@ extension NativeMessageTimelineCoordinator {
                 if documentView.frame.size != size {
                     documentView.setFrameSize(size)
                 }
-                let showsVerticalScroller =
-                    size.height > viewport.height + 0.5
-                if scrollView.hasVerticalScroller
-                    != showsVerticalScroller
-                {
-                    scrollView.hasVerticalScroller =
-                        showsVerticalScroller
-                }
+                updateVerticalScroller(of: scrollView, documentHeight: size.height, viewportHeight: viewport.height)
                 positionViewportCanvas()
             }
             guard !isApplyingUpdate, initialPositionConversation == parent.conversation else {
@@ -999,14 +989,15 @@ extension NativeMessageTimelineCoordinator {
         func restoreRow(at index: Int, offsetFromViewportTop: CGFloat) {
             guard rowOrigins.indices.contains(index), let scrollView else { return }
             scroll(
-                toDocumentY:
-                    contentOriginY(
-                        viewportHeight: scrollView.contentView.bounds.height
-                    )
-                    + rowOrigins[index]
+                toDocumentY: documentY(ofRow: index, viewportHeight: scrollView.contentView.bounds.height)
                     - offsetFromViewportTop,
                 scrollView: scrollView
             )
+        }
+
+        /// A row's top in the clip view's coordinates.
+        func documentY(ofRow index: Int, viewportHeight: CGFloat) -> CGFloat {
+            contentOriginY(viewportHeight: viewportHeight) + rowOrigins[index]
         }
 
         /// Consumes the canvas's request, measured before rows change.
@@ -1125,9 +1116,7 @@ extension NativeMessageTimelineCoordinator {
                     $0.containsMessage(messageID)
                 }), rowOrigins.indices.contains(index), layouts.indices.contains(index)
                 else { return nil }
-                let rowY =
-                    contentOriginY(viewportHeight: viewportHeight)
-                    + rowOrigins[index]
+                let rowY = documentY(ofRow: index, viewportHeight: viewportHeight)
                 let rowHeight = layouts[index].height
                 // Anchor within the part of the viewport the window toolbar
                 // leaves uncovered, so a top-anchored row is not beneath it.
@@ -1139,8 +1128,7 @@ extension NativeMessageTimelineCoordinator {
                     $0.containsMessage(messageID)
                 }), rowOrigins.indices.contains(index)
                 else { return nil }
-                proposedY = contentOriginY(viewportHeight: viewportHeight)
-                    + rowOrigins[index] - offsetFromViewportTop
+                proposedY = documentY(ofRow: index, viewportHeight: viewportHeight) - offsetFromViewportTop
             }
             return clampedDocumentY(proposedY, scrollView: scrollView)
         }
@@ -1410,8 +1398,7 @@ extension NativeMessageTimelineCoordinator {
                 return false
             }
             let newestMessageMaximumY =
-                contentOriginY(viewportHeight: visibleRect.height)
-                + rowOrigins[newestIndex]
+                documentY(ofRow: newestIndex, viewportHeight: visibleRect.height)
                 + layouts[newestIndex].height
             // This is the semantic read boundary: the bottom edge of the
             // newest message has entered the viewport. Composer/footer space

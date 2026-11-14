@@ -97,12 +97,7 @@ extension NativeTimelineCanvasView {
                 index += 1
                 continue
             }
-            let urls = Set(layouts[index].embedRegions.compactMap { region -> URL? in
-                guard region.mediaIsVideo,
-                      region.mediaAutoplaysInline
-                else { return nil }
-                return region.mediaURL
-            })
+            let urls = Set(layouts[index].embedRegions.compactMap(\.inlineVideoURL))
             if !urls.isEmpty {
                 let remaining =
                     Self.maximumInlineVideoOverlayCount - videoCount
@@ -993,10 +988,8 @@ extension NativeTimelineCanvasView {
                     NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: $0.message, store: spoilerRevealStore)
                 } ?? [:]
                 for region in layouts[index].embedRegions {
-                    guard region.mediaIsVideo,
-                          concealedEmbeds[region.embedID] == nil,
-                          region.mediaAutoplaysInline,
-                          let url = region.mediaURL,
+                    guard concealedEmbeds[region.embedID] == nil,
+                          let url = region.inlineVideoURL,
                           urls.contains(url),
                           let frame = region.mediaFrame
                     else { continue }
@@ -1512,14 +1505,7 @@ extension NativeTimelineCanvasView {
                     }
                 }
             }
-            let videoURLs: Set<URL> = Set(
-                layouts[index].embedRegions.compactMap { region -> URL? in
-                    guard region.mediaIsVideo,
-                          region.mediaAutoplaysInline
-                    else { return nil }
-                    return region.mediaURL
-                }
-            )
+            let videoURLs = Set(layouts[index].embedRegions.compactMap(\.inlineVideoURL))
             if !videoURLs.isEmpty {
                 videoRows[identifier] = videoURLs
             }

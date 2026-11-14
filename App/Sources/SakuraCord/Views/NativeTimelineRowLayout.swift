@@ -94,6 +94,9 @@ struct NativeTimelineRowLayout {
         let accentColor: UInt32?
         let drawsTopSeparator: Bool
 
+        /// A video that plays in place, as a GIF does, rather than on opening.
+        var inlineVideoURL: URL? { mediaIsVideo && mediaAutoplaysInline ? mediaURL : nil }
+
         /// Discord rounds a card tighter than the media it otherwise covers.
         var cornerRadius: CGFloat {
             kind == .card ? DiscordRichMessageMetrics.embedCornerRadius : DiscordRichMessageMetrics.cardCornerRadius

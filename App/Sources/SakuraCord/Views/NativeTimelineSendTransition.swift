@@ -751,14 +751,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
 
     private func fadeIn(_ layer: CALayer, duration: CFTimeInterval, delay: CFTimeInterval = 0) {
         layer.opacity = 1
-        let animation = CABasicAnimation(keyPath: "opacity")
-        animation.fromValue = 0
-        animation.toValue = 1
-        animation.duration = duration
-        animation.beginTime = delay > 0 ? layer.convertTime(CACurrentMediaTime(), from: nil) + delay : 0
-        animation.fillMode = .backwards
-        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        layer.add(animation, forKey: "opacity")
+        add(layer, "opacity", from: 0, to: 1, duration: duration, delay: delay)
     }
 
     private func add(
@@ -874,10 +867,7 @@ extension NativeTimelineCanvasView {
         suppressPointerInteractions()
         // The canvas update already installed media at the destination.
         // Remove those overlays now that their row is held back for flight.
-        reconcileAnimatedMedia()
-        startVisibleInlineVideosImmediately()
-        reconcileSpoilerOverlays()
-        reconcileActivityIndicators()
+        reconcileSendTransitionHeldOverlays()
         setNeedsDisplay(rowFrame(at: index))
         glideTranscript(by: transcriptShift)
         displayIfNeeded()
@@ -899,8 +889,7 @@ extension NativeTimelineCanvasView {
     ) -> (NativeTimelineSendTransitionOverlay.Geometry, CGRect)? {
         let source = pending.source
         let overlay = pending.overlay
-        guard model?.animatesMessageSending == true,
-              source.window === window,
+        guard source.window === window,
               overlay.window === window,
               items.indices.contains(index),
               layouts.indices.contains(index),
@@ -1134,11 +1123,17 @@ extension NativeTimelineCanvasView {
         guard reconcilesHeldMedia else { return }
         // The landed row's animated media, videos and spoiler covers were
         // held back while its copy was in flight.
+        reconcileSendTransitionHeldOverlays()
+        restorePointerInteractions()
+    }
+
+    /// The overlays a row holds back while its copy is in flight: animated
+    /// media, videos, spoiler covers and progress marks.
+    private func reconcileSendTransitionHeldOverlays() {
         reconcileAnimatedMedia()
         startVisibleInlineVideosImmediately()
         reconcileSpoilerOverlays()
         reconcileActivityIndicators()
-        restorePointerInteractions()
     }
 
     func cancelTranscriptGlide() {
@@ -1448,15 +1443,9 @@ extension NativeTimelineCanvasView {
               contentText.value.length > 0
         else { return nil }
         let drawingFrame = NativeTimelineTextGeometry.messageContentDrawingFrame(contentFrame)
-        let textFrame = CTFramesetterCreateFrame(
-            contentText.framesetter,
-            CFRange(location: 0, length: contentText.value.length),
-            CGPath(rect: CGRect(origin: .zero, size: drawingFrame.size), transform: nil),
-            nil
-        )
-        guard CFArrayGetCount(CTFrameGetLines(textFrame)) > 0 else { return nil }
-        var lineOrigin = CGPoint.zero
-        CTFrameGetLineOrigins(textFrame, CFRange(location: 0, length: 1), &lineOrigin)
+        guard let lineOrigin = CoreTextFrameLayout(
+            value: contentText.value, framesetter: contentText.framesetter, size: drawingFrame.size
+        ).origins.first else { return nil }
         return CGPoint(
             x: drawingFrame.minX + lineOrigin.x,
             y: drawingFrame.maxY - lineOrigin.y

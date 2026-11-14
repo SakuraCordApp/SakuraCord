@@ -78,23 +78,6 @@ struct NativeTimelineReactionTransition {
     }
 }
 
-extension MessageRowPresentation {
-    /// Whether the two rows present the same message apart from its reactions.
-    nonisolated func differsOnlyInReactions(from other: MessageRowPresentation) -> Bool {
-        var message = other.message
-        message.reactions = self.message.reactions
-        return message == self.message
-            && startsGroup == other.startsGroup
-            && endsGroup == other.endsGroup
-            && startsDay == other.startsDay
-            && replyPreview == other.replyPreview
-            && isReplyAvailable == other.isReplyAvailable
-            && searchContext == other.searchContext
-            && pinnedAt == other.pinnedAt
-            && isResource == other.isResource
-    }
-}
-
 extension NativeTimelineRowLayout.ReactionRegion {
     /// The same chip placed at `frame`; its contents keep their offsets from
     /// its leading edge.
@@ -231,9 +214,7 @@ extension NativeTimelineCanvasView {
     func reactionTransitionBitmap(for item: NativeMessageTimelineItem, width: CGFloat) -> NSImage? {
         guard let transition = reactionTransitions[item.identifier],
               let cached = bitmapCache[item.identifier],
-              cached.item == transition.bitmapItem,
-              abs(cached.width - width) < 0.5,
-              cached.appearanceName == effectiveAppearance.name
+              cached.matches(transition.bitmapItem, width: width, appearanceName: effectiveAppearance.name)
         else { return nil }
         return cached.images[-1]
     }

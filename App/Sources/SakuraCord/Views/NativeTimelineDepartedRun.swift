@@ -63,8 +63,8 @@ extension NativeTimelineCanvasView {
     /// A row's picture as it was, for a fade that outlives its layout: the
     /// cached bitmap when it had one, otherwise a fresh raster.
     func rowFadeImage(_ row: NativeTimelineRowMotionBaseline.Row, width: CGFloat) -> NSImage? {
-        if let cached = row.bitmap, cached.item == row.item, abs(cached.width - width) < 0.5,
-           cached.appearanceName == effectiveAppearance.name, let picture = cached.images[-1] {
+        if let cached = row.bitmap, cached.matches(row.item, width: width, appearanceName: effectiveAppearance.name),
+           let picture = cached.images[-1] {
             return picture
         }
         let item = row.item

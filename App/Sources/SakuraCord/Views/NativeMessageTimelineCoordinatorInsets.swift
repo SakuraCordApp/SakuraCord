@@ -47,8 +47,12 @@ extension NativeMessageTimelineCoordinator {
         {
             scrollView.contentInsets = NSEdgeInsets()
         }
-        let showsVerticalScroller =
-            scrollableDocumentHeight > viewportHeight + 0.5
+        updateVerticalScroller(of: scrollView, documentHeight: scrollableDocumentHeight, viewportHeight: viewportHeight)
+    }
+
+    /// Shows the scroller only while the document is taller than the viewport.
+    func updateVerticalScroller(of scrollView: NSScrollView, documentHeight: CGFloat, viewportHeight: CGFloat) {
+        let showsVerticalScroller = documentHeight > viewportHeight + 0.5
         if scrollView.hasVerticalScroller != showsVerticalScroller {
             scrollView.hasVerticalScroller = showsVerticalScroller
         }

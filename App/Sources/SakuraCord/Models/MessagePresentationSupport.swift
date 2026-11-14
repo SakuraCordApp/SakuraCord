@@ -243,6 +243,21 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
             && lhs.pinnedAt == rhs.pinnedAt
             && lhs.isResource == rhs.isResource
     }
+
+    /// Whether the two rows present the same message apart from its reactions.
+    nonisolated func differsOnlyInReactions(from other: MessageRowPresentation) -> Bool {
+        var message = other.message
+        message.reactions = self.message.reactions
+        return message == self.message
+            && startsGroup == other.startsGroup
+            && endsGroup == other.endsGroup
+            && startsDay == other.startsDay
+            && replyPreview == other.replyPreview
+            && isReplyAvailable == other.isReplyAvailable
+            && searchContext == other.searchContext
+            && pinnedAt == other.pinnedAt
+            && isResource == other.isResource
+    }
 }
 
 nonisolated enum MessageReplyPresentationPolicy {
