@@ -113,14 +113,11 @@ enum NativeTimelineBeginningText {
         }
         let baseFontSize = font.pointSize
         let prepared = RichMessageAttributedText.prepare(source: topic)
-        let resolver = source.map { MessageMentionResolver(model: $0, message: nil) }
-        var mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { result, token in
-            guard case let .mention(mention) = token else { return }
-            result[mention.rawToken] =
-                resolver?.presentation(mention)
-                ?? MentionPresentation.fallback(for: mention)
-        }
-        mentions = TimestampMentionPresentation.refreshed(mentions, source: topic, at: date)
+        let mentions = TimestampMentionPresentation.refreshed(
+            MessageMentionResolver.presentations(for: prepared, model: source, message: nil),
+            source: topic,
+            at: date
+        )
         let emojiSize = InterfaceScale.metric(22)
         let attributed = NSMutableAttributedString(
             attributedString: NativeTimelineCoreText.make(

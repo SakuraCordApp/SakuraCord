@@ -197,14 +197,11 @@ enum NativeTimelineTextPresentation {
             return nil
         }
         guard let prepared = plan.preparedText else { return nil }
-        let resolver = source.map { MessageMentionResolver(model: $0, message: message) }
-        var mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
-            guard case let .mention(mention) = token else { return }
-            values[mention.rawToken] =
-                resolver?.presentation(mention)
-                ?? MentionPresentation.fallback(for: mention)
-        }
-        mentions = TimestampMentionPresentation.refreshed(mentions, source: message.content, at: date)
+        let mentions = TimestampMentionPresentation.refreshed(
+            MessageMentionResolver.presentations(for: prepared, model: source, message: message),
+            source: message.content,
+            at: date
+        )
         let emojiSize = InterfaceScale.metric(InterfaceTypographyMetrics.message(prepared.isEmojiOnly ? 48 : 22))
         let cacheKey = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
@@ -212,9 +209,7 @@ enum NativeTimelineTextPresentation {
             prepared: prepared,
             emojiSize: emojiSize,
             baseFontSize: resolvedBaseFontSize,
-            mentions: mentions.values.sorted {
-                $0.rawToken < $1.rawToken
-            }
+            presentations: mentions
         )
         return Preparation(
             key: cacheKey,
@@ -313,6 +308,26 @@ nonisolated final class NativeTimelineResolvedTextCache: Sendable {
             }
             return box
         }
+    }
+}
+
+nonisolated extension NativeTimelineResolvedTextCache.Key {
+    init(
+        messageID: MessageID,
+        scope: String,
+        prepared: RichMessageAttributedText.Prepared,
+        emojiSize: CGFloat,
+        baseFontSize: CGFloat,
+        presentations: [String: MentionPresentation]
+    ) {
+        self.init(
+            messageID: messageID,
+            scope: scope,
+            prepared: prepared,
+            emojiSize: emojiSize,
+            baseFontSize: baseFontSize,
+            mentions: presentations.values.sorted { $0.rawToken < $1.rawToken }
+        )
     }
 }
 
@@ -1130,17 +1145,7 @@ enum NativeTimelineEmbedLayout {
         message: Message,
         source: AppModel?
     ) -> NativeTimelineAttributedTextBox {
-        let resolver = source.map {
-            MessageMentionResolver(model: $0, message: message)
-        }
-        let mentions = prepared.tokens.reduce(
-            into: [String: MentionPresentation]()
-        ) { result, token in
-            guard case let .mention(mention) = token else { return }
-            result[mention.rawToken] =
-                resolver?.presentation(mention)
-                ?? MentionPresentation.fallback(for: mention)
-        }
+        let mentions = MessageMentionResolver.presentations(for: prepared, model: source, message: message)
         let baseFontSize = InterfaceScale.fontSize(
             InterfaceTypographyMetrics.messageTextSize + fontSizeAdjustment
         )
@@ -1151,9 +1156,7 @@ enum NativeTimelineEmbedLayout {
             prepared: prepared,
             emojiSize: emojiSize,
             baseFontSize: baseFontSize,
-            mentions: mentions.values.sorted {
-                $0.rawToken < $1.rawToken
-            }
+            presentations: mentions
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
             NativeTimelineAttributedTextBox(

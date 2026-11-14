@@ -1152,17 +1152,7 @@ private enum NodeBuilder {
         let prepared = RichMessageAttributedText.prepare(
             source: content.utf8.contains(13) ? content.replacing(/\r\n?/, with: "\n") : content
         )
-        let resolver = source.map {
-            MessageMentionResolver(model: $0, message: message)
-        }
-        let mentions = prepared.tokens.reduce(
-            into: [String: MentionPresentation]()
-        ) { result, token in
-            guard case let .mention(mention) = token else { return }
-            result[mention.rawToken] =
-                resolver?.presentation(mention)
-                ?? MentionPresentation.fallback(for: mention)
-        }
+        let mentions = MessageMentionResolver.presentations(for: prepared, model: source, message: message)
         let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
         let emojiSize = InterfaceScale.metric(emojiSize)
         let key = NativeTimelineResolvedTextCache.Key(
@@ -1171,10 +1161,7 @@ private enum NodeBuilder {
             prepared: prepared,
             emojiSize: emojiSize,
             baseFontSize: baseFontSize * bodyScale,
-
-            mentions: mentions.values.sorted {
-                $0.rawToken < $1.rawToken
-            }
+            presentations: mentions
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
             NativeTimelineAttributedTextBox(

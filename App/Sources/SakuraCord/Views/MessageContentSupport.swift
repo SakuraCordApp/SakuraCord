@@ -28,6 +28,18 @@ struct MessageMentionResolver {
         presentation(mention).label
     }
 
+    /// Every mention in prepared text, keyed by token: resolved through the
+    /// model when there is one, else its fallback.
+    static func presentations(
+        for prepared: RichMessageAttributedText.Prepared, model: AppModel?, message: Message?
+    ) -> [String: MentionPresentation] {
+        let resolver = model.map { MessageMentionResolver(model: $0, message: message) }
+        return prepared.tokens.reduce(into: [:]) { result, token in
+            guard case let .mention(mention) = token else { return }
+            result[mention.rawToken] = resolver?.presentation(mention) ?? MentionPresentation.fallback(for: mention)
+        }
+    }
+
     /// Every mention a draft holds, keyed by token, as an editor shows them.
     func presentations(in text: String) -> [String: MentionPresentation] {
         MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
