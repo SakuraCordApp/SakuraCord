@@ -3,6 +3,14 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    func friendDisplayName(_ user: User) -> String {
+        friendNickname(for: user.id) ?? user.displayName
+    }
+
+    func isFriend(_ userID: UserID) -> Bool {
+        friendUserIDs.contains(userID)
+    }
+
     /// Friends is the Direct Messages home: chosen explicitly, or shown
     /// when no conversation is selected there.
     var isFriendsPresented: Bool {

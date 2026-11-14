@@ -8,14 +8,6 @@ extension AppModel {
         relationshipNicknamesByUserID[userID]
     }
 
-    func friendDisplayName(_ user: User) -> String {
-        friendNickname(for: user.id) ?? user.displayName
-    }
-
-    func isFriend(_ userID: UserID) -> Bool {
-        friendUserIDs.contains(userID)
-    }
-
     /// Discord's Change Nickname eligibility for another member: Manage
     /// Nicknames over a member whose highest role is below yours.
     func canChangeNickname(of userID: UserID, in guildID: GuildID) -> Bool {
