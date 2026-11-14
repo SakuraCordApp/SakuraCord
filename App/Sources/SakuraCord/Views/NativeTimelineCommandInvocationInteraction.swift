@@ -163,7 +163,7 @@ struct CommandInvocationPopover: View {
         case .role: "<@&\(value)>"
         // Like Discord, a mentionable is a role when one is known by that ID, otherwise a user.
         case .mentionable:
-            RoleID(value).flatMap { model.mentionRole($0, in: message) } != nil ? "<@&\(value)>" : "<@\(value)>"
+            RoleID(value).flatMap { MessageMentionResolver(model: model, message: message).role($0) } != nil ? "<@&\(value)>" : "<@\(value)>"
         default: DiscordMarkdown.escaped(value)
         }
     }

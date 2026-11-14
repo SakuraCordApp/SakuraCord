@@ -352,3 +352,29 @@ enum NativeTimelineBubbleDrawing {
         return path
     }
 }
+
+extension AppModel {
+    func bubbleContext(for message: Message) -> NativeTimelineBubbleLayout.Context {
+        let isEnabled =
+            messageAppearance(for: message.channelID) == .bubbles
+                && !message.type.hasGeneratedContent
+                // An alert's card holds its member's avatar, which a bubble
+                // would move to its own bottom edge.
+                && message.type != .autoModerationAction
+        // Standard message layout never consumes bubble identity. Avoid an
+        // account-wide channel search for every newly paginated message.
+        guard isEnabled else {
+            return NativeTimelineBubbleLayout.Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
+        }
+        let selectedChannel = self.selectedChannel
+        let channel = selectedChannel?.id == message.channelID
+            ? selectedChannel
+            : messagePresentationChannelsByID[message.channelID]
+        return NativeTimelineBubbleLayout.Context(
+            isEnabled: isEnabled,
+            isOutgoing: isEnabled
+                && message.author.id == currentUser?.id,
+            showsAvatar: NativeTimelineBubbleLayout.showsAvatar(in: channel)
+        )
+    }
+}
