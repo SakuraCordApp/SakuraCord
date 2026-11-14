@@ -311,29 +311,9 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    func requestDelete(_ message: Message) {
-        guard let window, let actions else { return }
-        requestDelete(
-            message,
-            in: window,
-            perform: actions.delete
-        )
-    }
-
-    func requestDiscardFailed(_ message: Message) {
-        guard let window, let actions else { return }
-        requestDelete(
-            message,
-            in: window,
-            perform: actions.discardFailed
-        )
-    }
-
-    private func requestDelete(
-        _ message: Message,
-        in window: NSWindow,
-        perform delete: @escaping (Message) -> Void
-    ) {
+    /// Deletes through `action`, after confirming unless Shift is held.
+    func requestDelete(_ message: Message, through action: KeyPath<NativeTimelineRowActions, (Message) -> Void> = \.delete) {
+        guard let window, let delete = actions?[keyPath: action] else { return }
         removeActionCapsule()
         if NSEvent.modifierFlags.contains(.shift) {
             delete(message)
@@ -581,116 +561,54 @@ extension NativeTimelineCanvasView {
         actions: NativeTimelineRowActions
     ) -> () -> Void {
         switch action {
-        case .pinMessage, .unpinMessage:
-            return { actions.togglePin(row.message) }
-        case .toggleTranslation:
-            return { [weak model] in model?.toggleMessageTranslation(row.message) }
-        default:
-            return nonPinMessageMenuHandler(
-                action: action,
-                row: row,
-                index: index,
-                actions: actions
-            )
-        }
-    }
-
-    private func threadMessageMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        row: MessageRowPresentation,
-        actions: NativeTimelineRowActions
-    ) -> (() -> Void)? {
-        switch action {
-        case .createThread:
-            { [weak model] in model?.beginThreadCreation(from: row.message) }
-        case .viewThread:
-            {
-                guard let thread = row.message.thread else { return }
-                actions.openThread(thread)
-            }
-        default:
-            nil
-        }
-    }
-
-    private func nonPinMessageMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        row: MessageRowPresentation,
-        index: Int,
-        actions: NativeTimelineRowActions
-    ) -> () -> Void {
-        if let handler = copyMessageMenuHandler(action: action, row: row)
-            ?? threadMessageMenuHandler(action: action, row: row, actions: actions)
-        {
-            return handler
-        }
-        return switch action {
-        case .jumpToMessage:
-            { actions.openMessage?(row.message) }
-        case .retrySending:
-            { actions.retry(row.message) }
+        case .jumpToMessage, .retrySending, .reply, .forward, .viewThread, .markUnread, .pinMessage, .unpinMessage:
+            actions.messageMenuHandler(for: action, message: row.message)
+        case .copyTranslation, .copyText, .copyLink, .copyMessageID, .copyAuthorID:
+            copyMessageMenuHandler(for: action, message: row.message)
         case .addReaction:
             { [weak self] in self?.showReactionPicker(forMessageRow: row.message) }
         case .viewReactions:
             { [weak self] in self?.showMessageReactions(row.message) }
-        case .reply:
-            {
-                guard let reply = actions.reply else { return }
-                reply(row.message)
-            }
-        case .forward:
-            {
-                guard let forward = actions.forward else { return }
-                forward(row.message)
-            }
+        case .createThread:
+            { [weak model] in model?.beginThreadCreation(from: row.message) }
         case .dismissInboxMention:
             { [weak model] in model?.dismissInboxMention(row.message) }
-        case .markUnread:
-            { actions.markUnread(row.message) }
         case .endPoll:
             { [weak self] in self?.requestEndPoll(row.message) }
+        case .toggleTranslation:
+            { [weak model] in model?.toggleMessageTranslation(row.message) }
         case .editMessage:
             { [weak self] in self?.beginEditing(row: row, at: index) }
         case .deleteMessage, .discardFailedMessage:
-            deletionMenuHandler(action: action, message: row.message)
-        default:
-            {}
+            { [weak self] in
+                self?.requestDelete(row.message, through: action == .deleteMessage ? \.delete : \.discardFailed)
+            }
         }
     }
 
     private func copyMessageMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        row: MessageRowPresentation
-    ) -> (() -> Void)? {
+        for action: NativeTimelineMessageMenuAction,
+        message: Message
+    ) -> () -> Void {
         switch action {
         case .copyTranslation:
             { [weak model] in
-                if let text = model?.translatedMessageText(row.message) { Pasteboard.copy(text) }
+                if let text = model?.translatedMessageText(message) { Pasteboard.copy(text) }
             }
         case .copyText:
-            { Pasteboard.copy(row.message.content) }
+            { Pasteboard.copy(message.content) }
         case .copyLink:
             { [weak self] in
                 guard let self else { return }
-                Pasteboard.copy(self.messageLink(for: row.message))
+                Pasteboard.copy(self.messageLink(for: message))
             }
         case .copyMessageID:
-            { Pasteboard.copy(row.message.id.description) }
+            { Pasteboard.copy(message.id.description) }
         case .copyAuthorID:
-            { Pasteboard.copy(row.message.author.id.description) }
+            { Pasteboard.copy(message.author.id.description) }
         default:
-            nil
+            {}
         }
-    }
-
-    func deletionMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        message: Message
-    ) -> () -> Void {
-        if action == .discardFailedMessage {
-            return { [weak self] in self?.requestDiscardFailed(message) }
-        }
-        return { [weak self] in self?.requestDelete(message) }
     }
 
     func imageContextMenuActions(
@@ -760,5 +678,32 @@ extension NativeTimelineCanvasView {
                 Pasteboard.copy(gif.url.absoluteString)
             }
         )
+    }
+}
+
+extension NativeTimelineRowActions {
+    /// The message menu actions the timeline's host performs.
+    func messageMenuHandler(for action: NativeTimelineMessageMenuAction, message: Message) -> () -> Void {
+        switch action {
+        case .jumpToMessage:
+            { openMessage?(message) }
+        case .retrySending:
+            { retry(message) }
+        case .reply:
+            { reply?(message) }
+        case .forward:
+            { forward?(message) }
+        case .viewThread:
+            {
+                guard let thread = message.thread else { return }
+                openThread(thread)
+            }
+        case .markUnread:
+            { markUnread(message) }
+        case .pinMessage, .unpinMessage:
+            { togglePin(message) }
+        default:
+            {}
+        }
     }
 }
