@@ -75,9 +75,11 @@ extension AppModel {
             attachments: [ForumPostAttachment(url: recording.fileURL, filename: VoiceMessageMetadata.filename)],
             voiceMessage: recording.metadata
         )
-        admitToOutbox(optimisticMessage(for: outgoing, replyPreview: replyTo.map(MessageReplyPreview.init)), draft: outgoing)
+        guard let delivery = enqueueMessage(
+            outgoing, replyPreview: replyTo.map(MessageReplyPreview.init), clearsComposer: false, in: destination
+        ) else { return .rejected }
         setReplyingTo(nil, in: destination)
-        return .enqueued(delivery: enqueueOutgoingSend(outgoing, isRetry: false, completesReading: true))
+        return .enqueued(delivery: delivery)
     }
 
     /// Recordings live in a private temporary directory until delivered or discarded.
