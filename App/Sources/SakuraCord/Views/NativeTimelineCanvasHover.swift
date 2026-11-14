@@ -6,17 +6,27 @@ import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineCanvasView {
+    /// Redraws the rows a hover left and entered.
+    func invalidateHoverRows(from old: Int?, to new: Int?) {
+        for index in [old, new].compactMap(\.self) {
+            setNeedsDisplay(rowFrame(at: index))
+        }
+    }
+
+    /// Redraws the rows of the messages a hover left and entered.
+    func invalidateHoverRows(from old: MessageID?, to new: MessageID?) {
+        for messageID in [old, new].compactMap(\.self) {
+            guard let index = items.firstIndex(where: { $0.messageID == messageID }) else { continue }
+            setNeedsDisplay(rowFrame(at: index))
+        }
+    }
+
     func setHoveredRow(_ value: Int?) {
         guard hoveredRow != value else { return }
         let old = hoveredRow
         hoveredRow = value
         updateAvatarPlayback()
-        if let old {
-            setNeedsDisplay(rowFrame(at: old))
-        }
-        if let value {
-            setNeedsDisplay(rowFrame(at: value))
-        }
+        invalidateHoverRows(from: old, to: value)
         if value == nil, actionCapsuleState?.isPresentationActive == true {
             return
         }
@@ -40,12 +50,7 @@ extension NativeTimelineCanvasView {
         guard hoveredCompactTimestampRow != value else { return }
         let old = hoveredCompactTimestampRow
         hoveredCompactTimestampRow = value
-        if let old {
-            setNeedsDisplay(rowFrame(at: old))
-        }
-        if let value {
-            setNeedsDisplay(rowFrame(at: value))
-        }
+        invalidateHoverRows(from: old, to: value)
     }
 
     func setHoveredAuthorMessageID(_ value: MessageID?) {
@@ -60,12 +65,7 @@ extension NativeTimelineCanvasView {
             authorHoverTicker.stop()
         }
         updateAvatarPlayback()
-        for messageID in [old, value].compactMap({ $0 }) {
-            guard let index = items.firstIndex(where: {
-                $0.messageID == messageID
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
+        invalidateHoverRows(from: old, to: value)
     }
 
     /// A hovered gradient name scrolls, as Discord's does; solid names stay still.
@@ -282,12 +282,7 @@ extension NativeTimelineCanvasView {
         guard hoveredForwardedSourceMessageID != value else { return }
         let old = hoveredForwardedSourceMessageID
         hoveredForwardedSourceMessageID = value
-        for messageID in [old, value].compactMap({ $0 }) {
-            guard let index = items.firstIndex(where: {
-                $0.messageID == messageID
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
+        invalidateHoverRows(from: old, to: value)
     }
     func setHoveredFooterAction(_ value: NativeTimelineFooterActionTarget?) {
         guard hoveredFooterAction != value else { return }
