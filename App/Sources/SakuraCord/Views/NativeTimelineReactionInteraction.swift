@@ -1,5 +1,4 @@
 import AppKit
-import QuartzCore
 import SakuraCordModels
 
 extension NativeTimelineCanvasView {

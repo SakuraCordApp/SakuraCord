@@ -1,7 +1,6 @@
 import AppKit
 import QuartzCore
 import SakuraCordModels
-import SwiftUI
 
 extension NativeTimelineCanvasView {
     struct PollPointerHit {

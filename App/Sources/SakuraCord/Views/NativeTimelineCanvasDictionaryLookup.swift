@@ -1,6 +1,5 @@
 import AppKit
 import CoreServices
-import CoreText
 
 extension NativeTimelineCanvasView {
     override func pressureChange(with event: NSEvent) {

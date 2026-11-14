@@ -1,5 +1,4 @@
 import AppKit
-import CoreText
 import QuartzCore
 import SakuraCordModels
 
