@@ -2126,7 +2126,7 @@ func `authoritative thread deletion removes open cached and resource conversatio
     model.open(post)
     #expect(model.openThread?.id == post.id)
 
-    model.deleteSidebarThread(post.thread)
+    model.deleteThread(post.thread)
 
     #expect(await until { !model.forumPosts.contains { $0.id == post.id } && model.openThread == nil })
     #expect(model.errorMessage == nil)

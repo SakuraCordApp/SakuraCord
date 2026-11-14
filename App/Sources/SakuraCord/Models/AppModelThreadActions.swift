@@ -90,7 +90,7 @@ extension AppModel {
     /// changed meanwhile.
     func reopenIfArchived(_ thread: MessageThreadSummary, account: AppModelAccountSession) async throws {
         guard thread.isArchived else { return }
-        let post = forumCataloguePosts.first { $0.id == thread.id } ?? ForumPost(thread: thread)
+        let post = forumPost(for: thread)
         let updated = try await account.provider.updateForumPost(post, mutation: .archived(false))
         guard isCurrentAccountSession(account) else { throw CancellationError() }
         reconcileMutatedThread(updated)
@@ -109,7 +109,7 @@ extension AppModel {
         case .name: guard policy.canRename else { return }
         case .tags: return
         }
-        let post = forumCataloguePosts.first { $0.id == thread.id } ?? ForumPost(thread: thread)
+        let post = forumPost(for: thread)
         startAccountChildTask(account: accountSession()) { model, account in
             do {
                 let updated = try await account.provider.updateForumPost(post, mutation: mutation)
@@ -122,7 +122,7 @@ extension AppModel {
         }
     }
 
-    func deleteSidebarThread(_ thread: MessageThreadSummary) {
+    func deleteThread(_ thread: MessageThreadSummary) {
         guard threadActionPolicy(thread).canDelete else { return }
         startAccountChildTask(account: accountSession()) { model, account in
             guard model.threadActionPolicy(thread).canDelete else { return }
@@ -153,6 +153,11 @@ extension AppModel {
         if let index = forumCatalogueIndexByID[id] { return forumCataloguePosts[index].thread }
         // An Inbox mention can come from a thread the sidebar doesn't list.
         return sidebarThread(id) ?? inbox.threads[id]
+    }
+
+    /// The catalogue's card for a thread, or one built from its summary.
+    private func forumPost(for thread: MessageThreadSummary) -> ForumPost {
+        forumCatalogueIndexByID[thread.id].map { forumCataloguePosts[$0] } ?? ForumPost(thread: thread)
     }
 
     func isForumThread(_ thread: MessageThreadSummary) -> Bool {
@@ -189,7 +194,7 @@ extension AppModel {
             store.error = "You no longer have permission to rename this \(presentation.isForumPost ? "post" : "thread")."
             return
         }
-        let post = forumCataloguePosts.first { $0.id == thread.id } ?? ForumPost(thread: thread)
+        let post = forumPost(for: thread)
         let revision = store.revision
         store.isSaving = true
         store.error = nil
@@ -232,6 +237,6 @@ extension AppModel {
 
     func confirmThreadDeletion(_ confirmation: ThreadActionStore.ThreadPresentation) {
         threadActions.deletion = nil
-        deleteSidebarThread(confirmation.thread)
+        deleteThread(confirmation.thread)
     }
 }

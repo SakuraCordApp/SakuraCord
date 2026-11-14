@@ -363,4 +363,21 @@ extension AppModel {
             completeConversationReadingAndAdvance(channelID: conversationID)
         }
     }
+
+    /// Selecting a voice channel opens its chat; this reopens a closed one.
+    func openVoiceChat(for channel: Channel) {
+        guard channel.kind == .voice else { return }
+        if selectedChannelID != channel.id {
+            selectedChannelID = channel.id
+        }
+        // Guild pages cannot show the chat.
+        guard selectedChannelID == channel.id, guildWorkspacePage == nil, !isVoiceChatOpen else { return }
+        openSideConversation(.voiceChat(channel.id))
+        beginSelectedChannelLoad()
+    }
+
+    func closeVoiceChat() {
+        guard isVoiceChatOpen else { return }
+        WorkspaceLayoutMotion.perform(in: self, closeSideConversations)
+    }
 }
