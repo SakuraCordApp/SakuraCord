@@ -320,32 +320,28 @@ extension AppModel {
             let uploadsFiles = !fileURLs.isEmpty
             if uploadsFiles { activeAttachmentUploadCount += 1 }
             defer { if uploadsFiles { activeAttachmentUploadCount -= 1 } }
-            beginUsingOwnedPromisedFiles(fileURLs)
-            let scoped = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
-            defer {
-                scoped.forEach { $0.stopAccessingSecurityScopedResource() }
-                endUsingOwnedPromisedFiles(fileURLs)
-            }
-            do {
-                try await session.provider.submitModal(submission)
-                guard isCurrentAccountSession(session) else { return }
-                startInteractionDeadline(nonce: submission.nonce)
-                form.finishSubmitting(rejection: nil)
-                // An accepted submission closes the form; the response follows separately.
-                if interactionModalForm === form { interactionModalForm = nil }
-            } catch let rejection as ModalSubmissionRejection {
-                guard isCurrentAccountSession(session) else { return }
-                _ = finishPendingInteraction(submission.nonce)
-                guard interactionModalForm === form else { return }
-                form.finishSubmitting(rejection: rejection)
-            } catch {
-                guard isCurrentAccountSession(session) else { return }
-                // Gateway failure can settle the record before transport throws.
-                // The still-present form must recover independently of that record.
-                _ = finishPendingInteraction(submission.nonce)
-                guard interactionModalForm === form else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                form.failSubmitting("Something went wrong. Try again.")
+            await withAttachmentFileAccess(fileURLs) {
+                do {
+                    try await session.provider.submitModal(submission)
+                    guard isCurrentAccountSession(session) else { return }
+                    startInteractionDeadline(nonce: submission.nonce)
+                    form.finishSubmitting(rejection: nil)
+                    // An accepted submission closes the form; the response follows separately.
+                    if interactionModalForm === form { interactionModalForm = nil }
+                } catch let rejection as ModalSubmissionRejection {
+                    guard isCurrentAccountSession(session) else { return }
+                    _ = finishPendingInteraction(submission.nonce)
+                    guard interactionModalForm === form else { return }
+                    form.finishSubmitting(rejection: rejection)
+                } catch {
+                    guard isCurrentAccountSession(session) else { return }
+                    // Gateway failure can settle the record before transport throws.
+                    // The still-present form must recover independently of that record.
+                    _ = finishPendingInteraction(submission.nonce)
+                    guard interactionModalForm === form else { return }
+                    DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+                    form.failSubmitting("Something went wrong. Try again.")
+                }
             }
         }
     }

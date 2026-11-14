@@ -360,82 +360,85 @@ extension AppModel {
         let uploadsAttachments = !outgoing.attachmentURLs.isEmpty
         if uploadsAttachments { activeAttachmentUploadCount += 1 }
         defer { if uploadsAttachments { activeAttachmentUploadCount -= 1 } }
-        let attachmentURLs = outgoing.attachmentURLs
-        beginUsingOwnedPromisedFiles(attachmentURLs)
-        let securityScopedURLs = attachmentURLs.filter {
-            $0.startAccessingSecurityScopedResource()
-        }
-        defer {
-            for url in securityScopedURLs {
-                url.stopAccessingSecurityScopedResource()
-            }
-            endUsingOwnedPromisedFiles(attachmentURLs)
-        }
-        Self.messageSendLogger.info(
-            """
-            Message send started channel=\(outgoing.channelID.description, privacy: .public) \
-            nonce=\(outgoing.nonce, privacy: .public) attachments=\(outgoing.attachmentURLs.count) \
-            stickers=\(outgoing.stickerIDs.count) retry=\(isRetry)
-            """
-        )
-        do {
-            let confirmed = try await session.provider.send(outgoing) { [weak self] progress in
-                Task { @MainActor in self?.attachmentUploads.apply(progress, nonce: outgoing.nonce) }
-            }
-            guard isCurrentAccountSession(session) else { return false }
-            attachmentUploads.finish(nonce: outgoing.nonce)
-            recordMessageEmojiUsage(outgoing.content)
-            confirmSlowmodeMessage(confirmed)
-            let reconciled = reconcileVisibleOrCached(confirmed)
-            discardVoiceMessageFile(for: outgoing)
-            composer.outbox.noteConfirmation(nonce: outgoing.nonce, channelID: outgoing.channelID)
-            composer.outbox.draftsByNonce[outgoing.nonce] = nil
-            composer.outbox.stickerUploadSourceURLByNonce[outgoing.nonce] = nil
-            journalAuthoritativeMessageUpsert(reconciled)
-            guard isCurrentAccountSession(session) else { return false }
+        return await withAttachmentFileAccess(outgoing.attachmentURLs) {
             Self.messageSendLogger.info(
                 """
-                Message send succeeded channel=\(outgoing.channelID.description, privacy: .public) \
-                nonce=\(outgoing.nonce, privacy: .public) \
-                message=\(confirmed.id.description, privacy: .public) retry=\(isRetry)
+                Message send started channel=\(outgoing.channelID.description, privacy: .public) \
+                nonce=\(outgoing.nonce, privacy: .public) attachments=\(outgoing.attachmentURLs.count) \
+                stickers=\(outgoing.stickerIDs.count) retry=\(isRetry)
                 """
             )
-            return true
-        } catch {
-            guard isCurrentAccountSession(session) else { return false }
-            // A Gateway confirmation is authoritative even if the REST request
-            // subsequently times out or fails on the retired transport.
-            if outgoingState(nonce: outgoing.nonce, channelID: outgoing.channelID) == .confirmed {
+            do {
+                let confirmed = try await session.provider.send(outgoing) { [weak self] progress in
+                    Task { @MainActor in self?.attachmentUploads.apply(progress, nonce: outgoing.nonce) }
+                }
+                guard isCurrentAccountSession(session) else { return false }
                 attachmentUploads.finish(nonce: outgoing.nonce)
+                recordMessageEmojiUsage(outgoing.content)
+                confirmSlowmodeMessage(confirmed)
+                let reconciled = reconcileVisibleOrCached(confirmed)
+                discardVoiceMessageFile(for: outgoing)
+                composer.outbox.noteConfirmation(nonce: outgoing.nonce, channelID: outgoing.channelID)
+                composer.outbox.draftsByNonce[outgoing.nonce] = nil
+                composer.outbox.stickerUploadSourceURLByNonce[outgoing.nonce] = nil
+                journalAuthoritativeMessageUpsert(reconciled)
+                guard isCurrentAccountSession(session) else { return false }
+                Self.messageSendLogger.info(
+                    """
+                    Message send succeeded channel=\(outgoing.channelID.description, privacy: .public) \
+                    nonce=\(outgoing.nonce, privacy: .public) \
+                    message=\(confirmed.id.description, privacy: .public) retry=\(isRetry)
+                    """
+                )
                 return true
-            }
-            // The user stopped every file, which already removed the message.
-            if error is CancellationError, composer.outbox.draftsByNonce[outgoing.nonce] == nil {
+            } catch {
+                guard isCurrentAccountSession(session) else { return false }
+                // A Gateway confirmation is authoritative even if the REST request
+                // subsequently times out or fails on the retired transport.
+                if outgoingState(nonce: outgoing.nonce, channelID: outgoing.channelID) == .confirmed {
+                    attachmentUploads.finish(nonce: outgoing.nonce)
+                    return true
+                }
+                // The user stopped every file, which already removed the message.
+                if error is CancellationError, composer.outbox.draftsByNonce[outgoing.nonce] == nil {
+                    return false
+                }
+                attachmentUploads.fail(nonce: outgoing.nonce)
+                recoverSlowmode(from: error, in: outgoing.channelID)
+                // A timeout ends this attempt without proving whether it was delivered.
+                // Keep the draft and nonce for explicit retry or discard; a late
+                // Gateway confirmation can still reconcile the failed message.
+                let state = OutboxState.failed
+                let failure: MessageSendFailure? = if case let ChatProviderError.autoModerationBlocked(explanation) = error {
+                    .autoModeration(explanation: explanation)
+                } else {
+                    nil
+                }
+                updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID, failure: failure)
+                let nsError = error as NSError
+                Self.messageSendLogger.error(
+                    """
+                    Message send failed channel=\(outgoing.channelID.description, privacy: .public) \
+                    nonce=\(outgoing.nonce, privacy: .public) state=\(state.rawValue, privacy: .public) \
+                    retry=\(isRetry) errorDomain=\(nsError.domain, privacy: .public) errorCode=\(nsError.code) \
+                    details=\(error.localizedDescription, privacy: .private(mask: .hash))
+                    """
+                )
                 return false
             }
-            attachmentUploads.fail(nonce: outgoing.nonce)
-            recoverSlowmode(from: error, in: outgoing.channelID)
-            // A timeout ends this attempt without proving whether it was delivered.
-            // Keep the draft and nonce for explicit retry or discard; a late
-            // Gateway confirmation can still reconcile the failed message.
-            let state = OutboxState.failed
-            let failure: MessageSendFailure? = if case let ChatProviderError.autoModerationBlocked(explanation) = error {
-                .autoModeration(explanation: explanation)
-            } else {
-                nil
-            }
-            updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID, failure: failure)
-            let nsError = error as NSError
-            Self.messageSendLogger.error(
-                """
-                Message send failed channel=\(outgoing.channelID.description, privacy: .public) \
-                nonce=\(outgoing.nonce, privacy: .public) state=\(state.rawValue, privacy: .public) \
-                retry=\(isRetry) errorDomain=\(nsError.domain, privacy: .public) errorCode=\(nsError.code) \
-                details=\(error.localizedDescription, privacy: .private(mask: .hash))
-                """
-            )
-            return false
         }
+    }
+
+    /// Keeps a send's files readable while `operation` uploads them: owned
+    /// promised files stay in use and security-scoped URLs stay open.
+    func withAttachmentFileAccess<Result>(_ urls: [URL], operation: () async -> Result) async -> Result {
+        beginUsingOwnedPromisedFiles(urls)
+        let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
+        defer {
+            scoped.forEach { $0.stopAccessingSecurityScopedResource() }
+            endUsingOwnedPromisedFiles(urls)
+        }
+        return await operation()
     }
 
     func optimisticMessage(
