@@ -6,12 +6,12 @@ extension ForumBoardView {
     // MARK: Media
 
     func refreshMedia() {
-        var keys = Set<NativeTimelineMediaKey>()
-        var keysByPost: [ChannelID: Set<NativeTimelineMediaKey>] = [:]
+        var keys = Set<MediaImageKey>()
+        var keysByPost: [ChannelID: Set<MediaImageKey>] = [:]
         let customEmojiURLsByID = model?.customEmojiURLsByID ?? [:]
         for id in cards.keys {
             guard case let .post(postID) = id, let presentation = presentations[postID] else { continue }
-            var postKeys = Set<NativeTimelineMediaKey>()
+            var postKeys = Set<MediaImageKey>()
             if let key = presentation.thumbnail?.mediaKey { postKeys.insert(key) }
             for tag in presentation.tags {
                 if let key = tag.emoji?.mediaKey { postKeys.insert(key) }
@@ -24,7 +24,7 @@ extension ForumBoardView {
             keys.formUnion(postKeys)
             keysByPost[postID] = postKeys
         }
-        let store = NativeTimelineMediaStore.shared
+        let store = MediaImageStore.shared
         store.retainVisibleImages(for: keys, owner: mediaOwner)
         // Media that leaves view may load next time, as the store retries it.
         failedMediaKeys.formIntersection(keys)

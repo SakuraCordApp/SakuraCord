@@ -69,7 +69,7 @@ struct NativeTimelineReactionTransition {
     let chips: [Chip]
 
     /// Ease-out quart as Core Animation draws it.
-    static let curve = NativeTimelineGlideCurve(
+    static let curve = GlideCurve(
         x1: 0.165, y1: 0.84, x2: 0.44, y2: 1, duration: NativeTimelineRowDisclosure.duration
     )
 

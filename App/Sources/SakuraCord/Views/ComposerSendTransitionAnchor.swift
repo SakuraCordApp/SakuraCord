@@ -200,7 +200,7 @@ final class ComposerSendTransitionAnchor {
                 .clipped()
                 .spoilerCover(
                     attachment.isSpoiler,
-                    pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: size.width)
+                    pillScale: SpoilerAppearance.pillScale(forTileWidth: size.width)
                 )
                 .environment(
                     \.colorScheme,

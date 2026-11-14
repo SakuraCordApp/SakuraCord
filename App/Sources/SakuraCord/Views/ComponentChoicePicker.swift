@@ -271,8 +271,8 @@ enum ComponentChoiceOptionPresentation {
 }
 
 extension NativeTimelineComponentLayout {
-    var selectMediaKeys: [NativeTimelineMediaKey] {
-        selects.flatMap { select -> [NativeTimelineMediaKey] in
+    var selectMediaKeys: [MediaImageKey] {
+        selects.flatMap { select -> [MediaImageKey] in
             // Load the image the field draws, so the two cannot disagree.
             select.selectedOptions.compactMap { option in
                 guard let url = ComponentChoiceOptionPresentation

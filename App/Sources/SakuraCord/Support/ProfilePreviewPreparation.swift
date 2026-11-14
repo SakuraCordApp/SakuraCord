@@ -77,7 +77,7 @@ enum ProfilePreviewPreparation {
 
     private static func preloadAvatar(_ url: URL, maximumPixelDimension: Int) async {
         guard !Task.isCancelled else { return }
-        if NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url) {
+        if UserAvatarPresentation.shouldDecodeAnimation(for: url) {
             await preload(url, maximumPixelDimension: maximumPixelDimension)
         } else {
             _ = await SharedDecodedImageLoader.shared.image(for: url, maximumPixelDimension: maximumPixelDimension, priority: .prefetch)

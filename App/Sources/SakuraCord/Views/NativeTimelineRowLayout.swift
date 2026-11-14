@@ -20,7 +20,7 @@ struct NativeTimelineRowLayout {
         let attachment: Attachment
         /// The still image drawn in the region: the image itself, or a
         /// video's poster frame.
-        let previewKey: NativeTimelineMediaKey?
+        let previewKey: MediaImageKey?
 
         var placeholder: NativeTimelineMediaPlaceholder? { .init(attachment) }
     }

@@ -12,8 +12,8 @@ extension NativeTimelineCanvasView {
     func animatedMediaKeys(
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout
-    ) -> Set<NativeTimelineMediaKey> {
-        var keys: Set<NativeTimelineMediaKey> = []
+    ) -> Set<MediaImageKey> {
+        var keys: Set<MediaImageKey> = []
         appendAnimatedAvatarKeys(for: row, layout: layout, into: &keys)
         appendAnimatedContentKeys(for: row, layout: layout, into: &keys)
         appendAnimatedComponentKeys(for: row, layout: layout, into: &keys)
@@ -24,7 +24,7 @@ extension NativeTimelineCanvasView {
     private func appendAnimatedAvatarKeys(
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout,
-        into keys: inout Set<NativeTimelineMediaKey>
+        into keys: inout Set<MediaImageKey>
     ) {
         let message = row.message
         let author =
@@ -34,7 +34,7 @@ extension NativeTimelineCanvasView {
             if let url =
                 author.avatarURL
                     ?? message.author.avatarURL,
-               NativeTimelineAvatarPresentation
+               UserAvatarPresentation
                 .shouldDecodeAnimation(for: url)
             {
                 keys.insert(.avatar(url))
@@ -50,14 +50,14 @@ extension NativeTimelineCanvasView {
         }
         if layout.replyFrame != nil,
            let url = row.replyPreview?.author.avatarURL,
-           NativeTimelineAvatarPresentation
+           UserAvatarPresentation
             .shouldDecodeAnimation(for: url)
         {
             keys.insert(.avatar(url))
         }
         if layout.commandInvocationRegion?.avatarFrame != nil,
            let url = message.interactionMetadata?.user?.avatarURL,
-           NativeTimelineAvatarPresentation
+           UserAvatarPresentation
             .shouldDecodeAnimation(for: url)
         {
             keys.insert(.avatar(url))
@@ -65,7 +65,7 @@ extension NativeTimelineCanvasView {
         for reaction in layout.reactionRegions {
             for avatar in reaction.avatarRegions {
                 if let url = avatar.reactor.avatarURL,
-                   NativeTimelineAvatarPresentation
+                   UserAvatarPresentation
                     .shouldDecodeAnimation(for: url)
                 {
                     keys.insert(.avatar(url))
@@ -77,7 +77,7 @@ extension NativeTimelineCanvasView {
     private func appendAnimatedContentKeys(
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout,
-        into keys: inout Set<NativeTimelineMediaKey>
+        into keys: inout Set<MediaImageKey>
     ) {
         let message = row.message
         for region in layout.linkedImageRegions
@@ -98,7 +98,7 @@ extension NativeTimelineCanvasView {
                     isSpoiler: attachment.isSpoiler,
                     store: spoilerRevealStore
                 ) {
-                if let key = NativeTimelineMediaKey.attachment(attachment) {
+                if let key = MediaImageKey.attachment(attachment) {
                     keys.insert(key)
                 }
             }
@@ -150,7 +150,7 @@ extension NativeTimelineCanvasView {
     private func appendAnimatedComponentKeys(
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout,
-        into keys: inout Set<NativeTimelineMediaKey>
+        into keys: inout Set<MediaImageKey>
     ) {
         let message = row.message
         for (componentIndex, component) in layout.componentLayouts.enumerated() {
@@ -234,7 +234,7 @@ extension NativeTimelineCanvasView {
     private func appendAnimatedStickerAndReactionKeys(
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout,
-        into keys: inout Set<NativeTimelineMediaKey>
+        into keys: inout Set<MediaImageKey>
     ) {
         let message = row.message
         for sticker in message.stickers
@@ -258,7 +258,7 @@ extension NativeTimelineCanvasView {
     func appendAnimatedInlineKeys(
         from value: NSAttributedString,
         revealedSpoilerLocations: Set<Int>,
-        into keys: inout Set<NativeTimelineMediaKey>
+        into keys: inout Set<MediaImageKey>
     ) {
         let range = NSRange(location: 0, length: value.length)
         let hiddenSpoilerRanges = NativeTimelineTextSpoilers.hiddenRanges(
@@ -804,8 +804,8 @@ extension NativeTimelineCanvasView {
                 )
                 .filter { $0.range.location == rangeLocation }
                 .map { $0.frame.offsetBy(dx: 0, dy: rowOrigin) },
-                cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
-                duration: NativeTimelineSpoilerAppearance.textRevealDuration
+                cornerRadius: SpoilerAppearance.textCornerRadius,
+                duration: SpoilerAppearance.textRevealDuration
             )
         }
         spoilerRevealStore.revealText(key)
@@ -954,7 +954,7 @@ extension NativeTimelineCanvasView {
             fadeOutSpoilerCover(
                 [cover.frame],
                 cornerRadius: cover.cornerRadius,
-                duration: NativeTimelineSpoilerAppearance.mediaRevealDuration,
+                duration: SpoilerAppearance.mediaRevealDuration,
                 dropsPill: true
             )
         }
@@ -1578,7 +1578,7 @@ extension NativeTimelineCanvasView {
         func animatedMediaKeysForTesting(
             row: MessageRowPresentation,
             layout: NativeTimelineRowLayout
-        ) -> Set<NativeTimelineMediaKey> {
+        ) -> Set<MediaImageKey> {
             animatedMediaKeys(for: row, layout: layout)
         }
     }

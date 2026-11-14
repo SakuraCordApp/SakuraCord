@@ -239,7 +239,7 @@ final class ForumPostPreviewTextRenderer {
     /// Hides a spoiler's glyphs and inline images while keeping its
     /// layout, so revealing it does not reflow the preview.
     private static func conceal(_ value: NSMutableAttributedString, range: NSRange) {
-        NativeTimelineSpoilerAppearance.concealText(in: value, range: range)
+        SpoilerAppearance.concealText(in: value, range: range)
         value.enumerateAttribute(.attachment, in: range) { rawValue, attachmentRange, _ in
             guard let attachment = rawValue as? NSTextAttachment else { return }
             let placeholder = NSTextAttachment()
@@ -407,14 +407,14 @@ final class ForumPostPreviewTextRenderer {
     /// Draws into the current flipped graphics context at `origin`.
     func draw(at origin: CGPoint) {
         for range in hiddenSpoilerRanges {
-            NativeTimelineSpoilerAppearance.textBackgroundColor(
+            SpoilerAppearance.textBackgroundColor(
                 hover: hoveredSpoilerLocation == range.location ? 1 : 0
             ).setFill()
             for frame in hiddenSpoilerFrames(for: range) {
                 NSBezierPath(
                     roundedRect: frame.offsetBy(dx: origin.x, dy: origin.y),
-                    xRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
-                    yRadius: NativeTimelineSpoilerAppearance.textCornerRadius
+                    xRadius: SpoilerAppearance.textCornerRadius,
+                    yRadius: SpoilerAppearance.textCornerRadius
                 ).fill()
             }
         }

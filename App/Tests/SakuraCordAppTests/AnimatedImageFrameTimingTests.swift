@@ -118,7 +118,7 @@ import Testing
 
 @Test func `timeline media declares every byte limited memory cache`() {
     #expect(
-        NativeTimelineMediaMemoryPolicy.decodedImageCacheBytes
+        MediaMemoryPolicy.decodedImageCacheBytes
             == 176 * 1_024 * 1_024
     )
     #expect(
@@ -126,27 +126,27 @@ import Testing
             == 56 * 1_024 * 1_024
     )
     #expect(
-        NativeTimelineMediaMemoryPolicy.decodedImageCacheBytes + SharedMediaDataMemoryPolicy.retainedBytes
+        MediaMemoryPolicy.decodedImageCacheBytes + SharedMediaDataMemoryPolicy.retainedBytes
             == 232 * 1_024 * 1_024
     )
 }
 
 @MainActor @Test
 func `timeline animated expansion stops when its final viewport owner leaves`() async throws {
-    let store = NativeTimelineMediaStore()
-    let key = NativeTimelineMediaKey.media(try #require(URL(
+    let store = MediaImageStore()
+    let key = MediaImageKey.media(try #require(URL(
         string: "https://cdn.example/obsolete-animation.gif"
     )))
     let firstOwner = UUID()
     let secondOwner = UUID()
-    let firstSubscriber = NativeTimelineMediaStore.AnimatedSubscriberID(
+    let firstSubscriber = MediaImageStore.AnimatedSubscriberID(
         owner: firstOwner,
         row: .message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 1)
         ))
     )
-    let secondSubscriber = NativeTimelineMediaStore.AnimatedSubscriberID(
+    let secondSubscriber = MediaImageStore.AnimatedSubscriberID(
         owner: secondOwner,
         row: .message(.server(
             channelID: ChannelID(rawValue: 1),

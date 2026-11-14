@@ -19,7 +19,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         var images: [Int: NSImage]
         var cost: Int
         let mediaPinOwner: UUID
-        let missingMediaKeys: Set<NativeTimelineMediaKey>
+        let missingMediaKeys: Set<MediaImageKey>
     }
 
     struct ReactionPointerHit {
@@ -83,7 +83,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     struct AnimatedMediaOverlayKey: Hashable {
         let row: NativeMessageTimelineItem.Identifier
         let role: AnimatedMediaOverlayRole
-        let media: NativeTimelineMediaKey
+        let media: MediaImageKey
     }
 
     struct TextCaretCandidate {
@@ -158,11 +158,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         let rowRange: Range<Int>
         let keysByIdentifier:
             [NativeMessageTimelineItem.Identifier:
-                Set<NativeTimelineMediaKey>]
+                Set<MediaImageKey>]
     }
 
     static let bitmapCostLimit =
-        NativeTimelineMediaMemoryPolicy.rowBitmapBytes
+        MediaMemoryPolicy.rowBitmapBytes
     var pollStates: [MessageID: NativeTimelinePollPresentation] = [:]
     var pollRowIndexes: [MessageID: Int] = [:]
     var pollSnapshots: [MessageID: MessagePoll] = [:]
@@ -229,7 +229,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     let visibleMediaPinOwner = UUID()
     var mediaKeysByIdentifier:
         [NativeMessageTimelineItem.Identifier:
-            Set<NativeTimelineMediaKey>] = [:]
+            Set<MediaImageKey>] = [:]
     var visibleMediaProjection: VisibleMediaProjection?
     /// The visible rows `presentRowsEnteringViewport` last presented; its own
     /// record, so another refresh of the projection cannot hide an entry.
@@ -355,7 +355,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionPreviewLoadTasks:
         [ReactionPreviewLoadKey: Task<Void, Never>] = [:]
     var animatedMediaRows:
-        [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
+        [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>] = [:]
     var inlineVideoRows:
         [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
     var inlineVideoOverlays:
@@ -391,7 +391,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         Set<NativeMessageTimelineItem.Identifier> = []
     var visibleMediaRequestTask: Task<Void, Never>?
     var pendingVisibleMediaRequests:
-        [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
+        [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>] = [:]
     lazy var mediaViewerHost = NSHostingView(
         rootView: AnyView(Color.clear.frame(width: 0, height: 0))
     )
@@ -542,16 +542,16 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
                 transition.overlay.removeFromSuperview()
             }
             cancelReactionPreviewLoads()
-            NativeTimelineMediaStore.shared.removeStaticRequests(
+            MediaImageStore.shared.removeStaticRequests(
                 owner: visibleMediaPinOwner
             )
-            NativeTimelineMediaStore.shared.releaseVisibleImages(
+            MediaImageStore.shared.releaseVisibleImages(
                 owner: visibleMediaPinOwner
             )
-            NativeTimelineMediaStore.shared.releasePinnedImages(
+            MediaImageStore.shared.releasePinnedImages(
                 owner: visibleMediaPinOwner
             )
-            NativeTimelineMediaStore.shared.cancelAnimatedRequests(
+            MediaImageStore.shared.cancelAnimatedRequests(
                 owner: visibleMediaPinOwner
             )
             if let spoilerRevealObserverID {

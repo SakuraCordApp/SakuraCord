@@ -295,7 +295,7 @@ enum ForumCardPainter {
         let metrics: ForumBoardMetrics
         /// Media whose download failed; a failed video poster falls back to
         /// the file tile.
-        let failedMedia: Set<NativeTimelineMediaKey>
+        let failedMedia: Set<MediaImageKey>
     }
 
     static func draw(_ input: DrawInput, on canvas: ForumCardCanvas) {
@@ -543,7 +543,7 @@ enum ForumCardPainter {
         _ presentation: ForumCardPresentation,
         in frame: CGRect,
         excerpt: ForumPostPreviewTextRenderer?,
-        failedMedia: Set<NativeTimelineMediaKey>,
+        failedMedia: Set<MediaImageKey>,
         on canvas: ForumCardCanvas
     ) {
         let radius = InterfaceScale.metric(12)
@@ -594,7 +594,7 @@ enum ForumCardPainter {
         _ media: ForumCardPresentation.Media,
         in frame: CGRect,
         style: MediaStyle,
-        failedMedia: Set<NativeTimelineMediaKey>,
+        failedMedia: Set<MediaImageKey>,
         on canvas: ForumCardCanvas
     ) {
         let cornerRadius = style.cornerRadius

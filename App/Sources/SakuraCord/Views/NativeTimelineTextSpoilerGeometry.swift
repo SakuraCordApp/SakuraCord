@@ -130,10 +130,10 @@ enum SelectableTextSpoilerGeometry {
     }
 
     static func draw(in view: NSTextView, dirtyRect: CGRect) {
-        NativeTimelineSpoilerAppearance.hiddenColor.setFill()
+        SpoilerAppearance.hiddenColor.setFill()
         for rect in rects(in: view) where rect.intersects(dirtyRect) {
             NSBezierPath(concentricRoundedRect: rect,
-                         cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius).fill()
+                         cornerRadius: SpoilerAppearance.textCornerRadius).fill()
         }
     }
 }

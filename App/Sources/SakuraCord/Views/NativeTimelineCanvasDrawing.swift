@@ -298,13 +298,13 @@ extension NativeTimelineCanvasView {
         visibleMediaRequestTask = nil
         pendingVisibleMediaRequests.removeAll(keepingCapacity: true)
         invalidateVisibleMediaProjection(keepingCapacity: true)
-        NativeTimelineMediaStore.shared.removeStaticRequests(
+        MediaImageStore.shared.removeStaticRequests(
             owner: visibleMediaPinOwner
         )
-        NativeTimelineMediaStore.shared.releaseVisibleImages(
+        MediaImageStore.shared.releaseVisibleImages(
             owner: visibleMediaPinOwner
         )
-        NativeTimelineMediaStore.shared.cancelAnimatedRequests(
+        MediaImageStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
         mediaReadyConversationID = nil
@@ -349,7 +349,7 @@ extension NativeTimelineCanvasView {
         animatedMediaReconcileTask = nil
         // Before the pointer targets clear, which drops the fades.
         redrawFadingHovers()
-        NativeTimelineMediaStore.shared.cancelAnimatedRequests(
+        MediaImageStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
         let clearedTargets = clearPointerTargets()
@@ -580,16 +580,16 @@ extension NativeTimelineCanvasView {
             visibleMediaRequestTask = nil
             pendingVisibleMediaRequests.removeAll(keepingCapacity: false)
             invalidateVisibleMediaProjection(keepingCapacity: false)
-            NativeTimelineMediaStore.shared.removeStaticRequests(
+            MediaImageStore.shared.removeStaticRequests(
                 owner: visibleMediaPinOwner
             )
-            NativeTimelineMediaStore.shared.releaseVisibleImages(
+            MediaImageStore.shared.releaseVisibleImages(
                 owner: visibleMediaPinOwner
             )
-            NativeTimelineMediaStore.shared.releasePinnedImages(
+            MediaImageStore.shared.releasePinnedImages(
                 owner: visibleMediaPinOwner
             )
-            NativeTimelineMediaStore.shared.cancelAnimatedRequests(
+            MediaImageStore.shared.cancelAnimatedRequests(
                 owner: visibleMediaPinOwner
             )
             clearBitmapCache(keepingCapacity: false)
@@ -866,7 +866,7 @@ extension NativeTimelineCanvasView {
         at index: Int,
         rowFrame: CGRect,
         dirtyRect: CGRect,
-        visibleMediaKeys: [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>]
+        visibleMediaKeys: [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>]
     ) {
         let item = items[index]
         let preparedMediaKeys = visibleMediaKeys[item.identifier]
@@ -928,7 +928,7 @@ extension NativeTimelineCanvasView {
         rowFrame: CGRect,
         paintFrame: CGRect,
         dirtyRect: CGRect,
-        preparedMediaKeys: Set<NativeTimelineMediaKey>,
+        preparedMediaKeys: Set<MediaImageKey>,
         revealState: NativeTimelineTextSpoilerRevealState
     ) {
         if reactionTransitions[item.identifier] != nil,
@@ -997,7 +997,7 @@ extension NativeTimelineCanvasView {
         _ item: NativeMessageTimelineItem,
         at index: Int,
         rowFrame: CGRect,
-        preparedMediaKeys: Set<NativeTimelineMediaKey>,
+        preparedMediaKeys: Set<MediaImageKey>,
         revealState: NativeTimelineTextSpoilerRevealState
     ) {
         enqueueVisibleMediaRequests(identifier: item.identifier, keys: preparedMediaKeys)
@@ -1044,7 +1044,7 @@ extension NativeTimelineCanvasView {
         at index: Int,
         rowFrame: CGRect,
         dirtyRect: CGRect,
-        preparedMediaKeys: Set<NativeTimelineMediaKey>,
+        preparedMediaKeys: Set<MediaImageKey>,
         revealState: NativeTimelineTextSpoilerRevealState
     ) {
         enqueueVisibleMediaRequests(identifier: item.identifier, keys: preparedMediaKeys)
@@ -1367,7 +1367,7 @@ extension NativeTimelineCanvasView {
         at index: Int,
         layout: NativeTimelineRowLayout,
         width: CGFloat,
-        preparedMediaKeys: Set<NativeTimelineMediaKey>,
+        preparedMediaKeys: Set<MediaImageKey>,
         tileIndex: Int = -1
     ) -> NSImage {
         if let cached = cachedBitmap(for: item, width: width, tileIndex: tileIndex) {
@@ -1436,7 +1436,7 @@ extension NativeTimelineCanvasView {
             entry = nil
         }
         let mediaPinOwner = entry?.mediaPinOwner ?? UUID()
-        NativeTimelineMediaStore.shared.pinLoadedImages(
+        MediaImageStore.shared.pinLoadedImages(
             for: preparedMediaKeys,
             owner: mediaPinOwner
         )
@@ -1522,7 +1522,7 @@ extension NativeTimelineCanvasView {
             let identifier = bitmapInsertionOrder.removeFirst()
             if let removed = bitmapCache.removeValue(forKey: identifier) {
                 bitmapCost -= removed.cost
-                NativeTimelineMediaStore.shared.releasePinnedImages(
+                MediaImageStore.shared.releasePinnedImages(
                     owner: removed.mediaPinOwner
                 )
             }
@@ -1531,7 +1531,7 @@ extension NativeTimelineCanvasView {
 
     func clearBitmapCache(keepingCapacity: Bool) {
         for cached in bitmapCache.values {
-            NativeTimelineMediaStore.shared.releasePinnedImages(
+            MediaImageStore.shared.releasePinnedImages(
                 owner: cached.mediaPinOwner
             )
         }

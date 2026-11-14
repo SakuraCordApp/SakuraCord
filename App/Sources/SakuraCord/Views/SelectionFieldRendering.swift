@@ -124,7 +124,7 @@ enum SelectionFieldRenderer {
         // Symbol palettes ignore alpha, which turns dark-mode secondary label
         // (translucent white) opaque. Draw the opaque colour at its alpha.
         let resolved = color.usingColorSpace(.deviceRGB) ?? color
-        guard let image = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+        guard let image = SystemSymbolImageCache.rasterizedConfiguredImage(
             named: name, pointSize: pointSize, weight: weight, color: resolved.withAlphaComponent(1),
             scale: device.map { max(abs($0.width), abs($0.height)) } ?? 2
         ) else { return }

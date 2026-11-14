@@ -174,7 +174,7 @@ nonisolated enum RichMessageAttributedText {
                 value.removeAttribute(.discordMarkdownSpoiler, range: range)
                 return
             }
-            NativeTimelineSpoilerAppearance.concealText(in: value, range: range)
+            SpoilerAppearance.concealText(in: value, range: range)
             value.removeAttribute(.link, range: range)
             value.enumerateAttribute(.attachment, in: range) { rawAttachment, attachmentRange, _ in
                 guard let original = rawAttachment as? NSTextAttachment else { return }

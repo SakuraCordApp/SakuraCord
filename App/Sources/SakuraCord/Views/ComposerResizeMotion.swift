@@ -15,7 +15,7 @@ enum ComposerResizeMotion {
         .timingCurve(0.22, 1, 0.36, 1, duration: duration)
     }
 
-    static let glideCurve = NativeTimelineGlideCurve(
+    static let glideCurve = GlideCurve(
         x1: 0.22, y1: 1, x2: 0.36, y2: 1, duration: duration
     )
 

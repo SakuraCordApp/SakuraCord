@@ -13,7 +13,7 @@ nonisolated final class AnimatedImagePosterCache: @unchecked Sendable {
     private var recency: [AnimatedRemoteImageRequestIdentity] = []
     private var totalCost = 0
 
-    init(maximumCost: Int = NativeTimelineMediaMemoryPolicy.animatedImagePosterBytes, maximumCount: Int = 256) {
+    init(maximumCost: Int = MediaMemoryPolicy.animatedImagePosterBytes, maximumCount: Int = 256) {
         self.maximumCost = maximumCost
         self.maximumCount = maximumCount
     }

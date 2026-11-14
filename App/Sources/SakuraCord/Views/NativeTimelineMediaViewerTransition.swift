@@ -44,7 +44,7 @@ extension NativeTimelineCanvasView {
         _ presentation: NativeTimelineMediaViewerPresentation,
         sourceFrame: CGRect,
         rowIndex: Int,
-        mediaKey: NativeTimelineMediaKey?,
+        mediaKey: MediaImageKey?,
         cornerRadius: CGFloat,
         fillsFrame: Bool
     ) -> NativeTimelineMediaViewerPresentation {
@@ -61,7 +61,7 @@ extension NativeTimelineCanvasView {
         _ presentation: NativeTimelineMediaViewerPresentation,
         sourceFrame: CGRect,
         rowIndex: Int,
-        mediaKey: NativeTimelineMediaKey?,
+        mediaKey: MediaImageKey?,
         cornerRadius: CGFloat,
         fillsFrame: Bool
     ) -> NativeTimelineMediaViewerPresentation {
@@ -157,7 +157,7 @@ extension NativeTimelineCanvasView {
 
         func insert(
             _ itemID: String,
-            key: NativeTimelineMediaKey,
+            key: MediaImageKey,
             frame: CGRect?,
             cornerRadius: CGFloat,
             fillsFrame: Bool
@@ -179,7 +179,7 @@ extension NativeTimelineCanvasView {
         }
 
         for region in layout.attachmentRegions {
-            guard let key = NativeTimelineMediaKey.attachment(
+            guard let key = MediaImageKey.attachment(
                 region.attachment
             ) else { continue }
             insert(

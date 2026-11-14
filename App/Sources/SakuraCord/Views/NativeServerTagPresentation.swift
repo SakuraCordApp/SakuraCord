@@ -35,7 +35,7 @@ nonisolated enum NativeAppBadgePresentation {
         let iconInset = isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0
         // Drawing the symbol image renders it again for every badge drawn;
         // the timeline's cache rasterizes it once per scale.
-        if isVerified, let checkmark = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+        if isVerified, let checkmark = SystemSymbolImageCache.rasterizedConfiguredImage(
             named: "checkmark", pointSize: ServerTagAppearance.fontSize, weight: .bold, color: label,
             scale: abs(context.convertToDeviceSpace(CGSize(width: 1, height: 1)).width)
         ) {

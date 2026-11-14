@@ -1828,7 +1828,7 @@ extension NativeTimelineCanvasView {
             presentation,
             sourceFrame: sourceFrame,
             rowIndex: rowIndex,
-            mediaKey: NativeTimelineMediaKey.attachment(attachment),
+            mediaKey: MediaImageKey.attachment(attachment),
             cornerRadius: InterfaceScale.metric(8),
             fillsFrame: MediaGalleryImagePresentation.fillsFrame(itemCount: layout.mediaGalleryItemCount)
         )
@@ -1848,7 +1848,7 @@ extension NativeTimelineCanvasView {
             presentation,
             sourceFrame: region?.mediaFrame ?? .zero,
             rowIndex: rowIndex,
-            mediaKey: region?.mediaURL.map { NativeTimelineMediaKey.media($0) },
+            mediaKey: region?.mediaURL.map { MediaImageKey.media($0) },
             cornerRadius: InterfaceScale.metric(8),
             fillsFrame: region?.mediaFillsFrame ?? false
         )

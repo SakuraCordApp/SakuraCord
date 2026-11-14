@@ -690,7 +690,7 @@ final class TypingIndicator: NSView {
         }
         // Share the timeline's decoded avatars, so anyone with a visible
         // message shows their picture straight away.
-        let dimension = NativeTimelineMediaKey.avatarPixelDimension
+        let dimension = MediaImageKey.avatarPixelDimension
         if let cached = SharedDecodedImageLoader.shared.cachedImage(
             for: url, maximumPixelDimension: dimension, preparesForTimeline: true
         ) {

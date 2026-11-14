@@ -39,7 +39,7 @@ struct AvatarView: View {
             }
             if let url {
                 if animates,
-                   NativeTimelineAvatarPresentation
+                   UserAvatarPresentation
                     .shouldDecodeAnimation(for: url)
                 {
                     AnimatedRemoteImage(
@@ -80,7 +80,7 @@ struct AvatarView: View {
     var cachedFrame: CGImage? {
         guard let url,
               animates,
-              NativeTimelineAvatarPresentation
+              UserAvatarPresentation
                 .shouldDecodeAnimation(for: url)
         else { return nil }
         return AnimatedRemoteImageDisplayCache.shared.image(

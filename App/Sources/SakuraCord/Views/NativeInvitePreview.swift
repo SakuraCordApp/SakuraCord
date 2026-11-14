@@ -32,16 +32,16 @@ struct NativeInvitePreview: NSViewRepresentable {
         required init?(coder: NSCoder) { nil }
         func loadImages() {
             guard let invite = card?.content else { return }
-            let keys = [invite.iconURL.map { NativeTimelineMediaKey.media($0, maximumPixelDimension: 128) },
-                        invite.inviter?.avatarURL.map { NativeTimelineMediaKey.media($0, maximumPixelDimension: 32) }].compactMap { $0 }
-                + invite.traits.compactMap { $0.emojiURL.map { NativeTimelineMediaKey.media($0, maximumPixelDimension: 32) } }
+            let keys = [invite.iconURL.map { MediaImageKey.media($0, maximumPixelDimension: 128) },
+                        invite.inviter?.avatarURL.map { MediaImageKey.media($0, maximumPixelDimension: 32) }].compactMap { $0 }
+                + invite.traits.compactMap { $0.emojiURL.map { MediaImageKey.media($0, maximumPixelDimension: 32) } }
             for key in keys {
-                NativeTimelineMediaStore.shared.request(key, owner: mediaOwner, subscriber: .loader) { [weak self] _ in self?.needsDisplay = true }
+                MediaImageStore.shared.request(key, owner: mediaOwner, subscriber: .loader) { [weak self] _ in self?.needsDisplay = true }
             }
         }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if window == nil { NativeTimelineMediaStore.shared.removeStaticRequests(owner: mediaOwner) }
+            if window == nil { MediaImageStore.shared.removeStaticRequests(owner: mediaOwner) }
         }
     }
 }

@@ -179,7 +179,7 @@ private struct ComposerAttachmentTile: View {
             face
                 .spoilerCover(
                     attachment.isSpoiler,
-                    pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: tileSize),
+                    pillScale: SpoilerAppearance.pillScale(forTileWidth: tileSize),
                     isHovered: isHovered
                 )
             if isChecking || uploadFraction != nil {

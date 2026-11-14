@@ -203,7 +203,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     /// A page request is in flight from this board; the model also guards.
     var isRequestingPage = false
     /// Media whose last request failed, so painters can show a fallback.
-    var failedMediaKeys = Set<NativeTimelineMediaKey>()
+    var failedMediaKeys = Set<MediaImageKey>()
     /// The entry indices realized last time; nil forces the next refresh to
     /// reconcile every card and rebuild settled state.
     private var realizedRange: Range<Int>?
@@ -252,8 +252,8 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         glideFinishTask?.cancel()
         minuteTimer?.invalidate()
         minuteTimer = nil
-        NativeTimelineMediaStore.shared.releaseVisibleImages(owner: mediaOwner)
-        NativeTimelineMediaStore.shared.cancelStaticRequestsOutsideVisibleSet(owner: mediaOwner)
+        MediaImageStore.shared.releaseVisibleImages(owner: mediaOwner)
+        MediaImageStore.shared.cancelStaticRequestsOutsideVisibleSet(owner: mediaOwner)
         for renderer in excerptRenderers.values { renderer.stopObservingReveals() }
         excerptRenderers.removeAll()
     }

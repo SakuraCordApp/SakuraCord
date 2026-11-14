@@ -29,7 +29,7 @@ extension NativeTimelineCanvasView {
             reconcileSendTransitions()
         }
         if !permitsAnimatedMediaPlayback {
-            NativeTimelineMediaStore.shared.cancelAnimatedRequests(owner: visibleMediaPinOwner)
+            MediaImageStore.shared.cancelAnimatedRequests(owner: visibleMediaPinOwner)
         }
         reconcileAnimatedMedia(allowsScrolling: true)
         let reduceMotion =
@@ -143,7 +143,7 @@ extension NativeTimelineCanvasView {
         func append(
             row: NativeMessageTimelineItem.Identifier,
             role: AnimatedMediaOverlayRole,
-            media: NativeTimelineMediaKey,
+            media: MediaImageKey,
             frame: CGRect,
             selectionFrame: CGRect? = nil,
             cornerRadius: CGFloat,
@@ -153,8 +153,8 @@ extension NativeTimelineCanvasView {
             allowsStaticImage: Bool = false
         ) {
             let image = allowsStaticImage
-                ? NativeTimelineMediaStore.shared.decodedImage(for: media)
-                : NativeTimelineMediaStore.shared.decodedAnimatedImage(for: media)
+                ? MediaImageStore.shared.decodedImage(for: media)
+                : MediaImageStore.shared.decodedAnimatedImage(for: media)
             guard desired.count < NativeTimelineCanvasView.maximumAnimatedMediaOverlayCount,
                   canvas.animatedMediaRows[row]?.contains(media) == true,
                   let image
@@ -306,7 +306,7 @@ extension NativeTimelineCanvasView {
         let author = model?.authorPresentation(for: row.message).user ?? row.message.author
         if let frame = layout.avatarFrame {
             if let url = author.avatarURL ?? row.message.author.avatarURL,
-               NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url) {
+               UserAvatarPresentation.shouldDecodeAnimation(for: url) {
                 accumulator.append(
                     row: identifier, role: .authorAvatar, media: .avatar(url), frame: frame,
                     cornerRadius: frame.width / 2, isLooping: true, fillsFrame: true
@@ -317,7 +317,7 @@ extension NativeTimelineCanvasView {
                     row: identifier,
                     role: .authorAvatarDecoration,
                     media: .avatarDecoration(decorationURL),
-                    frame: NativeTimelineAvatarPresentation.decorationFrame(around: frame),
+                    frame: UserAvatarPresentation.decorationFrame(around: frame),
                     cornerRadius: 0,
                     isLooping: true,
                     allowsStaticImage: true
@@ -327,8 +327,8 @@ extension NativeTimelineCanvasView {
         if let preview = row.replyPreview,
            let url = preview.author.avatarURL,
            let replyContentFrame = layout.replyContentFrame,
-           NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url) {
-            let frame = NativeTimelineAvatarPresentation.replyAvatarFrame(in: replyContentFrame)
+           UserAvatarPresentation.shouldDecodeAnimation(for: url) {
+            let frame = UserAvatarPresentation.replyAvatarFrame(in: replyContentFrame)
             accumulator.append(
                 row: identifier, role: .replyAvatar, media: .avatar(url), frame: frame,
                 cornerRadius: frame.width / 2, isLooping: true, fillsFrame: true
@@ -336,7 +336,7 @@ extension NativeTimelineCanvasView {
         }
         if let frame = layout.commandInvocationRegion?.avatarFrame,
            let url = row.message.interactionMetadata?.user?.avatarURL,
-           NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url) {
+           UserAvatarPresentation.shouldDecodeAnimation(for: url) {
             accumulator.append(
                 row: identifier, role: .invocationAvatar, media: .avatar(url), frame: frame,
                 cornerRadius: frame.width / 2, isLooping: true, fillsFrame: true
@@ -352,7 +352,7 @@ extension NativeTimelineCanvasView {
         for reaction in layout.reactionRegions where reactionTransitions[identifier] == nil {
             for (avatarIndex, avatar) in reaction.avatarRegions.enumerated() {
                 guard let url = avatar.reactor.avatarURL,
-                      NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url)
+                      UserAvatarPresentation.shouldDecodeAnimation(for: url)
                 else { continue }
                 accumulator.append(
                     row: identifier,
@@ -400,7 +400,7 @@ extension NativeTimelineCanvasView {
             accumulator.append(
                 row: identifier,
                 role: .attachment(region.attachment.id),
-                media: NativeTimelineMediaKey.attachment(region.attachment)
+                media: MediaImageKey.attachment(region.attachment)
                     ?? .media(region.attachment.url),
                 frame: region.frame,
                 cornerRadius: InterfaceScale.metric(8),
@@ -1436,7 +1436,7 @@ extension NativeTimelineCanvasView {
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         var rows:
-            [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
+            [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>] = [:]
         var videoRows:
             [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
         while items.indices.contains(index),
@@ -1462,7 +1462,7 @@ extension NativeTimelineCanvasView {
             if !reduceMotion, !keys.isEmpty {
                 rows[identifier] = keys
                 for key in keys {
-                    NativeTimelineMediaStore.shared.requestAnimated(
+                    MediaImageStore.shared.requestAnimated(
                         key,
                         owner: visibleMediaPinOwner,
                         subscriber: identifier

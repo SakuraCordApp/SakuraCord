@@ -193,7 +193,7 @@ enum NativeTimelineSendTransitionTiming {
         CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
     }
 
-    static let verticalCurve = NativeTimelineGlideCurve(
+    static let verticalCurve = GlideCurve(
         x1: 0.2, y1: 0.01, x2: 0.28, y2: 0.91, duration: duration
     )
 
@@ -794,7 +794,7 @@ struct NativeTimelineTranscriptGlide {
     let beganAt: CFTimeInterval
     /// How long the rows stay put before gliding.
     let hold: CFTimeInterval
-    let curve: NativeTimelineGlideCurve
+    let curve: GlideCurve
 
     var endsAt: CFTimeInterval {
         beganAt + hold + curve.duration
@@ -1220,7 +1220,7 @@ extension NativeTimelineCanvasView {
     func glideTranscript(
         by shift: CGFloat,
         holdingFor hold: CFTimeInterval = 0,
-        on curve: NativeTimelineGlideCurve = NativeTimelineSendTransitionTiming.verticalCurve
+        on curve: GlideCurve = NativeTimelineSendTransitionTiming.verticalCurve
     ) {
         guard abs(shift) >= 0.5, let layer else { return }
         // A send can move the rows twice in quick succession, once as the

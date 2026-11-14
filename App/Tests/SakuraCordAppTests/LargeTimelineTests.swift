@@ -190,20 +190,20 @@ func `concealed spoiler policy gates loading animation and nested containers unt
 @MainActor @Test
 func `spoiler cover centers its pill and owns pointer keyboard and accessibility activation`() throws {
     let bounds = CGRect(x: 0, y: 0, width: 280, height: 160)
-    let pill = NativeTimelineSpoilerAppearance.pillFrame(
+    let pill = SpoilerAppearance.pillFrame(
         in: bounds,
         measuredLabelWidth: 47.2,
         scale: 1
     )
     #expect(pill.midX == bounds.midX)
     #expect(pill.midY == bounds.midY)
-    #expect(pill.height == NativeTimelineSpoilerAppearance.pillHeight)
+    #expect(pill.height == SpoilerAppearance.pillHeight)
     #expect(
         pill.width
             == ceil(47.2)
-                + NativeTimelineSpoilerAppearance.pillHorizontalPadding * 2
+                + SpoilerAppearance.pillHorizontalPadding * 2
     )
-    let label = NativeTimelineSpoilerAppearance.labelFrame(
+    let label = SpoilerAppearance.labelFrame(
         in: CGRect(
             origin: .zero,
             size: pill.size
@@ -213,7 +213,7 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
     #expect(label.midX == pill.width / 2)
     #expect(label.midY == pill.height / 2)
     #expect(label.height == 14)
-    #expect(NativeTimelineSpoilerAppearance.textCornerRadius == 4)
+    #expect(SpoilerAppearance.textCornerRadius == 4)
 
     var activationCount = 0
     let overlay = NativeTimelineSpoilerOverlayHost(
@@ -341,17 +341,17 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
     }
 
     #expect(
-        NativeTimelineSpoilerAppearance.isActivationKey(
+        SpoilerAppearance.isActivationKey(
             try keyEvent(characters: "\r", keyCode: 36)
         )
     )
     #expect(
-        NativeTimelineSpoilerAppearance.isActivationKey(
+        SpoilerAppearance.isActivationKey(
             try keyEvent(characters: " ", keyCode: 49)
         )
     )
     #expect(
-        !NativeTimelineSpoilerAppearance.isActivationKey(
+        !SpoilerAppearance.isActivationKey(
             try keyEvent(
                 characters: " ",
                 keyCode: 49,
@@ -721,9 +721,9 @@ func `animated attachment and component spoilers start only after their own reve
         contentOriginY: 0
     )
 
-    let ordinaryKey = NativeTimelineMediaKey.media(ordinaryURL)
-    let hiddenKey = NativeTimelineMediaKey.media(hiddenURL)
-    let componentKey = NativeTimelineMediaKey.media(componentURL)
+    let ordinaryKey = MediaImageKey.media(ordinaryURL)
+    let hiddenKey = MediaImageKey.media(hiddenURL)
+    let componentKey = MediaImageKey.media(componentURL)
     var animated = canvas.animatedMediaKeysForTesting(
         row: row,
         layout: layout
@@ -1452,12 +1452,12 @@ func `benchmark run finalization does not require coordinator lifetime`() {
 
 @MainActor
 @Test func `retained row media survives volatile cache eviction`() throws {
-    let key = NativeTimelineMediaKey.media(try #require(URL(
+    let key = MediaImageKey.media(try #require(URL(
         string: "https://cdn.discordapp.com/attachments/1/2/pinned.png"
     )))
     let image = NSImage(size: NSSize(width: 32, height: 32))
     let owner = UUID()
-    let store = NativeTimelineMediaStore.shared
+    let store = MediaImageStore.shared
     store.cacheImageForTesting(image, for: key)
     store.pinLoadedImages(for: [key], owner: owner)
     store.evictVolatileImageForTesting(for: key)
@@ -1492,28 +1492,28 @@ func `benchmark run finalization does not require coordinator lifetime`() {
     )
 
     #expect(
-        NativeTimelineMediaKey.attachment(image)
+        MediaImageKey.attachment(image)
             == .media(proxy, fallbackURL: source)
     )
     #expect(
-        NativeTimelineMediaKey.attachment(image)?.loadURLs
+        MediaImageKey.attachment(image)?.loadURLs
             == [proxy, source]
     )
-    #expect(NativeTimelineMediaKey.attachment(video) == nil)
+    #expect(MediaImageKey.attachment(video) == nil)
 }
 
 @MainActor
 @Test func `updating a visible media lease keeps shared images pinned`() throws {
-    let firstKey = NativeTimelineMediaKey.media(try #require(URL(
+    let firstKey = MediaImageKey.media(try #require(URL(
         string: "https://cdn.example/visible-first.png"
     )))
-    let secondKey = NativeTimelineMediaKey.media(try #require(URL(
+    let secondKey = MediaImageKey.media(try #require(URL(
         string: "https://cdn.example/visible-second.png"
     )))
     let firstImage = NSImage(size: NSSize(width: 32, height: 32))
     let secondImage = NSImage(size: NSSize(width: 32, height: 32))
     let owner = UUID()
-    let store = NativeTimelineMediaStore.shared
+    let store = MediaImageStore.shared
 
     store.cacheImageForTesting(firstImage, for: firstKey)
     store.pinLoadedImages(for: [firstKey], owner: owner)
@@ -1534,7 +1534,7 @@ func `benchmark run finalization does not require coordinator lifetime`() {
 
 @MainActor
 @Test func `retained row media has a hard decoded pixel budget`() throws {
-    let store = NativeTimelineMediaStore.shared
+    let store = MediaImageStore.shared
     let image = NSImage(size: NSSize(width: 1_024, height: 1_024))
     let representation = try #require(
         NSBitmapImageRep(
@@ -1554,7 +1554,7 @@ func `benchmark run finalization does not require coordinator lifetime`() {
     var owners: [UUID] = []
 
     for index in 0 ..< 10 {
-        let key = NativeTimelineMediaKey.media(try #require(URL(
+        let key = MediaImageKey.media(try #require(URL(
             string: "https://cdn.example/large-\(index).png"
         )))
         let owner = UUID()
@@ -1575,7 +1575,7 @@ func `benchmark run finalization does not require coordinator lifetime`() {
 
 @MainActor
 @Test func `visible gallery survives deterministic decoded cache trimming`() throws {
-    let store = NativeTimelineMediaStore.shared
+    let store = MediaImageStore.shared
     let image = NSImage(size: NSSize(width: 1_024, height: 1_024))
     let representation = try #require(
         NSBitmapImageRep(
@@ -1593,7 +1593,7 @@ func `benchmark run finalization does not require coordinator lifetime`() {
     )
     image.addRepresentation(representation)
     let keys = try (0 ..< 20).map { index in
-        NativeTimelineMediaKey.media(try #require(URL(
+        MediaImageKey.media(try #require(URL(
             string: "https://cdn.example/cache-pressure-\(index).png"
         )))
     }
@@ -2443,19 +2443,19 @@ func `timeline avatar animation policy avoids decoding ordinary static avatars`(
     ))
 
     #expect(
-        !NativeTimelineAvatarPresentation
+        !UserAvatarPresentation
             .shouldDecodeAnimation(for: staticAvatar)
     )
     #expect(
-        NativeTimelineAvatarPresentation
+        UserAvatarPresentation
             .shouldDecodeAnimation(for: animatedAvatar)
     )
     #expect(
-        NativeTimelineAvatarPresentation
+        UserAvatarPresentation
             .shouldDecodeAnimation(for: gifAvatar)
     )
     let decorationFrame =
-        NativeTimelineAvatarPresentation.decorationFrame(
+        UserAvatarPresentation.decorationFrame(
             around: CGRect(x: 14, y: 3, width: 38, height: 38)
         )
     #expect(abs(decorationFrame.minX - 10.96) < 0.000_001)

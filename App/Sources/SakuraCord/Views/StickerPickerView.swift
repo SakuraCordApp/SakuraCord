@@ -826,11 +826,11 @@ struct StickerPreview: View {
                   maximumPixelDimension: 240
               )
         else { return }
-        NativeTimelineMediaStore.shared.cacheDecodedImage(
+        MediaImageStore.shared.cacheDecodedImage(
             decoded,
             for: .media(url, maximumPixelDimension: 384)
         )
-        NativeTimelineMediaStore.shared.cacheDecodedImage(
+        MediaImageStore.shared.cacheDecodedImage(
             decoded,
             for: .media(url)
         )

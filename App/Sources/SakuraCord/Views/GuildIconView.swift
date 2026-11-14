@@ -48,7 +48,7 @@ struct GuildIconView: View {
                         retriesFailedLoads: true
                     )
                     if animates,
-                       NativeTimelineAvatarPresentation
+                       UserAvatarPresentation
                         .shouldDecodeAnimation(for: iconURL)
                     {
                         AnimatedRemoteImage(

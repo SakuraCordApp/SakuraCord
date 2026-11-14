@@ -255,7 +255,7 @@ import Testing
     )
     #expect(await decodeScheduler.acquirePermitForTesting(priority: .visible))
     #expect(await decodeScheduler.acquirePermitForTesting(priority: .visible))
-    let store = NativeTimelineMediaStore(
+    let store = MediaImageStore(
         decodedImageLoad: { url, dimension, priority in
             await decodedLoader.image(
                 for: url,
@@ -270,7 +270,7 @@ import Testing
             )
         }
     )
-    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
+    let key = MediaImageKey.media(url, maximumPixelDimension: 32)
     var outcomes: [NativeTimelineStaticMediaLoadOutcome] = []
     store.request(
         key,
@@ -324,10 +324,10 @@ import Testing
         URL(string: "https://cdn.example/fallback-static.png")
     )
     let probe = ControlledDecodedImageLoad()
-    let store = NativeTimelineMediaStore { url, dimension, priority in
+    let store = MediaImageStore { url, dimension, priority in
         await probe.load(url: url, dimension: dimension, priority: priority)
     }
-    let key = NativeTimelineMediaKey.media(
+    let key = MediaImageKey.media(
         primaryURL,
         fallbackURL: fallbackURL,
         maximumPixelDimension: 32
@@ -367,9 +367,9 @@ import Testing
     let url = try #require(
         URL(string: "https://cdn.example/cancelled-visible-static.png")
     )
-    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
+    let key = MediaImageKey.media(url, maximumPixelDimension: 32)
     let probe = ControlledDecodedImageLoad()
-    let store = NativeTimelineMediaStore { url, dimension, priority in
+    let store = MediaImageStore { url, dimension, priority in
         await probe.load(url: url, dimension: dimension, priority: priority)
     }
     let owner = UUID()
@@ -398,9 +398,9 @@ import Testing
     let url = try #require(
         URL(string: "https://cdn.example/two-canvas-static.png")
     )
-    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
+    let key = MediaImageKey.media(url, maximumPixelDimension: 32)
     let probe = ControlledDecodedImageLoad()
-    let store = NativeTimelineMediaStore { url, dimension, priority in
+    let store = MediaImageStore { url, dimension, priority in
         await probe.load(url: url, dimension: dimension, priority: priority)
     }
     let firstOwner = UUID()
@@ -464,13 +464,13 @@ import Testing
 @MainActor
 @Test func `failed visible media waits for viewport exit before retrying`() async throws {
     let url = try #require(URL(string: "https://media.discordapp.net/attachments/1/2/clip.mp4?format=webp"))
-    let key = NativeTimelineMediaKey.media(url)
+    let key = MediaImageKey.media(url)
     let encoded = try #require(Data(base64Encoded:
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3vYjWQAAAABJRU5ErkJggg=="
     ))
     let image = try #require(NativeTimelineMediaDecoder.decode(encoded, maximumPixelDimension: 32))
     var loadCount = 0
-    let store = NativeTimelineMediaStore { _, _, _ in
+    let store = MediaImageStore { _, _, _ in
         loadCount += 1
         return loadCount == 1 ? nil : image
     }

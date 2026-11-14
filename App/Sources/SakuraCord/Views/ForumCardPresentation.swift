@@ -32,8 +32,8 @@ struct ForumCardPresentation: Equatable {
     }
 
     enum Media: Equatable {
-        case image(NativeTimelineMediaKey)
-        case video(poster: NativeTimelineMediaKey?, filename: String)
+        case image(MediaImageKey)
+        case video(poster: MediaImageKey?, filename: String)
         case audio(filename: String)
         case file(filename: String)
         /// Drawn under the spoiler cover, like every hidden item.
@@ -131,7 +131,7 @@ enum ForumTagEmojiPresentation: Equatable {
         }
     }
 
-    var mediaKey: NativeTimelineMediaKey? {
+    var mediaKey: MediaImageKey? {
         guard case let .custom(url) = self else { return nil }
         return .media(url, maximumPixelDimension: 64)
     }
@@ -195,7 +195,7 @@ extension ForumCardPresentation.Media {
         }
     }
 
-    var mediaKey: NativeTimelineMediaKey? {
+    var mediaKey: MediaImageKey? {
         switch self {
         case let .image(key): key
         case let .video(poster, _): poster

@@ -136,7 +136,7 @@ extension NativeTimelineCanvasView {
         at index: Int,
         rowFrame: CGRect,
         dirtyRect: CGRect,
-        visibleMediaKeys: [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>]
+        visibleMediaKeys: [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>]
     ) {
         let top = unreadDividerGapTop
         guard unreadDividerGap?.rowIndex == index,

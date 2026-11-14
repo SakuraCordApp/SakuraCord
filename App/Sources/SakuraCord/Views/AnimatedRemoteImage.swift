@@ -195,7 +195,7 @@ final class AnimatedRemoteImageDisplayCache: @unchecked Sendable {
 
     private let maximumCount = 128
     private let maximumCost =
-        NativeTimelineMediaMemoryPolicy.displayedAnimatedImageBytes
+        MediaMemoryPolicy.displayedAnimatedImageBytes
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
     private var recency: [String] = []
@@ -607,7 +607,7 @@ actor SharedAnimatedImageLoader {
 
     init() {
         cache.totalCostLimit =
-            NativeTimelineMediaMemoryPolicy.sharedAnimatedImageBytes
+            MediaMemoryPolicy.sharedAnimatedImageBytes
         cache.countLimit = 96
     }
 

@@ -174,7 +174,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let avatarURL = member.guildAvatarURL ?? member.user.avatarURL
         return member.user.avatarDecorationURL != nil
             || avatarURL.map(
-                NativeTimelineAvatarPresentation.shouldDecodeAnimation
+                UserAvatarPresentation.shouldDecodeAnimation
             ) == true
     }
 

@@ -123,7 +123,7 @@ final class ForumCardCanvas {
     func symbol(_ name: String, in frame: CGRect, color: NSColor, inset: CGFloat, weight: NSFont.Weight = .regular) {
         guard frame.width > 0, frame.height > 0 else { return }
         let pointSize = max(10, min(frame.width, frame.height) - max(0, inset) * 2)
-        guard let image = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+        guard let image = SystemSymbolImageCache.rasterizedConfiguredImage(
             named: name,
             pointSize: pointSize,
             weight: weight,

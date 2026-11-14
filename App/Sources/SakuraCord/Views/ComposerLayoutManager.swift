@@ -136,9 +136,9 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
                 if isCode { NativeTimelineRowPainter.drawCodeChrome(in: rect) } else { NativeTimelineRowPainter.drawQuoteBar(in: rect) }
             }
             // A draft's spoilers stay readable, as a revealed one does.
-            NativeTimelineSpoilerAppearance.revealedTextColor.setFill()
+            SpoilerAppearance.revealedTextColor.setFill()
             for rect in spoilers {
-                NSBezierPath(concentricRoundedRect: rect, cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius).fill()
+                NSBezierPath(concentricRoundedRect: rect, cornerRadius: SpoilerAppearance.textCornerRadius).fill()
             }
         }
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)

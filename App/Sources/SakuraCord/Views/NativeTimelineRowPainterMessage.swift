@@ -444,7 +444,7 @@ extension NativeTimelineRowPainter {
     private static func drawMessageLinkedImages(_ input: NativeTimelineMessageDrawInput) {
         let layout = input.layout
         for region in layout.linkedImageRegions {
-            let key = NativeTimelineMediaKey.media(
+            let key = MediaImageKey.media(
                 region.reference.displayURL,
                 maximumPixelDimension: region.reference.isEmoji ? 96 : 720
             )
@@ -992,7 +992,7 @@ extension NativeTimelineRowPainter {
         drawImage(
             image,
             in:
-                NativeTimelineAvatarPresentation
+                UserAvatarPresentation
                     .decorationFrame(around: avatarFrame),
             cornerRadius: 0,
             fillsFrame: false
@@ -1014,7 +1014,7 @@ extension NativeTimelineRowPainter {
             frame: bubbleConnector == nil
                 ? CGRect(x: frame.minX, y: contentFrame.minY, width: frame.width, height: frame.height)
                 : contentFrame,
-            avatarFrame: NativeTimelineAvatarPresentation.replyAvatarFrame(in: contentFrame),
+            avatarFrame: UserAvatarPresentation.replyAvatarFrame(in: contentFrame),
             trailingInset: bubbleConnector == nil ? 48 : 0,
             reservesSummary: bubbleConnector != nil,
             message: message,

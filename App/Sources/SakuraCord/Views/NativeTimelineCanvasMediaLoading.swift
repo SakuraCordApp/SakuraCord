@@ -5,7 +5,7 @@ extension NativeTimelineCanvasView {
     func requestMedia(
         for item: NativeMessageTimelineItem,
         at index: Int,
-        preparedMediaKeys: Set<NativeTimelineMediaKey>? = nil,
+        preparedMediaKeys: Set<MediaImageKey>? = nil,
         priority: MediaLoadPriority = .visible
     ) {
         let identifier = item.identifier
@@ -18,7 +18,7 @@ extension NativeTimelineCanvasView {
                 scheduleMediaInvalidation(identifier)
                 continue
             }
-            NativeTimelineMediaStore.shared.request(
+            MediaImageStore.shared.request(
                 key,
                 owner: requestOwner,
                 subscriber: identifier,
@@ -32,7 +32,7 @@ extension NativeTimelineCanvasView {
 
     func enqueueVisibleMediaRequests(
         identifier: NativeMessageTimelineItem.Identifier,
-        keys: Set<NativeTimelineMediaKey>
+        keys: Set<MediaImageKey>
     ) {
         // Record what the painter actually lacked, so cache-hit completion
         // repairs placeholders without repeatedly invalidating complete rows.
@@ -191,7 +191,7 @@ extension NativeTimelineCanvasView {
 
     @discardableResult
     func refreshVisibleMediaPins()
-        -> [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>]
+        -> [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>]
     {
         let interval = AppPerformanceSignposts.signposter.beginInterval(
             "TimelineVisibleMediaProjection"
@@ -210,11 +210,11 @@ extension NativeTimelineCanvasView {
               var index = rowIndex(at: max(0, viewport.minY))
         else {
             visibleMediaProjection = nil
-            NativeTimelineMediaStore.shared.retainVisibleImages(
+            MediaImageStore.shared.retainVisibleImages(
                 for: [],
                 owner: visibleMediaPinOwner
             )
-            NativeTimelineMediaStore.shared
+            MediaImageStore.shared
                 .cancelStaticRequestsOutsideVisibleSet(
                     owner: visibleMediaPinOwner
                 )
@@ -235,11 +235,11 @@ extension NativeTimelineCanvasView {
         }
         guard let lowerBound, let upperBound else {
             visibleMediaProjection = nil
-            NativeTimelineMediaStore.shared.retainVisibleImages(
+            MediaImageStore.shared.retainVisibleImages(
                 for: [],
                 owner: visibleMediaPinOwner
             )
-            NativeTimelineMediaStore.shared
+            MediaImageStore.shared
                 .cancelStaticRequestsOutsideVisibleSet(
                     owner: visibleMediaPinOwner
                 )
@@ -252,10 +252,10 @@ extension NativeTimelineCanvasView {
             return visibleMediaProjection.keysByIdentifier
         }
 
-        var keys: Set<NativeTimelineMediaKey> = []
+        var keys: Set<MediaImageKey> = []
         var keysByIdentifier:
             [NativeMessageTimelineItem.Identifier:
-                Set<NativeTimelineMediaKey>] = [:]
+                Set<MediaImageKey>] = [:]
         for index in rowRange
         where rowFrame(at: index).intersects(viewport) {
             if let row = items[index].messageRow, let model {
@@ -282,11 +282,11 @@ extension NativeTimelineCanvasView {
             rowRange: rowRange,
             keysByIdentifier: keysByIdentifier
         )
-        NativeTimelineMediaStore.shared.retainVisibleImages(
+        MediaImageStore.shared.retainVisibleImages(
             for: keys,
             owner: visibleMediaPinOwner
         )
-        NativeTimelineMediaStore.shared
+        MediaImageStore.shared
             .cancelStaticRequestsOutsideVisibleSet(
                 owner: visibleMediaPinOwner
             )
@@ -311,14 +311,14 @@ extension NativeTimelineCanvasView {
     func uncachedMediaKeys(
         for item: NativeMessageTimelineItem,
         at index: Int?
-    ) -> Set<NativeTimelineMediaKey> {
+    ) -> Set<MediaImageKey> {
         guard let index,
               layouts.indices.contains(index)
         else { return [] }
         if case .beginning = item,
            let beginningLayout = layouts[index].beginningLayout
         {
-            var keys: [NativeTimelineMediaKey] = []
+            var keys: [MediaImageKey] = []
             appendInlineMediaKeys(
                 from: beginningLayout.descriptionBox.value,
                 model: model,
@@ -329,7 +329,7 @@ extension NativeTimelineCanvasView {
         guard case let .message(row, _, _) = item else { return [] }
         let message = row.message
         let visibleEmbedCount = MessageEmbedPresentation.visibleEmbeds(for: message).count
-        var keys: [NativeTimelineMediaKey] = []
+        var keys: [MediaImageKey] = []
         keys.reserveCapacity(
             1 + message.attachments.count + visibleEmbedCount
                 + message.stickers.count
@@ -369,7 +369,7 @@ extension NativeTimelineCanvasView {
     private func appendAuthorMediaKeys(
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout,
-        into keys: inout [NativeTimelineMediaKey]
+        into keys: inout [MediaImageKey]
     ) {
         let message = row.message
         let author = model?.authorPresentation(for: message)
@@ -412,7 +412,7 @@ extension NativeTimelineCanvasView {
     private func appendMessageTextMediaKeys(
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout,
-        into keys: inout [NativeTimelineMediaKey]
+        into keys: inout [MediaImageKey]
     ) {
         let message = row.message
         if let model {
@@ -441,7 +441,7 @@ extension NativeTimelineCanvasView {
     private func appendEmbedMediaKeys(
         _ regions: [NativeTimelineRowLayout.EmbedRegion],
         concealedEmbeds: [String: NativeTimelineComponentRevealKey],
-        into keys: inout [NativeTimelineMediaKey]
+        into keys: inout [MediaImageKey]
     ) {
         for region in regions {
             for image in region.imageRegions {
@@ -494,7 +494,7 @@ extension NativeTimelineCanvasView {
 
     private func appendComponentMediaKeys(
         layouts: [NativeTimelineComponentLayout],
-        into keys: inout [NativeTimelineMediaKey]
+        into keys: inout [MediaImageKey]
     ) {
         // Hidden spoilers load too, so their covers can blur them.
         for componentLayout in layouts {
@@ -532,7 +532,7 @@ extension NativeTimelineCanvasView {
     private func appendStickerAndReactionMediaKeys(
         for message: Message,
         layout: NativeTimelineRowLayout,
-        into keys: inout [NativeTimelineMediaKey]
+        into keys: inout [MediaImageKey]
     ) {
         for sticker in message.stickers {
             if let url = sticker.mediaURL {
@@ -558,7 +558,7 @@ extension NativeTimelineCanvasView {
     func mediaKeys(
         for item: NativeMessageTimelineItem,
         at index: Int?
-    ) -> Set<NativeTimelineMediaKey> {
+    ) -> Set<MediaImageKey> {
         let identifier = item.identifier
         if let cached = mediaKeysByIdentifier[identifier] {
             return cached
@@ -577,7 +577,7 @@ extension NativeTimelineCanvasView {
     func appendInlineMediaKeys(
         from value: NSAttributedString,
         model: AppModel?,
-        into keys: inout [NativeTimelineMediaKey]
+        into keys: inout [MediaImageKey]
     ) {
         let range = NSRange(location: 0, length: value.length)
         value.enumerateAttribute(
@@ -621,7 +621,7 @@ extension NativeTimelineCanvasView {
         }
         bitmapCost -= removed.cost
         bitmapInsertionOrder.removeAll { $0 == identifier }
-        NativeTimelineMediaStore.shared.releasePinnedImages(
+        MediaImageStore.shared.releasePinnedImages(
             owner: removed.mediaPinOwner
         )
     }

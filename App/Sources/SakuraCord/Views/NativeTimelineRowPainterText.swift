@@ -78,7 +78,7 @@ extension NativeTimelineRowPainter {
         if !concealedSpoilerRanges.isEmpty {
             let concealed = NSMutableAttributedString(attributedString: attributed as NSAttributedString)
             for range in concealedSpoilerRanges {
-                NativeTimelineSpoilerAppearance.concealText(in: concealed, range: range)
+                SpoilerAppearance.concealText(in: concealed, range: range)
             }
             attributed = concealed as CFAttributedString
         }
@@ -205,11 +205,11 @@ extension NativeTimelineRowPainter {
             )
             let box = NativeTimelineTextSpoilerGeometry.coverFrame(fragment, clippedTo: frame)
             guard !box.isNull else { continue }
-            NativeTimelineSpoilerAppearance.hiddenColor.setFill()
+            SpoilerAppearance.hiddenColor.setFill()
             NSBezierPath(
                 roundedRect: box,
-                xRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
-                yRadius: NativeTimelineSpoilerAppearance.textCornerRadius
+                xRadius: SpoilerAppearance.textCornerRadius,
+                yRadius: SpoilerAppearance.textCornerRadius
             ).fill()
         }
         context.saveGState()
@@ -350,7 +350,7 @@ extension NativeTimelineRowPainter {
             selected.addAttribute(.foregroundColor, value: textColor, range: range)
             for spoiler in NativeTimelineTextSpoilers.ranges(in: value)
                 where !revealedSpoilerLocations.contains(spoiler.location) {
-                NativeTimelineSpoilerAppearance.concealText(in: selected, range: spoiler)
+                SpoilerAppearance.concealText(in: selected, range: spoiler)
             }
             drawingValue = selected
             drawingFramesetter = CTFramesetterCreateWithAttributedString(selected)
@@ -368,10 +368,10 @@ extension NativeTimelineRowPainter {
             attributedText: drawingValue,
             spoilerHoverProgress: spoilerHoverProgress
         )
-        NativeTimelineSpoilerAppearance.revealedTextColor.setFill()
+        SpoilerAppearance.revealedTextColor.setFill()
         for range in NativeTimelineTextSpoilers.ranges(in: value) where revealedSpoilerLocations.contains(range.location) {
             for rect in NativeTimelineTextSpoilerGeometry.rects(in: textFrame, outerFrame: frame, range: range) {
-                NSBezierPath(concentricRoundedRect: rect, cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius).fill()
+                NSBezierPath(concentricRoundedRect: rect, cornerRadius: SpoilerAppearance.textCornerRadius).fill()
             }
         }
         drawTextSelection(
@@ -428,7 +428,7 @@ extension NativeTimelineRowPainter {
             if revealedSpoilerLocations.contains(range.location) {
                 drawing.removeAttribute(.discordMarkdownSpoiler, range: range)
             } else {
-                NativeTimelineSpoilerAppearance.concealText(in: drawing, range: range)
+                SpoilerAppearance.concealText(in: drawing, range: range)
             }
         }
         return (drawing, CTFramesetterCreateWithAttributedString(drawing))
@@ -608,11 +608,11 @@ extension NativeTimelineRowPainter {
     private static func drawSpoilerDecorations(_ rects: [(CGRect, CGFloat)]) {
         for (spoilerRect, hover) in rects {
             let backgroundFrame = spoilerRect
-            NativeTimelineSpoilerAppearance.textBackgroundColor(hover: hover).setFill()
+            SpoilerAppearance.textBackgroundColor(hover: hover).setFill()
             NSBezierPath(
                 concentricRoundedRect: backgroundFrame,
                 cornerRadius:
-                    NativeTimelineSpoilerAppearance.textCornerRadius
+                    SpoilerAppearance.textCornerRadius
             ).fill()
         }
     }
@@ -944,7 +944,7 @@ extension NativeTimelineRowPainter {
                 width: iconSize,
                 height: iconSize
             )
-            if let image = NativeTimelineSystemSymbolCache.configuredImage(
+            if let image = SystemSymbolImageCache.configuredImage(
                 named: systemImage,
                 pointSize: iconSize,
                 weight: .semibold,

@@ -345,8 +345,8 @@ private struct ScheduledReplyContext: View {
         )
         let text = NSMutableAttributedString(string: prepared.text)
         for range in prepared.spoilerRanges {
-            text.addAttribute(.backgroundColor, value: NativeTimelineSpoilerAppearance.textBackgroundColor(hover: 0), range: range)
-            NativeTimelineSpoilerAppearance.concealText(in: text, range: range)
+            text.addAttribute(.backgroundColor, value: SpoilerAppearance.textBackgroundColor(hover: 0), range: range)
+            SpoilerAppearance.concealText(in: text, range: range)
         }
         return AttributedString(text)
     }
