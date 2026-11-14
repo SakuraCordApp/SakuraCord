@@ -287,29 +287,8 @@ extension AccountReadStateModel {
         }
         for channel in channels {
             channelByID[channel.id] = channel
-            var entry = entries[channel.id] ?? Entry(
-                channelID: channel.id,
-                guildID: channel.guildID,
-                parentID: channel.categoryID,
-                kind: channel.kind,
-                latestKnownMessageID: nil,
-                latestUnreadMessageID: nil,
-                lastAcknowledgedMessageID: nil,
-                mentionCount: 0,
-                unreadMessageCount: 0,
-                flags: nil,
-                lastViewed: nil,
-                threadNotificationSettings: nil,
-                isAccessible: true,
-                hasAuthoritativeReadState: false
-            )
-            entry.guildID = channel.guildID
-            entry.parentID = channel.categoryID
-            entry.kind = channel.kind
-            entry.latestKnownMessageID = maximum(
-                entry.latestKnownMessageID,
-                channel.lastMessageID
-            )
+            var entry = entries[channel.id] ?? .placeholder(channelID: channel.id, channel: nil)
+            entry.merge(channel)
             entries[channel.id] = entry
         }
         return InitialStateAssembly(
@@ -330,7 +309,7 @@ extension AccountReadStateModel {
                 assembly.remoteReadStateOrder.append(state.channelID)
             }
             var entry = assembly.entries[state.channelID]
-                ?? initialBaseEntry(for: state.channelID, channels: assembly.channelByID)
+                ?? .placeholder(channelID: state.channelID, channel: assembly.channelByID[state.channelID])
             applySnapshot(state, to: &entry)
             assembly.entries[state.channelID] = entry
         }
@@ -355,7 +334,7 @@ extension AccountReadStateModel {
         assembly.forumPostArchivedByID.reserveCapacity(threads.count)
         for thread in threads {
             var entry = assembly.entries[thread.id]
-                ?? initialBaseEntry(for: thread.id, channels: assembly.channelByID)
+                ?? .placeholder(channelID: thread.id, channel: assembly.channelByID[thread.id])
             entry.guildID = thread.guildID
                 ?? thread.parentID.flatMap { assembly.channelByID[$0]?.guildID }
             entry.parentID = thread.parentID
@@ -439,29 +418,6 @@ extension AccountReadStateModel {
         assembly.entries[parentID] = parent
     }
 
-    private nonisolated static func initialBaseEntry(
-        for channelID: ChannelID,
-        channels: [ChannelID: Channel]
-    ) -> Entry {
-        let channel = channels[channelID]
-        return Entry(
-            channelID: channelID,
-            guildID: channel?.guildID,
-            parentID: channel?.categoryID,
-            kind: channel?.kind ?? .unknown,
-            latestKnownMessageID: channel?.lastMessageID,
-            latestUnreadMessageID: channel?.lastMessageID,
-            lastAcknowledgedMessageID: nil,
-            mentionCount: 0,
-            unreadMessageCount: 0,
-            flags: nil,
-            lastViewed: nil,
-            threadNotificationSettings: nil,
-            isAccessible: true,
-            hasAuthoritativeReadState: false
-        )
-    }
-
     private nonisolated static func initialNotificationSettingsIndex(
         _ settings: [GuildNotificationSettings]
     ) -> NotificationSettingsIndex {
@@ -524,31 +480,8 @@ extension AccountReadStateModel {
     func merge(channels: [Channel]) {
         for channel in channels {
             channelByID[channel.id] = channel
-            var entry = self[channel.id] ?? Entry(
-                channelID: channel.id,
-                guildID: channel.guildID,
-                parentID: channel.categoryID,
-                kind: channel.kind,
-                latestKnownMessageID: nil,
-                latestUnreadMessageID: nil,
-                lastAcknowledgedMessageID: nil,
-                mentionCount: 0,
-                unreadMessageCount: 0,
-                flags: nil,
-                lastViewed: nil,
-                threadNotificationSettings: nil,
-                isAccessible: true,
-                hasAuthoritativeReadState: false
-            )
-            entry.guildID = channel.guildID
-            entry.parentID = channel.categoryID
-            entry.kind = channel.kind
-            entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, channel.lastMessageID)
-            if entry.hasAuthoritativeReadState {
-                entry.latestUnreadMessageID = maximum(
-                    entry.latestUnreadMessageID, channel.lastMessageID
-                )
-            }
+            var entry = self[channel.id] ?? .placeholder(channelID: channel.id, channel: nil)
+            entry.merge(channel)
             self[channel.id] = entry
         }
     }
@@ -1526,24 +1459,7 @@ extension AccountReadStateModel {
     }
 
     private func entry(for channelID: ChannelID) -> Entry {
-        if let existing = self[channelID] { return existing }
-        let channel = channelByID[channelID]
-        return Entry(
-            channelID: channelID,
-            guildID: channel?.guildID,
-            parentID: channel?.categoryID,
-            kind: channel?.kind ?? .unknown,
-            latestKnownMessageID: channel?.lastMessageID,
-            latestUnreadMessageID: channel?.lastMessageID,
-            lastAcknowledgedMessageID: nil,
-            mentionCount: 0,
-            unreadMessageCount: 0,
-            flags: nil,
-            lastViewed: nil,
-            threadNotificationSettings: nil,
-            isAccessible: true,
-            hasAuthoritativeReadState: false
-        )
+        self[channelID] ?? .placeholder(channelID: channelID, channel: channelByID[channelID])
     }
 
     private func mentionKind(
@@ -1582,6 +1498,41 @@ extension AccountReadStateModel {
         let guildID = message.guildID ?? self[message.channelID]?.guildID
         return query.includesRoles && !message.flags.contains(.failedToMentionRoles)
             && guildID.flatMap { currentUserRoleIDsByGuild[$0] }.map { !$0.isDisjoint(with: message.mentionedRoleIDs) } == true
+    }
+}
+
+nonisolated extension AccountReadStateModel.Entry {
+    /// An entry with no read state, seeded with `channel`'s newest message
+    /// when it is known.
+    static func placeholder(channelID: ChannelID, channel: Channel?) -> Self {
+        Self(
+            channelID: channelID,
+            guildID: channel?.guildID,
+            parentID: channel?.categoryID,
+            kind: channel?.kind ?? .unknown,
+            latestKnownMessageID: channel?.lastMessageID,
+            latestUnreadMessageID: channel?.lastMessageID,
+            lastAcknowledgedMessageID: nil,
+            mentionCount: 0,
+            unreadMessageCount: 0,
+            flags: nil,
+            lastViewed: nil,
+            threadNotificationSettings: nil,
+            isAccessible: true,
+            hasAuthoritativeReadState: false
+        )
+    }
+
+    /// Takes `channel`'s placement and newest message; only an entry with
+    /// authoritative read state counts that message as unread.
+    mutating func merge(_ channel: Channel) {
+        guildID = channel.guildID
+        parentID = channel.categoryID
+        kind = channel.kind
+        latestKnownMessageID = maximum(latestKnownMessageID, channel.lastMessageID)
+        if hasAuthoritativeReadState {
+            latestUnreadMessageID = maximum(latestUnreadMessageID, channel.lastMessageID)
+        }
     }
 }
 
