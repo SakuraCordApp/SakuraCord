@@ -554,43 +554,33 @@ extension NativeTimelineCanvasView {
         menu.insertItem(apps, at: insertion)
     }
 
+    // One case per menu action, so a new action cannot go unhandled.
+    // swiftlint:disable:next cyclomatic_complexity
     func messageMenuHandler(
         action: NativeTimelineMessageMenuAction,
         row: MessageRowPresentation,
         index: Int,
         actions: NativeTimelineRowActions
     ) -> () -> Void {
+        let message = row.message
         switch action {
-        case .jumpToMessage, .retrySending, .reply, .forward, .viewThread, .markUnread, .pinMessage, .unpinMessage:
-            actions.messageMenuHandler(for: action, message: row.message)
-        case .copyTranslation, .copyText, .copyLink, .copyMessageID, .copyAuthorID:
-            copyMessageMenuHandler(for: action, message: row.message)
-        case .addReaction:
-            { [weak self] in self?.showReactionPicker(forMessageRow: row.message) }
-        case .viewReactions:
-            { [weak self] in self?.showMessageReactions(row.message) }
-        case .createThread:
-            { [weak model] in model?.beginThreadCreation(from: row.message) }
-        case .dismissInboxMention:
-            { [weak model] in model?.dismissInboxMention(row.message) }
-        case .endPoll:
-            { [weak self] in self?.requestEndPoll(row.message) }
-        case .toggleTranslation:
-            { [weak model] in model?.toggleMessageTranslation(row.message) }
-        case .editMessage:
-            { [weak self] in self?.beginEditing(row: row, at: index) }
-        case .deleteMessage, .discardFailedMessage:
-            { [weak self] in
-                self?.requestDelete(row.message, through: action == .deleteMessage ? \.delete : \.discardFailed)
+        case .jumpToMessage:
+            { actions.openMessage?(message) }
+        case .retrySending:
+            { actions.retry(message) }
+        case .reply:
+            { actions.reply?(message) }
+        case .forward:
+            { actions.forward?(message) }
+        case .viewThread:
+            {
+                guard let thread = message.thread else { return }
+                actions.openThread(thread)
             }
-        }
-    }
-
-    private func copyMessageMenuHandler(
-        for action: NativeTimelineMessageMenuAction,
-        message: Message
-    ) -> () -> Void {
-        switch action {
+        case .markUnread:
+            { actions.markUnread(message) }
+        case .pinMessage, .unpinMessage:
+            { actions.togglePin(message) }
         case .copyTranslation:
             { [weak model] in
                 if let text = model?.translatedMessageText(message) { Pasteboard.copy(text) }
@@ -606,8 +596,24 @@ extension NativeTimelineCanvasView {
             { Pasteboard.copy(message.id.description) }
         case .copyAuthorID:
             { Pasteboard.copy(message.author.id.description) }
-        default:
-            {}
+        case .addReaction:
+            { [weak self] in self?.showReactionPicker(forMessageRow: message) }
+        case .viewReactions:
+            { [weak self] in self?.showMessageReactions(message) }
+        case .createThread:
+            { [weak model] in model?.beginThreadCreation(from: message) }
+        case .dismissInboxMention:
+            { [weak model] in model?.dismissInboxMention(message) }
+        case .endPoll:
+            { [weak self] in self?.requestEndPoll(message) }
+        case .toggleTranslation:
+            { [weak model] in model?.toggleMessageTranslation(message) }
+        case .editMessage:
+            { [weak self] in self?.beginEditing(row: row, at: index) }
+        case .deleteMessage, .discardFailedMessage:
+            { [weak self] in
+                self?.requestDelete(message, through: action == .deleteMessage ? \.delete : \.discardFailed)
+            }
         }
     }
 
@@ -678,32 +684,5 @@ extension NativeTimelineCanvasView {
                 Pasteboard.copy(gif.url.absoluteString)
             }
         )
-    }
-}
-
-extension NativeTimelineRowActions {
-    /// The message menu actions the timeline's host performs.
-    func messageMenuHandler(for action: NativeTimelineMessageMenuAction, message: Message) -> () -> Void {
-        switch action {
-        case .jumpToMessage:
-            { openMessage?(message) }
-        case .retrySending:
-            { retry(message) }
-        case .reply:
-            { reply?(message) }
-        case .forward:
-            { forward?(message) }
-        case .viewThread:
-            {
-                guard let thread = message.thread else { return }
-                openThread(thread)
-            }
-        case .markUnread:
-            { markUnread(message) }
-        case .pinMessage, .unpinMessage:
-            { togglePin(message) }
-        default:
-            {}
-        }
     }
 }
