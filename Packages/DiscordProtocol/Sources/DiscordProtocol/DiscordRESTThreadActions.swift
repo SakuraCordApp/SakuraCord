@@ -42,13 +42,6 @@ extension DiscordRESTProvider {
             }
     }
 
-    /// The thread revisions when a REST read starts. Capturing the whole maps
-    /// also covers threads unknown at that moment: a later record or deletion
-    /// gives them a revision the baseline lacks.
-    func threadRevisionBaseline() -> ThreadRevisionBaseline {
-        ThreadRevisionBaseline(records: threadRecordRevisions, memberships: threadMembershipRevisions)
-    }
-
     /// A confirmed join or leave updates known threads at once, through the
     /// same path as a Gateway membership change. A member the Gateway already
     /// delivered is kept; it carries Discord's join timestamp. Every accepted
@@ -84,9 +77,9 @@ extension DiscordRESTProvider {
         guard let parentID = response.thread.parentID else { return response.thread }
         let id = response.id
         let cached = cachedForumPosts[parentID]?[id]
-        let membershipIsCurrent = threadMembershipRevisions[id] == baseline.memberships[id]
+        let membershipIsCurrent = threadRevisions.memberships[id] == baseline.memberships[id]
         var committed: ForumPost
-        if threadRecordRevisions[id] != baseline.records[id] {
+        if threadRevisions.records[id] != baseline.records[id] {
             // THREAD_CREATE usually precedes the response and holds its record.
             guard let cached else { throw ChatProviderError.channelNotFound }
             committed = cached
@@ -144,9 +137,4 @@ extension DiscordRESTProvider {
         else { return }
         update.thread = .some(thread)
     }
-}
-
-struct ThreadRevisionBaseline {
-    let records: [ChannelID: UInt64]
-    let memberships: [ChannelID: UInt64]
 }

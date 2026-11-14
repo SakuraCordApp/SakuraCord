@@ -155,19 +155,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var cachedForumThreadOrder: [ChannelID] = []
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]
     var cachedJoinedThreadOrder: [ChannelID] = []
-    /// Advanced by each authoritative thread record or deletion; a REST
-    /// result is applied only when no newer record arrived meanwhile.
-    var threadRecordRevisions: [ChannelID: UInt64] = [:]
-    /// Advanced by authoritative membership changes and each local join or
-    /// leave; a REST result carries membership only when none arrived meanwhile.
-    var threadMembershipRevisions: [ChannelID: UInt64] = [:]
-    /// Advanced only by changes that supersede a pending mutation's result:
-    /// Gateway records and deletions, and accepted local mutations. Reads
-    /// advance the revisions above but never these, so an observation cannot
-    /// cancel a mutation's confirmation.
-    var threadRecordEpochs: [ChannelID: UInt64] = [:]
-    /// Gateway membership events and the start of each local join or leave.
-    var threadMembershipEpochs: [ChannelID: UInt64] = [:]
+    var threadRevisions = ThreadRevisionState()
     /// The latest pending edit per thread; the next edit waits for it.
     var threadMutationTails: [ChannelID: Task<Void, Never>] = [:]
     var cachedGuildNotificationSettings: [GuildID?: GuildNotificationSettings] = [:]

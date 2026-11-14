@@ -152,24 +152,24 @@ extension DiscordRESTProvider {
             if !refreshesCachedRecord, let cached = cachedForumPost(threadID: threadID) {
                 return cached
             }
-            let recordRevision = threadRecordRevisions[threadID]
-            let membershipRevision = threadMembershipRevisions[threadID]
+            let recordRevision = threadRevisions.records[threadID]
+            let membershipRevision = threadRevisions.memberships[threadID]
             let payload: ChannelDTO = try await request("/channels/\(threadID)")
             guard payload.isThread else {
                 throw ChatProviderError.invalidRequest("That link does not point to a thread.")
             }
             var post = try payload.forumPost(fallbackGuildID: nil)
-            let membershipIsCurrent = threadMembershipRevisions[threadID] == membershipRevision
+            let membershipIsCurrent = threadRevisions.memberships[threadID] == membershipRevision
             if let current = cachedForumPost(threadID: threadID) {
                 return reconcileLookedUpThread(
                     post,
                     with: current,
-                    recordIsCurrent: threadRecordRevisions[threadID] == recordRevision,
+                    recordIsCurrent: threadRevisions.records[threadID] == recordRevision,
                     membershipIsCurrent: membershipIsCurrent
                 )
             }
             // The record was deleted while the request was pending.
-            guard threadRecordRevisions[threadID] == recordRevision else {
+            guard threadRevisions.records[threadID] == recordRevision else {
                 throw ChatProviderError.channelNotFound
             }
             if !membershipIsCurrent {
@@ -224,23 +224,6 @@ extension DiscordRESTProvider {
 
     func cachedForumPost(threadID: ChannelID) -> ForumPost? {
         cachedForumPosts.values.lazy.compactMap { $0[threadID] }.first
-    }
-
-    /// Every accepted membership change advances the revision that
-    /// invalidates reads in flight. An `authoritative` change, a Gateway
-    /// event or a local join/leave, also supersedes a pending one.
-    @discardableResult
-    func advanceThreadMembershipRevision(_ threadID: ChannelID, authoritative: Bool = true) -> UInt64 {
-        let revision = (threadMembershipRevisions[threadID] ?? 0) &+ 1
-        threadMembershipRevisions[threadID] = revision
-        if authoritative { threadMembershipEpochs[threadID] = (threadMembershipEpochs[threadID] ?? 0) &+ 1 }
-        return revision
-    }
-
-    func advanceThreadRecordRevision(_ threadID: ChannelID, includesMembership: Bool, authoritative: Bool = true) {
-        threadRecordRevisions[threadID] = (threadRecordRevisions[threadID] ?? 0) &+ 1
-        if authoritative { threadRecordEpochs[threadID] = (threadRecordEpochs[threadID] ?? 0) &+ 1 }
-        if includesMembership { advanceThreadMembershipRevision(threadID, authoritative: authoritative) }
     }
 
     public func createForumPost(
@@ -569,7 +552,7 @@ extension DiscordRESTProvider {
         location: ThreadMembershipLocation
     ) async throws {
         advanceThreadMembershipRevision(threadID)
-        let epoch = threadMembershipEpochs[threadID]
+        let epoch = threadRevisions.membershipEpochs[threadID]
         let (data, response) = try await perform(
             "/channels/\(threadID)/thread-members/@me",
             method: isJoined ? "POST" : "DELETE",
@@ -580,7 +563,7 @@ extension DiscordRESTProvider {
         try validateEmptyResponse(data, response)
         // A Gateway membership event or a newer join/leave supersedes this
         // answer; an overlapping read does not.
-        guard threadMembershipEpochs[threadID] == epoch else { return }
+        guard threadRevisions.membershipEpochs[threadID] == epoch else { return }
         reconcileConfirmedThreadMembership(threadID: threadID, isJoined: isJoined)
     }
 
@@ -678,7 +661,7 @@ extension DiscordRESTProvider {
         var joinedThreadsChanged = false
         for var post in incomingPosts {
             let existing = cachedForumPosts[channel.id]?[post.id]
-            if threadRecordRevisions[post.id] != baseline.records[post.id] {
+            if threadRevisions.records[post.id] != baseline.records[post.id] {
                 if let existing { posts.append(existing) }
                 continue
             }
@@ -686,7 +669,7 @@ extension DiscordRESTProvider {
             if let existing {
                 post = Self.mergingForumPostCatalogueMetadata(incoming: post, existing: existing)
             }
-            if threadMembershipRevisions[post.id] != baseline.memberships[post.id] {
+            if threadRevisions.memberships[post.id] != baseline.memberships[post.id] {
                 post.thread.notificationSettings = existing?.thread.notificationSettings
                     ?? cachedJoinedThreads[post.id]?.notificationSettings
             } else if let respondedMembership,
@@ -862,8 +845,8 @@ extension DiscordRESTProvider {
     func patchForumPost(_ post: ForumPost, body: [String: JSONValue]) async throws
         -> ForumPost
     {
-        let epoch = threadRecordEpochs[post.id]
-        let membershipRevision = threadMembershipRevisions[post.id]
+        let epoch = threadRevisions.recordEpochs[post.id]
+        let membershipRevision = threadRevisions.memberships[post.id]
         let dto: ChannelDTO = try await request(
             "/channels/\(post.id)", method: "PATCH", body: body
         )
@@ -877,7 +860,7 @@ extension DiscordRESTProvider {
         // A Gateway record or deletion that arrived meanwhile is authoritative.
         // Discord sends THREAD_UPDATE before answering, so it usually holds this
         // change; a record that is gone was deleted while the request was pending.
-        guard threadRecordEpochs[post.id] == epoch else {
+        guard threadRevisions.recordEpochs[post.id] == epoch else {
             guard let cached else { throw ChatProviderError.channelNotFound }
             return cached
         }
@@ -889,7 +872,7 @@ extension DiscordRESTProvider {
         if let cached {
             updated = Self.mergingForumPostCatalogueMetadata(incoming: updated, existing: cached)
         }
-        if threadMembershipRevisions[post.id] != membershipRevision {
+        if threadRevisions.memberships[post.id] != membershipRevision {
             // A membership event arrived meanwhile; whatever this response
             // carries is older.
             updated.thread.notificationSettings = latestMembership
