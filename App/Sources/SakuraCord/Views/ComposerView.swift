@@ -1207,26 +1207,22 @@ private extension ComposerView {
     /// match neither sends nor leaves the query, as in Discord.
     private func handleTimeMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
         let rows = ComposerTimeFormatPicker.rows(for: context.query, now: timeQueryDate)
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            guard !rows.isEmpty else { return false }
-            autocompleteIndex = (autocompleteIndex - 1 + rows.count) % rows.count
-        case .next:
-            guard !rows.isEmpty else { return false }
-            autocompleteIndex = (autocompleteIndex + 1) % rows.count
-        case .accept, .advance:
-            guard !rows.isEmpty else {
+        if rows.isEmpty {
+            switch command {
+            case .previous, .next:
+                autocompleteKeyboardSelectionRevision &+= 1
+                return false
+            case .accept, .advance:
                 timeQueryNeedsPick = true
                 return true
+            case .dismiss, .previousField, .nextField, .removeField:
+                // These keys never read the row count.
+                break
             }
-            insertTimestamp(rows[min(autocompleteIndex, rows.count - 1)].token, context: context)
-        case .dismiss:
-            isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField:
-            return false
         }
-        return true
+        return routeSuggestionList(command, count: rows.count) {
+            insertTimestamp(rows[$0].token, context: context)
+        }
     }
 
     private func insertTimestamp(_ token: DiscordTimestampToken, context: KeywordMentionContext) {
@@ -1260,23 +1256,21 @@ private extension ComposerView {
     /// Keys while games match what is typed after `@game `.
     private func handleGameMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
         let games = gameMentionSearch.games
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            guard !games.isEmpty else { return true }
-            autocompleteIndex = (autocompleteIndex - 1 + games.count) % games.count
-        case .next:
-            guard !games.isEmpty else { return true }
-            autocompleteIndex = (autocompleteIndex + 1) % games.count
-        case .accept, .advance:
-            guard !games.isEmpty else { return true }
-            insertGameMention(games[min(autocompleteIndex, games.count - 1)], context: context)
-        case .dismiss:
-            isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField:
-            return false
+        if games.isEmpty {
+            switch command {
+            case .previous, .next:
+                autocompleteKeyboardSelectionRevision &+= 1
+                return true
+            case .accept, .advance:
+                return true
+            case .dismiss, .previousField, .nextField, .removeField:
+                // These keys never read the game count.
+                break
+            }
         }
-        return true
+        return routeSuggestionList(command, count: games.count) {
+            insertGameMention(games[$0], context: context)
+        }
     }
 
     private func insertGameMention(_ game: ProfileGame, context: KeywordMentionContext) {
