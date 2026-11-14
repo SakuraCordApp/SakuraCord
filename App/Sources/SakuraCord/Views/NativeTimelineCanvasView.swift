@@ -502,18 +502,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                 transition.overlay.removeFromSuperview()
             }
             cancelReactionPreviewLoads()
-            MediaImageStore.shared.removeStaticRequests(
-                owner: visibleMediaPinOwner
-            )
-            MediaImageStore.shared.releaseVisibleImages(
-                owner: visibleMediaPinOwner
-            )
-            MediaImageStore.shared.releasePinnedImages(
-                owner: visibleMediaPinOwner
-            )
-            MediaImageStore.shared.cancelAnimatedRequests(
-                owner: visibleMediaPinOwner
-            )
+            releaseMediaPins()
             if let spoilerRevealObserverID {
                 spoilerRevealStore.removeObserver(spoilerRevealObserverID)
             }

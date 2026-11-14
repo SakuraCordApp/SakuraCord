@@ -189,6 +189,36 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// Drops every request and image the timeline holds for its media.
+    func releaseMediaPins() {
+        MediaImageStore.shared.removeStaticRequests(
+            owner: visibleMediaPinOwner
+        )
+        MediaImageStore.shared.releaseVisibleImages(
+            owner: visibleMediaPinOwner
+        )
+        MediaImageStore.shared.releasePinnedImages(
+            owner: visibleMediaPinOwner
+        )
+        MediaImageStore.shared.cancelAnimatedRequests(
+            owner: visibleMediaPinOwner
+        )
+    }
+
+    /// With no row on screen, nothing stays pinned as visible.
+    private func clearVisibleMediaPins() -> [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>] {
+        visibleMediaProjection = nil
+        MediaImageStore.shared.retainVisibleImages(
+            for: [],
+            owner: visibleMediaPinOwner
+        )
+        MediaImageStore.shared
+            .cancelStaticRequestsOutsideVisibleSet(
+                owner: visibleMediaPinOwner
+            )
+        return [:]
+    }
+
     @discardableResult
     func refreshVisibleMediaPins()
         -> [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>]
@@ -209,16 +239,7 @@ extension NativeTimelineCanvasView {
               !layouts.isEmpty,
               var index = rowIndex(at: max(0, viewport.minY))
         else {
-            visibleMediaProjection = nil
-            MediaImageStore.shared.retainVisibleImages(
-                for: [],
-                owner: visibleMediaPinOwner
-            )
-            MediaImageStore.shared
-                .cancelStaticRequestsOutsideVisibleSet(
-                    owner: visibleMediaPinOwner
-                )
-            return [:]
+            return clearVisibleMediaPins()
         }
 
         var lowerBound: Int?
@@ -234,16 +255,7 @@ extension NativeTimelineCanvasView {
             index += 1
         }
         guard let lowerBound, let upperBound else {
-            visibleMediaProjection = nil
-            MediaImageStore.shared.retainVisibleImages(
-                for: [],
-                owner: visibleMediaPinOwner
-            )
-            MediaImageStore.shared
-                .cancelStaticRequestsOutsideVisibleSet(
-                    owner: visibleMediaPinOwner
-                )
-            return [:]
+            return clearVisibleMediaPins()
         }
         let rowRange = lowerBound ..< upperBound
         if let visibleMediaProjection,

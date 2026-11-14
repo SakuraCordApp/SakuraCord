@@ -516,18 +516,7 @@ extension NativeTimelineCanvasView {
             visibleMediaRequestTask = nil
             pendingVisibleMediaRequests.removeAll(keepingCapacity: false)
             invalidateVisibleMediaProjection(keepingCapacity: false)
-            MediaImageStore.shared.removeStaticRequests(
-                owner: visibleMediaPinOwner
-            )
-            MediaImageStore.shared.releaseVisibleImages(
-                owner: visibleMediaPinOwner
-            )
-            MediaImageStore.shared.releasePinnedImages(
-                owner: visibleMediaPinOwner
-            )
-            MediaImageStore.shared.cancelAnimatedRequests(
-                owner: visibleMediaPinOwner
-            )
+            releaseMediaPins()
             clearBitmapCache(keepingCapacity: false)
             removeReactionMouseMonitor()
             finishRowMotions()
