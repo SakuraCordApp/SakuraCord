@@ -850,18 +850,7 @@ final class OpusSampleBufferEncoder: NSObject,
     }
 
     func process(_ sampleBuffer: CMSampleBuffer) {
-        guard let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
-        guard let format = AVAudioFormat(formatDescription: description) else { return }
-        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
-        guard frameCount > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return }
-        buffer.frameLength = frameCount
-        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sampleBuffer,
-            at: 0,
-            frameCount: Int32(frameCount),
-            into: buffer.mutableAudioBufferList
-        ) == noErr else { return }
+        guard let buffer = AVAudioPCMBuffer(copying: sampleBuffer) else { return }
         process(buffer)
     }
 
@@ -1014,5 +1003,22 @@ extension VoiceAudioEngineError: LocalizedError {
         case .converterUnavailable:
             "The selected microphone uses an unsupported audio format."
         }
+    }
+}
+
+extension AVAudioPCMBuffer {
+    /// The sample buffer's audio, copied into a buffer of its own format; nil
+    /// when it holds none or cannot be read.
+    convenience init?(copying sampleBuffer: CMSampleBuffer) {
+        guard let description = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let format = AVAudioFormat(formatDescription: description)
+        else { return nil }
+        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard frameCount > 0 else { return nil }
+        self.init(pcmFormat: format, frameCapacity: frameCount)
+        frameLength = frameCount
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer, at: 0, frameCount: Int32(frameCount), into: mutableAudioBufferList
+        ) == noErr else { return nil }
     }
 }

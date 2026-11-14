@@ -342,17 +342,7 @@ final class VoiceMessageCaptureProcessor: NSObject,
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard let description = CMSampleBufferGetFormatDescription(sampleBuffer),
-              let format = AVAudioFormat(formatDescription: description)
-        else { return }
-        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
-        guard frameCount > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
-        else { return }
-        buffer.frameLength = frameCount
-        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sampleBuffer, at: 0, frameCount: Int32(frameCount), into: buffer.mutableAudioBufferList
-        ) == noErr else { return }
+        guard let buffer = AVAudioPCMBuffer(copying: sampleBuffer) else { return }
         process(buffer)
     }
 
