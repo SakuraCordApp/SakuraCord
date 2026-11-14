@@ -23,6 +23,19 @@ files under `Sources/CLibdave` and `Sources/CMLS`.
 The SwiftPM integration keeps transient signing keys and the OpenSSL 3 / ML-KEM
 adaptations. Preserve those choices when importing upstream source updates.
 
-The sender also retains its nonce sequence when the same MLS key domain is
-installed again during a protocol transition, matching the receiver’s replay
-protection for repeated ratchets.
+### Local divergences from libdave
+
+Replay protection for repeated key ratchets adds these changes under
+`Sources/CLibdave/libdave/cpp`. Reapply them when importing an upstream update.
+
+- `includes/dave/dave_interfaces.h`: `IKeyRatchet::GetDomainIdentity()` lets
+  the encryptor and decryptor recognise a reinstall of the same MLS key domain.
+- `src/mls_key_ratchet.h` and `src/mls_key_ratchet.cpp`:
+  `MlsKeyRatchet::domainIdentity_` keeps the base secret, which is derived per
+  epoch and user, as that identity.
+- `src/decryptor.cpp`: `Decryptor::TransitionToKeyRatchet` ignores a ratchet
+  whose domain already has a live cryptor manager, so processed frames do not
+  get a fresh replay window and expiries are not extended.
+- `src/encryptor.cpp`: `Encryptor::SetKeyRatchet` keeps the current ratchet and
+  nonce sequence when the same domain is installed again during a protocol
+  transition, so AES-GCM nonces are not reused.
