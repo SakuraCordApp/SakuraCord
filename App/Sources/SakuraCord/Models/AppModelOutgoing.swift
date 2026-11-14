@@ -87,11 +87,7 @@ extension AppModel {
         if !existing.attachments.isEmpty {
             for index in resolved.attachments.indices {
                 let attachment = resolved.attachments[index]
-                let previous = existing.attachments.first(where: {
-                    $0.id == attachment.id
-                }) ?? (existing.attachments.indices.contains(index)
-                    ? existing.attachments[index]
-                    : nil)
+                let previous = existing.attachments.counterpart(of: attachment, at: index)
                 if attachment.mediaKind == .video {
                     resolved.attachments[index].localPreviewURL = previous?.localPreviewURL
                     continue
@@ -113,13 +109,7 @@ extension AppModel {
         }
         if !existing.stickers.isEmpty {
             for index in resolved.stickers.indices {
-                let sticker = resolved.stickers[index]
-                let previous = existing.stickers.first(where: {
-                    $0.id == sticker.id
-                }) ?? (existing.stickers.indices.contains(index)
-                    ? existing.stickers[index]
-                    : nil)
-                if let mediaURL = previous?.mediaURL {
+                if let mediaURL = existing.stickers.counterpart(of: resolved.stickers[index], at: index)?.mediaURL {
                     resolved.stickers[index].assetURL = mediaURL
                 }
             }
@@ -524,5 +514,12 @@ extension Message {
         case .failed: nonce != nil
         case .confirmed: false
         }
+    }
+}
+
+private extension Array where Element: Identifiable {
+    /// The element with the same ID, else the one at the same position.
+    func counterpart(of element: Element, at index: Int) -> Element? {
+        first { $0.id == element.id } ?? (indices.contains(index) ? self[index] : nil)
     }
 }
