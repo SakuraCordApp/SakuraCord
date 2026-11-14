@@ -279,8 +279,10 @@ extension AppModel {
         if consumeProfileEvent(event) { return }
         if consumeVoiceEvent(event) { return }
         switch event {
-        case .currentUserRolesChanged, .currentUserRolesSnapshot:
-            consumeCurrentUserRoleEvent(event)
+        case .currentUserRolesChanged(let guildID, let roleIDs):
+            consumeCurrentUserRolesChanged(guildID: guildID, roleIDs: roleIDs)
+        case .currentUserRolesSnapshot(let roleIDsByGuild):
+            consumeCurrentUserRolesSnapshot(roleIDsByGuild)
         case .snapshotChanged(let value):
             consumeSnapshotChanged(value)
         case .guildChanged, .guildLayoutChanged, .guildLayoutSaveFailed, .guildRolesChanged,
@@ -338,17 +340,6 @@ extension AppModel {
         }
     }
 
-    func consumeCurrentUserRoleEvent(_ event: ClientEvent) {
-        switch event {
-        case .currentUserRolesChanged(let guildID, let roleIDs):
-            consumeCurrentUserRolesChanged(guildID: guildID, roleIDs: roleIDs)
-        case .currentUserRolesSnapshot(let roleIDsByGuild):
-            consumeCurrentUserRolesSnapshot(roleIDsByGuild)
-        default:
-            break
-        }
-    }
-
     func consumeCurrentUserRolesChanged(
         guildID: GuildID,
         roleIDs values: [RoleID]
@@ -391,14 +382,15 @@ extension AppModel {
         let previousState = connectionState
         connectionState = state
         handleApplicationStreamsForGatewayState(state)
-        if state == .ready, previousState != .ready {
+        let becameReady = state == .ready && previousState != .ready
+        if becameReady {
             refreshSelectedGuildOnboarding(force: true)
             scheduleCommandFrecencyFlushAfterConnecting()
         }
         // Discord saves pending command uses as soon as its connection closes.
         if state == .disconnected, previousState == .ready { flushCommandFrecencyNow() }
-        if state == .ready, previousState != .ready, inbox.isPresented { refreshInbox() }
-        if state == .ready, previousState != .ready { friendsConnectionChanged() }
+        if becameReady, inbox.isPresented { refreshInbox() }
+        if becameReady { friendsConnectionChanged() }
         if state != .ready {
             if previousState == .ready {
                 // A resumed session can reconcile missed messages through the
@@ -412,7 +404,7 @@ extension AppModel {
             stopLocalTyping(clearThrottle: true)
             typingState.clearAll()
         } else {
-            if previousState != .ready, activeVoiceChannel != nil {
+            if becameReady, activeVoiceChannel != nil {
                 let account = accountSession()
                 let generation = voiceMigrationGeneration
                 startAccountChildTask(account: account) { model, account in
@@ -422,13 +414,13 @@ extension AppModel {
                     )
                 }
             }
-            if previousState != .ready,
+            if becameReady,
                selectedChannelID != nil,
                hasCompletedInitialMessageLoad
             {
                 refreshSelectedChannelPreservingHistory()
             }
-            if previousState != .ready {
+            if becameReady {
                 revalidateOpenThreadAfterReconnect()
                 revalidateGuideResourceAfterReconnect()
             }
