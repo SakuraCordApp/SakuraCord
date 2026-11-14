@@ -3,6 +3,8 @@ import Foundation
 /// Discord's three-day auto-archive, for a thread whose channel sets none.
 public enum ThreadAutoArchive {
     public static let defaultDuration = 4_320
+    /// The auto-archive durations, in minutes, Discord accepts.
+    public static let validDurations: Set<Int> = [60, 1_440, 4_320, 10_080]
 }
 
 /// Thread and forum-post names: Discord accepts 1–100 characters.

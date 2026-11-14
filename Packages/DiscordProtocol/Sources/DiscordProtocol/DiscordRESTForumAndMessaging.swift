@@ -269,10 +269,10 @@ extension DiscordRESTProvider {
             throw ChatProviderError.invalidRequest(
                 "Attachment descriptions cannot exceed 1,024 characters.")
         }
-        guard Self.validForumAutoArchiveDurations.contains(draft.autoArchiveDuration) else {
+        guard ThreadAutoArchive.validDurations.contains(draft.autoArchiveDuration) else {
             throw ChatProviderError.invalidRequest("The selected auto-archive duration is invalid.")
         }
-        let selectedTags = Self.orderedUniqueForumTagIDs(
+        let selectedTags = ForumTag.orderedUniqueIDs(
             draft.appliedTagIDs,
             availableTags: channel.availableTags
         )
@@ -337,7 +337,7 @@ extension DiscordRESTProvider {
         guard !draft.isPrivate || draft.starterMessageID == nil else {
             throw ChatProviderError.invalidRequest("Threads started from a message are public.")
         }
-        guard Self.validForumAutoArchiveDurations.contains(draft.autoArchiveDuration) else {
+        guard ThreadAutoArchive.validDurations.contains(draft.autoArchiveDuration) else {
             throw ChatProviderError.invalidRequest("The selected auto-archive duration is invalid.")
         }
         let type = draft.isPrivate ? 12 : (channel.kind == .announcement ? 10 : 11)
@@ -415,7 +415,7 @@ extension DiscordRESTProvider {
             guard
                 let channel = cachedChannel(parentID), channel.kind == .forum
             else { throw ChatProviderError.channelNotFound }
-            let selectedTags = Self.orderedUniqueForumTagIDs(
+            let selectedTags = ForumTag.orderedUniqueIDs(
                 tags,
                 availableTags: channel.availableTags
             )
@@ -454,18 +454,6 @@ extension DiscordRESTProvider {
             working = try await patchForumPost(working, body: body)
         }
     }
-
-    nonisolated static func orderedUniqueForumTagIDs(
-        _ selectedTagIDs: [ForumTagID],
-        availableTags: [ForumTag]
-    ) -> [ForumTagID] {
-        let selected = Set(selectedTagIDs)
-        return availableTags.lazy.map(\.id).filter(selected.contains)
-    }
-
-    nonisolated static let validForumAutoArchiveDurations: Set<Int> = [
-        60, 1_440, 4_320, 10_080,
-    ]
 
     public func deleteForumPost(_ post: ForumPost) async throws {
         guard let parentID = post.thread.parentID else {

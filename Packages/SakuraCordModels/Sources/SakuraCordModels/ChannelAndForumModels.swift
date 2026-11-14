@@ -29,6 +29,12 @@ public struct ForumTag: Identifiable, Codable, Hashable, Sendable {
         self.emojiID = emojiID
         self.emojiName = emojiName
     }
+
+    /// The selected tags that are available, once each, in the channel's tag order.
+    public static func orderedUniqueIDs(_ selectedTagIDs: [ForumTagID], availableTags: [ForumTag]) -> [ForumTagID] {
+        let selected = Set(selectedTagIDs)
+        return availableTags.lazy.map(\.id).filter(selected.contains)
+    }
 }
 
 public struct ForumDefaultReaction: Codable, Hashable, Sendable {

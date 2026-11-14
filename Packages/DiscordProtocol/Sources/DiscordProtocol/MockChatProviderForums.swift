@@ -105,7 +105,7 @@ public extension MockChatProvider {
                 $0.id == draft.channelID && $0.kind == .forum
             })
         else { throw ChatProviderError.channelNotFound }
-        let selectedTags = DiscordRESTProvider.orderedUniqueForumTagIDs(
+        let selectedTags = ForumTag.orderedUniqueIDs(
             draft.appliedTagIDs,
             availableTags: channel.availableTags
         )
@@ -116,7 +116,7 @@ public extension MockChatProvider {
               selectedTags.count <= 5,
               Set(selectedTags) == Set(draft.appliedTagIDs),
               draft.attachments.count <= 10,
-              DiscordRESTProvider.validForumAutoArchiveDurations.contains(
+              ThreadAutoArchive.validDurations.contains(
                   draft.autoArchiveDuration
               )
         else {
@@ -169,7 +169,7 @@ public extension MockChatProvider {
               let channel = snapshot.channels.first(where: { $0.id == draft.channelID }),
               channel.kind == .text || (channel.kind == .announcement && !draft.isPrivate),
               draft.starterMessageID == nil || !draft.isPrivate,
-              DiscordRESTProvider.validForumAutoArchiveDurations.contains(draft.autoArchiveDuration)
+              ThreadAutoArchive.validDurations.contains(draft.autoArchiveDuration)
         else { throw ChatProviderError.invalidRequest("The thread does not meet this channel's requirements.") }
         let threadID: ChannelID
         var starterIndex: Int?
@@ -280,7 +280,7 @@ public extension MockChatProvider {
             guard let channel = snapshot.channels.first(where: { $0.id == parentID }) else {
                 throw ChatProviderError.channelNotFound
             }
-            let selectedTags = DiscordRESTProvider.orderedUniqueForumTagIDs(
+            let selectedTags = ForumTag.orderedUniqueIDs(
                 tags,
                 availableTags: channel.availableTags
             )

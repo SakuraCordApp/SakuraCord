@@ -504,19 +504,19 @@ struct ThreadCreationContractTests {
     let second = ForumTag(id: ForumTagID(rawValue: 8_002), name: "Second")
 
     #expect(
-        DiscordRESTProvider.orderedUniqueForumTagIDs(
+        ForumTag.orderedUniqueIDs(
             [second.id, first.id, second.id],
             availableTags: [first, second]
         ) == [first.id, second.id]
     )
     #expect(
-        DiscordRESTProvider.orderedUniqueForumTagIDs(
+        ForumTag.orderedUniqueIDs(
             [ForumTagID(rawValue: 9_999)],
             availableTags: [first, second]
         ).isEmpty
     )
     #expect(
-        DiscordRESTProvider.validForumAutoArchiveDurations
+        ThreadAutoArchive.validDurations
             == [60, 1_440, 4_320, 10_080]
     )
 }
