@@ -204,7 +204,7 @@ final class ComposerSendTransitionAnchor {
                 )
                 .environment(
                     \.colorScheme,
-                    view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+                    view.effectiveAppearance.isDark ? .dark : .light
                 )
             )
             renderer.scale = window.backingScaleFactor

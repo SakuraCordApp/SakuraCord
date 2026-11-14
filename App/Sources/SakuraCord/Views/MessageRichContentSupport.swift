@@ -47,7 +47,7 @@ enum DiscordEmbedPalette {
     private static func themed(_ midnight: NSColor, light: NSColor) -> NSColor {
         let theme = SakuraCordThemeStore.shared.committedTheme
         return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let isDark = appearance.isDark
             return theme.discordTinted(isDark ? midnight : light, isDark: isDark)
         }
     }

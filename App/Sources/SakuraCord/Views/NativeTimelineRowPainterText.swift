@@ -671,7 +671,7 @@ extension NativeTimelineRowPainter {
     /// Discord tints code with its blurple and outlines it in a translucent
     /// gray, so both read on any background and in either appearance.
     static let discordCodeBackgroundColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        appearance.isDark
             ? NSColor(srgbRed: 89 / 255, green: 102 / 255, blue: 242 / 255, alpha: 0.08)
             : NSColor(srgbRed: 77 / 255, green: 102 / 255, blue: 230 / 255, alpha: 0.04)
     }
@@ -681,7 +681,7 @@ extension NativeTimelineRowPainter {
             srgbRed: 150 / 255,
             green: 150 / 255,
             blue: 160 / 255,
-            alpha: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.2 : 0.4
+            alpha: appearance.isDark ? 0.2 : 0.4
         )
     }
 

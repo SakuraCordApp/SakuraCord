@@ -903,7 +903,7 @@ final class SakuraCordThemeStore {
         )
         let theme = committedTheme
         return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let isDark = appearance.isDark
             let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
             return NSColor(theme.readableForeground(source, for: themeAppearance))
         }

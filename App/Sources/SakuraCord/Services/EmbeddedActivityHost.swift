@@ -79,7 +79,7 @@ final class EmbeddedActivityHost: NSObject {
     /// The Activity iframe with the official client's sandbox, permissions and
     /// launch parameters, and the relay between it and this host.
     private func hostPage(proxyTicket: String) -> String {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let isDark = NSApp.effectiveAppearance.isDark
         var parameters = [
             "theme": isDark ? "dark" : "light",
             "frame_id": frameID,

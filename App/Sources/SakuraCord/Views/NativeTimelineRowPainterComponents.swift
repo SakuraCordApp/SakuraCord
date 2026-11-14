@@ -1049,7 +1049,7 @@ extension NativeTimelineRowPainter {
         let isDimmed = region.opacity < 1
         let pressProgress = isDimmed ? 0 : min(max(pressProgress, 0), 1)
         let hover: CGFloat = !isDimmed && isHovered ? 1 : 0
-        let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let isDark = NSAppearance.currentDrawing().isDark
         let fill: NSColor
         let border: NSColor
         let foreground: NSColor

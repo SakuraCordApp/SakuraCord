@@ -176,7 +176,7 @@ final class ForumBoardCard {
         var border = NSColor.separatorColor.cgColor
         var shadowOpacity: Float = 0
         appearance.performAsCurrentDrawingAppearance {
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let isDark = appearance.isDark
             switch kind {
             case .card:
                 let fillAlpha: CGFloat = isPressed ? 0.09 : isSelected ? 0.055 : isHovered ? 0.04 : 0

@@ -314,7 +314,7 @@ final class WorkspaceColumnsView: NSView {
     /// workspace's environment whole, in the colour scheme of this view.
     private func hosted(_ content: AnyView) -> AnyView {
         var environment = environment
-        environment.colorScheme = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+        environment.colorScheme = effectiveAppearance.isDark ? .dark : .light
         return AnyView(content.environment(\.self, environment))
     }
 

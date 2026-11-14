@@ -741,7 +741,7 @@ final class TypingIndicator: NSView {
     private static var fallbackTheme: SakuraCordGradientTheme?
 
     private func fallbackImage(name: String) -> CGImage? {
-        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let isDark = effectiveAppearance.isDark
         return Self.fallbackImage(name: name, colorScheme: isDark ? .dark : .light, scale: window?.backingScaleFactor ?? 2)
     }
 

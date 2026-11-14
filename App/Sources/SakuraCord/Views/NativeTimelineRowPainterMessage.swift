@@ -1623,10 +1623,7 @@ extension NativeTimelineRowPainter {
         guard let preview = action.themePreview else {
             return [.sakuraCordAccentColor]
         }
-        let appearance = NSAppearance.currentDrawing()
-            .bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? SakuraCordThemeAppearance.dark
-            : .light
+        let appearance = NSAppearance.currentDrawing().isDark ? SakuraCordThemeAppearance.dark : .light
         return preview.theme.activeColors.map {
             NSColor(preview.theme.renderedRGB($0, for: appearance))
         }

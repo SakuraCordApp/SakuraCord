@@ -20,7 +20,7 @@ nonisolated enum NativeTimelineSpoilerAppearance {
     /// dark mode, which matches SakuraCord's near-black timeline, and its
     /// light theme otherwise.
     static let hiddenColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        appearance.isDark
             ? NSColor(srgbRed: 0x59 / 255, green: 0x5A / 255, blue: 0x63 / 255, alpha: 1)
             : NSColor(srgbRed: 0x8F / 255, green: 0x90 / 255, blue: 0x97 / 255, alpha: 1)
     }
@@ -38,7 +38,7 @@ nonisolated enum NativeTimelineSpoilerAppearance {
     static let mediaHoverTintColor = NSColor(name: nil) { hoverTintBase($0).withAlphaComponent(hoverTint / 2) }
 
     private static func hoverTintBase(_ appearance: NSAppearance) -> NSColor {
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
+        appearance.isDark ? .white : .black
     }
 
     /// A revealed text spoiler keeps a faint fill, so it still reads as one.
@@ -47,7 +47,7 @@ nonisolated enum NativeTimelineSpoilerAppearance {
     static let revealedTextColor = NSColor(name: nil) { appearance in
         NSColor(
             srgbRed: 0x97 / 255, green: 0x97 / 255, blue: 0x9F / 255,
-            alpha: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.12 : 0.24
+            alpha: appearance.isDark ? 0.12 : 0.24
         )
     }
 

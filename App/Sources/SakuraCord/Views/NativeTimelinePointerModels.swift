@@ -73,7 +73,7 @@ enum NativeTimelineMentionAppearance {
             // Resolved here because the accent fallback can change with no theme commit.
             source: SakuraCordThemeRGB(NativeTimelineRowPainter.roleColor(presentation.colorHex) ?? .sakuraCordAccentColor),
             inBubble: inBubble,
-            isDark: NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua,
+            isDark: NSAppearance.currentDrawing().isDark,
             theme: SakuraCordThemeStore.shared.committedTheme
         )
         if let color = colors[key] { return color }

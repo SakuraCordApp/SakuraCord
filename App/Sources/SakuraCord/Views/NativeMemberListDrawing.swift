@@ -248,7 +248,7 @@ extension NativeMemberListCanvasView {
             ))
             context.clip()
             if let colors = NameplatePresentationPolicy.colors(for: nameplate.palette) {
-                let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                let isDark = effectiveAppearance.isDark
                 let color = Self.color(hex: isDark ? colors.dark : colors.light)
                 let gradient = CGGradient(
                     colorsSpace: CGColorSpaceCreateDeviceRGB(),

@@ -18,7 +18,7 @@ enum NativeTimelineSpoilerCover {
         return cache
     }()
     private static let backdropColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .black : .white
+        appearance.isDark ? .black : .white
     }
 
     /// Draws `content`, under the cover when `isCovered`, in the current
