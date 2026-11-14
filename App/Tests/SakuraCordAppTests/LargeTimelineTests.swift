@@ -534,7 +534,7 @@ func `concealed spoiler covers survive repeated far offscreen recycling and pagi
     func scroll(to y: CGFloat) {
         scrollView.contentView.scroll(to: CGPoint(x: 0, y: y))
         scrollView.reflectScrolledClipView(scrollView.contentView)
-        canvas.reconcileSpoilerOverlaysForTesting()
+        canvas.reconcileSpoilerOverlays()
     }
 
     scroll(to: 0)
@@ -724,8 +724,8 @@ func `animated attachment and component spoilers start only after their own reve
     let ordinaryKey = MediaImageKey.media(ordinaryURL)
     let hiddenKey = MediaImageKey.media(hiddenURL)
     let componentKey = MediaImageKey.media(componentURL)
-    var animated = canvas.animatedMediaKeysForTesting(
-        row: row,
+    var animated = canvas.animatedMediaKeys(
+        for: row,
         layout: layout
     )
     #expect(animated.contains(ordinaryKey))
@@ -738,8 +738,8 @@ func `animated attachment and component spoilers start only after their own reve
             attachmentID: "hidden-animation"
         )
     )
-    animated = canvas.animatedMediaKeysForTesting(
-        row: row,
+    animated = canvas.animatedMediaKeys(
+        for: row,
         layout: layout
     )
     #expect(animated.contains(hiddenKey))
@@ -751,8 +751,8 @@ func `animated attachment and component spoilers start only after their own reve
             componentID: "hidden-container"
         )
     )
-    animated = canvas.animatedMediaKeysForTesting(
-        row: row,
+    animated = canvas.animatedMediaKeys(
+        for: row,
         layout: layout
     )
     #expect(animated.contains(componentKey))
@@ -830,7 +830,7 @@ func `switching channels resets spoiler reveal across shared timeline canvases`(
             bottomSpacerHeight: 0,
             contentOriginY: 0
         )
-        canvas.reconcileSpoilerOverlaysForTesting()
+        canvas.reconcileSpoilerOverlays()
         return canvas
     }
 
@@ -868,7 +868,7 @@ func `switching channels resets spoiler reveal across shared timeline canvases`(
         bottomSpacerHeight: 0,
         contentOriginY: 0
     )
-    firstCanvas.reconcileSpoilerOverlaysForTesting()
+    firstCanvas.reconcileSpoilerOverlays()
     let compactCoverFrame = try #require(
         firstCanvas.spoilerOverlayFramesForTesting[key]
     )

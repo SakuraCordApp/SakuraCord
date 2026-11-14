@@ -223,10 +223,6 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     }
 }
 
-/// Presents decoded raster animation frames on Core Animation's compositor.
-/// The outer view is deliberately transparent so the selection tint can
-/// extend beyond the clipped media box exactly as the Core Text painter does.
-
 #if DEBUG
     extension NativeTimelineCanvasView {
         var spoilerOverlayFramesForTesting:
@@ -243,10 +239,6 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
                     overlay.hasPersistentPillForTesting ? key : nil
                 }
             )
-        }
-
-        func reconcileSpoilerOverlaysForTesting() {
-            reconcileSpoilerOverlays()
         }
     }
 #endif

@@ -1118,21 +1118,8 @@ extension NativeMessageTimelineCoordinator {
             initialPositionConversation == parent.conversation
         }
 
-        var initialPositionConversationForTesting:
-            NativeTimelineConversation?
-        {
-            initialPositionConversation
-        }
-
         var scrollStateForTesting: TimelineScrollState {
             scrollState()
-        }
-
-        var contentOriginYForTesting: CGFloat {
-            guard let scrollView else { return 0 }
-            return contentOriginY(
-                viewportHeight: scrollView.contentView.bounds.height
-            )
         }
 
         var contentHeightForTesting: CGFloat {
@@ -1141,22 +1128,6 @@ extension NativeMessageTimelineCoordinator {
 
         var performanceUpdatePathForTesting: String {
             performanceUpdatePath
-        }
-
-        var pendingLayoutWidthForTesting: CGFloat? {
-            pendingLayoutWidth
-        }
-
-        var widthRelayoutGenerationForTesting: UInt64 {
-            widthRelayoutGeneration
-        }
-
-        var cachedItemLayoutCountForTesting: Int {
-            cachedItemLayouts.count
-        }
-
-        func applyPendingWidthRelayoutForTesting() {
-            applyPendingWidthRelayout()
         }
 
         func messageOffsetFromViewportTopForTesting(

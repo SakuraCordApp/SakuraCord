@@ -640,16 +640,4 @@ extension NativeTimelineCanvasView {
             alert.runModal()
         }
     }
-
 }
-
-#if DEBUG
-    extension NativeTimelineCanvasView {
-        func animatedMediaKeysForTesting(
-            row: MessageRowPresentation,
-            layout: NativeTimelineRowLayout
-        ) -> Set<MediaImageKey> {
-            animatedMediaKeys(for: row, layout: layout)
-        }
-    }
-#endif
