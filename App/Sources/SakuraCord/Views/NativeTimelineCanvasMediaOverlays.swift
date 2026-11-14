@@ -1553,58 +1553,14 @@ extension NativeTimelineCanvasView {
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout
     ) -> Set<MediaImageKey> {
-        let identifier = NativeMessageTimelineItem.Identifier.message(row.identity)
         var accumulator = AnimatedMediaAccumulator(canvas: self, collectsKeys: true)
-        appendAnimatedAvatars(
+        appendAnimatedMedia(
             row: row,
-            identifier: identifier,
+            identifier: .message(row.identity),
             layout: layout,
             accumulator: &accumulator
         )
-        appendAnimatedMessageContent(
-            row: row,
-            identifier: identifier,
-            layout: layout,
-            accumulator: &accumulator
-        )
-        appendAnimatedEmbeds(
-            message: row.message,
-            identifier: identifier,
-            layout: layout,
-            accumulator: &accumulator
-        )
-        appendAnimatedComponents(
-            messageID: row.message.id,
-            identifier: identifier,
-            layout: layout,
-            accumulator: &accumulator
-        )
-        var keys = accumulator.keys
-        appendAnimatedStickerAndReactionKeys(for: row, layout: layout, into: &keys)
-        return keys
-    }
-
-    private func appendAnimatedStickerAndReactionKeys(
-        for row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        into keys: inout Set<MediaImageKey>
-    ) {
-        let message = row.message
-        for sticker in message.stickers
-        where sticker.format?.isAnimated == true {
-            if let url = sticker.mediaURL {
-                keys.insert(.media(url, maximumPixelDimension: 384))
-            }
-        }
-        for region in layout.reactionRegions {
-            let reference = region.reaction.emojiReference
-            guard reference.isAnimated,
-                  let url = reference.id.flatMap({
-                      model?.customEmojiURLsByID[$0]
-                  }) ?? reference.imageURL(size: 64)
-            else { continue }
-            keys.insert(.media(url, maximumPixelDimension: 64))
-        }
+        return accumulator.keys
     }
 
     /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
