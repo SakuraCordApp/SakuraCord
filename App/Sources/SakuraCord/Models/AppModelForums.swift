@@ -238,91 +238,70 @@ extension AppModel {
               selectedConversationAccess.isReadable
         else { return }
         let session = accountSession()
-        let loadSignpost = AppPerformanceSignposts.signposter.beginInterval("ForumPostsLoad")
-        defer {
-            AppPerformanceSignposts.signposter.endInterval("ForumPostsLoad", loadSignpost)
-        }
-        let trimmedSearch = forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isSearch = !trimmedSearch.isEmpty
-        if isSearch { isSearchingForumPosts = true }
-        if reset {
-            forumLoadGeneration &+= 1
-            forumPaginationError = nil
-            if !isSearch { forumNextOffset = nil }
-        } else {
-            isLoadingMoreForumPosts = true
-            forumPaginationError = nil
-        }
-        let requestGeneration = forumLoadGeneration
-        let loadingIndicatorTask: Task<Void, Never>? =
-            reset && !hasLoadedForumPosts
-                ? Task { [weak self] in
-                    try? await Task.sleep(for: .milliseconds(150))
-                    guard let self, !Task.isCancelled,
-                          selectedChannelID == channelID,
-                          forumLoadGeneration == requestGeneration,
-                          !hasLoadedForumPosts
-                    else { return }
-                    isLoadingForumPosts = true
+        await AppPerformanceSignposts.measure("ForumPostsLoad") {
+            let trimmedSearch = forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isSearch = !trimmedSearch.isEmpty
+            if isSearch { isSearchingForumPosts = true }
+            if reset {
+                forumLoadGeneration &+= 1
+                forumPaginationError = nil
+                if !isSearch { forumNextOffset = nil }
+            } else {
+                isLoadingMoreForumPosts = true
+                forumPaginationError = nil
+            }
+            let requestGeneration = forumLoadGeneration
+            let loadingIndicatorTask: Task<Void, Never>? =
+                reset && !hasLoadedForumPosts
+                    ? Task { [weak self] in
+                        try? await Task.sleep(for: .milliseconds(150))
+                        guard let self, !Task.isCancelled,
+                              selectedChannelID == channelID,
+                              forumLoadGeneration == requestGeneration,
+                              !hasLoadedForumPosts
+                        else { return }
+                        isLoadingForumPosts = true
+                    }
+                    : nil
+            defer {
+                loadingIndicatorTask?.cancel()
+                if isCurrentAccountSession(session),
+                   selectedChannelID == channelID,
+                   forumLoadGeneration == requestGeneration
+                {
+                    isLoadingForumPosts = false
+                    isLoadingMoreForumPosts = false
+                    if isSearch { isSearchingForumPosts = false }
                 }
-                : nil
-        defer {
-            loadingIndicatorTask?.cancel()
-            if isCurrentAccountSession(session),
-               selectedChannelID == channelID,
-               forumLoadGeneration == requestGeneration
-            {
-                isLoadingForumPosts = false
-                isLoadingMoreForumPosts = false
-                if isSearch { isSearchingForumPosts = false }
+            }
+            let scope: ForumPostScope =
+                !trimmedSearch.isEmpty
+                    ? .search(trimmedSearch)
+                    : .active
+            do {
+                let page = try await AppPerformanceSignposts.measure("ForumProviderLoad") {
+                    try await session.provider.forumPosts(
+                        in: channelID,
+                        query: currentForumQuery(scope: scope, offset: reset ? 0 : (forumNextOffset ?? 0))
+                    )
+                }
+                guard !Task.isCancelled,
+                      isCurrentAccountSession(session),
+                      selectedChannelID == channelID,
+                      forumLoadGeneration == requestGeneration
+                else { return }
+                applyForumPage(page, isSearch: isSearch, reset: reset, channelID: channelID)
+            } catch {
+                guard !Self.isForumLoadCancellation(error) else { return }
+                guard isCurrentAccountSession(session),
+                      selectedChannelID == channelID,
+                      forumLoadGeneration == requestGeneration
+                else {
+                    return
+                }
+                applyForumLoadError(error, isSearch: isSearch, reset: reset)
             }
         }
-        let scope: ForumPostScope =
-            !trimmedSearch.isEmpty
-                ? .search(trimmedSearch)
-                : .active
-        do {
-            let page = try await requestForumPosts(
-                provider: session.provider,
-                channelID: channelID,
-                scope: scope,
-                reset: reset
-            )
-            guard !Task.isCancelled,
-                  isCurrentAccountSession(session),
-                  selectedChannelID == channelID,
-                  forumLoadGeneration == requestGeneration
-            else { return }
-            applyForumPage(page, isSearch: isSearch, reset: reset, channelID: channelID)
-        } catch {
-            guard !Self.isForumLoadCancellation(error) else { return }
-            guard isCurrentAccountSession(session),
-                  selectedChannelID == channelID,
-                  forumLoadGeneration == requestGeneration
-            else {
-                return
-            }
-            applyForumLoadError(error, isSearch: isSearch, reset: reset)
-        }
-    }
-
-    func requestForumPosts(
-        provider: any ChatProvider,
-        channelID: ChannelID,
-        scope: ForumPostScope,
-        reset: Bool
-    ) async throws -> ForumPostPage {
-        let providerSignpost = AppPerformanceSignposts.signposter.beginInterval("ForumProviderLoad")
-        defer {
-            AppPerformanceSignposts.signposter.endInterval(
-                "ForumProviderLoad",
-                providerSignpost
-            )
-        }
-        return try await provider.forumPosts(
-            in: channelID,
-            query: currentForumQuery(scope: scope, offset: reset ? 0 : (forumNextOffset ?? 0))
-        )
     }
 
     /// A page of the selected forum under its current sort and tag filter.
@@ -350,42 +329,31 @@ extension AppModel {
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
         threadBrowser.receive(parentID: channelID, records: posts)
         reconcileInboxForumPosts(channelID: channelID, posts: posts, replacesAll: true)
-        let interval = AppPerformanceSignposts.signposter.beginInterval(
-            "ForumPostsChanged"
-        )
-        defer {
-            AppPerformanceSignposts.signposter.endInterval(
-                "ForumPostsChanged",
-                interval
-            )
+        AppPerformanceSignposts.measureSync("ForumPostsChanged") {
+            let threads = posts.map(\.thread)
+            AppPerformanceSignposts.measureSync(
+                "ForumForwardDestinationReplacement"
+            ) {
+                replaceForwardDestinationThreads(
+                    parentID: channelID,
+                    with: threads
+                )
+            }
+            AppPerformanceSignposts.measureSync(
+                "ForumReadStateReplacement"
+            ) {
+                readState.replaceThreads(parentID: channelID, with: threads)
+            }
+            AppPerformanceSignposts.measureSync("ForumUnreadRefreshRequest") {
+                requestCoalescedUnreadPresentationRefresh()
+            }
+            refreshTimelineThreadCards(parentID: channelID, posts: posts)
+            guard presentsForum(channelID) else { return }
+            // Omission from the provider's catalogue is not deletion; the open post
+            // closes only through `.threadDeleted`, lost access or the user.
+            replaceForumCatalogue(with: posts)
+            applyForumPresentation()
         }
-        let threads = AppPerformanceSignposts.measureSync(
-            "ForumThreadProjection"
-        ) {
-            posts.map(\.thread)
-        }
-        AppPerformanceSignposts.measureSync(
-            "ForumForwardDestinationReplacement"
-        ) {
-            replaceForwardDestinationThreads(
-                parentID: channelID,
-                with: threads
-            )
-        }
-        AppPerformanceSignposts.measureSync(
-            "ForumReadStateReplacement"
-        ) {
-            readState.replaceThreads(parentID: channelID, with: threads)
-        }
-        AppPerformanceSignposts.measureSync("ForumUnreadRefreshRequest") {
-            requestCoalescedUnreadPresentationRefresh()
-        }
-        refreshTimelineThreadCards(parentID: channelID, posts: posts)
-        guard presentsForum(channelID) else { return }
-        // Omission from the provider's catalogue is not deletion; the open post
-        // closes only through `.threadDeleted`, lost access or the user.
-        replaceForumCatalogue(with: posts)
-        applyForumPresentation()
     }
 
     func consumeForumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost]) {
@@ -421,28 +389,16 @@ extension AppModel {
         reset: Bool,
         channelID: ChannelID
     ) {
-        let catalogueSignpost = AppPerformanceSignposts.signposter.beginInterval(
-            "ForumCatalogueUpdate"
-        )
-        if isSearch {
-            mergeForumCatalogue(page.posts)
-        } else if reset {
-            replaceForumCatalogue(with: page.posts)
-        } else {
-            mergeForumCatalogue(page.posts)
+        AppPerformanceSignposts.measureSync("ForumCatalogueUpdate") {
+            if isSearch {
+                mergeForumCatalogue(page.posts)
+            } else if reset {
+                replaceForumCatalogue(with: page.posts)
+            } else {
+                mergeForumCatalogue(page.posts)
+            }
         }
-        AppPerformanceSignposts.signposter.endInterval(
-            "ForumCatalogueUpdate",
-            catalogueSignpost
-        )
-        let presentationSignpost = AppPerformanceSignposts.signposter.beginInterval(
-            "ForumPresentation"
-        )
-        applyForumPresentation()
-        AppPerformanceSignposts.signposter.endInterval(
-            "ForumPresentation",
-            presentationSignpost
-        )
+        AppPerformanceSignposts.measureSync("ForumPresentation", operation: applyForumPresentation)
         if !isSearch {
             forumNextOffset = page.nextOffset
             hasMoreForumPosts = page.hasMore

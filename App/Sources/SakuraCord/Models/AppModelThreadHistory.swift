@@ -178,52 +178,45 @@ extension AppModel {
                 model.endConversationRefresh(in: thread.id, revision: refreshRevision)
                 model.endThreadWindowRequest(request)
             }
-            let loadSignpost = AppPerformanceSignposts.signposter.beginInterval(
-                "ThreadConversationLoad"
-            )
-            defer {
-                AppPerformanceSignposts.signposter.endInterval(
-                    "ThreadConversationLoad",
-                    loadSignpost
-                )
-            }
-            do {
-                let page = try await model.threadHistoryPage(
-                    account.provider,
-                    in: thread.id,
-                    anchoredAt: target.map(MessageHistoryAnchor.around) ?? .newest,
-                    limit: target == nil ? model.initialHistoryFetchLimit : DiscordHistoryFetchLimit.aroundLimit
-                )
-                try Task.checkCancellation()
-                guard model.isCurrentAccountSession(account),
-                      model.isCurrentThreadWindow(request)
-                else { return }
-                if target == nil {
-                    model.finishInitialThreadLoad(
-                        page,
-                        request: request,
-                        refreshRevision: refreshRevision
+            await AppPerformanceSignposts.measure("ThreadConversationLoad") {
+                do {
+                    let page = try await model.threadHistoryPage(
+                        account.provider,
+                        in: thread.id,
+                        anchoredAt: target.map(MessageHistoryAnchor.around) ?? .newest,
+                        limit: target == nil ? model.initialHistoryFetchLimit : DiscordHistoryFetchLimit.aroundLimit
                     )
-                } else {
-                    model.replaceThreadWindow(
-                        with: page,
-                        request: request,
-                        mutations: model.conversationRefreshMutations(in: thread.id, revision: refreshRevision)
-                    )
+                    try Task.checkCancellation()
+                    guard model.isCurrentAccountSession(account),
+                          model.isCurrentThreadWindow(request)
+                    else { return }
+                    if target == nil {
+                        model.finishInitialThreadLoad(
+                            page,
+                            request: request,
+                            refreshRevision: refreshRevision
+                        )
+                    } else {
+                        model.replaceThreadWindow(
+                            with: page,
+                            request: request,
+                            mutations: model.conversationRefreshMutations(in: thread.id, revision: refreshRevision)
+                        )
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard model.isCurrentAccountSession(account),
+                          model.isCurrentThreadWindow(request)
+                    else { return }
+                    DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+                    model.threadErrorMessage = error.localizedDescription
+                    model.threadErrorScope = .initialPage
+                    model.threadWindow.failedInitialTarget = target
+                    model.threadWindow.initialLoadTarget = nil
+                    model.isLoadingThread = false
+                    model.hasCompletedInitialThreadLoad = true
                 }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard model.isCurrentAccountSession(account),
-                      model.isCurrentThreadWindow(request)
-                else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                model.threadErrorMessage = error.localizedDescription
-                model.threadErrorScope = .initialPage
-                model.threadWindow.failedInitialTarget = target
-                model.threadWindow.initialLoadTarget = nil
-                model.isLoadingThread = false
-                model.hasCompletedInitialThreadLoad = true
             }
         }
     }
