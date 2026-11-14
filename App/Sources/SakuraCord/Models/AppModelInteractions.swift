@@ -223,8 +223,7 @@ extension AppModel {
         nonce: String, channelID: ChannelID, application: ApplicationCommandApplication,
         commandName: String?, message text: String, isFailure: Bool = true
     ) {
-        let guildID = visibleChannels.first { $0.id == channelID }?.guildID
-            ?? snapshot?.channels.first { $0.id == channelID }?.guildID
+        let guildID = knownRootChannel(channelID)?.guildID
         appendOutgoingMessage(interactionLocalMessage(
             InteractionRowOrigin(
                 nonce: nonce, channelID: channelID, guildID: guildID,

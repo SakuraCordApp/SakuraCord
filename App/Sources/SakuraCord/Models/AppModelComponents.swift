@@ -22,8 +22,7 @@ extension AppModel {
             return
         }
         let guildID = message.guildID
-            ?? visibleChannels.first { $0.id == message.channelID }?.guildID
-            ?? snapshot?.channels.first { $0.id == message.channelID }?.guildID
+            ?? knownRootChannel(message.channelID)?.guildID
         let submission = ComponentInteractionSubmission(
             messageID: message.id, messageFlags: message.flags, channelID: message.channelID,
             guildID: guildID, applicationID: applicationID, customID: customID, kind: kind,

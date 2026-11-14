@@ -252,8 +252,7 @@ extension AppModel {
         guard supportedCapabilities.contains(.slashCommands) else { return }
         let destination = commandDestination(in: channelID)
         let guildID = (openThread?.id == channelID ? openThread?.guildID ?? openThreadParentChannel?.guildID : nil)
-            ?? visibleChannels.first { $0.id == channelID }?.guildID
-            ?? snapshot?.channels.first { $0.id == channelID }?.guildID
+            ?? knownRootChannel(channelID)?.guildID
         let commandComposer = commandComposer(for: destination)
         commandComposer.recordUse(of: command, guildID: guildID)
         for composer in commandComposers where composer !== commandComposer { composer.refreshFrecency() }
