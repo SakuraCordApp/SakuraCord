@@ -86,8 +86,17 @@ extension AppModel {
         from previous: [GuildID: Set<RoleID>],
         to current: [GuildID: Set<RoleID>]
     ) -> Set<GuildID> {
+        changedKeys(from: previous, to: current, isEqual: ==)
+    }
+
+    /// The keys present in either map whose values `isEqual` doesn't match.
+    nonisolated static func changedKeys<Key: Hashable, Value>(
+        from previous: [Key: Value],
+        to current: [Key: Value],
+        isEqual: (Value?, Value?) -> Bool
+    ) -> Set<Key> {
         Set(previous.keys).union(current.keys).filter {
-            previous[$0] != current[$0]
+            !isEqual(previous[$0], current[$0])
         }
     }
 
@@ -117,14 +126,9 @@ extension AppModel {
         let currentByID = Dictionary(
             uniqueKeysWithValues: channels.map { ($0.id, $0) }
         )
-        let affectedChannelIDs = Set(previousByID.keys)
-            .union(currentByID.keys)
-            .filter {
-                !Self.hasEqualChannelAccessInputs(
-                    previousByID[$0],
-                    currentByID[$0]
-                )
-            }
+        let affectedChannelIDs = Self.changedKeys(
+            from: previousByID, to: currentByID, isEqual: Self.hasEqualChannelAccessInputs
+        )
         AppPerformanceSignposts.measureSync("UnreadAccessTriggerChannelsChanged") {
             guard !affectedChannelIDs.isEmpty else {
                 refreshUnreadPresentation()
@@ -159,27 +163,16 @@ extension AppModel {
         let currentGuildsByID = Dictionary(
             uniqueKeysWithValues: currentSnapshot.guilds.map { ($0.id, $0) }
         )
-        let affectedGuildIDs = Set(previousGuildsByID.keys)
-            .union(currentGuildsByID.keys)
-            .filter {
-                !Self.hasEqualGuildAccessInputs(
-                    previousGuildsByID[$0],
-                    currentGuildsByID[$0]
-                )
-            }
-        let affectedChannelIDs = Set(previousChannelsByID.keys)
-            .union(currentChannelsByID.keys)
-            .filter {
-                !Self.hasEqualChannelAccessInputs(
-                    previousChannelsByID[$0],
-                    currentChannelsByID[$0]
-                )
-            }
-            .union(
-                previousAccessEvidence.symmetricDifference(
-                    readState.authoritativeAccessEvidenceChannelIDs()
-                )
+        let affectedGuildIDs = Self.changedKeys(
+            from: previousGuildsByID, to: currentGuildsByID, isEqual: Self.hasEqualGuildAccessInputs
+        )
+        let affectedChannelIDs = Self.changedKeys(
+            from: previousChannelsByID, to: currentChannelsByID, isEqual: Self.hasEqualChannelAccessInputs
+        ).union(
+            previousAccessEvidence.symmetricDifference(
+                readState.authoritativeAccessEvidenceChannelIDs()
             )
+        )
         let replacingChannelIDs = affectedChannelIDs.union(
             previousChannelsByID.values.lazy
                 .filter { $0.guildID.map(affectedGuildIDs.contains) == true }
@@ -197,7 +190,7 @@ extension AppModel {
             } else {
                 refreshUnreadPresentation(
                     appliesAccessImmediately: true,
-                    accessAffectedGuildIDs: Set(affectedGuildIDs),
+                    accessAffectedGuildIDs: affectedGuildIDs,
                     accessAffectedChannelIDs: affectedChannelIDs,
                     accessReplacingChannelIDs: replacingChannelIDs
                 )
