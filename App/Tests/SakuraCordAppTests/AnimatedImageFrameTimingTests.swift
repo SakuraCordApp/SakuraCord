@@ -121,14 +121,9 @@ import Testing
         MediaMemoryPolicy.decodedImageCacheBytes
             == 176 * 1_024 * 1_024
     )
-    #expect(
-        SharedMediaDataMemoryPolicy.retainedBytes
-            == 56 * 1_024 * 1_024
-    )
-    #expect(
-        MediaMemoryPolicy.decodedImageCacheBytes + SharedMediaDataMemoryPolicy.retainedBytes
-            == 232 * 1_024 * 1_024
-    )
+    let sharedMediaBytes = SharedMediaDataMemoryPolicy.remoteBytes + SharedMediaDataMemoryPolicy.localBytes
+    #expect(sharedMediaBytes == 56 * 1_024 * 1_024)
+    #expect(MediaMemoryPolicy.decodedImageCacheBytes + sharedMediaBytes == 232 * 1_024 * 1_024)
 }
 
 @MainActor @Test

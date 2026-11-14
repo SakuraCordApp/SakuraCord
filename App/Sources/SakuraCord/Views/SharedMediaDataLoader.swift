@@ -5,7 +5,6 @@ import MediaPipeline
 nonisolated enum SharedMediaDataMemoryPolicy {
     static let remoteBytes = 24 * 1_024 * 1_024
     static let localBytes = 32 * 1_024 * 1_024
-    static let retainedBytes = remoteBytes + localBytes
 }
 
 nonisolated struct SharedMediaDownloadedFile: Sendable {
