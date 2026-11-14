@@ -457,25 +457,51 @@ export_trace_tables() {
         --output "$output/activity-monitor-ledger.xml" >/dev/null 2>&1 || true
 }
 
-# Scenarios that drive a timeline or member-list auto-scroll.
+# Launched scenarios; "-" marks an empty field. The resource window bounds the
+# app-published process-resource window and the profile interval bounds the
+# Time Profiler summary. Traits: scroll drives a timeline or member-list
+# auto-scroll, authenticated requires a stored debug credential, interactive
+# needs an operable LaunchServices window, and gestures enables scroll input
+# telemetry.
+# name|launch argument|default seconds|resource window|profile interval|traits
+scenario_table='startup|-|12|-|StartupToWorkspace|-
+authenticated-scroll|--debug-authenticated-chat-performance-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll,authenticated
+offline-pins-scroll|--offline-pins-performance-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll
+offline-chat-scroll|--offline-chat-performance-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll
+offline-chat-voice-scroll|--offline-chat-voice-performance-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll
+authenticated-member-list-scroll|--debug-authenticated-member-list-performance-autoscroll|70|MemberListAutoScrollBenchmark|MemberListAutoScrollBenchmark|scroll,authenticated,interactive
+authenticated-gesture-scroll|--debug-authenticated-gesture-scroll-performance|40|AuthenticatedGestureScrollBenchmark|AuthenticatedGestureScrollBenchmark|authenticated,interactive,gestures
+authenticated-loading-scroll-overlap|--debug-authenticated-loading-scroll-overlap-performance|55|AuthenticatedLoadingScrollOverlapBenchmark|AuthenticatedLoadingScrollOverlapBenchmark|authenticated,interactive,gestures
+authenticated-navigation|--debug-authenticated-navigation-performance|45|AuthenticatedNavigationBenchmark|AuthenticatedNavigationBenchmark|authenticated
+authenticated-account-switch|--debug-authenticated-account-switch-performance|45|AuthenticatedAccountSwitchBenchmark|AuthenticatedAccountSwitchBenchmark|authenticated
+authenticated-history-pagination|--debug-authenticated-history-pagination-performance|45|AuthenticatedHistoryPaginationBenchmark|AuthenticatedHistoryPaginationBenchmark|authenticated
+authenticated-search|-|45|MessageSearchBenchmark|MessageSearchRequestToResults|authenticated
+authenticated-search-pagination|-|50|MessageSearchPaginationBenchmark|MessageSearchPaginationToResults|authenticated
+authenticated-search-scroll|-|50|MessageSearchScrollBenchmark|MessageSearchUserScroll|authenticated'
+
+# Prints a scenario's launch, seconds, window, profile or traits field;
+# prints nothing for an unknown scenario or an empty field.
+scenario_field() {
+    awk -F '|' -v name="$1" -v column="$2" '
+        BEGIN {
+            split("name launch seconds window profile traits", names, " ")
+            for (position in names) columns[names[position]] = position
+        }
+        $1 == name && $(columns[column]) != "-" { print $(columns[column]) }
+    ' <<<"$scenario_table"
+}
+
+scenario_has_trait() {
+    [[ ",$(scenario_field "$1" traits)," == *",$2,"* ]]
+}
+
 is_scroll_scenario() {
-    case "$1" in
-        authenticated-scroll|offline-pins-scroll|offline-chat-scroll|offline-chat-voice-scroll|authenticated-member-list-scroll)
-            return 0
-            ;;
-        *) return 1 ;;
-    esac
+    scenario_has_trait "$1" scroll
 }
 
 # Scenarios whose process CPU, energy, network and footprint are sampled.
 samples_process_resources() {
-    is_scroll_scenario "$1" && return 0
-    case "$1" in
-        authenticated-gesture-scroll|authenticated-loading-scroll-overlap|authenticated-navigation|authenticated-account-switch|authenticated-history-pagination|authenticated-search|authenticated-search-pagination|authenticated-search-scroll)
-            return 0
-            ;;
-        *) return 1 ;;
-    esac
+    [[ -n "$(scenario_field "$1" window)" ]]
 }
 
 ensure_rusage_sampler() {
@@ -597,44 +623,14 @@ record_launch() (
     trace="$output/recording.trace"
     notification="dev.sakuracord.performance.trace-started.$$.${RANDOM}"
     mkdir -p "$output"
-    case "$scenario" in
-        authenticated-scroll|offline-pins-scroll|offline-chat-scroll|offline-chat-voice-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
-        authenticated-member-list-scroll) resource_window_name="MemberListAutoScrollBenchmark" ;;
-        authenticated-gesture-scroll) resource_window_name="AuthenticatedGestureScrollBenchmark" ;;
-        authenticated-loading-scroll-overlap) resource_window_name="AuthenticatedLoadingScrollOverlapBenchmark" ;;
-        authenticated-navigation) resource_window_name="AuthenticatedNavigationBenchmark" ;;
-        authenticated-account-switch) resource_window_name="AuthenticatedAccountSwitchBenchmark" ;;
-        authenticated-history-pagination) resource_window_name="AuthenticatedHistoryPaginationBenchmark" ;;
-        authenticated-search) resource_window_name="MessageSearchBenchmark" ;;
-        authenticated-search-pagination) resource_window_name="MessageSearchPaginationBenchmark" ;;
-        authenticated-search-scroll) resource_window_name="MessageSearchScrollBenchmark" ;;
-        *) resource_window_name="" ;;
-    esac
-    if [[ "$scenario" == "authenticated-member-list-scroll" \
-          || "$scenario" == "authenticated-gesture-scroll" \
-          || "$scenario" == "authenticated-loading-scroll-overlap" ]]; then
-        requires_interactive_window=1
-        if [[ "$scenario" == "authenticated-member-list-scroll" ]]; then
-            scroll_input_telemetry=0
-        else
-            scroll_input_telemetry=1
-        fi
-    else
-        scroll_input_telemetry=0
-        requires_interactive_window=0
-    fi
+    resource_window_name="$(scenario_field "$scenario" window)"
+    requires_interactive_window=0
+    scroll_input_telemetry=0
+    scenario_has_trait "$scenario" interactive && requires_interactive_window=1
+    scenario_has_trait "$scenario" gestures && scroll_input_telemetry=1
     scroll_surface="${SAKURACORD_PERFORMANCE_SCROLL_SURFACE:-all}"
     performance_account_id="${SAKURACORD_PERFORMANCE_ACCOUNT_ID:-}"
-    if [[ "$scenario" == "authenticated-scroll" \
-          || "$scenario" == "authenticated-member-list-scroll" \
-          || "$scenario" == "authenticated-gesture-scroll" \
-          || "$scenario" == "authenticated-loading-scroll-overlap" \
-          || "$scenario" == "authenticated-navigation" \
-          || "$scenario" == "authenticated-account-switch" \
-          || "$scenario" == "authenticated-history-pagination" \
-          || "$scenario" == "authenticated-search" \
-          || "$scenario" == "authenticated-search-pagination" \
-          || "$scenario" == "authenticated-search-scroll" ]]; then
+    if scenario_has_trait "$scenario" authenticated; then
         debug_credential_directory="$HOME/Library/Containers/$bundle_id/Data/Library/Application Support/SakuraCord/InsecureDebugCredentials"
         if [[ -z "$performance_account_id" ]]; then
             preferred_account_id="$(
@@ -827,80 +823,10 @@ record_launch() (
     printf '%s\n' "Completed: $output"
 )
 
-record_startup() {
-    record_launch startup "$1"
-}
-
-record_authenticated_scroll() {
-    record_launch authenticated-scroll "$1" \
-        --debug-authenticated-chat-performance-autoscroll
-}
-
-record_offline_pins_scroll() {
-    record_launch offline-pins-scroll "$1" \
-        --offline-pins-performance-autoscroll
-}
-
-record_offline_chat_scroll() {
-    record_launch offline-chat-scroll "$1" \
-        --offline-chat-performance-autoscroll
-}
-
-record_offline_chat_voice_scroll() {
-    record_launch offline-chat-voice-scroll "$1" \
-        --offline-chat-voice-performance-autoscroll
-}
-
-record_authenticated_member_list_scroll() {
-    record_launch authenticated-member-list-scroll "$1" \
-        --debug-authenticated-member-list-performance-autoscroll
-}
-
-record_authenticated_gesture_scroll() {
-    record_launch authenticated-gesture-scroll "$1" \
-        --debug-authenticated-gesture-scroll-performance
-}
-
-record_authenticated_loading_scroll_overlap() {
-    local seconds="$1" surface="$2"
-    case "$surface" in
-        timeline|member-list|channel-list|server-list) ;;
-        *)
-            printf '%s\n' \
-                'Loading-scroll surface must be timeline, member-list, channel-list, or server-list.' >&2
-            exit 2
-            ;;
-    esac
-    SAKURACORD_PERFORMANCE_SCROLL_SURFACE="$surface" \
-        record_launch authenticated-loading-scroll-overlap "$seconds" \
-        --debug-authenticated-loading-scroll-overlap-performance
-}
-
-record_authenticated_navigation() {
-    record_launch authenticated-navigation "$1" \
-        --debug-authenticated-navigation-performance
-}
-
-record_authenticated_account_switch() {
-    record_launch authenticated-account-switch "$1" \
-        --debug-authenticated-account-switch-performance
-}
-
-record_authenticated_history_pagination() {
-    record_launch authenticated-history-pagination "$1" \
-        --debug-authenticated-history-pagination-performance
-}
-
-record_authenticated_search() {
-    record_launch authenticated-search "$1"
-}
-
-record_authenticated_search_pagination() {
-    record_launch authenticated-search-pagination "$1"
-}
-
-record_authenticated_search_scroll() {
-    record_launch authenticated-search-scroll "$1"
+record_scenario() {
+    local scenario="$1" seconds="${2:-$(scenario_field "$1" seconds)}" launch_argument
+    launch_argument="$(scenario_field "$scenario" launch)"
+    record_launch "$scenario" "$seconds" ${launch_argument:+"$launch_argument"}
 }
 
 summarize_recording() {
@@ -914,40 +840,8 @@ summarize_recording() {
     scenario="$(
         awk -F '\t' '$1 == "scenario" { print $2 }' "$output/metadata.tsv"
     )"
-    case "$scenario" in
-        authenticated-scroll|offline-pins-scroll|offline-chat-scroll|offline-chat-voice-scroll)
-            profile_interval="MessageTimelineAutoScrollBenchmark"
-            ;;
-        authenticated-member-list-scroll)
-            profile_interval="MemberListAutoScrollBenchmark"
-            ;;
-        authenticated-gesture-scroll)
-            profile_interval="AuthenticatedGestureScrollBenchmark"
-            ;;
-        authenticated-loading-scroll-overlap)
-            profile_interval="AuthenticatedLoadingScrollOverlapBenchmark"
-            ;;
-        authenticated-navigation)
-            profile_interval="AuthenticatedNavigationBenchmark"
-            ;;
-        authenticated-account-switch)
-            profile_interval="AuthenticatedAccountSwitchBenchmark"
-            ;;
-        authenticated-history-pagination)
-            profile_interval="AuthenticatedHistoryPaginationBenchmark"
-            ;;
-        authenticated-search)
-            profile_interval="MessageSearchRequestToResults"
-            ;;
-        authenticated-search-pagination)
-            profile_interval="MessageSearchPaginationToResults"
-            ;;
-        authenticated-search-scroll)
-            profile_interval="MessageSearchUserScroll"
-            ;;
-        *) profile_interval="" ;;
-    esac
-    if [[ -n "$profile_interval" \
+    profile_interval="$(scenario_field "$scenario" profile)"
+    if [[ "$scenario" != "startup" && -n "$profile_interval" \
           && -s "$output/time-profile.xml" ]]; then
         if [[ ! -s "$output/time-profile.xml" \
               || ! -s "$output/signposts.xml" \
@@ -1012,7 +906,7 @@ summarize_recording() {
             "$output/time-profile.xml" \
             --process "$profile_process" \
             --signposts "$output/signposts.xml" \
-            --interval StartupToWorkspace \
+            --interval "$profile_interval" \
             --app-only \
             >"$output/startup-time-profile.txt"
         if [[ ! -s "$output/startup-time-profile.txt" ]]; then
@@ -1020,11 +914,16 @@ summarize_recording() {
             exit 6
         fi
     fi
+    local scroll_benchmark=0
+    is_scroll_scenario "$scenario" && scroll_benchmark=1
     /usr/bin/ruby -r csv -r rexml/document - \
-        "$output" "$allow_missing_gestures" <<'RUBY' \
-        | tee "$output/summary.txt"
+        "$output" "$allow_missing_gestures" "$profile_interval" "$scroll_benchmark" \
+        <<'RUBY' | tee "$output/summary.txt"
 directory = File.expand_path(ARGV.fetch(0))
 allows_missing_gestures = ARGV.fetch(1, "0") == "1"
+measurement_interval = ARGV.fetch(2)
+measurement_interval = nil if measurement_interval.empty?
+scroll_benchmark = ARGV.fetch(3) == "1"
 
 def percentile(values, fraction)
   return nil if values.empty?
@@ -1333,13 +1232,6 @@ outline_list_profile_sampled_ms = time_profile_sampled_milliseconds.call(
 delayed_frame_profile_sampled_ms = time_profile_sampled_milliseconds.call(
   "delayed-frame-time-profile.txt"
 )
-timeline_scroll_scenarios = [
-  "authenticated-scroll",
-  "offline-pins-scroll",
-  "offline-chat-scroll",
-  "offline-chat-voice-scroll",
-]
-scroll_benchmark = (timeline_scroll_scenarios + ["authenticated-member-list-scroll"]).include?(scenario)
 navigation_benchmark = scenario == "authenticated-navigation"
 account_switch_benchmark = scenario == "authenticated-account-switch"
 history_pagination_benchmark = scenario == "authenticated-history-pagination"
@@ -1387,30 +1279,6 @@ navigation_static_decode_overlap_count = 0
 navigation_static_decode_overlap_ms = 0.0
 navigation_static_decode_overlap_maximum_ms = 0.0
 loading_scroll_overlap_metrics = {}
-measurement_interval = case scenario
-                       when *timeline_scroll_scenarios
-                         "MessageTimelineAutoScrollBenchmark"
-                       when "authenticated-member-list-scroll"
-                         "MemberListAutoScrollBenchmark"
-                       when "authenticated-gesture-scroll"
-                         "AuthenticatedGestureScrollBenchmark"
-                       when "authenticated-loading-scroll-overlap"
-                         "AuthenticatedLoadingScrollOverlapBenchmark"
-                       when "authenticated-navigation"
-                         "AuthenticatedNavigationBenchmark"
-                       when "authenticated-account-switch"
-                         "AuthenticatedAccountSwitchBenchmark"
-                       when "authenticated-history-pagination"
-                         "AuthenticatedHistoryPaginationBenchmark"
-                       when "authenticated-search"
-                         "MessageSearchRequestToResults"
-                       when "authenticated-search-pagination"
-                         "MessageSearchPaginationToResults"
-                       when "authenticated-search-scroll"
-                         "MessageSearchUserScroll"
-                       when "startup"
-                         "StartupToWorkspace"
-                       end
 measurement_window_label = "full recording"
 resource_window_label = "full recording"
 reports_resource_metrics = scenario != "startup"
@@ -2402,47 +2270,17 @@ case "$command" in
         template="${4:-Time Profiler}"
         record_running_app "$scenario" "$seconds" "$template"
         ;;
-    startup)
-        record_startup "${2:-12}"
-        ;;
-    authenticated-scroll)
-        record_authenticated_scroll "${2:-35}"
-        ;;
-    offline-pins-scroll)
-        record_offline_pins_scroll "${2:-35}"
-        ;;
-    offline-chat-scroll)
-        record_offline_chat_scroll "${2:-35}"
-        ;;
-    offline-chat-voice-scroll)
-        record_offline_chat_voice_scroll "${2:-35}"
-        ;;
-    authenticated-member-list-scroll)
-        record_authenticated_member_list_scroll "${2:-70}"
-        ;;
-    authenticated-gesture-scroll)
-        record_authenticated_gesture_scroll "${2:-40}"
-        ;;
     authenticated-loading-scroll-overlap)
-        record_authenticated_loading_scroll_overlap "${2:-55}" "${3:-timeline}"
-        ;;
-    authenticated-navigation)
-        record_authenticated_navigation "${2:-45}"
-        ;;
-    authenticated-account-switch)
-        record_authenticated_account_switch "${2:-45}"
-        ;;
-    authenticated-history-pagination)
-        record_authenticated_history_pagination "${2:-45}"
-        ;;
-    authenticated-search)
-        record_authenticated_search "${2:-45}"
-        ;;
-    authenticated-search-pagination)
-        record_authenticated_search_pagination "${2:-50}"
-        ;;
-    authenticated-search-scroll)
-        record_authenticated_search_scroll "${2:-50}"
+        case "${3:-timeline}" in
+            timeline|member-list|channel-list|server-list) ;;
+            *)
+                printf '%s\n' \
+                    'Loading-scroll surface must be timeline, member-list, channel-list, or server-list.' >&2
+                exit 2
+                ;;
+        esac
+        SAKURACORD_PERFORMANCE_SCROLL_SURFACE="${3:-timeline}" \
+            record_scenario "$command" "${2:-}"
         ;;
     snapshot)
         pid="$(require_running_pid)"
@@ -2460,7 +2298,10 @@ case "$command" in
         verify_build_provenance >/dev/null
         ;;
     *)
-        usage >&2
-        exit 1
+        if [[ -z "$(scenario_field "$command" seconds)" ]]; then
+            usage >&2
+            exit 1
+        fi
+        record_scenario "$command" "${2:-}"
         ;;
 esac
