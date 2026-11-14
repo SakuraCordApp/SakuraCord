@@ -183,34 +183,27 @@ enum NativeTimelineImageContextMenuPlan {
             }) {
                 return nil
             }
-            if let region = component.images.first(where: {
-                $0.frame.contains(point)
-            }) {
+            for region in component.mediaRegions where region.frame.contains(point) {
+                let displayURL: URL
+                let description: String
+                switch region.kind {
+                case let .image(image):
+                    (displayURL, description) = (image.displayURL, image.description)
+                case let .media(media) where !media.isVideo:
+                    (displayURL, description) = (media.displayURL, media.description)
+                case .media, .file:
+                    continue
+                }
                 guard !region.isSpoiler || isRevealed(region.componentID) else {
                     return nil
                 }
                 return RichMediaItem(
                     imageID: region.componentID,
                     url: region.openURL,
-                    previewURL: region.displayURL == region.openURL
+                    previewURL: displayURL == region.openURL
                         ? nil
-                        : region.displayURL,
-                    title: region.description
-                )
-            }
-            if let region = component.media.first(where: {
-                $0.frame.contains(point) && !$0.isVideo
-            }) {
-                guard !region.isSpoiler || isRevealed(region.componentID) else {
-                    return nil
-                }
-                return RichMediaItem(
-                    imageID: region.componentID,
-                    url: region.openURL,
-                    previewURL: region.displayURL == region.openURL
-                        ? nil
-                        : region.displayURL,
-                    title: region.description
+                        : displayURL,
+                    title: description
                 )
             }
         }

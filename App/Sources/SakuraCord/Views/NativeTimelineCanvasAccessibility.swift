@@ -39,36 +39,12 @@ struct NativeTimelineTextAccessibilityInput {
     let parent: NSAccessibilityElement
 }
 
-struct ComponentMediaA11yInput {
-    let label: String
-    let frame: CGRect
-    let componentID: String
-    let openURL: URL
-    let isSpoiler: Bool
-    let message: Message
-    let rowIndex: Int
-    let parent: NSAccessibilityElement
-    /// The file a file component's element downloads; nil for media.
-    let file: Attachment?
-    let viewerPresentation: MediaViewerPresentation?
-}
-
 private struct MessageIdentityA11yInput {
     let message: Message
     let layout: NativeTimelineRowLayout
     let author: User
     let timestamp: String
     let settings: AccessibilitySettingsSnapshot
-    let rowIndex: Int
-    let parent: NSAccessibilityElement
-}
-
-private struct ComponentTextA11yInput {
-    let component: NativeTimelineComponentLayout
-    let hiddenContainerFrames: [CGRect]
-    let layoutIndex: Int
-    let itemIdentifier: NativeMessageTimelineItem.Identifier
-    let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
     let rowIndex: Int
     let parent: NSAccessibilityElement
 }
@@ -784,26 +760,8 @@ extension NativeTimelineCanvasView {
                     rowIndex: rowIndex
                 ),
                 parent: parent
-            ) {
-                if let presentation =
-                    MediaViewerPlan.linkedImages(
-                        in: message,
-                        selectedReferenceID: region.reference.id
-                    )
-                {
-                    self.model?.mediaViewerPresentation =
-                        self.mediaViewerPresentation(
-                            presentation,
-                            sourceFrame: region.frame,
-                            rowIndex: rowIndex,
-                            mediaKey: region.mediaKey,
-                            cornerRadius: region.cornerRadius,
-                            fillsFrame: region.fillsFrame
-                        )
-                } else {
-                    NSWorkspace.shared.open(region.reference.url)
-                }
-                return true
+            ) { [weak self] in
+                self?.activateLinkedImage(region, in: message, rowIndex: rowIndex) ?? false
             })
         }
         if !layout.attachmentRegions.isEmpty {
@@ -841,14 +799,9 @@ extension NativeTimelineCanvasView {
         parent: Any?
     ) -> NSAccessibilityElement {
         let attachment = region.attachment
-        let revealKey =
-            NativeTimelineComponentRevealKey.attachment(
-                messageID: message.id,
-                attachmentID: attachment.id
-            )
-        let isHiddenSpoiler =
-            attachment.isSpoiler
-            && !spoilerRevealStore.isMediaRevealed(revealKey)
+        let isHiddenSpoiler = NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+            attachment, in: message.id, store: spoilerRevealStore
+        )
         let contentLabel =
             attachment.description
             ?? attachment.title
@@ -889,7 +842,8 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         parent: NSAccessibilityElement
     ) {
-        for region in layout.audioPlayers where !isConcealedSpoiler(region.attachment, in: message.id) {
+        for region in layout.audioPlayers
+        where !NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: message.id, store: spoilerRevealStore) {
             children.append(voiceMessageAccessibilityElement(region, rowIndex: rowIndex, parent: parent))
         }
     }
@@ -1374,16 +1328,12 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         parent: NSAccessibilityElement
     ) {
-        for (layoutIndex, component) in
-            layout.componentLayouts.enumerated()
-        {
-            let hiddenContainerFrames =
-                NativeTimelineSpoilerConcealmentPolicy
-                    .hiddenContainerFrames(
-                        in: component,
-                        messageID: message.id,
-                        store: spoilerRevealStore
-                    )
+        for (layoutIndex, component) in layout.componentLayouts.enumerated() {
+            let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: component,
+                messageID: message.id,
+                store: spoilerRevealStore
+            )
             appendHiddenComponentAccessibility(
                 to: &children,
                 component: component,
@@ -1392,18 +1342,26 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex,
                 parent: parent
             )
-            appendComponentTextAccessibility(
-                to: &children,
-                input: ComponentTextA11yInput(
-                    component: component,
-                    hiddenContainerFrames: hiddenContainerFrames,
-                    layoutIndex: layoutIndex,
+            for (textIndex, textRegion) in component.textRegions.enumerated()
+            where !textRegion.text.value.string.isEmpty
+                && !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                    textRegion.frame,
+                    hiddenContainerFrames: hiddenContainerFrames
+                ) {
+                let textRegionID = NativeTimelineTextRegion.component(layoutIndex: layoutIndex, textIndex: textIndex)
+                appendTextAccessibility(to: &children, input: .init(
+                    value: textRegion.text.value,
+                    framesetter: textRegion.text.framesetter,
+                    drawingFrame: textRegion.text.drawingFrame(textRegion.frame),
+                    accessibilityFrame: textRegion.frame,
+                    sourceMessage: nil,
                     itemIdentifier: itemIdentifier,
-                    revealedTextSpoilerState: revealedTextSpoilerState,
+                    region: textRegionID,
+                    revealedLocations: revealedTextSpoilerState.locations(in: textRegionID),
                     rowIndex: rowIndex,
                     parent: parent
-                )
-            )
+                ))
+            }
             appendComponentControlAccessibility(
                 to: &children,
                 component: component,
@@ -1412,15 +1370,20 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex,
                 parent: parent
             )
-            appendComponentContentAccessibility(
-                to: &children,
-                component: component,
-                hiddenContainerFrames: hiddenContainerFrames,
-                message: message,
-                layouts: layout.componentLayouts,
-                rowIndex: rowIndex,
-                parent: parent
-            )
+            for region in component.mediaRegions
+            where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                region.frame,
+                hiddenContainerFrames: hiddenContainerFrames
+            ) {
+                appendComponentMediaAccessibility(
+                    to: &children,
+                    region: region,
+                    message: message,
+                    layout: layout,
+                    rowIndex: rowIndex,
+                    parent: parent
+                )
+            }
         }
     }
 
@@ -1432,68 +1395,27 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         parent: NSAccessibilityElement
     ) {
-            for hiddenContainer in component.containers
-            where hiddenContainerFrames.contains(hiddenContainer.frame) {
-                let key = NativeTimelineComponentRevealKey(
-                    messageID: message.id,
-                    componentID: hiddenContainer.componentID
-                )
-                children.append(accessibilityElement(
-                    role: .button,
-                    label: "Reveal spoiler",
-                    help: "Reveals the spoiler without opening it",
-                    frame: accessibilityChildFrame(
-                        hiddenContainer.frame,
-                        rowIndex: rowIndex
-                    ),
-                    parent: parent
-                ) { [weak self] in
-                    guard let self else { return false }
-                    self.reveal(key, rowIndex: rowIndex)
-                    return true
-                })
-            }
-    }
-
-    private func appendComponentTextAccessibility(
-        to children: inout [Any],
-        input: ComponentTextA11yInput
-    ) {
-        let component = input.component
-        let hiddenContainerFrames = input.hiddenContainerFrames
-        let layoutIndex = input.layoutIndex
-        let itemIdentifier = input.itemIdentifier
-        let revealedTextSpoilerState = input.revealedTextSpoilerState
-        let rowIndex = input.rowIndex
-        let parent = input.parent
-            for (textIndex, textRegion) in
-                component.textRegions.enumerated()
-            where !textRegion.text.value.string.isEmpty
-                && !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
-                    textRegion.frame,
-                    hiddenContainerFrames: hiddenContainerFrames
-                ) {
-                let textRegionID = NativeTimelineTextRegion.component(
-                    layoutIndex: layoutIndex,
-                    textIndex: textIndex
-                )
-                let drawingFrame = textRegion.text.drawingFrame(textRegion.frame)
-                appendTextAccessibility(to: &children, input: .init(
-                    value: textRegion.text.value,
-                    framesetter: textRegion.text.framesetter,
-                    drawingFrame: drawingFrame,
-                    accessibilityFrame: textRegion.frame,
-                    sourceMessage: nil,
-                    itemIdentifier: itemIdentifier,
-                    region: textRegionID,
-                    revealedLocations:
-                        revealedTextSpoilerState.locations(
-                            in: textRegionID
-                        ),
-                    rowIndex: rowIndex,
-                    parent: parent
-                ))
-            }
+        for hiddenContainer in component.containers
+        where hiddenContainerFrames.contains(hiddenContainer.frame) {
+            let key = NativeTimelineComponentRevealKey(
+                messageID: message.id,
+                componentID: hiddenContainer.componentID
+            )
+            children.append(accessibilityElement(
+                role: .button,
+                label: "Reveal spoiler",
+                help: "Reveals the spoiler without opening it",
+                frame: accessibilityChildFrame(
+                    hiddenContainer.frame,
+                    rowIndex: rowIndex
+                ),
+                parent: parent
+            ) { [weak self] in
+                guard let self else { return false }
+                self.reveal(key, rowIndex: rowIndex)
+                return true
+            })
+        }
     }
 
     private func appendComponentControlAccessibility(
@@ -1504,138 +1426,55 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         parent: NSAccessibilityElement
     ) {
-            for region in component.buttons
-            where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
-                region.frame,
-                hiddenContainerFrames: hiddenContainerFrames
-            ) {
-                children.append(accessibilityElement(
-                    role: .button,
-                    label: region.label.isEmpty ? "Button" : region.label,
-                    frame: accessibilityChildFrame(
-                        region.frame,
-                        rowIndex: rowIndex
-                    ),
-                    parent: parent,
-                    isEnabled: !region.isDisabled
-                ) { [weak self] in
-                    self?.activateComponentButton(
-                        region,
-                        message: message
-                    ) ?? false
-                })
-            }
-            for region in component.selects
-            where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
-                region.frame,
-                hiddenContainerFrames: hiddenContainerFrames
-            ) {
-                children.append(accessibilityElement(
-                    role: .popUpButton,
-                    label: region.placeholder,
-                    value: region.selectedOptions
-                        .map(\.label)
-                        .joined(separator: ", "),
-                    frame: accessibilityChildFrame(
-                        region.frame,
-                        rowIndex: rowIndex
-                    ),
-                    parent: parent,
-                    isEnabled: !region.isDisabled
-                ) { [weak self] in
-                    guard let self, !region.isDisabled else {
-                        return false
-                    }
-                    self.showComponentChoicePicker(
-                        for: region,
-                        message: message
-                    )
-                    return true
-                })
-            }
-    }
-
-    private func appendComponentContentAccessibility(
-        to children: inout [Any],
-        component: NativeTimelineComponentLayout,
-        hiddenContainerFrames: [CGRect],
-        message: Message,
-        layouts: [NativeTimelineComponentLayout],
-        rowIndex: Int,
-        parent: NSAccessibilityElement
-    ) {
-            for region in component.images
-            where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
-                region.frame,
-                hiddenContainerFrames: hiddenContainerFrames
-            ) {
-                appendComponentMediaAccessibility(to: &children, input: .init(
-                    label: region.description,
-                    frame: region.frame,
-                    componentID: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    message: message,
-                    rowIndex: rowIndex,
-                    parent: parent,
-                    file: nil,
-                    viewerPresentation:
-                        MediaViewerPlan.components(
-                            in: message,
-                            layouts: layouts,
-                            selectedComponentID: region.componentID,
-                            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
-                        )
-                ))
-            }
-            for region in component.media
-            where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
-                region.frame,
-                hiddenContainerFrames: hiddenContainerFrames
-            ) {
-                appendComponentMediaAccessibility(to: &children, input: .init(
-                    label: region.description,
-                    frame: region.frame,
-                    componentID: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    message: message,
-                    rowIndex: rowIndex,
-                    parent: parent,
-                    file: nil,
-                    viewerPresentation:
-                        MediaViewerPlan.components(
-                            in: message,
-                            layouts: layouts,
-                            selectedComponentID: region.componentID,
-                            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
-                        )
-                ))
-            }
-            for region in component.files
-            where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
-                region.frame,
-                hiddenContainerFrames: hiddenContainerFrames
-            ) {
-                appendComponentMediaAccessibility(to: &children, input: .init(
-                    label: region.attachment.filename,
-                    frame: region.frame,
-                    componentID: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    message: message,
-                    rowIndex: rowIndex,
-                    parent: parent,
-                    file: region.attachment,
-                    viewerPresentation:
-                        MediaViewerPlan.components(
-                            in: message,
-                            layouts: layouts,
-                            selectedComponentID: region.componentID,
-                            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
-                        )
-                ))
-            }
+        for region in component.buttons
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            region.frame,
+            hiddenContainerFrames: hiddenContainerFrames
+        ) {
+            children.append(accessibilityElement(
+                role: .button,
+                label: region.label.isEmpty ? "Button" : region.label,
+                frame: accessibilityChildFrame(
+                    region.frame,
+                    rowIndex: rowIndex
+                ),
+                parent: parent,
+                isEnabled: !region.isDisabled
+            ) { [weak self] in
+                self?.activateComponentButton(
+                    region,
+                    message: message
+                ) ?? false
+            })
+        }
+        for region in component.selects
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            region.frame,
+            hiddenContainerFrames: hiddenContainerFrames
+        ) {
+            children.append(accessibilityElement(
+                role: .popUpButton,
+                label: region.placeholder,
+                value: region.selectedOptions
+                    .map(\.label)
+                    .joined(separator: ", "),
+                frame: accessibilityChildFrame(
+                    region.frame,
+                    rowIndex: rowIndex
+                ),
+                parent: parent,
+                isEnabled: !region.isDisabled
+            ) { [weak self] in
+                guard let self, !region.isDisabled else {
+                    return false
+                }
+                self.showComponentChoicePicker(
+                    for: region,
+                    message: message
+                )
+                return true
+            })
+        }
     }
 
 }

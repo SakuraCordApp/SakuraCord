@@ -100,46 +100,59 @@ struct NativeTimelineComponentLayout {
         var isLoading = false
     }
 
-    struct ImageRegion {
-        let frame: CGRect
-        let componentID: String
-        let displayURL: URL
-        let openURL: URL
-        let description: String
-        let isSpoiler: Bool
-        let cornerRadius: CGFloat
-        let maximumPixelDimension: Int
-        let placeholder: NativeTimelineMediaPlaceholder?
-
-        var mediaKey: MediaImageKey { .media(displayURL, maximumPixelDimension: maximumPixelDimension) }
-    }
-
+    /// A thumbnail, gallery item or file. Each reveals, opens and takes a
+    /// spoiler cover alike.
     struct MediaRegion {
-        let frame: CGRect
-        let componentID: String
-        let displayURL: URL
-        /// The still image drawn in the tile: the media itself for images, or
-        /// the media proxy's poster frame for videos.
-        let previewURL: URL?
-        let openURL: URL
-        let description: String
-        let isSpoiler: Bool
-        let isVideo: Bool
-        let placeholder: NativeTimelineMediaPlaceholder?
-    }
+        enum Kind {
+            case image(ImageContent)
+            case media(MediaContent)
+            case file(FileContent)
+        }
 
-    struct FileRegion {
+        /// A section's thumbnail.
+        struct ImageContent {
+            let displayURL: URL
+            let description: String
+            let cornerRadius: CGFloat
+            let maximumPixelDimension: Int
+            let placeholder: NativeTimelineMediaPlaceholder?
+
+            var mediaKey: MediaImageKey { .media(displayURL, maximumPixelDimension: maximumPixelDimension) }
+        }
+
+        /// A media gallery item.
+        struct MediaContent {
+            let displayURL: URL
+            /// The still image drawn in the tile: the media itself for images, or
+            /// the media proxy's poster frame for videos.
+            let previewURL: URL?
+            let description: String
+            let isVideo: Bool
+            let placeholder: NativeTimelineMediaPlaceholder?
+        }
+
+        struct FileContent {
+            let title: String
+            let description: String?
+            /// The file the card names and downloads.
+            let attachment: Attachment
+            let isInBubble: Bool
+
+            func card(frame: CGRect) -> NativeTimelineFileCard {
+                .init(frame: frame, attachment: attachment, isInBubble: isInBubble)
+            }
+        }
+
         var frame: CGRect
         let componentID: String
         let openURL: URL
-        let title: String
-        let description: String?
         let isSpoiler: Bool
-        /// The file the card names and downloads.
-        let attachment: Attachment
-        let isInBubble: Bool
+        let kind: Kind
 
-        var card: NativeTimelineFileCard { .init(frame: frame, attachment: attachment, isInBubble: isInBubble) }
+        var fileCard: NativeTimelineFileCard? {
+            guard case let .file(file) = kind else { return nil }
+            return file.card(frame: frame)
+        }
     }
 
     struct SeparatorRegion {
@@ -157,9 +170,9 @@ struct NativeTimelineComponentLayout {
     let textRegions: [TextRegion]
     let buttons: [ButtonRegion]
     let selects: [SelectRegion]
-    let images: [ImageRegion]
-    let media: [MediaRegion]
-    let files: [FileRegion]
+    /// Thumbnails, then gallery items, then files: the order the media
+    /// viewer and VoiceOver present them in.
+    let mediaRegions: [MediaRegion]
     let separators: [SeparatorRegion]
     let unsupported: [UnsupportedRegion]
     let drawsTopSeparator: Bool
@@ -267,9 +280,7 @@ struct NativeTimelineComponentLayout {
             textRegions: root.textRegions,
             buttons: root.buttons,
             selects: root.selects,
-            images: root.images,
-            media: root.media,
-            files: root.files,
+            mediaRegions: root.images + root.media + root.files,
             separators: root.separators,
             unsupported: root.unsupported,
             drawsTopSeparator:
@@ -284,9 +295,10 @@ private struct Node {
     var textRegions: [NativeTimelineComponentLayout.TextRegion] = []
     var buttons: [NativeTimelineComponentLayout.ButtonRegion] = []
     var selects: [NativeTimelineComponentLayout.SelectRegion] = []
-    var images: [NativeTimelineComponentLayout.ImageRegion] = []
+    // Kept apart until the layout lists them by kind.
+    var images: [NativeTimelineComponentLayout.MediaRegion] = []
     var media: [NativeTimelineComponentLayout.MediaRegion] = []
-    var files: [NativeTimelineComponentLayout.FileRegion] = []
+    var files: [NativeTimelineComponentLayout.MediaRegion] = []
     var separators: [NativeTimelineComponentLayout.SeparatorRegion] = []
     var unsupported: [NativeTimelineComponentLayout.UnsupportedRegion] = []
 
@@ -341,37 +353,16 @@ private struct Node {
                 isLoading: $0.isLoading
             )
         }
-        result.images = images.map {
-            .init(
-                frame: $0.frame.offsetBy(dx: dx, dy: dy),
-                componentID: $0.componentID,
-                displayURL: $0.displayURL,
-                openURL: $0.openURL,
-                description: $0.description,
-                isSpoiler: $0.isSpoiler,
-                cornerRadius: $0.cornerRadius,
-                maximumPixelDimension: $0.maximumPixelDimension,
-                placeholder: $0.placeholder
-            )
+        func offset(_ regions: [NativeTimelineComponentLayout.MediaRegion]) -> [NativeTimelineComponentLayout.MediaRegion] {
+            regions.map {
+                var region = $0
+                region.frame = region.frame.offsetBy(dx: dx, dy: dy)
+                return region
+            }
         }
-        result.media = media.map {
-            .init(
-                frame: $0.frame.offsetBy(dx: dx, dy: dy),
-                componentID: $0.componentID,
-                displayURL: $0.displayURL,
-                previewURL: $0.previewURL,
-                openURL: $0.openURL,
-                description: $0.description,
-                isSpoiler: $0.isSpoiler,
-                isVideo: $0.isVideo,
-                placeholder: $0.placeholder
-            )
-        }
-        result.files = files.map {
-            var file = $0
-            file.frame = file.frame.offsetBy(dx: dx, dy: dy)
-            return file
-        }
+        result.images = offset(images)
+        result.media = offset(media)
+        result.files = offset(files)
         result.separators = separators.map {
             .init(
                 frame: $0.frame.offsetBy(dx: dx, dy: dy),
@@ -494,14 +485,16 @@ private enum NodeBuilder {
                             height: size
                         ),
                         componentID: id,
-                        displayURL: item.displayURL,
                         openURL: item.openURL,
-                        description:
-                            item.description ?? item.title,
                         isSpoiler: item.isSpoiler,
-                        cornerRadius: DiscordRichMessageMetrics.px(8),
-                        maximumPixelDimension: 256,
-                        placeholder: item.placeholder
+                        kind: .image(.init(
+                            displayURL: item.displayURL,
+                            description:
+                                item.description ?? item.title,
+                            cornerRadius: DiscordRichMessageMetrics.px(8),
+                            maximumPixelDimension: 256,
+                            placeholder: item.placeholder
+                        ))
                     )
                 ]
             )
@@ -941,14 +934,16 @@ private enum NodeBuilder {
                     return .init(
                         frame: frame,
                         componentID: item.id,
-                        displayURL: media.displayURL,
-                        previewURL: media.previewURL,
                         openURL: media.openURL,
-                        description:
-                            media.description ?? media.title,
                         isSpoiler: media.isSpoiler,
-                        isVideo: media.isVideo,
-                        placeholder: media.placeholder
+                        kind: .media(.init(
+                            displayURL: media.displayURL,
+                            previewURL: media.previewURL,
+                            description:
+                                media.description ?? media.title,
+                            isVideo: media.isVideo,
+                            placeholder: media.placeholder
+                        ))
                     )
                 }
             )
@@ -985,11 +980,13 @@ private enum NodeBuilder {
                         frame: CGRect(origin: .zero, size: size),
                         componentID: id,
                         openURL: item.openURL,
-                        title: item.title,
-                        description: item.description,
                         isSpoiler: item.isSpoiler,
-                        attachment: attachment,
-                        isInBubble: inBubble
+                        kind: .file(.init(
+                            title: item.title,
+                            description: item.description,
+                            attachment: attachment,
+                            isInBubble: inBubble
+                        ))
                     )
                 ]
             )

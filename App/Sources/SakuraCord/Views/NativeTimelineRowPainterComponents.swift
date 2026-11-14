@@ -65,9 +65,7 @@ extension NativeTimelineRowPainter {
             } ?? []
         drawComponentChrome(input, hiddenContainerFrames: hiddenContainerFrames)
         drawComponentText(input, hiddenContainerFrames: hiddenContainerFrames)
-        drawComponentImages(input, hiddenContainerFrames: hiddenContainerFrames)
         drawComponentMedia(input, hiddenContainerFrames: hiddenContainerFrames)
-        drawComponentFiles(input, hiddenContainerFrames: hiddenContainerFrames)
         drawComponentControls(input, hiddenContainerFrames: hiddenContainerFrames)
         drawUnsupportedComponents(input, hiddenContainerFrames: hiddenContainerFrames)
 
@@ -184,96 +182,69 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static func drawComponentImages(
-        _ input: NativeTimelineComponentsDrawInput,
-        hiddenContainerFrames: [CGRect]
-    ) {
-        for region in input.layout.images
-        where !isInsideHiddenComponentContainer(
-            region.frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        ) {
-            NativeTimelineSpoilerCover.draw(
-                covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
-                in: region.frame,
-                cornerRadius: region.cornerRadius
-            ) {
-                drawComponentImage(region)
-            }
-        }
-    }
-
-    private static func drawComponentImage(_ region: NativeTimelineComponentLayout.ImageRegion) {
-        // Discord crops a thumbnail to fill its square.
-        drawMediaSurface(
-            in: region.frame,
-            cornerRadius: region.cornerRadius,
-            backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.08),
-            image: mediaImage(for: region.mediaKey),
-            fillsFrame: true,
-            placeholder: region.placeholder,
-            fallbackSymbol: ("photo", InterfaceScale.metric(22))
-        )
-    }
-
     private static func drawComponentMedia(
         _ input: NativeTimelineComponentsDrawInput,
         hiddenContainerFrames: [CGRect]
     ) {
-        for region in input.layout.media
+        for region in input.layout.mediaRegions
         where !isInsideHiddenComponentContainer(
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
+            let cornerRadius = switch region.kind {
+            case let .image(image): image.cornerRadius
+            case .media: DiscordRichMessageMetrics.px(8)
+            case let .file(file): file.card(frame: region.frame).cornerRadius
+            }
             NativeTimelineSpoilerCover.draw(
                 covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
                 in: region.frame,
-                cornerRadius: DiscordRichMessageMetrics.px(8)
+                cornerRadius: cornerRadius
             ) {
-                drawComponentMediaItem(region)
+                drawComponentMediaItem(region, input: input)
             }
         }
     }
 
-    private static func drawComponentMediaItem(_ region: NativeTimelineComponentLayout.MediaRegion) {
-        drawMediaSurface(
-            in: region.frame,
-            cornerRadius: DiscordRichMessageMetrics.px(8),
-            backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.10),
-            image: region.previewURL.flatMap { mediaImage(for: .media($0)) },
-            fillsFrame: true,
-            placeholder: region.placeholder,
-            fallbackSymbol: region.isVideo ? ("film", InterfaceScale.metric(30)) : nil,
-            isVideo: region.isVideo
-        )
-    }
-
-    private static func drawComponentFiles(
-        _ input: NativeTimelineComponentsDrawInput,
-        hiddenContainerFrames: [CGRect]
+    private static func drawComponentMediaItem(
+        _ region: NativeTimelineComponentLayout.MediaRegion,
+        input: NativeTimelineComponentsDrawInput
     ) {
-        for region in input.layout.files
-        where !isInsideHiddenComponentContainer(
-            region.frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        ) {
-            NativeTimelineSpoilerCover.draw(
-                covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
+        switch region.kind {
+        case let .image(image):
+            // Discord crops a thumbnail to fill its square.
+            drawMediaSurface(
                 in: region.frame,
-                cornerRadius: region.card.cornerRadius
-            ) {
-                fileCard(
-                    region.card,
-                    messageID: input.messageID,
-                    bubbleRegion: input.bubbleRegion,
-                    state: input.model?.attachmentDownloads.states[region.attachment.id],
-                    finishProgress: input.fileCardFinishProgress,
-                    pointer: .init(
-                        hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
-                        pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
-                    )
+                cornerRadius: image.cornerRadius,
+                backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.08),
+                image: mediaImage(for: image.mediaKey),
+                fillsFrame: true,
+                placeholder: image.placeholder,
+                fallbackSymbol: ("photo", InterfaceScale.metric(22))
+            )
+        case let .media(media):
+            drawMediaSurface(
+                in: region.frame,
+                cornerRadius: DiscordRichMessageMetrics.px(8),
+                backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.10),
+                image: media.previewURL.flatMap { mediaImage(for: .media($0)) },
+                fillsFrame: true,
+                placeholder: media.placeholder,
+                fallbackSymbol: media.isVideo ? ("film", InterfaceScale.metric(30)) : nil,
+                isVideo: media.isVideo
+            )
+        case let .file(file):
+            fileCard(
+                file.card(frame: region.frame),
+                messageID: input.messageID,
+                bubbleRegion: input.bubbleRegion,
+                state: input.model?.attachmentDownloads.states[file.attachment.id],
+                finishProgress: input.fileCardFinishProgress,
+                pointer: .init(
+                    hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
+                    pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
                 )
-            }
+            )
         }
     }
 

@@ -202,24 +202,28 @@ extension NativeTimelineCanvasView {
             )
         }
         for component in layout.componentLayouts {
-            for region in component.images {
-                insert(
-                    region.componentID,
-                    key: region.mediaKey,
-                    frame: region.frame,
-                    cornerRadius: region.cornerRadius,
-                    // The row crops a thumbnail to fill its square.
-                    fillsFrame: true
-                )
-            }
-            for region in component.media where !region.isVideo {
-                insert(
-                    region.componentID,
-                    key: .media(region.displayURL),
-                    frame: region.frame,
-                    cornerRadius: 8,
-                    fillsFrame: true
-                )
+            for region in component.mediaRegions {
+                switch region.kind {
+                case let .image(image):
+                    insert(
+                        region.componentID,
+                        key: image.mediaKey,
+                        frame: region.frame,
+                        cornerRadius: image.cornerRadius,
+                        // The row crops a thumbnail to fill its square.
+                        fillsFrame: true
+                    )
+                case let .media(media) where !media.isVideo:
+                    insert(
+                        region.componentID,
+                        key: .media(media.displayURL),
+                        frame: region.frame,
+                        cornerRadius: 8,
+                        fillsFrame: true
+                    )
+                case .media, .file:
+                    break
+                }
             }
         }
         for region in layout.embedRegions {
@@ -288,7 +292,9 @@ extension NativeTimelineCanvasView {
         guard window != nil, layouts.indices.contains(rowIndex) else { return nil }
         let layout = layouts[rowIndex]
         guard let card = layout.fileCards.first(where: { $0.attachment.id == itemID })
-            ?? layout.componentLayouts.lazy.flatMap(\.files).first(where: { $0.componentID == itemID })?.card
+            ?? layout.componentLayouts.lazy.flatMap(\.mediaRegions).first(where: {
+                $0.fileCard != nil && $0.componentID == itemID
+            })?.fileCard
         else { return nil }
         let frameInCanvas = card.frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
         let visibleFrame = visiblePart(of: frameInCanvas)
@@ -344,7 +350,9 @@ extension NativeTimelineCanvasView {
         guard layouts.indices.contains(rowIndex) else { return presentation }
         if presentation.items.indices.contains(presentation.selection),
            presentation.items[presentation.selection].id == componentID,
-           layouts[rowIndex].componentLayouts.contains(where: { $0.files.contains { $0.componentID == componentID } }) {
+           layouts[rowIndex].componentLayouts.contains(where: {
+               $0.mediaRegions.contains { $0.fileCard != nil && $0.componentID == componentID }
+           }) {
             return linking(
                 fileCardTransitionSource(for: presentation.items[presentation.selection], rowIndex: rowIndex)
                     .map(presentation.withTransitionSource) ?? presentation,
@@ -352,29 +360,29 @@ extension NativeTimelineCanvasView {
             )
         }
         for layout in layouts[rowIndex].componentLayouts {
-            if let region = layout.images.first(where: {
-                $0.componentID == componentID
-            }) {
-                return mediaViewerPresentation(
-                    presentation,
-                    sourceFrame: region.frame,
-                    rowIndex: rowIndex,
-                    mediaKey: region.mediaKey,
-                    cornerRadius: region.cornerRadius,
-                    fillsFrame: true
-                )
-            }
-            if let region = layout.media.first(where: {
-                $0.componentID == componentID
-            }) {
-                return mediaViewerPresentation(
-                    presentation,
-                    sourceFrame: region.frame,
-                    rowIndex: rowIndex,
-                    mediaKey: .media(region.displayURL),
-                    cornerRadius: 8,
-                    fillsFrame: true
-                )
+            for region in layout.mediaRegions where region.componentID == componentID {
+                switch region.kind {
+                case let .image(image):
+                    return mediaViewerPresentation(
+                        presentation,
+                        sourceFrame: region.frame,
+                        rowIndex: rowIndex,
+                        mediaKey: image.mediaKey,
+                        cornerRadius: image.cornerRadius,
+                        fillsFrame: true
+                    )
+                case let .media(media):
+                    return mediaViewerPresentation(
+                        presentation,
+                        sourceFrame: region.frame,
+                        rowIndex: rowIndex,
+                        mediaKey: .media(media.displayURL),
+                        cornerRadius: 8,
+                        fillsFrame: true
+                    )
+                case .file:
+                    continue
+                }
             }
         }
         return presentation

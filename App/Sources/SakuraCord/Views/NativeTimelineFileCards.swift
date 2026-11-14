@@ -2,23 +2,13 @@ import AppKit
 import SakuraCordModels
 
 extension NativeTimelineCanvasView {
-    /// Whether an attachment still hides behind its spoiler cover.
-    func isConcealedSpoiler(_ attachment: Attachment, in messageID: MessageID) -> Bool {
-        NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-            messageID: messageID,
-            contentID: NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id),
-            isSpoiler: attachment.isSpoiler,
-            store: spoilerRevealStore
-        )
-    }
-
     /// Whether a spoiler hides an upload's ring: it still hides its file
     /// card's button, but not the cover over an image.
     func hidesUploadRing(_ ring: NativeTimelineRowLayout.UploadRing, of message: Message) -> Bool {
         guard ring.mediaFrame == nil,
               let attachment = message.attachments.first(where: { $0.id == ring.attachmentID })
         else { return false }
-        return isConcealedSpoiler(attachment, in: message.id)
+        return NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore)
     }
 
     /// The visible file cards in a message row, attachment cards first. A
@@ -27,20 +17,23 @@ extension NativeTimelineCanvasView {
     func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
         let layout = layouts[index]
         let isLocalSend = items[index].messageRow?.message.isUnconfirmedLocalSend == true
-        let attachments = isLocalSend ? [] : layout.fileCards.filter { !isConcealedSpoiler($0.attachment, in: messageID) }
+        let attachments = isLocalSend ? [] : layout.fileCards.filter {
+            !NativeTimelineSpoilerConcealmentPolicy.isConcealed($0.attachment, in: messageID, store: spoilerRevealStore)
+        }
         let components = layout.componentLayouts.flatMap { component -> [NativeTimelineFileCard] in
-            guard !component.files.isEmpty else { return [] }
+            let files = component.mediaRegions.filter { $0.fileCard != nil }
+            guard !files.isEmpty else { return [] }
             let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
                 in: component, messageID: messageID, store: spoilerRevealStore
             )
-            return component.files.filter { region in
+            return files.filter { region in
                 !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                     region.frame, hiddenContainerFrames: hiddenContainers
                 ) && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
                     messageID: messageID, contentID: region.componentID,
                     isSpoiler: region.isSpoiler, store: spoilerRevealStore
                 )
-            }.map(\.card)
+            }.compactMap(\.fileCard)
         }
         return attachments + components
     }
@@ -135,11 +128,10 @@ extension NativeTimelineCanvasView {
     /// A file card's body: previews the file in the media viewer.
     func previewFileCard(_ card: NativeTimelineFileCard, message: Message, rowIndex: Int) {
         let layout = layouts[rowIndex]
-        if let region = layout.componentLayouts.lazy.flatMap(\.files).first(where: { $0.frame == card.frame }) {
-            _ = activateComponentMedia(
-                id: region.componentID, openURL: region.openURL, isSpoiler: region.isSpoiler,
-                layout: layout, message: message, rowIndex: rowIndex
-            )
+        if let region = layout.componentLayouts.lazy.flatMap(\.mediaRegions).first(where: {
+            $0.fileCard != nil && $0.frame == card.frame
+        }) {
+            _ = activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex)
         } else {
             _ = activateAttachment(card.attachment, in: message, rowIndex: rowIndex)
         }

@@ -785,7 +785,8 @@ extension NativeTimelineCanvasView {
     /// clicks land.
     func installAudioFileCursors(at index: Int, rowOrigin: CGFloat) {
         for region in layouts[index].audioPlayers
-        where region.style == .audioFile && !isConcealedSpoiler(region.attachment, in: region.messageID) {
+        where region.style == .audioFile
+            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: region.messageID, store: spoilerRevealStore) {
             for (_, frame) in Self.controlHitFrames(of: region) where !frame.isNull && !frame.isEmpty {
                 addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
             }
@@ -799,7 +800,9 @@ extension NativeTimelineCanvasView {
         else { return nil }
         let origin = displayedRowOrigin(at: index)
         let local = CGPoint(x: point.x, y: point.y - origin)
-        for region in layouts[index].audioPlayers where region.frame.contains(local) && !isConcealedSpoiler(region.attachment, in: region.messageID) {
+        for region in layouts[index].audioPlayers
+        where region.frame.contains(local)
+            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: region.messageID, store: spoilerRevealStore) {
             // Between an audio card's controls lies the player's own gap.
             let control: VoiceMessageControl
             if let hit = Self.controlHitFrames(of: region).first(where: { $0.1.contains(local) }) {
@@ -825,7 +828,8 @@ extension NativeTimelineCanvasView {
         guard let card = layout.attachmentRegions.first(where: { $0.attachment.mediaKind == .audio && $0.frame.contains(local) })
         else { return nil }
         return layout.audioFilePlayers.first {
-            $0.attachment.id == card.attachment.id && !isConcealedSpoiler($0.attachment, in: $0.messageID)
+            $0.attachment.id == card.attachment.id
+                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed($0.attachment, in: $0.messageID, store: spoilerRevealStore)
         }
     }
 

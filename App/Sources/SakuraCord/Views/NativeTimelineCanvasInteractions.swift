@@ -27,50 +27,18 @@ extension NativeTimelineCanvasView {
                     return true
                 }
             }
-            for region in componentLayout.images
+            // A file card's button and link act through their own pointer hit.
+            for region in componentLayout.mediaRegions
             where region.frame.contains(point) {
-                return activateComponentMedia(
-                    id: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    layout: layout,
-                    message: message,
-                    rowIndex: rowIndex
-                )
-            }
-            for region in componentLayout.media
-            where region.frame.contains(point) {
-                if region.isVideo, !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                if case let .media(media) = region.kind, media.isVideo, !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
                     messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
                 ) {
-                    let (id, openURL, isSpoiler) = (region.componentID, region.openURL, region.isSpoiler)
-                    playInline(region.displayURL, mediaID: id, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
-                        _ = self?.activateComponentMedia(
-                            id: id, openURL: openURL, isSpoiler: isSpoiler, layout: layout, message: message, rowIndex: index
-                        )
+                    playInline(media.displayURL, mediaID: region.componentID, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
+                        _ = self?.activateComponentMedia(region, layout: layout, message: message, rowIndex: index)
                     }
                     return true
                 }
-                return activateComponentMedia(
-                    id: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    layout: layout,
-                    message: message,
-                    rowIndex: rowIndex
-                )
-            }
-            for region in componentLayout.files
-            where region.frame.contains(point) {
-                // The card's button and link act through their own pointer hit.
-                return activateComponentMedia(
-                    id: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    layout: layout,
-                    message: message,
-                    rowIndex: rowIndex
-                )
+                return activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex)
             }
             for region in componentLayout.selects
             where region.frame.contains(point) {
@@ -86,15 +54,14 @@ extension NativeTimelineCanvasView {
     }
 
     func activateComponentMedia(
-        id: String,
-        openURL: URL,
-        isSpoiler: Bool,
+        _ region: NativeTimelineComponentLayout.MediaRegion,
         layout: NativeTimelineRowLayout,
         message: Message,
         rowIndex: Int
     ) -> Bool {
+        let id = region.componentID
         if NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-            messageID: message.id, contentID: id, isSpoiler: isSpoiler, store: spoilerRevealStore
+            messageID: message.id, contentID: id, isSpoiler: region.isSpoiler, store: spoilerRevealStore
         ) {
             reveal(NativeTimelineComponentRevealKey(messageID: message.id, componentID: id), rowIndex: rowIndex)
         } else if let presentation = MediaViewerPlan.components(
@@ -109,7 +76,7 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex
             )
         } else {
-            NSWorkspace.shared.open(openURL)
+            NSWorkspace.shared.open(region.openURL)
         }
         return true
     }

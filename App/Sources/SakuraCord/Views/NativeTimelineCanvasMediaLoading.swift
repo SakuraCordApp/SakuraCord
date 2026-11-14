@@ -462,12 +462,16 @@ extension NativeTimelineCanvasView {
     ) {
         // Hidden spoilers load too, so their covers can blur them.
         for componentLayout in layouts {
-            for image in componentLayout.images {
-                keys.append(image.mediaKey)
-            }
-            for media in componentLayout.media {
-                if let previewURL = media.previewURL {
-                    keys.append(.media(previewURL))
+            for region in componentLayout.mediaRegions {
+                switch region.kind {
+                case let .image(image):
+                    keys.append(image.mediaKey)
+                case let .media(media):
+                    if let previewURL = media.previewURL {
+                        keys.append(.media(previewURL))
+                    }
+                case .file:
+                    break
                 }
             }
             for button in componentLayout.buttons {

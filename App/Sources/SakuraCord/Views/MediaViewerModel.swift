@@ -437,52 +437,33 @@ enum MediaViewerPlan {
             let hiddenContainers = layout.containers.filter {
                 $0.isSpoiler && !isRevealed($0.componentID)
             }
-            func isVisible(_ frame: CGRect, isSpoiler: Bool, id: String) -> Bool {
-                (!isSpoiler || isRevealed(id))
-                    && !hiddenContainers.contains(where: {
-                        $0.frame.contains(frame)
-                    })
+            return layout.mediaRegions.compactMap { region -> RichMediaItem? in
+                guard !region.isSpoiler || isRevealed(region.componentID),
+                      !hiddenContainers.contains(where: { $0.frame.contains(region.frame) })
+                else { return nil }
+                return switch region.kind {
+                case let .image(image):
+                    componentItem(
+                        id: region.componentID,
+                        url: region.openURL,
+                        previewURL: image.displayURL,
+                        title: image.description,
+                        isVideo: false,
+                        message: message
+                    )
+                case let .media(media):
+                    componentItem(
+                        id: region.componentID,
+                        url: region.openURL,
+                        previewURL: media.displayURL,
+                        title: media.description,
+                        isVideo: media.isVideo,
+                        message: message
+                    )
+                case let .file(file):
+                    componentFileItem(file, componentID: region.componentID, openURL: region.openURL)
+                }
             }
-
-            let images: [RichMediaItem] = layout.images.compactMap { region in
-                guard isVisible(
-                    region.frame,
-                    isSpoiler: region.isSpoiler,
-                    id: region.componentID
-                ) else { return nil }
-                return componentItem(
-                    id: region.componentID,
-                    url: region.openURL,
-                    previewURL: region.displayURL,
-                    title: region.description,
-                    isVideo: false,
-                    message: message
-                )
-            }
-            let media: [RichMediaItem] = layout.media.compactMap { region in
-                guard isVisible(
-                    region.frame,
-                    isSpoiler: region.isSpoiler,
-                    id: region.componentID
-                ) else { return nil }
-                return componentItem(
-                    id: region.componentID,
-                    url: region.openURL,
-                    previewURL: region.displayURL,
-                    title: region.description,
-                    isVideo: region.isVideo,
-                    message: message
-                )
-            }
-            let files: [RichMediaItem] = layout.files.compactMap { region in
-                guard isVisible(
-                    region.frame,
-                    isSpoiler: region.isSpoiler,
-                    id: region.componentID
-                ) else { return nil }
-                return componentFileItem(region)
-            }
-            return images + media + files
         }
         return presentation(
             items: items,
@@ -560,15 +541,17 @@ enum MediaViewerPlan {
     /// component names, previewed by its kind. A named file of no known type
     /// with an image's extension shows as an image.
     private static func componentFileItem(
-        _ region: NativeTimelineComponentLayout.FileRegion
+        _ file: NativeTimelineComponentLayout.MediaRegion.FileContent,
+        componentID: String,
+        openURL: URL
     ) -> RichMediaItem {
-        var item = RichMediaItem(region.attachment)
-        if item.kind == .file, RichMediaItem.isSupportedImageURL(region.openURL) {
-            item.kind = .image(animated: RichMediaItem.isAnimatedImageURL(region.openURL))
+        var item = RichMediaItem(file.attachment)
+        if item.kind == .file, RichMediaItem.isSupportedImageURL(openURL) {
+            item.kind = .image(animated: RichMediaItem.isAnimatedImageURL(openURL))
         }
-        item.id = region.componentID
-        item.title = region.title
-        item.description = region.description
+        item.id = componentID
+        item.title = file.title
+        item.description = file.description
         return item
     }
 }

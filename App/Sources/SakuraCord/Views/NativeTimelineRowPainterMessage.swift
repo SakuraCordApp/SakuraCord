@@ -516,15 +516,9 @@ extension NativeTimelineRowPainter {
                 )
             }
             for region in layout.attachmentRegions {
-                let isConcealed =
-                    spoilerRevealStore.map {
-                        NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                            messageID: message.id,
-                            contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
-                            isSpoiler: region.attachment.isSpoiler,
-                            store: $0
-                        )
-                    } ?? false
+                let isConcealed = spoilerRevealStore.map {
+                    NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: message.id, store: $0)
+                } ?? false
                 NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: layout.cornerRadius(of: region)) {
                     drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
                 }

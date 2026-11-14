@@ -230,6 +230,20 @@ enum NativeTimelineSpoilerConcealmentPolicy {
             )
     }
 
+    /// Whether an attachment still hides behind its spoiler cover.
+    static func isConcealed(
+        _ attachment: Attachment,
+        in messageID: MessageID,
+        store: NativeTimelineSpoilerRevealStore
+    ) -> Bool {
+        isConcealed(
+            messageID: messageID,
+            contentID: NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id),
+            isSpoiler: attachment.isSpoiler,
+            store: store
+        )
+    }
+
     /// The embeds still hidden because the message links them inside a
     /// spoiler, as Discord hides them, by embed ID with their reveal keys.
     static func concealedEmbeds(

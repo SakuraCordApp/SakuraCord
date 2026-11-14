@@ -452,10 +452,7 @@ extension NativeTimelineCanvasView {
         // A revealed attachment can share its animation with one still hidden.
         for region in layout.attachmentRegions
         where region.attachment.mediaKind == .animatedImage
-            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                messageID: row.message.id, contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
-                isSpoiler: region.attachment.isSpoiler, store: spoilerRevealStore
-            ) {
+            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: row.message.id, store: spoilerRevealStore) {
             accumulator.append(
                 row: identifier,
                 role: .attachment(region.attachment.id),
@@ -564,30 +561,34 @@ extension NativeTimelineCanvasView {
                     messageID: messageID, contentID: componentID, isSpoiler: isSpoiler, store: spoilerRevealStore
                 )
         }
-        for image in component.images
-        where Self.isPotentiallyAnimated(image.displayURL) && !isHidden(image.frame, image.componentID, image.isSpoiler) {
-            accumulator.append(
-                row: identifier,
-                role: .componentImage(componentIndex, image.componentID),
-                media: image.mediaKey,
-                frame: image.frame,
-                cornerRadius: image.cornerRadius,
-                isLooping: false,
-                fillsFrame: true
-            )
-        }
-        for media in component.media
-        where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL)
-            && !isHidden(media.frame, media.componentID, media.isSpoiler) {
-            accumulator.append(
-                row: identifier,
-                role: .componentMedia(componentIndex, media.componentID),
-                media: .media(media.displayURL),
-                frame: media.frame,
-                cornerRadius: DiscordRichMessageMetrics.px(8),
-                isLooping: true,
-                fillsFrame: true
-            )
+        for region in component.mediaRegions {
+            switch region.kind {
+            case let .image(image)
+            where Self.isPotentiallyAnimated(image.displayURL) && !isHidden(region.frame, region.componentID, region.isSpoiler):
+                accumulator.append(
+                    row: identifier,
+                    role: .componentImage(componentIndex, region.componentID),
+                    media: image.mediaKey,
+                    frame: region.frame,
+                    cornerRadius: image.cornerRadius,
+                    isLooping: false,
+                    fillsFrame: true
+                )
+            case let .media(media)
+            where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL)
+                && !isHidden(region.frame, region.componentID, region.isSpoiler):
+                accumulator.append(
+                    row: identifier,
+                    role: .componentMedia(componentIndex, region.componentID),
+                    media: .media(media.displayURL),
+                    frame: region.frame,
+                    cornerRadius: DiscordRichMessageMetrics.px(8),
+                    isLooping: true,
+                    fillsFrame: true
+                )
+            case .image, .media, .file:
+                break
+            }
         }
     }
 
@@ -1134,27 +1135,25 @@ extension NativeTimelineCanvasView {
         _ mediaID: String, url: URL, in layout: NativeTimelineRowLayout, messageID: MessageID
     ) -> CGRect? {
         func isSameMedia(_ other: URL) -> Bool { other.host == url.host && other.path == url.path }
-        func isConcealed(_ contentID: String, isSpoiler: Bool) -> Bool {
-            NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                messageID: messageID, contentID: contentID, isSpoiler: isSpoiler, store: spoilerRevealStore
-            )
-        }
         if let region = layout.attachmentRegions.first(where: { $0.attachment.id == mediaID }) {
             let attachment = region.attachment
-            let contentID = NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id)
             return attachment.mediaKind == .video && isSameMedia(attachment.proxyURL ?? attachment.url)
-                && !isConcealed(contentID, isSpoiler: attachment.isSpoiler) ? region.frame : nil
+                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: messageID, store: spoilerRevealStore)
+                ? region.frame : nil
         }
         for component in layout.componentLayouts {
-            guard let media = component.media.first(where: {
-                $0.componentID == mediaID && $0.isVideo && isSameMedia($0.displayURL)
+            guard let media = component.mediaRegions.first(where: {
+                guard case let .media(content) = $0.kind else { return false }
+                return $0.componentID == mediaID && content.isVideo && isSameMedia(content.displayURL)
             }) else { continue }
             let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
                 in: component, messageID: messageID, store: spoilerRevealStore
             )
             let isHidden = NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                 media.frame, hiddenContainerFrames: hiddenContainerFrames
-            ) || isConcealed(media.componentID, isSpoiler: media.isSpoiler)
+            ) || NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                messageID: messageID, contentID: media.componentID, isSpoiler: media.isSpoiler, store: spoilerRevealStore
+            )
             return isHidden ? nil : media.frame
         }
         return nil
@@ -1312,50 +1311,23 @@ extension NativeTimelineCanvasView {
         hiddenContainerFrames: [CGRect],
         into desired: inout [DesiredSpoilerOverlay]
     ) {
-        for region in component.images where shouldOverlaySpoiler(
+        for region in component.mediaRegions where shouldOverlaySpoiler(
             region.isSpoiler,
             frame: region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
+            let cornerRadius = switch region.kind {
+            case let .image(image): image.cornerRadius
+            case .media: InterfaceScale.metric(8)
+            case let .file(file): file.card(frame: region.frame).cornerRadius
+            }
             appendDesiredSpoilerOverlay(
                 NativeTimelineComponentRevealKey(
                     messageID: messageID,
                     componentID: region.componentID
                 ),
                 frame: region.frame,
-                cornerRadius: region.cornerRadius,
-                rowOrigin: rowOrigin,
-                into: &desired
-            )
-        }
-        for region in component.media where shouldOverlaySpoiler(
-            region.isSpoiler,
-            frame: region.frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        ) {
-            appendDesiredSpoilerOverlay(
-                NativeTimelineComponentRevealKey(
-                    messageID: messageID,
-                    componentID: region.componentID
-                ),
-                frame: region.frame,
-                cornerRadius: InterfaceScale.metric(8),
-                rowOrigin: rowOrigin,
-                into: &desired
-            )
-        }
-        for region in component.files where shouldOverlaySpoiler(
-            region.isSpoiler,
-            frame: region.frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        ) {
-            appendDesiredSpoilerOverlay(
-                NativeTimelineComponentRevealKey(
-                    messageID: messageID,
-                    componentID: region.componentID
-                ),
-                frame: region.frame,
-                cornerRadius: region.card.cornerRadius,
+                cornerRadius: cornerRadius,
                 rowOrigin: rowOrigin,
                 into: &desired
             )

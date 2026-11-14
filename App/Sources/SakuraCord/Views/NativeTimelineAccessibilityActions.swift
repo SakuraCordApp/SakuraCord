@@ -4,46 +4,28 @@ import SakuraCordModels
 extension NativeTimelineCanvasView {
     func appendComponentMediaAccessibility(
         to children: inout [Any],
-        input: ComponentMediaA11yInput
+        region: NativeTimelineComponentLayout.MediaRegion,
+        message: Message,
+        layout: NativeTimelineRowLayout,
+        rowIndex: Int,
+        parent: NSAccessibilityElement
     ) {
-        let label = input.label
-        let frame = input.frame
-        let componentID = input.componentID
-        let openURL = input.openURL
-        let isSpoiler = input.isSpoiler
-        let message = input.message
-        let rowIndex = input.rowIndex
-        let parent = input.parent
-        let file = input.file
-        let viewerPresentation = input.viewerPresentation
-        let key = NativeTimelineComponentRevealKey(
-            messageID: message.id,
-            componentID: componentID
-        )
+        let (label, file): (String, Attachment?) = switch region.kind {
+        case let .image(image): (image.description, nil)
+        case let .media(media): (media.description, nil)
+        case let .file(file): (file.attachment.filename, file.attachment)
+        }
         let isHiddenSpoiler = NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-            messageID: message.id, contentID: componentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+            messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
         )
         let element = accessibilityElement(
             role: .button,
             label: isHiddenSpoiler ? "Reveal spoiler" : label,
             help: isHiddenSpoiler ? "Reveals the spoiler without opening it" : "Open \(label)",
-            frame: accessibilityChildFrame(frame, rowIndex: rowIndex),
+            frame: accessibilityChildFrame(region.frame, rowIndex: rowIndex),
             parent: parent
         ) { [weak self] in
-            guard let self else { return false }
-            if isHiddenSpoiler {
-                self.reveal(key, rowIndex: rowIndex)
-            } else if let viewerPresentation {
-                self.model?.mediaViewerPresentation =
-                    self.mediaViewerPresentation(
-                        viewerPresentation,
-                        componentID: componentID,
-                        rowIndex: rowIndex
-                    )
-            } else {
-                NSWorkspace.shared.open(openURL)
-            }
-            return true
+            self?.activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex) ?? false
         }
         // A file previews when pressed; its card's button downloads it.
         if let file, !isHiddenSpoiler {
@@ -320,19 +302,36 @@ extension NativeTimelineCanvasView {
         return element
     }
 
+    func activateLinkedImage(
+        _ region: NativeTimelineRowLayout.LinkedImageRegion,
+        in message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        if let presentation = MediaViewerPlan.linkedImages(
+            in: message,
+            selectedReferenceID: region.reference.id
+        ) {
+            model?.mediaViewerPresentation = mediaViewerPresentation(
+                presentation,
+                sourceFrame: region.frame,
+                rowIndex: rowIndex,
+                mediaKey: region.mediaKey,
+                cornerRadius: region.cornerRadius,
+                fillsFrame: region.fillsFrame
+            )
+        } else {
+            NSWorkspace.shared.open(region.reference.url)
+        }
+        return true
+    }
+
     func activateAttachment(
         _ attachment: Attachment,
         in message: Message,
         rowIndex: Int
     ) -> Bool {
-        let revealKey = NativeTimelineComponentRevealKey.attachment(
-            messageID: message.id,
-            attachmentID: attachment.id
-        )
-        if attachment.isSpoiler,
-           !spoilerRevealStore.isMediaRevealed(revealKey)
-        {
-            reveal(revealKey, rowIndex: rowIndex)
+        if NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore) {
+            reveal(.attachment(messageID: message.id, attachmentID: attachment.id), rowIndex: rowIndex)
         } else if !openAttachmentInViewer(
             attachment,
             sourceFrame: layouts[rowIndex].attachmentRegions.first { $0.attachment.id == attachment.id }?.frame ?? .zero,

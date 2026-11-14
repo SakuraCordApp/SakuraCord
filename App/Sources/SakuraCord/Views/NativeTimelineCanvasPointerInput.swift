@@ -697,49 +697,23 @@ extension NativeTimelineCanvasView {
         if let linkedImage = layout.linkedImageRegions.first(
             where: { $0.frame.contains(point) }
         ) {
-            if let presentation = MediaViewerPlan.linkedImages(
-                in: row.message,
-                selectedReferenceID: linkedImage.reference.id
-            ) {
-                model?.mediaViewerPresentation = mediaViewerPresentation(
-                    presentation,
-                    sourceFrame: linkedImage.frame,
-                    rowIndex: rowIndex,
-                    mediaKey: linkedImage.mediaKey,
-                    cornerRadius: linkedImage.cornerRadius,
-                    fillsFrame: linkedImage.fillsFrame
-                )
-            } else {
-                NSWorkspace.shared.open(linkedImage.reference.url)
-            }
-            return true
+            return activateLinkedImage(linkedImage, in: row.message, rowIndex: rowIndex)
         }
         if let attachmentRegion = layout.attachmentRegions.first(
             where: { $0.frame.contains(point) }
         ) {
             let attachment = attachmentRegion.attachment
-            let revealKey = NativeTimelineComponentRevealKey.attachment(
-                messageID: row.id,
-                attachmentID: attachment.id
-            )
-            if attachment.isSpoiler,
-               !spoilerRevealStore.isMediaRevealed(revealKey)
-            {
-                reveal(revealKey, rowIndex: rowIndex)
-            } else if attachment.mediaKind == .video {
-                playInline(
-                    attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
-                    frame: attachmentRegion.frame, rowIndex: rowIndex
-                ) { [weak self, attachmentID = attachment.id] index, layout, message in
-                    guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
-                    _ = self?.openAttachmentInViewer(
-                        region.attachment, sourceFrame: region.frame, message: message, layout: layout, rowIndex: index
-                    )
-                }
-            } else if !openAttachmentInViewer(
-                attachment, sourceFrame: attachmentRegion.frame, message: row.message, layout: layout, rowIndex: rowIndex
-            ) {
-                NSWorkspace.shared.open(attachment.url)
+            guard attachment.mediaKind == .video,
+                  !NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: row.id, store: spoilerRevealStore)
+            else { return activateAttachment(attachment, in: row.message, rowIndex: rowIndex) }
+            playInline(
+                attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
+                frame: attachmentRegion.frame, rowIndex: rowIndex
+            ) { [weak self, attachmentID = attachment.id] index, layout, message in
+                guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
+                _ = self?.openAttachmentInViewer(
+                    region.attachment, sourceFrame: region.frame, message: message, layout: layout, rowIndex: index
+                )
             }
             return true
         }
@@ -1329,29 +1303,14 @@ extension NativeTimelineCanvasView {
                     )
                 }
             }
-            if let region = componentLayout.images.first(where: {
+            if let region = componentLayout.mediaRegions.first(where: {
                 $0.frame.contains(point)
             }) {
-                return .componentImage(
-                    message.id,
-                    region.componentID
-                )
-            }
-            if let region = componentLayout.media.first(where: {
-                $0.frame.contains(point)
-            }) {
-                return .componentMedia(
-                    message.id,
-                    region.componentID
-                )
-            }
-            if let region = componentLayout.files.first(where: {
-                $0.frame.contains(point)
-            }) {
-                return .componentFile(
-                    message.id,
-                    region.componentID
-                )
+                switch region.kind {
+                case .image: return .componentImage(message.id, region.componentID)
+                case .media: return .componentMedia(message.id, region.componentID)
+                case .file: return .componentFile(message.id, region.componentID)
+                }
             }
             if let region = componentLayout.selects.first(where: {
                 $0.frame.contains(point)
