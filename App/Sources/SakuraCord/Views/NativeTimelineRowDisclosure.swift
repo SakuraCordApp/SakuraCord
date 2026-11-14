@@ -370,8 +370,7 @@ extension NativeTimelineCanvasView {
 
     func redrawForRowMotion(invalidating rect: CGRect? = nil) {
         // Hover regions are cached at the rows' displaced positions.
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, rowMotions.isEmpty,
            !suppressesHoverPresentation {
             // The motion has landed: tracking areas and cursor rects follow the rows.

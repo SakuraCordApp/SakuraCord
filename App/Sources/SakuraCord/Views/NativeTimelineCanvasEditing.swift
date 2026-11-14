@@ -184,8 +184,7 @@ extension NativeTimelineCanvasView {
         let previousHeight = editingRowHeight ?? storage.layouts[index].height
         editing.layout = layout
         invalidateBitmap(items[index].identifier)
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         resizeForEditingChange(by: layout.height - previousHeight)
         positionEditingRow()
         rebuildAccessibilityProxy(for: items[index].identifier)
@@ -283,8 +282,7 @@ extension NativeTimelineCanvasView {
         let identifier = editing.item?.identifier
         editing.clear()
         if let identifier { invalidateBitmap(identifier) }
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         resizeForEditingChange(by: -delta)
         window?.invalidateCursorRects(for: self)
         if let index {
@@ -416,17 +414,13 @@ extension NativeTimelineCanvasView {
         )
         applyDocumentSize(size)
         enclosingScrollView?.tile()
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
         reconcileAccessibilityProxies()
         positionAnimatedMediaOverlays()
         reconcileBeginningSelectionOverlay()
-        positionInlineVideoOverlays()
-        reconcileVoiceMessageOverlay()
-        reconcileActivityIndicators()
-        positionSpoilerOverlays()
+        positionRowOverlays()
         needsDisplay = true
     }
 

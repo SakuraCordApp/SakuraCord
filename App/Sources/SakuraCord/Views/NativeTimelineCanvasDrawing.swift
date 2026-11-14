@@ -28,8 +28,7 @@ extension NativeTimelineCanvasView {
         precondition(storage.items.count == storage.rowOrigins.count)
         let previousContentOriginY = self.contentOriginY
         let contentOriginMoved: Bool
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         invalidateVisibleMediaProjection(keepingCapacity: true)
         self.storage = storage
         self.model = model
@@ -195,8 +194,7 @@ extension NativeTimelineCanvasView {
                 || abs(oldMinimumHeight - self.minimumHeight) >= 0.5
                 || abs(oldBottomSpacerHeight - self.bottomSpacerHeight) >= 0.5
         else { return }
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         let size = NSSize(
             width: max(1, frame.width),
             height: max(displayedContentHeight, self.minimumHeight)
@@ -212,10 +210,7 @@ extension NativeTimelineCanvasView {
         positionAnimatedMediaOverlays()
         positionReactionBandViews()
         reconcileBeginningSelectionOverlay()
-        positionInlineVideoOverlays()
-        reconcileVoiceMessageOverlay()
-        reconcileActivityIndicators()
-        positionSpoilerOverlays()
+        positionRowOverlays()
         componentChoiceOverlay?.repositionWithAnchor()
         needsDisplay = true
         redrawMovedShortContentSynchronously(
@@ -277,8 +272,7 @@ extension NativeTimelineCanvasView {
 
     func invalidatePresentationCaches() {
         clearBitmapCache(keepingCapacity: true)
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         invalidateVisibleMediaProjection(keepingCapacity: true)
         removeAccessibilityProxies()
         presentationCacheInvalidationCount += 1
@@ -315,8 +309,7 @@ extension NativeTimelineCanvasView {
         )
         mediaReadyConversationID = nil
         removeInlinePlayers()
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         needsDisplay = true
     }
 
@@ -547,6 +540,17 @@ extension NativeTimelineCanvasView {
         positionEditingRow()
         positionActionCapsule()
         positionAnimatedMediaOverlays()
+        positionRowOverlays()
+    }
+
+    /// Cached pointer regions follow row geometry, so a layout change drops them.
+    func clearPointerRegionCaches() {
+        mentionPointerRegionCache.removeAll(keepingCapacity: true)
+        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+    }
+
+    /// Moves the views hosted over rows onto where the rows are drawn now.
+    func positionRowOverlays() {
         positionInlineVideoOverlays()
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
