@@ -405,3 +405,113 @@ struct MemberListSubscriptionState {
     /// still need a subscription send to get a fresh SYNC.
     var memberListsNeedingRefresh: [GuildID: [String: UUID]] = [:]
 }
+
+extension DiscordRESTProvider {
+    func subscribeToMemberList(
+        guildID: GuildID,
+        channelID requestedChannelID: ChannelID? = nil,
+        ranges: [ClosedRange<Int>] = [0 ... 99]
+    ) async throws {
+        let selectedChannel: Channel?
+        if let requestedChannelID {
+            selectedChannel = cachedChannels[guildID]?.first { $0.id == requestedChannelID }
+        } else {
+            selectedChannel = cachedChannels[guildID]?.first {
+                $0.kind != .voice
+                    && canViewMemberListChannel($0, guildID: guildID)
+            }
+        }
+        guard let selectedChannel,
+              canViewMemberListChannel(selectedChannel, guildID: guildID)
+        else { return }
+        let memberListID = DiscordMemberListIdentity.id(
+            for: selectedChannel, guildID: guildID,
+            roles: cachedGuildRoles[guildID] ?? []
+        )
+        if selectedMemberListID[guildID] != memberListID {
+            memberListRefreshRetryTasks.removeValue(forKey: guildID)?.cancel()
+            memberListViewportRestoreTasks.removeValue(forKey: guildID)?.cancel()
+        }
+        selectedMemberListID[guildID] = memberListID
+        memberListState.memberListViewportRequests[guildID] = (
+            memberListID, DiscordMemberListSubscription(channelID: selectedChannel.id, ranges: ranges)
+        )
+        try await enqueueGuildSubscription(
+            guildID: guildID,
+            request: .members(channelID: selectedChannel.id, ranges: ranges)
+        )
+    }
+
+    func attemptMemberSubscription(guildID: GuildID, restoringViewport: Bool = false) async {
+        // RESUMED retains the selected channel and its latest requested ranges.
+        // A fresh READY clears the viewport and starts with the initial block.
+        let viewport = restoringViewport ? memberListState.memberListViewportRequests[guildID]?.subscription : nil
+        do {
+            try await subscribeToMemberList(
+                guildID: guildID, channelID: viewport?.channelID,
+                ranges: viewport?.ranges ?? [DiscordMemberListRangePolicy.initialRange]
+            )
+        } catch {
+            gatewayLogger.error(
+                "Lazy member-list subscription failed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    public func updateMemberListViewport(
+        in guildID: GuildID,
+        channelID: ChannelID,
+        visibleRange: ClosedRange<Int>
+    ) async throws {
+        guard pendingMemberGuildID == guildID else { return }
+        let ranges = DiscordMemberListRangePolicy.ranges(around: visibleRange)
+        guard let channel = cachedChannels[guildID]?.first(where: { $0.id == channelID })
+        else { return }
+        let memberListID = DiscordMemberListIdentity.id(
+            for: channel,
+            guildID: guildID,
+            roles: cachedGuildRoles[guildID] ?? []
+        )
+        let changedSelection = selectedMemberListID[guildID] != memberListID
+        selectedMemberListID[guildID] = memberListID
+        memberListState.memberListViewportRequests[guildID] = (
+            memberListID, DiscordMemberListSubscription(channelID: channelID, ranges: ranges)
+        )
+        if changedSelection {
+            memberListRefreshRetryTasks.removeValue(forKey: guildID)?.cancel()
+            memberListViewportRestoreTasks.removeValue(forKey: guildID)?.cancel()
+        }
+        // An inaccessible viewport still supersedes the old selection. This
+        // cancels its recovery and lets returning to an accessible cached list
+        // publish rows even when its subscribed ranges have not changed.
+        guard canViewMemberListChannel(channel, guildID: guildID) else {
+            discardInaccessibleMemberLists(guildID: guildID)
+            publishMembers(guildID: guildID, members: [], groups: [])
+            return
+        }
+        if changedSelection {
+            publishMembers(
+                guildID: guildID,
+                members: orderedMemberListMembers(
+                    guildID: guildID, memberListID: memberListID
+                ) ?? [],
+                groups: cachedMemberListGroups[guildID]?[memberListID] ?? []
+            )
+        }
+        let needsRefresh = memberListState.memberListsNeedingRefresh[guildID]?[memberListID] != nil
+        if !needsRefresh,
+           !DiscordMemberListRangePolicy.requiresSubscriptionUpdate(
+               memberListID: memberListID,
+               ranges: ranges,
+               currentSubscriptions: memberListState.memberListSubscriptions[guildID] ?? [:]
+           )
+        {
+            return
+        }
+        try await subscribeToMemberList(
+            guildID: guildID,
+            channelID: channelID,
+            ranges: ranges
+        )
+    }
+}

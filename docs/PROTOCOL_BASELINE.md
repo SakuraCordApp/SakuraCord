@@ -106,7 +106,7 @@ compatibility for each service remains unverified.
 
 ## Capability gates
 
-[DiscordRESTProvider.supports](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTNotificationsAndMessaging.swift)
+[DiscordRESTProvider.supports](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTMessaging.swift)
 is authoritative for the [provider capability interface](../Packages/DiscordProtocol/Sources/DiscordProtocol/ChatProvider.swift).
 It currently enables forums, slash commands, message components, returned-modal
 submission, remote component choices, GIFs, forwarding, soundboard, sticker

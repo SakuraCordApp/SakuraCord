@@ -494,17 +494,7 @@ extension DiscordRESTProvider {
         until: Date?
     ) async throws {
         var settings = try await joinedThreadNotificationSettings(for: post)
-        var body: [String: JSONValue] = ["muted": .bool(isMuted)]
-        if isMuted, let until {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            body["mute_config"] = .object([
-                "end_time": .string(formatter.string(from: until)),
-            ])
-        } else {
-            body["mute_config"] = .null
-        }
-        try await patchThreadNotificationSettings(threadID: post.id, body: body)
+        try await patchThreadNotificationSettings(threadID: post.id, body: Self.muteSettings(isMuted: isMuted, until: until))
         settings.isMuted = isMuted
         settings.muteConfiguration =
             isMuted ? DiscordMuteConfiguration(endTime: until) : nil
@@ -1232,20 +1222,6 @@ extension DiscordRESTProvider {
         return try JSONDecoder().decode(ReadAcknowledgementResponse.self, from: data)
     }
 
-    public func updateChannelNotificationLevel(
-        guildID: GuildID?,
-        channelID: ChannelID,
-        level: MessageNotificationLevel
-    ) async throws {
-        try await updateChannelNotificationSettings(
-            guildID: guildID,
-            channelID: channelID,
-            override: [
-                "message_notifications": .number(Double(level.rawValue))
-            ]
-        )
-    }
-
     public func acknowledgeBulk(
         _ readStates: [BulkReadStateAcknowledgement]
     ) async throws {
@@ -1270,70 +1246,5 @@ extension DiscordRESTProvider {
                 ]
             )
         }
-    }
-
-    public func updateGuildNotificationLevel(
-        guildID: GuildID,
-        level: MessageNotificationLevel
-    ) async throws {
-        try await updateGuildNotificationSettings(
-            guildID: guildID,
-            settings: [
-                "message_notifications": .number(Double(level.rawValue))
-            ]
-        )
-    }
-
-    public func updateGuildMute(
-        guildID: GuildID,
-        isMuted: Bool,
-        until: Date?
-    ) async throws {
-        var settings: [String: JSONValue] = ["muted": .bool(isMuted)]
-        if isMuted, let until {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            settings["mute_config"] = .object([
-                "end_time": .string(formatter.string(from: until)),
-            ])
-        } else {
-            settings["mute_config"] = .null
-        }
-        try await updateGuildNotificationSettings(
-            guildID: guildID,
-            settings: settings
-        )
-    }
-
-    public func updateGuildNotificationToggle(
-        guildID: GuildID,
-        toggle: GuildNotificationToggle,
-        isEnabled: Bool
-    ) async throws {
-        let setting: (key: String, value: JSONValue) = switch toggle {
-        case .suppressEveryone:
-            ("suppress_everyone", .bool(isEnabled))
-        case .suppressRoles:
-            ("suppress_roles", .bool(isEnabled))
-        case .suppressHighlights:
-            (
-                "notify_highlights",
-                .number(Double(
-                    isEnabled
-                        ? GuildHighlightNotificationLevel.disabled.rawValue
-                        : GuildHighlightNotificationLevel.inherit.rawValue
-                ))
-            )
-        case .muteScheduledEvents:
-            ("mute_scheduled_events", .bool(isEnabled))
-        case .mobilePush:
-            ("mobile_push", .bool(isEnabled))
-        case .hideMutedChannels:
-            ("hide_muted_channels", .bool(isEnabled))
-        }
-        try await updateGuildNotificationSettings(
-            guildID: guildID,
-            settings: [setting.key: setting.value]
-        )
     }
 }
