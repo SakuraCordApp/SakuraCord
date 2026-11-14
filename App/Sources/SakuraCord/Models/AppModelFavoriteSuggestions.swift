@@ -71,7 +71,9 @@ extension AppModel {
         guard pool.channels.count + pool.users.count < Self.favoriteSuggestionPoolDepth else { return }
         let history = forwardDestinationHistory
         let favoriteIDs = favoriteIDs
-        let index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: self)
+        guard let index = await ForwardDestinationSearchIndexCache.shared.prepare(
+            for: self, priority: .userInitiated, corpus: .favorites
+        ) else { return }
         // Discord's favourites filter applies before the list is capped.
         let fallback = await Task.detached(priority: .userInitiated) {
             index.results(query: "", recentChannelIDs: history, excludedChannelIDs: favoriteIDs)

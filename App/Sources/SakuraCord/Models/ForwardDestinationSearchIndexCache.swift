@@ -6,10 +6,26 @@ import SwiftUI
 final class ForwardDestinationSearchIndexCache {
     static let shared = ForwardDestinationSearchIndexCache()
 
+    /// The destinations a search covers. Forward lists conversations the
+    /// account can post in; Favorites (Add to Favorites and Suggested
+    /// Channels) lists every searchable one, as Discord's favourites filter
+    /// replaces the forward permission check.
+    nonisolated enum Corpus: Hashable, Sendable { case forward, favorites }
+
     private struct Key: Equatable {
         let modelID: ObjectIdentifier
         let userID: UserID?
         let revision: UInt64
+    }
+
+    /// One corpus's latest index and its build in flight.
+    private struct Slot {
+        var modelID: ObjectIdentifier?
+        var userID: UserID?
+        var revision: UInt64?
+        var index: ForwardDestinationSearchPolicy.Index?
+        var preparationKey: Key?
+        var preparationTask: Task<ForwardDestinationSearchPolicy.Index, Never>?
     }
 
     private struct PrewarmKey: Equatable {
@@ -30,9 +46,8 @@ final class ForwardDestinationSearchIndexCache {
         let usageScores: [String: Int]
         let usageOrder: [String]
         let searchableChannelIDs: Set<ChannelID>
-        /// nil for the Add to Favorites corpus, where Discord's favourites
-        /// filter replaces the forward permission check.
-        var eligibleChannelIDs: Set<ChannelID>?
+        /// nil for the Favorites corpus.
+        let eligibleChannelIDs: Set<ChannelID>?
 
         func makeIndex() -> ForwardDestinationSearchPolicy.Index {
             ForwardDestinationSearchPolicy.makeIndex(
@@ -70,7 +85,7 @@ final class ForwardDestinationSearchIndexCache {
         let usageScores: [String: Int]
         let usageOrder: [String]
 
-        func makeInput(currentUserID: UserID?) -> Input {
+        func makeInput(currentUserID: UserID?, corpus: Corpus) -> Input {
             let channels = ForwardDestinationSearchPolicy.channelsInStoreOrder(
                 snapshot?.channels ?? [],
                 storeOrder: snapshot?.forwardChannelStoreOrder ?? []
@@ -122,7 +137,7 @@ final class ForwardDestinationSearchIndexCache {
                 else { return nil }
                 return thread.id
             })
-            let eligibleChannelIDs = Set(
+            let eligibleChannelIDs = corpus == .favorites ? nil : Set(
                 channels.lazy.filter { channel in
                     ForwardDestinationPermissionPolicy.canUseChannel(
                         channel,
@@ -208,25 +223,21 @@ final class ForwardDestinationSearchIndexCache {
         }
     }
 
-    private var modelID: ObjectIdentifier?
-    private var userID: UserID?
-    private var revision: UInt64?
-    private var index: ForwardDestinationSearchPolicy.Index?
-    private var preparationKey: Key?
-    private var preparationTask: Task<ForwardDestinationSearchPolicy.Index, Never>?
+    private var slots: [Corpus: Slot] = [:]
     private var prewarmKey: PrewarmKey?
     private var prewarmTask: Task<Void, Never>?
 
     func value(
         for model: AppModel,
         userID: UserID?,
-        revision: UInt64
+        revision: UInt64,
+        corpus: Corpus = .forward
     ) -> ForwardDestinationSearchPolicy.Index? {
-        guard modelID == ObjectIdentifier(model),
-              self.userID == userID,
-              self.revision == revision
+        guard let slot = slots[corpus], slot.modelID == ObjectIdentifier(model),
+              slot.userID == userID,
+              slot.revision == revision
         else { return nil }
-        return index
+        return slot.index
     }
 
     /// Returns the most recently completed index for this account even while a
@@ -235,29 +246,32 @@ final class ForwardDestinationSearchIndexCache {
     /// is presented instead of blocking interaction on background work.
     func latestValue(
         for model: AppModel,
-        userID: UserID?
+        userID: UserID?,
+        corpus: Corpus = .forward
     ) -> ForwardDestinationSearchPolicy.Index? {
-        guard modelID == ObjectIdentifier(model),
-              self.userID == userID
+        guard let slot = slots[corpus], slot.modelID == ObjectIdentifier(model),
+              slot.userID == userID
         else { return nil }
-        return index
+        return slot.index
     }
 
     func invalidate(for model: AppModel) {
-        guard modelID == ObjectIdentifier(model) else { return }
-        revision = nil
+        for corpus in slots.keys where slots[corpus]?.modelID == ObjectIdentifier(model) {
+            slots[corpus]?.revision = nil
+        }
     }
 
     func store(
         _ index: ForwardDestinationSearchPolicy.Index,
         for model: AppModel,
         userID: UserID?,
-        revision: UInt64
+        revision: UInt64,
+        corpus: Corpus = .forward
     ) {
-        modelID = ObjectIdentifier(model)
-        self.userID = userID
-        self.revision = revision
-        self.index = index
+        slots[corpus, default: Slot()].modelID = ObjectIdentifier(model)
+        slots[corpus]?.userID = userID
+        slots[corpus]?.revision = revision
+        slots[corpus]?.index = index
     }
 
     /// Starts one cache-owned background prewarm for an account. View tasks
@@ -305,14 +319,16 @@ final class ForwardDestinationSearchIndexCache {
 
     func prepare(
         for model: AppModel,
-        priority: TaskPriority
+        priority: TaskPriority,
+        corpus: Corpus = .forward
     ) async -> ForwardDestinationSearchPolicy.Index? {
         let currentUserID = model.snapshot?.currentUser.id
         let sourceRevision = model.forwardSearchSourceRevision
         if let cached = value(
             for: model,
             userID: currentUserID,
-            revision: sourceRevision
+            revision: sourceRevision,
+            corpus: corpus
         ) {
             return cached
         }
@@ -322,8 +338,8 @@ final class ForwardDestinationSearchIndexCache {
             userID: currentUserID,
             revision: sourceRevision
         )
-        if let preparationTask,
-           let preparationKey,
+        if let preparationTask = slots[corpus]?.preparationTask,
+           let preparationKey = slots[corpus]?.preparationKey,
            preparationKey != key
         {
             // Index construction is synchronous CPU work. Cancelling its Task
@@ -332,20 +348,18 @@ final class ForwardDestinationSearchIndexCache {
             // presentation. Cache the in-flight snapshot, then coalesce callers
             // onto one rebuild for the newest revision.
             let prepared = await preparationTask.value
-            if self.preparationKey == preparationKey {
-                modelID = preparationKey.modelID
-                userID = preparationKey.userID
-                revision = preparationKey.revision
-                index = prepared
-                self.preparationKey = nil
-                self.preparationTask = nil
+            if slots[corpus]?.preparationKey == preparationKey {
+                slots[corpus] = Slot(
+                    modelID: preparationKey.modelID, userID: preparationKey.userID,
+                    revision: preparationKey.revision, index: prepared
+                )
             }
             guard !Task.isCancelled else { return nil }
-            return await prepare(for: model, priority: priority)
+            return await prepare(for: model, priority: priority, corpus: corpus)
         }
 
         let task: Task<ForwardDestinationSearchPolicy.Index, Never>
-        if preparationKey == key, let preparationTask {
+        if slots[corpus]?.preparationKey == key, let preparationTask = slots[corpus]?.preparationTask {
             task = preparationTask
         } else {
             let source = AppPerformanceSignposts.measureSync(
@@ -370,7 +384,7 @@ final class ForwardDestinationSearchIndexCache {
                 let inputInterval = signposter.beginInterval(
                     "ForwardDestinationIndexInputPreparation"
                 )
-                let input = source.makeInput(currentUserID: currentUserID)
+                let input = source.makeInput(currentUserID: currentUserID, corpus: corpus)
                 signposter.endInterval(
                     "ForwardDestinationIndexInputPreparation",
                     inputInterval
@@ -385,45 +399,25 @@ final class ForwardDestinationSearchIndexCache {
                 )
                 return index
             }
-            preparationKey = key
-            preparationTask = newTask
+            slots[corpus, default: Slot()].preparationKey = key
+            slots[corpus]?.preparationTask = newTask
             task = newTask
         }
 
         let prepared = await task.value
-        if preparationKey == key {
+        if slots[corpus]?.preparationKey == key {
             store(
                 prepared,
                 for: model,
                 userID: currentUserID,
-                revision: sourceRevision
+                revision: sourceRevision,
+                corpus: corpus
             )
-            preparationKey = nil
-            preparationTask = nil
+            slots[corpus]?.preparationKey = nil
+            slots[corpus]?.preparationTask = nil
         }
         guard !Task.isCancelled else { return nil }
         return prepared
-    }
-
-    private var favoritesKey: Key?
-    private var favoritesTask: Task<ForwardDestinationSearchPolicy.Index, Never>?
-
-    /// The Add to Favorites picker and Suggested Channels search the forward
-    /// corpus with every searchable conversation eligible, built once per
-    /// source revision off the main actor; favourites are left out per query.
-    func favoritesIndex(for model: AppModel) async -> ForwardDestinationSearchPolicy.Index {
-        let currentUserID = model.snapshot?.currentUser.id
-        let key = Key(modelID: ObjectIdentifier(model), userID: currentUserID, revision: model.forwardSearchSourceRevision)
-        if favoritesKey == key, let favoritesTask { return await favoritesTask.value }
-        let source = makeSource(for: model)
-        let task = Task.detached(priority: .userInitiated) {
-            var input = source.makeInput(currentUserID: currentUserID)
-            input.eligibleChannelIDs = nil
-            return input.makeIndex()
-        }
-        favoritesKey = key
-        favoritesTask = task
-        return await task.value
     }
 
     private func makeSource(for model: AppModel) -> Source {
