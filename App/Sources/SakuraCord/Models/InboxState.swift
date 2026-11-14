@@ -58,6 +58,14 @@ nonisolated struct InboxCollapseIntent: Equatable, Sendable {
     let isEvents: Bool
 }
 
+/// The UserDefaults keys the inbox's mention filters and age agreements use.
+nonisolated enum InboxPreferenceKeys {
+    static let currentServer = "dev.sakuracord.inbox-current-server"
+    static let includesRoles = "dev.sakuracord.inbox-include-roles"
+    static let includesEveryone = "dev.sakuracord.inbox-include-everyone"
+    static let ageAgreements = "dev.sakuracord.inbox-age-agreements"
+}
+
 @MainActor
 @Observable
 final class InboxState {
@@ -70,7 +78,7 @@ final class InboxState {
     var scheduledEvents = InboxScheduledEvents()
     var selectedEvent: InboxScheduledEvent?
     var ageRestrictedGuildID: GuildID?
-    var acceptedAgeRestrictedGuildIDs = Set((UserDefaults.standard.stringArray(forKey: "dev.sakuracord.inbox-age-agreements") ?? []).compactMap(GuildID.init))
+    var acceptedAgeRestrictedGuildIDs = Set((UserDefaults.standard.stringArray(forKey: InboxPreferenceKeys.ageAgreements) ?? []).compactMap(GuildID.init))
     @ObservationIgnored var ageRestrictedAction: (@MainActor () -> Void)?
     @ObservationIgnored var eventMutationTasks: [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored var pendingEventAcknowledgements: [GuildID: ScheduledEventID] = [:]

@@ -15,9 +15,9 @@ extension AppModel {
         if !isOfflineTesting {
             let preferences = UserDefaults.standard
             inbox.query = InboxMentionQuery(
-                guildID: preferences.bool(forKey: "dev.sakuracord.inbox-current-server") ? selectedGuildID : nil,
-                includesRoles: preferences.object(forKey: "dev.sakuracord.inbox-include-roles") as? Bool ?? true,
-                includesEveryone: preferences.object(forKey: "dev.sakuracord.inbox-include-everyone") as? Bool ?? true
+                guildID: preferences.bool(forKey: InboxPreferenceKeys.currentServer) ? selectedGuildID : nil,
+                includesRoles: preferences.object(forKey: InboxPreferenceKeys.includesRoles) as? Bool ?? true,
+                includesEveryone: preferences.object(forKey: InboxPreferenceKeys.includesEveryone) as? Bool ?? true
             )
         } else if inbox.query.guildID != nil { inbox.query.guildID = selectedGuildID }
         inbox.scrollRequest = MessageTimelineScrollRequest(target: .top)
@@ -31,10 +31,10 @@ extension AppModel {
         if !isOfflineTesting {
             let preferences = UserDefaults.standard
             if selectedChannel?.guildID != nil {
-                preferences.set(inbox.query.guildID != nil, forKey: "dev.sakuracord.inbox-current-server")
+                preferences.set(inbox.query.guildID != nil, forKey: InboxPreferenceKeys.currentServer)
             }
-            preferences.set(inbox.query.includesRoles, forKey: "dev.sakuracord.inbox-include-roles")
-            preferences.set(inbox.query.includesEveryone, forKey: "dev.sakuracord.inbox-include-everyone")
+            preferences.set(inbox.query.includesRoles, forKey: InboxPreferenceKeys.includesRoles)
+            preferences.set(inbox.query.includesEveryone, forKey: InboxPreferenceKeys.includesEveryone)
         }
         inbox.scrollRequest = MessageTimelineScrollRequest(target: .top)
         resumeInbox()
