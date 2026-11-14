@@ -710,18 +710,20 @@ extension AppModel {
         if !changed.isEmpty { publishMessageRowsUpdate(changedMessageIDs: changed) }
     }
 
+    func reconcileOpenThread(with posts: [ForumPost]) {
+        guard let updated = posts.first(where: { $0.id == openThread?.id }) else { return }
+        if openThreadResolution != nil, updated.thread.notificationSettings != nil {
+            // A Gateway record carrying the current user's member settles
+            // access before, or instead of, the pending lookup.
+            presentResolvedOpenThread(updated.thread)
+        } else {
+            openThread = updated.thread
+        }
+    }
+
     /// Keeps timeline thread cards current. A card's summary lives on its
     /// message; its latest-message preview mirrors the provider's catalogue.
     func refreshTimelineThreadCards(parentID: ChannelID, posts: [ForumPost], replacesAll: Bool = true) {
-        if let updated = posts.first(where: { $0.id == openThread?.id }) {
-            if openThreadResolution != nil, updated.thread.notificationSettings != nil {
-                // A Gateway record carrying the current user's member settles
-                // access before, or instead of, the pending lookup.
-                presentResolvedOpenThread(updated.thread)
-            } else {
-                openThread = updated.thread
-            }
-        }
         var changedPreviewThreadIDs = Set<ChannelID>()
         if replacesAll {
             let retained = Set(posts.map(\.id))

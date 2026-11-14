@@ -344,6 +344,7 @@ extension AppModel {
             AppPerformanceSignposts.measureSync("ForumUnreadRefreshRequest") {
                 requestCoalescedUnreadPresentationRefresh()
             }
+            reconcileOpenThread(with: posts)
             refreshTimelineThreadCards(parentID: channelID, posts: posts)
             guard presentsForum(channelID) else { return }
             // Omission from the provider's catalogue is not deletion; the open post
@@ -354,6 +355,7 @@ extension AppModel {
     }
 
     func consumeForumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost]) {
+        reconcileOpenThread(with: posts)
         refreshTimelineThreadCards(parentID: channelID, posts: posts, replacesAll: false)
         reconcileInboxForumPosts(channelID: channelID, posts: posts, replacesAll: false)
         mergeSnapshotThreads(posts.map(\.thread))
