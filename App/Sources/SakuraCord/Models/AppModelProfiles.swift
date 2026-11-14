@@ -46,11 +46,7 @@ extension AppModel {
         for destination in [ProfilePresentationDestination.inspector, .contextual, .expanded] {
             guard var presentation = profilePresentation(for: destination), presentation.member.id == userID,
                   presentation.guildID == scope.guildID else { continue }
-            switch destination {
-            case .inspector: inspectorProfileTask?.cancel()
-            case .contextual: contextualProfileTask?.cancel()
-            case .expanded: expandedProfileTask?.cancel()
-            }
+            profileTasks[destination]?.cancel()
             if let value {
                 presentation.profile = value
                 presentation.errorMessage = nil
@@ -114,7 +110,7 @@ extension AppModel {
            DiscordBuiltInCommands.isClydeMessage(sourceMessage)
             || (sourceMessage.webhookID != nil && user.isWebhookIdentity) {
             let isClyde = DiscordBuiltInCommands.isClydeMessage(sourceMessage)
-            contextualProfileTask?.cancel()
+            profileTasks[.contextual]?.cancel()
             let requestID = UUID()
             contextualProfilePresentation = ProfilePresentationState(
                 requestID: requestID, guildID: guildID,
@@ -271,17 +267,8 @@ extension AppModel {
             isLoading: cachedProfile == nil,
             errorMessage: nil
         )
-        switch destination {
-        case .inspector:
-            inspectorProfileTask?.cancel()
-            inspectorProfilePresentation = presentation
-        case .contextual:
-            contextualProfileTask?.cancel()
-            contextualProfilePresentation = presentation
-        case .expanded:
-            expandedProfileTask?.cancel()
-            expandedProfilePresentation = presentation
-        }
+        profileTasks[destination]?.cancel()
+        setProfilePresentation(presentation, for: destination)
         guard cachedProfile == nil else { return requestID }
         let session = accountSession()
 
@@ -322,14 +309,7 @@ extension AppModel {
                 setProfilePresentation(value, for: destination)
             }
         }
-        switch destination {
-        case .inspector:
-            inspectorProfileTask = task
-        case .contextual:
-            contextualProfileTask = task
-        case .expanded:
-            expandedProfileTask = task
-        }
+        profileTasks[destination] = task
         return requestID
     }
 
@@ -341,14 +321,12 @@ extension AppModel {
     }
 
     func dismissExpandedProfile() {
-        expandedProfileTask?.cancel()
-        expandedProfileTask = nil
+        profileTasks.removeValue(forKey: .expanded)?.cancel()
         expandedProfilePresentation = nil
     }
 
     func dismissInspectorProfile() {
-        inspectorProfileTask?.cancel()
-        inspectorProfileTask = nil
+        profileTasks.removeValue(forKey: .inspector)?.cancel()
         inspectorProfilePresentation = nil
         isInspectorProfilePresented = false
     }
@@ -359,8 +337,7 @@ extension AppModel {
         {
             return
         }
-        contextualProfileTask?.cancel()
-        contextualProfileTask = nil
+        profileTasks.removeValue(forKey: .contextual)?.cancel()
         contextualProfilePresentation = nil
     }
 

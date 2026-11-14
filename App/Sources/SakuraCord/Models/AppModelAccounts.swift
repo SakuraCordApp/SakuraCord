@@ -540,10 +540,6 @@ extension AppModel {
         roleMemberResult = nil
         roleMemberErrorMessage = nil
         isLoadingRoleMembers = false
-        inspectorProfileTask?.cancel()
-        inspectorProfileTask = nil
-        contextualProfileTask?.cancel()
-        contextualProfileTask = nil
         stickersByGuild = [:]
         standardStickerPacks = []
         stickerUserSettings = StickerUserSettings()

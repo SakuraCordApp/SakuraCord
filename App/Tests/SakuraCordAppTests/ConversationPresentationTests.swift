@@ -601,7 +601,7 @@ func `server verification blocks sends without exposing hidden channels`(state: 
     model.showProfile(for: user, sourceMessage: first)
     let initial = try #require(model.liveProfilePresentation(for: .contextual))
     #expect(initial.isWebhook && !initial.isLoading && initial.errorMessage == nil)
-    #expect(model.contextualProfileTask == nil)
+    #expect(model.profileTasks[.contextual] == nil)
     first.author.displayName = "Second persona"
     first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/second.png")
     model.showProfile(for: first.author, sourceMessage: first)

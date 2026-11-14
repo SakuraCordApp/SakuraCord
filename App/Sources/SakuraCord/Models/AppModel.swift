@@ -924,11 +924,7 @@ final class AppModel {
     @ObservationIgnored var lastTypingRequestAt: [ChannelID: Date] = [:]
     @ObservationIgnored var localTypingGeneration: UInt64 = 0
     @ObservationIgnored let localTypingTiming: LocalTypingTiming
-    @ObservationIgnored var inspectorProfileTask:
-        Task<Void, Never>?
-    @ObservationIgnored var contextualProfileTask:
-        Task<Void, Never>?
-    @ObservationIgnored var expandedProfileTask: Task<Void, Never>?
+    @ObservationIgnored var profileTasks: [ProfilePresentationDestination: Task<Void, Never>] = [:]
     @ObservationIgnored var preparedProfileEditingSnapshot: ProfileEditingSnapshot?
     @ObservationIgnored var currentUserProfilePrefetch: CurrentUserProfilePrefetch?
     @ObservationIgnored var profileCache: [ProfileCacheKey: UserProfile] = [:]
