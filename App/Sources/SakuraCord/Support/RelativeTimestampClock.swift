@@ -1,7 +1,5 @@
 import AppKit
-import MessageRendering
 import Observation
-import SakuraCordModels
 
 /// A single clock services attached timestamp surfaces. Listeners own no timers,
 /// and weak ownership prevents a retained timer from keeping a view alive.
@@ -39,6 +37,12 @@ final class RelativeTimestampClock {
                 MainActor.assumeIsolated { self?.pulse(at: .now) }
             })
         }
+    }
+
+    /// Whether a tick should redraw `view`: only one shown in a visible
+    /// window is worth the layout.
+    static func isShowing(_ view: NSView) -> Bool {
+        view.window?.occlusionState.contains(.visible) == true && !view.isHiddenOrHasHiddenAncestor
     }
 
     func remove(_ owner: AnyObject) {

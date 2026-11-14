@@ -28,9 +28,7 @@ extension NativeMessageTimelineCoordinator {
     }
 
     func refreshTimestampPresentation(at date: Date) {
-        guard let scrollView, let window = scrollView.window,
-              window.occlusionState.contains(.visible), !scrollView.isHiddenOrHasHiddenAncestor
-        else { return }
+        guard let scrollView, RelativeTimestampClock.isShowing(scrollView) else { return }
         refreshTimestampLayouts(at: date)
     }
 

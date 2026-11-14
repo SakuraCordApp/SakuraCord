@@ -221,8 +221,7 @@ final class RichMessageNSTextView: NSTextView {
             return
         }
         RelativeTimestampClock.shared.observe(self) { [weak self] date in
-            guard let self, let window, window.occlusionState.contains(.visible),
-                  !isHiddenOrHasHiddenAncestor, !visibleRect.isEmpty else { return }
+            guard let self, RelativeTimestampClock.isShowing(self), !visibleRect.isEmpty else { return }
             timestampRefresh?(date)
         }
     }
