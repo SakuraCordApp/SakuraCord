@@ -337,7 +337,7 @@ enum MentionAutocompleteSuggestionFactory {
         }
     }
 
-    private static func mergingMemberStore(_ members: [Member], updates: [Member]) -> [Member] {
+    static func mergingMemberStore(_ members: [Member], updates: [Member]) -> [Member] {
         guard !updates.isEmpty else { return members }
         var result = members
         var positions = Dictionary(uniqueKeysWithValues: members.enumerated().map { ($0.element.id, $0.offset) })
