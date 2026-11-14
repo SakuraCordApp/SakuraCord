@@ -2200,7 +2200,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
     #expect(pinsAutoScroll.mode == .offlineTesting)
     #expect(pinsAutoScroll.includesPinsPerformanceFixture)
     #expect(pinsAutoScroll.includesChatPerformanceFixture)
-    #expect(pinsAutoScroll.runsPinsPerformanceAutoScroll)
     let authenticatedAutoScroll = AppLaunchConfiguration(
         arguments: [
             "SakuraCord",

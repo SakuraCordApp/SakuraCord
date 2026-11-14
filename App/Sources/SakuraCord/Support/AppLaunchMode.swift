@@ -88,7 +88,6 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let includesOfflineFlag: Bool
     /// Animated media logs its decoding cost, in any build.
     let reportsAnimatedMediaPerformance: Bool
-    let runsPinsPerformanceAutoScroll: Bool
     /// A 1,000-friend list, presence churn and a scroll and section-switch benchmark.
     let runsFriendsPerformanceBenchmark: Bool
     /// A 150-server rail scrolled, selected and updated with mention badges.
@@ -174,7 +173,6 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
         reportsAnimatedMediaPerformance = arguments.contains {
             $0.contains("chat-performance")
         } || requestsGestureScrollBenchmark
-        runsPinsPerformanceAutoScroll = includesPinsPerformanceFixture
         runsFriendsPerformanceBenchmark = flags.contains(.friendsPerformance)
         runsServerRailPerformanceBenchmark = flags.contains(.serverRailPerformance)
 #if SAKURACORD_MOTION_BENCHMARK
@@ -222,7 +220,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
         runsChatPerformanceAutoScroll
             || runsChannelOpenBenchmark
             || runsForumPerformanceAutoScroll
-            || runsPinsPerformanceAutoScroll
+            || includesPinsPerformanceFixture
             || runsFriendsPerformanceBenchmark
             || runsServerRailPerformanceBenchmark
             || runsUnreadChurnBenchmark

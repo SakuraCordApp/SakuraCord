@@ -124,9 +124,8 @@ enum ForumBoardBenchmark {
         var layout = ForumLayoutStabilityProbe.Summary()
     }
 
-    static func run(model: AppModel) async {
+    static func run(model: AppModel, resizesGallery: Bool) async {
         ForumLayoutStabilityProbe.shared.reset()
-        NSApp.activate(ignoringOtherApps: true)
         guard await PerformanceBenchmarkHarness.waitUntil(
             { model.hasLoadedForumPosts && !model.forumPosts.isEmpty }, seconds: 30
         ),
@@ -135,7 +134,7 @@ enum ForumBoardBenchmark {
             logger.error("ForumBenchmark: the forum did not load or has no scroll view")
             return
         }
-        if AppLaunchConfiguration.current.runsForumGalleryResize {
+        if resizesGallery {
             await resizeGallery(model: model, scrollView: scrollView)
             return
         }

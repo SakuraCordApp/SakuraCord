@@ -23,7 +23,6 @@ enum FriendsPerformanceBenchmark {
     }
 
     static func run(model: AppModel, provider: MockChatProvider?) async {
-        NSApp.activate(ignoringOtherApps: true)
         model.openFriends()
         try? await Task.sleep(for: .seconds(1))
         model.selectFriendsSection(.all)

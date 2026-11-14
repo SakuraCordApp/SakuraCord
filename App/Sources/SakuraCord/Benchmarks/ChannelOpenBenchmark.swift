@@ -15,7 +15,6 @@ enum ChannelOpenBenchmark {
     private static let channelID = MockChatProvider.generalChannelID
 
     static func run(model: AppModel) async {
-        NSApp.activate(ignoringOtherApps: true)
         let clock = ContinuousClock()
         var opens: [Double] = []
         for _ in 0 ..< 11 {

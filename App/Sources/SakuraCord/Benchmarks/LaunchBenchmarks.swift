@@ -13,7 +13,7 @@ struct LaunchBenchmarks {
 #if DEBUG
         await runAuthenticatedBenchmarks(model: model)
 #endif
-        if launch.includesChatPerformanceFixture {
+        if activatesOfflineBenchmark {
             NSApp.activate(ignoringOtherApps: true)
         }
         if launch.includesForumPerformanceFixture {
@@ -23,7 +23,7 @@ struct LaunchBenchmarks {
         }
 #if DEBUG
         if launch.runsForumPerformanceAutoScroll {
-            await ForumBoardBenchmark.run(model: model)
+            await ForumBoardBenchmark.run(model: model, resizesGallery: launch.runsForumGalleryResize)
         }
 #endif
         if launch.runsFriendsPerformanceBenchmark {
@@ -52,6 +52,22 @@ struct LaunchBenchmarks {
         if launch.runsChatLiveArrivalStress {
             await runLiveStress()
         }
+    }
+
+    /// An offline fixture or benchmark that needs the window frontmost.
+    private var activatesOfflineBenchmark: Bool {
+        var activates = launch.includesChatPerformanceFixture
+            || launch.runsFriendsPerformanceBenchmark
+            || launch.runsServerRailPerformanceBenchmark
+            || launch.runsUnreadChurnBenchmark
+            || launch.runsChannelOpenBenchmark
+#if DEBUG
+        activates = activates || launch.runsForumPerformanceAutoScroll
+#endif
+#if SAKURACORD_MOTION_BENCHMARK
+        activates = activates || launch.sideChatMotionOptions != nil
+#endif
+        return activates
     }
 
 #if DEBUG

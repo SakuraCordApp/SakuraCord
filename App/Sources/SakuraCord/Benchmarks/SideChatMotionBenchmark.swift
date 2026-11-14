@@ -58,7 +58,6 @@ enum SideChatMotionBenchmark {
     }
 
     static func run(model: AppModel, options: Options) async {
-        NSApp.activate(ignoringOtherApps: true)
         if options.showsFollowShowcase {
             await showFollowShowcase(model: model)
             return

@@ -29,7 +29,6 @@ enum UnreadChurnBenchmark {
     }
 
     static func run(model: AppModel, provider: MockChatProvider?) async {
-        NSApp.activate(ignoringOtherApps: true)
         try? await Task.sleep(for: .seconds(4))
         guard let provider, let currentUser = model.currentUser,
               let view = PerformanceBenchmarkHarness.mainWindow?.contentView

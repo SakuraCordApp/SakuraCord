@@ -30,7 +30,6 @@ enum ServerRailPerformanceBenchmark {
     }
 
     static func run(model: AppModel) async {
-        NSApp.activate(ignoringOtherApps: true)
         try? await Task.sleep(for: .seconds(4))
         guard let window = PerformanceBenchmarkHarness.mainWindow,
               let scrollView = PerformanceBenchmarkHarness.tallestScrollView(
