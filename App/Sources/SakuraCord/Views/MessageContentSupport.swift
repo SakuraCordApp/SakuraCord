@@ -116,18 +116,9 @@ extension MessageMentionResolver {
         if channel == nil, let thread = model.messagePresentationThread(channelID) {
             return threadPresentation(thread, mention: mention)
         }
-        let guildName = channel?.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-        let label = if crossesGuild(targetGuildID: channel?.guildID),
-                       let guildName,
-                       let channel
-        {
-            "\(guildName) / \(channel.name)"
-        } else {
-            channel?.name ?? "unknown-channel"
-        }
         return MentionPresentation(
             rawToken: mention.rawToken,
-            label: label,
+            label: channel.map { qualifiedLabel($0.name, guildID: $0.guildID) } ?? "unknown-channel",
             target: .channel(channelID),
             systemImage: ChannelIconPresentation.systemImage(
                 for: channel?.kind ?? .unknown,
@@ -142,15 +133,9 @@ extension MessageMentionResolver {
         }
         let guildID = mention.messageGuildID.flatMap(GuildID.init)
         if let channel = channel(channelID) {
-            let guildName = channel.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-            let label = if crossesGuild(targetGuildID: channel.guildID), let guildName {
-                "\(guildName) / \(channel.name)"
-            } else {
-                channel.name
-            }
             return MentionPresentation(
                 rawToken: mention.rawToken,
-                label: label,
+                label: qualifiedLabel(channel.name, guildID: channel.guildID),
                 target: .channel(channelID),
                 systemImage: ChannelIconPresentation.systemImage(
                     for: channel.kind,
@@ -169,6 +154,15 @@ extension MessageMentionResolver {
         )
     }
 
+    /// A conversation's name, after its server's when the mention points
+    /// into another server.
+    private func qualifiedLabel(_ name: String, guildID: GuildID?) -> String {
+        guard crossesGuild(targetGuildID: guildID),
+              let guildName = guildID.flatMap({ model.serverRailGuildsByID[$0]?.name })
+        else { return name }
+        return "\(guildName) / \(name)"
+    }
+
     /// A known thread or forum post, which opens like a thread link.
     private func threadPresentation(
         _ thread: MessageThreadSummary,
@@ -176,16 +170,9 @@ extension MessageMentionResolver {
         linkGuildID: GuildID? = nil
     ) -> MentionPresentation {
         let guildID = thread.guildID ?? linkGuildID
-        let label = if crossesGuild(targetGuildID: guildID),
-                       let guildName = guildID.flatMap({ model.serverRailGuildsByID[$0]?.name })
-        {
-            "\(guildName) / \(thread.name)"
-        } else {
-            thread.name
-        }
         return MentionPresentation(
             rawToken: mention.rawToken,
-            label: label,
+            label: qualifiedLabel(thread.name, guildID: guildID),
             target: .linkedChannel(guildID: guildID, channelID: thread.id),
             systemImage: ChannelIconPresentation.systemImage(forThreadInForum: model.isForumPost(thread))
         )
@@ -201,15 +188,7 @@ extension MessageMentionResolver {
         let guildID = mention.messageGuildID.flatMap(GuildID.init)
         // A message in a thread or forum post is labeled with that thread.
         let name = channel(channelID)?.name ?? model.messagePresentationThread(channelID)?.name
-        let guildName = guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-        let channelLabel = if crossesGuild(targetGuildID: guildID),
-                              let guildName,
-                              let name
-        {
-            "\(guildName) / \(name) ›"
-        } else {
-            "\(name ?? MentionPresentation.unknownChannelLinkLabel) ›"
-        }
+        let channelLabel = "\(name.map { qualifiedLabel($0, guildID: guildID) } ?? MentionPresentation.unknownChannelLinkLabel) ›"
         return MentionPresentation(
             rawToken: mention.rawToken,
             label: channelLabel,
