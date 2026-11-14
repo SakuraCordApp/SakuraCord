@@ -940,11 +940,11 @@ private struct ChannelRow: View {
             Image(systemName: systemImage)
                 .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
                 .fontWeight(.medium)
-                .foregroundStyle(channelIconForegroundStyle)
+                .foregroundStyle(channelForegroundStyle)
                 .frame(width: ChannelSidebarLayoutMetrics.iconWidth)
             Text(channel.name)
                 .font(.interfaceSystem(size: 14, weight: showsUnread && !isMuted ? .medium : .regular))
-                .foregroundStyle(channelNameForegroundStyle)
+                .foregroundStyle(channelForegroundStyle)
                 .lineLimit(1)
             Spacer()
             if let activity = runningActivity.application {
@@ -979,7 +979,7 @@ private struct ChannelRow: View {
         }
         .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .anchorPreference(key: SidebarUnreadRowAnchors.self, value: .bounds) {
-            showsUnread ? [SidebarUnreadRowAnchor(id: channel.id, anchor: $0, color: channelNameForegroundStyle.resolve(in: environment))] : []
+            showsUnread ? [SidebarUnreadRowAnchor(id: channel.id, anchor: $0, color: channelForegroundStyle.resolve(in: environment))] : []
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(accessibilityValue)
@@ -1048,13 +1048,8 @@ private struct ChannelRow: View {
             && model.usesAllMessagesUnreadSetting(channel)
     }
 
-    private var channelIconForegroundStyle: Color {
-        if isSelected { return .primary }
-        if isMuted { return .primary.opacity(0.32) }
-        return showsUnread ? .primary : .primary.opacity(0.70)
-    }
-
-    private var channelNameForegroundStyle: Color {
+    /// The row's icon and name ink.
+    private var channelForegroundStyle: Color {
         if isSelected { return .primary }
         if isMuted { return .primary.opacity(0.32) }
         return showsUnread ? .primary : .primary.opacity(0.70)
