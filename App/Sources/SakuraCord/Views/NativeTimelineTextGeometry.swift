@@ -303,6 +303,74 @@ nonisolated enum NativeTimelineTextSelectionGeometry {
     }
 }
 
+struct NativeTimelineInlineEmojiRegion {
+    let rawToken: String
+    let characterRange: NSRange
+    let mediaFrame: CGRect
+    let selectionFrame: CGRect?
+}
+
+enum NativeTimelineInlineEmojiGeometry {
+    /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
+    static func regions(
+        in value: NSAttributedString,
+        framesetter: CTFramesetter,
+        frame: CGRect,
+        selectionRange: NSRange?,
+        revealedSpoilerLocations: Set<Int>
+    ) -> [NativeTimelineInlineEmojiRegion] {
+        guard value.length > 0, frame.width > 0, frame.height > 0
+        else { return [] }
+        let hiddenSpoilerRanges = NativeTimelineTextSpoilers.hiddenRanges(
+            in: value,
+            revealedLocations: revealedSpoilerLocations
+        )
+        let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
+        let textFrame = layout.frame
+        var result: [NativeTimelineInlineEmojiRegion] = []
+        for glyphRun in layout.runs {
+            let range = glyphRun.stringRange
+            guard range.location >= 0,
+                  range.location < value.length,
+                  let rawToken = value.attribute(
+                      .discordEmojiToken,
+                      at: range.location,
+                      effectiveRange: nil
+                  ) as? String,
+                  !hiddenSpoilerRanges.contains(where: {
+                      NSLocationInRange(range.location, $0)
+                  })
+            else { continue }
+            let mediaFrame = glyphRun.frame(in: frame)
+            let isSelected =
+                NativeTimelineTextSelectionGeometry.intersects(
+                    characterRange: range,
+                    selectionRange: selectionRange
+                )
+            let selectionFrame = isSelected
+                ? NativeTimelineTextSelectionGeometry.rects(
+                    in: textFrame,
+                    outerFrame: frame,
+                    range: NSRange(
+                        location: range.location,
+                        length: max(1, range.length)
+                    )
+                ).first
+                : nil
+            result.append(NativeTimelineInlineEmojiRegion(
+                rawToken: rawToken,
+                characterRange: NSRange(
+                    location: range.location,
+                    length: max(1, range.length)
+                ),
+                mediaFrame: mediaFrame,
+                selectionFrame: selectionFrame
+            ))
+        }
+        return result
+    }
+}
+
 nonisolated struct NativeTimelineCodeBlockRegion: Equatable {
     let range: NSRange
     let backgroundFrame: CGRect
@@ -579,38 +647,24 @@ enum NativeTimelineTextHitTester {
               frame.height > 0
         else { return [] }
         let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
-        let lines = layout.lines
-        guard lines.count > 0 else { return [] }
-        let origins = layout.origins
         var result: [NativeTimelineMentionHitRegion] = []
-        for index in 0 ..< lines.count {
-            let line = coreTextLine(lines[index])
-            let lineOrigin = origins[index]
-            for case let run as CTRun
-                in CTLineGetGlyphRuns(line) as NSArray
-            {
-                let range = CTRunGetStringRange(run)
-                guard range.location >= 0,
-                      range.location < value.length,
-                      let mention = (
-                          value.attribute(
-                              .nativeTimelineMention,
-                              at: range.location,
-                              effectiveRange: nil
-                          ) as? NativeTimelineMentionBox
-                      )?.presentation
-                else { continue }
-                result.append(NativeTimelineMentionHitRegion(
-                    characterIndex: range.location,
-                    presentation: mention,
-                    frame: inlineAttachmentFrame(
-                        run: run,
-                        line: line,
-                        lineOrigin: lineOrigin,
-                        outerFrame: frame
-                    )
-                ))
-            }
+        for glyphRun in layout.runs {
+            let range = glyphRun.stringRange
+            guard range.location >= 0,
+                  range.location < value.length,
+                  let mention = (
+                      value.attribute(
+                          .nativeTimelineMention,
+                          at: range.location,
+                          effectiveRange: nil
+                      ) as? NativeTimelineMentionBox
+                  )?.presentation
+            else { continue }
+            result.append(NativeTimelineMentionHitRegion(
+                characterIndex: range.location,
+                presentation: mention,
+                frame: glyphRun.frame(in: frame)
+            ))
         }
         return result
     }
@@ -721,28 +775,15 @@ enum NativeTimelineTextHitTester {
         else { return nil }
 
         let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
-        let lines = layout.lines
-        guard lines.count > 0 else { return nil }
-        let origins = layout.origins
         var anchor: CGRect?
-        for lineIndex in 0 ..< lines.count {
-            let line = coreTextLine(lines[lineIndex])
-            let lineOrigin = origins[lineIndex]
-            for case let run as CTRun in CTLineGetGlyphRuns(line) as NSArray {
-                let range = CTRunGetStringRange(run)
-                guard range.location <= characterIndex,
-                      characterIndex
-                        < range.location + max(1, range.length)
-                else { continue }
-                anchor = inlineAttachmentFrame(
-                    run: run,
-                    line: line,
-                    lineOrigin: lineOrigin,
-                    outerFrame: frame
-                )
-                break
-            }
-            if anchor != nil { break }
+        for glyphRun in layout.runs {
+            let range = glyphRun.stringRange
+            guard range.location <= characterIndex,
+                  characterIndex
+                    < range.location + max(1, range.length)
+            else { continue }
+            anchor = glyphRun.frame(in: frame)
+            break
         }
         guard let anchor else { return nil }
         let values = [
@@ -754,38 +795,6 @@ enum NativeTimelineTextHitTester {
         return values.allSatisfy(\.isFinite) && !anchor.isEmpty
             ? anchor
             : nil
-    }
-
-    static func inlineAttachmentFrame(
-        run: CTRun,
-        line: CTLine,
-        lineOrigin: CGPoint,
-        outerFrame: CGRect
-    ) -> CGRect {
-        let range = CTRunGetStringRange(run)
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        let width = CGFloat(CTRunGetTypographicBounds(
-            run,
-            CFRange(location: 0, length: 0),
-            &ascent,
-            &descent,
-            &leading
-        ))
-        let horizontalPosition = lineOrigin.x + CTLineGetOffsetForStringIndex(
-            line,
-            range.location,
-            nil
-        )
-        let height = max(1, ascent + descent)
-        let localBottom = lineOrigin.y - descent
-        return CGRect(
-            x: outerFrame.minX + horizontalPosition,
-            y: outerFrame.maxY - localBottom - height,
-            width: max(1, width),
-            height: height
-        )
     }
 
     static func hit(
@@ -880,56 +889,47 @@ enum NativeTimelineTextHitTester {
         // Inline mentions are taller than the surrounding text line. Check
         // their exact painted run rectangles first so the whole visible pill,
         // including its top and bottom padding, is clickable.
-        for index in 0 ..< layout.lines.count {
-            let line = coreTextLine(layout.lines[index])
-            let lineOrigin = layout.origins[index]
-            for case let run as CTRun in CTLineGetGlyphRuns(line) as NSArray {
-                let range = CTRunGetStringRange(run)
-                let attachmentFrame = inlineAttachmentFrame(
-                    run: run,
-                    line: line,
-                    lineOrigin: lineOrigin,
-                    outerFrame: outerFrame
+        for glyphRun in layout.runs {
+            let range = glyphRun.stringRange
+            let attachmentFrame = glyphRun.frame(in: outerFrame)
+            guard range.location >= 0,
+                  range.location < value.length,
+                  attachmentFrame.contains(point)
+            else { continue }
+            let mention = (
+                value.attribute(
+                    .nativeTimelineMention,
+                    at: range.location,
+                    effectiveRange: nil
+                ) as? NativeTimelineMentionBox
+            )?.presentation
+            let effectiveSpoilerRange =
+                paintedSpoiler?.range
+                ?? NativeTimelineTextSpoilers.range(
+                    at: range.location,
+                    in: value
                 )
-                guard range.location >= 0,
-                      range.location < value.length,
-                      attachmentFrame.contains(point)
-                else { continue }
-                let mention = (
-                    value.attribute(
-                        .nativeTimelineMention,
-                        at: range.location,
-                        effectiveRange: nil
-                    ) as? NativeTimelineMentionBox
-                )?.presentation
-                let effectiveSpoilerRange =
-                    paintedSpoiler?.range
-                    ?? NativeTimelineTextSpoilers.range(
-                        at: range.location,
-                        in: value
-                    )
-                if let effectiveSpoilerRange {
-                    // Keep the run's link so it opens once the spoiler is
-                    // revealed; activation reveals a hidden spoiler first.
-                    return NativeTimelineTextHit(
-                        characterIndex: range.location,
-                        url: linkURL(from: value.attribute(
-                            .link,
-                            at: range.location,
-                            effectiveRange: nil
-                        )),
-                        mention: mention,
-                        spoilerRange: effectiveSpoilerRange
-                    )
-                }
-                guard let mention else { continue }
+            if let effectiveSpoilerRange {
+                // Keep the run's link so it opens once the spoiler is
+                // revealed; activation reveals a hidden spoiler first.
                 return NativeTimelineTextHit(
                     characterIndex: range.location,
-                    url: nil,
+                    url: linkURL(from: value.attribute(
+                        .link,
+                        at: range.location,
+                        effectiveRange: nil
+                    )),
                     mention: mention,
-                    spoilerRange: nil
+                    spoilerRange: effectiveSpoilerRange
                 )
             }
+            guard let mention else { continue }
+            return NativeTimelineTextHit(
+                characterIndex: range.location,
+                url: nil,
+                mention: mention,
+                spoilerRange: nil
+            )
         }
         return nil
     }
@@ -1202,5 +1202,53 @@ nonisolated struct CoreTextFrameLayout {
         var origins = Array(repeating: CGPoint.zero, count: lines.count)
         CTFrameGetLineOrigins(textFrame, CFRange(location: 0, length: lines.count), &origins)
         self.origins = origins
+    }
+
+    /// A glyph run with the line it sits on and that line's origin.
+    struct Run {
+        let run: CTRun
+        let line: CTLine
+        let lineOrigin: CGPoint
+
+        var stringRange: CFRange { CTRunGetStringRange(run) }
+
+        /// The run's typographic box in `outerFrame`, as an inline mention
+        /// or emoji paints it.
+        func frame(in outerFrame: CGRect) -> CGRect {
+            let range = stringRange
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            var leading: CGFloat = 0
+            let width = CGFloat(CTRunGetTypographicBounds(
+                run,
+                CFRange(location: 0, length: 0),
+                &ascent,
+                &descent,
+                &leading
+            ))
+            let horizontalPosition = lineOrigin.x + CTLineGetOffsetForStringIndex(
+                line,
+                range.location,
+                nil
+            )
+            let height = max(1, ascent + descent)
+            let localBottom = lineOrigin.y - descent
+            return CGRect(
+                x: outerFrame.minX + horizontalPosition,
+                y: outerFrame.maxY - localBottom - height,
+                width: max(1, width),
+                height: height
+            )
+        }
+    }
+
+    /// Each line's glyph runs in order.
+    var runs: some Sequence<Run> {
+        zip(lines, origins).lazy.flatMap { value, origin in
+            let line = coreTextLine(value)
+            return (CTLineGetGlyphRuns(line) as NSArray).lazy
+                .compactMap { $0 as? CTRun }
+                .map { Run(run: $0, line: line, lineOrigin: origin) }
+        }
     }
 }

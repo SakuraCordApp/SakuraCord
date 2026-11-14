@@ -733,10 +733,6 @@ extension NativeTimelineRowPainter {
         model: AppModel?,
         selectionRange: NSRange?
     ) -> [InlineAttachmentDraw] {
-        let layout = CoreTextFrameLayout(textFrame: textFrame)
-        let lines = layout.lines
-        guard lines.count > 0 else { return [] }
-        let origins = layout.origins
         var draws: [InlineAttachmentDraw] = []
         draws.reserveCapacity(4)
         let context = InlineAttachmentContext(
@@ -747,28 +743,16 @@ extension NativeTimelineRowPainter {
             selectionRange: selectionRange
         )
 
-        for index in 0 ..< lines.count {
-            let line = coreTextLine(lines[index])
-            let lineOrigin = origins[index]
-            let runs = CTLineGetGlyphRuns(line) as NSArray
-            for case let run as CTRun in runs {
-                if let draw = inlineAttachmentDraw(
-                    for: run,
-                    line: line,
-                    lineOrigin: lineOrigin,
-                    context: context
-                ) {
-                    draws.append(draw)
-                }
+        for glyphRun in CoreTextFrameLayout(textFrame: textFrame).runs {
+            if let draw = inlineAttachmentDraw(for: glyphRun, context: context) {
+                draws.append(draw)
             }
         }
         return draws
     }
 
     private static func inlineAttachmentDraw(
-        for run: CTRun,
-        line: CTLine,
-        lineOrigin: CGPoint,
+        for glyphRun: CoreTextFrameLayout.Run,
         context: InlineAttachmentContext
     ) -> InlineAttachmentDraw? {
         let textFrame = context.textFrame
@@ -776,7 +760,7 @@ extension NativeTimelineRowPainter {
         let attributedText = context.attributedText
         let model = context.model
         let selectionRange = context.selectionRange
-        let range = CTRunGetStringRange(run)
+        let range = glyphRun.stringRange
         guard range.location >= 0, range.location < attributedText.length else { return nil }
         let mention = attributedText.attribute(
             .nativeTimelineMention,
@@ -795,20 +779,7 @@ extension NativeTimelineRowPainter {
             effectiveRange: nil
         ) != nil
         guard !isHiddenSpoiler else { return nil }
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        let width = CGFloat(CTRunGetTypographicBounds(
-            run, CFRange(location: 0, length: 0), &ascent, &descent, nil
-        ))
-        let horizontalOffset = lineOrigin.x
-            + CTLineGetOffsetForStringIndex(line, range.location, nil)
-        let size = CGSize(width: max(1, width), height: max(1, ascent + descent))
-        let frame = CGRect(
-            x: outerFrame.minX + horizontalOffset,
-            y: outerFrame.maxY - (lineOrigin.y - descent) - size.height,
-            width: size.width,
-            height: size.height
-        )
+        let frame = glyphRun.frame(in: outerFrame)
         let selectionFrame = inlineAttachmentSelectionFrame(
             range: range,
             selectionRange: selectionRange,
