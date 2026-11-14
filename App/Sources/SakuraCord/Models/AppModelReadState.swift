@@ -277,7 +277,10 @@ extension AppModel {
 
     func refreshDockBadge() {
         let count: Int? = switch notificationPreferences.dockBadgeStyle {
-        case .mentions: readState.totalMentions
+        case .mentions:
+            AppPerformanceSignposts.measureSync("UnreadDockBadgeProjection") {
+                readState.totalMentions
+            }
         case .unreadConversations:
             readState.unreadPresentationProjection().unreadConversationCount
         case .off: nil

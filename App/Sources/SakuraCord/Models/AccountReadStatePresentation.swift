@@ -64,6 +64,12 @@ extension AccountReadStateModel {
             )
         }
 
+        /// Whether the entry makes its category header show unread.
+        func marksUnreadCategory(_ entry: Entry) -> Bool {
+            entry.countsAsUnreadConversation && isAggregateConversation(entry)
+                || newForumPostParentID(of: entry) != nil
+        }
+
         func unreadGuildID(for entry: Entry) -> GuildID? {
             isAggregateConversation(entry) ? entry.guildID : nil
         }
@@ -239,9 +245,7 @@ extension AccountReadStateModel {
                 {
                     unreadByGuildID[guildID] = true
                 }
-                if isEligible,
-                   entry.countsAsUnreadConversation && isAggregateConversation(entry)
-                    || newForumPostParentID(of: entry) != nil,
+                if isEligible, marksUnreadCategory(entry),
                    let guildID = entry.guildID,
                    let parentID = entry.parentID
                 {

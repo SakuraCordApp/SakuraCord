@@ -155,8 +155,7 @@ extension AccountReadStateModel {
         for entry in entries.values {
             guard entry.guildID == guildID,
                   entry.isAccessible,
-                  entry.countsAsUnreadConversation && source.isAggregateConversation(entry)
-                    || source.newForumPostParentID(of: entry) != nil,
+                  source.marksUnreadCategory(entry),
                   !isGuildResourceChannel(entry),
                   let parentID = entry.parentID
             else { continue }
