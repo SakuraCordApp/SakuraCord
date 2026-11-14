@@ -26,12 +26,12 @@ extension ForumTag {
 }
 
 extension AppModel {
-    func canToggleForumTag(_ tag: ForumTag, on post: ForumPost) -> Bool {
+    func canToggleForumTag(_ tag: ForumTag, on post: ForumPost, in channel: Channel) -> Bool {
         let policy = threadActionPolicy(post.thread)
         guard policy.canEditTags, policy.canManage || !tag.isModerated else {
             return false
         }
-        if selectedChannel?.requiresForumTag == true,
+        if channel.requiresForumTag,
            post.thread.appliedTagIDs.count == 1,
            post.thread.appliedTagIDs.contains(tag.id)
         {
@@ -43,7 +43,7 @@ extension AppModel {
     /// Adds or removes a tag from a post.
     func toggleForumTag(_ tagID: ForumTagID, on post: ForumPost, in channel: Channel) {
         guard let tag = channel.availableTags.first(where: { $0.id == tagID }),
-              canToggleForumTag(tag, on: post)
+              canToggleForumTag(tag, on: post, in: channel)
         else { return }
         var tags = Set(post.thread.appliedTagIDs)
         if tags.contains(tagID) {
@@ -424,20 +424,14 @@ extension AppModel {
     func mergeForumCatalogue(_ posts: [ForumPost]) {
         for incoming in posts {
             readState.merge(forumPost: incoming)
-            let post: ForumPost
             if let index = forumCatalogueIndexByID[incoming.id] {
-                post = forumPostMergingPrevious(
+                forumCataloguePosts[index] = forumPostMergingPrevious(
                     incoming,
                     previous: forumCataloguePosts[index]
                 )
             } else {
-                post = incoming
-            }
-            if let index = forumCatalogueIndexByID[post.id] {
-                forumCataloguePosts[index] = post
-            } else {
-                forumCatalogueIndexByID[post.id] = forumCataloguePosts.endIndex
-                forumCataloguePosts.append(post)
+                forumCatalogueIndexByID[incoming.id] = forumCataloguePosts.endIndex
+                forumCataloguePosts.append(incoming)
             }
         }
     }

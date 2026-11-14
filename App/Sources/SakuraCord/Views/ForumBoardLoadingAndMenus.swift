@@ -100,7 +100,7 @@ extension ForumBoardView {
             tags: channel.availableTags,
             appliedTagIDs: post.thread.appliedTagIDs,
             customEmojiURLsByID: model.customEmojiURLsByID,
-            canToggle: { [weak model] in model?.canToggleForumTag($0, on: post) ?? false },
+            canToggle: { [weak model] in model?.canToggleForumTag($0, on: post, in: channel) ?? false },
             toggleTag: { [weak model] tagID in
                 model?.toggleForumTag(tagID, on: post, in: channel)
             }
