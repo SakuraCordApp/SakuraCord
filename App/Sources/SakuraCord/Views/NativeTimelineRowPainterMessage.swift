@@ -472,6 +472,17 @@ extension NativeTimelineRowPainter {
         if opacity < 1 { context?.endTransparencyLayer() }
     }
 
+    /// Scales what is drawn next about `frame`'s centre; at full scale the
+    /// context is left as it is.
+    static func concatScale(_ scale: CGFloat, aboutCenterOf frame: CGRect) {
+        guard abs(scale - 1) > 0.0001 else { return }
+        let transform = NSAffineTransform()
+        transform.translateX(by: frame.midX, yBy: frame.midY)
+        transform.scaleX(by: scale, yBy: scale)
+        transform.translateX(by: -frame.midX, yBy: -frame.midY)
+        transform.concat()
+    }
+
     private static func drawMessageVoiceMessage(_ input: NativeTimelineMessageDrawInput) {
         guard let region = input.layout.voiceMessageRegion else { return }
         let playback = input.model?.voiceMessagePlayback

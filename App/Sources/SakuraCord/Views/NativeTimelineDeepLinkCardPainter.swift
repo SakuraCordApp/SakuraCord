@@ -90,19 +90,7 @@ extension NativeTimelineRowPainter {
         }
         NSGraphicsContext.saveGraphicsState()
         if !isEnabled { NSGraphicsContext.current?.cgContext.setAlpha(0.4) }
-        if abs(scale - 1) > 0.0001 {
-            let transform = NSAffineTransform()
-            transform.translateX(
-                by: frame.midX,
-                yBy: frame.midY
-            )
-            transform.scaleX(by: scale, yBy: scale)
-            transform.translateX(
-                by: -frame.midX,
-                yBy: -frame.midY
-            )
-            transform.concat()
-        }
+        concatScale(scale, aboutCenterOf: frame)
         let buttonPath = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: frame.height / 2
