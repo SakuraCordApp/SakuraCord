@@ -184,7 +184,7 @@ extension NativeTimelineCanvasView {
         /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
         mutating func appendInlineEmoji(
             row: NativeMessageTimelineItem.Identifier,
-            role: (Int, Int) -> AnimatedMediaOverlayRole,
+            role: (Int) -> AnimatedMediaOverlayRole,
             value: NSAttributedString,
             framesetter: CTFramesetter,
             frame: CGRect,
@@ -209,18 +209,18 @@ extension NativeTimelineCanvasView {
                 }
                 return
             }
-            for (ordinal, region) in NativeTimelineInlineEmojiGeometry.regions(
+            for region in NativeTimelineInlineEmojiGeometry.regions(
                 in: value,
                 framesetter: framesetter,
                 frame: frame,
                 selectionRange: selectionRange,
                 revealedSpoilerLocations: revealedSpoilerLocations
-            ).enumerated() {
+            ) {
                 guard let media = animatedEmojiMedia(EmojiReference(rawToken: region.rawToken))
                 else { continue }
                 append(
                     row: row,
-                    role: role(ordinal, region.characterRange.location),
+                    role: role(region.characterRange.location),
                     media: media,
                     frame: region.mediaFrame,
                     selectionFrame: region.selectionFrame,
@@ -459,7 +459,7 @@ extension NativeTimelineCanvasView {
         if let contentFrame = layout.contentFrame, let contentText = layout.contentText {
             accumulator.appendInlineEmoji(
                 row: identifier,
-                role: { _, location in .messageEmoji(location) },
+                role: { .messageEmoji($0) },
                 value: contentText.value,
                 framesetter: contentText.framesetter,
                 frame: NativeTimelineTextGeometry.messageContentDrawingFrame(contentFrame),
@@ -517,7 +517,7 @@ extension NativeTimelineCanvasView {
                 )
                 accumulator.appendInlineEmoji(
                     row: identifier,
-                    role: { _, location in
+                    role: { location in
                         .embedEmoji(embed.embedID, textIndex, location)
                     },
                     value: textRegion.text.value,
@@ -602,7 +602,7 @@ extension NativeTimelineCanvasView {
             )
             accumulator.appendInlineEmoji(
                 row: identifier,
-                role: { _, location in
+                role: { location in
                     .componentEmoji(componentIndex, textIndex, location)
                 },
                 value: textRegion.text.value,
