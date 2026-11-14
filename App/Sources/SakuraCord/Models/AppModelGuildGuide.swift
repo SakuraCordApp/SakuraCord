@@ -153,7 +153,7 @@ extension AppModel {
                 }
                 model.onboarding.guides[guildID]?.progress = refreshed
                 if case .guideResource(guildID, let channelID)? = model.sideConversations.context,
-                   !guide.resourceChannels.contains(where: { $0.channelID == channelID }) {
+                   !guide.isResourceChannel(channelID) {
                     model.closeSideConversations()
                 }
             } catch {
@@ -166,7 +166,7 @@ extension AppModel {
     }
 
     func visitGuideTask(_ action: GuildGuideChannel, guildID: GuildID) {
-        guard let channel = snapshot?.channels.first(where: { $0.id == action.channelID }),
+        guard let channel = knownRootChannel(action.channelID),
               conversationAccess(for: channel).isReadable else {
             onboarding.guides[guildID]?.error = "This channel is no longer available to you. Refresh the guide."
             return
@@ -192,7 +192,7 @@ extension AppModel {
 
     func receiveGuideMessage(_ message: Message) {
         guard message.author.id == currentUser?.id,
-              let guildID = snapshot?.channels.first(where: { $0.id == message.channelID })?.guildID else { return }
+              let guildID = knownRootChannel(message.channelID)?.guildID else { return }
         completeGuideAction(message.channelID, guildID: guildID, type: 1)
     }
 
@@ -249,7 +249,7 @@ extension AppModel {
     }
 
     func openGuideResource(_ channelID: ChannelID, guildID: GuildID) {
-        guard onboarding.guides[guildID]?.configuration?.resourceChannels.contains(where: { $0.channelID == channelID }) == true else { return }
+        guard onboarding.guides[guildID]?.configuration?.isResourceChannel(channelID) == true else { return }
         openSideConversation(.guideResource(guildID, channelID)) {
             guideResource = GuildResourceState(channelID: channelID)
         }

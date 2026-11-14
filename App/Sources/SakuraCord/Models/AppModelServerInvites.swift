@@ -226,13 +226,11 @@ extension AppModel {
         }
         do {
             try await session.provider.leaveGuild(guild.id)
-            guard try await awaitServerRail(
+            return try await awaitServerRail(
                 account: session,
                 timeoutMessage: "Discord accepted the leave request, but membership has not updated yet. Reconnect before trying again.",
                 until: { serverRailGuildsByID[guild.id] == nil }
-            ) else { return false }
-            onboarding.entries[guild.id] = nil
-            return true
+            )
         } catch {
             guard isCurrentAccountSession(session) else { return false }
             store.leaveError = error.localizedDescription

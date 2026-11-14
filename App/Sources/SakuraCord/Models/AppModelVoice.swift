@@ -428,7 +428,7 @@ extension AppModel {
     /// The conversation's active mute, with its end if timed; nil when not
     /// muted. Read by ID: a ringing call can outlive its channel in the list.
     private func privateCallMute(_ call: PrivateCall, at date: Date) -> DiscordMuteConfiguration? {
-        if snapshot?.channels.first(where: { $0.id == call.channelID })?.isMuted == true {
+        if knownRootChannel(call.channelID)?.isMuted == true {
             return DiscordMuteConfiguration()
         }
         return readState.notificationOverride(channelID: call.channelID, guildID: nil)?.activeMute(at: date)

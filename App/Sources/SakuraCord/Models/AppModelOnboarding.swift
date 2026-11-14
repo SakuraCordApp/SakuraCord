@@ -380,8 +380,7 @@ extension AppModel {
     ) -> [ChannelGroup] {
         guard let guildID else { return groups }
         let groups = pinnedChannelGroups(groups, guildID: guildID)
-        let guide = onboarding.guides[guildID]?.configuration
-        let resources = guide?.enabled == true ? Set(guide?.resourceChannels.map(\.channelID) ?? []) : []
+        let guide = onboarding.guides[guildID]?.configuration.flatMap { $0.enabled ? $0 : nil }
         let settings = presentedGuildChannelSettings(in: guildID)
         let filtersSelection = !showsAllChannels(in: guildID)
         let hasGuide = filtersSelection && hasGuildGuide(in: guildID)
@@ -395,7 +394,7 @@ extension AppModel {
                 let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
                     || (isThreadFullWidth && openThread?.parentID == channel.id)
                 if filtersSelection {
-                    if hasGuide, resources.contains(channel.id) || channel.isGuildResource,
+                    if hasGuide, guide?.isResourceChannel(channel.id) == true || channel.isGuildResource,
                        channel.id != activeChannelID { return true }
                     if !GuildChannelSelection.isSelected(channel.id, settings: settings),
                        !(group.categoryID.map { GuildChannelSelection.isSelected($0, settings: settings) } ?? false),

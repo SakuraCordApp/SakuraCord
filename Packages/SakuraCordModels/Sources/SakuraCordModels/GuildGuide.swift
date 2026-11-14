@@ -8,6 +8,10 @@ public struct GuildGuide: Decodable, Equatable, Sendable {
     public var newMemberActions: [GuildGuideChannel]
     public var resourceChannels: [GuildGuideChannel]
 
+    public func isResourceChannel(_ channelID: ChannelID) -> Bool {
+        resourceChannels.contains { $0.channelID == channelID }
+    }
+
     public struct WelcomeMessage: Decodable, Equatable, Sendable {
         public var authorIDs: [UserID]
         public var message: String
