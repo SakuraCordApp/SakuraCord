@@ -412,7 +412,7 @@ extension DiscordRESTProvider {
         applyGuildSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
         applyFavoritesSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
         applyUserContentSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
-        personalizationConsented = ready.personalizationConsented ?? false
+        favoritesSync.personalizationConsented = ready.personalizationConsented ?? false
         publishProfileCustomStatus()
         applyInboxSettingsProto(ready.userSettingsProto, isPartial: false)
         finishInitialGatewaySnapshot(

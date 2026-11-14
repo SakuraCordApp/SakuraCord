@@ -204,7 +204,7 @@ struct FavoritesSettingsContractTests {
             let savedContent = DiscordUserContentProto.message(inSettings: lastBody)
             if fails {
                 #expect(savedContent == nil)
-                let content = try #require(await provider.userContentMessage)
+                let content = try #require(await provider.favoritesSync.userContentMessage)
                 #expect(DiscordUserContentProto.isDismissed(807, in: content))
             } else {
                 #expect(try !DiscordUserContentProto.isDismissed(807, in: #require(savedContent)))
@@ -232,7 +232,7 @@ struct FavoritesSettingsContractTests {
         try await provider.updateFavorites([.reset])
         let dismissal = Task { try await provider.setFavoritesSuggestionsDismissed(true) }
         #expect(await eventually {
-            await provider.userContentMessage.map { DiscordUserContentProto.isDismissed(807, in: $0) } == true
+            await provider.favoritesSync.userContentMessage.map { DiscordUserContentProto.isDismissed(807, in: $0) } == true
         })
         FavoritesURLProtocol.releaseHeldResponses()
         try await dismissal.value
@@ -286,7 +286,7 @@ struct FavoritesSettingsContractTests {
         try await provider.setFavoritesSuggestionsDismissed(true)
         FavoritesURLProtocol.releaseHeldResponsesKeepingHold()
         #expect(await eventually { FavoritesURLProtocol.requests.count == 2 && FavoritesURLProtocol.hasHeldResponse })
-        let shown = try #require(await provider.userContentMessage)
+        let shown = try #require(await provider.favoritesSync.userContentMessage)
         #expect(DiscordUserContentProto.isDismissed(807, in: shown))
 
         try await provider.updateFavorites([.reset])

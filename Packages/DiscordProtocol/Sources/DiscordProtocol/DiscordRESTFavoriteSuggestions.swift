@@ -15,15 +15,15 @@ extension DiscordRESTProvider {
         let message = DiscordUserContentProto.message(inSettings: data)
         guard message != nil || replacesAllSettings else { return }
         let version = DiscordSettingsProto.dataVersion(in: data)
-        if let version, let current = userContentDataVersion, version < current { return }
-        if let version { userContentDataVersion = version }
+        if let version, let current = favoritesSync.userContentDataVersion, version < current { return }
+        if let version { favoritesSync.userContentDataVersion = version }
         let stored = message ?? Data()
-        confirmedUserContentMessage = stored
+        favoritesSync.confirmedUserContentMessage = stored
         // A change still queued is newer than this copy and stays shown until
         // its own save answers.
-        guard pendingUserContent == nil else { return }
-        let wasDismissed = userContentMessage.map { DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: $0) }
-        userContentMessage = stored
+        guard favoritesSync.pendingUserContent == nil else { return }
+        let wasDismissed = favoritesSync.userContentMessage.map { DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: $0) }
+        favoritesSync.userContentMessage = stored
         let isDismissed = DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: stored)
         if wasDismissed != isDismissed { continuation?.yield(.favoritesSuggestionsDismissed(isDismissed)) }
     }
@@ -32,14 +32,14 @@ extension DiscordRESTProvider {
     /// UserContentSettings with one bit changed, saved at once through the
     /// Favorites queue so a Reset and a dismissal never land out of order.
     public func setFavoritesSuggestionsDismissed(_ dismissed: Bool) async throws {
-        guard let current = userContentMessage else {
+        guard let current = favoritesSync.userContentMessage else {
             throw ChatProviderError.invalidRequest("Wait for your account settings to finish loading.")
         }
         let content = DiscordUserContentProto.favoritesSuggestions
         guard DiscordUserContentProto.isDismissed(content, in: current) != dismissed else { return }
         let message = DiscordUserContentProto.setting(content, dismissed: dismissed, in: current)
-        userContentMessage = message
-        pendingUserContent = message
+        favoritesSync.userContentMessage = message
+        favoritesSync.pendingUserContent = message
         continuation?.yield(.favoritesSuggestionsDismissed(dismissed))
         startFavoritesSave()
     }
@@ -48,24 +48,24 @@ extension DiscordRESTProvider {
     /// its lifetime and read only with personalization consent, as the
     /// official persisted stores do. A failed read keeps the older ranking.
     public func conversationAffinities(restoring stored: ConversationAffinities?) async -> ConversationAffinities {
-        guard personalizationConsented else { return ConversationAffinities() }
-        if channelAffinities == nil, let stored, let date = stored.channelsFetchedAt { channelAffinities = (stored.channelIDs, date) }
-        if userAffinities == nil, let stored, let date = stored.usersFetchedAt { userAffinities = (stored.userIDs, date) }
+        guard favoritesSync.personalizationConsented else { return ConversationAffinities() }
+        if favoritesSync.channelAffinities == nil, let stored, let date = stored.channelsFetchedAt { favoritesSync.channelAffinities = (stored.channelIDs, date) }
+        if favoritesSync.userAffinities == nil, let stored, let date = stored.usersFetchedAt { favoritesSync.userAffinities = (stored.userIDs, date) }
         let now = Date.now
         // The two stores fetch independently, as Discord's do.
-        let refreshesChannels = channelAffinities.map { now.timeIntervalSince($0.fetchedAt) > Self.channelAffinitiesLifetime } ?? true
-        let refreshesUsers = userAffinities.map { now.timeIntervalSince($0.fetchedAt) > Self.userAffinitiesLifetime } ?? true
+        let refreshesChannels = favoritesSync.channelAffinities.map { now.timeIntervalSince($0.fetchedAt) > Self.channelAffinitiesLifetime } ?? true
+        let refreshesUsers = favoritesSync.userAffinities.map { now.timeIntervalSince($0.fetchedAt) > Self.userAffinitiesLifetime } ?? true
         async let channelResponse: ChannelAffinitiesDTO? = refreshesChannels ? try? await request("/users/@me/affinities/v2/channels") : nil
         async let userResponse: UserAffinitiesDTO? = refreshesUsers ? try? await request("/users/@me/affinities/v2/users") : nil
         if let response = await channelResponse {
-            channelAffinities = (Self.ranked(response.channelAffinities.map { ($0.channelID, $0.score ?? 0) }), now)
+            favoritesSync.channelAffinities = (Self.ranked(response.channelAffinities.map { ($0.channelID, $0.score ?? 0) }), now)
         }
         if let response = await userResponse {
-            userAffinities = (Self.ranked(response.userAffinities.map { ($0.otherUserID, $0.dmProbability ?? 0) }), now)
+            favoritesSync.userAffinities = (Self.ranked(response.userAffinities.map { ($0.otherUserID, $0.dmProbability ?? 0) }), now)
         }
         return ConversationAffinities(
-            channelIDs: channelAffinities?.ids ?? [], userIDs: userAffinities?.ids ?? [],
-            channelsFetchedAt: channelAffinities?.fetchedAt, usersFetchedAt: userAffinities?.fetchedAt
+            channelIDs: favoritesSync.channelAffinities?.ids ?? [], userIDs: favoritesSync.userAffinities?.ids ?? [],
+            channelsFetchedAt: favoritesSync.channelAffinities?.fetchedAt, usersFetchedAt: favoritesSync.userAffinities?.fetchedAt
         )
     }
 
