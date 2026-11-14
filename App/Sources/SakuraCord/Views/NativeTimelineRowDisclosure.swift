@@ -150,7 +150,7 @@ extension NativeTimelineCanvasView {
     func clearDisclosure(redraws: Bool = true) {
         let disclosure = rowDisclosure
         rowDisclosure = nil
-        disclosureTicker.stop()
+        stopRowMotionTickerIfIdle()
         resetDisclosureGeometry()
         guard let disclosure else { return }
         if redraws { redrawForRowMotion() }
@@ -284,15 +284,12 @@ extension NativeTimelineCanvasView {
 
     private func startDisclosureMotion() {
         refreshDisclosureGeometry()
-        disclosureTicker.start(on: self) { [weak self] in self?.stepDisclosure() }
+        startRowMotionTicker()
     }
 
-    private func stepDisclosure() {
-        guard var disclosure = rowDisclosure else {
-            disclosureTicker.stop()
-            return
-        }
-        let now = ProcessInfo.processInfo.systemUptime
+    /// Eases the group toward its target. A closed group holds its rows until they go.
+    func stepDisclosure(at now: TimeInterval) {
+        guard var disclosure = rowDisclosure, !disclosure.isFinished else { return }
         guard let headerIndex = disclosureHeaderIndex(for: disclosure.key, hint: disclosure.headerIndexHint) else {
             clearDisclosure()
             return
@@ -321,7 +318,7 @@ extension NativeTimelineCanvasView {
             if disclosure.isCollapsing {
                 disclosure.isFinished = true
                 rowDisclosure = disclosure
-                disclosureTicker.stop()
+                stopRowMotionTickerIfIdle()
                 refreshDisclosureGeometry()
                 redrawForRowMotion()
                 if case .suppressedMessages = disclosure.key { pendingDisclosureScrollAnchor = disclosure.key }

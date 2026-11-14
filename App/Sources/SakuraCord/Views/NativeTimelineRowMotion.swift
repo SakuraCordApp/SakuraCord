@@ -266,10 +266,7 @@ extension NativeTimelineCanvasView {
         guard update.startedChips || !departedRuns.isEmpty || update.plan.motion != nil
         else { return }
         rowMotionTransitionWidth = bounds.width
-        if rowMotionTicker.displayLink == nil {
-            rowMotionStepUptime = nil
-            rowMotionTicker.start(on: self) { [weak self] in self?.stepRowMotions() }
-        }
+        startRowMotionTicker()
     }
 
     /// Adds pieces to the runs below their rows, in order. A piece whose
@@ -423,9 +420,32 @@ extension NativeTimelineCanvasView {
         return true
     }
 
+    /// Starts stepping row motions from the next frame, unless they already are.
+    func startRowMotionTicker() {
+        guard rowMotionTicker.displayLink == nil else { return }
+        rowMotionStepUptime = nil
+        rowMotionTicker.start(on: self) { [weak self] in self?.stepRowMotions() }
+    }
+
+    /// Whether rows are moving: by an update, the divider's gap, or a group
+    /// opening or closing. A closed group holding its rows until they go
+    /// stands still.
+    var rowMotionIsRunning: Bool {
+        !rowMotions.isEmpty || unreadDividerGap != nil || rowDisclosure?.isFinished == false
+    }
+
+    func stopRowMotionTickerIfIdle() {
+        guard !rowMotionIsRunning, reactionTransitions.isEmpty, departedRuns.isEmpty else { return }
+        rowMotionTicker.stop()
+    }
+
+    /// Steps every row motion at one time, in a fixed order: the divider's
+    /// gap, a group, then updates and what moves with them.
     private func stepRowMotions() {
         let now = ProcessInfo.processInfo.systemUptime
         deferGlides(pastStallBefore: now)
+        stepUnreadDividerGap(at: now)
+        stepDisclosure(at: now)
         let hadMotion = !rowMotions.isEmpty
         for index in rowMotions.indices where rowMotions[index].startUptime == nil {
             rowMotions[index].startUptime = now
@@ -468,9 +488,7 @@ extension NativeTimelineCanvasView {
         if redrawsRows { redrawForRowMotion(invalidating: rowMotionFrame) }
         if !fadeFrame.isNull { setNeedsDisplay(fadeFrame.union(departedRunFrame)) }
         if reconcilesMedia { reconcileAnimatedMediaOverlays(reduceMotion: false) }
-        if reactionTransitions.isEmpty, rowMotions.isEmpty, departedRuns.isEmpty {
-            rowMotionTicker.stop()
-        }
+        stopRowMotionTickerIfIdle()
     }
 
     /// A late frame moves glides by at most one 60 Hz frame of their curve.
@@ -518,7 +536,6 @@ extension NativeTimelineCanvasView {
     /// or a conversation change.
     func finishRowMotions() {
         pendingRowMotionBaseline = nil
-        rowMotionTicker.stop()
         let hadMotion = !rowMotions.isEmpty
         let hadChips = !reactionTransitions.isEmpty || !departedRuns.isEmpty || !editedTextBands.isEmpty
         rowMotions.removeAll()
@@ -526,6 +543,7 @@ extension NativeTimelineCanvasView {
         departedRuns.removeAll()
         handOvers.removeAll()
         for identifier in reactionTransitions.keys { endReactionTransition(identifier) }
+        stopRowMotionTickerIfIdle()
         refreshRowMotionGeometry()
         if hadMotion {
             redrawForRowMotion()

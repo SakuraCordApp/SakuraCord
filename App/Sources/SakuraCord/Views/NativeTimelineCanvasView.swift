@@ -203,7 +203,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var transcriptGlideFinishTask: Task<Void, Never>?
     var unreadDividerFades: [NativeMessageTimelineItem.Identifier: NativeTimelineUnreadDividerFade] = [:]
     var unreadDividerGap: NativeTimelineUnreadDividerGap?
-    let unreadDividerGapTicker = DisplayLinkTicker()
     let authorHoverTicker = DisplayLinkTicker()
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
@@ -260,7 +259,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var disclosureMaskedViews: [NSView] = []
     /// A header whose viewport position the next structural update keeps.
     var pendingDisclosureScrollAnchor: NativeTimelineRowDisclosure.Key?
-    let disclosureTicker = DisplayLinkTicker()
     var model: AppModel?
     var accessibilitySettingsSnapshot = AccessibilitySettingsSnapshot.defaults
     var presentedConversationID: ChannelID?
@@ -339,6 +337,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     /// By deleted row, for the update that deleted it to place.
     var handOvers: [NativeMessageTimelineItem.Identifier: HandOver] = [:]
     var nextRowMotionID = 1
+    /// Steps every row motion: updates', the divider gap's and a group's.
     let rowMotionTicker = DisplayLinkTicker()
     /// When the row motion ticker last stepped, to tell a late frame.
     var rowMotionStepUptime: TimeInterval?
@@ -529,7 +528,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             visibleMediaRequestTask?.cancel()
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
-            unreadDividerGapTicker.stop()
             authorHoverTicker.stop()
             rowMotionTicker.stop()
             for fade in unreadDividerFades.values {

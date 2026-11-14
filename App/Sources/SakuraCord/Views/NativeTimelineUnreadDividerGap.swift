@@ -227,16 +227,13 @@ extension NativeTimelineCanvasView {
             waitsForSend: !appearing && sendTransitionBlocksInteractions,
             frame: start
         )
-        unreadDividerGapTicker.start(on: self) { [weak self] in self?.stepUnreadDividerGap() }
+        startRowMotionTicker()
         redrawForRowMotion()
         return true
     }
 
-    private func stepUnreadDividerGap() {
-        guard var gap = unreadDividerGap else {
-            unreadDividerGapTicker.stop()
-            return
-        }
+    func stepUnreadDividerGap(at now: TimeInterval) {
+        guard var gap = unreadDividerGap else { return }
         guard let index = rowIndex(forIdentifier: gap.identifier, hint: gap.rowIndex) else {
             finishUnreadDividerGap()
             return
@@ -258,7 +255,6 @@ extension NativeTimelineCanvasView {
                 )
             }
         }
-        let now = ProcessInfo.processInfo.systemUptime
         let start = gap.startUptime ?? now
         gap.startUptime = start
         let progress = NativeTimelineRowDisclosure.progress(at: now - start)
@@ -283,9 +279,9 @@ extension NativeTimelineCanvasView {
     /// nowhere left to be. Not when its row is reversing on `identifier`,
     /// where it carries on from its current opacity.
     func finishUnreadDividerGap(preservingFadeFor identifier: NativeMessageTimelineItem.Identifier? = nil) {
-        unreadDividerGapTicker.stop()
         guard let gap = unreadDividerGap else { return }
         unreadDividerGap = nil
+        stopRowMotionTickerIfIdle()
         if gap.identifier != identifier {
             finishUnreadDividerFade(gap.identifier)
         }
