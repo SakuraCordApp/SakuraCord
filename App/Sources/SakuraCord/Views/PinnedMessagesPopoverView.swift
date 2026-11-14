@@ -3,9 +3,7 @@ import SwiftUI
 
 struct PinnedMessagesPopoverView: View {
     let model: AppModel
-    private let runsPerformanceAutoScroll = ProcessInfo.processInfo.arguments.contains(
-        "--offline-pins-performance-autoscroll"
-    )
+    private let runsPerformanceAutoScroll = AppLaunchConfiguration.current.runsPinsPerformanceAutoScroll
 
     var body: some View {
         @Bindable var pins = model.pinnedMessages

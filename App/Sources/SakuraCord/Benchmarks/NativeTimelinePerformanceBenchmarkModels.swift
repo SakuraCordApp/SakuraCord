@@ -29,8 +29,7 @@ nonisolated enum NativeTimelineBenchmarkScrollPolicy {
     static let maximumStep: CGFloat = 40
     static let duration: TimeInterval = 20
     static let nominalDistance = pointsPerSecond * duration
-    /// Measures live updates on a still timeline instead of a scrolling one.
-    static let isIdle = ProcessInfo.processInfo.arguments.contains("--offline-chat-performance-idle")
+    static let isIdle = AppLaunchConfiguration.current.isChatPerformanceIdle
 
     static func distance(tickInterval: TimeInterval) -> CGFloat {
         guard !isIdle else { return 0 }

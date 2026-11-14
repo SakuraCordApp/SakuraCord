@@ -100,7 +100,7 @@ struct SoftwareUpdatesSettingsPage: View {
         }
         .windowModal(isPresented: $presentsBuildBrowser, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             PullRequestBuildBrowser(
-                isPreview: ProcessInfo.processInfo.arguments.contains("--offline"),
+                isPreview: AppLaunchConfiguration.current.includesOfflineFlag,
                 installedBuildID: updateController.installedPullRequestBuildID,
                 updateController: updateController
             ) { build in

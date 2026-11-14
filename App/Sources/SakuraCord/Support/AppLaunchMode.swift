@@ -28,6 +28,20 @@ nonisolated enum OfflineLaunchFlag: String {
     case friendsPerformance = "--offline-friends-performance"
     case unreadChurn = "--offline-unread-churn"
     case serverRailPerformance = "--offline-server-rail-performance"
+    case chatPerformanceIdle = "--offline-chat-performance-idle"
+    case chatPerformanceLiveReactionsOnly = "--offline-chat-performance-live-reactions-only"
+    case chatPerformanceLiveMutationsOnly = "--offline-chat-performance-live-mutations-only"
+    case chatPerformanceLiveArrivalsOnly = "--offline-chat-performance-live-arrivals-only"
+
+    /// Whether the flag starts the offline provider by itself. The others
+    /// only adjust a chat benchmark that another flag starts.
+    var selectsOfflineMode: Bool {
+        switch self {
+        case .chatPerformanceIdle, .chatPerformanceLiveReactionsOnly,
+             .chatPerformanceLiveMutationsOnly, .chatPerformanceLiveArrivalsOnly: false
+        default: true
+        }
+    }
 }
 
 nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
@@ -55,7 +69,22 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let runsHistoryPaginationBenchmark: Bool
     let runsAuthenticatedGestureScrollBenchmark: Bool
     let runsLoadingScrollOverlapBenchmark: Bool
+    /// The gesture-scroll and loading-overlap flags as given, in any build;
+    /// the benchmarks themselves run only in debug builds.
+    let requestsGestureScrollBenchmark: Bool
+    let requestsLoadingScrollOverlapBenchmark: Bool
     let runsChatLiveArrivalStress: Bool
+    /// Which of the live stress's reactions, arrivals and mutations run.
+    let liveStressRunsReactions: Bool
+    let liveStressRunsArrivals: Bool
+    let liveStressRunsMutations: Bool
+    /// Measures live updates on a still timeline instead of a scrolling one.
+    let isChatPerformanceIdle: Bool
+    let runsForumGalleryResize: Bool
+    /// The bare `--offline` flag, without a fixture.
+    let includesOfflineFlag: Bool
+    /// Animated media logs its decoding cost, in any build.
+    let reportsAnimatedMediaPerformance: Bool
     let runsPinsPerformanceAutoScroll: Bool
     /// A 1,000-friend list, presence churn and a scroll and section-switch benchmark.
     let runsFriendsPerformanceBenchmark: Bool
@@ -77,6 +106,10 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
 #else
         let runsAuthenticatedAutoScroll = false
 #endif
+        requestsGestureScrollBenchmark = arguments.contains("--debug-authenticated-gesture-scroll-performance")
+        requestsLoadingScrollOverlapBenchmark = arguments.contains(
+            "--debug-authenticated-loading-scroll-overlap-performance"
+        )
         #if DEBUG
             runsAuthenticatedNavigationBenchmark = arguments.contains(
                 "--debug-authenticated-navigation-performance"
@@ -87,12 +120,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             runsHistoryPaginationBenchmark = arguments.contains(
                 "--debug-authenticated-history-pagination-performance"
             )
-            runsAuthenticatedGestureScrollBenchmark = arguments.contains(
-                "--debug-authenticated-gesture-scroll-performance"
-            )
-            runsLoadingScrollOverlapBenchmark = arguments.contains(
-                "--debug-authenticated-loading-scroll-overlap-performance"
-            )
+            runsAuthenticatedGestureScrollBenchmark = requestsGestureScrollBenchmark
+            runsLoadingScrollOverlapBenchmark = requestsLoadingScrollOverlapBenchmark
             runsMemberListPerformanceAutoScroll = arguments.contains(
                 "--debug-authenticated-member-list-performance-autoscroll"
             )
@@ -132,6 +161,15 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || flags.contains(.chatFilesPerformanceAutoScroll)
             || runsAuthenticatedAutoScroll
         runsChatLiveArrivalStress = flags.contains(.chatPerformanceLiveAutoScroll)
+        liveStressRunsReactions = flags.contains(.chatPerformanceLiveReactionsOnly)
+        liveStressRunsArrivals = !liveStressRunsReactions && !flags.contains(.chatPerformanceLiveMutationsOnly)
+        liveStressRunsMutations = !liveStressRunsReactions && !flags.contains(.chatPerformanceLiveArrivalsOnly)
+        isChatPerformanceIdle = flags.contains(.chatPerformanceIdle)
+        runsForumGalleryResize = flags.contains(.forumGalleryResize)
+        includesOfflineFlag = flags.contains(.offline)
+        reportsAnimatedMediaPerformance = arguments.contains {
+            $0.contains("chat-performance")
+        } || requestsGestureScrollBenchmark
         runsPinsPerformanceAutoScroll = includesPinsPerformanceFixture
         runsFriendsPerformanceBenchmark = flags.contains(.friendsPerformance)
         runsServerRailPerformanceBenchmark = flags.contains(.serverRailPerformance)
@@ -149,7 +187,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || includesChatFilesPerformanceFixture
             || flags.contains(.chatPerformance)
             || includesPinsPerformanceFixture
-        mode = isMotionBenchmarkLaunch || !flags.isEmpty ? .offlineTesting : .normal
+        mode = isMotionBenchmarkLaunch || flags.contains(where: \.selectsOfflineMode) ? .offlineTesting : .normal
     }
 
     /// An authenticated benchmark that scrolls the timeline.

@@ -60,7 +60,7 @@ actor SharedAnimatedImageLoader {
                    let image = await PreparedAnimatedImage.restore(prepared)
                 {
                     try Task.checkCancellation()
-                    if ProcessInfo.processInfo.arguments.contains("--debug-authenticated-gesture-scroll-performance") {
+                    if AppLaunchConfiguration.current.requestsGestureScrollBenchmark {
                         Self.cacheLogger.notice("Prepared animation cache hit: \(prepared.count, privacy: .public) bytes; \(image.frames.count, privacy: .public) frames")
                     }
                     return image

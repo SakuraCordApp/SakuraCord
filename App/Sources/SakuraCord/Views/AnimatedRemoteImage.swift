@@ -294,10 +294,7 @@ nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
         subsystem: "dev.sakuracord.SakuraCord",
         category: "AnimatedMediaPerformance"
     )
-    private static let reportsPerformance =
-        ProcessInfo.processInfo.arguments.contains {
-            $0.contains("chat-performance") || $0 == "--debug-authenticated-gesture-scroll-performance"
-        }
+    private static let reportsPerformance = AppLaunchConfiguration.current.reportsAnimatedMediaPerformance
 
     let frames: [CGImage]
     let frameDurations: [TimeInterval]

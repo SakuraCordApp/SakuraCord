@@ -511,9 +511,7 @@ extension AppModel {
     ) -> GuildID? {
         let runsLoadingOverlapBenchmark =
             runsChatPerformanceBenchmark
-            && ProcessInfo.processInfo.arguments.contains(
-                "--debug-authenticated-loading-scroll-overlap-performance"
-            )
+            && AppLaunchConfiguration.current.requestsLoadingScrollOverlapBenchmark
         // Benchmark setup must not pre-open the measured guild. This is
         // evaluated before history prefetch and initial guild activation,
         // so each process launch retains a genuinely cold Google Labs

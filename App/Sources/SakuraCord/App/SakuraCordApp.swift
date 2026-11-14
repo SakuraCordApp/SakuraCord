@@ -14,12 +14,7 @@ public func runSakuraCord() {
 struct SakuraCordApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
-    private let launch = AppLaunchConfiguration.current
-#if SAKURACORD_MOTION_BENCHMARK
-    /// Set when the launch runs the side chat motion benchmark.
-    private let sideChatMotionOptions: SideChatMotionBenchmark.Options?
-#endif
-    private let performanceMockProvider: MockChatProvider?
+    private let launchBenchmarks: LaunchBenchmarks
 
     init() {
         AppPerformanceSignposts.beginStartup()
@@ -35,7 +30,6 @@ struct SakuraCordApp: App {
         let motionOptions = configuration.runsSideChatMotionBenchmark
             ? SideChatMotionBenchmark.Options(arguments: ProcessInfo.processInfo.arguments)
             : nil
-        sideChatMotionOptions = motionOptions
         WorkspaceMotionProbes.isEnabled = motionOptions != nil
         MockChatProvider.motionFixture = motionOptions.map {
             MockChatProvider.MotionFixture(
@@ -63,7 +57,13 @@ struct SakuraCordApp: App {
                 friendCount: configuration.runsFriendsPerformanceBenchmark ? 1_000 : nil
             )
             : nil
-        performanceMockProvider = mockProvider
+#if SAKURACORD_MOTION_BENCHMARK
+        launchBenchmarks = LaunchBenchmarks(
+            launch: configuration, provider: mockProvider, sideChatMotionOptions: motionOptions
+        )
+#else
+        launchBenchmarks = LaunchBenchmarks(launch: configuration, provider: mockProvider)
+#endif
         let provider: (any ChatProvider)? = mockProvider
         let notificationService = MacNativeNotificationService(
             deliversNotifications: configuration.mode != .offlineTesting
@@ -116,129 +116,7 @@ struct SakuraCordApp: App {
                 .task {
                     await appDelegate.startSession(for: model)
                     await model.applyConfiguredLocalStorageLimit()
-#if DEBUG
-                    if launch.runsAuthenticatedNavigationBenchmark {
-                        await model.runAuthenticatedNavigationPerformanceBenchmark()
-                    }
-                    if launch.runsAuthenticatedAccountSwitchBenchmark {
-                        await model.runAuthenticatedAccountSwitchPerformanceBenchmark()
-                    }
-                    if launch.runsHistoryPaginationBenchmark {
-                        await model.runAuthenticatedHistoryPaginationPerformanceBenchmark()
-                    }
-                    if launch.runsAuthenticatedGestureScrollBenchmark {
-                        await model.runAuthenticatedGestureScrollPerformanceBenchmark()
-                    }
-                    if launch.runsLoadingScrollOverlapBenchmark {
-                        await model.runAuthenticatedLoadingScrollOverlapPerformanceBenchmark()
-                    }
-                    if launch.activatesAuthenticatedScrollBenchmark {
-                        // A display-link benchmark is only representative
-                        // while AppKit is presenting this window normally.
-                        // Background/occluded windows are intentionally
-                        // throttled by WindowServer and would report machine
-                        // scheduling as SakuraCord frame loss.
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
-                    if launch.preparesTimelineScrollBenchmark {
-                        await model.prepareAuthenticatedTimelineScrollPerformanceBenchmark()
-                    }
-                    if launch.preparesMemberListScrollBenchmark {
-                        await model.prepareAuthenticatedMemberListScrollPerformanceBenchmark()
-                    }
-#endif
-                    if launch.includesChatPerformanceFixture {
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
-                    if launch.includesForumPerformanceFixture {
-                        model.selectedChannelID = ChannelID(rawValue: 220)
-                    } else if launch.includesChatPerformanceFixture, !launch.runsChannelOpenBenchmark {
-                        model.selectedChannelID = ChannelID(rawValue: 210)
-                    }
-#if DEBUG
-                    if launch.runsForumPerformanceAutoScroll {
-                        await ForumBoardBenchmark.run(model: model)
-                    }
-#endif
-                    if launch.runsFriendsPerformanceBenchmark {
-                        await FriendsPerformanceBenchmark.run(model: model, provider: performanceMockProvider)
-                    }
-                    if launch.runsServerRailPerformanceBenchmark {
-                        await ServerRailPerformanceBenchmark.run(model: model)
-                    }
-                    if launch.runsUnreadChurnBenchmark {
-                        await UnreadChurnBenchmark.run(model: model, provider: performanceMockProvider)
-                    }
-                    if launch.runsChannelOpenBenchmark {
-                        await ChannelOpenBenchmark.run(model: model)
-                    }
-#if SAKURACORD_MOTION_BENCHMARK
-                    if let sideChatMotionOptions {
-                        await SideChatMotionBenchmark.run(model: model, options: sideChatMotionOptions)
-                    }
-#endif
-                    if launch.includesPinsPerformanceFixture {
-                        await model.channelLoadTask?.value
-                        model.presentPinnedMessages(channelID: ChannelID(rawValue: 210))
-                        await model.pinnedMessages.loadTask?.value
-                        await model.preparePinnedMessagesPerformanceBenchmark()
-                    }
-                    if launch.runsChatLiveArrivalStress {
-                        await NativeTimelinePerformanceBenchmarkGate.shared
-                            .waitUntilStarted()
-                        guard !Task.isCancelled,
-                              let performanceMockProvider
-                        else { return }
-                        let arguments = ProcessInfo.processInfo.arguments
-                        let runsReactions = arguments.contains(
-                            "--offline-chat-performance-live-reactions-only"
-                        )
-                        let runsArrivals =
-                            !runsReactions
-                            && !arguments.contains(
-                                "--offline-chat-performance-live-mutations-only"
-                            )
-                        let runsMutations =
-                            !runsReactions
-                            && !arguments.contains(
-                                "--offline-chat-performance-live-arrivals-only"
-                            )
-                        await withTaskGroup(of: Void.self) { group in
-                            if runsReactions {
-                                group.addTask {
-                                    await performanceMockProvider
-                                        .emitTimelineReactionStress(
-                                            in: ChannelID(rawValue: 210),
-                                            operationCount: 800
-                                        )
-                                }
-                            }
-                            if runsArrivals {
-                                group.addTask {
-                                    await performanceMockProvider
-                                        .emitTimelineStressMessages(
-                                            in: ChannelID(rawValue: 210),
-                                            count: 2_400,
-                                            burstSize: 4,
-                                            burstInterval: .milliseconds(32)
-                                        )
-                                }
-                            }
-                            if runsMutations {
-                                group.addTask {
-                                    await performanceMockProvider
-                                        .emitTimelineMutationStress(
-                                            in: ChannelID(rawValue: 210),
-                                            operationCount: 1_200,
-                                            deleteEvery: 5,
-                                            lookback: 600,
-                                            initialDelay: .milliseconds(500),
-                                            operationInterval: .milliseconds(32)
-                                        )
-                                }
-                            }
-                        }
-                    }
+                    await launchBenchmarks.run(model: model)
                 }
         }
         .defaultLaunchBehavior(.presented)

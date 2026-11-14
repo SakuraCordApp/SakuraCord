@@ -135,7 +135,7 @@ enum ForumBoardBenchmark {
             logger.error("ForumBenchmark: the forum did not load or has no scroll view")
             return
         }
-        if ProcessInfo.processInfo.arguments.contains("--offline-forum-gallery-resize") {
+        if AppLaunchConfiguration.current.runsForumGalleryResize {
             await resizeGallery(model: model, scrollView: scrollView)
             return
         }
