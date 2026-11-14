@@ -92,8 +92,7 @@ extension AppModel {
         guard !runsChatPerformanceBenchmark, currentStatus != .dnd, !isMessageSuppressed(message) else { return }
         // A call announces itself by ringing, not with a banner for its message.
         guard message.type != .call else { return }
-        let channel = snapshot?.channels.first { $0.id == message.channelID }
-            ?? visibleChannels.first { $0.id == message.channelID }
+        let channel = knownRootChannel(message.channelID)
         guard let currentUserID = snapshot?.currentUser.id else { return }
         let event = NotificationEventContext.message(
             message,
@@ -160,8 +159,7 @@ extension AppModel {
             return MentionPresentation.fallback(for: mention).label
         case .channel, .channelLink:
             let id = ChannelID(mention.id)
-            let channel = snapshot?.channels.first { $0.id == id }
-                ?? visibleChannels.first { $0.id == id }
+            let channel = id.flatMap(knownRootChannel)
             return "#\(channel?.name ?? "unknown-channel")"
         case .message:
             return "Message link"

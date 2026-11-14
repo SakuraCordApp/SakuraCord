@@ -11,8 +11,7 @@ extension AppModel {
             ?? snapshot?.activeJoinedThreads.first { $0.id == channelID }
             ?? forumPosts.first { $0.thread.id == channelID }?.thread
         let permissionChannelID = thread?.parentID ?? channelID
-        guard let channel = snapshot?.channels.first(where: { $0.id == permissionChannelID })
-            ?? visibleChannels.first(where: { $0.id == permissionChannelID }),
+        guard let channel = knownRootChannel(permissionChannelID),
             thread != nil || Self.supportsTyping(channel.kind) || channel.kind == .voice,
             conversationAccess(for: channel).isReadable
         else { return nil }

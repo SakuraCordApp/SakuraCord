@@ -142,7 +142,7 @@ extension AppModel {
     func messagePermissionContext(
         for channelID: ChannelID
     ) -> (channel: Channel, isThread: Bool)? {
-        if let channel = rootMessageChannel(channelID) {
+        if let channel = messagePresentationChannel(channelID) {
             return (channel, false)
         }
         if openThread?.id == channelID, let parent = openThreadParentChannel {
@@ -151,13 +151,8 @@ extension AppModel {
         let parentID = threads.first(where: { $0.id == channelID })?.parentID
             ?? activeJoinedThreads.first(where: { $0.id == channelID })?.parentID
             ?? messageSearch.page?.channels.first(where: { $0.id == channelID })?.categoryID
-        guard let parentID, let parent = rootMessageChannel(parentID) else { return nil }
+        guard let parentID, let parent = messagePresentationChannel(parentID) else { return nil }
         return (parent, true)
-    }
-
-    private func rootMessageChannel(_ channelID: ChannelID) -> Channel? {
-        messagePresentationChannelsByID[channelID]
-            ?? visibleChannels.first(where: { $0.id == channelID })
     }
 
     private func selectedChannelSupportsPins(_ channel: Channel) -> Bool {
@@ -192,7 +187,7 @@ extension AppModel {
             presentPinnedMessages(channelID: channelID)
             return
         }
-        if rootMessageChannel(channelID) != nil {
+        if messagePresentationChannel(channelID) != nil {
             navigate(to: channelID)
         } else {
             // Thread resolution derives the guild from the thread's parent.

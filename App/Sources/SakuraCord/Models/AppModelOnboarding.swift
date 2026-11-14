@@ -298,8 +298,7 @@ extension AppModel {
             ?? snapshot?.activeJoinedThreads.first { $0.id == channelID }?.parentID
             ?? (openThread?.id == channelID ? openThread?.parentID : nil)
             ?? channelID
-        let channel = snapshot?.channels.first { $0.id == parentID }
-            ?? visibleChannels.first { $0.id == parentID }
+        let channel = knownRootChannel(parentID)
         guard let guildID = channel?.guildID else { return true }
         if requiresOnboarding(in: guildID) || (serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true && onboardingMember(in: guildID)?.flags == nil) {
             openChannelsAndRoles(in: guildID)

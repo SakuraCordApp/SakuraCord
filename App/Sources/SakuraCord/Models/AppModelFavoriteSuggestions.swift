@@ -236,18 +236,6 @@ extension AppModel {
             model.addFavorites(additions, categoryName: categoryName)
         }
     }
-
-    /// Reset Favorites: Discord's first-run state, Suggested Channels back
-    /// included (the provider saves both together), and the device's
-    /// Unlimited favorites cleared. Like Discord, it asks nothing and leaves
-    /// for Friends.
-    func resetFavorites() {
-        let wasPresented = favorites.isPresented
-        updateFavorites(.reset)
-        if !favorites.localEntries.isEmpty { clearLocalFavorites() }
-        // After the reset, whose fallback to an empty Favorites would cancel this.
-        if wasPresented { openFriends() }
-    }
 }
 
 /// Suggested Channels' resolved candidates: affine channels and DM partners

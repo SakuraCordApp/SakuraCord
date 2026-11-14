@@ -827,9 +827,7 @@ final class AppModel {
                     refreshUnreadPresentation()
                 }
             }
-            selectedChannel =
-                snapshot?.channels.first { $0.id == selectedChannelID }
-                    ?? visibleChannels.first { $0.id == selectedChannelID }
+            selectedChannel = selectedChannelID.flatMap(knownRootChannel)
             if let selectedChannel,
                let guildID = selectedChannel.guildID
             {

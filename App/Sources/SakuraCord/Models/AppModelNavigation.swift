@@ -53,8 +53,7 @@ extension AppModel {
 
     private var navigationChannel: Channel? {
         if isThreadFullWidth, let openThread { return threadNavigationChannel(openThread) }
-        return snapshot?.channels.first { $0.id == selectedChannelID }
-            ?? visibleChannels.first { $0.id == selectedChannelID }
+        return selectedChannelID.flatMap(knownRootChannel)
     }
 
     // Sidebar choices supersede asynchronous navigation to another destination
