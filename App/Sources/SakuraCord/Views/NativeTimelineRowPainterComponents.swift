@@ -172,18 +172,11 @@ extension NativeTimelineRowPainter {
                 in: region.frame,
                 model: input.model,
                 bubble: input.bubbleRegion,
-                selectionRange:
-                    input.textSelection?.itemIdentifier == input.itemIdentifier
-                        && input.textSelection?.region == textRegion
-                    ? input.textSelection?.range : nil,
+                selectionRange: input.textSelection.scoped(to: input.itemIdentifier, region: textRegion)?.range,
                 hoveredMentionCharacterIndex:
-                    input.hoveredMention?.itemIdentifier == input.itemIdentifier
-                        && input.hoveredMention?.region == textRegion
-                    ? input.hoveredMention?.characterIndex : nil,
+                    input.hoveredMention.scoped(to: input.itemIdentifier, region: textRegion)?.characterIndex,
                 hoveredLinkCharacterIndex:
-                    input.hoveredTextLink?.itemIdentifier == input.itemIdentifier
-                        && input.hoveredTextLink?.region == textRegion
-                    ? input.hoveredTextLink?.characterIndex : nil,
+                    input.hoveredTextLink.scoped(to: input.itemIdentifier, region: textRegion)?.characterIndex,
                 spoilerHoverProgress: input.textSpoilerHover.progress(in: input.itemIdentifier, region: textRegion),
                 revealedSpoilerLocations:
                     input.revealedTextSpoilerState.locations(in: textRegion)

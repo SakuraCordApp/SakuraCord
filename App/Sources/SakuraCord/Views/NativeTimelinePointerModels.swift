@@ -15,14 +15,30 @@ nonisolated struct NativeTimelineFooterActionTarget: Equatable {
     let kind: Kind
 }
 
-nonisolated struct NativeTimelineMentionHover: Equatable {
+/// Pointer or selection state that belongs to one text region of one row.
+nonisolated protocol NativeTimelineTextRegionScoped {
+    var itemIdentifier: NativeMessageTimelineItem.Identifier { get }
+    var region: NativeTimelineTextRegion { get }
+}
+
+extension Optional where Wrapped: NativeTimelineTextRegionScoped {
+    /// The state when it is in this row's text region.
+    func scoped(
+        to itemIdentifier: NativeMessageTimelineItem.Identifier,
+        region: NativeTimelineTextRegion
+    ) -> Wrapped? {
+        flatMap { $0.itemIdentifier == itemIdentifier && $0.region == region ? $0 : nil }
+    }
+}
+
+nonisolated struct NativeTimelineMentionHover: Equatable, NativeTimelineTextRegionScoped {
     let itemIdentifier: NativeMessageTimelineItem.Identifier
     let region: NativeTimelineTextRegion
     let characterIndex: Int
     let rawToken: String
 }
 
-nonisolated struct NativeTimelineTextLinkHover: Equatable {
+nonisolated struct NativeTimelineTextLinkHover: Equatable, NativeTimelineTextRegionScoped {
     let itemIdentifier: NativeMessageTimelineItem.Identifier
     let region: NativeTimelineTextRegion
     let characterIndex: Int
@@ -308,7 +324,7 @@ nonisolated enum NativeTimelineShortContentRedrawPolicy {
     }
 }
 
-nonisolated struct NativeTimelineTextSelection: Equatable {
+nonisolated struct NativeTimelineTextSelection: Equatable, NativeTimelineTextRegionScoped {
     let itemIdentifier: NativeMessageTimelineItem.Identifier
     let region: NativeTimelineTextRegion
     let range: NSRange

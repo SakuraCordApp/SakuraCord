@@ -156,18 +156,18 @@ extension NativeTimelineRowPainter {
             text(actionTitle, in: actionFrame, font: font, color: accent, isInteractiveHovered: input.interaction.isTranslationActionHovered)
         }
         guard let textFrame = region.textFrame, let text = region.text else { return }
+        let itemIdentifier = NativeMessageTimelineItem.Identifier.message(input.row.identity)
         attributedText(
             text,
             in: NativeTimelineTextGeometry.messageContentDrawingFrame(textFrame),
             model: input.model,
             bubble: input.layout.bubbleRegion,
-            selectionRange: input.textSelection?.itemIdentifier == .message(input.row.identity)
-                && input.textSelection?.region == region.regionID ? input.textSelection?.range : nil,
-            hoveredMentionCharacterIndex: input.interaction.hoveredMention?.itemIdentifier == .message(input.row.identity)
-                && input.interaction.hoveredMention?.region == region.regionID ? input.interaction.hoveredMention?.characterIndex : nil,
-            hoveredLinkCharacterIndex: input.interaction.hoveredTextLink?.itemIdentifier == .message(input.row.identity)
-                && input.interaction.hoveredTextLink?.region == region.regionID ? input.interaction.hoveredTextLink?.characterIndex : nil,
-            spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: .message(input.row.identity), region: region.regionID),
+            selectionRange: input.textSelection.scoped(to: itemIdentifier, region: region.regionID)?.range,
+            hoveredMentionCharacterIndex:
+                input.interaction.hoveredMention.scoped(to: itemIdentifier, region: region.regionID)?.characterIndex,
+            hoveredLinkCharacterIndex:
+                input.interaction.hoveredTextLink.scoped(to: itemIdentifier, region: region.regionID)?.characterIndex,
+            spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: itemIdentifier, region: region.regionID),
             revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: region.regionID)
         )
     }

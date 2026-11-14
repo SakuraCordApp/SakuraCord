@@ -485,8 +485,7 @@ extension NativeTimelineCanvasView {
                 value: contentText.value,
                 framesetter: contentText.framesetter,
                 frame: NativeTimelineTextGeometry.messageContentDrawingFrame(contentFrame),
-                selectionRange: textSelection?.itemIdentifier == identifier
-                    && textSelection?.region == .content ? textSelection?.range : nil,
+                selectionRange: textSelection.scoped(to: identifier, region: .content)?.range,
                 revealedSpoilerLocations: revealedTextSpoilerLocations(
                     messageID: row.message.id,
                     region: .content,
@@ -549,8 +548,7 @@ extension NativeTimelineCanvasView {
                     value: textRegion.text.value,
                     framesetter: textRegion.text.framesetter,
                     frame: drawingFrame,
-                    selectionRange: textSelection?.itemIdentifier == identifier
-                        && textSelection?.region == textRegionID ? textSelection?.range : nil,
+                    selectionRange: textSelection.scoped(to: identifier, region: textRegionID)?.range,
                     revealedSpoilerLocations: revealedTextSpoilerLocations(
                         messageID: message.id,
                         region: textRegionID,
@@ -634,8 +632,7 @@ extension NativeTimelineCanvasView {
                 value: textRegion.text.value,
                 framesetter: textRegion.text.framesetter,
                 frame: drawingFrame,
-                selectionRange: textSelection?.itemIdentifier == identifier
-                    && textSelection?.region == textRegionID ? textSelection?.range : nil,
+                selectionRange: textSelection.scoped(to: identifier, region: textRegionID)?.range,
                 revealedSpoilerLocations: revealedTextSpoilerLocations(
                     messageID: messageID,
                     region: textRegionID,

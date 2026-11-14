@@ -414,21 +414,11 @@ extension NativeTimelineRowPainter {
                 in: drawingFrame,
                 model: model,
                 bubble: layout.bubbleRegion,
-                selectionRange:
-                    textSelection?.itemIdentifier == .message(row.identity)
-                        && textSelection?.region == .content
-                    ? textSelection?.range
-                    : nil,
+                selectionRange: textSelection.scoped(to: .message(row.identity), region: .content)?.range,
                 hoveredMentionCharacterIndex:
-                    hoveredMention?.itemIdentifier == .message(row.identity)
-                        && hoveredMention?.region == .content
-                    ? hoveredMention?.characterIndex
-                    : nil,
+                    hoveredMention.scoped(to: .message(row.identity), region: .content)?.characterIndex,
                 hoveredLinkCharacterIndex:
-                    hoveredTextLink?.itemIdentifier == .message(row.identity)
-                        && hoveredTextLink?.region == .content
-                    ? hoveredTextLink?.characterIndex
-                    : nil,
+                    hoveredTextLink.scoped(to: .message(row.identity), region: .content)?.characterIndex,
                 spoilerHoverProgress: textSpoilerHover.progress(in: .message(row.identity), region: .content),
                 revealedSpoilerLocations:
                     revealedTextSpoilerState.locations(in: .content)
@@ -649,15 +639,11 @@ extension NativeTimelineRowPainter {
                 in: textRegion.frame,
                 model: input.model,
                 bubble: region.kind == .bubbleIntegratedCard ? input.layout.bubbleRegion : nil,
-                selectionRange: input.textSelection?.itemIdentifier == itemIdentifier
-                    && input.textSelection?.region == textRegionID
-                    ? input.textSelection?.range : nil,
-                hoveredMentionCharacterIndex: input.interaction.hoveredMention?.itemIdentifier == itemIdentifier
-                    && input.interaction.hoveredMention?.region == textRegionID
-                    ? input.interaction.hoveredMention?.characterIndex : nil,
-                hoveredLinkCharacterIndex: input.interaction.hoveredTextLink?.itemIdentifier == itemIdentifier
-                    && input.interaction.hoveredTextLink?.region == textRegionID
-                    ? input.interaction.hoveredTextLink?.characterIndex : nil,
+                selectionRange: input.textSelection.scoped(to: itemIdentifier, region: textRegionID)?.range,
+                hoveredMentionCharacterIndex:
+                    input.interaction.hoveredMention.scoped(to: itemIdentifier, region: textRegionID)?.characterIndex,
+                hoveredLinkCharacterIndex:
+                    input.interaction.hoveredTextLink.scoped(to: itemIdentifier, region: textRegionID)?.characterIndex,
                 spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: itemIdentifier, region: textRegionID),
                 revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: textRegionID)
             )

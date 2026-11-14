@@ -60,9 +60,8 @@ extension NativeTimelineCanvasView {
             var word = term.location == kCFNotFound
                 ? Self.wordRange(at: lookupIndex, in: lookupText.string)
                 : NSRange(location: term.location, length: term.length)
-            if usesSelection, let selection = textSelection,
-               selection.itemIdentifier == items[index].identifier,
-               selection.region == text.region,
+            if usesSelection,
+               let selection = textSelection.scoped(to: items[index].identifier, region: text.region),
                NSLocationInRange(hit.characterIndex, selection.range)
             {
                 let visibleSelection = NSIntersectionRange(selection.range, lookupRange)
