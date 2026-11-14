@@ -215,7 +215,7 @@ struct ForumPostComposer: View {
                         ForEach(channel.availableTags) { tag in
                             ForumTagButton(
                                 tag: tag,
-                                customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
+                                emoji: ForumTagEmojiPresentation(tag: tag, customEmojiURLsByID: model.customEmojiURLsByID),
                                 isSelected: draft.tagIDs.contains(tag.id)
                             ) { toggleTag(tag) }
                             .disabled(!draft.tagIDs.contains(tag.id) && !canAdd(tag))

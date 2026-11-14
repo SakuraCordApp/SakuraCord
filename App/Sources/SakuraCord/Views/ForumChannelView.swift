@@ -167,7 +167,7 @@ private struct ForumTagStrip: View {
                     ForEach(channel.availableTags) { tag in
                         ForumTagButton(
                             tag: tag,
-                            customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
+                            emoji: ForumTagEmojiPresentation(tag: tag, customEmojiURLsByID: model.customEmojiURLsByID),
                             isSelected: model.forumSelectedTagIDs.contains(tag.id)
                         ) {
                             model.toggleForumFilterTag(tag.id)
@@ -505,7 +505,7 @@ final class ForumSortMenuNSButton: NSButton {
 
 struct ForumTagButton: View {
     let tag: ForumTag
-    let customEmojiURL: URL?
+    let emoji: ForumTagEmojiPresentation?
     let isSelected: Bool
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
@@ -513,7 +513,7 @@ struct ForumTagButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(5)) {
-                ForumTagEmoji(tag: tag, customEmojiURL: customEmojiURL, size: ForumTagChipMetrics.emojiSize)
+                ForumTagEmoji(emoji: emoji, size: ForumTagChipMetrics.emojiSize)
                 Text(tag.name)
                     .lineLimit(1)
             }
@@ -533,12 +533,12 @@ struct ForumTagButton: View {
 }
 
 private struct ForumTagEmoji: View {
-    let tag: ForumTag
-    let customEmojiURL: URL?
+    let emoji: ForumTagEmojiPresentation?
     let size: CGFloat
 
     var body: some View {
-        if tag.emojiID != nil, let url = resolvedCustomEmojiURL {
+        switch emoji {
+        case let .custom(url):
             AnimatedRemoteImage(
                 url: url,
                 fallbackSystemImage: "tag",
@@ -546,15 +546,13 @@ private struct ForumTagEmoji: View {
             )
             .frame(width: size, height: size)
             .frame(width: size + 4, height: size + 4)
-        } else if let emoji = tag.emojiName, !emoji.isEmpty {
-            Text(emoji)
+        case let .unicode(name):
+            Text(name)
                 .font(.system(size: size * 0.9))
                 .fixedSize()
                 .frame(width: size + 4, height: size + 4)
+        case nil:
+            EmptyView()
         }
-    }
-
-    private var resolvedCustomEmojiURL: URL? {
-        ForumTagEmojiPresentation.customEmojiURL(for: tag, cached: customEmojiURL)
     }
 }
