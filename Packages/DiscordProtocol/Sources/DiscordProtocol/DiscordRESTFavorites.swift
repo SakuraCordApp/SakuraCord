@@ -152,6 +152,6 @@ struct FavoritesSyncState {
     /// Channels dismissal, or the restore Reset sends in its own write.
     var pendingUserContent: Data?
     var personalizationConsented = false
-    var channelAffinities: (ids: [ChannelID], fetchedAt: Date)?
-    var userAffinities: (ids: [UserID], fetchedAt: Date)?
+    /// Each ranking is loaded once its fetch date is set.
+    var affinities = ConversationAffinities()
 }

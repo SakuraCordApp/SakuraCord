@@ -46,24 +46,29 @@ extension DiscordRESTProvider {
     /// official persisted stores do. A failed read keeps the older ranking.
     public func conversationAffinities(restoring stored: ConversationAffinities?) async -> ConversationAffinities {
         guard favoritesSync.personalizationConsented else { return ConversationAffinities() }
-        if favoritesSync.channelAffinities == nil, let stored, let date = stored.channelsFetchedAt { favoritesSync.channelAffinities = (stored.channelIDs, date) }
-        if favoritesSync.userAffinities == nil, let stored, let date = stored.usersFetchedAt { favoritesSync.userAffinities = (stored.userIDs, date) }
+        if favoritesSync.affinities.channelsFetchedAt == nil, let stored, stored.channelsFetchedAt != nil {
+            favoritesSync.affinities.channelIDs = stored.channelIDs
+            favoritesSync.affinities.channelsFetchedAt = stored.channelsFetchedAt
+        }
+        if favoritesSync.affinities.usersFetchedAt == nil, let stored, stored.usersFetchedAt != nil {
+            favoritesSync.affinities.userIDs = stored.userIDs
+            favoritesSync.affinities.usersFetchedAt = stored.usersFetchedAt
+        }
         let now = Date.now
         // The two stores fetch independently, as Discord's do.
-        let refreshesChannels = favoritesSync.channelAffinities.map { now.timeIntervalSince($0.fetchedAt) > Self.channelAffinitiesLifetime } ?? true
-        let refreshesUsers = favoritesSync.userAffinities.map { now.timeIntervalSince($0.fetchedAt) > Self.userAffinitiesLifetime } ?? true
+        let refreshesChannels = favoritesSync.affinities.channelsFetchedAt.map { now.timeIntervalSince($0) > Self.channelAffinitiesLifetime } ?? true
+        let refreshesUsers = favoritesSync.affinities.usersFetchedAt.map { now.timeIntervalSince($0) > Self.userAffinitiesLifetime } ?? true
         async let channelResponse: ChannelAffinitiesDTO? = refreshesChannels ? try? await request("/users/@me/affinities/v2/channels") : nil
         async let userResponse: UserAffinitiesDTO? = refreshesUsers ? try? await request("/users/@me/affinities/v2/users") : nil
         if let response = await channelResponse {
-            favoritesSync.channelAffinities = (Self.ranked(response.channelAffinities.map { ($0.channelID, $0.score ?? 0) }), now)
+            favoritesSync.affinities.channelIDs = Self.ranked(response.channelAffinities.map { ($0.channelID, $0.score ?? 0) })
+            favoritesSync.affinities.channelsFetchedAt = now
         }
         if let response = await userResponse {
-            favoritesSync.userAffinities = (Self.ranked(response.userAffinities.map { ($0.otherUserID, $0.dmProbability ?? 0) }), now)
+            favoritesSync.affinities.userIDs = Self.ranked(response.userAffinities.map { ($0.otherUserID, $0.dmProbability ?? 0) })
+            favoritesSync.affinities.usersFetchedAt = now
         }
-        return ConversationAffinities(
-            channelIDs: favoritesSync.channelAffinities?.ids ?? [], userIDs: favoritesSync.userAffinities?.ids ?? [],
-            channelsFetchedAt: favoritesSync.channelAffinities?.fetchedAt, usersFetchedAt: favoritesSync.userAffinities?.fetchedAt
-        )
+        return favoritesSync.affinities
     }
 
     /// Highest first; equal values keep Discord's order, as its stable sort does.
