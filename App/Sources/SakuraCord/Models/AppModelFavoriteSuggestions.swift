@@ -25,7 +25,10 @@ extension AppModel {
         guard favorites.isPresented, favorites.suggestionsDismissed == false else {
             favorites.suggestionsTask?.cancel()
             favorites.suggestionsTask = nil
-            favorites.suggestions = []
+            // Closing Favorites keeps its rows: removing a section from the
+            // list in the update that removes the list throws inside AppKit,
+            // and the window then stops drawing.
+            if favorites.isPresented { favorites.suggestions = [] }
             return
         }
         // Discord re-picks while rendering, so an added or removed favourite
