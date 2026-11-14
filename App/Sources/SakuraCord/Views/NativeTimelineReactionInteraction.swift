@@ -4,9 +4,7 @@ import SakuraCordModels
 
 extension NativeTimelineCanvasView {
     func reactionPointerHit(at point: CGPoint) -> ReactionPointerHit? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               case let .message(row, _, _) = items[index]
         else { return nil }
         let local = CGPoint(

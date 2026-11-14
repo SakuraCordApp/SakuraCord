@@ -506,18 +506,14 @@ extension NativeTimelineCanvasView {
     }
 
     private func forwardedSourcePointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               let frame = layouts[index].forwardedSourceRegion?.frame
         else { return nil }
         let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         return frame.contains(local) ? items[index].messageID : nil
     }
     private func footerActionPointerHit(at point: CGPoint) -> NativeTimelineFooterActionTarget? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index)
+        guard let index = hitRowIndex(at: point.y)
         else { return nil }
         let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         if case let .suppressedMessages(group) = items[index] {
@@ -687,9 +683,7 @@ extension NativeTimelineCanvasView {
             pressed: pressedActivationTarget,
             released: pointerActivationTarget(at: point)
         ) else { return }
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               let actions
         else { return }
         let item = items[index]
@@ -1098,9 +1092,7 @@ extension NativeTimelineCanvasView {
     }
 
     func hoveredRowIndex(at point: CGPoint) -> Int? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index)
+        guard let index = hitRowIndex(at: point.y)
         else { return nil }
         guard case .message = items[index] else { return index }
         let local = CGPoint(
@@ -1124,9 +1116,7 @@ extension NativeTimelineCanvasView {
     func compactTimestampRowIndex(
         at point: CGPoint
     ) -> Int? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               case .message = items[index],
               layouts[index].compactTimestampFrame != nil,
               NativeTimelineCompactTimestampHitTesting.contains(
@@ -1312,9 +1302,7 @@ extension NativeTimelineCanvasView {
     func mentionPointerHit(
         at point: CGPoint
     ) -> NativeTimelineMentionHover? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               items[index].textOwnerID != nil
         else { return nil }
         for mention in mentionPointerRegions(at: index)
@@ -1330,9 +1318,7 @@ extension NativeTimelineCanvasView {
     }
 
     func authorNamePointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               case let .message(row, _, _) = items[index],
               row.startsGroup,
               !row.message.type.hasGeneratedContent,
@@ -1348,9 +1334,7 @@ extension NativeTimelineCanvasView {
     func textLinkPointerHit(
         at point: CGPoint
     ) -> NativeTimelineTextLinkHover? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               items[index].textOwnerID != nil
         else { return nil }
         let local = CGPoint(
@@ -1372,9 +1356,7 @@ extension NativeTimelineCanvasView {
     func textSpoilerPointerHit(
         at point: CGPoint
     ) -> NativeTimelineTextSpoilerHover? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               items[index].textOwnerID != nil
         else { return nil }
         let local = CGPoint(
@@ -1498,9 +1480,7 @@ extension NativeTimelineCanvasView {
     func pointerActivationTarget(
         at point: CGPoint
     ) -> NativeTimelinePointerActivationTarget? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index)
+        guard let index = hitRowIndex(at: point.y)
         else { return nil }
         let item = items[index]
         let layout = layouts[index]
@@ -1744,9 +1724,7 @@ extension NativeTimelineCanvasView {
     func componentButtonPointerHit(
         at point: CGPoint
     ) -> ComponentButtonPointerHit? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               case let .message(row, _, _) = items[index]
         else { return nil }
         let rowOrigin = displayedRowOrigin(at: index)

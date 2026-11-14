@@ -36,7 +36,7 @@ extension NativeTimelineCanvasView {
     }
 
     func serverTagPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y), items.indices.contains(index), layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               let tag = layouts[index].serverTagRegion, tag.presentation.identity.guildID != nil
         else { return nil }
         let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))

@@ -5,7 +5,7 @@ import SwiftUI
 
 extension NativeTimelineCanvasView {
     func commandPillPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y), items.indices.contains(index), layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               let pill = layouts[index].commandInvocationRegion?.pillFrame
         else { return nil }
         let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))

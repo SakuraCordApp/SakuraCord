@@ -33,9 +33,7 @@ extension NativeTimelineCanvasView {
               !overlayBlocksInteractions,
               editingMessageID == nil
         else { return nil }
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               items[index].messageID != nil
         else {
             return nil

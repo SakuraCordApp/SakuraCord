@@ -5,9 +5,7 @@ import SakuraCordModels
 /// invalidates only the card, not its row.
 extension NativeTimelineCanvasView {
     func threadCardPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               let frame = layouts[index].threadFrame,
               let messageID = items[index].messageID
         else { return nil }

@@ -678,6 +678,13 @@ extension NativeTimelineCanvasView {
         return items.indices.contains(lower) ? lower : nil
     }
 
+    /// The row under a pointer's y whose item and layout are both present.
+    func hitRowIndex(at documentY: CGFloat) -> Int? {
+        guard let index = rowIndex(at: documentY), items.indices.contains(index), layouts.indices.contains(index)
+        else { return nil }
+        return index
+    }
+
     func startMessageJumpHighlight(_ messageID: MessageID) {
         cancelMessageJumpHighlight()
         let highlight = MessageJumpHighlight(
