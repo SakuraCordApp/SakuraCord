@@ -1023,3 +1023,91 @@ struct ToolbarSearchFieldController: NSViewRepresentable {
 
     }
 }
+
+/// What the toolbar search field edits: the Friends search, a server's
+/// channel filter, or message search.
+private struct ToolbarSearchTarget {
+    let text: Binding<String>
+    let tokens: Binding<[MessageSearchToken]>
+    let isFocused: Binding<Bool>
+    /// Friends and channel filters search locally, without tokens or submit.
+    let isLocal: Bool
+    let clear: @MainActor () -> Void
+    let endEditing: @MainActor () -> Void
+
+    init(model: AppModel, search: MessageSearchState) {
+        let bindableModel = Bindable(model)
+        let onboarding = Bindable(model.onboarding)
+        let friends = Bindable(model.friends)
+        let friendsSearch = model.isFriendsSearchActive
+        isLocal = friendsSearch || model.isBrowsingGuildChannels
+        if friendsSearch {
+            text = bindableModel.friendsSearchText
+            isFocused = friends.isSearchFocused
+            clear = { model.friendsSearchText = "" }
+            endEditing = { model.friends.isSearchFocused = false }
+        } else if isLocal {
+            text = onboarding.channelSearch
+            isFocused = onboarding.isChannelSearchFocused
+            clear = { model.onboarding.channelSearch = "" }
+            endEditing = { model.onboarding.isChannelSearchFocused = false }
+        } else {
+            text = bindableModel.messageSearchInputText
+            isFocused = Bindable(search).isInputFocused
+            clear = { model.clearMessageSearchUsingBuiltInButton() }
+            endEditing = { model.messageSearchEditingDidEnd() }
+        }
+        tokens = isLocal ? .constant([]) : Bindable(search).tokens
+    }
+}
+
+struct MessageSearchToolbarBridge: View {
+    let model: AppModel
+    let isVisible: Bool
+    @Binding var metrics: ToolbarSearchFieldMetrics
+
+    var body: some View {
+        let target = ToolbarSearchTarget(model: model, search: model.messageSearch)
+        ToolbarSearchFieldController(
+            searchText: target.text,
+            searchTokens: target.tokens,
+            isSearchFocused: target.isFocused,
+            isToolbarItemVisible: isVisible,
+            preferredFieldWidth: ChatChromeMetrics.toolbarSearchMaximumFieldWidth,
+            didUseBuiltInClear: target.clear,
+            didEndEditing: target.endEditing,
+            pasteCanonicalSyntax: { value in
+                if target.isLocal { return .init(tokens: [], text: value) }
+                return MessageSearchTokenParser.parse(
+                    value,
+                    users: model.messageSearchUsers,
+                    channels: model.messageSearchChannels
+                )
+            },
+            changed: { metrics = $0 }
+        )
+    }
+}
+
+struct MessageSearchToolbarModifier: ViewModifier {
+    let model: AppModel
+    let search: MessageSearchState
+    let prompt: Text
+
+    func body(content: Content) -> some View {
+        let target = ToolbarSearchTarget(model: model, search: search)
+        content
+            .searchable(
+                text: target.text,
+                tokens: target.tokens,
+                isPresented: target.isFocused,
+                placement: .toolbar,
+                prompt: prompt
+            ) { token in
+                Text(token.title)
+            }
+            .onSubmit(of: .search) {
+                if !target.isLocal { model.submitMessageSearchInput() }
+            }
+    }
+}
