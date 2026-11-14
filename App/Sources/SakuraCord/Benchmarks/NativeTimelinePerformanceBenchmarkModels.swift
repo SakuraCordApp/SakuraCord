@@ -228,6 +228,85 @@ enum NativeTimelineBenchmarkArtifact {
     }
 }
 
+/// The signpost interval, resource window and scroll-work gate activity of
+/// one native auto-scroll benchmark run.
+struct NativeScrollBenchmarkMeasurement {
+    enum Surface {
+        case memberList
+        case messageTimeline
+
+        var name: StaticString {
+            switch self {
+            case .memberList: "MemberListAutoScrollBenchmark"
+            case .messageTimeline: "MessageTimelineAutoScrollBenchmark"
+            }
+        }
+
+        func event(for outcome: NativeTimelineBenchmarkFinishOutcome) -> StaticString? {
+            switch (self, outcome) {
+            case (.memberList, .completed): "MemberListAutoScrollBenchmarkCompleted"
+            case (.memberList, .insufficientHistory): "MemberListAutoScrollBenchmarkInsufficientHistory"
+            case (.memberList, .cancelled): "MemberListAutoScrollBenchmarkCancelled"
+            // The member list never paginates.
+            case (.memberList, .paginationFailed): nil
+            case (.messageTimeline, .completed): "MessageTimelineAutoScrollBenchmarkCompleted"
+            case (.messageTimeline, .insufficientHistory): "MessageTimelineAutoScrollBenchmarkInsufficientHistory"
+            case (.messageTimeline, .cancelled): "MessageTimelineAutoScrollBenchmarkCancelled"
+            case (.messageTimeline, .paginationFailed): "MessageTimelineAutoScrollBenchmarkPaginationFailed"
+            }
+        }
+    }
+
+    let surface: Surface
+    private let gatesScrollWork: Bool
+    private let interval: OSSignpostIntervalState
+
+    init(_ surface: Surface, gatesScrollWork: Bool) {
+        self.surface = surface
+        self.gatesScrollWork = gatesScrollWork
+        interval = AppPerformanceSignposts.signposter.beginInterval(surface.name)
+        AppPerformanceSignposts.beginResourceWindow(named: surface.name.description)
+        // Programmatic benchmark motion bypasses AppKit's live-scroll
+        // notifications. Exercise the same loading-isolation gate as a real
+        // trackpad gesture so scheduling regressions remain observable.
+        if gatesScrollWork { AppScrollWorkGate.beginActivity() }
+    }
+
+    func endScrollWork() {
+        if gatesScrollWork { AppScrollWorkGate.endActivity() }
+    }
+
+    func emitEvent(for outcome: NativeTimelineBenchmarkFinishOutcome) {
+        if let event = surface.event(for: outcome) {
+            AppPerformanceSignposts.signposter.emitEvent(event)
+        }
+    }
+
+    func endInterval() {
+        AppPerformanceSignposts.signposter.endInterval(surface.name, interval)
+    }
+
+    func endResourceWindow(after outcome: NativeTimelineBenchmarkFinishOutcome) {
+        AppPerformanceSignposts.endResourceWindow(
+            named: surface.name.description,
+            nominalDuration: outcome == .completed
+                ? NativeTimelineBenchmarkScrollPolicy.duration
+                : nil
+        )
+    }
+
+    /// Reports the outcome and closes the measurement around the run's artifact.
+    func finish(
+        outcome: NativeTimelineBenchmarkFinishOutcome,
+        writeArtifact: () -> Void
+    ) {
+        emitEvent(for: outcome)
+        endInterval()
+        writeArtifact()
+        endResourceWindow(after: outcome)
+    }
+}
+
 @MainActor
 final class NativeTimelinePerformanceBenchmarkGate {
     static let shared = NativeTimelinePerformanceBenchmarkGate()

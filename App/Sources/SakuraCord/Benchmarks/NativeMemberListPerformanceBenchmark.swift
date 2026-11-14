@@ -50,7 +50,11 @@ extension NativeMemberListCoordinator {
     ) {
         scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
-        let interval = beginPerformanceScrollMeasurement()
+        let measurement = NativeScrollBenchmarkMeasurement(
+            .memberList,
+            gatesScrollWork: true
+        )
+        performanceMeasurement = measurement
         var ticks = NativeTimelineBenchmarkTickStats()
         var completedDistance: CGFloat = 0
         let ticker = DisplayLinkTicker()
@@ -79,81 +83,38 @@ extension NativeMemberListCoordinator {
             if elapsed >= NativeTimelineBenchmarkScrollPolicy.duration
                 || nextY >= maximumY - 0.5
             {
-                AppScrollWorkGate.endActivity()
+                measurement.endScrollWork()
                 ticker?.stop()
                 performanceTicker = nil
+                performanceMeasurement = nil
                 let outcome: NativeTimelineBenchmarkFinishOutcome =
                     elapsed >= NativeTimelineBenchmarkScrollPolicy.duration
                         ? .completed : .insufficientHistory
-                switch outcome {
-                case .completed:
-                    AppPerformanceSignposts.signposter.emitEvent(
-                        "MemberListAutoScrollBenchmarkCompleted"
+                measurement.finish(outcome: outcome) {
+                    NativeTimelineBenchmarkArtifact.write(
+                        outcome: outcome,
+                        completedDistance: completedDistance,
+                        elapsed: elapsed,
+                        ticks: ticks
                     )
-                case .insufficientHistory:
-                    AppPerformanceSignposts.signposter.emitEvent(
-                        "MemberListAutoScrollBenchmarkInsufficientHistory"
-                    )
-                case .cancelled, .paginationFailed:
-                    break
                 }
-                AppPerformanceSignposts.signposter.endInterval(
-                    "MemberListAutoScrollBenchmark",
-                    interval
-                )
-                performanceInterval = nil
-                NativeTimelineBenchmarkArtifact.write(
-                    outcome: outcome,
-                    completedDistance: completedDistance,
-                    elapsed: elapsed,
-                    ticks: ticks
-                )
-                AppPerformanceSignposts.endResourceWindow(
-                    named: "MemberListAutoScrollBenchmark",
-                    nominalDuration:
-                        outcome == .completed
-                            ? NativeTimelineBenchmarkScrollPolicy.duration : nil
-                )
             }
         }
     }
 
-    private func beginPerformanceScrollMeasurement() -> OSSignpostIntervalState {
-        let interval = AppPerformanceSignposts.signposter.beginInterval(
-            "MemberListAutoScrollBenchmark"
-        )
-        performanceInterval = interval
-        // Programmatic benchmark motion bypasses AppKit's live-scroll
-        // notifications. Exercise the same loading-isolation gate as a real
-        // trackpad gesture so cross-surface regressions remain observable.
-        AppScrollWorkGate.beginActivity()
-        AppPerformanceSignposts.beginResourceWindow(
-            named: "MemberListAutoScrollBenchmark"
-        )
-        return interval
-    }
-
     func cancelPerformanceBenchmark() {
-        if let performanceInterval {
-            AppScrollWorkGate.endActivity()
-            AppPerformanceSignposts.signposter.emitEvent(
-                "MemberListAutoScrollBenchmarkCancelled"
-            )
-            AppPerformanceSignposts.signposter.endInterval(
-                "MemberListAutoScrollBenchmark",
-                performanceInterval
-            )
-            NativeTimelineBenchmarkArtifact.write(
-                outcome: .cancelled,
-                completedDistance: 0,
-                elapsed: 0
-            )
-            AppPerformanceSignposts.endResourceWindow(
-                named: "MemberListAutoScrollBenchmark"
-            )
+        if let performanceMeasurement {
+            performanceMeasurement.endScrollWork()
+            performanceMeasurement.finish(outcome: .cancelled) {
+                NativeTimelineBenchmarkArtifact.write(
+                    outcome: .cancelled,
+                    completedDistance: 0,
+                    elapsed: 0
+                )
+            }
         }
         performanceTicker?.stop()
         performanceTicker = nil
-        performanceInterval = nil
+        performanceMeasurement = nil
     }
 }

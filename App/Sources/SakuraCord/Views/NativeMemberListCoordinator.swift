@@ -38,7 +38,7 @@ final class NativeMemberListCoordinator: NSObject {
     var performanceStartGeneration: UInt64 = 0
     var performanceLayoutSections: [PerformanceLayoutSection]?
     var didStartPerformanceBenchmark = false
-    var performanceInterval: OSSignpostIntervalState?
+    var performanceMeasurement: NativeScrollBenchmarkMeasurement?
     var documentPreparationTask: Task<Void, Never>?
     var requestedSections: [MemberSection]?
     var requestedPresentation: NativeMemberListPresentation?

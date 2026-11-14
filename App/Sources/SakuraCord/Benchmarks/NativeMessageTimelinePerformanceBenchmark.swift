@@ -149,30 +149,23 @@ extension NativeMessageTimelineCoordinator {
         beginPerformanceBenchmarkPaginationIntent(
             towardLater: scrollsTowardLater
         )
-        let signpost = AppPerformanceSignposts.signposter.beginInterval(
-            "MessageTimelineAutoScrollBenchmark"
-        )
-        AppPerformanceSignposts.beginResourceWindow(
-            named: "MessageTimelineAutoScrollBenchmark"
+        // An idle run measures a still timeline, which a real gesture would
+        // never gate.
+        let measurement = NativeScrollBenchmarkMeasurement(
+            .messageTimeline,
+            gatesScrollWork: !NativeTimelineBenchmarkScrollPolicy.isIdle
         )
         let state = NativeTimelineBenchmarkRunState(
             scrollsTowardLater: scrollsTowardLater,
             initialItemCount: items.count,
-            closeMeasurement: {
-                AppPerformanceSignposts.signposter.endInterval(
-                    "MessageTimelineAutoScrollBenchmark",
-                    signpost
-                )
-            }
+            closeMeasurement: { measurement.endInterval() }
         )
         self.performanceDisplayLinkTicker = state.ticker
         let finish: (NativeTimelineBenchmarkFinishOutcome) -> Void = { [weak self, weak canvas, state] outcome in
             guard let elapsed = state.finish(
-                endActivity: {
-                    if !NativeTimelineBenchmarkScrollPolicy.isIdle { AppScrollWorkGate.endActivity() }
-                },
+                endActivity: { measurement.endScrollWork() },
                 beforeMeasurementClose: {
-                    Self.emitPerformanceBenchmarkOutcome(outcome)
+                    measurement.emitEvent(for: outcome)
                 },
                 performBookkeeping: { elapsed in
                     Self.writePerformanceBenchmarkArtifact(
@@ -185,6 +178,7 @@ extension NativeMessageTimelineCoordinator {
                             self?.performanceUpdateTotalDuration ?? 0
                         )
                     )
+                    measurement.endResourceWindow(after: outcome)
                 }
             ) else { return }
             Self.logPerformanceBenchmarkSummary(
@@ -197,11 +191,6 @@ extension NativeMessageTimelineCoordinator {
             )
         }
         self.performanceBenchmarkFinish = finish
-        // The deterministic workload bypasses NSEvent, but production
-        // loading isolation keys off the same cross-surface gate as a
-        // real gesture. Exercise that scheduling policy here so the
-        // permanent benchmark catches priority regressions.
-        if !NativeTimelineBenchmarkScrollPolicy.isIdle { AppScrollWorkGate.beginActivity() }
         state.ticker.start(on: canvas) { [weak self, weak scrollView, weak state] in
             guard let self, let scrollView, let state else {
                 finish(.cancelled)
@@ -306,22 +295,6 @@ extension NativeMessageTimelineCoordinator {
         finishScrollActivity()
     }
 
-    static func emitPerformanceBenchmarkOutcome(
-        _ outcome: NativeTimelineBenchmarkFinishOutcome
-    ) {
-        let event: StaticString = switch outcome {
-        case .completed:
-            "MessageTimelineAutoScrollBenchmarkCompleted"
-        case .insufficientHistory:
-            "MessageTimelineAutoScrollBenchmarkInsufficientHistory"
-        case .cancelled:
-            "MessageTimelineAutoScrollBenchmarkCancelled"
-        case .paginationFailed:
-            "MessageTimelineAutoScrollBenchmarkPaginationFailed"
-        }
-        AppPerformanceSignposts.signposter.emitEvent(event)
-    }
-
     static func writePerformanceBenchmarkArtifact(
         outcome: NativeTimelineBenchmarkFinishOutcome,
         elapsed: TimeInterval,
@@ -338,12 +311,6 @@ extension NativeMessageTimelineCoordinator {
             mainThreadCPUTime: PerformanceBenchmarkHarness.currentThreadCPUTime()
                 - state.mainThreadCPUTimeAtStart,
             timelineUpdates: timelineUpdates
-        )
-        AppPerformanceSignposts.endResourceWindow(
-            named: "MessageTimelineAutoScrollBenchmark",
-            nominalDuration: outcome == .completed
-                ? NativeTimelineBenchmarkScrollPolicy.duration
-                : nil
         )
     }
 
