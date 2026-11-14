@@ -753,18 +753,6 @@ struct ForumThreadSearchResponseDTO: Decodable {
     }
 }
 
-enum RichMessageFixtureDecoder {
-    static func decodeMessage(from data: Data) throws -> Message {
-        try JSONDecoder().decode(MessageDTO.self, from: data).domain()
-    }
-
-    static func mergeUpdate(from data: Data, into message: Message) throws -> Message {
-        var result = message
-        try JSONDecoder().decode(MessageUpdateDTO.self, from: data).apply(to: &result)
-        return result
-    }
-}
-
 struct StringOrIntegerDTO: Decodable {
     let value: String
 
