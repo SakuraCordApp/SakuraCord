@@ -62,14 +62,12 @@ extension AppModel {
             do {
                 _ = try await session.provider.editGroupDirectMessage(presentation.channel.id, changes: changes)
                 guard model.isCurrentAccountSession(session), !model.accountTransitionIsActive, store.revision == revision else { return }
-                store.isSaving = false
                 store.presentation = nil
             } catch {
                 guard model.isCurrentAccountSession(session), !model.accountTransitionIsActive, store.revision == revision else { return }
                 if !(error is CancellationError) {
                     DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
                 }
-                store.isSaving = false
                 store.error = error is CancellationError
                     ? "The group change was interrupted. Check the group before trying again."
                     : error.localizedDescription
