@@ -55,9 +55,7 @@ extension DiscordRESTProvider {
         let generation = profileEditingGeneration
         let path = "/guilds/\(guildID)/members/\(userID)"
         let (data, response) = try await perform(path, method: "PATCH", body: ["nick": .string(nickname)])
-        if response.statusCode == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path) {
-            throw apiDiagnostics.coalescing(error, with: response)
-        }
+        if let error = profileValidationFailure(data: data, response: response, method: "PATCH", path: path) { throw error }
         let saved: JSONValue = try decodedResponse(data, response, method: "PATCH", path: path) { status, _ in
             status == 403 ? ChatProviderError.invalidRequest("You don’t have permission to change this member’s nickname.") : nil
         }
@@ -184,10 +182,8 @@ extension DiscordRESTProvider {
         let (data, response) = try await perform(
             request.path, method: request.method, body: request.body, headers: request.headers
         )
-        try validateEmptyResponse(data, response) { status, _ in
-            guard status == 400, let error = Self.profileValidationError(data: data, method: request.method, path: request.path)
-            else { return nil }
-            return apiDiagnostics.coalescing(error, with: response)
+        try validateEmptyResponse(data, response) { _, _ in
+            profileValidationFailure(data: data, response: response, method: request.method, path: request.path)
         }
         return data
     }

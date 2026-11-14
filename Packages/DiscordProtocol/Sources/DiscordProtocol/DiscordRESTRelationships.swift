@@ -282,10 +282,8 @@ extension DiscordRESTProvider {
         let (data, response) = try await perform(
             path, method: "PATCH", body: ["nickname": value.map(JSONValue.string) ?? .null]
         )
-        try validateEmptyResponse(data, response) { status, _ in
-            guard status == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path)
-            else { return nil }
-            return apiDiagnostics.coalescing(error, with: response)
+        try validateEmptyResponse(data, response) { _, _ in
+            profileValidationFailure(data: data, response: response, method: "PATCH", path: path)
         }
         // Only this friend's events supersede the save; the generation also
         // guards READY and disconnect, which clear the per-user revisions.

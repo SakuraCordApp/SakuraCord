@@ -32,9 +32,7 @@ public extension DiscordRESTProvider {
             path, method: "PATCH", body: body,
             headers: ["X-Context-Properties": DiscordClientMetadata.groupDirectMessageMenuContextHeader]
         )
-        if response.statusCode == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path) {
-            throw apiDiagnostics.coalescing(error, with: response)
-        }
+        if let error = profileValidationFailure(data: data, response: response, method: "PATCH", path: path) { throw error }
         let dto: ChannelDTO = try decodedResponse(data, response, method: "PATCH", path: path) { status, _ in
             status == 403 ? ChatProviderError.invalidRequest("You can no longer edit this group.") : nil
         }
