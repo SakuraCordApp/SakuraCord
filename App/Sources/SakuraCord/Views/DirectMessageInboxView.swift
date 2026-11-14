@@ -244,41 +244,10 @@ private struct DirectMessageInboxRow: View {
         .onModalHover { isHovered = $0 }
         .overlay {
             ChannelContextMenuBridge(
+                channel: channel,
+                model: model,
                 isSelected: isSelected,
                 isUnread: channel.unreadCount > 0,
-                isMutationPending:
-                    model.isChannelNotificationMutationPending(channel.id),
-                directOverride: model.channelNotificationOverride(for: channel),
-                inheritedLevel:
-                    model.inheritedChannelNotificationLevel(for: channel),
-                inheritanceSource: .directMessages,
-                markRead: {
-                    model.markConversationRead(channelID: channel.id)
-                },
-                mute: { duration in
-                    model.setChannelMute(
-                        true,
-                        until: duration.endDate(),
-                        for: channel
-                    )
-                },
-                unmute: {
-                    model.setChannelMute(false, until: nil, for: channel)
-                },
-                setNotificationLevel: { level in
-                    model.setChannelNotificationLevel(level, for: channel)
-                },
-                copyChannelID: {
-                    Pasteboard.copy(channel.id.description)
-                },
-                copyLink: {
-                    Pasteboard.copy(
-                        DiscordLink.channel(
-                            guildID: nil,
-                            channelID: channel.id
-                        )
-                    )
-                },
                 pinAction: .available(isPinned: isPinned, toggle: {
                     model.toggleDirectMessagePin(channel.id)
                 }),

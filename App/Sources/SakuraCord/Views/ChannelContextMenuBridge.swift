@@ -431,6 +431,44 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     }
 }
 
+extension ChannelContextMenuBridge {
+    /// The menu for a channel or DM row, with its notification, read and copy
+    /// actions bound to the model.
+    init(
+        channel: Channel,
+        model: AppModel,
+        isSelected: Bool,
+        isUnread: Bool,
+        allowsMutations: Bool = true,
+        pinAction: ChannelPinMenuAction = .unavailable,
+        userMenu: @escaping () -> NSMenu? = { nil },
+        groupActions: GroupDirectMessageMenuActions? = nil,
+        closeDirectMessage: (() -> Void)? = nil,
+        favoriteItems: @escaping () -> [NSMenuItem] = { [] }
+    ) {
+        self.init(
+            isSelected: isSelected,
+            isUnread: isUnread,
+            isMutationPending: model.isChannelNotificationMutationPending(channel.id),
+            allowsMutations: allowsMutations,
+            directOverride: model.channelNotificationOverride(for: channel),
+            inheritedLevel: model.inheritedChannelNotificationLevel(for: channel),
+            inheritanceSource: channel.guildID == nil ? .directMessages : channel.categoryID == nil ? .server : .category,
+            markRead: { model.markConversationRead(channelID: channel.id) },
+            mute: { model.setChannelMute(true, until: $0.endDate(), for: channel) },
+            unmute: { model.setChannelMute(false, until: nil, for: channel) },
+            setNotificationLevel: { model.setChannelNotificationLevel($0, for: channel) },
+            copyChannelID: { Pasteboard.copy(channel.id.description) },
+            copyLink: { Pasteboard.copy(DiscordLink.channel(guildID: channel.guildID, channelID: channel.id)) },
+            pinAction: pinAction,
+            userMenu: userMenu,
+            groupActions: groupActions,
+            closeDirectMessage: closeDirectMessage,
+            favoriteItems: favoriteItems
+        )
+    }
+}
+
 extension MessageNotificationLevel {
     nonisolated var menuTitle: String {
         switch self {

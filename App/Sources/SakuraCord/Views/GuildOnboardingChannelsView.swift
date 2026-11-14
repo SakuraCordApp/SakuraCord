@@ -103,21 +103,11 @@ private struct BrowseChannelRow: View {
         .help(followsCategory ? "Unfollow the category to choose individual channels." : "")
         .overlay {
             ChannelContextMenuBridge(
+                channel: channel,
+                model: model,
                 isSelected: false,
                 isUnread: model.canMarkConversationRead(channelID: channel.id),
-                isMutationPending: model.isChannelNotificationMutationPending(channel.id),
-                allowsMutations: !model.checkingChannelIDs.contains(channel.id),
-                directOverride: model.channelNotificationOverride(for: channel),
-                inheritedLevel: model.inheritedChannelNotificationLevel(for: channel),
-                inheritanceSource: channel.categoryID == nil ? .server : .category,
-                markRead: { model.markConversationRead(channelID: channel.id) },
-                mute: { model.setChannelMute(true, until: $0.endDate(), for: channel) },
-                unmute: { model.setChannelMute(false, until: nil, for: channel) },
-                setNotificationLevel: { model.setChannelNotificationLevel($0, for: channel) },
-                copyChannelID: { Pasteboard.copy(channel.id.description) },
-                copyLink: {
-                    Pasteboard.copy(DiscordLink.channel(guildID: channel.guildID, channelID: channel.id))
-                }
+                allowsMutations: !model.checkingChannelIDs.contains(channel.id)
             )
         }
     }

@@ -985,45 +985,13 @@ private struct ChannelRow: View {
         .accessibilityValue(accessibilityValue)
         .overlay {
             ChannelContextMenuBridge(
+                channel: channel,
+                model: model,
                 isSelected: isSelected,
                 isUnread: channel.kind == .forum
                     ? model.canMarkConversationRead(channelID: channel.id)
                     : channel.unreadCount > 0,
-                isMutationPending:
-                    model.isChannelNotificationMutationPending(channel.id),
                 allowsMutations: !isChecking,
-                directOverride: model.channelNotificationOverride(for: channel),
-                inheritedLevel:
-                    model.inheritedChannelNotificationLevel(for: channel),
-                inheritanceSource:
-                    channel.categoryID == nil ? .server : .category,
-                markRead: {
-                    model.markConversationRead(channelID: channel.id)
-                },
-                mute: { duration in
-                    model.setChannelMute(
-                        true,
-                        until: duration.endDate(),
-                        for: channel
-                    )
-                },
-                unmute: {
-                    model.setChannelMute(false, until: nil, for: channel)
-                },
-                setNotificationLevel: { level in
-                    model.setChannelNotificationLevel(level, for: channel)
-                },
-                copyChannelID: {
-                    Pasteboard.copy(channel.id.description)
-                },
-                copyLink: {
-                    Pasteboard.copy(
-                        DiscordLink.channel(
-                            guildID: channel.guildID,
-                            channelID: channel.id
-                        )
-                    )
-                },
                 pinAction: isHidden ? .unavailable : .available(
                     isPinned: isPinned,
                     isServerChannel: true,
