@@ -448,7 +448,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         else { return }
         // Anchored on the first visible post, past any section header.
         let position = scrollAnchor(postsOnly: true).flatMap { anchor -> ForumViewMemory.ScrollPosition? in
-            guard case let .post(postID) = anchor.id else { return nil }
+            guard let postID = anchor.id.postID else { return nil }
             return ForumViewMemory.ScrollPosition(postID: postID, offset: anchor.offset)
         }
         model.forumViewMemory.rememberScrollPosition(position, for: channel.id)
@@ -597,7 +597,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         CATransaction.commit()
         begin(group)
         drawArrivals(of: group)
-        let livePostIDs = Set(liveIDs.compactMap { if case let .post(id) = $0 { id } else { nil } })
+        let livePostIDs = Set(liveIDs.compactMap(\.postID))
         for id in excerptRenderers.keys where !livePostIDs.contains(id) {
             excerptRenderers[id]?.stopObservingReveals()
             excerptRenderers[id] = nil
@@ -627,7 +627,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let isVisible = entry.frame.intersects(visible)
         let id = entry.item.id
         var resolved = false
-        if case let .post(postID) = id {
+        if let postID = id.postID {
             resolved = resolveContent(for: postID, isNewCard: cards[id] == nil)
         }
         if let card = cards[id] {
@@ -754,7 +754,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             if sizeChanged, card.hasContent, followsLiveResize {
                 // A width change in progress reflows off the main thread;
                 // a worker-drawn excerpt redraws once more when it settles.
-                if case let .post(postID) = id, excerptRenderers[postID]?.supportsWorkerText == true {
+                if let postID = id.postID, excerptRenderers[postID]?.supportsWorkerText == true {
                     liveResizedIDs.insert(id)
                 }
                 laysOutExcerptsOffMain = true
@@ -773,7 +773,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     }
 
     func applyChrome(_ card: ForumBoardCard, id: ForumBoardItem.Identifier, animated: Bool) {
-        let postID: ChannelID? = if case let .post(value) = id { value } else { nil }
+        let postID = id.postID
         card.applyChrome(
             isHovered: hoveredID == id || keyboardID == id,
             isKeyboardFocused: keyboardID == id,
@@ -814,7 +814,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         #if DEBUG
         guard let width = layoutState?.width else { return }
         for (id, card) in cards {
-            guard case let .post(postID) = id else { continue }
+            guard let postID = id.postID else { continue }
             ForumLayoutStabilityProbe.shared.record(postID: postID, size: card.frame.size, containerWidth: width)
         }
         #endif

@@ -123,6 +123,11 @@ nonisolated enum ForumBoardItem: Hashable, Sendable {
         case olderPostsHeader
         case placeholder(Int)
         case paginationStatus
+
+        var postID: ChannelID? {
+            if case let .post(id) = self { return id }
+            return nil
+        }
     }
 
     case post(ForumCardGeometryInput)

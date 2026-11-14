@@ -10,7 +10,7 @@ extension ForumBoardView {
         var keysByPost: [ChannelID: Set<MediaImageKey>] = [:]
         let customEmojiURLsByID = model?.customEmojiURLsByID ?? [:]
         for id in cards.keys {
-            guard case let .post(postID) = id, let presentation = presentations[postID] else { continue }
+            guard let postID = id.postID, let presentation = presentations[postID] else { continue }
             var postKeys = Set<MediaImageKey>()
             if let key = presentation.thumbnail?.mediaKey { postKeys.insert(key) }
             for tag in presentation.tags {

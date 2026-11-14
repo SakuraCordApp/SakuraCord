@@ -29,7 +29,7 @@ extension ForumBoardView {
         var hydratedPostIDs = Set<ChannelID>()
         withObservationTracking {
             for id in cards.keys {
-                guard case let .post(postID) = id, let post = postsByID[postID] else { continue }
+                guard let postID = id.postID, let post = postsByID[postID] else { continue }
                 let presentation = model.forumCardPresentation(for: post, in: channel, tagsByID: tagsByID)
                 let presentationChanged = presentations[postID] != presentation
                 if presentations[postID]?.isAwaitingContent(isGallery: isGallery) == true,
@@ -100,7 +100,7 @@ extension ForumBoardView {
     /// Excerpt fonts, emoji sizes and the list/gallery source all feed the
     /// renderers, so a font load, mode change or scale change rebuilds them.
     func reconfigureRealizedExcerpts() {
-        for case let .post(postID) in cards.keys { configureExcerpt(for: postID) }
+        for postID in cards.keys.compactMap(\.postID) { configureExcerpt(for: postID) }
     }
 
     /// Configures a post's excerpt renderer for the current mode, metrics and
@@ -335,7 +335,7 @@ extension ForumBoardView {
     func refreshRelativeTimes() {
         var repainted = false
         for (id, card) in cards {
-            guard case let .post(postID) = id, let presentation = presentations[postID],
+            guard let postID = id.postID, let presentation = presentations[postID],
                   paintedRelativeTimes[id] != presentation.relativeTimeText(isGallery: isGallery)
             else { continue }
             regions[id] = nil
