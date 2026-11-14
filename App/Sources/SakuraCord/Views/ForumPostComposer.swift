@@ -46,9 +46,6 @@ private enum ForumPostProblem: Equatable {
 /// Rows sit inside the 32-point panel as the poll creator's do; the footer's
 /// 12-point inset keeps its capsules concentric with the panel.
 struct ForumPostComposer: View {
-    static let titleLimit = 100
-    static let tagLimit = 5
-
     let model: AppModel
     let channel: Channel
     @Environment(\.windowModalContext) private var modal
@@ -144,10 +141,10 @@ struct ForumPostComposer: View {
                 receiveAttachments: receiveAttachments,
                 submit: { isContentFocused = true }
             )
-            if draft.title.count > Self.titleLimit - 20 {
-                Text("\(draft.title.count)/\(Self.titleLimit)")
+            if draft.title.count > ThreadNamePolicy.maximumLength - 20 {
+                Text("\(draft.title.count)/\(ThreadNamePolicy.maximumLength)")
                     .font(.interface(.caption)).monospacedDigit()
-                    .foregroundStyle(draft.title.count > Self.titleLimit ? .red : .secondary)
+                    .foregroundStyle(draft.title.count > ThreadNamePolicy.maximumLength ? .red : .secondary)
                     .transition(.opacity)
             }
         }
@@ -358,7 +355,7 @@ private extension ForumPostComposer {
     var currentProblem: ForumPostProblem? {
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty { return .missingTitle }
-        if title.count > Self.titleLimit { return .titleTooLong }
+        if title.count > ThreadNamePolicy.maximumLength { return .titleTooLong }
         if draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, attachments.isEmpty { return .missingContent }
         if !ChatCharacterLimitPolicy.isWithinLimit(characterCount: draft.content.count, premiumType: Self.limitPremiumType) {
             return .contentTooLong
@@ -416,7 +413,7 @@ private extension ForumPostComposer {
     /// Adding is gated; a selected tag can always be removed, even one made
     /// moderator-only since the draft was saved.
     func canAdd(_ tag: ForumTag) -> Bool {
-        (!tag.isModerated || model.canManageForumPosts) && appliedTagIDs.count < Self.tagLimit
+        (!tag.isModerated || model.canManageForumPosts) && appliedTagIDs.count < ForumTag.maximumAppliedCount
     }
 
     func toggleTag(_ tag: ForumTag) {

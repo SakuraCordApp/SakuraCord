@@ -20,6 +20,11 @@ struct ForumPostComposerDraft: Equatable {
     }
 }
 
+extension ForumTag {
+    /// Discord allows at most five tags on a post.
+    static let maximumAppliedCount = 5
+}
+
 extension AppModel {
     func canToggleForumTag(_ tag: ForumTag, on post: ForumPost) -> Bool {
         let policy = threadActionPolicy(post.thread)
@@ -35,7 +40,7 @@ extension AppModel {
         return true
     }
 
-    /// Adds or removes a tag from a post; Discord allows at most five.
+    /// Adds or removes a tag from a post.
     func toggleForumTag(_ tagID: ForumTagID, on post: ForumPost, in channel: Channel) {
         guard let tag = channel.availableTags.first(where: { $0.id == tagID }),
               canToggleForumTag(tag, on: post)
@@ -43,7 +48,7 @@ extension AppModel {
         var tags = Set(post.thread.appliedTagIDs)
         if tags.contains(tagID) {
             tags.remove(tagID)
-        } else if tags.count < 5 {
+        } else if tags.count < ForumTag.maximumAppliedCount {
             tags.insert(tagID)
         }
         Task { await updateForumPostTags(post, tagIDs: Array(tags)) }
@@ -577,7 +582,7 @@ extension AppModel {
             return false
         }
         let uniqueTagIDs = Set(tagIDs)
-        guard uniqueTagIDs.count <= 5,
+        guard uniqueTagIDs.count <= ForumTag.maximumAppliedCount,
               let channel = selectedChannel,
               channel.id == post.thread.parentID
         else {

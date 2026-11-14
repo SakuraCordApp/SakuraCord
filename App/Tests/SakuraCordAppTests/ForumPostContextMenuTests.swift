@@ -4,7 +4,7 @@ import Testing
 @testable import SakuraCord
 
 @MainActor
-@Test func `forum post owners can edit ordinary but not moderated tags`() throws {
+@Test func `forum post tags menu enables only the tags the post can toggle`() throws {
     let ordinary = ForumTag(id: ForumTagID(rawValue: 1), name: "Open")
     let moderated = ForumTag(
         id: ForumTagID(rawValue: 2),
@@ -16,33 +16,14 @@ import Testing
             ThreadMenuEntry(id: ThreadActionsMenu.tagsSlotID, title: "Tags", content: .slot),
         ]]),
         tags: [ordinary, moderated],
-        appliedTagIDs: [],
+        appliedTagIDs: [moderated.id],
         customEmojiURLsByID: [:],
-        requiresTag: false,
-        canManage: false,
+        canToggle: { !$0.isModerated },
         toggleTag: { _ in }
     )
 
     let tagsMenu = try #require(menu.item(withTitle: "Tags")?.submenu)
     #expect(tagsMenu.item(withTitle: ordinary.name)?.isEnabled == true)
     #expect(tagsMenu.item(withTitle: moderated.name)?.isEnabled == false)
-}
-
-@MainActor
-@Test func `required forum tag cannot be removed when it is the last applied tag`() throws {
-    let required = ForumTag(id: ForumTagID(rawValue: 1), name: "Required")
-    let menu = ForumPostMenuBuilder().makeMenu(
-        actionsMenu: ThreadActionsMenu(sections: [[
-            ThreadMenuEntry(id: ThreadActionsMenu.tagsSlotID, title: "Tags", content: .slot),
-        ]]),
-        tags: [required],
-        appliedTagIDs: [required.id],
-        customEmojiURLsByID: [:],
-        requiresTag: true,
-        canManage: true,
-        toggleTag: { _ in }
-    )
-
-    let tagsMenu = try #require(menu.item(withTitle: "Tags")?.submenu)
-    #expect(tagsMenu.item(withTitle: required.name)?.isEnabled == false)
+    #expect(tagsMenu.item(withTitle: moderated.name)?.state == .on)
 }

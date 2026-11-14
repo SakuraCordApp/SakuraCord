@@ -102,8 +102,7 @@ extension ForumBoardView {
             tags: channel.availableTags,
             appliedTagIDs: post.thread.appliedTagIDs,
             customEmojiURLsByID: model.customEmojiURLsByID,
-            requiresTag: channel.requiresForumTag,
-            canManage: model.threadActionPolicy(post.thread).canManage,
+            canToggle: { [weak model] in model?.canToggleForumTag($0, on: post) ?? false },
             toggleTag: { [weak model] tagID in
                 model?.toggleForumTag(tagID, on: post, in: channel)
             }

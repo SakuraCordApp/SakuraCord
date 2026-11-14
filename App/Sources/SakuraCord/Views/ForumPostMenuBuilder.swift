@@ -20,23 +20,21 @@ final class ForumPostMenuBuilder: NSObject {
         tags: [ForumTag],
         appliedTagIDs: [ForumTagID],
         customEmojiURLsByID: CustomEmojiImageURLs,
-        requiresTag: Bool,
-        canManage: Bool,
+        canToggle: @escaping (ForumTag) -> Bool,
         toggleTag: @escaping (ForumTagID) -> Void
     ) -> NSMenu {
         self.toggleTag = toggleTag
         return renderer.makeMenu(actionsMenu) { [self] entry in
             guard entry.id == ThreadActionsMenu.tagsSlotID else { return nil }
             preloadCustomTagImages(for: tags, customEmojiURLsByID: customEmojiURLsByID)
-            return tagsMenuItem(tags: tags, appliedTagIDs: appliedTagIDs, requiresTag: requiresTag, canManage: canManage)
+            return tagsMenuItem(tags: tags, appliedTagIDs: appliedTagIDs, canToggle: canToggle)
         }
     }
 
     private func tagsMenuItem(
         tags: [ForumTag],
         appliedTagIDs: [ForumTagID],
-        requiresTag: Bool,
-        canManage: Bool
+        canToggle: (ForumTag) -> Bool
     ) -> NSMenuItem {
         let tagsItem = NSMenuItem(title: "Tags", action: nil, keyEquivalent: "")
         ContextMenuItemSupport.configure(tagsItem, title: "Tags", systemImage: "tag.fill")
@@ -49,12 +47,8 @@ final class ForumPostMenuBuilder: NSObject {
                 keyEquivalent: ""
             )
             item.target = self
-            let isApplied = appliedTagIDs.contains(tag.id)
-            let wouldRemoveRequiredLastTag =
-                requiresTag && isApplied && appliedTagIDs.count == 1
-            item.isEnabled = (canManage || !tag.isModerated)
-                && !wouldRemoveRequiredLastTag
-            item.state = isApplied ? .on : .off
+            item.isEnabled = canToggle(tag)
+            item.state = appliedTagIDs.contains(tag.id) ? .on : .off
             item.representedObject = NSNumber(value: tag.id.rawValue)
             item.image = menuImage(for: tag)
             item.preferredImageVisibility = .visible
