@@ -106,34 +106,6 @@ extension NativeTimelineCanvasView {
         return gap.staticGap - rowMotionOffset(at: gap.rowIndex - 1) + rowMotionOffset(at: gap.rowIndex)
     }
 
-    /// The divider's own row never draws above its gap while it slides in.
-    func unreadDividerGapSpan(at index: Int, minY: CGFloat, maxY: CGFloat) -> Range<CGFloat> {
-        guard unreadDividerGap?.rowIndex == index else { return minY ..< maxY }
-        let top = unreadDividerGapTop
-        return max(top, minY) ..< max(top, maxY)
-    }
-
-    func drawTimelineRowClippedToUnreadDividerGap(
-        at index: Int,
-        rowFrame: CGRect,
-        dirtyRect: CGRect,
-        visibleMediaKeys: [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>]
-    ) {
-        let top = unreadDividerGapTop
-        guard unreadDividerGap?.rowIndex == index,
-              rowFrame.minY < top,
-              let context = NSGraphicsContext.current?.cgContext
-        else {
-            drawTimelineRow(at: index, rowFrame: rowFrame, dirtyRect: dirtyRect, visibleMediaKeys: visibleMediaKeys)
-            return
-        }
-        guard top < rowFrame.maxY else { return }
-        context.saveGState()
-        context.clip(to: CGRect(x: rowFrame.minX, y: top, width: rowFrame.width, height: rowFrame.maxY - top))
-        drawTimelineRow(at: index, rowFrame: rowFrame, dirtyRect: dirtyRect, visibleMediaKeys: visibleMediaKeys)
-        context.restoreGState()
-    }
-
     /// Starts the divider's space opening or closing from the picture on
     /// screen before the update. Returns false when the change must apply
     /// instantly: Reduce Motion, another motion running (a closing divider

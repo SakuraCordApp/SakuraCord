@@ -761,13 +761,11 @@ extension NativeTimelineCanvasView {
         for index in displayedRows {
             let rowFrame = rowFrame(at: index)
             guard rowFrame.intersects(dirtyRect) else { continue }
-            guard clippedRows.contains(index) else {
-                drawTimelineRowClippedToUnreadDividerGap(
-                    at: index, rowFrame: rowFrame, dirtyRect: dirtyRect, visibleMediaKeys: visibleMediaKeys
-                )
+            guard clippedRows.contains(index), rowFrame.minY < clippedRowsMinY || rowFrame.maxY > clippedRowsMaxY else {
+                drawTimelineRow(at: index, rowFrame: rowFrame, dirtyRect: dirtyRect, visibleMediaKeys: visibleMediaKeys)
                 continue
             }
-            // An animating group is clipped to its revealed height.
+            // An animating gap or group shows only the open part of its rows.
             let minY = max(rowFrame.minY, clippedRowsMinY)
             let maxY = min(rowFrame.maxY, clippedRowsMaxY)
             guard minY < maxY, let context = NSGraphicsContext.current?.cgContext else { continue }

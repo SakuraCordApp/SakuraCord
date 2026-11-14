@@ -169,7 +169,7 @@ extension NativeTimelineCanvasView {
     }
 
     /// Visits displayed rows intersecting `rect` in index order. Rows hidden
-    /// outside an animating group's clip do not end the walk early.
+    /// outside an animating gap's or group's clip do not end the walk early.
     func forEachDisplayedRow(in rect: CGRect, _ body: (Int) -> Void) {
         guard !items.isEmpty, var index = rowIndex(at: max(0, rect.minY)) else { return }
         while items.indices.contains(index) {
@@ -189,7 +189,7 @@ extension NativeTimelineCanvasView {
     func visibleRowSpan(at index: Int) -> Range<CGFloat> {
         let minY = displayedRowOrigin(at: index)
         let maxY = minY + displayedRowHeight(at: index)
-        guard clippedRows.contains(index) else { return unreadDividerGapSpan(at: index, minY: minY, maxY: maxY) }
+        guard clippedRows.contains(index) else { return minY ..< maxY }
         let clippedMin = min(clippedRowsMaxY, max(clippedRowsMinY, minY))
         let clippedMax = min(clippedRowsMaxY, max(clippedRowsMinY, maxY))
         return clippedMin ..< clippedMax

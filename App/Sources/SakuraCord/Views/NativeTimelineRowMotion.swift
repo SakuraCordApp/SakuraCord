@@ -453,11 +453,16 @@ extension NativeTimelineCanvasView {
         rowMotionTicker.start(on: self) { [weak self] in self?.stepRowMotions() }
     }
 
-    /// Whether rows are moving: by an update, the divider's gap, or a group
-    /// opening or closing. A closed group holding its rows until they go
+    /// The divider's gap or a group opening or closing, whose rows show only
+    /// part of themselves. A closed group holding its rows until they go
     /// stands still.
+    var clipsMovingRows: Bool {
+        unreadDividerGap != nil || rowDisclosure?.isFinished == false
+    }
+
+    /// Whether any row motion is moving rows.
     var rowMotionIsRunning: Bool {
-        !rowMotions.isEmpty || unreadDividerGap != nil || rowDisclosure?.isFinished == false
+        !rowMotions.isEmpty || clipsMovingRows
     }
 
     func stopRowMotionTickerIfIdle() {
@@ -655,19 +660,23 @@ extension NativeTimelineCanvasView {
         return moved
     }
 
-    /// The rows an opening or closing group shows only part of, and the span
-    /// they show: from where the rows before them end to where the rows after
-    /// them start.
+    /// The rows an opening or closing gap or group shows only part of, and
+    /// the span they show: from where the rows before them end to where the
+    /// rows after them start. The divider's row never draws above its gap.
     private func refreshClippedRows() {
-        guard let disclosure = rowDisclosure, !disclosure.rows.isEmpty else {
+        if let gap = unreadDividerGap, rowOrigins.indices.contains(gap.rowIndex) {
+            clippedRows = gap.rowIndex ..< gap.rowIndex + 1
+            clippedRowsRelativeMinY = rowMotionOffset(at: gap.rowIndex - 1)
+            clippedRowsRelativeMaxY = .greatestFiniteMagnitude
+        } else if let disclosure = rowDisclosure, !disclosure.rows.isEmpty {
+            clippedRows = disclosure.rows
+            clippedRowsRelativeMinY = rowMotionOffset(at: disclosure.rows.lowerBound - 1)
+            clippedRowsRelativeMaxY = disclosure.rowsHeight + rowMotionOffset(at: disclosure.rows.upperBound)
+        } else {
             clippedRows = 0 ..< 0
             clippedRowsRelativeMinY = -.greatestFiniteMagnitude
             clippedRowsRelativeMaxY = .greatestFiniteMagnitude
-            return
         }
-        clippedRows = disclosure.rows
-        clippedRowsRelativeMinY = rowMotionOffset(at: disclosure.rows.lowerBound - 1)
-        clippedRowsRelativeMaxY = disclosure.rowsHeight + rowMotionOffset(at: disclosure.rows.upperBound)
     }
 
     var clippedRowsMinY: CGFloat {
@@ -723,8 +732,7 @@ extension NativeTimelineCanvasView {
     func redrawForRowMotion(invalidating rect: CGRect? = nil) {
         // Hover regions are cached at the rows' displaced positions.
         clearPointerRegionCaches()
-        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, rowMotions.isEmpty,
-           !suppressesHoverPresentation {
+        if !rowMotionIsRunning, !suppressesHoverPresentation {
             // The motion has landed: tracking areas and cursor rects follow the rows.
             updateTrackingAreas()
             window?.invalidateCursorRects(for: self)
@@ -735,7 +743,7 @@ extension NativeTimelineCanvasView {
         positionInlineVideoOverlays()
         // The copy button can't follow its block as rows move and clip, so
         // it leaves until the pointer next moves over a block.
-        if !(rowDisclosure?.isFinished ?? true) || unreadDividerGap != nil { setHoveredCodeBlock(nil) }
+        if clipsMovingRows { setHoveredCodeBlock(nil) }
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()

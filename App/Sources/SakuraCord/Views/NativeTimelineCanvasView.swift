@@ -314,8 +314,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var rowMotionRemainingHeights: [Int: CGFloat] = [:]
     /// The part of each row's remaining height that its edited text's band still has to glide.
     var rowMotionTextRemainingHeights: [Int: CGFloat] = [:]
-    /// Rows an opening or closing group shows only part of, and the span they
-    /// show, relative to the first one's static top, so a content-origin
+    /// Rows an opening or closing gap or group shows only part of, and the
+    /// span they show, relative to the first one's static top, so a content-origin
     /// change can never leave the clip behind the rows.
     var clippedRows: Range<Int> = 0 ..< 0
     var clippedRowsRelativeMinY = -CGFloat.greatestFiniteMagnitude
