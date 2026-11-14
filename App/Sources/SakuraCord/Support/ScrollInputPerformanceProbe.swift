@@ -188,10 +188,6 @@ final class ScrollInputPerformanceProbe {
         subsystem: "dev.sakuracord.SakuraCord",
         category: "ScrollInputPerformance"
     )
-    private static let isEnabled =
-        ProcessInfo.processInfo.environment[
-            "SAKURACORD_SCROLL_INPUT_TELEMETRY"
-        ] == "1"
     private static let boundaryGap: TimeInterval = 0.120
     private static let maximumFrameTicks = 2
 
@@ -231,7 +227,7 @@ final class ScrollInputPerformanceProbe {
             }
             return event
         }
-        guard Self.isEnabled else { return }
+        guard PerformanceBenchmarkHarness.recordsScrollInputTelemetry else { return }
         emitInstalledEvent()
         Self.logger.debug(
             "Installed gesture probe for \(self.surface.rawValue, privacy: .public)"
@@ -332,7 +328,7 @@ final class ScrollInputPerformanceProbe {
             )
             scheduleLiveScrollFallbackEnd(for: scrollView)
         }
-        guard Self.isEnabled else { return }
+        guard PerformanceBenchmarkHarness.recordsScrollInputTelemetry else { return }
 
         let priorInputTimestamp = lastInputTimestamp
         let inputInterval = event.timestamp - priorInputTimestamp
@@ -523,11 +519,6 @@ struct ScrollInputPerformanceProbeAttachment: NSViewRepresentable {
 
     @MainActor
     final class Coordinator {
-        private static let recordsInputTelemetry =
-            ProcessInfo.processInfo.environment[
-                "SAKURACORD_SCROLL_INPUT_TELEMETRY"
-            ] == "1"
-
         private let surface: ScrollPerformanceSurface
         private let probe: ScrollInputPerformanceProbe
         private weak var installedScrollView: NSScrollView?
@@ -584,7 +575,7 @@ struct ScrollInputPerformanceProbeAttachment: NSViewRepresentable {
                     }
                 }
                 resolutionTask = nil
-                guard Self.recordsInputTelemetry,
+                guard PerformanceBenchmarkHarness.recordsScrollInputTelemetry,
                       !didReportResolutionFailure,
                       let view
                 else { return }

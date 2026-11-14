@@ -172,9 +172,16 @@ enum PerformanceBenchmarkHarness {
     }
 
     /// Where a script asked a benchmark to write its result, if it did.
-    nonisolated static var resultPath: String? {
-        ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_RESULT_PATH"]
-    }
+    nonisolated static let resultPath = ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_RESULT_PATH"]
+    /// The resource window a script asked to be timed, and where to write it.
+    nonisolated static let resourceWindowName = ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_WINDOW_NAME"]
+    nonisolated static let resourceWindowPath = ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_WINDOW_PATH"]
+    /// Which scroll surfaces a script measures in an authenticated scroll benchmark.
+    nonisolated static let scrollSurface =
+        ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_SCROLL_SURFACE"] ?? "all"
+    /// Whether a script asked for scroll input-to-frame telemetry.
+    nonisolated static let recordsScrollInputTelemetry =
+        ProcessInfo.processInfo.environment["SAKURACORD_SCROLL_INPUT_TELEMETRY"] == "1"
 
     /// Writes the fields `makeFields` returns to `resultPath`, one
     /// tab-separated name and value per line, when a script asked for them.

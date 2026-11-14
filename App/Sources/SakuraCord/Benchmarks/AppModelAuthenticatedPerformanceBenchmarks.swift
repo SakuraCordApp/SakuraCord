@@ -460,7 +460,7 @@ extension AppModel {
                     ("target", target),
                     ("target_channel_id", channel?.id.rawValue.description ?? ""),
                     ("target_channel_name", channel?.name ?? ""),
-                    ("surface", ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_SCROLL_SURFACE"] ?? "all"),
+                    ("surface", PerformanceBenchmarkHarness.scrollSurface),
                     (
                         "display_maximum_frames_per_second",
                         max(1, NSApp.keyWindow?.screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 60)
