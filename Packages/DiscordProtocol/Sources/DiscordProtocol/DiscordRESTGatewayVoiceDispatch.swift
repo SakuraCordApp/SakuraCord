@@ -212,6 +212,34 @@ extension DiscordRESTProvider {
         }
     }
 
+    func finishVoiceNegotiationIfReady() {
+        guard let pending = pendingVoiceNegotiation,
+              let sessionID = pending.sessionID,
+              let token = pending.token,
+              let endpoint = pending.endpoint
+        else { return }
+        voiceNegotiationTimeoutTask?.cancel()
+        pendingVoiceNegotiation = nil
+        let info = VoiceConnectionInfo(
+            serverID: pending.guildID?.description ?? pending.channelID.description,
+            channelID: pending.channelID,
+            guildID: pending.guildID,
+            userID: pending.userID,
+            sessionID: sessionID,
+            token: token,
+            endpoint: endpoint
+        )
+        activeVoiceConnection = info
+        pending.continuation.resume(returning: info)
+    }
+
+    func failVoiceNegotiation(id: UUID, error: any Error) {
+        guard let pending = pendingVoiceNegotiation, pending.id == id else { return }
+        voiceNegotiationTimeoutTask?.cancel()
+        pendingVoiceNegotiation = nil
+        pending.continuation.resume(throwing: error)
+    }
+
     /// Admits a voice participant's member that is not cached yet, so voice
     /// presentations outside the selected guild can show who joined. The
     /// caller checks it is absent: this never replaces a cached member or
