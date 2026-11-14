@@ -290,15 +290,10 @@ extension DiscordRESTProvider {
         let (data, response) = try await perform(
             path, method: "PATCH", query: [], body: ["nickname": value.map(JSONValue.string) ?? .null]
         )
-        guard (200 ..< 300).contains(response.statusCode) else {
-            if response.statusCode == 400,
-               let error = Self.profileValidationError(data: data, method: "PATCH", path: path)
-            { throw apiDiagnostics.coalescing(error, with: response) }
-            if response.statusCode == 401 {
-                authorizationValue = nil
-                throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
-            }
-            throw unexplainedFailure(data, response)
+        try validateEmptyResponse(data, response) { status, _ in
+            guard status == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path)
+            else { return nil }
+            return apiDiagnostics.coalescing(error, with: response)
         }
         // Only this friend's events supersede the save; the generation also
         // guards READY and disconnect, which clear the per-user revisions.

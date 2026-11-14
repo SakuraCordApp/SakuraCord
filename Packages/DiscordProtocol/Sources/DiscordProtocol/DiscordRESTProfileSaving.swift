@@ -184,15 +184,10 @@ extension DiscordRESTProvider {
         let (data, response) = try await perform(
             request.path, method: request.method, query: [], body: request.body, headers: request.headers
         )
-        guard (200 ..< 300).contains(response.statusCode) else {
-            if response.statusCode == 400,
-               let error = Self.profileValidationError(data: data, method: request.method, path: request.path)
-            { throw apiDiagnostics.coalescing(error, with: response) }
-            if response.statusCode == 401 {
-                authorizationValue = nil
-                throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
-            }
-            throw unexplainedFailure(data, response)
+        try validateEmptyResponse(data, response) { status, _ in
+            guard status == 400, let error = Self.profileValidationError(data: data, method: request.method, path: request.path)
+            else { return nil }
+            return apiDiagnostics.coalescing(error, with: response)
         }
         return data
     }

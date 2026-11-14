@@ -1254,13 +1254,7 @@ extension DiscordRESTProvider {
             body: body,
             maximumAttempts: 1
         )
-        guard (200 ..< 300).contains(response.statusCode) else {
-            if response.statusCode == 401 {
-                authorizationValue = nil
-                throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
-            }
-            throw unexplainedFailure(data, response)
-        }
+        try validateEmptyResponse(data, response)
         guard !data.isEmpty else { return ReadAcknowledgementResponse(token: token) }
         return try JSONDecoder().decode(ReadAcknowledgementResponse.self, from: data)
     }

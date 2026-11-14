@@ -360,8 +360,13 @@ extension DiscordRESTProvider {
         try validateEmptyResponse(data, response)
     }
 
-    func validateEmptyResponse(_ data: Data, _ response: HTTPURLResponse) throws {
+    func validateEmptyResponse(
+        _ data: Data,
+        _ response: HTTPURLResponse,
+        mapFailure: (_ status: Int, _ discordCode: Int?) -> (any Error)? = { _, _ in nil }
+    ) throws {
         guard (200 ..< 300).contains(response.statusCode) else {
+            if let error = mapFailure(response.statusCode, Self.discordErrorCode(from: data)) { throw error }
             if response.statusCode == 401 {
                 authorizationValue = nil
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
