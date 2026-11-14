@@ -837,11 +837,6 @@ private struct ChatRootView: View {
         .titlebarButtons()
     }
 
-    private var showsThreadsToolbarItem: Bool {
-        model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil
-            && !model.isThreadFullWidth && model.canBrowseThreadsInSelectedChannel
-    }
-
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
         if usesWorkspaceTitlebar {
@@ -880,14 +875,6 @@ private struct ChatRootView: View {
         }
 
         if !model.isSwitchingAccounts {
-            if let channel = selectedPrivateChannel {
-                ToolbarItemGroup { privateCallButtons(channel) }
-                    .visibilityPriority(.high)
-            } else if model.guildWorkspacePage == nil, model.onboardingEntryGuildID == nil, let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
-                ToolbarItem { openVoiceChatButton(channel) }
-                    .visibilityPriority(.high)
-            }
-
             if model.isThreadFullWidth, let thread = model.openThread {
                 if ForumPostFollowToolbarButton.isOffered(model: model, thread: thread) {
                     ToolbarItem {
@@ -895,43 +882,6 @@ private struct ChatRootView: View {
                     }
                     ToolbarSpacer(.fixed)
                 }
-            }
-
-            if let pinsChannelID = toolbarPinsChannelID {
-                ToolbarSpacer(.fixed)
-
-                ToolbarItem(id: "pinned-messages") {
-                    Button {
-                        if model.pinnedMessages.isPresented {
-                            model.dismissPinnedMessages()
-                        } else {
-                            model.presentPinnedMessages(channelID: pinsChannelID)
-                        }
-                    } label: {
-                        Label("Pinned Messages", systemImage: model.pinnedMessages.isPresented ? "pin.fill" : "pin")
-                            .symbolVariant(.none)
-                            .animation(.smooth(duration: 0.24), value: model.pinnedMessages.isPresented)
-                    }
-                    .help("Pinned Messages")
-                    .background {
-                        StableAnchoredPopoverPresenter(
-                            isPresented: model.pinnedMessages.isPresented,
-                            configuration: .toolbarPanel,
-                            onDismiss: model.dismissPinnedMessages,
-                            onWillDismiss: model.dismissPinnedMessages
-                        ) {
-                            PinnedMessagesPopoverView(model: model)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-                .visibilityPriority(.high)
-            }
-
-            if showsThreadsToolbarItem {
-                ToolbarSpacer(.fixed)
-                ToolbarItem(id: "threads") { ThreadsToolbarButton(model: model) }
-                    .visibilityPriority(.high)
             }
 
             if let conversation = model.workspacePresentation.paneSideConversation {
@@ -1153,13 +1103,6 @@ private struct ChatRootView: View {
             }
             .visibilityPriority(.high)
         }
-    }
-
-    private var toolbarPinsChannelID: ChannelID? {
-        guard model.guildWorkspacePage == nil, model.onboardingEntryGuildID == nil,
-              selectedVoiceChannel == nil, model.workspacePresentation.paneSideConversation == nil
-        else { return nil }
-        return model.activePinsChannelID
     }
 
     private var conversationToolbarPresentation: ConversationToolbarPresentation? {
