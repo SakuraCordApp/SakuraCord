@@ -1026,7 +1026,7 @@ extension NativeTimelineCanvasView {
     }
 
     private func reconcileSendTransition(_ transition: NativeTimelineSendTransition) {
-        guard let index = items.lastIndex(where: { $0.identifier == transition.identifier }),
+        guard let index = rowIndex(forIdentifier: transition.identifier),
               layouts.indices.contains(index),
               let target = layouts[index].sendTransitionFrame(rowWidth: rowFrame(at: index).width)
         else {
@@ -1060,7 +1060,7 @@ extension NativeTimelineCanvasView {
         for identifiers: Set<NativeMessageTimelineItem.Identifier>
     ) {
         for transition in sendTransitions where identifiers.contains(transition.identifier) {
-            guard let index = items.lastIndex(where: { $0.identifier == transition.identifier }),
+            guard let index = rowIndex(forIdentifier: transition.identifier),
                   layouts.indices.contains(index),
                   let content = sendTransitionContent(
                       item: items[index],
@@ -1102,7 +1102,7 @@ extension NativeTimelineCanvasView {
         transition.finishTask?.cancel()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        if let index = items.lastIndex(where: { $0.identifier == transition.identifier }) {
+        if let index = rowIndex(forIdentifier: transition.identifier) {
             setNeedsDisplay(rowFrame(at: index))
             displayIfNeeded()
         }
@@ -1289,7 +1289,7 @@ extension NativeTimelineCanvasView {
     }
 
     private func sendTransitionAwaitsMedia(_ transition: NativeTimelineSendTransition) -> Bool {
-        guard let index = items.lastIndex(where: { $0.identifier == transition.identifier })
+        guard let index = rowIndex(forIdentifier: transition.identifier)
         else { return false }
         return mediaKeys(for: items[index], at: index).contains {
             NativeTimelineRowPainter.mediaImage(for: $0) == nil

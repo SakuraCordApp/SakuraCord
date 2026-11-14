@@ -624,11 +624,21 @@ extension NativeTimelineCanvasView {
         return index
     }
 
+    /// The row of the message with this ID.
+    func rowIndex(forMessageID messageID: MessageID) -> Int? {
+        items.firstIndex { $0.messageID == messageID }
+    }
+
+    /// The row under `point`, and `point` in that row's coordinates.
+    func rowHit(at point: CGPoint) -> (index: Int, local: CGPoint)? {
+        guard let index = hitRowIndex(at: point.y) else { return nil }
+        return (index, CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index)))
+    }
+
     /// The message under `point` when it falls inside the row-local frame
     /// `frame` picks for the row's index.
     func messageID(at point: CGPoint, frame: (Int) -> CGRect?) -> MessageID? {
-        guard let index = hitRowIndex(at: point.y), let target = frame(index),
-              target.contains(CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index)))
+        guard case let (index, local)? = rowHit(at: point), let target = frame(index), target.contains(local)
         else { return nil }
         return items[index].messageID
     }
@@ -694,9 +704,7 @@ extension NativeTimelineCanvasView {
     }
 
     func invalidateMessageJumpHighlight(_ messageID: MessageID) {
-        guard let index = items.firstIndex(where: {
-            $0.messageID == messageID
-        }) else { return }
+        guard let index = rowIndex(forMessageID: messageID) else { return }
         setNeedsDisplay(rowFrame(at: index))
     }
 

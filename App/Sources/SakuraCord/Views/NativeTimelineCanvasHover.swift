@@ -16,7 +16,7 @@ extension NativeTimelineCanvasView {
     /// Redraws the rows of the messages a hover left and entered.
     func invalidateHoverRows(from old: MessageID?, to new: MessageID?) {
         for messageID in [old, new].compactMap(\.self) {
-            guard let index = items.firstIndex(where: { $0.messageID == messageID }) else { continue }
+            guard let index = rowIndex(forMessageID: messageID) else { continue }
             setNeedsDisplay(rowFrame(at: index))
         }
     }
@@ -379,9 +379,7 @@ extension NativeTimelineCanvasView {
     func invalidateComponentButton(
         _ target: NativeTimelineComponentButtonTarget
     ) {
-        guard let index = items.firstIndex(where: {
-            $0.messageID == target.messageID
-        }) else { return }
+        guard let index = rowIndex(forMessageID: target.messageID) else { return }
         setNeedsDisplay(fileCardDisplayFrame(target, at: index) ?? rowFrame(at: index))
     }
 }

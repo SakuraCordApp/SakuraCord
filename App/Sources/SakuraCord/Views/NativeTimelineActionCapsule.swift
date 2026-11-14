@@ -27,9 +27,7 @@ extension NativeTimelineCanvasView {
             // An edited row shows Cancel and Save where its actions would be.
             guard let messageID = actionCapsuleMessageID,
                   messageID != editing.messageID,
-                  let index = items.firstIndex(where: {
-                      $0.messageID == messageID
-                  }),
+                  let index = rowIndex(forMessageID: messageID),
                   case let .message(row, _, _) = items[index],
                   MessageOutboxPresentation.interactionMode(
                     for: row.message
@@ -44,9 +42,7 @@ extension NativeTimelineCanvasView {
         }
         guard let index = hoveredRow
                 ?? mediaViewerHighlightedMessageID.flatMap({ messageID in
-                    items.firstIndex(where: {
-                        $0.messageID == messageID
-                    })
+                    rowIndex(forMessageID: messageID)
                 }),
               items.indices.contains(index),
               case let .message(row, _, _) = items[index],
@@ -210,7 +206,7 @@ extension NativeTimelineCanvasView {
                     else { return nil }
                     return candidate
                 })
-                ?? items.firstIndex(where: { $0.messageID == messageID })
+                ?? rowIndex(forMessageID: messageID)
         else { return }
         state.updateAvailableWidth(bounds.width)
         let size = state.hostSize
@@ -294,7 +290,7 @@ extension NativeTimelineCanvasView {
     func presentActionCapsuleMenu(forMessageID messageID: MessageID) {
         guard let host = actionCapsuleHost,
               let actions,
-              let index = items.firstIndex(where: { $0.messageID == messageID }),
+              let index = rowIndex(forMessageID: messageID),
               case let .message(row, _, _) = items[index],
               let menu = messageContextMenu(
                 for: row,

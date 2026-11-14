@@ -363,9 +363,8 @@ extension NativeTimelineCanvasView {
         messageID(at: point) { layouts[$0].forwardedSourceRegion?.frame }
     }
     private func footerActionPointerHit(at point: CGPoint) -> NativeTimelineFooterActionTarget? {
-        guard let index = hitRowIndex(at: point.y)
+        guard case let (index, local)? = rowHit(at: point)
         else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         if case let .suppressedMessages(group) = items[index] {
             guard layouts[index].suppressedHeader?.toggleFrame.contains(local) == true else { return nil }
             return .init(messageID: group.id, kind: .suppressedToggle)
@@ -533,15 +532,11 @@ extension NativeTimelineCanvasView {
             pressed: pressedActivationTarget,
             released: pointerActivationTarget(at: point)
         ) else { return }
-        guard let index = hitRowIndex(at: point.y),
+        guard case let (index, local)? = rowHit(at: point),
               let actions
         else { return }
         let item = items[index]
         let layout = layouts[index]
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
         if case let .suppressedMessages(group) = item {
             if layout.suppressedHeader?.toggleFrame.contains(local) == true {
                 toggleSuppressedGroup(group)
@@ -913,13 +908,9 @@ extension NativeTimelineCanvasView {
     }
 
     func hoveredRowIndex(at point: CGPoint) -> Int? {
-        guard let index = hitRowIndex(at: point.y)
+        guard case let (index, local)? = rowHit(at: point)
         else { return nil }
         guard case .message = items[index] else { return index }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
         let layout = layouts[index]
         guard NativeTimelineHoverHitTesting.contains(
             local,
@@ -1098,13 +1089,9 @@ extension NativeTimelineCanvasView {
     func textLinkPointerHit(
         at point: CGPoint
     ) -> NativeTimelineTextLinkHover? {
-        guard let index = hitRowIndex(at: point.y),
+        guard case let (index, local)? = rowHit(at: point),
               items[index].textOwnerID != nil
         else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
         guard let hit = textPointerHit(
             in: layouts[index],
             point: local
@@ -1120,13 +1107,9 @@ extension NativeTimelineCanvasView {
     func textSpoilerPointerHit(
         at point: CGPoint
     ) -> NativeTimelineTextSpoilerHover? {
-        guard let index = hitRowIndex(at: point.y),
+        guard case let (index, local)? = rowHit(at: point),
               items[index].textOwnerID != nil
         else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
         guard let hit = textPointerHit(
             in: layouts[index],
             point: local
@@ -1244,14 +1227,10 @@ extension NativeTimelineCanvasView {
     func pointerActivationTarget(
         at point: CGPoint
     ) -> NativeTimelinePointerActivationTarget? {
-        guard let index = hitRowIndex(at: point.y)
+        guard case let (index, local)? = rowHit(at: point)
         else { return nil }
         let item = items[index]
         let layout = layouts[index]
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
         if case let .suppressedMessages(group) = item {
             guard layout.suppressedHeader?.toggleFrame.contains(local) == true else { return nil }
             return .suppressedMessages(group.id)

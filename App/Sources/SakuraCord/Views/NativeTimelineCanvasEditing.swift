@@ -125,9 +125,7 @@ extension NativeTimelineCanvasView {
     @discardableResult
     func beginEditingCurrentUserMessage(_ messageID: MessageID) -> Bool {
         guard let currentUserID = model?.currentUser?.id,
-              let index = items.firstIndex(where: {
-                  $0.messageID == messageID
-              }),
+              let index = rowIndex(forMessageID: messageID),
               case let .message(row, _, _) = items[index],
               row.message.author.id == currentUserID
         else { return false }
@@ -141,7 +139,7 @@ extension NativeTimelineCanvasView {
         guard let messageID = editing.messageID else { return }
         if editingRowIndex == nil {
             // A message deleted mid-edit, or mid-save, takes its editor with it.
-            guard let index = items.firstIndex(where: { $0.messageID == messageID }) else {
+            guard let index = rowIndex(forMessageID: messageID) else {
                 return finishEditing(at: nil)
             }
             editing.rowIndex = index
@@ -228,7 +226,7 @@ extension NativeTimelineCanvasView {
 
     func endEditing(commit value: String?) {
         guard let messageID = editing.messageID, editing.committedContent == nil else { return }
-        let index = editingRowIndex ?? items.firstIndex(where: { $0.messageID == messageID })
+        let index = editingRowIndex ?? rowIndex(forMessageID: messageID)
         let message: Message?
         if let index,
            case let .message(row, _, _) = items[index]

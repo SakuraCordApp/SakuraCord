@@ -821,9 +821,8 @@ extension NativeTimelineCanvasView {
     /// rather than only over its controls.
     private func audioFilePlayer(onCardAt point: CGPoint) -> NativeTimelineVoiceMessageRegion? {
         guard WindowModalCoordinator.allowsInput(for: self),
-              let index = hitRowIndex(at: point.y)
+              case let (index, local)? = rowHit(at: point)
         else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         let layout = layouts[index]
         guard let card = layout.attachmentRegions.first(where: { $0.attachment.mediaKind == .audio && $0.frame.contains(local) })
         else { return nil }

@@ -482,9 +482,7 @@ extension NativeTimelineCanvasView {
         messageID: MessageID,
         componentID: String
     ) -> CGRect? {
-        guard let rowIndex = items.firstIndex(where: {
-            $0.messageID == messageID
-        }),
+        guard let rowIndex = rowIndex(forMessageID: messageID),
         layouts.indices.contains(rowIndex),
         let region = layouts[rowIndex].componentLayouts
             .flatMap(\.selects)

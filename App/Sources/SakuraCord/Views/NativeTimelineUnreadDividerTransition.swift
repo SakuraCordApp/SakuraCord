@@ -201,7 +201,7 @@ extension NativeTimelineCanvasView {
         capturingTop: Bool = false
     ) -> NativeTimelineUnreadDividerSource? {
         guard let messageID,
-              let index = items.firstIndex(where: { $0.messageID == messageID }),
+              let index = rowIndex(forMessageID: messageID),
               layouts.indices.contains(index)
         else { return nil }
         let identifier = items[index].identifier

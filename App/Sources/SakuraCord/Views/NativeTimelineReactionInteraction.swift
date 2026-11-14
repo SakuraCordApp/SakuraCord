@@ -4,43 +4,24 @@ import SakuraCordModels
 
 extension NativeTimelineCanvasView {
     func reactionPointerHit(at point: CGPoint) -> ReactionPointerHit? {
-        guard let index = hitRowIndex(at: point.y),
+        guard case let (index, local)? = rowHit(at: point),
               case let .message(row, _, _) = items[index]
         else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
-        let rowOrigin = displayedRowOrigin(at: index)
-        let layout = layouts[index]
         let frames = displayedReactionFrames(at: index)
-        let target = NativeTimelineReactionClickHitTesting.target(
+        switch NativeTimelineReactionClickHitTesting.target(
             at: local,
             reactionFrames: frames.reactions,
             addReactionFrame: frames.add
-        )
-        switch target {
+        ) {
         case let .reaction(regionIndex):
-            let region = layout.reactionRegions[regionIndex]
-            return ReactionPointerHit(
-                target: .reaction(
-                    messageID: row.id,
-                    reactionID: region.reaction.id
-                ),
-                rowIndex: index,
-                message: row.message,
-                reaction: region.reaction,
-                frame: frames.reactions[regionIndex].offsetBy(dx: 0, dy: rowOrigin)
+            let reaction = layouts[index].reactionRegions[regionIndex].reaction
+            return reactionPointerHit(
+                .reaction(messageID: row.id, reactionID: reaction.id),
+                at: index, message: row.message, reaction: reaction, frame: frames.reactions[regionIndex]
             )
         case .add:
-            guard model?.canCreateReactions(on: row.message) == true,
-                  let frame = frames.add else { return nil }
-            return ReactionPointerHit(
-                target: .add(messageID: row.id),
-                rowIndex: index,
-                message: row.message,
-                reaction: nil,
-                frame: frame.offsetBy(dx: 0, dy: rowOrigin)
+            return reactionPointerHit(
+                .add(messageID: row.id), at: index, message: row.message, reaction: nil, frame: frames.add
             )
         case nil:
             return nil
@@ -55,33 +36,39 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               case let .message(row, _, _) = items[index]
         else { return nil }
-        let rowOrigin = displayedRowOrigin(at: index)
         let frames = displayedReactionFrames(at: index)
         switch target {
         case let .reaction(_, reactionID):
             guard let regionIndex = layouts[index].reactionRegions.firstIndex(where: {
                 $0.reaction.id == reactionID
             }) else { return nil }
-            return ReactionPointerHit(
-                target: target,
-                rowIndex: index,
-                message: row.message,
-                reaction: layouts[index].reactionRegions[regionIndex].reaction,
-                frame: frames.reactions[regionIndex].offsetBy(dx: 0, dy: rowOrigin)
+            return reactionPointerHit(
+                target, at: index, message: row.message,
+                reaction: layouts[index].reactionRegions[regionIndex].reaction, frame: frames.reactions[regionIndex]
             )
         case .add:
-            guard model?.canCreateReactions(on: row.message) == true,
-                  let frame = frames.add else {
-                return nil
-            }
-            return ReactionPointerHit(
-                target: target,
-                rowIndex: index,
-                message: row.message,
-                reaction: nil,
-                frame: frame.offsetBy(dx: 0, dy: rowOrigin)
-            )
+            return reactionPointerHit(target, at: index, message: row.message, reaction: nil, frame: frames.add)
         }
+    }
+
+    /// The hit for a chip or the add button of the row at `index`, drawn at
+    /// `frame` in the row; none for an add button the user may not use.
+    private func reactionPointerHit(
+        _ target: NativeTimelineReactionPointerTarget,
+        at index: Int,
+        message: Message,
+        reaction: Reaction?,
+        frame: CGRect?
+    ) -> ReactionPointerHit? {
+        if case .add = target, model?.canCreateReactions(on: message) != true { return nil }
+        guard let frame else { return nil }
+        return ReactionPointerHit(
+            target: target,
+            rowIndex: index,
+            message: message,
+            reaction: reaction,
+            frame: frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
+        )
     }
 
     func rowIndex(for target: NativeTimelineReactionPointerTarget) -> Int? {
@@ -91,7 +78,7 @@ extension NativeTimelineCanvasView {
         {
             return hoveredRow
         }
-        return items.firstIndex { $0.messageID == target.messageID }
+        return rowIndex(forMessageID: target.messageID)
     }
 
     func hoveredReactionID(inMessageAt index: Int) -> String? {
@@ -194,12 +181,17 @@ extension NativeTimelineCanvasView {
     /// Both native reaction popovers use the visible message row as their anchor.
     /// The presenters freeze this rectangle while the popover remains open.
     func messageReactionPopoverAnchor(for message: Message) -> CGRect? {
-        guard let index = items.firstIndex(where: { $0.messageID == message.id }),
+        guard let index = rowIndex(forMessageID: message.id),
               layouts.indices.contains(index) else { return nil }
         let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
-        let visibleRow = rowFrame(at: index).intersection(viewport)
-        let anchor = visibleRow.isNull || visibleRow.isEmpty ? viewport : visibleRow
+        let anchor = visiblePart(ofRowAt: index, in: viewport) ?? viewport
         return anchor.isNull || anchor.isEmpty ? nil : anchor
+    }
+
+    /// The part of the row inside `viewport`, or nil when none of it is.
+    private func visiblePart(ofRowAt index: Int, in viewport: CGRect) -> CGRect? {
+        let part = rowFrame(at: index).intersection(viewport)
+        return part.isNull || part.isEmpty ? nil : part
     }
 
     func beginReactionPopoverLayout() {
@@ -225,9 +217,8 @@ extension NativeTimelineCanvasView {
         guard reactionPickerCoordinator.isShown || reactionDetailsPopover?.isShown == true else { return }
         let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
         func isVisible(_ messageID: MessageID?) -> Bool {
-            guard let messageID, let index = items.firstIndex(where: { $0.messageID == messageID }) else { return false }
-            let intersection = rowFrame(at: index).intersection(viewport)
-            return !intersection.isNull && !intersection.isEmpty
+            guard let messageID, let index = rowIndex(forMessageID: messageID) else { return false }
+            return visiblePart(ofRowAt: index, in: viewport) != nil
         }
         if reactionPickerCoordinator.isShown, !isVisible(reactionPickerMessageID) {
             reactionPickerMessageID = nil

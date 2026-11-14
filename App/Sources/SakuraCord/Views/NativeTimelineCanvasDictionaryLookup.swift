@@ -33,12 +33,11 @@ extension NativeTimelineCanvasView {
               !overlayBlocksInteractions,
               editing.messageID == nil
         else { return nil }
-        guard let index = hitRowIndex(at: point.y),
+        guard case let (index, local)? = rowHit(at: point),
               items[index].messageID != nil
         else {
             return nil
         }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         for text in selectableTextRegions(for: items[index], layout: layouts[index]) {
             guard let hit = NativeTimelineTextHitTester.hit(
                 value: text.value,

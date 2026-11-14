@@ -347,17 +347,13 @@ extension NativeTimelineCanvasView {
         dismissHoverLabel()
         guard !overlayBlocksInteractions, !glideBlocksPointer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
-        guard let index = hitRowIndex(at: point.y),
+        guard case let (index, localPoint)? = rowHit(at: point),
               case let .message(row, _, _) = items[index]
         else { return nil }
         let interactionMode = MessageOutboxPresentation.interactionMode(
             for: row.message
         )
         guard interactionMode.allowsMessageContextMenu else { return nil }
-        let localPoint = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
         if let menu = userContextMenu(for: row, index: index, localPoint: localPoint) {
             return menu
         }

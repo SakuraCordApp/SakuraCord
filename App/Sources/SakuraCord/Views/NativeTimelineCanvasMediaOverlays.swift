@@ -808,7 +808,7 @@ extension NativeTimelineCanvasView {
     /// row, or the last in bubble layout, and plays while any row is hovered.
     func hoveredGroupIdentifiers() -> Set<NativeMessageTimelineItem.Identifier> {
         guard let index = hoveredRow ?? hoveredAuthorMessageID.flatMap({ targetID in
-            items.firstIndex(where: { $0.messageID == targetID })
+            rowIndex(forMessageID: targetID)
         }), items.indices.contains(index) else { return [] }
         guard case let .message(row, _, _) = items[index] else { return [items[index].identifier] }
         var identifiers: Set<NativeMessageTimelineItem.Identifier> = [items[index].identifier]

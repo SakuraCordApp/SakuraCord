@@ -18,7 +18,7 @@ extension NativeTimelineCanvasView {
     }
 
     func invalidateThreadCard(messageID: MessageID) {
-        guard let index = items.firstIndex(where: { $0.messageID == messageID }),
+        guard let index = rowIndex(forMessageID: messageID),
               layouts.indices.contains(index),
               let frame = layouts[index].threadFrame
         else { return }

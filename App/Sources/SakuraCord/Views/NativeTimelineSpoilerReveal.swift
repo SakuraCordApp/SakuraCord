@@ -357,9 +357,7 @@ extension NativeTimelineCanvasView {
     func reveal(
         _ key: NativeTimelineComponentRevealKey
     ) {
-        guard let rowIndex = items.firstIndex(where: {
-            $0.messageID == key.messageID
-        }) else { return }
+        guard let rowIndex = rowIndex(forMessageID: key.messageID) else { return }
         reveal(key, rowIndex: rowIndex)
     }
 
@@ -398,7 +396,7 @@ extension NativeTimelineCanvasView {
     func spoilerRevealStateDidChange(messageID: MessageID) {
         // A forum post's starter message shares the post's ID with the
         // beginning row above it, so a message row takes precedence.
-        guard let rowIndex = items.firstIndex(where: { $0.messageID == messageID })
+        guard let rowIndex = rowIndex(forMessageID: messageID)
             ?? items.firstIndex(where: { $0.beginning?.id.rawValue == messageID.rawValue })
         else { return }
         let identifier = items[rowIndex].identifier
