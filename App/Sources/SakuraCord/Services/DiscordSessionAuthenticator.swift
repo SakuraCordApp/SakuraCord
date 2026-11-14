@@ -224,10 +224,6 @@ actor DiscordSessionAuthenticator {
         await fingerprints.loadInstallationID()
     }
 
-    func resolvedInstallationID() async throws -> String? {
-        (try await resolvedClientIdentifiers()).installationID
-    }
-
     func exchangeRemoteAuthTicket(_ ticket: String) async throws -> DiscordRemoteAuthTicketExchangeStep {
         guard !ticket.isEmpty else { throw AuthenticationError.invalidResponse }
         let installationID = await fingerprints.loadInstallationID()

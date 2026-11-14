@@ -91,11 +91,6 @@ extension AppModel {
         }
     }
 
-    var canManageSelectedChannelPins: Bool {
-        guard let selectedChannelID else { return false }
-        return canManagePins(in: selectedChannelID)
-    }
-
     var canManageActiveConversationPins: Bool {
         guard let channelID = pinnedMessages.channelID ?? activePinsChannelID else { return false }
         return canManagePins(in: channelID)

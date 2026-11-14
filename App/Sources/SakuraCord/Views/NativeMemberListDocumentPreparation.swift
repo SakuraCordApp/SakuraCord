@@ -63,32 +63,13 @@ extension NativeMemberListCanvasView {
     }
 
     @discardableResult
-    func updateDocumentIfNeeded(
-        sections: [MemberSection],
-        previousItems: [Item]? = nil
-    ) -> Bool {
-        guard sections != presentedSections else { return false }
-        guard let document = Self.prepareDocument(
-            sections: sections,
-            presentation: presentation,
-            reusing: preparationSnapshot()
-        ) else {
-            return false
-        }
-        return applyPreparedDocument(document, previousItems: previousItems)
-    }
-
-    @discardableResult
-    func applyPreparedDocument(
-        _ document: PreparedDocument,
-        previousItems suppliedPreviousItems: [Item]? = nil
-    ) -> Bool {
+    func applyPreparedDocument(_ document: PreparedDocument) -> Bool {
         guard document.sections != presentedSections
             || document.presentation != presentation
             || document.stableLayoutChangedIndexes?.isEmpty == false
             || document.preparedText.contains(where: { preparedText[$0.key]?.nameFont != $0.value.nameFont })
         else { return false }
-        let previousItems = suppliedPreviousItems ?? items
+        let previousItems = items
         presentation = document.presentation
         presentedSections = document.sections
         items = document.items

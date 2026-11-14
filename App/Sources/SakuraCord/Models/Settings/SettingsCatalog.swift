@@ -100,7 +100,6 @@ nonisolated struct SettingsCatalog: Sendable {
 
 nonisolated extension SettingsSectionID {
     static let accountIdentity = Self(rawValue: "account-identity")
-    static let accountLaunch = Self(rawValue: "account-launch")
     static let startupRestoration = Self(rawValue: "startup-restoration")
     static let confirmations = Self(rawValue: "confirmations")
     static let appearanceTheme = Self(rawValue: "appearance-theme")
@@ -163,10 +162,7 @@ nonisolated extension SettingsControlID {
     static let accountPhone = Self(rawValue: "my-account.phone")
     static let accountMFA = Self(rawValue: "my-account.mfa")
     static let accountDevices = Self(rawValue: "my-account.devices")
-    static let selectedAccount = Self(rawValue: "my-account.selected-account")
     static let switchAccount = Self(rawValue: "my-account.switch-account")
-    static let addAccount = Self(rawValue: "my-account.add-account")
-    static let removeSavedSession = Self(rawValue: "my-account.remove-saved-session")
     static let launchAtLogin = Self(rawValue: "general.launch-at-login")
     static let launchDestination = Self(rawValue: "general.launch-destination")
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")

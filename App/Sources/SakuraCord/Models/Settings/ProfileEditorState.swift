@@ -96,9 +96,6 @@ final class ProfileEditorState {
         case .set: true
         }
     }
-    var hasNameStyleSelection: Bool {
-        changes.identity.displayNameStyle.applying(to: snapshot?.identity.displayNameStyle ?? .missing).value != nil
-    }
 
     func selectedCollectibleID(_ kind: ProfileCollectibleKind) -> String? {
         switch kind {

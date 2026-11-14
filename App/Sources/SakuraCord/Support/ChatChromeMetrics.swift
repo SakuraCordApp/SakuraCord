@@ -20,7 +20,6 @@ nonisolated enum ChatChromeMetrics {
         (composerButtonSize - composerAccessoryButtonSize) / 2
     }
     static var composerSegmentSpacing: CGFloat { InterfaceScale.metric(8) }
-    static var controlCornerRadius: CGFloat { InterfaceScale.metric(16) }
     static var serverRailWidth: CGFloat { InterfaceScale.metric(68) }
     /// The window controls are fixed-size system chrome, so the sidebar title
     /// stays clear of them and centred on their line at every interface size.
@@ -85,12 +84,6 @@ nonisolated enum ChatChromeMetrics {
 nonisolated enum ChatDetailLayoutPolicy {
     static var timelineTopPadding: CGFloat { InterfaceScale.metric(12) }
     static var timelineBottomPadding: CGFloat { InterfaceScale.metric(12) }
-    /// The former SwiftUI scroll view retained its seven-point soft-edge
-    /// overlap in addition to the stack padding when a width reflow exposed
-    /// the first intersecting row.
-    static var timelineWidthReflowTopInset: CGFloat {
-        timelineTopPadding + InterfaceScale.metric(7)
-    }
     static var newMessagesButtonSpacing: CGFloat { InterfaceScale.metric(10) }
     static var defaultFloatingFooterHeight: CGFloat {
         ChatChromeMetrics.composerControlHeight + InterfaceScale.metric(12 + 18)
@@ -99,10 +92,6 @@ nonisolated enum ChatDetailLayoutPolicy {
     static func bottomContentInset(measuredFooterHeight: CGFloat) -> CGFloat {
         guard measuredFooterHeight.isFinite else { return defaultFloatingFooterHeight }
         return max(defaultFloatingFooterHeight, measuredFooterHeight)
-    }
-
-    static func timelineMinimumContentHeight(viewportHeight: CGFloat) -> CGFloat {
-        max(0, viewportHeight)
     }
 
     static func newMessagesButtonBottomPadding(bottomContentInset: CGFloat) -> CGFloat {
