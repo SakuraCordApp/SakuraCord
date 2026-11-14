@@ -57,10 +57,7 @@ extension AppModel {
         runNotificationMutation(.forumPost(post.id), failureMessage: "Discord did not accept the mute setting.") {
             try await $0.updateForumPostMute(post, isMuted: isMuted, until: until)
         } apply: { model in
-            model.updateLocalForumPostNotificationSettings(postID: post.id) {
-                $0.isMuted = isMuted
-                $0.muteConfiguration = isMuted ? DiscordMuteConfiguration(endTime: until) : nil
-            }
+            model.updateLocalForumPostNotificationSettings(postID: post.id) { $0.setMuted(isMuted, until: until) }
         }
     }
 

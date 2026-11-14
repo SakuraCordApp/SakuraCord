@@ -21,8 +21,8 @@ public struct DiscordMuteConfiguration: Codable, Hashable, Sendable {
 
 /// Settings Discord can mute, optionally until a set time.
 public protocol DiscordMutableSettings {
-    var isMuted: Bool { get }
-    var muteConfiguration: DiscordMuteConfiguration? { get }
+    var isMuted: Bool { get set }
+    var muteConfiguration: DiscordMuteConfiguration? { get set }
 }
 
 public extension DiscordMutableSettings {
@@ -36,6 +36,12 @@ public extension DiscordMutableSettings {
         guard isMuted else { return nil }
         let mute = muteConfiguration ?? DiscordMuteConfiguration()
         return mute.isActive(at: date) ? mute : nil
+    }
+
+    /// Mutes until `endTime`, or indefinitely without one, or unmutes.
+    mutating func setMuted(_ isMuted: Bool, until endTime: Date?) {
+        self.isMuted = isMuted
+        muteConfiguration = isMuted ? DiscordMuteConfiguration(endTime: endTime) : nil
     }
 }
 

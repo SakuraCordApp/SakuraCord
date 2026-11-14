@@ -340,11 +340,7 @@ public extension MockChatProvider {
                 muteEndTime: until
             )
         )
-        try updateForumPostNotificationSettings(post) {
-            $0.isMuted = isMuted
-            $0.muteConfiguration =
-                isMuted ? DiscordMuteConfiguration(endTime: until) : nil
-        }
+        try updateForumPostNotificationSettings(post) { $0.setMuted(isMuted, until: until) }
     }
 
     private func updateForumPostNotificationSettings(

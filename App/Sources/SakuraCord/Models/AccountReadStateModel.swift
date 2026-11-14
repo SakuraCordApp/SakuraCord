@@ -73,8 +73,7 @@ final class AccountReadStateModel {
             guard previous != newValue else { return }
             if previous?.threadNotificationSettings != newValue?.threadNotificationSettings,
                let settings = newValue?.threadNotificationSettings,
-               settings.isMuted, let endTime = settings.muteConfiguration?.endTime,
-               endTime > .now {
+               let endTime = settings.activeMute(at: .now)?.endTime {
                 nextNotificationPolicyExpiration = min(nextNotificationPolicyExpiration ?? endTime, endTime)
             }
             withMutation(keyPath: \.entries) {

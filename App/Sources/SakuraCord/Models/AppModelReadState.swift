@@ -601,10 +601,7 @@ extension AppModel {
         runNotificationMutation(.guild(guildID), failureMessage: "Discord did not accept the server mute setting.") {
             try await $0.updateGuildMute(guildID: guildID, isMuted: isMuted, until: until)
         } apply: { model in
-            model.updateLocalGuildNotificationSettings(guild: guild) {
-                $0.isMuted = isMuted
-                $0.muteConfiguration = isMuted ? DiscordMuteConfiguration(endTime: until) : nil
-            }
+            model.updateLocalGuildNotificationSettings(guild: guild) { $0.setMuted(isMuted, until: until) }
         } finish: { model in
             model.refreshServerRailPresentation(guildID: guildID)
         }
@@ -660,10 +657,7 @@ extension AppModel {
         runNotificationMutation(.channel(channelID), failureMessage: "Discord did not accept the channel mute setting.") {
             try await $0.updateChannelMute(guildID: guildID, channelID: channelID, isMuted: isMuted, until: until)
         } apply: { model in
-            model.updateLocalChannelNotificationOverride(channel: channel) {
-                $0.isMuted = isMuted
-                $0.muteConfiguration = isMuted ? DiscordMuteConfiguration(endTime: until) : nil
-            }
+            model.updateLocalChannelNotificationOverride(channel: channel) { $0.setMuted(isMuted, until: until) }
         }
     }
 
@@ -692,10 +686,7 @@ extension AppModel {
         runNotificationMutation(.channel(categoryID), failureMessage: "Discord did not accept the category mute setting.") {
             try await $0.updateCategoryMute(guildID: guildID, categoryID: categoryID, isMuted: isMuted, until: until)
         } apply: { model in
-            model.updateLocalChannelNotificationOverride(guildID: guildID, channelID: categoryID) {
-                $0.isMuted = isMuted
-                $0.muteConfiguration = isMuted ? DiscordMuteConfiguration(endTime: until) : nil
-            }
+            model.updateLocalChannelNotificationOverride(guildID: guildID, channelID: categoryID) { $0.setMuted(isMuted, until: until) }
         }
     }
 

@@ -495,9 +495,7 @@ extension DiscordRESTProvider {
     ) async throws {
         var settings = try await joinedThreadNotificationSettings(for: post)
         try await patchThreadNotificationSettings(threadID: post.id, body: Self.muteSettings(isMuted: isMuted, until: until))
-        settings.isMuted = isMuted
-        settings.muteConfiguration =
-            isMuted ? DiscordMuteConfiguration(endTime: until) : nil
+        settings.setMuted(isMuted, until: until)
         updateCachedThreadNotificationSettings(settings, for: post)
     }
 
