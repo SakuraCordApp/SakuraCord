@@ -82,7 +82,12 @@ nonisolated enum NativeNotificationIdentity {
         channelID: ChannelID,
         messageID: MessageID
     ) -> String {
-        "message:\(accountID):\(channelID):\(messageID)"
+        messagePrefix(accountID: accountID, channelID: channelID) + "\(messageID)"
+    }
+
+    /// The prefix shared by every message notification in a conversation.
+    static func messagePrefix(accountID: String, channelID: ChannelID) -> String {
+        "message:\(accountID):\(channelID):"
     }
 
     static func conversation(accountID: String, channelID: ChannelID) -> String {
@@ -576,12 +581,22 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         guard pendingRequests[identifier] == token, !Task.isCancelled,
               preferences.isEnabled, preferences.previewStyle == style
         else { return }
-        await add(content, identifier: identifier, sound: sound, kind: "Message", preferences: preferences)
+        content.sound = preferences.playsSound ? sound : nil
+        do {
+            try await submitRequest(
+                UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+            )
+        } catch {
+            let notificationError = error as NSError
+            Self.logger.error(
+                "Message notification delivery failed; domain=\(notificationError.domain, privacy: .public), code=\(notificationError.code)"
+            )
+        }
     }
 
     func cancel(accountID: String, channelID: ChannelID) async {
         guard deliversNotifications else { return }
-        let prefix = "message:\(accountID):\(channelID):"
+        let prefix = NativeNotificationIdentity.messagePrefix(accountID: accountID, channelID: channelID)
         pendingRequests = pendingRequests.filter { !$0.key.hasPrefix(prefix) }
         let delivered = await center.deliveredNotifications()
         let deliveredIDs = delivered.map(\.request.identifier).filter { $0.hasPrefix(prefix) }
@@ -595,29 +610,6 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         guard deliversNotifications else { return }
         NSApplication.shared.dockTile.badgeLabel =
             enabled && count > 0 ? String(count) : nil
-    }
-
-    private func add(
-        _ content: UNNotificationContent,
-        identifier: String,
-        sound: UNNotificationSound?,
-        kind: StaticString,
-        preferences: NotificationPreferences
-    ) async {
-        guard deliversNotifications, !isSuppressed, preferences.isEnabled,
-              let content = content.mutableCopy() as? UNMutableNotificationContent
-        else { return }
-        content.sound = preferences.playsSound ? sound : nil
-        do {
-            try await submitRequest(
-                UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-            )
-        } catch {
-            let notificationError = error as NSError
-            Self.logger.error(
-                "\(kind) notification delivery failed; domain=\(notificationError.domain, privacy: .public), code=\(notificationError.code)"
-            )
-        }
     }
 
 }
