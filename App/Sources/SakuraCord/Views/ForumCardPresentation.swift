@@ -122,9 +122,7 @@ enum ForumTagEmojiPresentation: Equatable {
 
     init?(tag: ForumTag, customEmojiURLsByID: CustomEmojiImageURLs) {
         if let id = tag.emojiID {
-            let url = customEmojiURLsByID[id]
-                ?? EmojiReference(id: id, name: tag.emojiName ?? "emoji").imageURL(size: 64)
-            guard let url else { return nil }
+            guard let url = Self.customEmojiURL(for: tag, cached: customEmojiURLsByID[id]) else { return nil }
             self = .custom(url)
         } else if let name = tag.emojiName, !name.isEmpty {
             self = .unicode(name)
@@ -136,6 +134,12 @@ enum ForumTagEmojiPresentation: Equatable {
     var mediaKey: NativeTimelineMediaKey? {
         guard case let .custom(url) = self else { return nil }
         return .media(url, maximumPixelDimension: 64)
+    }
+
+    /// A custom tag emoji's image: the account's cached link, else Discord's CDN.
+    static func customEmojiURL(for tag: ForumTag, cached: URL?) -> URL? {
+        guard let id = tag.emojiID else { return nil }
+        return cached ?? EmojiReference(id: id, name: tag.emojiName ?? "emoji").imageURL(size: 64)
     }
 }
 
@@ -198,5 +202,56 @@ extension ForumCardPresentation.Media {
         case let .spoiler(media): media.mediaKey
         case .audio, .file: nil
         }
+    }
+}
+
+nonisolated enum ForumTimestampPresentation {
+    static func roundedRelativeText(for date: Date, relativeTo now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        switch seconds {
+        case ..<60:
+            return "now"
+        case ..<3_600:
+            return "\(max(1, seconds / 60))m ago"
+        case ..<86_400:
+            return "\(seconds / 3_600)h ago"
+        case ..<604_800:
+            return "\(seconds / 86_400)d ago"
+        case ..<2_629_800:
+            return "\(seconds / 604_800)w ago"
+        case ..<31_557_600:
+            return "\(seconds / 2_629_800)mo ago"
+        default:
+            return "\(seconds / 31_557_600)y ago"
+        }
+    }
+}
+
+nonisolated enum ForumPostReactionPresentation {
+    static func displayedReaction(
+        reactions: [Reaction],
+        defaultReaction: ForumDefaultReaction?
+    ) -> Reaction? {
+        var highestCountReaction: Reaction?
+        for reaction in MessageReactionPresentation.items(from: reactions) {
+            if highestCountReaction == nil
+                || reaction.count > (highestCountReaction?.count ?? 0)
+            {
+                highestCountReaction = reaction
+            }
+        }
+        if let highestCountReaction {
+            return highestCountReaction
+        }
+        guard let token = defaultReactionToken(defaultReaction) else { return nil }
+        return Reaction(emoji: token, count: 0)
+    }
+
+    static func defaultReactionToken(_ value: ForumDefaultReaction?) -> String? {
+        guard let value else { return nil }
+        if let id = value.emojiID {
+            return EmojiReference(id: id, name: value.emojiName ?? "emoji").rawToken
+        }
+        return value.emojiName
     }
 }

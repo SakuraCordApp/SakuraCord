@@ -1051,7 +1051,7 @@ func `forum previews conceal hidden spoilers and share their reveal with the tim
     let source = "before ||secret [site](https://example.com) <:glow:123>|| after"
     let preview = ForumPostPreviewTextView()
     preview.configure(
-        ForumPostPreviewTextView.Configuration(
+        ForumPostPreviewTextRenderer.Configuration(
             messageID: messageID,
             source: source,
             mentionPresentations: [:],
@@ -1060,7 +1060,7 @@ func `forum previews conceal hidden spoilers and share their reveal with the tim
             maximumNumberOfLines: 2,
             isEmphasized: true,
             underlinesLinks: false,
-            prefix: ForumPostPreviewTextView.Prefix(
+            prefix: ForumPostPreviewTextRenderer.Prefix(
                 value: NSAttributedString(string: "Ada: "),
                 accessibilityText: "Ada: "
             )

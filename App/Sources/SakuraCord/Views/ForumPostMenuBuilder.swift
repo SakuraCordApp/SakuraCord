@@ -67,12 +67,9 @@ final class ForumPostMenuBuilder: NSObject {
     private func preloadCustomTagImages(for tags: [ForumTag], customEmojiURLsByID: CustomEmojiImageURLs) {
         for tag in tags {
             guard customTagImages[tag.id] == nil, imageTasks[tag.id] == nil,
-                  let emojiID = tag.emojiID,
-                  let url = customEmojiURLsByID[emojiID]
-                  ?? EmojiReference(
-                      id: emojiID,
-                      name: tag.emojiName ?? "emoji"
-                  ).imageURL(size: 64)
+                  let url = ForumTagEmojiPresentation.customEmojiURL(
+                      for: tag, cached: tag.emojiID.flatMap { customEmojiURLsByID[$0] }
+                  )
             else { continue }
             imageTasks[tag.id] = Task { [weak self] in
                 defer { self?.imageTasks[tag.id] = nil }

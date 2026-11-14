@@ -113,7 +113,7 @@ extension ForumBoardView {
         var placeholder = "Original message was deleted"
         var isEmphasized = presentation.isEmphasized
         let lines: Int
-        var prefix: ForumPostPreviewTextView.Prefix?
+        var prefix: ForumPostPreviewTextRenderer.Prefix?
         if isGallery {
             switch presentation.hero {
             case let .text(value): message = value
@@ -155,7 +155,7 @@ extension ForumBoardView {
         let previous = renderer.configuration
         renderer.configure(
             message.map {
-                ForumPostPreviewTextView.Configuration(
+                ForumPostPreviewTextRenderer.Configuration(
                     resolving: $0,
                     model: model,
                     fontSize: fontSize,
@@ -164,7 +164,7 @@ extension ForumBoardView {
                     underlinesLinks: presentation.underlinesLinks,
                     prefix: prefix
                 )
-            } ?? ForumPostPreviewTextView.Configuration(
+            } ?? ForumPostPreviewTextRenderer.Configuration(
                 messageID: MessageID(rawValue: postID.rawValue),
                 source: placeholder,
                 mentionPresentations: [:],
@@ -194,7 +194,7 @@ extension ForumBoardView {
     private func authorPrefix(
         _ author: ForumCardPresentation.Author,
         separated: Bool = true
-    ) -> ForumPostPreviewTextView.Prefix {
+    ) -> ForumPostPreviewTextRenderer.Prefix {
         let bodySize = metrics.excerptFont.pointSize
         let fallback = NSFont.interfaceSystemFont(ofSize: bodySize, weight: .semibold)
         ProfileNameFontLoader.shared.request(id: author.fontID)
@@ -212,7 +212,7 @@ extension ForumBoardView {
         font: NSFont,
         bodySize: CGFloat,
         separated: Bool
-    ) -> ForumPostPreviewTextView.Prefix {
+    ) -> ForumPostPreviewTextRenderer.Prefix {
         let value = NSMutableAttributedString()
         if let dotColor = author.roleDotColor,
            let dot = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)?
@@ -235,13 +235,13 @@ extension ForumBoardView {
             ]
         ))
         guard separated else {
-            return ForumPostPreviewTextView.Prefix(value: value, accessibilityText: author.name)
+            return ForumPostPreviewTextRenderer.Prefix(value: value, accessibilityText: author.name)
         }
         value.append(NSAttributedString(
             string: ": ",
             attributes: [.font: NSFont.interfaceSystemFont(ofSize: bodySize), .foregroundColor: NSColor.secondaryLabelColor]
         ))
-        return ForumPostPreviewTextView.Prefix(value: value, accessibilityText: "\(author.name): ")
+        return ForumPostPreviewTextRenderer.Prefix(value: value, accessibilityText: "\(author.name): ")
     }
 
     // MARK: Drawing

@@ -209,7 +209,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     private var realizedRange: Range<Int>?
     private var settledWorkTask: Task<Void, Never>?
     private var needsObservationRefresh = false
-    var authorPrefixes: [AuthorPrefixKey: ForumPostPreviewTextView.Prefix] = [:]
+    var authorPrefixes: [AuthorPrefixKey: ForumPostPreviewTextRenderer.Prefix] = [:]
 
     override var isFlipped: Bool { true }
 

@@ -12,7 +12,7 @@ struct ForumPostPreviewText: NSViewRepresentable {
     let maximumNumberOfLines: Int
     let isEmphasized: Bool
     var textStyle: NSFont.TextStyle = .body
-    var prefix: ForumPostPreviewTextView.Prefix?
+    var prefix: ForumPostPreviewTextRenderer.Prefix?
 
     func makeNSView(context _: Context) -> ForumPostPreviewTextView {
         ForumPostPreviewTextView()
@@ -20,7 +20,7 @@ struct ForumPostPreviewText: NSViewRepresentable {
 
     func updateNSView(_ view: ForumPostPreviewTextView, context _: Context) {
         view.configure(
-            ForumPostPreviewTextView.Configuration(
+            ForumPostPreviewTextRenderer.Configuration(
                 resolving: message,
                 model: model,
                 fontSize: NSFont.interfacePreferredFont(forTextStyle: textStyle).pointSize,
@@ -51,8 +51,22 @@ struct ForumPostPreviewText: NSViewRepresentable {
 /// layers, so both share spoiler, emoji and truncation behaviour.
 @MainActor
 final class ForumPostPreviewTextRenderer {
-    typealias Prefix = ForumPostPreviewTextView.Prefix
-    typealias Configuration = ForumPostPreviewTextView.Configuration
+    struct Prefix: Equatable {
+        let value: NSAttributedString
+        let accessibilityText: String
+    }
+
+    struct Configuration: Equatable {
+        let messageID: MessageID
+        let source: String
+        let mentionPresentations: [String: MentionPresentation]
+        let fontSize: CGFloat
+        let emojiSize: CGFloat
+        let maximumNumberOfLines: Int
+        let isEmphasized: Bool
+        let underlinesLinks: Bool
+        let prefix: Prefix?
+    }
 
     private let textStorage = NSTextStorage()
     private let layoutManager = NSLayoutManager()
@@ -438,23 +452,6 @@ final class ForumPostPreviewTextRenderer {
 }
 
 final class ForumPostPreviewTextView: NSView {
-    struct Prefix: Equatable {
-        let value: NSAttributedString
-        let accessibilityText: String
-    }
-
-    struct Configuration: Equatable {
-        let messageID: MessageID
-        let source: String
-        let mentionPresentations: [String: MentionPresentation]
-        let fontSize: CGFloat
-        let emojiSize: CGFloat
-        let maximumNumberOfLines: Int
-        let isEmphasized: Bool
-        let underlinesLinks: Bool
-        let prefix: Prefix?
-    }
-
     private let renderer = ForumPostPreviewTextRenderer()
     private var hoverTrackingArea: NSTrackingArea?
 
@@ -477,7 +474,7 @@ final class ForumPostPreviewTextView: NSView {
     required init?(coder _: NSCoder) { nil }
 
     func configure(
-        _ configuration: Configuration,
+        _ configuration: ForumPostPreviewTextRenderer.Configuration,
         revealStore: NativeTimelineSpoilerRevealStore
     ) {
         let previous = renderer.configuration
@@ -590,7 +587,7 @@ final class ForumPostPreviewTextView: NSView {
     }
 }
 
-extension ForumPostPreviewTextView.Configuration {
+extension ForumPostPreviewTextRenderer.Configuration {
     /// Resolves the message's mentions and sizes inline emoji from the body font.
     init(
         resolving message: Message,
@@ -599,7 +596,7 @@ extension ForumPostPreviewTextView.Configuration {
         maximumNumberOfLines: Int,
         isEmphasized: Bool,
         underlinesLinks: Bool,
-        prefix: ForumPostPreviewTextView.Prefix?
+        prefix: ForumPostPreviewTextRenderer.Prefix?
     ) {
         let resolver = MessageMentionResolver(model: model, message: message)
         let prepared = RichMessageAttributedText.prepare(source: message.content)

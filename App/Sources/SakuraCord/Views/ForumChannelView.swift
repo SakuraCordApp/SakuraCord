@@ -609,59 +609,6 @@ private struct ForumTagEmoji: View {
     }
 
     private var resolvedCustomEmojiURL: URL? {
-        if let customEmojiURL { return customEmojiURL }
-        guard let id = tag.emojiID else { return nil }
-        return EmojiReference(id: id, name: tag.emojiName ?? "emoji").imageURL(size: 64)
-    }
-}
-
-nonisolated enum ForumTimestampPresentation {
-    static func roundedRelativeText(for date: Date, relativeTo now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(date)))
-        switch seconds {
-        case ..<60:
-            return "now"
-        case ..<3_600:
-            return "\(max(1, seconds / 60))m ago"
-        case ..<86_400:
-            return "\(seconds / 3_600)h ago"
-        case ..<604_800:
-            return "\(seconds / 86_400)d ago"
-        case ..<2_629_800:
-            return "\(seconds / 604_800)w ago"
-        case ..<31_557_600:
-            return "\(seconds / 2_629_800)mo ago"
-        default:
-            return "\(seconds / 31_557_600)y ago"
-        }
-    }
-}
-
-nonisolated enum ForumPostReactionPresentation {
-    static func displayedReaction(
-        reactions: [Reaction],
-        defaultReaction: ForumDefaultReaction?
-    ) -> Reaction? {
-        var highestCountReaction: Reaction?
-        for reaction in MessageReactionPresentation.items(from: reactions) {
-            if highestCountReaction == nil
-                || reaction.count > (highestCountReaction?.count ?? 0)
-            {
-                highestCountReaction = reaction
-            }
-        }
-        if let highestCountReaction {
-            return highestCountReaction
-        }
-        guard let token = defaultReactionToken(defaultReaction) else { return nil }
-        return Reaction(emoji: token, count: 0)
-    }
-
-    static func defaultReactionToken(_ value: ForumDefaultReaction?) -> String? {
-        guard let value else { return nil }
-        if let id = value.emojiID {
-            return EmojiReference(id: id, name: value.emojiName ?? "emoji").rawToken
-        }
-        return value.emojiName
+        ForumTagEmojiPresentation.customEmojiURL(for: tag, cached: customEmojiURL)
     }
 }
