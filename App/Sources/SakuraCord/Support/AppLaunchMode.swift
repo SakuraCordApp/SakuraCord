@@ -162,30 +162,3 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || runsLoadingScrollOverlapBenchmark
     }
 }
-
-@MainActor
-final class NativeTimelinePerformanceBenchmarkGate {
-    static let shared = NativeTimelinePerformanceBenchmarkGate()
-
-    private var didStart = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    private init() {}
-
-    func waitUntilStarted() async {
-        guard !didStart else { return }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-
-    func begin() {
-        guard !didStart else { return }
-        didStart = true
-        let pending = waiters
-        waiters.removeAll(keepingCapacity: false)
-        for continuation in pending {
-            continuation.resume()
-        }
-    }
-}

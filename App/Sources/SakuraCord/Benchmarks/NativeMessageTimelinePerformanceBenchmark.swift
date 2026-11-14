@@ -504,12 +504,10 @@ final class NativeTimelineBenchmarkRunState {
         endActivity()
         ticker.stop()
         beforeMeasurementClose()
-        return NativeTimelineBenchmarkFinishSequence.run(
-            startedAt: startedAt,
-            now: now,
-            closeMeasurement: closeMeasurement,
-            performBookkeeping: performBookkeeping
-        )
+        let elapsed = now() - startedAt
+        closeMeasurement()
+        performBookkeeping(elapsed)
+        return elapsed
     }
 }
 
