@@ -1,32 +1,5 @@
 import AppKit
-
-enum NativeTimelineCompactTimestampMetrics {
-    static var font: NSFont {
-        .messageSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize)
-    }
-
-    private static var cachedWidth: (key: String, width: CGFloat)?
-
-    static func width(settings: InterfaceSettingsSnapshot) -> CGFloat {
-        let locale = Locale.autoupdatingCurrent
-        let key = "\(locale.identifier):\(locale.hourCycle):\(settings.timestampFormat):\(settings.includesTimestampSeconds):\(font.pointSize)"
-        if let cachedWidth, cachedWidth.key == key { return cachedWidth.width }
-        // Measure every hour once, so changing digit counts and day periods
-        // never shift the message column between rows or clip hovered times.
-        let width = (0 ..< 24).map { hour in
-            let text = InterfaceTimestampFormatter.text(
-                for: Date(timeIntervalSince1970: Double(hour * 3600 + 59 * 60 + 59)),
-                format: settings.timestampFormat,
-                includesSeconds: settings.includesTimestampSeconds,
-                locale: locale,
-                timeZone: TimeZone(secondsFromGMT: 0)!
-            )
-            return (text as NSString).size(withAttributes: [.font: font]).width
-        }.max() ?? 0
-        cachedWidth = (key, ceil(width))
-        return ceil(width)
-    }
-}
+import SakuraCordModels
 
 nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case jumpToMessage
@@ -322,5 +295,71 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
             ])
         }
         return result
+    }
+}
+
+extension NativeTimelineCanvasView {
+    func actionItem(
+        _ title: String,
+        systemImage: String,
+        isDestructive: Bool = false,
+        action: @escaping () -> Void
+    ) -> NSMenuItem {
+        ContextMenuItemSupport.item(title, systemImage: systemImage, isDestructive: isDestructive) { [weak self] in
+            guard let self, !self.sendTransitionBlocksInteractions else { return }
+            action()
+        }
+    }
+
+    func requestDelete(_ message: Message) {
+        guard let window, let actions else { return }
+        requestDelete(
+            message,
+            in: window,
+            perform: actions.delete
+        )
+    }
+
+    func requestDiscardFailed(_ message: Message) {
+        guard let window, let actions else { return }
+        requestDelete(
+            message,
+            in: window,
+            perform: actions.discardFailed
+        )
+    }
+
+    private func requestDelete(
+        _ message: Message,
+        in window: NSWindow,
+        perform delete: @escaping (Message) -> Void
+    ) {
+        removeActionCapsule()
+        if MessageDeleteConfirmationPolicy.isBypassed(
+            by: NSEvent.modifierFlags
+        ) {
+            delete(message)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Delete this message?"
+        alert.informativeText = "This action cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete Message")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        // Do not order a sheet synchronously from a SwiftUI-hosted button
+        // transaction. AppKit can throw while remote media views are being
+        // reconciled during that same update group.
+        Task { @MainActor [weak self, weak window] in
+            await Task.yield()
+            guard let self, let window, self.window === window,
+                  window.attachedSheet == nil
+            else { return }
+            alert.beginSheetModal(for: window) { response in
+                guard response == .alertFirstButtonReturn else { return }
+                delete(message)
+            }
+        }
     }
 }

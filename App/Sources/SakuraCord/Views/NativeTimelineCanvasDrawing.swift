@@ -1541,3 +1541,23 @@ extension NativeTimelineCanvasView {
     }
 
 }
+
+extension NativeTimelineCanvasView {
+    /// Pointer changes only need the bounded visible rows, never a search of
+    /// the entire message history. Rows outside the viewport need no redraw.
+    func visibleMessageRowIndex(for messageID: MessageID) -> Int? {
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        guard viewport.height > 0, var index = rowIndex(at: max(0, viewport.minY)) else { return nil }
+        while items.indices.contains(index), layouts.indices.contains(index),
+              displayedRowOrigin(at: index) < viewport.maxY {
+            if items[index].messageID == messageID, rowFrame(at: index).intersects(viewport) { return index }
+            index += 1
+        }
+        return nil
+    }
+
+    func invalidateVisibleMessageRow(messageID: MessageID) {
+        guard let index = visibleMessageRowIndex(for: messageID) else { return }
+        setNeedsDisplay(rowFrame(at: index))
+    }
+}

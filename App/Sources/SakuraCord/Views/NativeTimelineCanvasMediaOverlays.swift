@@ -1410,3 +1410,96 @@ extension NativeTimelineCanvasView {
     }
 
 }
+
+extension NativeTimelineCanvasView {
+    func reconcileAnimatedMedia(
+        allowsScrolling: Bool = false
+    ) {
+        // Scrolling changes which compositor overlays are visible, but it
+        // must not tear down the active players or decoded frames on every
+        // momentum tick. A delayed reconciliation commonly lands after
+        // scrolling begins.
+        guard allowsScrolling || !suppressesHoverPresentation else { return }
+        guard !items.isEmpty,
+              var index = rowIndex(at: max(0, visibleRect.minY))
+        else {
+            animatedMediaRows.removeAll()
+            inlineVideoRows.removeAll()
+            removeInlineVideoOverlays()
+            removeAnimatedMediaOverlays()
+            return
+        }
+        // Keep the paused compositor layers and their clocks while occluded.
+        // Discarding them here would restart decorations when the window returns.
+        guard permitsAnimatedMediaPlayback else { return }
+        let reduceMotion =
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        var rows:
+            [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
+        var videoRows:
+            [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
+        while items.indices.contains(index),
+              displayedRowOrigin(at: index) < visibleRect.maxY
+        {
+            guard case let .message(row, _, _) = items[index],
+                  layouts.indices.contains(index)
+            else {
+                index += 1
+                continue
+            }
+            let identifier = items[index].identifier
+            // A message still flying in from the composer gets its media
+            // once it lands.
+            if hidesRowForSendTransition(identifier) {
+                index += 1
+                continue
+            }
+            let keys = animatedMediaKeys(
+                for: row,
+                layout: layouts[index]
+            )
+            if !reduceMotion, !keys.isEmpty {
+                rows[identifier] = keys
+                for key in keys {
+                    NativeTimelineMediaStore.shared.requestAnimated(
+                        key,
+                        owner: visibleMediaPinOwner,
+                        subscriber: identifier
+                    ) { [weak self] in
+                        guard let self,
+                              let currentIndex = self.items.firstIndex(
+                                  where: { $0.identifier == identifier }
+                              )
+                        else { return }
+                        self.invalidateBitmap(identifier)
+                        self.setNeedsDisplay(self.rowFrame(at: currentIndex))
+                        self.reconcileAnimatedMediaOverlays(
+                            reduceMotion: false
+                        )
+                    }
+                }
+            }
+            let videoURLs: Set<URL> = Set(
+                layouts[index].embedRegions.compactMap { region -> URL? in
+                    guard region.mediaIsVideo,
+                          region.mediaAutoplaysInline
+                    else { return nil }
+                    return region.mediaURL
+                }
+            )
+            if !videoURLs.isEmpty {
+                videoRows[identifier] = videoURLs
+            }
+            index += 1
+        }
+        animatedMediaRows = rows
+        inlineVideoRows = videoRows
+        reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
+        if !allowsScrolling {
+            reconcileInlineVideoOverlays(
+                plays: !reduceMotion
+            )
+        }
+    }
+}

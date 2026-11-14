@@ -305,36 +305,6 @@ extension NativeTimelineCanvasView {
         return index
     }
 
-#if DEBUG
-    var spoilerOverlayFramesForTesting:
-        [NativeTimelineComponentRevealKey: CGRect]
-    {
-        spoilerOverlays.mapValues(\.frame)
-    }
-
-    var spoilerOverlayPillKeysForTesting:
-        Set<NativeTimelineComponentRevealKey>
-    {
-        Set(
-            spoilerOverlays.compactMap { key, overlay in
-                overlay.hasPersistentPillForTesting ? key : nil
-            }
-        )
-    }
-
-    func reconcileSpoilerOverlaysForTesting() {
-        reconcileSpoilerOverlays()
-    }
-
-    func animatedMediaKeysForTesting(
-        row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout
-    ) -> Set<NativeTimelineMediaKey> {
-        animatedMediaKeys(for: row, layout: layout)
-    }
-
-#endif
-
     /// Rows after the edited one move with it even when the content origin
     /// stays, so their overlays and pointer regions follow every change.
     func resizeForEditingChange(by delta: CGFloat) {
@@ -436,70 +406,6 @@ extension NativeTimelineCanvasView {
             }
         }
         return nil
-    }
-
-    func actionItem(
-        _ title: String,
-        systemImage: String,
-        isDestructive: Bool = false,
-        action: @escaping () -> Void
-    ) -> NSMenuItem {
-        ContextMenuItemSupport.item(title, systemImage: systemImage, isDestructive: isDestructive) { [weak self] in
-            guard let self, !self.sendTransitionBlocksInteractions else { return }
-            action()
-        }
-    }
-
-    func requestDelete(_ message: Message) {
-        guard let window, let actions else { return }
-        requestDelete(
-            message,
-            in: window,
-            perform: actions.delete
-        )
-    }
-
-    func requestDiscardFailed(_ message: Message) {
-        guard let window, let actions else { return }
-        requestDelete(
-            message,
-            in: window,
-            perform: actions.discardFailed
-        )
-    }
-
-    private func requestDelete(
-        _ message: Message,
-        in window: NSWindow,
-        perform delete: @escaping (Message) -> Void
-    ) {
-        removeActionCapsule()
-        if MessageDeleteConfirmationPolicy.isBypassed(
-            by: NSEvent.modifierFlags
-        ) {
-            delete(message)
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = "Delete this message?"
-        alert.informativeText = "This action cannot be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete Message")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons.first?.hasDestructiveAction = true
-        // Do not order a sheet synchronously from a SwiftUI-hosted button
-        // transaction. AppKit can throw while remote media views are being
-        // reconciled during that same update group.
-        Task { @MainActor [weak self, weak window] in
-            await Task.yield()
-            guard let self, let window, self.window === window,
-                  window.attachedSheet == nil
-            else { return }
-            alert.beginSheetModal(for: window) { response in
-                guard response == .alertFirstButtonReturn else { return }
-                delete(message)
-            }
-        }
     }
 }
 

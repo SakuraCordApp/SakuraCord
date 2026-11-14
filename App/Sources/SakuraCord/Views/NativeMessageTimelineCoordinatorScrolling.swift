@@ -1442,26 +1442,4 @@ extension NativeMessageTimelineCoordinator {
                     viewportMaximumY: visibleRect.maxY
                 )
         }
-
-        func beginPerformanceBenchmarkPaginationIntent(towardLater: Bool) {
-            if towardLater {
-                isLaterHistoryScrollGestureActive = true
-                hasLaterHistoryScrollIntent = true
-                hasIssuedLaterHistoryRequest = parent.isLoadingLater
-            } else {
-                isEarlierHistoryScrollGestureActive = true
-                hasEarlierHistoryScrollIntent = true
-                hasIssuedEarlierHistoryRequest = parent.isLoadingEarlier
-            }
-        }
-
-        func endPerformanceBenchmarkPaginationIntent(towardLater: Bool) {
-            if towardLater {
-                isLaterHistoryScrollGestureActive = false
-                hasLaterHistoryScrollIntent = false
-            } else {
-                isEarlierHistoryScrollGestureActive = false
-                hasEarlierHistoryScrollIntent = false
-            }
-        }
 }

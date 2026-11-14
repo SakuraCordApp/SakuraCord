@@ -1572,3 +1572,14 @@ extension NativeTimelineCanvasView {
     }
 
 }
+
+#if DEBUG
+    extension NativeTimelineCanvasView {
+        func animatedMediaKeysForTesting(
+            row: MessageRowPresentation,
+            layout: NativeTimelineRowLayout
+        ) -> Set<NativeTimelineMediaKey> {
+            animatedMediaKeys(for: row, layout: layout)
+        }
+    }
+#endif

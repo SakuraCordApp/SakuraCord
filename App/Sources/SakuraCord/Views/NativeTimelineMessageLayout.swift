@@ -1370,3 +1370,31 @@ enum MessageEditLayoutMetrics {
     nonisolated static var keycapHorizontalPadding: CGFloat { InterfaceScale.metric(5) }
     nonisolated static var keycapVerticalPadding: CGFloat { InterfaceScale.metric(1) }
 }
+
+enum NativeTimelineCompactTimestampMetrics {
+    static var font: NSFont {
+        .messageSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize)
+    }
+
+    private static var cachedWidth: (key: String, width: CGFloat)?
+
+    static func width(settings: InterfaceSettingsSnapshot) -> CGFloat {
+        let locale = Locale.autoupdatingCurrent
+        let key = "\(locale.identifier):\(locale.hourCycle):\(settings.timestampFormat):\(settings.includesTimestampSeconds):\(font.pointSize)"
+        if let cachedWidth, cachedWidth.key == key { return cachedWidth.width }
+        // Measure every hour once, so changing digit counts and day periods
+        // never shift the message column between rows or clip hovered times.
+        let width = (0 ..< 24).map { hour in
+            let text = InterfaceTimestampFormatter.text(
+                for: Date(timeIntervalSince1970: Double(hour * 3600 + 59 * 60 + 59)),
+                format: settings.timestampFormat,
+                includesSeconds: settings.includesTimestampSeconds,
+                locale: locale,
+                timeZone: TimeZone(secondsFromGMT: 0)!
+            )
+            return (text as NSString).size(withAttributes: [.font: font]).width
+        }.max() ?? 0
+        cachedWidth = (key, ceil(width))
+        return ceil(width)
+    }
+}
