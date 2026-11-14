@@ -57,15 +57,6 @@ nonisolated struct NotificationSoundPreference: Equatable {
     }
 }
 
-nonisolated enum NotificationSoundKeys {
-    static let messageSoundID = "notifications.messageSound"
-    static let messageSoundBookmark = "notifications.messageSoundBookmark"
-    static let messageSoundName = "notifications.messageSoundName"
-    static let callRingtoneID = "notifications.callRingtone"
-    static let callRingtoneBookmark = "notifications.callRingtoneBookmark"
-    static let callRingtoneName = "notifications.callRingtoneName"
-}
-
 nonisolated enum NotificationSoundLibrary {
     static let bundledID = "bundled"
     static let customID = "custom"
