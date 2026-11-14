@@ -50,23 +50,17 @@ nonisolated enum NativeTimelineBenchmarkScrollPolicy {
 }
 
 nonisolated struct NativeTimelineBenchmarkScrollController {
-    enum Outcome: Equatable {
-        case continueBenchmark
-        case completed
-        case insufficientHistory
-        case paginationFailed
-    }
-
     let startedAt: TimeInterval
     private(set) var completedDistance: CGFloat = 0
 
+    /// How the run ends after this tick, or nil while it continues.
     mutating func recordTick(
         uptime: TimeInterval,
         previousDocumentY: CGFloat,
         currentDocumentY: CGFloat,
         hasMoreMessages: Bool,
         paginationFailed: Bool = false
-    ) -> Outcome {
+    ) -> NativeTimelineBenchmarkFinishOutcome? {
         let advance = max(0, previousDocumentY - currentDocumentY)
         completedDistance += advance
         if paginationFailed {
@@ -78,7 +72,7 @@ nonisolated struct NativeTimelineBenchmarkScrollController {
         if uptime - startedAt >= NativeTimelineBenchmarkScrollPolicy.duration {
             return .completed
         }
-        return .continueBenchmark
+        return nil
     }
 }
 

@@ -267,7 +267,7 @@ extension NativeMessageTimelineCoordinator {
                 state.maximumScrollWork,
                 ProcessInfo.processInfo.systemUptime - workStart
             )
-            let result = state.controller.recordTick(
+            let outcome = state.controller.recordTick(
                 uptime: tickUptime,
                 previousDocumentY: state.scrollsTowardLater
                     ? -visibleRect.minY : visibleRect.minY,
@@ -278,16 +278,7 @@ extension NativeMessageTimelineCoordinator {
                     ? parent.laterHistoryLoadFailed
                     : parent.earlierHistoryLoadFailed
             )
-            switch result {
-            case .continueBenchmark:
-                break
-            case .completed:
-                finish(.completed)
-            case .insufficientHistory:
-                finish(.insufficientHistory)
-            case .paginationFailed:
-                finish(.paginationFailed)
-            }
+            if let outcome { finish(outcome) }
         }
 
         func logDelayedPerformanceTickIfNeeded(_ interval: TimeInterval) {
@@ -492,7 +483,7 @@ final class NativeTimelineBenchmarkRunState {
     @discardableResult
     func finish(
         now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-        endActivity: () -> Void = { AppScrollWorkGate.endActivity() },
+        endActivity: () -> Void,
         beforeMeasurementClose: () -> Void,
         performBookkeeping: (_ elapsed: TimeInterval) -> Void
     ) -> TimeInterval? {
