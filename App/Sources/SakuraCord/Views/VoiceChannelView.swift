@@ -216,7 +216,7 @@ private struct VoiceChannelPreviewCard: View {
             HStack(spacing: InterfaceScale.metric(6)) {
                 if participant.isStreaming {
                     Image(systemName: "display")
-                        .foregroundStyle(Color(hex: 0x23A55A))
+                        .foregroundStyle(Color.presenceOnline)
                         .accessibilityLabel("Sharing screen")
                 }
                 if participant.isCameraEnabled {

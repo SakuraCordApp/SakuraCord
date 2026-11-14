@@ -847,7 +847,7 @@ private struct QuickSwitcherResultRow: View, Equatable {
                             .foregroundStyle(.white)
                             .padding(.horizontal, InterfaceScale.metric(6))
                             .frame(minWidth: InterfaceScale.metric(20), minHeight: InterfaceScale.metric(20))
-                            .background(Color(hex: MentionRed.hex), in: .rect(cornerRadius: InterfaceScale.metric(5)))
+                            .background(MentionRed.color, in: .rect(cornerRadius: InterfaceScale.metric(5)))
                             .layoutPriority(2)
                     }
                 }

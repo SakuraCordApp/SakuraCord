@@ -803,7 +803,7 @@ private struct VoiceParticipantTile: View {
                 ConcentricRectangle(cornerRadius: metrics.value(16), style: .continuous)
                     .stroke(
                         participant.isSpeaking
-                            ? Color(hex: 0x23A55A) : Color.primary.opacity(0.08),
+                            ? Color.presenceOnline : Color.primary.opacity(0.08),
                         lineWidth: metrics.value(participant.isSpeaking ? 3 : 1)
                     )
             }
@@ -933,7 +933,7 @@ private struct RingingParticipantAvatar: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color(hex: 0x23A55A), lineWidth: max(2, size * 0.035))
+                .stroke(Color.presenceOnline, lineWidth: max(2, size * 0.035))
                 .frame(width: size * 1.18, height: size * 1.18)
                 .scaleEffect(isPulsing ? 1.12 : 0.92)
                 .opacity(isPulsing ? 0.12 : 0.68)
@@ -947,7 +947,7 @@ private struct RingingParticipantAvatar: View {
         }
         .frame(width: size * 1.36, height: size * 1.36)
         .shadow(
-            color: Color(hex: 0x23A55A).opacity(isPulsing ? 0.34 : 0.12),
+            color: Color.presenceOnline.opacity(isPulsing ? 0.34 : 0.12),
             radius: isPulsing ? 9 : 3
         )
         .onAppear { updateAnimation(reduceMotion: reduceMotion) }

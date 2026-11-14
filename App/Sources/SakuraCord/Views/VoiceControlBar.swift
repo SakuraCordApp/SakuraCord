@@ -74,7 +74,7 @@ struct VoiceSidebarControlPanel: View {
                             ? "Turn Off Camera" : "Turn On Camera",
                         diameter: diameter,
                         tintColor: model.isCameraEnabled
-                            ? Color(hex: 0x23A55A) : nil,
+                            ? Color.presenceOnline : nil,
                         isDisabled: model.voiceSessionState != .connected
                             && !model.isCameraEnabled
                     ) {
@@ -160,7 +160,7 @@ struct VoiceSidebarControlPanel: View {
         switch model.voiceSessionState {
         case .connecting, .reconnecting: Color(hex: 0xF0B232)
         case .failed, .disconnected: Color.leaveCallRed
-        default: Color(hex: 0x23A55A)
+        default: Color.presenceOnline
         }
     }
 
@@ -328,7 +328,7 @@ struct VoiceCallControlDock: View {
                     title: model.isCameraEnabled ? "Stop Video" : "Start Video",
                     systemImage: model.isCameraEnabled ? "video.slash.fill" : "video.fill",
                     isAlert: false,
-                    tintColor: model.isCameraEnabled ? Color(hex: 0x23A55A) : nil,
+                    tintColor: model.isCameraEnabled ? Color.presenceOnline : nil,
                     isDisabled: model.voiceSessionState != .connected
                         && !model.isCameraEnabled,
                     showsTitle: showsTitles,

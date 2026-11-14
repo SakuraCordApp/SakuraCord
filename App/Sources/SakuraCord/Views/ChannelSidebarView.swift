@@ -877,7 +877,7 @@ private struct VoiceParticipantRow: View {
             Spacer(minLength: InterfaceScale.metric(4))
             if participant.isStreaming {
                 Image(systemName: "display")
-                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .foregroundStyle(Color.presenceOnline)
             }
             if participant.isVideoEnabled {
                 Image(systemName: "video.fill")
@@ -956,7 +956,7 @@ private struct ChannelRow: View {
             if hasActiveScreenShare {
                 Image(systemName: "display")
                     .font(.interface(.caption))
-                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .foregroundStyle(Color.presenceOnline)
                     .accessibilityLabel("Active screen share")
             }
             if isVoiceConnected {

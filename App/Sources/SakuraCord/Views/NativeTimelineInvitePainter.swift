@@ -136,8 +136,7 @@ extension NativeTimelineRowPainter {
     /// Server tag cards pass their own top-left-origin context.
     static func inviteGradient(_ hex: UInt32, in frame: CGRect, context: CGContext? = nil) {
         guard let context = context ?? NSGraphicsContext.current?.cgContext, frame.height > 0 else { return }
-        let base = NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255,
-                           green: CGFloat((hex >> 8) & 255) / 255, blue: CGFloat(hex & 255) / 255, alpha: 1)
+        let base = NSColor(hex: hex)
         let bright = inviteBrightColor(base)
         guard let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
                                         colors: [bright.cgColor, base.cgColor] as CFArray, locations: [0.2065, 0.8516]) else { return }

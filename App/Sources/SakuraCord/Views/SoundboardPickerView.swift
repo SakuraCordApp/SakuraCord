@@ -463,7 +463,7 @@ private struct SoundboardButton: View {
 
     private var outlineColor: Color {
         if model.isSoundPlaying(sound), !isPressed {
-            return Color(hex: 0x23A55A)
+            return Color.presenceOnline
         }
         return PickerTileStyle.outline(colorScheme, isHovering: isHovering)
     }

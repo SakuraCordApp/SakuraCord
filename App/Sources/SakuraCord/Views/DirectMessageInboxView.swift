@@ -189,7 +189,7 @@ private struct DirectMessageInboxRow: View {
                     Label(callStatus, systemImage: "bell.fill")
                     .font(.interface(.caption))
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .foregroundStyle(Color.presenceOnline)
                     .lineLimit(1)
                 } else if channel.kind == .groupDirectMessage {
                     Text("\(channel.recipients.count + 1) members")

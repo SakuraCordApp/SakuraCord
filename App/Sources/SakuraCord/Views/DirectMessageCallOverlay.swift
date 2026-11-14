@@ -272,7 +272,7 @@ private struct PrivateCallActionDock: View {
                     PrivateCallGlassButton(
                         title: "Answer",
                         systemImage: "phone.fill",
-                        tint: Color(hex: 0x23A55A),
+                        tint: Color.presenceOnline,
                         action: accept
                     )
                 } else {
@@ -414,7 +414,7 @@ private struct IncomingPrivateCallCard: View {
                     IncomingCallActionButton(
                         title: "Answer",
                         systemImage: "phone.fill",
-                        tint: Color(hex: 0x23A55A),
+                        tint: Color.presenceOnline,
                         action: accept
                     )
                 }

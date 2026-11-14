@@ -471,12 +471,9 @@ extension NativeTimelineRowPainter {
     static let bubbleIntegratedSectionTintColor = NSColor(
         name: nil
     ) { appearance in
-        switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
-        case .darkAqua:
-            NSColor.black.withAlphaComponent(0.12)
-        default:
-            NSColor.black.withAlphaComponent(0.055)
-        }
+        appearance.isDark
+            ? NSColor.black.withAlphaComponent(0.12)
+            : NSColor.black.withAlphaComponent(0.055)
     }
 
     private static func bubbleIntegratedSectionGeometry(

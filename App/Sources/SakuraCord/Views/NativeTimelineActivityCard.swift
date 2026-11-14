@@ -213,8 +213,7 @@ extension NativeTimelineRowPainter {
     /// Discord tints the card with a 45° gradient from the cover's colour,
     /// darkened so white text stays legible on any art.
     private static func activityGradient(_ hex: UInt32, in frame: CGRect) {
-        let base = NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255, green: CGFloat((hex >> 8) & 255) / 255,
-                           blue: CGFloat(hex & 255) / 255, alpha: 1)
+        let base = NSColor(hex: hex)
         func scaled(_ factor: CGFloat) -> NSColor {
             NSColor(srgbRed: base.redComponent * factor, green: base.greenComponent * factor,
                     blue: base.blueComponent * factor, alpha: 1)

@@ -35,7 +35,7 @@ struct SidebarMentionBadge: View {
             .contentTransition(.numericText(value: Double(count)))
             .padding(.horizontal, InterfaceScale.metric(6))
             .padding(.vertical, InterfaceScale.metric(2))
-            .background(Color(hex: MentionRed.hex), in: Capsule())
+            .background(MentionRed.color, in: Capsule())
             .transition(MentionBadgeMotion.transition)
     }
 }

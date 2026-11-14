@@ -269,12 +269,9 @@ enum NativeTimelineBubbleDrawing {
     }
 
     static let incomingFillColor = NSColor(name: nil) { appearance in
-        switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
-        case .darkAqua:
-            NSColor(srgbRed: 0.22, green: 0.22, blue: 0.23, alpha: 1)
-        default:
-            NSColor(srgbRed: 0.93, green: 0.93, blue: 0.94, alpha: 1)
-        }
+        appearance.isDark
+            ? NSColor(srgbRed: 0.22, green: 0.22, blue: 0.23, alpha: 1)
+            : NSColor(srgbRed: 0.93, green: 0.93, blue: 0.94, alpha: 1)
     }
 
     static func fillColor(for region: NativeTimelineBubbleRegion) -> NSColor {

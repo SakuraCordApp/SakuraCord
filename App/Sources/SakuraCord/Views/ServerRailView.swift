@@ -667,7 +667,7 @@ struct ServerRailMentionBadge: View {
                     .contentTransition(.numericText(value: Double(count)))
                     .padding(.horizontal, InterfaceScale.metric(5))
                     .frame(minWidth: InterfaceScale.metric(18), minHeight: InterfaceScale.metric(18))
-                    .background(Color(hex: MentionRed.hex), in: Capsule())
+                    .background(MentionRed.color, in: Capsule())
                 if isCutout {
                     badge
                         .padding(InterfaceScale.metric(2))
