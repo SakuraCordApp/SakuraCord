@@ -53,6 +53,33 @@ nonisolated struct ConversationPermissionBasis: Sendable {
     }
 }
 
+nonisolated extension ConversationPermissionBasis {
+    /// The basis for the current user, as `member` when known, in `guild`.
+    /// Stored role IDs win over the member's, which may be stale.
+    init(guild: Guild, currentUserID: UserID, member: Member?, roles: [GuildRole], storedRoleIDs: Set<RoleID>?) {
+        let roleIDs = storedRoleIDs ?? Set(member?.roles.map(\.id) ?? [])
+        self.init(
+            guild: guild,
+            resolvedBasePermissions: guild.currentUserPermissions
+                ?? ConversationPermissionResolver.basePermissions(
+                    guildID: guild.id,
+                    roleIDs: roleIDs,
+                    roles: roles
+                ),
+            overwritePrincipals: PermissionOverwritePrincipals(
+                guildID: guild.id,
+                currentUserID: currentUserID,
+                roleIDs: roleIDs
+            ),
+            hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
+            currentUserIsPending: member?.isPending == true,
+            currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
+            currentUserRequiresOnboarding: guild.hasOnboarding && member?.requiresOnboarding == true,
+            currentUserOnboardingIsKnown: guild.isOnboardingStateKnown(for: member)
+        )
+    }
+}
+
 struct CommandMemberQuery: Hashable {
     var guildID: GuildID
     var query: String
@@ -722,30 +749,12 @@ final class AppModel {
         else {
             return nil
         }
-        let member = onboardingMember(in: guildID)
-        let roles =
-            guildRolesByGuildID[guildID]
-            ?? (guildID == selectedGuildID ? guildRoles : [])
-        let storedRoleIDs = currentUserRoleIDsByGuild[guildID]
-        let roleIDs = storedRoleIDs ?? Set(member?.roles.map(\.id) ?? [])
         return ConversationPermissionBasis(
             guild: guild,
-            resolvedBasePermissions: guild.currentUserPermissions
-                ?? ConversationPermissionResolver.basePermissions(
-                    guildID: guildID,
-                    roleIDs: roleIDs,
-                    roles: roles
-                ),
-            overwritePrincipals: PermissionOverwritePrincipals(
-                guildID: guildID,
-                currentUserID: currentUserID,
-                roleIDs: roleIDs
-            ),
-            hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
-            currentUserIsPending: onboardingMember(in: guildID)?.isPending == true,
-            currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
-            currentUserRequiresOnboarding: requiresOnboarding(in: guildID),
-            currentUserOnboardingIsKnown: guild.isOnboardingStateKnown(for: onboardingMember(in: guildID))
+            currentUserID: currentUserID,
+            member: onboardingMember(in: guildID),
+            roles: guildRolesByGuildID[guildID] ?? (guildID == selectedGuildID ? guildRoles : []),
+            storedRoleIDs: currentUserRoleIDsByGuild[guildID]
         )
     }
 

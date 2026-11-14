@@ -189,28 +189,12 @@ final class ConversationDestinationSearchIndexCache {
             else { return nil }
             let member = currentMembersByGuildID[guildID] ?? membersByGuildID[guildID]?[currentUserID]
                 ?? (guildID == selectedGuildID ? membersByID[currentUserID] : nil)
-            let roles = guildRolesByGuildID[guildID]
-                ?? (guildID == selectedGuildID ? guildRoles : [])
-            let storedRoleIDs = currentUserRoleIDsByGuild[guildID]
-            let roleIDs = storedRoleIDs ?? Set(member?.roles.map(\.id) ?? [])
             return ConversationPermissionBasis(
                 guild: guild,
-                resolvedBasePermissions: guild.currentUserPermissions
-                    ?? ConversationPermissionResolver.basePermissions(
-                        guildID: guildID,
-                        roleIDs: roleIDs,
-                        roles: roles
-                    ),
-                overwritePrincipals: PermissionOverwritePrincipals(
-                    guildID: guildID,
-                    currentUserID: currentUserID,
-                    roleIDs: roleIDs
-                ),
-                hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
-                currentUserIsPending: member?.isPending == true,
-                currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
-                currentUserRequiresOnboarding: guild.hasOnboarding && member?.requiresOnboarding == true,
-                currentUserOnboardingIsKnown: guild.isOnboardingStateKnown(for: member)
+                currentUserID: currentUserID,
+                member: member,
+                roles: guildRolesByGuildID[guildID] ?? (guildID == selectedGuildID ? guildRoles : []),
+                storedRoleIDs: currentUserRoleIDsByGuild[guildID]
             )
         }
     }

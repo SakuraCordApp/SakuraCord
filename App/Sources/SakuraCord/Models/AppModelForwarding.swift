@@ -332,21 +332,8 @@ extension AppModel {
         destination channel: Channel
     ) -> String? {
         guard let guildID = channel.guildID else { return nil }
-        guard let guild = serverRailGuildsByID[guildID],
-              let currentUserID = currentUser?.id
-        else { return "Destination permissions are unavailable." }
-        let member = onboardingMember(in: guildID)
-        let roles =
-            guildRolesByGuildID[guildID]
-            ?? (guildID == selectedGuildID ? guildRoles : [])
-        guard let permissions = ConversationPermissionResolver.effectivePermissions(
-            guild: guild,
-            channel: channel,
-            currentUserID: currentUserID,
-            currentMember: member,
-            roles: roles,
-            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
-        ) else {
+        guard let basis = conversationPermissionBasis(for: guildID) else { return "Destination permissions are unavailable." }
+        guard let permissions = basis.effectivePermissions(in: channel) else {
             return channel.permissionOverwrites?.isEmpty != false
                 ? nil
                 : "Destination permissions are unavailable."
