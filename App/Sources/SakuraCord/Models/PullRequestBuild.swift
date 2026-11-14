@@ -30,18 +30,38 @@ nonisolated struct PullRequestBuild: Codable, Equatable, Identifiable, Sendable 
     func validate() throws {
         guard pullRequest > 0, runID > 0, runID <= 9_999_999_999_999,
               (1 ... 999).contains(runAttempt),
-              id == "pr-\(pullRequest)-run-\(runID)-attempt-\(runAttempt)",
+              id == Self.id(pullRequest: pullRequest, runID: runID, runAttempt: runAttempt),
               !title.isEmpty, title.count <= 500,
               !commitSubject.isEmpty, commitSubject.count <= 500,
               Self.isHex(headSHA, count: 40), Self.isHex(builtSHA, count: 40),
               Self.isHex(sha256, count: 64),
-              buildVersion == String(4_000_000_000_000_000_000 + runID * 1000 + runAttempt),
+              buildVersion == Self.buildVersion(runID: runID, runAttempt: runAttempt),
               ["debug", "release"].contains(configuration),
               ["arm64", "universal"].contains(architecture),
               appcastURL == Self.assetURL(id: id, name: "appcast.xml"),
               archiveURL == Self.assetURL(id: id, name: "SakuraCord.app.zip"),
               symbolsURL == Self.assetURL(id: id, name: "SakuraCord.dSYM.zip")
         else { throw PullRequestBuildError.invalidCatalog }
+    }
+
+    static func id(pullRequest: Int, runID: Int, runAttempt: Int) -> String {
+        "pr-\(pullRequest)-run-\(runID)-attempt-\(runAttempt)"
+    }
+
+    struct IDComponents {
+        let pullRequest: String
+        let run: String
+        let attempt: String
+    }
+
+    /// The parts of a build ID as written, or nil when it is not a PR build ID.
+    static func idComponents(_ id: String) -> IDComponents? {
+        guard let match = id.wholeMatch(of: /pr-(\d+)-run-(\d+)-attempt-(\d+)/) else { return nil }
+        return IDComponents(pullRequest: String(match.1), run: String(match.2), attempt: String(match.3))
+    }
+
+    static func buildVersion(runID: Int, runAttempt: Int) -> String {
+        String(4_000_000_000_000_000_000 + runID * 1000 + runAttempt)
     }
 
     static func assetURL(id: String, name: String) -> URL? {
