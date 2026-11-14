@@ -131,12 +131,13 @@ enum ActionMenuRenderer {
     }
 
     private static func menuItem(_ entry: ActionMenuEntry, slot: (ActionMenuEntry) -> NSMenuItem?) -> NSMenuItem? {
-        let action: (() -> Void)?
-        switch entry.content {
-        case .slot: return slot(entry)
-        case .action(let entryAction): action = entryAction
-        case .submenu: action = nil
-        }
+        if case .slot = entry.content { return slot(entry) }
+        return item(entry, slot: slot)
+    }
+
+    /// The item for an entry other than a slot, for menus built partly by hand.
+    static func item(_ entry: ActionMenuEntry, slot: (ActionMenuEntry) -> NSMenuItem? = { _ in nil }) -> NSMenuItem {
+        let action: (() -> Void)? = if case .action(let entryAction) = entry.content { entryAction } else { nil }
         let item = ContextMenuItemSupport.item(
             entry.title,
             systemImage: entry.systemImage,

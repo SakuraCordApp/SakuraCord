@@ -62,66 +62,11 @@ nonisolated enum ChannelContextMenuSubtitle {
     }
 }
 
-/// The mute and notification items that channel, category and server menus
-/// share.
+/// The mute and notification items that channel, category, server and thread
+/// menus share.
 @MainActor
 enum NotificationMenuItems {
     /// Unmute, with the time a timed mute has left.
-    static func unmute(
-        _ title: String, until endTime: Date?, isEnabled: Bool, action: @escaping () -> Void
-    ) -> NSMenuItem {
-        let item = ContextMenuItemSupport.item(title, systemImage: "bell.fill", isEnabled: isEnabled, action: action)
-        if let subtitle = ChannelContextMenuSubtitle.muteRemaining(until: endTime) {
-            item.subtitle = subtitle
-        }
-        return item
-    }
-
-    /// Mute, with a submenu of durations.
-    static func mute(
-        _ title: String, isEnabled: Bool, action: @escaping (ChannelMuteDuration) -> Void
-    ) -> NSMenuItem {
-        let item = ContextMenuItemSupport.item(title, systemImage: "bell.slash.fill", isEnabled: isEnabled, action: nil)
-        let submenu = NSMenu(title: title)
-        submenu.autoenablesItems = false
-        for duration in ChannelMuteDuration.allCases {
-            submenu.addItem(ContextMenuItemSupport.item(duration.title, isEnabled: isEnabled) { action(duration) })
-        }
-        item.submenu = submenu
-        return item
-    }
-
-    /// Notification Settings, with the effective level beside its submenu.
-    static func settings(selection: String, isEnabled: Bool, submenu: NSMenu) -> NSMenuItem {
-        let item = ContextMenuItemSupport.item(
-            "Notification Settings", systemImage: "bell.badge.fill", isEnabled: isEnabled, action: nil
-        )
-        item.subtitle = selection
-        item.submenu = submenu
-        return item
-    }
-
-    static func submenu() -> NSMenu {
-        let menu = NSMenu(title: "Notification Settings")
-        menu.autoenablesItems = false
-        return menu
-    }
-
-    /// One level in the Notification Settings submenu, checked when selected.
-    static func level(
-        _ level: MessageNotificationLevel,
-        title: String,
-        selected: MessageNotificationLevel,
-        isEnabled: Bool,
-        action: @escaping (MessageNotificationLevel) -> Void
-    ) -> NSMenuItem {
-        let item = ContextMenuItemSupport.item(title, isEnabled: isEnabled) { action(level) }
-        item.state = selected == level ? .on : .off
-        return item
-    }
-
-    // The same items as action menu entries, for menus built from sections.
-
     static func unmuteEntry(
         _ title: String, until endTime: Date?, isEnabled: Bool, content: ActionMenuEntry.Content
     ) -> ActionMenuEntry {
@@ -132,6 +77,7 @@ enum NotificationMenuItems {
         )
     }
 
+    /// Mute, with a submenu of durations.
     static func muteEntry(
         _ title: String, isEnabled: Bool, content: (ChannelMuteDuration) -> ActionMenuEntry.Content
     ) -> ActionMenuEntry {
@@ -143,6 +89,7 @@ enum NotificationMenuItems {
         )
     }
 
+    /// Notification Settings, with the effective level beside its submenu.
     static func settingsEntry(selection: String, isEnabled: Bool, levels: [ActionMenuEntry]) -> ActionMenuEntry {
         ActionMenuEntry(
             id: "notifications", title: "Notification Settings", systemImage: "bell.badge.fill",
@@ -150,6 +97,7 @@ enum NotificationMenuItems {
         )
     }
 
+    /// One level in the Notification Settings submenu, checked when selected.
     static func levelEntry(
         _ level: MessageNotificationLevel,
         title: String,
@@ -346,29 +294,29 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 menu.addItem(.separator())
             }
 
-            if bridge.directOverride?.isActivelyMuted() == true {
-                menu.addItem(
-                    NotificationMenuItems.unmute(
-                        bridge.subject.unmuteTitle,
-                        until: bridge.directOverride?.muteConfiguration?.endTime,
-                        isEnabled: canMutate
-                    ) { self.bridge.unmute() }
+            let muteEntry = if bridge.directOverride?.isActivelyMuted() == true {
+                NotificationMenuItems.unmuteEntry(
+                    bridge.subject.unmuteTitle,
+                    until: bridge.directOverride?.muteConfiguration?.endTime,
+                    isEnabled: canMutate,
+                    content: .action { self.bridge.unmute() }
                 )
             } else {
-                menu.addItem(
-                    NotificationMenuItems.mute(bridge.subject.muteTitle, isEnabled: canMutate) { self.bridge.mute($0) }
-                )
+                NotificationMenuItems.muteEntry(bridge.subject.muteTitle, isEnabled: canMutate) { duration in
+                    .action { self.bridge.mute(duration) }
+                }
             }
+            menu.addItem(ActionMenuRenderer.item(muteEntry))
 
             menu.addItem(
-                NotificationMenuItems.settings(
+                ActionMenuRenderer.item(NotificationMenuItems.settingsEntry(
                     selection: ChannelContextMenuSubtitle.notificationSelection(
                         configured: bridge.directOverride?.messageNotifications ?? .inherit,
                         inherited: bridge.inheritedLevel
                     ),
                     isEnabled: canMutate,
-                    submenu: notificationMenu(isEnabled: canMutate)
-                )
+                    levels: notificationLevelEntries()
+                ))
             )
 
             menu.addItem(.separator())
@@ -410,23 +358,20 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             return items
         }
 
-        private func notificationMenu(isEnabled: Bool) -> NSMenu {
-            let menu = NotificationMenuItems.submenu()
+        private func notificationLevelEntries() -> [ActionMenuEntry] {
             let selected = bridge.directOverride?.messageNotifications ?? .inherit
             let levels: [MessageNotificationLevel] = [
                 .inherit, .allMessages, .onlyMentions, .nothing,
             ]
-            for level in levels {
-                let title = level == .inherit ? bridge.inheritanceSource.menuTitle : level.menuTitle
-                let item = NotificationMenuItems.level(level, title: title, selected: selected, isEnabled: isEnabled) {
-                    self.bridge.setNotificationLevel($0)
-                }
-                if level == .inherit {
-                    item.subtitle = bridge.inheritedLevel.menuTitle
-                }
-                menu.addItem(item)
+            return levels.map { level in
+                NotificationMenuItems.levelEntry(
+                    level,
+                    title: level == .inherit ? bridge.inheritanceSource.menuTitle : level.menuTitle,
+                    subtitle: level == .inherit ? bridge.inheritedLevel.menuTitle : nil,
+                    selected: selected,
+                    content: .action { self.bridge.setNotificationLevel(level) }
+                )
             }
-            return menu
         }
     }
 }

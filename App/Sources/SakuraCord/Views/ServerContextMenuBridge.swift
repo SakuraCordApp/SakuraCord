@@ -55,25 +55,32 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             menu.addItem(.separator())
 
             let settings = bridge.notificationSettings
-            if settings.isActivelyMuted() {
-                menu.addItem(
-                    NotificationMenuItems.unmute(
-                        "Unmute Server",
-                        until: settings.muteConfiguration?.endTime,
-                        isEnabled: canMutate
-                    ) { self.bridge.actions.unmute(self.bridge.guild) }
+            let muteEntry = if settings.isActivelyMuted() {
+                NotificationMenuItems.unmuteEntry(
+                    "Unmute Server",
+                    until: settings.muteConfiguration?.endTime,
+                    isEnabled: canMutate,
+                    content: .action { self.bridge.actions.unmute(self.bridge.guild) }
                 )
             } else {
-                menu.addItem(NotificationMenuItems.mute("Mute Server", isEnabled: canMutate) { self.bridge.actions.mute(self.bridge.guild, $0) })
+                NotificationMenuItems.muteEntry("Mute Server", isEnabled: canMutate) { duration in
+                    .action { self.bridge.actions.mute(self.bridge.guild, duration) }
+                }
             }
+            menu.addItem(ActionMenuRenderer.item(muteEntry))
 
-            menu.addItem(
-                NotificationMenuItems.settings(
-                    selection: settings.messageNotifications.menuTitle,
-                    isEnabled: canMutate,
-                    submenu: notificationMenu(isEnabled: canMutate)
-                )
-            )
+            let notificationItem = ActionMenuRenderer.item(NotificationMenuItems.settingsEntry(
+                selection: settings.messageNotifications.menuTitle,
+                isEnabled: canMutate,
+                levels: [MessageNotificationLevel.allMessages, .onlyMentions, .nothing].map { level in
+                    NotificationMenuItems.levelEntry(
+                        level, title: level.menuTitle, subtitle: nil, selected: settings.messageNotifications,
+                        content: .action { self.bridge.actions.setNotificationLevel(self.bridge.guild, level) }
+                    )
+                }
+            ))
+            if let submenu = notificationItem.submenu { appendNotificationToggles(to: submenu) }
+            menu.addItem(notificationItem)
 
             let hideMutedItem = ContextMenuItemSupport.item("Hide Muted Channels", systemImage: "eye.slash.fill", isEnabled: canMutate) {
                 self.bridge.actions.setNotificationToggle(self.bridge.guild, .hideMutedChannels, !self.bridge.notificationSettings.hideMutedChannels)
@@ -103,19 +110,10 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             return menu
         }
 
-        private func notificationMenu(isEnabled: Bool) -> NSMenu {
-            let menu = NotificationMenuItems.submenu()
+        /// The server's suppression and push toggles, below the levels.
+        private func appendNotificationToggles(to menu: NSMenu) {
             let settings = bridge.notificationSettings
-            let levels: [MessageNotificationLevel] = [
-                .allMessages, .onlyMentions, .nothing,
-            ]
-            for level in levels {
-                menu.addItem(
-                    NotificationMenuItems.level(
-                        level, title: level.menuTitle, selected: settings.messageNotifications, isEnabled: isEnabled
-                    ) { self.bridge.actions.setNotificationLevel(self.bridge.guild, $0) }
-                )
-            }
+            let isEnabled = !bridge.isMutationPending
             menu.addItem(.separator())
             for toggle in GuildNotificationToggle.allCases where toggle != .hideMutedChannels {
                 if toggle == .mobilePush {
@@ -127,7 +125,6 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 toggleItem.state = settings.isEnabled(toggle) ? .on : .off
                 menu.addItem(toggleItem)
             }
-            return menu
         }
     }
 }
