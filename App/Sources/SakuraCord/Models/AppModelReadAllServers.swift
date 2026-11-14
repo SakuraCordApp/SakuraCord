@@ -18,9 +18,7 @@ extension AppModel {
 
         for target in targets {
             preserveUnreadDividerIfNeeded(channelID: target.channelID)
-            discardPendingAcknowledgement(for: target.channelID)
-            readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
-            readState.acknowledge(channelID: target.channelID, messageID: target.messageID)
+            acknowledgeExplicitly(channelID: target.channelID, through: target.messageID)
         }
         isMarkingAllServersRead = true
         refreshUnreadPresentation()

@@ -89,9 +89,7 @@ extension AppModel {
 
     private func prepareInboxBulkChannels(_ targets: [BulkReadStateAcknowledgement]) {
         for target in targets where target.readStateType == 0 {
-            discardPendingAcknowledgement(for: target.channelID)
-            readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
-            readState.acknowledge(channelID: target.channelID, messageID: target.messageID)
+            acknowledgeExplicitly(channelID: target.channelID, through: target.messageID)
         }
     }
 

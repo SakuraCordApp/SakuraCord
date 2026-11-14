@@ -461,11 +461,17 @@ extension AppModel {
 
     private func markRead(channelID: ChannelID, through target: MessageID) {
         preserveUnreadDividerIfNeeded(channelID: channelID)
+        acknowledgeExplicitly(channelID: channelID, through: target)
+        cancelNativeNotifications(channelID: channelID)
+        enqueueAcknowledgement(channelID: channelID, mutation: readStateMutation(channelID: channelID, messageID: target))
+    }
+
+    /// Applies an explicit read locally: it replaces any debounced automatic
+    /// one and lifts a hold on automatic reads.
+    func acknowledgeExplicitly(channelID: ChannelID, through target: MessageID) {
         discardPendingAcknowledgement(for: channelID)
         readState.unblockAutomaticAcknowledgement(channelID: channelID)
         readState.acknowledge(channelID: channelID, messageID: target)
-        cancelNativeNotifications(channelID: channelID)
-        enqueueAcknowledgement(channelID: channelID, mutation: readStateMutation(channelID: channelID, messageID: target))
     }
 
     func markGuildRead(_ guildID: GuildID) {
@@ -476,9 +482,7 @@ extension AppModel {
 
         for target in targets {
             preserveUnreadDividerIfNeeded(channelID: target.channelID)
-            discardPendingAcknowledgement(for: target.channelID)
-            readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
-            readState.acknowledge(channelID: target.channelID, messageID: target.messageID)
+            acknowledgeExplicitly(channelID: target.channelID, through: target.messageID)
             cancelNativeNotifications(channelID: target.channelID)
         }
         refreshUnreadPresentation()
