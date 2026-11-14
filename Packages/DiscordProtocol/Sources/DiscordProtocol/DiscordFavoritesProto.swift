@@ -14,7 +14,7 @@ enum DiscordFavoritesProto {
 
     /// The raw Favorites message, or nil when the settings don't carry one.
     static func message(inSettings data: Data) -> Data? {
-        ProtoReader.lastMessage(settingsField, in: data)
+        ProtoReader.mergedMessage(settingsField, in: data)
     }
 
     static func settings(from message: Data) -> FavoritesSettings {

@@ -11,6 +11,7 @@ struct FavoritesPickerView: View {
     /// The picks as of the last query change, which Discord lists first.
     @State private var pinnedIDs: [ForwardDestinationID] = []
     @State private var index: ForwardDestinationSearchPolicy.Index?
+    @State private var indexRevision = 0
     @State private var results: [ForwardDestination] = []
     @FocusState private var isSearchFocused: Bool
 
@@ -60,21 +61,28 @@ struct FavoritesPickerView: View {
                 for: model, priority: .userInitiated, corpus: .favorites
             ) else { return }
             index = built
-            await refreshResults()
+            indexRevision &+= 1
             isSearchFocused = true
         }
-        .task(id: SearchRequest(query: query, pinnedIDs: pinnedIDs)) { await refreshResults() }
+        .task(id: searchRequest) { await refreshResults() }
         .onChange(of: query) { pinnedIDs = selection.map(\.id) }
     }
 
+    /// A new index restarts the search, as a query change does, so no older
+    /// index's results replace its own.
     private struct SearchRequest: Hashable {
         let query: String
         let pinnedIDs: [ForwardDestinationID]
+        let indexRevision: Int
+    }
+
+    private var searchRequest: SearchRequest {
+        SearchRequest(query: query, pinnedIDs: pinnedIDs, indexRevision: indexRevision)
     }
 
     private func refreshResults() async {
         guard let index else { return }
-        let request = SearchRequest(query: query, pinnedIDs: pinnedIDs)
+        let request = searchRequest
         let history = model.forwardDestinationHistory
         let favoriteIDs = model.favoriteIDs
         let search = Task.detached(priority: .userInitiated) {
@@ -83,9 +91,9 @@ struct FavoritesPickerView: View {
                 pinnedDestinationIDs: request.pinnedIDs, excludedChannelIDs: favoriteIDs
             )
         }
-        // A newer keystroke cancels this search rather than letting it finish.
+        // A newer keystroke or index cancels this search rather than letting it finish.
         let found = await withTaskCancellationHandler { await search.value } onCancel: { search.cancel() }
-        guard !Task.isCancelled, request == SearchRequest(query: query, pinnedIDs: pinnedIDs) else { return }
+        guard !Task.isCancelled, request == searchRequest else { return }
         results = found
     }
 

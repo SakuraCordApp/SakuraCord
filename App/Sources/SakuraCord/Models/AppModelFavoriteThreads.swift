@@ -103,7 +103,8 @@ extension AppModel {
     /// activity. Threads with unread messages and the open one stay.
     func pruneReadFavoriteThreads() {
         let choice = favoritesThreadSettingsChoice
-        guard let days = choice.removalDays, let settings = favorites.settings else { return }
+        // Unlimited favorites' local threads are pruned like synced ones.
+        guard let days = choice.removalDays, let settings = displayedFavorites else { return }
         let scope = choice.scope == .all ? nil : favoriteAutoAddCategoryIDs(in: settings)
         let account = currentUser?.id.description
         if let last = favorites.lastThreadPrune, last.scope == account, Date.now.timeIntervalSince(last.date) < 24 * 60 * 60 { return }

@@ -11,7 +11,7 @@ final class FavoritesStore {
     var settings: FavoritesSettings?
     /// Whether the rail's Favorites server is the open destination.
     var isPresented = false
-    /// The addition Discord's limit just blocked, shown as its upsell notice.
+    /// The additions Discord's limit just blocked, shown as its upsell notice.
     var limitReached: FavoritesLimitNotice?
     var nameEditor: FavoritesNameEditor?
     /// nil until the account's settings load.
@@ -68,13 +68,14 @@ struct FavoriteAddition: Equatable {
     let channelType: Int
 }
 
-/// A favourite Discord's limit kept from being added, with where it was going.
+/// The favourites Discord's limit kept from being added, the blocked one
+/// first, with where they were going.
 struct FavoritesLimitNotice: Identifiable, Equatable {
     let limit: Int
-    let addition: FavoriteAddition
+    let additions: [FavoriteAddition]
     var parentID: ChannelID?
     var categoryName: String?
-    var id: ChannelID { addition.id }
+    var id: ChannelID { additions[0].id }
 }
 
 /// The open Favorites name dialog.
@@ -123,6 +124,8 @@ extension AppModel {
             favorites.settingsAreConfirmed = isConfirmed
             dropSyncedLocalFavorites()
         }
+        // A thread favourited on another client loads while Favorites is open.
+        if favorites.isPresented { loadFavoriteThreads() }
         refreshFavoriteSuggestions()
     }
 
@@ -194,6 +197,9 @@ extension AppModel {
     func openFavorites() {
         guard showsFavoritesRailItem else { return }
         leaveGuildJoinRequestPage()
+        // A fetched private thread asks Discord again each time Favorites
+        // opens, since only its answer states the current membership.
+        for (id, thread) in favorites.threads where thread.isPrivate { favorites.requestedThreadIDs.remove(id) }
         loadFavoriteThreads()
         openRememberedFavorite()
     }
@@ -206,9 +212,6 @@ extension AppModel {
     /// Like the official client, fetch favourited threads that no loaded list
     /// carries; a thread that can't be read stays stored but unlisted.
     func loadFavoriteThreads() {
-        // A fetched private thread asks Discord again each time, since only
-        // its answer states the current membership.
-        for (id, thread) in favorites.threads where thread.isPrivate { favorites.requestedThreadIDs.remove(id) }
         let missing = (displayedFavorites?.entries ?? []).filter {
             (10 ... 12).contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
                 && sidebarThread($0.id) == nil && favorites.requestedThreadIDs.insert($0.id).inserted
@@ -288,7 +291,8 @@ extension AppModel {
     /// turn until one meets the account's limit, under `parentID` or under a
     /// category found, or else created, by name. The limit shows the notice
     /// unless the addition is silent, and a blocked first addition sends
-    /// nothing; Unlimited favorites keeps it on this device instead.
+    /// nothing; Unlimited favorites keeps it on this device instead. The
+    /// notice keeps the rest of the batch for its Unlimited action.
     func addFavorites(
         _ additions: [FavoriteAddition], parentID: ChannelID? = nil, categoryName: String? = nil, isSilent: Bool = false
     ) {
@@ -301,7 +305,7 @@ extension AppModel {
             settings.apply(edit)
             edits.append(edit)
         }
-        for addition in additions where !isFavorite(addition.id) && !settings.contains(addition.id) {
+        for (offset, addition) in additions.enumerated() where !isFavorite(addition.id) && !settings.contains(addition.id) {
             // Discord prunes favourites the account can no longer see before it
             // counts, so a deleted or hidden channel never blocks an addition.
             var counted = settings
@@ -315,7 +319,8 @@ extension AppModel {
             if let limit, !featuresSettings.unlimitedFavorites {
                 if !isSilent {
                     favorites.limitReached = FavoritesLimitNotice(
-                        limit: limit, addition: addition, parentID: parentID, categoryName: resolvesCategory ? categoryName : nil
+                        limit: limit, additions: Array(additions[offset...]), parentID: parentID,
+                        categoryName: resolvesCategory ? categoryName : nil
                     )
                 }
                 break
@@ -350,13 +355,13 @@ extension AppModel {
         if !edits.isEmpty { updateFavorites(edits) }
     }
 
-    /// Turns on Unlimited favorites, then adds the favourite the limit blocked.
+    /// Turns on Unlimited favorites, then adds the favourites the limit blocked.
     func addFavoriteBeyondLimit(_ notice: FavoritesLimitNotice) {
         var settings = featuresSettings
         settings.unlimitedFavorites = true
         applyFeaturesSettings(settings)
         favorites.limitReached = nil
-        addFavorites([notice.addition], parentID: notice.parentID, categoryName: notice.categoryName)
+        addFavorites(notice.additions, parentID: notice.parentID, categoryName: notice.categoryName)
     }
 
     func createFavoriteCategory(named name: String) {
@@ -386,9 +391,10 @@ extension AppModel {
             do {
                 try await account.provider.updateFavorites(synced)
             } catch {
+                let settings = await account.provider.favoritesSettings()
                 guard model.isCurrentAccountSession(account) else { return }
                 model.errorMessage = error.localizedDescription
-                model.presentFavorites(await account.provider.favoritesSettings(), isConfirmed: false)
+                model.presentFavorites(settings, isConfirmed: false)
             }
         }
     }

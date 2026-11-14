@@ -436,8 +436,10 @@ different list and an oversized write risks rejection. Local favourites follow
 the synced ones in each section, keep the server shown when no explicit
 visibility is stored, may sit in a synced category, and can be
 renamed, moved and removed; those edits send nothing, though a local addition
-reveals a hidden Favorites server as a synced one does. Discord's list stays
-authoritative: remote edits apply to the synced part, a local favourite that
+reveals a hidden Favorites server as a synced one does. Thread automation adds
+and prunes local threads as it does synced ones. The limit notice's Turn On
+Unlimited Favorites adds the blocked addition and the rest of its batch.
+Discord's list stays authoritative: remote edits apply to the synced part, a local favourite that
 Discord confirms carrying becomes synced and leaves the local list (never on an
 edit still awaiting Discord's answer, so a rejected save loses nothing), and a synced
 favourite removed elsewhere is not restored. Removing a synced favourite does

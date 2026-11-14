@@ -91,9 +91,12 @@ struct ProtoReader {
 }
 
 extension ProtoReader {
-    /// The last occurrence of a length-delimited field, as protobuf merges it.
-    static func lastMessage(_ field: Int, in data: Data) -> Data? {
-        fields(data).last { $0.field == field }?.payload
+    /// A singular embedded message field: protobuf merges repeated
+    /// occurrences, which parsing their payloads concatenated in wire order
+    /// does. nil when the field is absent.
+    static func mergedMessage(_ field: Int, in data: Data) -> Data? {
+        let payloads = fields(data).filter { $0.field == field }.compactMap(\.payload)
+        return payloads.isEmpty ? nil : payloads.reduce(Data(), +)
     }
 
     static func fields(_ data: Data) -> [RawProtoField] {

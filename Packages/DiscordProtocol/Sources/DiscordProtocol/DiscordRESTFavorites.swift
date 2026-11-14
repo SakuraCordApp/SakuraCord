@@ -101,16 +101,22 @@ extension DiscordRESTProvider {
                 gatewayLogger.error("Could not save Favorites: \(error.localizedDescription, privacy: .public)")
                 pendingFavorites = nil
                 publishStoredFavorites()
-                if let userContent, userContentMessage == userContent {
+                // A Reset queued behind this save is dropped with it, so its
+                // restored Suggested Channels are rolled back too.
+                let unsavedContent = pendingUserContent ?? userContent
+                pendingUserContent = nil
+                if let unsavedContent, userContentMessage == unsavedContent {
                     userContentMessage = DiscordUserContentProto.setting(
-                        DiscordUserContentProto.favoritesSuggestions, dismissed: true, in: userContent
+                        DiscordUserContentProto.favoritesSuggestions, dismissed: true, in: unsavedContent
                     )
                     continuation?.yield(.favoritesSuggestionsDismissed(true))
                 }
                 continuation?.yield(.favoritesSaveFailed(reason: error.localizedDescription))
                 return
             }
-            guard pendingFavorites == target else { continue }
+            // A Reset made since may have returned the Favorites to this
+            // target while its Suggested Channels still need saving.
+            guard pendingFavorites == target, pendingUserContent == nil else { continue }
             pendingFavorites = nil
             publishStoredFavorites()
         }

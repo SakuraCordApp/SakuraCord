@@ -12,7 +12,7 @@ enum DiscordUserContentProto {
     static let favoritesSuggestions = 807
 
     static func message(inSettings data: Data) -> Data? {
-        ProtoReader.lastMessage(settingsField, in: data)
+        ProtoReader.mergedMessage(settingsField, in: data)
     }
 
     static func isDismissed(_ content: Int, in message: Data) -> Bool {

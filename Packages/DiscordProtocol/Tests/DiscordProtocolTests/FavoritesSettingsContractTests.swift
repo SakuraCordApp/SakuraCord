@@ -172,6 +172,46 @@ struct FavoritesSettingsContractTests {
         await provider.disconnect()
     }
 
+    /// A Reset made while a save is in flight is sent in a follow-up save even
+    /// when later edits return the Favorites to the in-flight state, and is
+    /// dropped with that save when it fails, so no later save sends it.
+    @Test func `a Reset queued behind an in-flight save follows it or fails with it`() async throws {
+        for fails in [true, false] {
+            FavoritesURLProtocol.reset()
+            FavoritesURLProtocol.holdResponses()
+            let provider = makeProvider()
+            var dismissed = [UInt8](repeating: 0, count: 101)
+            dismissed[100] = 0x80
+            try await receiveReady(provider, settings: (
+                DiscordSettingsProto.protoLengthDelimitedField(
+                    DiscordUserContentProto.settingsField, DiscordSettingsProto.protoLengthDelimitedField(1, Data(dismissed))
+                ) + DiscordSettingsProto.protoLengthDelimitedField(DiscordFavoritesProto.settingsField, Data([0x1A, 0x00]))
+            ).base64EncodedString())
+            try await provider.updateFavorites([.setVisible(true)])
+            #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
+            try await provider.updateFavorites([.reset])
+            try await provider.updateFavorites([.setVisible(true)])
+            FavoritesURLProtocol.releaseHeldResponses(failing: fails)
+            await provider.favoritesSaveTask?.value
+            if fails {
+                try await provider.updateFavorites([.setVisible(true)])
+                await provider.favoritesSaveTask?.value
+            }
+
+            #expect(FavoritesURLProtocol.requests.count == 2)
+            let lastBody = try #require((FavoritesURLProtocol.requests.last?.body["settings"] as? String).flatMap { Data(base64Encoded: $0) })
+            let savedContent = DiscordUserContentProto.message(inSettings: lastBody)
+            if fails {
+                #expect(savedContent == nil)
+                let content = try #require(await provider.userContentMessage)
+                #expect(DiscordUserContentProto.isDismissed(807, in: content))
+            } else {
+                #expect(try !DiscordUserContentProto.isDismissed(807, in: #require(savedContent)))
+            }
+            await provider.disconnect()
+        }
+    }
+
     @Test func `moving a favourite renumbers display order like the official client`() {
         var settings = FavoritesSettings(entries: [
             .init(id: ChannelID(rawValue: 1), position: 3, channelType: 15),
@@ -219,13 +259,14 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
     /// Guards the held-response state, which URLSession's loading thread and the test share.
     private static let lock = NSLock()
     nonisolated(unsafe) private static var holdsResponses = false
-    nonisolated(unsafe) private static var heldResponse: (() -> Void)?
+    /// Each held request's completion, which fails it when passed true.
+    nonisolated(unsafe) private static var heldResponses: [(Bool) -> Void] = []
 
     static func reset() {
         requests = []
         lock.withLock {
             holdsResponses = false
-            heldResponse = nil
+            heldResponses = []
         }
     }
 
@@ -235,16 +276,16 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     static var hasHeldResponse: Bool {
-        lock.withLock { heldResponse != nil }
+        lock.withLock { !heldResponses.isEmpty }
     }
 
-    static func releaseHeldResponses() {
+    static func releaseHeldResponses(failing: Bool = false) {
         let held = lock.withLock {
             holdsResponses = false
-            defer { heldResponse = nil }
-            return heldResponse
+            defer { heldResponses = [] }
+            return heldResponses
         }
-        held?()
+        for finish in held { finish(failing) }
     }
 
     override static func canInit(with request: URLRequest) -> Bool { true }
@@ -262,16 +303,20 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
         ))
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
         let payload = try? JSONSerialization.data(withJSONObject: ["settings": body["settings"] as? String ?? ""])
-        let finish = { [self] in
+        let finish = { [self] (fails: Bool) in
+            guard !fails else {
+                client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+                return
+            }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: payload ?? Data())
             client?.urlProtocolDidFinishLoading(self)
         }
         let isHeld = Self.lock.withLock {
-            if Self.holdsResponses { Self.heldResponse = finish }
+            if Self.holdsResponses { Self.heldResponses.append(finish) }
             return Self.holdsResponses
         }
-        if !isHeld { finish() }
+        if !isHeld { finish(false) }
     }
 
     private static func requestBody(_ request: URLRequest) -> Data? {

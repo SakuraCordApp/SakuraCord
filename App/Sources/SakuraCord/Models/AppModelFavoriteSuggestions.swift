@@ -224,16 +224,17 @@ extension AppModel {
             return addFavorites(additions, parentID: parentID, categoryName: categoryName)
         }
         startAccountChildTask(account: accountSession()) { model, account in
+            var failed = false
             for userID in usersWithoutDirectMessage {
                 if let channel = try? await account.provider.ensurePrivateChannel(for: userID) {
                     additions.append(FavoriteAddition(id: channel.id, channelType: 1))
+                } else {
+                    failed = true
                 }
             }
             guard model.isCurrentAccountSession(account) else { return }
-            guard !additions.isEmpty else {
-                model.errorMessage = "Oops, something went wrong..."
-                return
-            }
+            // The others are still added.
+            if failed { model.errorMessage = "Oops, something went wrong..." }
             model.addFavorites(additions, parentID: parentID, categoryName: categoryName)
         }
     }
