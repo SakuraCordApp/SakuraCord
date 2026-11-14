@@ -34,10 +34,7 @@ extension AppModel {
                 channels: visibleChannels.filter { !hiddenChannelIDs.contains($0.id) },
                 threads: mentionAutocompleteThreads,
                 guilds: serverRailGuildsByID,
-                guildAndChannelUsageScores: discordGuildAndChannelUsageScores,
-                currentUserID: currentUser?.id,
-                currentMember: currentMember,
-                roles: guildRoles
+                guildAndChannelUsageScores: discordGuildAndChannelUsageScores
             )
         }
     }

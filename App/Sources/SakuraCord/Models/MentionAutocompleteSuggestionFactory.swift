@@ -217,10 +217,7 @@ enum MentionAutocompleteSuggestionFactory {
         channels: [Channel],
         threads: [MessageThreadSummary] = [],
         guilds: [GuildID: Guild],
-        guildAndChannelUsageScores: [String: Int] = [:],
-        currentUserID: UserID? = nil,
-        currentMember: Member? = nil,
-        roles: [GuildRole] = []
+        guildAndChannelUsageScores: [String: Int] = [:]
     ) -> [MentionAutocompleteSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedQuery = trimmedQuery.lowercased()
@@ -504,23 +501,6 @@ enum MentionAutocompleteSuggestionFactory {
             if character == remaining.first { remaining.removeFirst() }
         }
         return remaining.isEmpty
-    }
-
-    private static func canView(
-        _ channel: Channel,
-        guild: Guild?,
-        currentUserID: UserID?,
-        currentMember: Member?,
-        roles: [GuildRole]
-    ) -> Bool {
-        guard let permissions = resolvedPermissions(
-            in: channel,
-            guild: guild,
-            currentUserID: currentUserID,
-            currentMember: currentMember,
-            roles: roles
-        ) else { return true }
-        return permissions & DiscordPermissionBits.viewChannel != 0
     }
 
     static func canMentionNonMentionableRoles(
