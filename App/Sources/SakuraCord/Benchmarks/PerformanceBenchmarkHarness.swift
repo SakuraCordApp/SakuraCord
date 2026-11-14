@@ -191,19 +191,33 @@ enum PerformanceBenchmarkHarness {
         return encoder
     }()
 
-    /// Writes `result` as JSON to `fileName` in the temporary directory and
-    /// logs it after `logPrefix`.
-    static func writeResult(_ result: some Encodable, fileName: String, logPrefix: String, logger: Logger) {
+    /// Writes `result` as JSON to `resultPath`, or without one to `fileName`
+    /// in the temporary directory, logs it after `logPrefix`, and returns the
+    /// path it wrote. The sandboxed app can only write beneath its own
+    /// container, so scripts pass a `resultPath` under it.
+    @discardableResult
+    static func writeResult(
+        _ result: some Encodable,
+        fileName: String,
+        logPrefix: String,
+        logger: Logger
+    ) -> String? {
         let data: Data
         do {
             data = try resultEncoder.encode(result)
         } catch {
             logger.error("\(logPrefix, privacy: .public) could not encode its result: \(error, privacy: .public)")
-            return
+            return nil
         }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-        try? data.write(to: url, options: .atomic)
+        let path = resultPath ?? FileManager.default.temporaryDirectory.appendingPathComponent(fileName).path
+        do {
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        } catch {
+            logger.error("\(logPrefix, privacy: .public) could not write \(path, privacy: .public): \(error, privacy: .public)")
+            return nil
+        }
         logger.notice("\(logPrefix, privacy: .public) \(String(bytes: data, encoding: .utf8) ?? "", privacy: .public)")
+        return path
     }
 }
 

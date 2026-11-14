@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 import SakuraCordModels
 
 /// Offline channel-open benchmark: opens a long channel from a short one,
@@ -8,6 +9,7 @@ import SakuraCordModels
 /// Read-only against the offline fixture.
 @MainActor
 enum ChannelOpenBenchmark {
+    private static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "ChannelOpenBenchmark")
     private static let start = ChannelID(rawValue: 200)
     private static let channelID = ChannelID(rawValue: 210)
 
@@ -26,9 +28,9 @@ enum ChannelOpenBenchmark {
             opens.append(Double(elapsed.components.seconds) * 1_000 + Double(elapsed.components.attoseconds) / 1e15)
             try? await Task.sleep(for: .seconds(1))
         }
-        if let path = PerformanceBenchmarkHarness.resultPath,
-           let data = try? JSONEncoder().encode(["opensMS": opens]) {
-            try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
-        }
+        PerformanceBenchmarkHarness.writeResult(
+            ["opensMS": opens], fileName: "sakuracord-channel-open-benchmark.json",
+            logPrefix: "CHANNEL_OPEN_BENCHMARK", logger: logger
+        )
     }
 }

@@ -158,18 +158,9 @@ enum ForumBoardBenchmark {
     }
 
     private static func scroll(_ scrollView: NSScrollView, model: AppModel, into result: inout Result) async {
-        let framesPerSecond = scrollView.window?.screen?.maximumFramesPerSecond ?? 60
-        let nominalInterval = 1 / Double(max(framesPerSecond, 1))
-        var sampler = ForumFrameTimingSampler()
         var distance: CGFloat = 0
         var framesAtEnd = 0
-        let start = ProcessInfo.processInfo.systemUptime
-        // The display link stops firing if the board leaves the window,
-        // so a wall-clock deadline also ends the run.
-        await PerformanceBenchmarkHarness.runDisplayLink(
-            on: scrollView, seconds: scrollDuration, endsByDeadline: true
-        ) { frame in
-            sampler.record(interval: frame.interval)
+        result.frames = await sampledRun(on: scrollView, seconds: scrollDuration) { frame in
             let clip = scrollView.contentView
             let maximumY = PerformanceBenchmarkHarness.scrollRange(of: scrollView).upperBound
             // An interval is capped so one long hitch cannot skip the
@@ -181,11 +172,9 @@ enum ForumBoardBenchmark {
             clip.scroll(to: NSPoint(x: clip.bounds.minX, y: offsetY))
             scrollView.reflectScrolledClipView(clip)
         }
-        let duration = ProcessInfo.processInfo.systemUptime - start
         result.scrollDistance = Double(distance)
         result.nominalScrollDistance = Double(scrollSpeed) * scrollDuration
         result.framesAtEndOfContent = framesAtEnd
-        result.frames = sampler.summary(nominalInterval: nominalInterval, duration: duration)
     }
 
     private struct ResizeResult: Codable {
@@ -233,6 +222,18 @@ enum ForumBoardBenchmark {
         seconds: TimeInterval,
         step: @escaping (CGFloat) -> Void
     ) async -> ForumFrameTimingSampler.Summary {
+        await sampledRun(on: view, seconds: seconds) { frame in
+            step(CGFloat(0.5 - 0.5 * cos(frame.elapsed * .pi / 2)))
+        }
+    }
+
+    /// Calls `step` on each display-link frame for `seconds`, sampling frame
+    /// intervals against the display's nominal one.
+    private static func sampledRun(
+        on view: NSView,
+        seconds: TimeInterval,
+        step: @escaping (PerformanceBenchmarkHarness.Frame) -> Void
+    ) async -> ForumFrameTimingSampler.Summary {
         let nominalInterval = 1 / Double(max(view.window?.screen?.maximumFramesPerSecond ?? 60, 1))
         var sampler = ForumFrameTimingSampler()
         let start = ProcessInfo.processInfo.systemUptime
@@ -240,23 +241,15 @@ enum ForumBoardBenchmark {
         // so a wall-clock deadline also ends the run.
         await PerformanceBenchmarkHarness.runDisplayLink(on: view, seconds: seconds, endsByDeadline: true) { frame in
             sampler.record(interval: frame.interval)
-            step(CGFloat(0.5 - 0.5 * cos(frame.elapsed * .pi / 2)))
+            step(frame)
         }
         return sampler.summary(nominalInterval: nominalInterval, duration: ProcessInfo.processInfo.systemUptime - start)
     }
 
     private static func report(_ result: Result) {
-        let data = (try? PerformanceBenchmarkHarness.resultEncoder.encode(result)) ?? Data()
-        // The sandboxed app can only write beneath its own container, so
-        // scripts pass a path under it, as the other offline benchmarks do.
-        let path = PerformanceBenchmarkHarness.resultPath
-            ?? FileManager.default.temporaryDirectory
-            .appendingPathComponent("sakuracord-forum-benchmark.json").path
-        do {
-            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
-        } catch {
-            logger.error("ForumBenchmark: could not write \(path, privacy: .public): \(error, privacy: .public)")
-        }
+        let path = PerformanceBenchmarkHarness.writeResult(
+            result, fileName: "sakuracord-forum-benchmark.json", logPrefix: "FORUM_BENCHMARK", logger: logger
+        )
         let frames = result.frames
         let layout = result.layout
         let line = String(
@@ -266,7 +259,7 @@ enum ForumBoardBenchmark {
             frames.frameCount, frames.meanIntervalMS, frames.p95IntervalMS, frames.p99IntervalMS,
             frames.maxIntervalMS, frames.hitchCount, frames.durationSeconds, result.scrollDistance,
             layout.cardsMeasured, layout.layoutJumps, layout.cardsThatJumped, layout.maxHeightDelta,
-            result.postsAtStart, result.postsAtEnd, path
+            result.postsAtStart, result.postsAtEnd, path ?? "unwritten"
         )
         FileHandle.standardOutput.write(Data((line + "\n").utf8))
         logger.notice("\(line, privacy: .public)")
