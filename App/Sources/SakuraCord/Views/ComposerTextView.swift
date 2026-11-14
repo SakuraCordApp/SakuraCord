@@ -20,6 +20,20 @@ enum ComposerAutocompleteCommand {
     case nextField
     case advance
     case removeField
+
+    /// Moves through `count` rows, wrapping at either end, accepts the
+    /// highlighted row or dismisses the list. Field commands are not the
+    /// list's, so they return false.
+    func route(_ index: inout Int, count: Int, accept: (Int) -> Void, dismiss: () -> Void) -> Bool {
+        switch self {
+        case .previous: index = (index - 1 + count) % count
+        case .next: index = (index + 1) % count
+        case .accept, .advance: accept(min(index, count - 1))
+        case .dismiss: dismiss()
+        case .previousField, .nextField, .removeField: return false
+        }
+        return true
+    }
 }
 
 @MainActor

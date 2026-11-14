@@ -955,17 +955,13 @@ private struct InlineMessageEditor: View {
 
     private func handleAutocomplete(_ command: ComposerAutocompleteCommand) -> Bool {
         if let timeContext { return handleTimeAutocomplete(command, context: timeContext) }
+        let suggestions = self.suggestions
         guard let context, !suggestions.isEmpty else { return false }
-        switch command {
-        case .previous:
-            autocompleteIndex = (autocompleteIndex - 1 + suggestions.count) % suggestions.count
-        case .next: autocompleteIndex = (autocompleteIndex + 1) % suggestions.count
-        case .accept, .advance:
-            accept(suggestions[min(autocompleteIndex, suggestions.count - 1)], context: context)
-        case .dismiss: isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField: return false
+        return command.route(&autocompleteIndex, count: suggestions.count) {
+            accept(suggestions[$0], context: context)
+        } dismiss: {
+            isAutocompleteDismissed = true
         }
-        return true
     }
 
     private func accept(_ suggestion: ColonAutocompleteSuggestion, context: ColonAutocompleteContext) {

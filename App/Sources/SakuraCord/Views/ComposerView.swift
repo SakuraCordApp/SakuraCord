@@ -559,9 +559,7 @@ struct ComposerView: View {
             let suggestions = mentionAutocompleteSuggestions(for: context)
             if !suggestions.isEmpty {
                 MentionAutocompleteList(
-                    heading: context.kind == .member
-                        ? MentionAutocompleteSuggestionFactory.memberHeading(query: context.query)
-                        : MentionAutocompleteSuggestionFactory.channelHeading(query: context.query),
+                    heading: context.heading,
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
                     highlight: { autocompleteIndex = $0 },
@@ -1115,23 +1113,12 @@ struct ComposerView: View {
         context: MentionAutocompleteContext
     ) -> Bool {
         if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            autocompleteIndex = (autocompleteIndex - 1 + mentionAutocompleteSuggestions.count)
-                % mentionAutocompleteSuggestions.count
-        case .next:
-            autocompleteIndex = (autocompleteIndex + 1) % mentionAutocompleteSuggestions.count
-        case .accept, .advance:
-            acceptMentionAutocomplete(
-                mentionAutocompleteSuggestions[min(autocompleteIndex, mentionAutocompleteSuggestions.count - 1)],
-                context: context
-            )
-        case .dismiss:
+        let suggestions = mentionAutocompleteSuggestions
+        return command.route(&autocompleteIndex, count: suggestions.count) {
+            acceptMentionAutocomplete(suggestions[$0], context: context)
+        } dismiss: {
             isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField:
-            return false
         }
-        return true
     }
 
     private func handleColonAutocomplete(
@@ -1139,20 +1126,12 @@ struct ComposerView: View {
         context: ColonAutocompleteContext
     ) -> Bool {
         if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            autocompleteIndex =
-                (autocompleteIndex - 1 + autocompleteSuggestions.count) % autocompleteSuggestions.count
-        case .next: autocompleteIndex = (autocompleteIndex + 1) % autocompleteSuggestions.count
-        case .accept, .advance:
-            acceptAutocomplete(
-                autocompleteSuggestions[min(autocompleteIndex, autocompleteSuggestions.count - 1)],
-                context: context
-            )
-        case .dismiss: isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField: return false
+        let suggestions = autocompleteSuggestions
+        return command.route(&autocompleteIndex, count: suggestions.count) {
+            acceptAutocomplete(suggestions[$0], context: context)
+        } dismiss: {
+            isAutocompleteDismissed = true
         }
-        return true
     }
 
     private func acceptAutocomplete(

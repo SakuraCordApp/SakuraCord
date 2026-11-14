@@ -60,6 +60,13 @@ struct MentionAutocompleteContext {
     let query: String
     let range: NSRange
 
+    /// The suggestion list's heading for what is typed.
+    var heading: String {
+        kind == .member
+            ? MentionAutocompleteSuggestionFactory.memberHeading(query: query)
+            : MentionAutocompleteSuggestionFactory.channelHeading(query: query)
+    }
+
     init?(text: String, selection: NSRange?) {
         let cursor = selection?.location ?? text.utf16.count
         guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }

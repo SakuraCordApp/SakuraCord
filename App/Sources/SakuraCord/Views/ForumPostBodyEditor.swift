@@ -147,9 +147,7 @@ struct ForumPostBodyEditor: View {
             )
         case let .mention(context, suggestions):
             MentionAutocompleteList(
-                heading: context.kind == .member
-                    ? MentionAutocompleteSuggestionFactory.memberHeading(query: context.query)
-                    : MentionAutocompleteSuggestionFactory.channelHeading(query: context.query),
+                heading: context.heading,
                 suggestions: suggestions,
                 selectedIndex: autocompleteIndex,
                 highlight: { autocompleteIndex = $0 },
@@ -209,11 +207,17 @@ struct ForumPostBodyEditor: View {
         if command == .previous || command == .next { keyboardSelectionRevision &+= 1 }
         switch menu {
         case let .emoji(context, suggestions):
-            return route(command, count: suggestions.count) { accept(suggestions[$0], replacing: context.range) }
+            return command.route(&autocompleteIndex, count: suggestions.count) { accept(suggestions[$0], replacing: context.range) } dismiss: {
+                isAutocompleteDismissed = true
+            }
         case let .mention(context, suggestions):
-            return route(command, count: suggestions.count) { accept(suggestions[$0], context: context) }
+            return command.route(&autocompleteIndex, count: suggestions.count) { accept(suggestions[$0], context: context) } dismiss: {
+                isAutocompleteDismissed = true
+            }
         case let .time(context, rows) where !rows.isEmpty:
-            return route(command, count: rows.count) { insert(rows[$0].token.rawToken + " ", replacing: context.range) }
+            return command.route(&autocompleteIndex, count: rows.count) { insert(rows[$0].token.rawToken + " ", replacing: context.range) } dismiss: {
+                isAutocompleteDismissed = true
+            }
         case .time, nil:
             // `@time ` with nothing matching yet: Return asks for a time
             // rather than a newline, as in the composer.
@@ -226,18 +230,6 @@ struct ForumPostBodyEditor: View {
             }
             return true
         }
-    }
-
-    /// Moves through, accepts or dismisses the open menu of `count` rows.
-    private func route(_ command: ComposerAutocompleteCommand, count: Int, accept: (Int) -> Void) -> Bool {
-        switch command {
-        case .previous: autocompleteIndex = (autocompleteIndex - 1 + count) % count
-        case .next: autocompleteIndex = (autocompleteIndex + 1) % count
-        case .accept, .advance: accept(min(autocompleteIndex, count - 1))
-        case .dismiss: isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField: return false
-        }
-        return true
     }
 
     private func accept(_ suggestion: ColonAutocompleteSuggestion, replacing range: NSRange) {
