@@ -262,16 +262,12 @@ final class VoiceMessagePlaybackStore {
 
     private func activate(_ id: VoiceMessagePlaybackID, source: Source, duration: TimeInterval?) {
         cancelActive(rememberingPosition: true)
+        pausedPosition = position(of: id)
         activeID = id
         activeSource = source
         activeDuration = duration
-        pausedPosition = position(ofInactive: id)
         phase = .paused
         notify()
-    }
-
-    private func position(ofInactive id: VoiceMessagePlaybackID) -> TimeInterval {
-        resumePositions[id] ?? 0
     }
 
     private func play() {
@@ -309,7 +305,7 @@ final class VoiceMessagePlaybackStore {
     }
 
     private func adopt(_ player: VoiceMessagePlayer, file: PlaybackFile, for id: VoiceMessagePlaybackID) {
-        player.onFinish = { [weak self] in self?.finish(id) }
+        player.onFinish = { [weak self] in self?.stop(id) }
         player.onInterruption = { [weak self] in self?.interrupted(id) }
         self.player = player
         playerFile = file
@@ -360,16 +356,11 @@ final class VoiceMessagePlaybackStore {
         notify()
     }
 
-    private func finish(_ id: VoiceMessagePlaybackID) {
-        guard activeID == id else { return }
-        cancelActive(rememberingPosition: false)
-    }
-
     private func cancelActive(rememberingPosition: Bool) {
         guard let id = activeID else { return }
         loadTask?.cancel()
         loadTask = nil
-        let position = player?.isPlaying == true ? player?.currentTime ?? pausedPosition : pausedPosition
+        let position = position(of: id)
         let duration = player?.duration ?? activeDuration ?? 0
         if let player, let playerFile, let activeSource { cache(player, file: playerFile, for: activeSource) }
         player = nil
