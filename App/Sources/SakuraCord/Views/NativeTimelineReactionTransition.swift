@@ -70,7 +70,7 @@ struct NativeTimelineReactionTransition {
 
     /// Ease-out quart as Core Animation draws it.
     static let curve = GlideCurve(
-        x1: 0.165, y1: 0.84, x2: 0.44, y2: 1, duration: NativeTimelineRowDisclosure.duration
+        x1: 0.165, y1: 0.84, x2: 0.44, y2: 1, duration: NativeTimelineRowMotionTiming.quartDuration
     )
 
     func progress(at uptime: TimeInterval) -> CGFloat {
@@ -329,7 +329,7 @@ extension NativeTimelineCanvasView {
         animation.fromValue = value
         animation.beginTime = begin
         animation.fillMode = .backwards
-        animation.duration = NativeTimelineRowDisclosure.duration
+        animation.duration = NativeTimelineRowMotionTiming.quartDuration
         animation.timingFunction = Self.reactionTiming
         animation.preferredFrameRateRange = .fullRate(on: window?.screen)
         layer.add(animation, forKey: keyPath)

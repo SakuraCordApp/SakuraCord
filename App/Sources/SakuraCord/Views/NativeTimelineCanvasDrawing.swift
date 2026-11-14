@@ -81,8 +81,8 @@ extension NativeTimelineCanvasView {
         }
         // Rows laid out at another width no longer match the chips' frames
         // or the fading pictures.
-        if !reactionTransitions.isEmpty || !rowMotions.isEmpty || !departedRuns.isEmpty,
-           abs(rowMotionTransitionWidth - max(1, viewportWidth)) >= 0.5 {
+        if !reactionTransitions.isEmpty || !rowMotion.motions.isEmpty || !rowMotion.departedRuns.isEmpty,
+           abs(rowMotion.layoutWidth - max(1, viewportWidth)) >= 0.5 {
             finishRowMotions()
         }
         let size = NSSize(
@@ -770,7 +770,7 @@ extension NativeTimelineCanvasView {
         for index in displayedRows {
             let rowFrame = rowFrame(at: index)
             guard rowFrame.intersects(dirtyRect) else { continue }
-            guard clippedRows.contains(index), rowFrame.minY < clippedRowsMinY || rowFrame.maxY > clippedRowsMaxY else {
+            guard rowMotion.clippedRows.contains(index), rowFrame.minY < clippedRowsMinY || rowFrame.maxY > clippedRowsMaxY else {
                 drawTimelineRow(at: index, rowFrame: rowFrame, dirtyRect: dirtyRect, visibleMediaKeys: visibleMediaKeys)
                 continue
             }

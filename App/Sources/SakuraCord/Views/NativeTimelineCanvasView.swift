@@ -305,55 +305,16 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         StablePickerPopoverPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
-    var pendingRowMotionBaseline: NativeTimelineRowMotionBaseline?
+    let rowMotion = NativeTimelineRowMotionState()
     var reactionTransitions: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionTransition] = [:]
-    var rowMotions: [NativeTimelineRowMotion] = []
-    /// Per-frame geometry of `rowMotions`: the displacement of rows up
-    /// to the first changed one, and how much less each changed row and the
-    /// rows after it are displaced.
-    var rowMotionShift: CGFloat = 0
-    var rowMotionSteps: [(index: Int, cumulative: CGFloat)] = []
-    /// Each step's offset, then their running totals, while the geometry is
-    /// refreshed: kept between refreshes so they reuse its storage.
-    var rowMotionStepScratch: [NativeTimelineRowMotion.Offset] = []
-    var rowMotionRemainingHeights: [Int: CGFloat] = [:]
-    /// The part of each row's remaining height that its edited text's band still has to glide.
-    var rowMotionTextRemainingHeights: [Int: CGFloat] = [:]
-    /// Rows an opening or closing gap or group shows only part of, and the
-    /// span they show, relative to the first one's static top, so a content-origin
-    /// change can never leave the clip behind the rows.
-    var clippedRows: Range<Int> = 0 ..< 0
-    var clippedRowsRelativeMinY = -CGFloat.greatestFiniteMagnitude
-    var clippedRowsRelativeMaxY = CGFloat.greatestFiniteMagnitude
     var editedTextBands: [NativeMessageTimelineItem.Identifier: NativeTimelineEditedTextBand] = [:] {
         didSet {
             guard oldValue.isEmpty != editedTextBands.isEmpty else { return }
             if editedTextBands.isEmpty { restorePointerInteractions() } else { suppressPointerInteractions() }
         }
     }
-    var departedRuns: [NativeMessageTimelineItem.Identifier: NativeTimelineDepartedRun] = [:]
-    /// What a row deleted by the update landing now was still showing:
-    /// the run closing below it and the part of its own height change
-    /// still to come, both now the row before it's.
-    struct HandOver {
-        let anchor: NativeMessageTimelineItem.Identifier
-        var run: NativeTimelineDepartedRun?
-        var residualHeight: CGFloat = 0
-    }
-
-    /// By deleted row, for the update that deleted it to place.
-    var handOvers: [NativeMessageTimelineItem.Identifier: HandOver] = [:]
-    var nextRowMotionID = 1
-    /// Steps every row motion: updates', the divider gap's and a group's.
-    let rowMotionTicker = DisplayLinkTicker()
-    /// When the row motion ticker last stepped, to tell a late frame.
-    var rowMotionStepUptime: TimeInterval?
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
     var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]
-    /// The display scale and colour space reaction pictures are drawn for.
-    var reactionBacking: (scale: CGFloat, colorSpace: NSColorSpace?) = (0, nil)
-    /// The width the running row motions were laid out at.
-    var rowMotionTransitionWidth: CGFloat = 0
     let hoverLabelCoordinator =
         StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
     /// A press dismisses the hovered target's label until another is hovered.
@@ -516,8 +477,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         // AppKit also calls this as the window is resized or moved with
         // neither changed, which would snap a motion mid-update.
         let backing = (scale: window?.backingScaleFactor ?? 0, colorSpace: window?.colorSpace)
-        guard backing != reactionBacking else { return }
-        reactionBacking = backing
+        guard backing != rowMotion.backing else { return }
+        rowMotion.backing = backing
         // Moving chips were drawn for the previous display's scale and colours.
         finishRowMotions()
     }
@@ -536,7 +497,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
             authorHoverTicker.stop()
-            rowMotionTicker.stop()
+            rowMotion.ticker.stop()
             for fade in unreadDividerFades.values {
                 fade.finishTask?.cancel()
                 fade.overlay.removeFromSuperview()

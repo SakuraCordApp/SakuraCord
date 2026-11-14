@@ -71,7 +71,7 @@ struct NativeTimelineUnreadDividerChange {
 
 enum NativeTimelineUnreadDividerMotion {
     /// Matches the row disclosure so the fade and the gap land together.
-    static let fadeInDuration: CFTimeInterval = NativeTimelineRowDisclosure.duration
+    static let fadeInDuration: CFTimeInterval = NativeTimelineRowMotionTiming.quartDuration
     static let fadeOutDuration: CFTimeInterval = 0.2
     /// Reduce Motion keeps a plain, quick fade and nothing else.
     static let reducedMotionDuration: CFTimeInterval = 0.12

@@ -117,7 +117,7 @@ struct NativeTimelineUpdateMotion {
     let departedOldIndices: Set<Int>
     /// What rows this update deleted were still showing, now handed to the
     /// row before each of them.
-    var handOvers: [Identifier: NativeTimelineCanvasView.HandOver]
+    var handOvers: [Identifier: NativeTimelineRowMotionState.HandOver]
     /// The motion this update starts, for the pieces that belong to it.
     let motionID: Int
     var plan = NativeTimelineRowMotionPlan()

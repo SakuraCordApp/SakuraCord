@@ -21,8 +21,6 @@ import SakuraCordModels
 /// collapse immediately: Inbox groups hold them here (`heldItems`), and
 /// blocked or ignored runs hold them in `IgnoredUsersState.collapsingMessageIDs`.
 struct NativeTimelineRowDisclosure {
-    static let duration: TimeInterval = 0.3
-
     enum Key: Equatable {
         case inbox(ChannelID)
         case suppressedMessages(MessageID)
@@ -57,12 +55,6 @@ struct NativeTimelineRowDisclosure {
     /// The group's rows as last followed, and their laid-out height.
     var rows: Range<Int> = 0 ..< 0
     var rowsHeight: CGFloat = 0
-
-    /// Ease-out with a soft landing, close to AppKit's disclosure motion.
-    static func progress(at elapsed: TimeInterval) -> CGFloat {
-        let fraction = min(1, max(0, elapsed / duration))
-        return 1 - pow(1 - fraction, 4)
-    }
 }
 
 extension NativeTimelineCanvasView {
@@ -149,7 +141,7 @@ extension NativeTimelineCanvasView {
         let range = suppressedContentRange(group, headerIndex: headerIndex)
         guard let last = range.last else { return frame }
         var maxY = displayedRowOrigin(at: last) + layouts[last].height
-        if range == clippedRows { maxY = min(maxY, clippedRowsMaxY) }
+        if range == rowMotion.clippedRows { maxY = min(maxY, clippedRowsMaxY) }
         return CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(frame.height, maxY - frame.minY))
     }
 
@@ -175,8 +167,8 @@ extension NativeTimelineCanvasView {
         while items.indices.contains(index) {
             let span = visibleRowSpan(at: index)
             if span.lowerBound >= rect.maxY { return }
-            if clippedRows.contains(index), span.lowerBound >= clippedRowsMaxY {
-                index = clippedRows.upperBound
+            if rowMotion.clippedRows.contains(index), span.lowerBound >= clippedRowsMaxY {
+                index = rowMotion.clippedRows.upperBound
                 continue
             }
             if span.upperBound > span.lowerBound { body(index) }
@@ -189,7 +181,7 @@ extension NativeTimelineCanvasView {
     func visibleRowSpan(at index: Int) -> Range<CGFloat> {
         let minY = displayedRowOrigin(at: index)
         let maxY = minY + displayedRowHeight(at: index)
-        guard clippedRows.contains(index) else { return minY ..< maxY }
+        guard rowMotion.clippedRows.contains(index) else { return minY ..< maxY }
         let clippedMin = min(clippedRowsMaxY, max(clippedRowsMinY, minY))
         let clippedMax = min(clippedRowsMaxY, max(clippedRowsMinY, maxY))
         return clippedMin ..< clippedMax
@@ -293,7 +285,7 @@ extension NativeTimelineCanvasView {
         } else {
             contentHeight(of: range)
         }
-        let progress = NativeTimelineRowDisclosure.progress(at: now - start)
+        let progress = NativeTimelineRowMotionTiming.quart.progress(at: now - start)
         disclosure.revealedHeight = disclosure.startHeight + (target - disclosure.startHeight) * progress
         disclosure.beforeShift = disclosure.startBeforeShift
             + (disclosure.targetBeforeShift - disclosure.startBeforeShift) * progress
@@ -370,8 +362,8 @@ extension NativeTimelineCanvasView {
     func maskDisclosureSubviews() {
         for view in disclosureMaskedViews { view.layer?.mask = nil }
         disclosureMaskedViews = []
-        guard rowDisclosure != nil, !clippedRows.isEmpty else { return }
-        let rows = items[clippedRows]
+        guard rowDisclosure != nil, !rowMotion.clippedRows.isEmpty else { return }
+        let rows = items[rowMotion.clippedRows]
         let identifiers = Set(rows.map(\.identifier))
         let messageIDs = Set(rows.compactMap(\.messageID))
         var views: [NSView] = []
