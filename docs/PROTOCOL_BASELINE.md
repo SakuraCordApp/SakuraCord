@@ -15,7 +15,7 @@ dated observations establish why a wire shape was chosen.
 | [Read state and Inbox](protocol/READ_STATE.md) | Acknowledgements, Undo, mentions, events, notifications. |
 | [Guilds and membership](protocol/GUILDS.md) | Invites, join applications, onboarding, channel customization, Guide, member discovery. |
 | [Friends and relationships](protocol/RELATIONSHIPS.md) | Relationship records, friend presence, requests, blocking, CAPTCHA replay. |
-| [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, group-DM edits and leaving, closing a 1:1 DM, widgets, status, protobuf updates, folders and favourites. |
+| [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, group-DM edits and leaving, closing a 1:1 DM, widgets, status, protobuf updates, folders, the Favorites server and favourites. |
 | [Voice and streams](protocol/VOICE.md) | Calls, screen sharing, voice recovery, soundboard. |
 | [Activities](protocol/ACTIVITIES.md) | Activity shelf, launch and leave, instances, the Embedded App SDK host, Activity OAuth and invites. |
 

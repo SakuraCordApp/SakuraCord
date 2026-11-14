@@ -22,6 +22,13 @@ struct FeaturesSettingsPage: View {
                     .help("When off, all channels are shown and channel customization controls are hidden. Your server selections are preserved.")
                 Toggle("Show hidden channels", isOn: value.showHiddenChannels)
                     .settingsControlAnchor(.showHiddenChannels, state: state)
+                Toggle("Show Favorites server", isOn: Binding(
+                    get: { model.favoritesAreEnabled },
+                    set: { model.setFavoritesEnabled($0) }
+                ))
+                .disabled(model.favorites.settings == nil)
+                .settingsControlAnchor(.showFavoritesServer, state: state)
+                .help("Syncs with Discord. Your Favorites stay saved when this is off.")
             } header: {
                 Text("Channels", bundle: #bundle)
             }
@@ -69,6 +76,8 @@ private struct FakeNitroSettingsSection: View {
                 .settingsControlAnchor(.fakeNitroSoundboard, state: state)
             Toggle("FakeNitro stream quality", isOn: $value.fakeNitroStreamQuality)
                 .settingsControlAnchor(.fakeNitroStreamQuality, state: state)
+            Toggle("Unlimited favorites", isOn: $value.unlimitedFavorites)
+                .settingsControlAnchor(.unlimitedFavorites, state: state)
         } header: {
             Text("FakeNitro", bundle: #bundle)
         }

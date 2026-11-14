@@ -348,6 +348,7 @@ extension AppModel {
 
     func consumePresenceAndCommandEvent(_ event: ClientEvent) {
         if consumeForwardSearchPeopleEvent(event) { return }
+        if consumeFavoritesEvent(event) { return }
         if consumeApplicationStreamEvent(event) { return }
         if consumeProfileEvent(event) { return }
         if consumeVoiceEvent(event) { return }

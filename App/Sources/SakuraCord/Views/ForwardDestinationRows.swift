@@ -51,7 +51,7 @@ struct ForwardDestinationRow: View {
     }
 }
 
-private struct ForwardDestinationAvatar: View {
+struct ForwardDestinationAvatar: View {
     let destination: ForwardDestination
 
     var body: some View {

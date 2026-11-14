@@ -29,6 +29,7 @@ struct ServerRailContainer: View {
             selectJoinRequest: model.selectGuildJoinRequest,
             home: model.serverRailPresentation.home,
             selectHome: { model.selectGuild(nil) },
+            favoritesModel: model.showsFavoritesRailItem ? model : nil,
             selectDirectMessage: { model.navigate(to: $0) },
             selectGuild: model.selectGuild,
             joinServer: { invites.showsJoinDialog = true },
@@ -132,6 +133,7 @@ struct ServerRailContainer: View {
         } message: {
             Text(invites.leaveError ?? "")
         }
+        .modifier(FavoritesDialogs(model: model))
     }
 }
 
@@ -145,6 +147,7 @@ struct ServerRailView: View {
     var selectJoinRequest: (GuildID?) -> Void = { _ in }
     let home: ServerRailHomeEntry
     let selectHome: () -> Void
+    var favoritesModel: AppModel?
     let selectDirectMessage: (ChannelID) -> Void
     let selectGuild: (GuildID?) -> Void
     var joinServer: () -> Void = {}
@@ -176,6 +179,11 @@ struct ServerRailView: View {
                     action: selectHome
                 )
 
+                if let favoritesModel {
+                    FavoritesRailButton(model: favoritesModel)
+                        .transition(ServerRailAnimations.membershipTransition)
+                }
+
                 ForEach(directMessages) { entry in
                     DirectMessageRailButton(entry: entry) {
                         selectDirectMessage(entry.id)
@@ -205,6 +213,7 @@ struct ServerRailView: View {
             // move with it.
             .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: joinRequestsExpanded.wrappedValue)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: directMessages.map(\.id))
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: favoritesModel != nil)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: joinRequests.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)
@@ -1005,35 +1014,49 @@ struct ServerRailHoverPreferenceKey: PreferenceKey {
 private struct HomeRailButton: View {
     let home: ServerRailHomeEntry
     let action: () -> Void
+
+    var body: some View {
+        ServerRailSymbolButton(title: "Direct Messages", systemImage: "message.fill", isSelected: home.isSelected, action: action)
+    }
+}
+
+/// A rail tile drawn from a symbol, such as Direct Messages and Favorites:
+/// filled with the accent while selected or hovered, with the hover pill and name.
+struct ServerRailSymbolButton: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    var hasNotification = false
+    var mentionCount = 0
+    let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(4)) {
-                ServerRailSelectionIndicator(
-                    isSelected: home.isSelected,
-                    isHovering: isHovering,
-                    hasNotification: false
-                )
-                Image(systemName: "message.fill")
-                    .font(.interface(.title2))
-                    .foregroundStyle(home.isSelected ? SakuraCordAccentColor.labelOnFill : .primary)
-                    .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
-                    .background(
-                        home.isSelected
-                            ? SakuraCordAccentColor.color
-                            : Color.secondary.opacity(0.16),
-                        in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous)
-                    )
-                    .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+                ServerRailSelectionIndicator(isSelected: isSelected, isHovering: isHovering, hasNotification: hasNotification)
+                ServerRailBadgedIcon(mentionCount: mentionCount) {
+                    Image(systemName: systemImage)
+                        .font(.interface(.title2))
+                        .foregroundStyle(isSelected || isHovering ? SakuraCordAccentColor.labelOnFill : .primary)
+                        .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
+                        .background(
+                            isSelected || isHovering ? SakuraCordAccentColor.color : Color.secondary.opacity(0.16),
+                            in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous)
+                        )
+                        .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+                }
             }
             .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
-        .accessibilityLabel("Direct Messages")
+        .accessibilityLabel(title)
+        .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
+            isHovering ? ServerRailHoverItem(name: title, bounds: bounds) : nil
+        }
         .onServerRailHover { isHovering = $0 }
-        .help("Direct Messages")
+        .animation(.snappy(duration: 0.18), value: isHovering)
     }
 }
 

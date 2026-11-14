@@ -193,6 +193,28 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var profileDeveloperSettingsDataVersion: UInt32?
     var guildLayoutDataVersion: UInt32?
     var inboxSettingsFieldVersions: [Int: UInt32] = [:]
+    /// The confirmed settings-proto/1 Favorites message; nil until settings load.
+    var favoritesMessage: Data?
+    var favoritesDataVersion: UInt32?
+    /// The settings data version of `userContentMessage`; older copies, such as
+    /// a late response to an earlier write, are ignored.
+    var userContentDataVersion: UInt32?
+    /// The optimistic Favorites state while a save is pending or in flight.
+    var pendingFavorites: FavoritesSettings?
+    var favoritesSaveTask: Task<Void, Never>?
+    var favoritesGeneration: UInt64 = 0
+    /// The settings-proto/1 UserContentSettings message, with any write still
+    /// awaiting Discord's answer applied.
+    var userContentMessage: Data?
+    /// The UserContentSettings Discord last confirmed, which a failed write
+    /// rolls back to.
+    var confirmedUserContentMessage: Data?
+    /// UserContentSettings waiting in the Favorites save queue: a Suggested
+    /// Channels dismissal, or the restore Reset sends in its own write.
+    var pendingUserContent: Data?
+    var personalizationConsented = false
+    var channelAffinities: (ids: [ChannelID], fetchedAt: Date)?
+    var userAffinities: (ids: [UserID], fetchedAt: Date)?
     var lastSentPresenceStatus: PresenceStatus?
     var presenceSendWindowEnds: [Date] = []
     var deferredPresenceTask: Task<Void, Never>?

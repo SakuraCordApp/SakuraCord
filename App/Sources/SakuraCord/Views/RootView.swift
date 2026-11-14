@@ -285,6 +285,8 @@ private struct ChatRootView: View {
                 } else if let guildID = model.onboardingEntryGuildID {
                     GuildOnboardingView(model: model, guildID: guildID)
                         .id(guildID)
+                } else if model.favorites.isPresented, model.selectedChannelID == nil {
+                    FavoritesEmptyState(model: model)
                 } else {
                     ChatWorkspaceView(
                         model: model,
@@ -1045,6 +1047,7 @@ private struct ChatRootView: View {
 
     private var sidebarDisplayName: String {
         if let guildID = model.presentedGuildJoinRequestID { return model.joinRequestGuildName(guildID) }
+        if model.favorites.isPresented { return "Favorites" }
         guard let guild = selectedGuild else { return "Messages" }
         return guild.name.isEmpty ? "Unnamed Server" : guild.name
     }

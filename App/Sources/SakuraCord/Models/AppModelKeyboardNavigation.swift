@@ -52,6 +52,10 @@ extension AppModel {
     }
 
     func navigateShortcutConversation(direction: Int, unreadOnly: Bool, mentionsOnly: Bool = false) {
+        if favorites.isPresented, !unreadOnly {
+            if let favorite = shortcutFavoriteDestination(direction: direction) { selectFavorite(favorite) }
+            return
+        }
         if selectedGuildID == nil, !unreadOnly {
             switch keyboardShortcutDirectMessageDestination(direction: direction) {
             case .friends: openFriends()
@@ -64,6 +68,16 @@ extension AppModel {
         if let channelID = keyboardShortcutConversationDestination(direction: direction, unreadOnly: unreadOnly, mentionsOnly: mentionsOnly) {
             navigate(to: channelID)
         }
+    }
+
+    /// Inside Favorites the previous and next conversation follow the
+    /// Favorites list, as a server's follow its channel list.
+    private func shortcutFavoriteDestination(direction: Int) -> FavoriteConversation? {
+        let favorites = favoriteConversations()
+        guard !favorites.isEmpty else { return nil }
+        let start = favorites.firstIndex { $0.id == presentedFavoriteChannelID } ?? (direction > 0 ? -1 : 0)
+        let destination = favorites[(start + direction + favorites.count) % favorites.count]
+        return destination.id == presentedFavoriteChannelID ? nil : destination
     }
 
     func keyboardShortcutConversationDestination(direction: Int, unreadOnly: Bool, mentionsOnly: Bool = false) -> ChannelID? {
@@ -98,6 +112,11 @@ extension AppModel {
     /// history pagination, and can block the main thread between scroll frames.
     func hasKeyboardShortcutConversationDestination(unreadOnly: Bool, mentionsOnly: Bool = false) -> Bool {
         let selectedID = shortcutThreadIsFullWidth ? openThread?.id : selectedChannelID
+        if favorites.isPresented, !unreadOnly {
+            // Stops at the first other favourite instead of resolving them all.
+            return (displayedFavorites?.sections.flatMap(\.entries) ?? []).lazy
+                .compactMap(favoriteConversation).contains { $0.id != presentedFavoriteChannelID }
+        }
         if !unreadOnly {
             if selectedGuildID == nil {
                 // Message Requests is a destination beside Friends whenever a request waits.

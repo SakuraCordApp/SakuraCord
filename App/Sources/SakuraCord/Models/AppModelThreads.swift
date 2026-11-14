@@ -298,6 +298,7 @@ extension AppModel {
     func consumeThreadEvent(_ event: ClientEvent) -> Bool {
         switch event {
         case .threadDeleted(let channelID):
+            favorites.threads[channelID] = nil
             consumeThreadDeleted(channelID: channelID)
         case .forumPostsChanged(let channelID, let posts):
             consumeForumPostsChanged(channelID: channelID, posts: posts)

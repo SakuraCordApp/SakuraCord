@@ -188,6 +188,7 @@ not start network work merely because a row redraws.
 | Reply ping choice | App-wide user defaults through `SettingsPreferenceStore`, shared by both composers and retained across account resets. Self-replies suppress the effective ping without changing the saved choice. Offline fixtures keep this choice in memory. |
 | Workspace, message history, members, read state, onboarding choices | Session memory; restored from the live provider, not disk. |
 | Unsaved emoji/reaction usage | Account-scoped user defaults until acknowledged by Discord; replayed over remote history and removed with the account. |
+| Unlimited favorites past Discord's limit | Account-scoped user defaults; never sent to Discord and removed with the account. See [settings synchronization](protocol/SETTINGS.md#favorites-server). |
 | Unsaved account status pick | Account-scoped user defaults until saved, superseded or rejected; removed with the account. See [settings synchronization](protocol/SETTINGS.md#status-and-custom-status). |
 | Derived people search, channel ordering and emoji catalogues | Account-scoped disposable caches under `Caches/dev.sakuracord.SakuraCord`. Never bootstrap the workspace or store credentials/message bodies. |
 | Media cache | Disposable LRU; shares the configured storage budget with drafts, which reserve space first and are never automatically evicted. |

@@ -348,6 +348,10 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             storage: .appWide(key: "settings.features.fakeNitroStreamQuality"), defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .unlimitedFavorites, page: .features,
+            storage: .appWide(key: "settings.features.unlimitedFavorites"), defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
             id: .voiceMessageRecording, page: .features,
             storage: .appWide(key: "settings.features.voiceMessageRecording"), defaultValue: .bool(true)
         ),

@@ -6,7 +6,9 @@ extension AppModel {
     /// Friends is the Direct Messages home: chosen explicitly, or shown
     /// when no conversation is selected there.
     var isFriendsPresented: Bool {
-        selectedGuildID == nil && onboardingEntryGuildID == nil && (friends.isPresented || selectedChannelID == nil)
+        // An empty Favorites server rests on no conversation, not Friends.
+        selectedGuildID == nil && onboardingEntryGuildID == nil && !favorites.isPresented
+            && (friends.isPresented || selectedChannelID == nil)
     }
 
     var friendsSection: FriendsSection {
@@ -50,6 +52,7 @@ extension AppModel {
             selectGuild(nil)
             return
         }
+        setFavoritesPresented(false)
         suspendSelectedConversationPresentation()
         closeThread()
         friends.isPresented = true
@@ -246,7 +249,7 @@ extension AppModel {
             navigate(to: channel.id)
             return
         }
-        startConversationNavigation { model, session in
+        startConversationNavigation(presentsFavorites: false) { model, session in
             do {
                 let channel = try await session.provider.ensurePrivateChannel(for: user.id)
                 guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }

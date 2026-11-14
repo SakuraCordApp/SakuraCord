@@ -123,13 +123,16 @@ enum ChannelPinMenuAction {
 /// Page destinations share the channel row's native hover and selection tracking.
 struct ChannelRowHoverBridge: NSViewRepresentable {
     let isSelected: Bool
+    /// Resolved when the menu opens.
+    var menu: (() -> NSMenu?)?
     func makeNSView(context: Context) -> ChannelContextMenuHitView {
         let view = ChannelContextMenuHitView()
-        view.isSelected = isSelected
+        updateNSView(view, context: context)
         return view
     }
     func updateNSView(_ view: ChannelContextMenuHitView, context: Context) {
         view.isSelected = isSelected
+        view.menuProvider = menu
     }
     static func dismantleNSView(_ view: ChannelContextMenuHitView, coordinator: ()) {
         view.uninstallFromNativeRow()
@@ -165,6 +168,8 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     var groupActions: GroupDirectMessageMenuActions?
     /// Close DM for a 1:1 DM.
     var closeDirectMessage: (() -> Void)?
+    /// Favorites server actions, resolved when the menu opens.
+    var favoriteItems: () -> [NSMenuItem] = { [] }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(from: self)
@@ -213,6 +218,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         private var userMenu: () -> NSMenu?
         private var groupActions: GroupDirectMessageMenuActions?
         private var closeDirectMessage: (() -> Void)?
+        private var favoriteItems: () -> [NSMenuItem]
 
         init(from bridge: ChannelContextMenuBridge) {
             subject = bridge.subject
@@ -232,6 +238,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             userMenu = bridge.userMenu
             groupActions = bridge.groupActions
             closeDirectMessage = bridge.closeDirectMessage
+            favoriteItems = bridge.favoriteItems
         }
 
         func update(from bridge: ChannelContextMenuBridge) {
@@ -252,6 +259,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             userMenu = bridge.userMenu
             groupActions = bridge.groupActions
             closeDirectMessage = bridge.closeDirectMessage
+            favoriteItems = bridge.favoriteItems
         }
 
         func makeMenu() -> NSMenu {
@@ -267,6 +275,12 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 )
             )
             menu.addItem(.separator())
+
+            let favorites = favoriteItems()
+            if !favorites.isEmpty {
+                favorites.forEach(menu.addItem)
+                menu.addItem(.separator())
+            }
 
             if let pinTitle = pinAction.title {
                 menu.addItem(
