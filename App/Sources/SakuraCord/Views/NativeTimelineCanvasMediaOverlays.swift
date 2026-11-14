@@ -1573,94 +1573,15 @@ extension NativeTimelineCanvasView {
             layout: layout,
             accumulator: &accumulator
         )
+        appendAnimatedComponents(
+            messageID: row.message.id,
+            identifier: identifier,
+            layout: layout,
+            accumulator: &accumulator
+        )
         var keys = accumulator.keys
-        appendAnimatedComponentKeys(for: row, layout: layout, into: &keys)
         appendAnimatedStickerAndReactionKeys(for: row, layout: layout, into: &keys)
         return keys
-    }
-
-    private func appendAnimatedComponentKeys(
-        for row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        into keys: inout Set<MediaImageKey>
-    ) {
-        let message = row.message
-        for (componentIndex, component) in layout.componentLayouts.enumerated() {
-            let hiddenContainerFrames =
-                NativeTimelineSpoilerConcealmentPolicy
-                    .hiddenContainerFrames(
-                        in: component,
-                        messageID: message.id,
-                        store: spoilerRevealStore
-                    )
-            for image in component.images
-            where Self.isPotentiallyAnimated(image.displayURL)
-                && !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        image.frame,
-                        hiddenContainerFrames: hiddenContainerFrames
-                    )
-                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                    messageID: message.id,
-                    contentID: image.componentID,
-                    isSpoiler: image.isSpoiler,
-                    store: spoilerRevealStore
-                ) {
-                keys.insert(.media(
-                    image.displayURL,
-                    maximumPixelDimension: image.maximumPixelDimension
-                ))
-            }
-            for media in component.media
-            where Self.isPotentiallyAnimated(media.displayURL)
-                && !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        media.frame,
-                        hiddenContainerFrames: hiddenContainerFrames
-                    )
-                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                    messageID: message.id,
-                    contentID: media.componentID,
-                    isSpoiler: media.isSpoiler,
-                    store: spoilerRevealStore
-                ) {
-                keys.insert(.media(media.displayURL))
-            }
-            for button in component.buttons {
-                guard !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        button.frame,
-                        hiddenContainerFrames: hiddenContainerFrames
-                    )
-                else { continue }
-                guard let emoji = button.emoji,
-                      emoji.isAnimated,
-                      let url = emoji.imageURL(size: 32)
-                else { continue }
-                keys.insert(.media(url, maximumPixelDimension: 64))
-            }
-            for (textIndex, textRegion) in component.textRegions.enumerated() {
-                guard !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        textRegion.frame,
-                        hiddenContainerFrames: hiddenContainerFrames
-                    )
-                else { continue }
-                appendAnimatedInlineKeys(
-                    from: textRegion.text.value,
-                    revealedSpoilerLocations: revealedTextSpoilerLocations(
-                        messageID: message.id,
-                        region: .component(
-                            layoutIndex: componentIndex,
-                            textIndex: textIndex
-                        ),
-                        value: textRegion.text.value,
-                        layout: layout
-                    ),
-                    into: &keys
-                )
-            }
-        }
     }
 
     private func appendAnimatedStickerAndReactionKeys(
