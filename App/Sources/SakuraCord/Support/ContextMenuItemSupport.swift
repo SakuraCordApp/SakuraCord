@@ -1,5 +1,12 @@
 import AppKit
 
+extension NSEvent {
+    /// A secondary click: the right button, or the left with Control held.
+    var isContextClick: Bool {
+        type == .rightMouseDown || (type == .leftMouseDown && modifierFlags.contains(.control))
+    }
+}
+
 @MainActor
 enum ContextMenuItemSupport {
     static func configure(

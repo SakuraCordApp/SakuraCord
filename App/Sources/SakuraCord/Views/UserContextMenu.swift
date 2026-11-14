@@ -108,7 +108,7 @@ final class UserContextMenuHitView: NSView {
     var makeMenu: (() -> NSMenu?)?
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let event = window?.currentEvent, bounds.contains(convert(point, from: superview)),
-              event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control)) else { return nil }
+              event.isContextClick else { return nil }
         return self
     }
     override func menu(for event: NSEvent) -> NSMenu? {

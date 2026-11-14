@@ -590,9 +590,7 @@ final class ChannelContextMenuHitView: NSView {
         // Browse Channels uses ordinary SwiftUI rows rather than table rows.
         // Handle their secondary clicks here; table rows keep their native host.
         guard nativeRowView == nil, bounds.contains(point),
-              let event = window?.currentEvent,
-              event.type == .rightMouseDown
-                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+              let event = window?.currentEvent, event.isContextClick
         else { return nil }
         return self
     }
@@ -1050,12 +1048,7 @@ final class ChannelNativeRowInteractionView: NSView, WindowModalInputParticipant
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard bounds.contains(point),
-              let event = window?.currentEvent,
-              event.type == .rightMouseDown
-                || (
-                    event.type == .leftMouseDown
-                        && event.modifierFlags.contains(.control)
-                )
+              let event = window?.currentEvent, event.isContextClick
         else { return nil }
         return self
     }

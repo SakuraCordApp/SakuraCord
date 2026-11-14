@@ -345,7 +345,7 @@ final class ListBackgroundMenuView: NSView {
     }
 
     private func presentMenu(for event: NSEvent) -> Bool {
-        guard event.type == .rightMouseDown || event.modifierFlags.contains(.control),
+        guard event.isContextClick,
               let window, event.window === window, let menuProvider,
               WindowModalCoordinator.allowsInput(for: self),
               bounds.contains(convert(event.locationInWindow, from: nil))
@@ -367,9 +367,7 @@ final class ServerContextMenuHitView: NSView {
         guard super.hitTest(point) != nil,
               let event = window?.currentEvent ?? NSApp.currentEvent
         else { return nil }
-        let isContextClick = event.type == .rightMouseDown
-            || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
-        return isContextClick ? self : nil
+        return event.isContextClick ? self : nil
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
