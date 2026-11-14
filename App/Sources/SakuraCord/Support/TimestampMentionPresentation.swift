@@ -44,14 +44,8 @@ nonisolated enum TimestampMentionPresentation {
         guard source.contains("<t:") else { return presentations }
         var result = presentations
         for case let .mention(mention) in RichMessageAttributedText.prepare(source: source).tokens {
-            guard mention.kind == .timestamp,
-                  let token = DiscordTimestampToken(rawToken: mention.rawToken) else { continue }
-            result[mention.rawToken] = MentionPresentation(
-                rawToken: mention.rawToken,
-                label: token.formatted(relativeTo: date),
-                target: .unresolved,
-                isTimestamp: true
-            )
+            guard mention.kind == .timestamp, DiscordTimestampToken(rawToken: mention.rawToken) != nil else { continue }
+            result[mention.rawToken] = .timestamp(mention, at: date)
         }
         return result
     }

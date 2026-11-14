@@ -47,6 +47,17 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
 
     /// Broadcast, game, timestamp and command mentions carry everything
     /// they show in the token itself; a game's name and icon load later.
+    /// A timestamp mention showing its time as of `date`, or its raw token
+    /// when it doesn't parse.
+    static func timestamp(_ mention: RenderedMention, at date: Date = .now) -> MentionPresentation {
+        MentionPresentation(
+            rawToken: mention.rawToken,
+            label: DiscordTimestampToken(rawToken: mention.rawToken)?.formatted(relativeTo: date) ?? mention.rawToken,
+            target: .unresolved,
+            isTimestamp: true
+        )
+    }
+
     private static func selfContainedPresentation(for mention: RenderedMention) -> MentionPresentation {
         switch mention.kind {
         case .game:
@@ -57,12 +68,7 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
                 systemImage: "gamecontroller.fill"
             )
         case .timestamp:
-            MentionPresentation(
-                rawToken: mention.rawToken,
-                label: DiscordTimestampToken(rawToken: mention.rawToken)?.formatted() ?? mention.rawToken,
-                target: .unresolved,
-                isTimestamp: true
-            )
+            timestamp(mention)
         case .command:
             if let name = mention.commandName {
                 MentionPresentation(rawToken: mention.rawToken, label: "/\(name)", target: .command(id: mention.id, name: name))
