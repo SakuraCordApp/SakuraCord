@@ -50,7 +50,7 @@ struct NativeTimelineVoiceMessageRegion {
         maximumWidth: CGFloat,
         style: Style
     ) -> Self? {
-        guard (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage),
+        guard message.isVoiceMessage,
               message.attachments.count == 1,
               let attachment = message.attachments.first,
               attachment.mediaKind == .audio
@@ -963,7 +963,7 @@ extension NativeTimelineCanvasView {
         let identifiers = bitmapCache.compactMap { identifier, cached in
             guard let message = cached.item.messageRow?.message else { return nil as NativeMessageTimelineItem.Identifier? }
             var players = message.attachments.filter { $0.mediaKind == .audio }.map { VoiceMessagePlaybackID.attachment(message.id, attachmentID: $0.id) }
-            if (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) { players.append(.message(message.id)) }
+            if message.isVoiceMessage { players.append(.message(message.id)) }
             guard !players.isEmpty, playbackIDs.map({ !$0.isDisjoint(with: players) }) ?? true else { return nil }
             return identifier
         }

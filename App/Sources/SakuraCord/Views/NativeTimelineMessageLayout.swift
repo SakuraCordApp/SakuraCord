@@ -677,7 +677,7 @@ extension NativeTimelineRowLayout {
         }
 
         private mutating func appendAttachments() {
-            if !usesComponentsV2, (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) {
+            if !usesComponentsV2, message.isVoiceMessage {
                 if let region = NativeTimelineVoiceMessageRegion.make(
                     message: message,
                     origin: CGPoint(x: contentX, y: richContentY),

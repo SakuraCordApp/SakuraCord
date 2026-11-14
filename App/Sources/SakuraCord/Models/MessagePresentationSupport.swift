@@ -1211,4 +1211,9 @@ nonisolated extension Message {
     var isPostStarter: Bool {
         id.rawValue == channelID.rawValue
     }
+
+    /// A voice message, or a forward of one, which plays like the original.
+    var isVoiceMessage: Bool {
+        (forwardedSnapshot?.flags ?? flags).contains(.voiceMessage)
+    }
 }
