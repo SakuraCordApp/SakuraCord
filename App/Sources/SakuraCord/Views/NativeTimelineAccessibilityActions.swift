@@ -415,23 +415,6 @@ extension NativeTimelineCanvasView {
         return true
     }
 
-    func setHoveredRow(_ value: Int?) {
-        guard hoveredRow != value else { return }
-        let old = hoveredRow
-        hoveredRow = value
-        updateAvatarPlayback()
-        if let old {
-            setNeedsDisplay(rowFrame(at: old))
-        }
-        if let value {
-            setNeedsDisplay(rowFrame(at: value))
-        }
-        if value == nil, actionCapsuleState?.isPresentationActive == true {
-            return
-        }
-        reconcileActionCapsule()
-    }
-
 }
 
 extension NativeTimelineCanvasView {

@@ -4,13 +4,6 @@ import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineCanvasView {
-    func setHoveredCommandPillMessageID(_ value: MessageID?) {
-        guard hoveredCommandPillMessageID != value else { return }
-        let old = hoveredCommandPillMessageID
-        hoveredCommandPillMessageID = value
-        for messageID in [old, value].compactMap({ $0 }) { invalidateVisibleMessageRow(messageID: messageID) }
-    }
-
     func commandPillPointerHit(at point: CGPoint) -> MessageID? {
         guard let index = rowIndex(at: point.y), items.indices.contains(index), layouts.indices.contains(index),
               let pill = layouts[index].commandInvocationRegion?.pillFrame

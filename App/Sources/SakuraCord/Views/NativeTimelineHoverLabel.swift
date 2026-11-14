@@ -61,12 +61,6 @@ extension NativeTimelineCanvasView {
         presentHoverLabel()
     }
 
-    func setHoveredSilentBadgeMessageID(_ value: MessageID?) {
-        guard hoveredSilentBadgeMessageID != value else { return }
-        hoveredSilentBadgeMessageID = value
-        presentHoverLabel()
-    }
-
     func silentBadgePointerHit(at point: CGPoint) -> MessageID? {
         guard let index = rowIndex(at: point.y), layouts.indices.contains(index),
               let frame = layouts[index].silentBadgeFrame,
