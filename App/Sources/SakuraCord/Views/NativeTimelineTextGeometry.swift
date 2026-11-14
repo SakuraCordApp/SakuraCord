@@ -328,16 +328,7 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
               frame.height > 0,
               containsCodeBlock(value)
         else { return [] }
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: value.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
         return regions(
             in: textFrame,
             outerFrame: frame,
@@ -452,16 +443,7 @@ enum NativeTimelineTextHitTester {
               frame.width > 0,
               frame.height > 0
         else { return [] }
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: value.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
         return spoilerRegions(
             value: value,
             textFrame: textFrame,
@@ -497,16 +479,7 @@ enum NativeTimelineTextHitTester {
               frame.width > 0,
               frame.height > 0
         else { return [] }
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: value.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
         return linkRegions(
             value: value,
             textFrame: textFrame,
@@ -612,16 +585,7 @@ enum NativeTimelineTextHitTester {
               frame.width > 0,
               frame.height > 0
         else { return [] }
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: value.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
         let lines = CTFrameGetLines(textFrame) as NSArray
         guard lines.count > 0 else { return [] }
         var origins = Array(
@@ -696,16 +660,7 @@ enum NativeTimelineTextHitTester {
               frame.width > 0,
               frame.height > 0
         else { return nil }
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: value.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
         let lines = CTFrameGetLines(textFrame) as NSArray
         guard lines.count > 0 else { return nil }
         var origins = Array(repeating: CGPoint.zero, count: lines.count)
@@ -785,16 +740,7 @@ enum NativeTimelineTextHitTester {
             effectiveRange.length > 0
         else { return nil }
 
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: value.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
         let lines = CTFrameGetLines(textFrame) as NSArray
         guard lines.count > 0 else { return nil }
         var origins = Array(repeating: CGPoint.zero, count: lines.count)
@@ -960,16 +906,7 @@ enum NativeTimelineTextHitTester {
         framesetter: CTFramesetter,
         frame: CGRect
     ) -> CoreTextFrameLayout {
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
-        )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: value.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: value, framesetter: framesetter, size: frame.size)
         let lines = CTFrameGetLines(textFrame) as NSArray
         var origins = Array(repeating: CGPoint.zero, count: lines.count)
         CTFrameGetLineOrigins(
@@ -1284,4 +1221,14 @@ enum NativeTimelineTextHitTester {
         guard index != kCFNotFound else { return nil }
         return min(valueLength, max(0, index))
     }
+}
+
+/// The framesetter's frame for the whole text at a size.
+private nonisolated func coreTextFrame(value: NSAttributedString, framesetter: CTFramesetter, size: CGSize) -> CTFrame {
+    CTFramesetterCreateFrame(
+        framesetter,
+        CFRange(location: 0, length: value.length),
+        CGPath(rect: CGRect(origin: .zero, size: size), transform: nil),
+        nil
+    )
 }
