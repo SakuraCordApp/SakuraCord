@@ -509,8 +509,7 @@ extension AppModel {
         releaseAllOwnedPromisedFiles()
         oversizedAttachmentPrompt = nil
         queuedOversizedAttachmentPrompts.removeAll()
-        for task in interactionDeadlineTasks.values { task.cancel() }
-        interactionDeadlineTasks = [:]
+        interactionDeadlineTasks.cancelAll()
         for commandComposer in commandComposers {
             commandComposer.resetForChannelChange()
             commandComposer.memberSearchCache = [:]

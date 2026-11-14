@@ -637,8 +637,7 @@ extension NativeMemberListCanvasView {
     func tearDown() {
         placeholderShimmerTask?.cancel()
         placeholderShimmerTask = nil
-        for task in imageTasks.values { task.cancel() }
-        imageTasks.removeAll()
+        imageTasks.cancelAll()
         imageTaskPriorities.removeAll()
         imageTaskPixelDimensions.removeAll()
         imageRequestItemIDs.removeAll()

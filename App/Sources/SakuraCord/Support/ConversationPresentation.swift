@@ -184,27 +184,6 @@ nonisolated enum ConversationPermissionResolver {
     static func effectivePermissions(
         guild: Guild,
         channel: Channel,
-        currentUserID: UserID,
-        resolvedBasePermissions: UInt64?,
-        roleIDs: Set<RoleID>,
-        hasCurrentRoleIdentity: Bool
-    ) -> UInt64? {
-        effectivePermissions(
-            guild: guild,
-            channel: channel,
-            resolvedBasePermissions: resolvedBasePermissions,
-            overwritePrincipals: PermissionOverwritePrincipals(
-                guildID: guild.id,
-                currentUserID: currentUserID,
-                roleIDs: roleIDs
-            ),
-            hasCurrentRoleIdentity: hasCurrentRoleIdentity
-        )
-    }
-
-    static func effectivePermissions(
-        guild: Guild,
-        channel: Channel,
         resolvedBasePermissions: UInt64?,
         overwritePrincipals: PermissionOverwritePrincipals,
         hasCurrentRoleIdentity: Bool,

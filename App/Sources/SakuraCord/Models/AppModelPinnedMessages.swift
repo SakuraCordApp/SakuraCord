@@ -59,8 +59,7 @@ final class PinnedMessagesState {
         loadTask?.cancel()
         loadGeneration &+= 1
         loadTask = nil
-        for task in mutationTasks.values { task.cancel() }
-        mutationTasks = [:]
+        mutationTasks.cancelAll()
         mutationGenerations = [:]
         mutationIntents = [:]
         isPresented = false

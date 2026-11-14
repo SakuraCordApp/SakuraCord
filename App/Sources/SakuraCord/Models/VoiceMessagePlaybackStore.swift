@@ -252,8 +252,7 @@ final class VoiceMessagePlaybackStore {
         cachedPlayers.removeAll()
         resumePositions.removeAll()
         resumeOrder.removeAll()
-        measurements.values.forEach { $0.cancel() }
-        measurements.removeAll()
+        measurements.cancelAll()
         knownDurations.removeAll()
         knownDurationOrder.removeAll()
         failedMeasurements.removeAll()

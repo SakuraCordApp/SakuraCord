@@ -50,8 +50,7 @@ final class NicknameEditorStore {
     @ObservationIgnored var memberLoads: [String: Task<Void, Never>] = [:]
 
     func reset() {
-        memberLoads.values.forEach { $0.cancel() }
-        memberLoads.removeAll()
+        memberLoads.cancelAll()
         presentation = nil
     }
 }

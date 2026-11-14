@@ -359,8 +359,7 @@ extension AppModel {
     }
 
     func resetReactionReactorLoads() {
-        for task in reactionReactorLoadTasks.values { task.cancel() }
-        reactionReactorLoadTasks = [:]
+        reactionReactorLoadTasks.cancelAll()
         reactionReactorLoadIDs = [:]
         loadedReactionReactorPreviews = [:]
         failedReactionReactorLoads = [:]

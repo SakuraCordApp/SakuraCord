@@ -43,8 +43,7 @@ final class GuildOnboardingStore {
         entries = [:]
         members = [:]
         bootstrapMembers = [:]
-        for task in timeoutExpiryTasks.values { task.cancel() }
-        timeoutExpiryTasks = [:]
+        timeoutExpiryTasks.cancelAll()
         timeoutRevisions = [:]
         guides = [:]
         presentedGuildID = nil

@@ -72,7 +72,7 @@ final class VoiceMessageComposerState {
         elapsedSampledAt = .now
         let generation = startGeneration
         Task {
-            guard await VoiceMessageRecorder.requestMicrophonePermission() else {
+            guard await VoiceAudioEngine.requestMicrophonePermission() else {
                 guard generation == startGeneration, phase == .starting else { return }
                 phase = .idle
                 errorMessage = VoiceMessageRecorderError.microphonePermissionDenied.localizedDescription

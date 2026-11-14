@@ -80,14 +80,6 @@ public final class VoiceMessageRecorder {
 
     public var isRecording: Bool { processor != nil }
 
-    public static func requestMicrophonePermission() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: true
-        case .notDetermined: await AVCaptureDevice.requestAccess(for: .audio)
-        default: false
-        }
-    }
-
     public func start(inputDeviceID: AudioDeviceID? = nil) throws {
         cancel()
         let device = MediaDeviceCatalog.audioCaptureDevice(deviceID: inputDeviceID)
