@@ -8,10 +8,6 @@ import SakuraCordModels
 struct LaunchBenchmarks {
     let launch: AppLaunchConfiguration
     let provider: MockChatProvider?
-#if SAKURACORD_MOTION_BENCHMARK
-    /// Set when the launch runs the side chat motion benchmark.
-    let sideChatMotionOptions: SideChatMotionBenchmark.Options?
-#endif
 
     func run(model: AppModel) async {
 #if DEBUG
@@ -43,7 +39,7 @@ struct LaunchBenchmarks {
             await ChannelOpenBenchmark.run(model: model)
         }
 #if SAKURACORD_MOTION_BENCHMARK
-        if let sideChatMotionOptions {
+        if let sideChatMotionOptions = launch.sideChatMotionOptions {
             await SideChatMotionBenchmark.run(model: model, options: sideChatMotionOptions)
         }
 #endif

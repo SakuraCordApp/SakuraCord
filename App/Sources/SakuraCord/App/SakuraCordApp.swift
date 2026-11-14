@@ -27,11 +27,8 @@ struct SakuraCordApp: App {
         ForumLayoutStabilityProbe.shared.isEnabled = configuration.includesForumPerformanceFixture
 #endif
 #if SAKURACORD_MOTION_BENCHMARK
-        let motionOptions = configuration.runsSideChatMotionBenchmark
-            ? SideChatMotionBenchmark.Options(arguments: ProcessInfo.processInfo.arguments)
-            : nil
-        WorkspaceMotionProbes.isEnabled = motionOptions != nil
-        MockChatProvider.motionFixture = motionOptions.map {
+        WorkspaceMotionProbes.isEnabled = configuration.sideChatMotionOptions != nil
+        MockChatProvider.motionFixture = configuration.sideChatMotionOptions.map {
             MockChatProvider.MotionFixture(
                 threadCount: $0.cycles + 1,
                 messageCount: $0.threadMessageCount,
@@ -57,13 +54,7 @@ struct SakuraCordApp: App {
                 friendCount: configuration.runsFriendsPerformanceBenchmark ? 1_000 : nil
             )
             : nil
-#if SAKURACORD_MOTION_BENCHMARK
-        launchBenchmarks = LaunchBenchmarks(
-            launch: configuration, provider: mockProvider, sideChatMotionOptions: motionOptions
-        )
-#else
         launchBenchmarks = LaunchBenchmarks(launch: configuration, provider: mockProvider)
-#endif
         let provider: (any ChatProvider)? = mockProvider
         let notificationService = MacNativeNotificationService(
             deliversNotifications: configuration.mode != .offlineTesting

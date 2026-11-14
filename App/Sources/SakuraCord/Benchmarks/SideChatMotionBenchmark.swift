@@ -16,7 +16,7 @@ import SwiftUI
 enum SideChatMotionBenchmark {
     static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "SideChatMotionBenchmark")
 
-    struct Options {
+    nonisolated struct Options: Equatable, Sendable {
         var cycles = 6
         var historyDelayMilliseconds = 0
         var threadMessageCount = 150

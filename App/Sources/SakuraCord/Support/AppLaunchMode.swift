@@ -32,6 +32,9 @@ nonisolated enum OfflineLaunchFlag: String {
     case chatPerformanceLiveReactionsOnly = "--offline-chat-performance-live-reactions-only"
     case chatPerformanceLiveMutationsOnly = "--offline-chat-performance-live-mutations-only"
     case chatPerformanceLiveArrivalsOnly = "--offline-chat-performance-live-arrivals-only"
+#if SAKURACORD_MOTION_BENCHMARK
+    case sideChatMotion = "--offline-side-chat-motion"
+#endif
 
     /// Whether the flag starts the offline provider by itself. The others
     /// only adjust a chat benchmark that another flag starts.
@@ -93,8 +96,9 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     /// Mentions arriving in other servers while main-thread time is measured.
     let runsUnreadChurnBenchmark: Bool
 #if SAKURACORD_MOTION_BENCHMARK
-    /// Fixture threads opened, closed and widened while every frame is recorded.
-    let runsSideChatMotionBenchmark: Bool
+    /// Fixture threads opened, closed and widened while every frame is
+    /// recorded; set when the launch runs that benchmark.
+    let sideChatMotionOptions: SideChatMotionBenchmark.Options?
 #endif
 
     init(arguments: [String]) {
@@ -174,10 +178,9 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
         runsFriendsPerformanceBenchmark = flags.contains(.friendsPerformance)
         runsServerRailPerformanceBenchmark = flags.contains(.serverRailPerformance)
 #if SAKURACORD_MOTION_BENCHMARK
-        let isMotionBenchmarkLaunch = arguments.contains("--offline-side-chat-motion")
-        runsSideChatMotionBenchmark = isMotionBenchmarkLaunch
-#else
-        let isMotionBenchmarkLaunch = false
+        sideChatMotionOptions = flags.contains(.sideChatMotion)
+            ? SideChatMotionBenchmark.Options(arguments: arguments)
+            : nil
 #endif
         includesChatPerformanceFixture =
             flags.contains(.chatPerformanceAutoScroll)
@@ -187,7 +190,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || includesChatFilesPerformanceFixture
             || flags.contains(.chatPerformance)
             || includesPinsPerformanceFixture
-        mode = isMotionBenchmarkLaunch || flags.contains(where: \.selectsOfflineMode) ? .offlineTesting : .normal
+        mode = flags.contains(where: \.selectsOfflineMode) ? .offlineTesting : .normal
     }
 
     /// An authenticated benchmark that scrolls the timeline.
