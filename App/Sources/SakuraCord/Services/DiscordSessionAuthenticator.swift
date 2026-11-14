@@ -127,32 +127,7 @@ actor DiscordSessionAuthenticator {
             return .captcha(captcha)
         }
         try validateAuthenticationResponse(data: data, response: response)
-        let payload = try JSONDecoder().decode(LoginResponse.self, from: data)
-
-        if payload.mfa == true {
-            guard let ticket = payload.ticket, !ticket.isEmpty else {
-                throw AuthenticationError.invalidResponse
-            }
-            var methods: [DiscordMFAMethod] = []
-            if payload.totp == true {
-                methods.append(.totp)
-            }
-            if payload.backup == true {
-                methods.append(.backup)
-            }
-            if payload.sms == true {
-                methods.append(.sms)
-            }
-            guard !methods.isEmpty else { throw AuthenticationError.unsupportedMFA }
-            return .mfa(DiscordMFAChallenge(
-                ticket: ticket,
-                loginInstanceID: payload.loginInstanceID,
-                methods: methods
-            ))
-        }
-
-        guard let token = payload.token else { throw AuthenticationError.invalidResponse }
-        return try .authenticated(pendingCredential(token: token))
+        return try authenticationStep(from: JSONDecoder().decode(LoginResponse.self, from: data))
     }
 
     func completeCaptcha(
@@ -184,30 +159,7 @@ actor DiscordSessionAuthenticator {
             throw AuthenticationError.captchaRequired
         }
         try validateAuthenticationResponse(data: data, response: response)
-        let payload = try JSONDecoder().decode(LoginResponse.self, from: data)
-        if payload.mfa == true {
-            guard let ticket = payload.ticket, !ticket.isEmpty else {
-                throw AuthenticationError.invalidResponse
-            }
-            var methods: [DiscordMFAMethod] = []
-            if payload.totp == true {
-                methods.append(.totp)
-            }
-            if payload.backup == true {
-                methods.append(.backup)
-            }
-            if payload.sms == true {
-                methods.append(.sms)
-            }
-            guard !methods.isEmpty else { throw AuthenticationError.unsupportedMFA }
-            return .mfa(DiscordMFAChallenge(
-                ticket: ticket,
-                loginInstanceID: payload.loginInstanceID,
-                methods: methods
-            ))
-        }
-        guard let token = payload.token else { throw AuthenticationError.invalidResponse }
-        return try .authenticated(pendingCredential(token: token))
+        return try authenticationStep(from: JSONDecoder().decode(LoginResponse.self, from: data))
     }
 
     func cancelCaptcha(challengeID: UUID) {
@@ -332,6 +284,32 @@ actor DiscordSessionAuthenticator {
 
     func acceptRemoteAuthToken(_ token: String) throws -> PendingDiscordCredential {
         try pendingCredential(token: token)
+    }
+
+    private func authenticationStep(from payload: LoginResponse) throws -> DiscordNativeAuthenticationStep {
+        if payload.mfa == true {
+            guard let ticket = payload.ticket, !ticket.isEmpty else {
+                throw AuthenticationError.invalidResponse
+            }
+            var methods: [DiscordMFAMethod] = []
+            if payload.totp == true {
+                methods.append(.totp)
+            }
+            if payload.backup == true {
+                methods.append(.backup)
+            }
+            if payload.sms == true {
+                methods.append(.sms)
+            }
+            guard !methods.isEmpty else { throw AuthenticationError.unsupportedMFA }
+            return .mfa(DiscordMFAChallenge(
+                ticket: ticket,
+                loginInstanceID: payload.loginInstanceID,
+                methods: methods
+            ))
+        }
+        guard let token = payload.token else { throw AuthenticationError.invalidResponse }
+        return try .authenticated(pendingCredential(token: token))
     }
 
     private func decodeRemoteAuthEncryptedToken(_ data: Data) throws -> String {
