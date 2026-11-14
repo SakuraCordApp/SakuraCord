@@ -12,7 +12,7 @@ extension NativeTimelineCanvasView {
 
     func pollPointerHit(at point: CGPoint) -> PollPointerHit? {
         guard WindowModalCoordinator.allowsInput(for: self),
-              let index = rowIndex(at: point.y), layouts.indices.contains(index), items.indices.contains(index),
+              let index = hitRowIndex(at: point.y),
               case let .message(row, _, _) = items[index] else { return nil }
         let origin = displayedRowOrigin(at: index)
         let local = CGPoint(x: point.x, y: point.y - origin)

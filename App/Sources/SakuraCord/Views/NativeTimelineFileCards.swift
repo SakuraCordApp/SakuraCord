@@ -143,9 +143,9 @@ extension NativeTimelineCanvasView {
     /// The tooltip of the timeline's buttons that have no label.
     func view(_: NSView, stringForToolTip _: NSView.ToolTipTag, point: NSPoint, userData _: UnsafeMutableRawPointer?) -> String {
         if codeBlockCopyButtonHit(at: point) != nil { return "Copy Code" }
-        guard let index = rowIndex(at: point.y), items.indices.contains(index) else { return "" }
+        guard let index = hitRowIndex(at: point.y) else { return "" }
         let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        if layouts.indices.contains(index), let roleRegion = layouts[index].roleIconRegion,
+        if let roleRegion = layouts[index].roleIconRegion,
            roleRegion.frame.contains(local) {
             return roleRegion.role.name
         }

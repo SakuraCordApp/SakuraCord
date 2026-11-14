@@ -21,6 +21,17 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// Redraws the rows of the items a hover left and entered.
+    func invalidateHoverRows(
+        from old: NativeMessageTimelineItem.Identifier?,
+        to new: NativeMessageTimelineItem.Identifier?
+    ) {
+        for identifier in [old, new].compactMap(\.self) {
+            guard let index = items.firstIndex(where: { $0.identifier == identifier }) else { continue }
+            setNeedsDisplay(rowFrame(at: index))
+        }
+    }
+
     func setHoveredRow(_ value: Int?) {
         guard hoveredRow != value else { return }
         let old = hoveredRow
@@ -95,14 +106,7 @@ extension NativeTimelineCanvasView {
         let oldIdentifier = hoveredMention?.itemIdentifier
         hoveredMention = value
         presentHoverLabel()
-        for identifier
-            in [oldIdentifier, value?.itemIdentifier].compactMap({ $0 })
-        {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == identifier
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
+        invalidateHoverRows(from: oldIdentifier, to: value?.itemIdentifier)
     }
 
     func setHoveredTextLink(
@@ -111,14 +115,7 @@ extension NativeTimelineCanvasView {
         guard hoveredTextLink != value else { return }
         let oldIdentifier = hoveredTextLink?.itemIdentifier
         hoveredTextLink = value
-        for identifier
-            in [oldIdentifier, value?.itemIdentifier].compactMap({ $0 })
-        {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == identifier
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
+        invalidateHoverRows(from: oldIdentifier, to: value?.itemIdentifier)
     }
 
     func setHoveredTextSpoiler(
@@ -127,14 +124,7 @@ extension NativeTimelineCanvasView {
         guard hoveredTextSpoiler != value else { return }
         let old = hoveredTextSpoiler
         hoveredTextSpoiler = value
-        for identifier
-            in [old?.itemIdentifier, value?.itemIdentifier].compactMap({ $0 })
-        {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == identifier
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
+        invalidateHoverRows(from: old?.itemIdentifier, to: value?.itemIdentifier)
         let now = ProcessInfo.processInfo.systemUptime
         for (spoiler, isHovered) in [(old, false), (value, true)] {
             guard let spoiler else { continue }

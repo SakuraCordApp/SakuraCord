@@ -795,8 +795,7 @@ extension NativeTimelineCanvasView {
     /// The voice message or audio file control under `point`.
     func voiceMessagePointerHit(at point: CGPoint) -> VoiceMessagePointerHit? {
         guard WindowModalCoordinator.allowsInput(for: self),
-              let index = rowIndex(at: point.y),
-              layouts.indices.contains(index), items.indices.contains(index)
+              let index = hitRowIndex(at: point.y)
         else { return nil }
         let origin = displayedRowOrigin(at: index)
         let local = CGPoint(x: point.x, y: point.y - origin)
@@ -819,7 +818,7 @@ extension NativeTimelineCanvasView {
     /// rather than only over its controls.
     private func audioFilePlayer(onCardAt point: CGPoint) -> NativeTimelineVoiceMessageRegion? {
         guard WindowModalCoordinator.allowsInput(for: self),
-              let index = rowIndex(at: point.y), layouts.indices.contains(index)
+              let index = hitRowIndex(at: point.y)
         else { return nil }
         let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         let layout = layouts[index]

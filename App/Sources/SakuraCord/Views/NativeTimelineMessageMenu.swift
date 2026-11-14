@@ -369,8 +369,7 @@ extension NativeTimelineCanvasView {
         dismissHoverLabel()
         guard !overlayBlocksInteractions, !glideBlocksPointer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
-        guard let index = rowIndex(at: point.y),
-              layouts.indices.contains(index),
+        guard let index = hitRowIndex(at: point.y),
               case let .message(row, _, _) = items[index]
         else { return nil }
         let interactionMode = MessageOutboxPresentation.interactionMode(
