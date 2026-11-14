@@ -103,9 +103,7 @@ extension AppModel {
             forumTagMatch = saved?.tagMatch ?? defaults.tagMatch
         }
         guard selectedConversationAccess.isReadable else { return }
-        forumLoadTask = Task { [weak self] in
-            await self?.loadForumPosts(reset: true)
-        }
+        restartForumLoad()
     }
 
     // MARK: Sort & view
@@ -177,6 +175,10 @@ extension AppModel {
 
     func reloadForumPosts() {
         guard selectedChannel?.kind == .forum else { return }
+        restartForumLoad()
+    }
+
+    private func restartForumLoad() {
         forumLoadTask?.cancel()
         forumLoadTask = Task { [weak self] in
             await self?.loadForumPosts(reset: true)
@@ -328,22 +330,9 @@ extension AppModel {
         reconcileInboxForumPosts(channelID: channelID, posts: posts, replacesAll: true)
         AppPerformanceSignposts.measureSync("ForumPostsChanged") {
             let threads = posts.map(\.thread)
-            AppPerformanceSignposts.measureSync(
-                "ForumForwardDestinationReplacement"
-            ) {
-                replaceSnapshotThreads(
-                    parentID: channelID,
-                    with: threads
-                )
-            }
-            AppPerformanceSignposts.measureSync(
-                "ForumReadStateReplacement"
-            ) {
-                readState.replaceThreads(parentID: channelID, with: threads)
-            }
-            AppPerformanceSignposts.measureSync("ForumUnreadRefreshRequest") {
-                requestCoalescedUnreadPresentationRefresh()
-            }
+            replaceSnapshotThreads(parentID: channelID, with: threads)
+            readState.replaceThreads(parentID: channelID, with: threads)
+            requestCoalescedUnreadPresentationRefresh()
             reconcileOpenThread(with: posts)
             refreshTimelineThreadCards(parentID: channelID, posts: posts)
             guard presentsForum(channelID) else { return }
