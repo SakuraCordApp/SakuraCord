@@ -387,19 +387,19 @@ extension AccountReadStateModel {
             ancestorFlags: UInt64?
         ) -> Bool {
             let channelFlags = directFlags ?? parentFlags ?? ancestorFlags ?? 0
-            let channelIsOptedIn = (directFlags ?? 0) & (1 << 12) != 0
-                || (parentFlags ?? 0) & (1 << 12) != 0
+            let channelIsOptedIn = (directFlags ?? 0) & ChannelNotificationOverride.optInFlag != 0
+                || (parentFlags ?? 0) & ChannelNotificationOverride.optInFlag != 0
             if !isDirectMessage,
-               guildFlags & (1 << 14) != 0,
+               guildFlags & GuildNotificationSettings.optInChannelsFlag != 0,
                !channelIsOptedIn
             {
                 return false
             }
             if !isDirectMessage, !usesNewNotifications { return true }
-            if channelFlags & (1 << 9) != 0 { return false }
-            if channelFlags & (1 << 10) != 0 { return true }
-            if guildFlags & (1 << 12) != 0 { return false }
-            if guildFlags & (1 << 11) != 0 { return true }
+            if channelFlags & ChannelNotificationOverride.unreadOnlyMentionsFlag != 0 { return false }
+            if channelFlags & ChannelNotificationOverride.unreadAllMessagesFlag != 0 { return true }
+            if guildFlags & GuildNotificationSettings.unreadOnlyMentionsFlag != 0 { return false }
+            if guildFlags & GuildNotificationSettings.unreadAllMessagesFlag != 0 { return true }
             return level == .allMessages
         }
 
@@ -407,8 +407,8 @@ extension AccountReadStateModel {
             parentFlags: UInt64,
             level: MessageNotificationLevel
         ) -> Bool {
-            if parentFlags & (1 << 14) != 0 { return true }
-            if parentFlags & (1 << 13) != 0 { return false }
+            if parentFlags & ChannelNotificationOverride.newForumThreadsOnFlag != 0 { return true }
+            if parentFlags & ChannelNotificationOverride.newForumThreadsOffFlag != 0 { return false }
             return level == .allMessages
         }
 

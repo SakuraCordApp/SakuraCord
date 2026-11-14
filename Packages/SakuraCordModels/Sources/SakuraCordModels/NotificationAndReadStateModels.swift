@@ -95,9 +95,15 @@ public struct ThreadNotificationSettings: Codable, Hashable, Sendable {
 }
 
 public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
+    public static let unreadOnlyMentionsFlag: UInt64 = 1 << 9
+    public static let unreadAllMessagesFlag: UInt64 = 1 << 10
     // Discord's FAVORITED bit pins a DM in the inbox (@me override) or a server
     // channel to the top of its channel list (guild override).
     public static let pinnedFlag: UInt64 = 1 << 11
+    /// Shows the channel in a server that has opted out of showing all channels.
+    public static let optInFlag: UInt64 = 1 << 12
+    public static let newForumThreadsOffFlag: UInt64 = 1 << 13
+    public static let newForumThreadsOnFlag: UInt64 = 1 << 14
 
     public var channelID: ChannelID
     public var messageNotifications: MessageNotificationLevel

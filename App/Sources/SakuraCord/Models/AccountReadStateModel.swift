@@ -860,11 +860,9 @@ extension AccountReadStateModel {
             notificationOverride(channelID: parentID, guildID: entry.guildID)
         }
 
-        let unreadAllMessagesFlag: UInt64 = 1 << 10
-        let unreadOnlyMentionsFlag: UInt64 = 1 << 9
         func unreadSetting(flags: UInt64) -> Bool? {
-            if flags & unreadAllMessagesFlag != 0 { return true }
-            if flags & unreadOnlyMentionsFlag != 0 { return false }
+            if flags & ChannelNotificationOverride.unreadAllMessagesFlag != 0 { return true }
+            if flags & ChannelNotificationOverride.unreadOnlyMentionsFlag != 0 { return false }
             return nil
         }
 
@@ -875,11 +873,9 @@ extension AccountReadStateModel {
             return setting
         }
 
-        let guildUnreadAllMessagesFlag: UInt64 = 1 << 11
-        let guildUnreadOnlyMentionsFlag: UInt64 = 1 << 12
         let guildFlags = guildSettings?.flags ?? 0
-        if guildFlags & guildUnreadAllMessagesFlag != 0 { return true }
-        if guildFlags & guildUnreadOnlyMentionsFlag != 0 { return false }
+        if guildFlags & GuildNotificationSettings.unreadAllMessagesFlag != 0 { return true }
+        if guildFlags & GuildNotificationSettings.unreadOnlyMentionsFlag != 0 { return false }
 
         let directLevel = directOverride?.messageNotifications ?? .inherit
         if directLevel != .inherit { return directLevel == .allMessages }
