@@ -272,3 +272,45 @@ extension NativeTimelineRowPainter {
         border.stroke()
     }
 }
+
+/// Text rules for the timeline thread card, matching Discord's client.
+nonisolated enum NativeTimelineThreadCard {
+    static var height: CGFloat { InterfaceScale.metric(54) }
+    /// Discord capped message counts at 50 for threads created before July 2022.
+    private static let cappedCountCutoff = Date(timeIntervalSince1970: 1_656_712_657)
+
+    static func countText(_ thread: MessageThreadSummary) -> String {
+        let count = thread.messageCount
+        guard count > 0 else { return "See Thread" }
+        guard count > 1 else { return "1 Message" }
+        return "\(shownCount(thread)) Messages"
+    }
+
+    /// The count alone, for cards too narrow for the full label.
+    static func compactCountText(_ thread: MessageThreadSummary) -> String? {
+        thread.messageCount > 0 ? shownCount(thread) : nil
+    }
+
+    private static func shownCount(_ thread: MessageThreadSummary) -> String {
+        let count = thread.messageCount
+        return if count >= 100_000 {
+            "100k+"
+        } else if count >= 50, thread.id.createdAt <= cappedCountCutoff {
+            "50+"
+        } else {
+            "\(count)"
+        }
+    }
+
+    static func activityText(_ date: Date, now: Date = .now) -> String {
+        let seconds = max(0, now.timeIntervalSince(date))
+        let day: TimeInterval = 86_400
+        return switch seconds {
+        case ..<3_600: "\(max(1, Int(seconds / 60)))m ago"
+        case ..<day: "\(Int(seconds / 3_600))h ago"
+        case ..<(30 * day): "\(Int(seconds / day))d ago"
+        case ..<(360 * day): ">30d ago"
+        default: date.formatted(date: .long, time: .omitted)
+        }
+    }
+}

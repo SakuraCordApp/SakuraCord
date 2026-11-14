@@ -5,40 +5,6 @@ import Foundation
 import MessageRendering
 import SakuraCordModels
 
-nonisolated enum MemberStoreMerge {
-    static func merging(
-        existing: [UserID: Member],
-        updates: [Member]
-    ) -> [UserID: Member] {
-        var result = existing
-        for var member in updates {
-            if member.memberListIndex == nil {
-                member.memberListIndex = result[member.id]?.memberListIndex
-            }
-            result[member.id] = member
-        }
-        return result
-    }
-}
-
-actor OfflineCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        throw ChatProviderError.invalidRequest(
-            "Credential storage is unavailable in offline testing mode.")
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        throw ChatProviderError.invalidRequest(
-            "Credentials are unavailable in offline testing mode.")
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        []
-    }
-}
-
 nonisolated final class NativeTimelineAttributedTextBox: @unchecked Sendable {
     let value: NSAttributedString
     let framesetter: CTFramesetter

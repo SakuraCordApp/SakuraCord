@@ -420,35 +420,6 @@ struct NativeTimelineActionCapsuleOverlay: View {
     }
 }
 
-struct MediaViewerTransitionSource {
-    let itemID: String
-    let image: NSImage
-    let frameInWindow: CGRect
-    var visibleFrameInWindow: CGRect
-    let cornerRadius: CGFloat
-    let fillsFrame: Bool
-    /// Whether the timeline leaves the source out while the viewer shows
-    /// it, through the transition link. A source elsewhere, like a
-    /// composer tile, hides itself.
-    var coversSource = true
-}
-
-/// What the timeline shares with the viewer it opens: the timeline keeps the
-/// zoom's sources on its cards' live frames as it scrolls, and leaves out the
-/// card the viewer stands in for.
-@Observable
-final class MediaViewerTransitionLink {
-    var sources: [String: MediaViewerTransitionSource]
-    /// Takes the card the viewer stands in for, if any.
-    @ObservationIgnored var cover: (String?) -> Void = { _ in }
-    /// Runs in the transaction that removes the viewer.
-    @ObservationIgnored var release: () -> Void = {}
-
-    init(sources: [String: MediaViewerTransitionSource]) {
-        self.sources = sources
-    }
-}
-
 struct NativeTimelineMediaViewerPresentation: Identifiable {
     let id: UUID
     let messageID: MessageID?

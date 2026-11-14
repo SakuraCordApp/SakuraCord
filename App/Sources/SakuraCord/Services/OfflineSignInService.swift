@@ -1,5 +1,6 @@
 import DiscordProtocol
 import Foundation
+import SakuraCordModels
 
 nonisolated protocol DiscordSignInAuthenticating: Sendable {
     func login(identifier: String, password: String) async throws -> DiscordNativeAuthenticationStep
@@ -130,5 +131,23 @@ actor OfflineSignInService: DiscordSignInAuthenticating, DiscordSignInRemoteAuth
 
     private func credential() throws -> PendingDiscordCredential {
         try PendingDiscordCredential(Data(Self.fixtureToken.utf8))
+    }
+}
+
+actor OfflineCredentialStore: CredentialStore {
+    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        throw ChatProviderError.invalidRequest(
+            "Credential storage is unavailable in offline testing mode.")
+    }
+
+    func credential(for handle: CredentialHandle) async throws -> Data {
+        throw ChatProviderError.invalidRequest(
+            "Credentials are unavailable in offline testing mode.")
+    }
+
+    func remove(_ handle: CredentialHandle) async throws {}
+
+    func handles() async throws -> [CredentialHandle] {
+        []
     }
 }
