@@ -517,20 +517,6 @@ enum NativeTimelineTextHitTester {
         }
     }
 
-    static func mention(
-        value: NSAttributedString,
-        framesetter: CTFramesetter,
-        frame: CGRect,
-        point: CGPoint
-    ) -> MentionPresentation? {
-        hit(
-            value: value,
-            framesetter: framesetter,
-            frame: frame,
-            point: point
-        )?.mention
-    }
-
     static func mentionRegions(
         value: NSAttributedString,
         framesetter: CTFramesetter,

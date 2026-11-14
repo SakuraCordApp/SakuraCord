@@ -293,7 +293,7 @@ import Testing
 @MainActor
 @Test func `Attachment confirmations preserve complete masked host warnings`() async throws {
     let url = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/example.com?ex=ffffffff"))
-    let masked = DiscordMarkdown.appKitAttributed("[https://dis**cord**.com](\(url.absoluteString))")
+    let masked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[https://dis**cord**.com](\(url.absoluteString))"))
     let label = MessageLinkActivator.safetyDisplayedText(in: masked, at: 12)
     #expect(label == "https://discord.com")
     let model = AppModel(launchMode: .offlineTesting)
