@@ -1,4 +1,5 @@
 import AppKit
+import DiscordProtocol
 import Foundation
 import OSLog
 import SakuraCordModels
@@ -10,8 +11,8 @@ import SakuraCordModels
 @MainActor
 enum ChannelOpenBenchmark {
     private static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "ChannelOpenBenchmark")
-    private static let start = ChannelID(rawValue: 200)
-    private static let channelID = ChannelID(rawValue: 210)
+    private static let start = MockChatProvider.welcomeChannelID
+    private static let channelID = MockChatProvider.generalChannelID
 
     static func run(model: AppModel) async {
         NSApp.activate(ignoringOtherApps: true)

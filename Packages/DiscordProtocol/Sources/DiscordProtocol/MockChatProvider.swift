@@ -92,12 +92,12 @@ public actor MockChatProvider: ChatProvider {
         emojisByGuild = fixture.emojisByGuild
         messagesByChannel = fixture.messagesByChannel
         if let pinnedMessageCount,
-           var messages = messagesByChannel[ChannelID(rawValue: 210)]
+           var messages = messagesByChannel[MockChatProvider.generalChannelID]
         {
             for index in messages.indices.suffix(max(0, pinnedMessageCount)) {
                 messages[index].isPinned = true
             }
-            messagesByChannel[ChannelID(rawValue: 210)] = messages
+            messagesByChannel[MockChatProvider.generalChannelID] = messages
         }
         pinnedAtByMessageID = Dictionary(
             uniqueKeysWithValues: messagesByChannel.values.flatMap { messages in
@@ -106,11 +106,11 @@ public actor MockChatProvider: ChatProvider {
         )
         let guildAuthors = fixture.membersByGuild[GuildID(rawValue: 100)]?.map(\.user) ?? [fixture.currentUser]
         let forumFixture = Self.makeForumPosts(
-            channelID: ChannelID(rawValue: 220), authors: guildAuthors, count: forumPostCount ?? 6
+            channelID: MockChatProvider.feedbackForumID, authors: guildAuthors, count: forumPostCount ?? 6
         )
         let bugForumFixture = Self.makeForumPosts(channelID: ChannelID(rawValue: 221), authors: guildAuthors)
         forumPostsByChannel = [
-            ChannelID(rawValue: 220): forumFixture,
+            MockChatProvider.feedbackForumID: forumFixture,
             ChannelID(rawValue: 221): bugForumFixture,
         ]
         for post in forumFixture + bugForumFixture {

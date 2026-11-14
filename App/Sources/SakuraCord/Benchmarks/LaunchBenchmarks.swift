@@ -21,9 +21,9 @@ struct LaunchBenchmarks {
             NSApp.activate(ignoringOtherApps: true)
         }
         if launch.includesForumPerformanceFixture {
-            model.selectedChannelID = ChannelID(rawValue: 220)
+            model.selectedChannelID = MockChatProvider.feedbackForumID
         } else if launch.includesChatPerformanceFixture, !launch.runsChannelOpenBenchmark {
-            model.selectedChannelID = ChannelID(rawValue: 210)
+            model.selectedChannelID = MockChatProvider.generalChannelID
         }
 #if DEBUG
         if launch.runsForumPerformanceAutoScroll {
@@ -49,7 +49,7 @@ struct LaunchBenchmarks {
 #endif
         if launch.includesPinsPerformanceFixture {
             await model.channelLoadTask?.value
-            model.presentPinnedMessages(channelID: ChannelID(rawValue: 210))
+            model.presentPinnedMessages(channelID: MockChatProvider.generalChannelID)
             await model.pinnedMessages.loadTask?.value
             await model.preparePinnedMessagesPerformanceBenchmark()
         }
@@ -106,7 +106,7 @@ struct LaunchBenchmarks {
                 group.addTask {
                     await provider
                         .emitTimelineReactionStress(
-                            in: ChannelID(rawValue: 210),
+                            in: MockChatProvider.generalChannelID,
                             operationCount: 800
                         )
                 }
@@ -115,7 +115,7 @@ struct LaunchBenchmarks {
                 group.addTask {
                     await provider
                         .emitTimelineStressMessages(
-                            in: ChannelID(rawValue: 210),
+                            in: MockChatProvider.generalChannelID,
                             count: 2_400,
                             burstSize: 4,
                             burstInterval: .milliseconds(32)
@@ -126,7 +126,7 @@ struct LaunchBenchmarks {
                 group.addTask {
                     await provider
                         .emitTimelineMutationStress(
-                            in: ChannelID(rawValue: 210),
+                            in: MockChatProvider.generalChannelID,
                             operationCount: 1_200,
                             deleteEvery: 5,
                             lookback: 600,

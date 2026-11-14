@@ -28,7 +28,7 @@ struct MockMessageFixtureBuilder {
         [
             ChannelID(rawValue: 216): messageShowcase(),
             ChannelID(rawValue: 902): showcaseThreadMessages(),
-            ChannelID(rawValue: 200): [
+            MockChatProvider.welcomeChannelID: [
                 message(
                     1001, 200, rowan,
                     "Welcome to **Aurora Studio** — a fictional community bundled with SakuraCord's offline demo.",
@@ -54,7 +54,7 @@ struct MockMessageFixtureBuilder {
                     base.addingTimeInterval(240)
                 )
             ],
-            ChannelID(rawValue: 210): [
+            MockChatProvider.generalChannelID: [
                 message(
                     2001, 210, maya,
                     "I tried the new sidebar at three window widths. The compact state finally feels intentional.",
@@ -127,17 +127,17 @@ struct MockMessageFixtureBuilder {
                     base.addingTimeInterval(900), reactions: [Reaction(emoji: "✨", count: 4)]
                 ),
                 Message(
-                    id: MessageID(rawValue: 2007), channelID: ChannelID(rawValue: 210), author: nova,
+                    id: MessageID(rawValue: 2007), channelID: MockChatProvider.generalChannelID, author: nova,
                     content: "", timestamp: base.addingTimeInterval(960), type: .userJoin,
                     guildID: auroraID
                 ),
                 Message(
-                    id: MessageID(rawValue: 2008), channelID: ChannelID(rawValue: 210), author: nova,
+                    id: MessageID(rawValue: 2008), channelID: MockChatProvider.generalChannelID, author: nova,
                     content: "", timestamp: base.addingTimeInterval(990), guildID: auroraID,
                     stickers: [lottieSticker]
                 ),
                 Message(
-                    id: MessageID(rawValue: 2009), channelID: ChannelID(rawValue: 210), author: rowan,
+                    id: MessageID(rawValue: 2009), channelID: MockChatProvider.generalChannelID, author: rowan,
                     content: "Welcome <@2> — take a look in <#211>.", timestamp: base.addingTimeInterval(1_040),
                     guildID: auroraID,
                     embeds: [
@@ -155,7 +155,7 @@ struct MockMessageFixtureBuilder {
                     base.addingTimeInterval(1_100)
                 ),
                 Message(
-                    id: MessageID(rawValue: 2011), channelID: ChannelID(rawValue: 210), author: juniper,
+                    id: MessageID(rawValue: 2011), channelID: MockChatProvider.generalChannelID, author: juniper,
                     content: "https://klipy.com/gifs/cat-bouncing-LhA", timestamp: base.addingTimeInterval(1_160),
                     guildID: auroraID,
                     embeds: [
@@ -206,7 +206,7 @@ struct MockMessageFixtureBuilder {
                     base.addingTimeInterval(780), reactions: [Reaction(emoji: "😅", count: 2)]
                 )
             ],
-            ChannelID(rawValue: 220): [
+            MockChatProvider.feedbackForumID: [
                 message(
                     2301, 220, maya,
                     "**Suggestion:** keep demo data isolated from account caches so screenshots are repeatable.",

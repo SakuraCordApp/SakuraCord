@@ -1,5 +1,6 @@
 #if SAKURACORD_MOTION_BENCHMARK
 import AppKit
+import DiscordProtocol
 import OSLog
 import QuartzCore
 import SakuraCordModels
@@ -14,7 +15,6 @@ import SwiftUI
 @MainActor
 enum SideChatMotionBenchmark {
     static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "SideChatMotionBenchmark")
-    /// Brackets each action so Instruments captures can be split per action.
 
     struct Options {
         var cycles = 6
@@ -63,7 +63,7 @@ enum SideChatMotionBenchmark {
             await showFollowShowcase(model: model)
             return
         }
-        model.selectedChannelID = ChannelID(rawValue: 210)
+        model.selectedChannelID = MockChatProvider.generalChannelID
         if options.holdsPane, let thread = await motionThreads(model: model, count: 1)?.first {
             model.showInspector = false
             model.open(thread)
@@ -131,7 +131,7 @@ enum SideChatMotionBenchmark {
             for cycle in 0 ..< options.forumCycles {
                 await perform(forumSteps(post: posts[cycle % posts.count]), cycle: cycle)
             }
-            model.selectedChannelID = ChannelID(rawValue: 210)
+            model.selectedChannelID = MockChatProvider.generalChannelID
             try? await Task.sleep(for: .seconds(2))
         }
 
@@ -311,7 +311,7 @@ enum SideChatMotionBenchmark {
 
     /// The offline forum's posts, once the forum is selected and loaded.
     private static func forumPosts(model: AppModel) async -> [ForumPost]? {
-        model.selectedChannelID = ChannelID(rawValue: 220)
+        model.selectedChannelID = MockChatProvider.feedbackForumID
         guard await PerformanceBenchmarkHarness.waitUntil({ !model.forumPosts.isEmpty }, seconds: 10) else { return nil }
         try? await Task.sleep(for: .seconds(1))
         return model.forumPosts

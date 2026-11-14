@@ -41,3 +41,24 @@ Replay protection for repeated key ratchets adds these changes under
 - `src/encryptor.cpp`: `Encryptor::SetKeyRatchet` keeps the current ratchet and
   nonce sequence when the same domain is installed again during a protocol
   transition, so AES-GCM nonces are not reused.
+
+### Local divergences from MLS++
+
+Compared with upstream `fc724c3100ce3b5d8565dbd6d93648a440991a8c`, the vendored
+tree under `Sources/CMLS/mlspp` omits upstream's `test`, `lib/*/test`, and
+`vcpkg` directories and changes only error text: each generic
+`Unsupported algorithm` names what was unsupported, and some include the
+rejected ID. These came with the initial import, which does not record why.
+
+- `src/crypto.cpp`: signature and cipher-suite signature-scheme lookups.
+- `src/credential.cpp`: credential signature lookup.
+- `lib/hpke/src/aead_cipher.cpp`: AEAD key, nonce, tag, and cipher lookups.
+- `lib/hpke/src/group.cpp`: EC curve names, prime curves, scalar masks, and raw
+  curves.
+- `lib/hpke/src/hkdf.cpp`: digest-to-HKDF lookup.
+- `lib/hpke/src/hpke.cpp`: KEM, KDF, and AEAD ID lookups.
+- `README.md`: links RFC 9420 instead of the draft.
+
+`include/mls/crypto.h`, `src/state.cpp`, `src/treekem.cpp`, and
+`lib/hpke/src/signature.cpp` match upstream; their changes in the last import
+came from upstream itself.

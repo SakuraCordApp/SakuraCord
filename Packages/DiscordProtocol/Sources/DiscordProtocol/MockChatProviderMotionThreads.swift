@@ -23,7 +23,7 @@ extension MockChatProvider {
     /// the provider's initializer is the same with and without the benchmark.
     public nonisolated(unsafe) static var motionFixture: MotionFixture?
 
-    static let motionThreadParentID = ChannelID(rawValue: 210)
+    static let motionThreadParentID = MockChatProvider.generalChannelID
     static let motionThreadFirstID: UInt64 = 7_100_001
     static let motionStarterFirstID: UInt64 = 7_200_000_001
     /// Thread `n` (1-based) owns the message IDs `base + n * 100_000 ..<`.
