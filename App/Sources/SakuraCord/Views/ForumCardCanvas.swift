@@ -187,7 +187,7 @@ final class ForumCardCanvas {
             operations.append(.bitmap(image, frame: frame))
             return
         }
-        guard let context = ForumCardRasterizer.makeContext(width: pixelWidth, height: pixelHeight, colorSpace: colorSpace) else { return }
+        guard let context = CGContext.premultipliedBitmap(width: pixelWidth, height: pixelHeight, colorSpace: colorSpace) else { return }
         context.translateBy(x: 0, y: CGFloat(pixelHeight))
         context.scaleBy(x: scale, y: -scale)
         context.translateBy(x: -frame.minX, y: -frame.minY)

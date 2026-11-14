@@ -530,7 +530,7 @@ extension NativeTimelineCanvasView {
             accent: NSColor.sakuraCordAccentColor.cgColor.components ?? []
         )
         if let image = reactionPictures[key] { return ReactionPicture(image: image, frame: bounds) }
-        guard let context = ForumCardRasterizer.makeContext(
+        guard let context = CGContext.premultipliedBitmap(
             width: Int((bounds.width * scale).rounded()),
             height: Int((bounds.height * scale).rounded()),
             colorSpace: CGColorSpaceCreateDeviceRGB()

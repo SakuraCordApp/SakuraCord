@@ -89,7 +89,7 @@ nonisolated enum ForumCardRasterizer {
     static func image(for scene: ForumCardScene) -> CGImage? {
         let pixelWidth = Int((scene.size.width * scene.scale).rounded(.up))
         let pixelHeight = Int((scene.size.height * scene.scale).rounded(.up))
-        guard pixelWidth > 0, pixelHeight > 0, let context = makeContext(width: pixelWidth, height: pixelHeight, colorSpace: scene.colorSpace) else {
+        guard pixelWidth > 0, pixelHeight > 0, let context = CGContext.premultipliedBitmap(width: pixelWidth, height: pixelHeight, colorSpace: scene.colorSpace) else {
             return nil
         }
         context.translateBy(x: 0, y: CGFloat(pixelHeight))
@@ -102,18 +102,6 @@ nonisolated enum ForumCardRasterizer {
     }
 
     static let defaultColorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-
-    static func makeContext(width: Int, height: Int, colorSpace: CGColorSpace) -> CGContext? {
-        CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        )
-    }
 
     private static func draw(_ operation: ForumCardScene.Operation, in context: CGContext) {
         switch operation {

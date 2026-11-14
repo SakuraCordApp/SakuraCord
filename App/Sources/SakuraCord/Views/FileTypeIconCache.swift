@@ -56,7 +56,7 @@ enum FileTypeIconCache {
     /// document; no extension at all is plain data.
     private nonisolated static func render(_ pathExtension: String, pixels: Int) -> CGImage? {
         let type = UTType(filenameExtension: pathExtension) ?? .data
-        guard let context = ForumCardRasterizer.makeContext(
+        guard let context = CGContext.premultipliedBitmap(
             width: pixels, height: pixels, colorSpace: ForumCardRasterizer.defaultColorSpace
         ) else { return nil }
         NSGraphicsContext.saveGraphicsState()
