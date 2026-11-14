@@ -781,7 +781,7 @@ extension NativeTimelineRowPainter {
                 height: avatarSize
             )
             if let url = presentation.avatarURL,
-               let image = mediaImage(for: .avatar(url))
+               let image = MediaImageStore.shared.stillImage(for: .avatar(url))
             {
                 drawImage(
                     image,
@@ -815,7 +815,7 @@ extension NativeTimelineRowPainter {
         model: AppModel?
     ) -> NSImage? {
         MediaImageKey.emoji(EmojiReference(rawToken: token), in: model?.customEmojiURLsByID)
-            .flatMap { mediaImage(for: $0) }
+            .flatMap { MediaImageStore.shared.stillImage(for: $0) }
     }
 
     static func measuredTextWidth(

@@ -206,7 +206,7 @@ extension NativeTimelineRowPainter {
                 in: region.frame,
                 cornerRadius: image.cornerRadius,
                 backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.08),
-                image: mediaImage(for: image.mediaKey),
+                image: MediaImageStore.shared.stillImage(for: image.mediaKey),
                 fillsFrame: true,
                 placeholder: image.placeholder,
                 fallbackSymbol: ("photo", InterfaceScale.metric(22))
@@ -216,7 +216,7 @@ extension NativeTimelineRowPainter {
                 in: region.frame,
                 cornerRadius: DiscordRichMessageMetrics.px(8),
                 backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.10),
-                image: media.previewURL.flatMap { mediaImage(for: .media($0)) },
+                image: media.previewURL.flatMap { MediaImageStore.shared.stillImage(for: .media($0)) },
                 fillsFrame: true,
                 placeholder: media.placeholder,
                 fallbackSymbol: media.isVideo ? ("film", InterfaceScale.metric(30)) : nil,
@@ -528,7 +528,7 @@ extension NativeTimelineRowPainter {
                    for: region.reaction,
                    customEmojiURLsByID: model?.customEmojiURLsByID ?? [:]
                ),
-               let image = mediaImage(for: key)
+               let image = MediaImageStore.shared.stillImage(for: key)
             {
                 drawImage(
                     image,
@@ -570,7 +570,7 @@ extension NativeTimelineRowPainter {
             (frame: $0, name: "", url: nil as URL?, isPlaceholder: true)
         }
         for avatar in avatars {
-            let isLoadingImage = avatar.url.map { mediaImage(for: .avatar($0)) == nil } ?? false
+            let isLoadingImage = avatar.url.map { MediaImageStore.shared.stillImage(for: .avatar($0)) == nil } ?? false
             if avatar.isPlaceholder || isLoadingImage {
                 NSColor.quaternaryLabelColor.setFill()
                 NSBezierPath(ovalIn: avatar.frame).fill()
@@ -825,7 +825,7 @@ extension NativeTimelineRowPainter {
     ) -> NSImage? {
         guard let url = leading.imageURL else { return nil }
         if url.isFileURL { return fileImage(at: url) }
-        return mediaImage(for: .media(url, maximumPixelDimension: 64))
+        return MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 64))
     }
 
     /// Loaded once per file: rows draw their selects on every redraw, and
@@ -845,7 +845,7 @@ extension NativeTimelineRowPainter {
     ) {
         if emoji.id != nil,
            let url = emoji.imageURL(size: 32),
-           let image = mediaImage(
+           let image = MediaImageStore.shared.stillImage(
                for: .media(url, maximumPixelDimension: 64)
            )
         {
@@ -915,13 +915,6 @@ extension NativeTimelineRowPainter {
         color.withAlphaComponent(selected ? 0.22 : 0.18).setFill()
         NSBezierPath(roundedRect: frame, xRadius: frame.height / 2, yRadius: frame.height / 2)
             .fill()
-    }
-
-    static func mediaImage(
-        for key: MediaImageKey
-    ) -> NSImage? {
-        MediaImageStore.shared.firstAnimatedFrame(for: key)
-            ?? MediaImageStore.shared.image(for: key)
     }
 
     /// A media tile: an optional tinted backdrop, then the loaded image, its

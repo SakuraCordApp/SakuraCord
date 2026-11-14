@@ -455,7 +455,7 @@ enum ForumCardPainter {
         case let .unicode(value):
             canvas.image(ComponentUnicodeEmojiRenderer.image(for: value), in: frame, cornerRadius: 0, fillsFrame: false)
         case .custom:
-            if let key = emoji.mediaKey, let image = NativeTimelineRowPainter.mediaImage(for: key) {
+            if let key = emoji.mediaKey, let image = MediaImageStore.shared.stillImage(for: key) {
                 canvas.image(image, in: frame, cornerRadius: 0, fillsFrame: false)
             } else {
                 canvas.fillOval(frame.insetBy(dx: 1, dy: 1), color: NSColor.labelColor.withAlphaComponent(0.1))
@@ -598,8 +598,8 @@ enum ForumCardPainter {
         // Only a tile without its image gets a backing: one under an image
         // shows around its antialiased corners.
         let image: NSImage? = switch media {
-        case let .image(key): NativeTimelineRowPainter.mediaImage(for: key)
-        case let .video(poster?, _): NativeTimelineRowPainter.mediaImage(for: poster)
+        case let .image(key): MediaImageStore.shared.stillImage(for: key)
+        case let .video(poster?, _): MediaImageStore.shared.stillImage(for: poster)
         default: nil
         }
         if image == nil {
@@ -629,7 +629,7 @@ enum ForumCardPainter {
                 size: frame.size,
                 cornerRadius: cornerRadius
             ) {
-                if let image = hidden.mediaKey.flatMap(NativeTimelineRowPainter.mediaImage(for:)) {
+                if let image = hidden.mediaKey.flatMap(MediaImageStore.shared.stillImage(for:)) {
                     NativeTimelineRowPainter.drawImage(
                         image, in: CGRect(origin: .zero, size: frame.size), cornerRadius: cornerRadius, fillsFrame: true
                     )
@@ -736,7 +736,7 @@ enum ForumCardPainter {
         return ReactionPillKey(
             reaction: reaction,
             emojiKey: emojiKey,
-            isEmojiLoaded: emojiKey.map { NativeTimelineRowPainter.mediaImage(for: $0) != nil } ?? false,
+            isEmojiLoaded: emojiKey.map { MediaImageStore.shared.stillImage(for: $0) != nil } ?? false,
             isHovered: isHovered,
             isDisabled: summary.isDisabled,
             accent: NSColor.sakuraCordAccentColor.cgColor.components ?? []

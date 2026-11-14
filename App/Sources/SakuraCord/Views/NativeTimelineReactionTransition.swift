@@ -435,7 +435,7 @@ extension NativeTimelineCanvasView {
         )
         let key: [AnyHashable] = [
             "emoji", region.reaction.emojiReference.name, emojiKey,
-            emojiKey.map { NativeTimelineRowPainter.mediaImage(for: $0) != nil },
+            emojiKey.map { MediaImageStore.shared.stillImage(for: $0) != nil },
         ]
         return reactionPicture(key, covering: region.emojiFrame) {
             if region.reaction.emojiReference.id == nil {
@@ -468,7 +468,7 @@ extension NativeTimelineCanvasView {
         let frame = frames.reduce(first) { $0.union($1) }
         let key: [AnyHashable] = ["avatars", region.placeholderAvatarFrames.count] + region.avatarRegions.map { avatar in
             [avatar.reactor.id, avatar.reactor.displayName, avatar.reactor.avatarURL, avatar.reactor.avatarURL.map {
-                NativeTimelineRowPainter.mediaImage(for: .avatar($0)) != nil
+                MediaImageStore.shared.stillImage(for: .avatar($0)) != nil
             }] as [AnyHashable]
         }
         return ReactionAvatarsPicture(

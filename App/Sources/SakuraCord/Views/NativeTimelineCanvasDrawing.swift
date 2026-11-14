@@ -1393,7 +1393,7 @@ extension NativeTimelineCanvasView {
             cost: 0,
             mediaPinOwner: mediaPinOwner,
             missingMediaKeys: preparedMediaKeys.filter {
-                NativeTimelineRowPainter.mediaImage(for: $0) == nil
+                MediaImageStore.shared.stillImage(for: $0) == nil
             }
         )
         updated.images[tileIndex] = image
@@ -1441,7 +1441,7 @@ extension NativeTimelineCanvasView {
         // Incomplete bitmaps can outlive their load subscriptions when a
         // conversation is detached. Recheck their missing images on reuse.
         if cached.missingMediaKeys.contains(where: {
-            NativeTimelineRowPainter.mediaImage(for: $0) != nil
+            MediaImageStore.shared.stillImage(for: $0) != nil
         }) {
             invalidateBitmap(item.identifier)
             return nil

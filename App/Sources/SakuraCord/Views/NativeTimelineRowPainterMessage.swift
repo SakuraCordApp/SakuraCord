@@ -248,13 +248,13 @@ extension NativeTimelineRowPainter {
                                      isHighlighted: input.interaction.isServerTagHovered, context: context)
             if let url = region.presentation.identity.badgeURL,
                let frame = region.presentation.badgeFrame(in: region.frame),
-               let image = mediaImage(for: .media(url, maximumPixelDimension: 32)) {
+               let image = MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 32)) {
                 drawImage(image, in: frame, cornerRadius: 0, fillsFrame: false)
             }
         }
         if let region = input.layout.roleIconRegion {
             if let url = region.role.iconURL,
-               let image = mediaImage(for: .media(url, maximumPixelDimension: 48)) {
+               let image = MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 48)) {
                 drawImage(image, in: region.frame, cornerRadius: 0, fillsFrame: false)
             } else if let emoji = region.role.unicodeEmoji, !emoji.isEmpty {
                 text(
@@ -430,7 +430,7 @@ extension NativeTimelineRowPainter {
     private static func drawMessageLinkedImages(_ input: NativeTimelineMessageDrawInput) {
         let layout = input.layout
         for region in layout.linkedImageRegions {
-            if let image = mediaImage(for: region.mediaKey) {
+            if let image = MediaImageStore.shared.stillImage(for: region.mediaKey) {
                 drawImage(
                     image,
                     in: region.frame,
@@ -542,7 +542,7 @@ extension NativeTimelineRowPainter {
                 in: region.frame,
                 cornerRadius: attachmentCornerRadius,
                 backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.10),
-                image: region.previewKey.flatMap(mediaImage(for:)),
+                image: region.previewKey.flatMap(MediaImageStore.shared.stillImage(for:)),
                 fillsFrame: fillsFrame,
                 placeholder: region.placeholder,
                 fallbackSymbol: isVideo ? ("film", InterfaceScale.metric(30)) : nil,
@@ -649,7 +649,7 @@ extension NativeTimelineRowPainter {
                 in: imageRegion.frame,
                 cornerRadius: imageRegion.cornerRadius,
                 backdrop: nil,
-                image: mediaImage(for: imageRegion.mediaKey),
+                image: MediaImageStore.shared.stillImage(for: imageRegion.mediaKey),
                 fillsFrame: false,
                 placeholder: imageRegion.placeholder,
                 placeholderFillsFrame: false,
@@ -668,7 +668,7 @@ extension NativeTimelineRowPainter {
             in: frame,
             cornerRadius: InterfaceScale.metric(8),
             backdrop: NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.10),
-            image: mediaImage(for: .media(region.mediaPreviewURL ?? url)),
+            image: MediaImageStore.shared.stillImage(for: .media(region.mediaPreviewURL ?? url)),
             fillsFrame: region.mediaFillsFrame || region.mediaPosterFillsFrame,
             placeholder: region.mediaPlaceholder,
             fallbackSymbol: region.mediaIsVideo ? ("film", InterfaceScale.metric(30)) : nil,
@@ -756,7 +756,7 @@ extension NativeTimelineRowPainter {
                     continue
                 }
                 let image = sticker?.mediaURL.flatMap {
-                    mediaImage(
+                    MediaImageStore.shared.stillImage(
                         for: .media($0, maximumPixelDimension: 384)
                     )
                 }
@@ -912,7 +912,7 @@ extension NativeTimelineRowPainter {
         in frame: CGRect
     ) {
         if let url,
-           let image = mediaImage(for: .avatar(url))
+           let image = MediaImageStore.shared.stillImage(for: .avatar(url))
         {
             drawImage(image, in: frame, cornerRadius: frame.width / 2, fillsFrame: true)
             return
@@ -948,7 +948,7 @@ extension NativeTimelineRowPainter {
         url: URL,
         around avatarFrame: CGRect
     ) {
-        guard let image = mediaImage(for: .avatarDecoration(url)) else {
+        guard let image = MediaImageStore.shared.stillImage(for: .avatarDecoration(url)) else {
             return
         }
         drawImage(

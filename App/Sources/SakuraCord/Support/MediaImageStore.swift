@@ -252,6 +252,12 @@ final class MediaImageStore {
         animatedCache.object(forKey: key.cacheKey)?.firstFrame
     }
 
+    /// The still a painter draws for `key`: an animated image's first frame,
+    /// otherwise the decoded image.
+    func stillImage(for key: MediaImageKey) -> NSImage? {
+        firstAnimatedFrame(for: key) ?? image(for: key)
+    }
+
     func decodedAnimatedImage(
         for key: MediaImageKey
     ) -> DecodedAnimatedImage? {

@@ -108,7 +108,7 @@ extension NativeTimelineCanvasView {
         ) {
             guard imageItemIDs.contains(itemID),
                   previousSources.map({ $0[itemID] != nil }) ?? true,
-                  let image = NativeTimelineRowPainter.mediaImage(for: key) ?? previousSources?[itemID]?.image
+                  let image = MediaImageStore.shared.stillImage(for: key) ?? previousSources?[itemID]?.image
             else { return }
             images[itemID] = image
             guard sources[itemID] == nil else { return }

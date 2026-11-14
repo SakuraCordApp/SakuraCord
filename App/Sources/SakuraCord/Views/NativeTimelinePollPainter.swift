@@ -96,7 +96,7 @@ extension NativeTimelineRowPainter {
 
     private static func drawPollEmoji(_ emoji: EmojiReference?, frame: CGRect?) {
         guard let emoji, let frame else { return }
-        if let key = MediaImageKey.emoji(emoji), let image = mediaImage(for: key) {
+        if let key = MediaImageKey.emoji(emoji), let image = MediaImageStore.shared.stillImage(for: key) {
             image.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         } else if emoji.id == nil {
             text(emoji.name, in: frame, font: .interfaceSystemFont(ofSize: 20), color: .labelColor, lineBreakMode: .byClipping)

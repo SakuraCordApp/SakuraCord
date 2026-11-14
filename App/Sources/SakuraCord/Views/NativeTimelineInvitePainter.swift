@@ -33,7 +33,7 @@ extension NativeTimelineRowPainter {
         NSBezierPath(rect: CGRect(x: card.frame.minX, y: card.frame.minY, width: card.frame.width,
                                  height: card.contentBottom - card.frame.minY + (card.hasCollapsedContent ? InterfaceScale.metric(16) : 1))).addClip()
         if let avatarFrame = card.inviterAvatarFrame, let url = card.content?.inviter?.avatarURL,
-           let image = mediaImage(for: .media(url, maximumPixelDimension: 32)) {
+           let image = MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 32)) {
             drawImage(image, in: avatarFrame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
         }
         for label in card.labels {
@@ -52,7 +52,7 @@ extension NativeTimelineRowPainter {
             var textFrame = trait.frame.insetBy(dx: InterfaceScale.metric(8), dy: InterfaceScale.metric(4))
             if trait.value.emoji != nil || trait.value.emojiURL != nil {
                 let emojiFrame = CGRect(x: textFrame.minX, y: textFrame.minY + InterfaceScale.metric(2), width: InterfaceScale.metric(16), height: InterfaceScale.metric(16))
-                if let url = trait.value.emojiURL, let image = mediaImage(for: .media(url, maximumPixelDimension: 32)) {
+                if let url = trait.value.emojiURL, let image = MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 32)) {
                     drawImage(image, in: emojiFrame, cornerRadius: 0, fillsFrame: false)
                 } else if let emoji = trait.value.emoji {
                     let value = NativeEmojiCatalogMetadata.value(forShortcode: emoji) ?? emoji
@@ -102,7 +102,7 @@ extension NativeTimelineRowPainter {
                     yRadius: InterfaceScale.metric(22)
                 ).fill()
             }
-            if let url = invite.iconURL, let image = mediaImage(for: .media(url, maximumPixelDimension: 128)) {
+            if let url = invite.iconURL, let image = MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 128)) {
                 NSGraphicsContext.saveGraphicsState()
                 NSBezierPath(roundedRect: card.iconFrame, xRadius: InterfaceScale.metric(19), yRadius: InterfaceScale.metric(19)).addClip()
                 drawImage(image, in: card.iconFrame, cornerRadius: 0, fillsFrame: true)

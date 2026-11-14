@@ -1291,7 +1291,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(forIdentifier: transition.identifier)
         else { return false }
         return mediaKeys(for: items[index], at: index).contains {
-            NativeTimelineRowPainter.mediaImage(for: $0) == nil
+            MediaImageStore.shared.stillImage(for: $0) == nil
         }
     }
 
