@@ -1375,13 +1375,7 @@ final class AnimatedImageCanvas: NSView {
         } else {
             layer.contents = image.frames.first
             guard image.frames.count > 1 else { return }
-            let frames = CAKeyframeAnimation(keyPath: "contents")
-            frames.values = image.frames
-            frames.keyTimes = AnimatedImageKeyframeSchedule.keyTimes(
-                for: image.frameDurations
-            ) + [1]
-            frames.duration = AnimatedImageKeyframeSchedule.duration(for: image.frameDurations)
-            frames.calculationMode = .discrete
+            let frames = AnimatedImageKeyframeSchedule.contentsAnimation(for: image)
             frames.repeatCount = isLooping ? .infinity : 1
             frames.isRemovedOnCompletion = !isLooping
             frames.fillMode = .forwards
@@ -1409,6 +1403,16 @@ nonisolated enum AnimatedImageKeyframeSchedule {
             defer { elapsed += duration }
             return NSNumber(value: elapsed / totalDuration)
         }
+    }
+
+    /// Steps a layer's contents through the image's frames once.
+    static func contentsAnimation(for image: DecodedAnimatedImage) -> CAKeyframeAnimation {
+        let frames = CAKeyframeAnimation(keyPath: "contents")
+        frames.values = image.frames
+        frames.keyTimes = keyTimes(for: image.frameDurations) + [1]
+        frames.duration = duration(for: image.frameDurations)
+        frames.calculationMode = .discrete
+        return frames
     }
 }
 

@@ -12,7 +12,7 @@ nonisolated struct AnimatedImageFrameSchedule {
             end += duration
             return end
         }
-        sourceDuration = max(end, 0.05)
+        sourceDuration = AnimatedImageKeyframeSchedule.duration(for: durations)
     }
 
     func frameIndex(

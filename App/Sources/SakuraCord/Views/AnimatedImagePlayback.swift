@@ -8,11 +8,7 @@ nonisolated struct AnimatedImagePlayback: Equatable {
     let loopDelay: TimeInterval
 
     func animation(for image: DecodedAnimatedImage, isLooping: Bool) -> CAAnimation {
-        let frames = CAKeyframeAnimation(keyPath: "contents")
-        frames.values = image.frames
-        frames.keyTimes = AnimatedImageKeyframeSchedule.keyTimes(for: image.frameDurations) + [1]
-        frames.duration = AnimatedImageKeyframeSchedule.duration(for: image.frameDurations)
-        frames.calculationMode = .discrete
+        let frames = AnimatedImageKeyframeSchedule.contentsAnimation(for: image)
         // A looping layer can contain a one-shot APNG intro. Browsers honor
         // the file's play count and retain its final frame independently of
         // the profile effect's layer visibility schedule.
