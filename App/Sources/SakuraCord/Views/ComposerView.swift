@@ -680,8 +680,7 @@ struct ComposerView: View {
     private func send() {
         guard !isSubmitting, allowsSubmission() else { return }
         if isCreatingThread, !model.validateThreadCreation() { return }
-        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty,
-              !hasCheckingAttachments
+        guard !isDraftBlank, !hasCheckingAttachments
         else { return }
         guard !model.isSchedulingMessage(in: conversation) else { return }
         if !isCreatingThread, model.scheduledSendDate(in: conversation) != nil { return schedule() }
@@ -772,11 +771,6 @@ struct ComposerView: View {
         return MentionAutocompleteContext(text: draft, selection: draftSelection)
     }
 
-    private var mentionAutocompleteSuggestions: [MentionAutocompleteSuggestion] {
-        guard let context = mentionAutocompleteContext else { return [] }
-        return mentionAutocompleteSuggestions(for: context)
-    }
-
     private func mentionAutocompleteSuggestions(
         for context: MentionAutocompleteContext
     ) -> [MentionAutocompleteSuggestion] {
@@ -835,22 +829,21 @@ struct ComposerView: View {
         )
     }
 
+    /// No text beyond whitespace and no attachments.
+    private var isDraftBlank: Bool {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
+    }
+
     private var composerCanSubmit: Bool {
         if hasActiveCommand {
             return true
         }
         return !isSubmitting
             && !hasCheckingAttachments
-            && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || !attachments.isEmpty)
+            && !isDraftBlank
             && draft.count <= ChatCharacterLimitPolicy.limit(
                 premiumType: model.currentUser?.premiumType
             )
-    }
-
-    private var autocompleteSuggestions: [ColonAutocompleteSuggestion] {
-        guard let context = autocompleteContext else { return [] }
-        return emojiSuggestions(query: context.query)
     }
 
     private func emojiSuggestions(query: String) -> [ColonAutocompleteSuggestion] {
@@ -967,14 +960,15 @@ struct ComposerView: View {
         if let context = gameMentionContext {
             return handleGameMention(command, context: context)
         }
-        if let context = mentionAutocompleteContext, !mentionAutocompleteSuggestions.isEmpty {
-            let suggestions = mentionAutocompleteSuggestions
+        if let context = mentionAutocompleteContext,
+           case let suggestions = mentionAutocompleteSuggestions(for: context), !suggestions.isEmpty {
             return routeSuggestionList(command, count: suggestions.count) {
                 acceptMentionAutocomplete(suggestions[$0], context: context)
             }
         }
-        guard let context = autocompleteContext, !autocompleteSuggestions.isEmpty else { return false }
-        let suggestions = autocompleteSuggestions
+        guard let context = autocompleteContext,
+              case let suggestions = emojiSuggestions(query: context.query), !suggestions.isEmpty
+        else { return false }
         return routeSuggestionList(command, count: suggestions.count) {
             acceptAutocomplete(suggestions[$0], replacing: context.range)
         }
@@ -1145,7 +1139,7 @@ struct ComposerView: View {
     }
 }
 
-private extension ComposerView {
+extension ComposerView {
     @ViewBuilder
     private var composerOverlay: some View {
         if isInputActive {
@@ -1305,8 +1299,7 @@ private extension ComposerView {
             if draft.isEmpty { updateDraft("/\(mention.name)") }
             return
         }
-        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, attachments.isEmpty,
-           !hasActiveCommand, !isVoiceMessageActive {
+        if isDraftBlank, !hasActiveCommand, !isVoiceMessageActive {
             activateCommand(command)
         } else {
             commandAwaitingClear = command
@@ -1425,8 +1418,7 @@ extension ComposerView {
 
     /// With nothing to send, the send button records a voice message instead.
     private var showsVoiceMessageButton: Bool {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && attachments.isEmpty && !hasActiveCommand && !isCreatingThread
+        isDraftBlank && !hasActiveCommand && !isCreatingThread
             && model.canSendVoiceMessages(in: conversation)
     }
 
