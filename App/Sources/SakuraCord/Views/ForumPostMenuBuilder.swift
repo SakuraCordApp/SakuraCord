@@ -100,20 +100,20 @@ final class ForumPostMenuBuilder: NSObject {
     }
 
     private func nativeEmojiImage(_ emoji: String) -> NSImage {
-        let image = NSImage(size: NSSize(width: 18, height: 18))
-        image.lockFocus()
-        let value = NSAttributedString(
-            string: emoji,
-            attributes: [.font: NSFont.systemFont(ofSize: 14)]
-        )
-        let size = value.size()
-        value.draw(
-            at: NSPoint(
-                x: (18 - size.width) / 2,
-                y: (18 - size.height) / 2
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            let value = NSAttributedString(
+                string: emoji,
+                attributes: [.font: NSFont.systemFont(ofSize: 14)]
             )
-        )
-        image.unlockFocus()
+            let size = value.size()
+            value.draw(
+                at: NSPoint(
+                    x: (18 - size.width) / 2,
+                    y: (18 - size.height) / 2
+                )
+            )
+            return true
+        }
         image.isTemplate = false
         return image
     }
