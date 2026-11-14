@@ -111,10 +111,7 @@ final class MediaImageContextMenuHitView: NSView {
         guard bounds.contains(point), let event = NSApp.currentEvent else {
             return nil
         }
-        let isSecondaryClick = event.type == .rightMouseDown
-            || (event.type == .leftMouseDown
-                && event.modifierFlags.contains(.control))
-        return isSecondaryClick ? self : nil
+        return event.isContextClick ? self : nil
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
