@@ -11,13 +11,10 @@ extension DiscordRESTProvider {
     private static let userAffinitiesLifetime: TimeInterval = 8 * 60 * 60
 
     func applyUserContentSettingsProto(_ encoded: String?, replacesAllSettings: Bool) {
-        guard let encoded, let data = Data(base64Encoded: encoded) else { return }
-        let message = DiscordUserContentProto.message(inSettings: data)
-        guard message != nil || replacesAllSettings else { return }
-        let version = DiscordSettingsProto.dataVersion(in: data)
-        if let version, let current = favoritesSync.userContentDataVersion, version < current { return }
-        if let version { favoritesSync.userContentDataVersion = version }
-        let stored = message ?? Data()
+        guard let stored = DiscordSettingsProto.acceptedField(
+            in: encoded, replacesAllSettings: replacesAllSettings, dataVersion: &favoritesSync.userContentDataVersion,
+            field: DiscordUserContentProto.message(inSettings:)
+        ) else { return }
         favoritesSync.confirmedUserContentMessage = stored
         // A change still queued is newer than this copy and stays shown until
         // its own save answers.

@@ -45,14 +45,10 @@ extension DiscordRESTProvider {
     }
 
     func applyFavoritesSettingsProto(_ encoded: String?, replacesAllSettings: Bool) {
-        guard let encoded, let data = Data(base64Encoded: encoded) else { return }
-        let message = DiscordFavoritesProto.message(inSettings: data)
-        guard message != nil || replacesAllSettings else { return }
-        let version = DiscordSettingsProto.dataVersion(in: data)
-        if let version, let current = favoritesSync.favoritesDataVersion, version < current { return }
-        if let version { favoritesSync.favoritesDataVersion = version }
-        let stored = message ?? Data()
-        guard stored != favoritesSync.favoritesMessage else { return }
+        guard let stored = DiscordSettingsProto.acceptedField(
+            in: encoded, replacesAllSettings: replacesAllSettings, dataVersion: &favoritesSync.favoritesDataVersion,
+            field: DiscordFavoritesProto.message(inSettings:)
+        ), stored != favoritesSync.favoritesMessage else { return }
         favoritesSync.favoritesMessage = stored
         // A pending edit stays presented; its save reconciles with this copy.
         guard favoritesSync.pendingFavorites == nil else { return }

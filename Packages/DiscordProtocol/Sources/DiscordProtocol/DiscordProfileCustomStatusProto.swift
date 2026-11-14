@@ -25,6 +25,25 @@ extension DiscordSettingsProto {
         return result
     }
 
+    /// The field an encoded settings update carries, if the update applies:
+    /// it must carry the field or replace all settings, where a missing
+    /// field reads as empty, and must not be older than `dataVersion`, which
+    /// it advances.
+    static func acceptedField(
+        in encoded: String?,
+        replacesAllSettings: Bool,
+        dataVersion: inout UInt32?,
+        field: (Data) -> Data?
+    ) -> Data? {
+        guard let encoded, let data = Data(base64Encoded: encoded) else { return nil }
+        let message = field(data)
+        guard message != nil || replacesAllSettings else { return nil }
+        let version = Self.dataVersion(in: data)
+        if let version, let current = dataVersion, version < current { return nil }
+        if let version { dataVersion = version }
+        return message ?? Data()
+    }
+
     /// StatusSettings.status (field 1) is a google.protobuf.StringValue whose
     /// field 1 carries the account-wide presence string.
     static func presenceStatus(in statusSettings: Data) -> PresenceStatus? {
