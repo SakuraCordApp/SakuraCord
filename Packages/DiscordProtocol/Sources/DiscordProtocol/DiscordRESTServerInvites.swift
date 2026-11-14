@@ -225,7 +225,6 @@ private struct ServerInviteDTO: Decodable {
             var label: String
             var emojiId: String?
             var emojiName: String?
-            var emojiAnimated: Bool?
             var position: Int?
         }
     }

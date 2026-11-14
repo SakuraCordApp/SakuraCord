@@ -37,8 +37,6 @@ public actor MockChatProvider: ChatProvider {
     public internal(set) var guildNotificationRequests: [GuildNotificationRequest] = []
     public internal(set) var channelNotificationRequests: [ChannelNotificationRequest] = []
     public internal(set) var categoryNotificationRequests: [CategoryNotificationRequest] = []
-    var categoryCollapsedUpdatesAreSuspended = false
-    var categoryCollapsedUpdateWaiters: [CheckedContinuation<Void, Never>] = []
     public internal(set) var threadNotificationRequests: [ThreadNotificationRequest] = []
     public internal(set) var groupLeaveRequests: [(channelID: ChannelID, silently: Bool)] = []
     var relationshipPresences: [UserID: UserPresence]?
