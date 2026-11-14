@@ -34,6 +34,9 @@ extension AppModel {
         else { return }
         voiceMigrationGeneration &+= 1
         let voiceGeneration = voiceMigrationGeneration
+        func isCurrent() -> Bool {
+            isCurrentVoiceOperation(account, generation: voiceGeneration, channelID: channel.id)
+        }
         activeVoiceChannel = channel
         reconcilePrivateCallSounds()
         voiceSessionState = .connecting
@@ -48,21 +51,13 @@ extension AppModel {
                 selfMute: isVoiceMuted,
                 selfDeaf: isVoiceDeafened
             )
-            guard isCurrentVoiceOperation(
-                account,
-                generation: voiceGeneration,
-                channelID: channel.id
-            ) else { return }
+            guard isCurrent() else { return }
             try await startVoiceSession(
                 with: info,
                 account: account,
                 generation: voiceGeneration
             )
-            guard isCurrentVoiceOperation(
-                account,
-                generation: voiceGeneration,
-                channelID: channel.id
-            ) else { return }
+            guard isCurrent() else { return }
             watchAvailableDirectMessageStreamsAutomatically()
             if voiceVideoPreferences.playsFeedbackSounds {
                 soundPlayer.play(.userJoin)
@@ -71,20 +66,12 @@ extension AppModel {
                 await toggleCamera()
             }
         } catch {
-            guard isCurrentVoiceOperation(
-                account,
-                generation: voiceGeneration,
-                channelID: channel.id
-            ) else { return }
+            guard isCurrent() else { return }
             let failedSession = voiceSession
             voiceEventTask?.cancel()
             voiceEventTask = nil
             await failedSession?.disconnect()
-            guard isCurrentVoiceOperation(
-                account,
-                generation: voiceGeneration,
-                channelID: channel.id
-            ) else { return }
+            guard isCurrent() else { return }
             voiceSessionState = .failed
             reportVoiceFailure(error)
             try? await account.provider.updateVoiceState(
@@ -94,11 +81,7 @@ extension AppModel {
                 selfDeaf: false,
                 selfVideo: false
             )
-            guard isCurrentVoiceOperation(
-                account,
-                generation: voiceGeneration,
-                channelID: channel.id
-            ) else { return }
+            guard isCurrent() else { return }
             activeVoiceChannel = nil
             if voiceSession === failedSession {
                 voiceSession = nil
