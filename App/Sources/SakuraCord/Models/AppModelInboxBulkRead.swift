@@ -11,12 +11,9 @@ extension AppModel {
         var groups = inbox.groups.filter { $0.guildID == guildID }
         if !groups.contains(where: \.isEvents), let state = inbox.scheduledEvents.readStates[guildID],
            let newest = state.latestID, newest != state.lastAcknowledgedID {
-            groups.append(InboxUnreadGroup(
-                channelID: ChannelID(rawValue: guildID.rawValue), guildID: guildID,
-                title: "Events", subtitle: nil,
-                oldestReadMessageID: state.lastAcknowledgedID.map { MessageID(rawValue: $0.rawValue) },
-                newestUnreadMessageID: MessageID(rawValue: newest.rawValue), mentionCount: state.mentionCount,
-                isEvents: true
+            groups.append(.events(
+                guildID: guildID, subtitle: nil, oldestRead: state.lastAcknowledgedID, newest: newest,
+                mentionCount: state.mentionCount
             ))
         }
         let channelIDs = Set((snapshot?.channels.filter { $0.guildID == guildID }.map(\.id) ?? [])

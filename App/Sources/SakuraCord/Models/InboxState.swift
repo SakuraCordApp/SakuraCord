@@ -23,6 +23,25 @@ nonisolated struct InboxUnreadGroup: Equatable, Identifiable, Sendable {
     var isCollapsed = false
     var errorMessage: String?
 
+    /// A server's unread scheduled events, under the server's own ID.
+    static func events(
+        guildID: GuildID,
+        subtitle: String?,
+        oldestRead: ScheduledEventID?,
+        newest: ScheduledEventID,
+        mentionCount: Int,
+        isCollapsed: Bool = false
+    ) -> Self {
+        InboxUnreadGroup(
+            channelID: ChannelID(rawValue: guildID.rawValue), guildID: guildID,
+            title: "Events", subtitle: subtitle,
+            oldestReadMessageID: oldestRead.map { MessageID(rawValue: $0.rawValue) },
+            newestUnreadMessageID: MessageID(rawValue: newest.rawValue), mentionCount: mentionCount,
+            isEvents: true,
+            isCollapsed: isCollapsed
+        )
+    }
+
     /// Whether retained content still describes the same unread range.
     func canReuseContent(of retained: Self) -> Bool {
         retained.isLoaded && retained.errorMessage == nil && !isAgeRestricted

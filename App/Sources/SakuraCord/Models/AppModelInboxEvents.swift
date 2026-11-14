@@ -21,12 +21,9 @@ extension AppModel {
                   let state = inbox.scheduledEvents.readStates[guild.id], let newest = state.latestID else { return nil }
             let boundary = state.lastAcknowledgedID ?? guild.joinedAt.map(ScheduledEventID.init(timestamp:))
             guard let boundary, boundary < newest else { return nil }
-            let group = InboxUnreadGroup(
-                channelID: ChannelID(rawValue: guild.id.rawValue), guildID: guild.id,
-                title: "Events", subtitle: guild.name,
-                oldestReadMessageID: MessageID(rawValue: boundary.rawValue),
-                newestUnreadMessageID: MessageID(rawValue: newest.rawValue), mentionCount: state.mentionCount,
-                isEvents: true,
+            let group = InboxUnreadGroup.events(
+                guildID: guild.id, subtitle: guild.name, oldestRead: boundary, newest: newest,
+                mentionCount: state.mentionCount,
                 isCollapsed: inbox.settings.collapsedEventGuildIDs.contains(guild.id)
             )
             return InboxUnreadCandidate(group: group, rank: 5, guild: guildPositions[guild.id] ?? .max, position: .max)
