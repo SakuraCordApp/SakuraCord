@@ -685,18 +685,6 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(settings.frequentlyUsedSoundIDs.last == "s31")
 }
 
-@Test func `guilds missing from settings appear above the stored sequence`() {
-    let stored = Guild(id: GuildID(rawValue: 100), name: "Stored")
-    let newlyCreated = Guild(id: GuildID(rawValue: 400), name: "Testing Server 2")
-    let olderUnlisted = Guild(id: GuildID(rawValue: 300), name: "Older unlisted")
-
-    #expect(DiscordRESTProvider.applyingGuildOrder(
-        [stored.id], to: [stored, olderUnlisted, newlyCreated]
-    ).map(\.id) == [
-        newlyCreated.id, olderUnlisted.id, stored.id
-    ])
-}
-
 @Test func `guild member subscription matches current discord bulk shape`() throws {
     let payload = DiscordGatewayPayloadFactory.guildSubscriptions(
         guildID: GuildID(rawValue: 100),

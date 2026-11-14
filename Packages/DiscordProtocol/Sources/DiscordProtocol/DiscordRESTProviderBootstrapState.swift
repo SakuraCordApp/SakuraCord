@@ -195,23 +195,6 @@ extension DiscordRESTProvider {
         )
         return (orderedGuilds, railItems)
     }
-
-    static func applyingGuildOrder(_ orderedIDs: [GuildID], to guilds: [Guild]) -> [Guild] {
-        let byID = Dictionary(uniqueKeysWithValues: guilds.map { ($0.id, $0) })
-        let ordered = orderedIDs.compactMap { byID[$0] }
-        let orderedSet = Set(orderedIDs)
-        let omitted =
-            guilds
-                .filter { !orderedSet.contains($0.id) }
-                .sorted { $0.id.rawValue > $1.id.rawValue }
-        gatewayLogger.info(
-            "Applied guild settings order; ordered=\(ordered.count), omitted=\(omitted.count)"
-        )
-        // Match Discord/Paicord's unlisted-guild fallback: guilds absent from the
-        // folder payload appear first, newest joined/created first. Guild IDs are
-        // time-sortable snowflakes and are the bootstrap-safe proxy for join date.
-        return omitted + ordered
-    }
 }
 
 nonisolated struct DiscordInstallationExperimentsDTO: Decodable {
