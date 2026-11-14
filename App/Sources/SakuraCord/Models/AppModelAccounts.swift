@@ -168,7 +168,6 @@ extension AppModel {
         transitionGeneration: UInt64
     ) async -> Bool {
         let previousAccount = accountSession(allowsTransition: true)
-        let previousProvider = previousAccount.provider
         let previousEventTask = eventTask
         await resetAccountScopedLoadsAndForumState()
         let preparationSignpost = AppPerformanceSignposts.signposter.beginInterval(
@@ -183,19 +182,11 @@ extension AppModel {
                 )
             }
         }
-        await AppPerformanceSignposts.measure("PreviousSessionShutdown") {
-            await leaveVoice(account: previousAccount)
-            guard accountSessionGeneration == transitionGeneration else { return }
-            resetAppSounds()
-            await previousProvider.disconnect()
-        }
-        guard accountSessionGeneration == transitionGeneration else { return false }
-        previousEventTask?.cancel()
-        await previousEventTask?.value
-        guard accountSessionGeneration == transitionGeneration else { return false }
-        eventTask = nil
-        await drainAccountChildTasks()
-        guard accountSessionGeneration == transitionGeneration else { return false }
+        guard await shutDownPreviousSession(
+            previousAccount,
+            eventTask: previousEventTask,
+            transitionGeneration: transitionGeneration
+        ) else { return false }
         if !preservesInteractivePresentation {
             sessionState = .connecting
         }
@@ -224,6 +215,28 @@ extension AppModel {
             guard accountSessionGeneration == transitionGeneration else { return false }
         }
         return isAuthenticated
+    }
+
+    /// Stops the previous account's voice, sounds, provider, event consumer
+    /// and child tasks; false once a newer transition superseded this one.
+    func shutDownPreviousSession(
+        _ previousAccount: AppModelAccountSession,
+        eventTask previousEventTask: Task<Void, Never>?,
+        transitionGeneration: UInt64
+    ) async -> Bool {
+        await AppPerformanceSignposts.measure("PreviousSessionShutdown") {
+            await leaveVoice(account: previousAccount)
+            guard accountSessionGeneration == transitionGeneration else { return }
+            resetAppSounds()
+            await previousAccount.provider.disconnect()
+        }
+        guard accountSessionGeneration == transitionGeneration else { return false }
+        previousEventTask?.cancel()
+        await previousEventTask?.value
+        guard accountSessionGeneration == transitionGeneration else { return false }
+        eventTask = nil
+        await drainAccountChildTasks()
+        return accountSessionGeneration == transitionGeneration
     }
 
     /// Points account-owned stores at `handle`'s account, or at the signed-out scope when it is `nil`.
