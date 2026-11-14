@@ -216,7 +216,7 @@ private struct AddFriendView: View {
         .padding(InterfaceScale.metric(24))
         .frame(maxWidth: InterfaceScale.metric(720), alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background { ProfileEditorFocusDismissal() }
+        .background { ClickOutsideEndsEditing() }
         .onAppear { focusedField = .username }
         .onChange(of: friends.addFriendFocusRequest) { _, _ in focusedField = .username }
     }
@@ -298,7 +298,7 @@ private struct AddFriendView: View {
         .background { Color.clear.contentShape(Rectangle()).onTapGesture { focusFromPadding(.note) } }
     }
 
-    /// A click in a field's padding focuses that field. ProfileEditorFocusDismissal
+    /// A click in a field's padding focuses that field. ClickOutsideEndsEditing
     /// blurs the current field after any click outside it, so focus moves on the
     /// next turn of the run loop, after that blur. Gaining focus selects the whole
     /// field, so the caret then goes to the end, as a click beside the text would.

@@ -70,7 +70,7 @@ struct ProfilesSettingsPage: View {
         .fileImporter(isPresented: $imageImport.isPresented, allowedContentTypes: ProfileImagePicker.allowedImageTypes,
                       allowsMultipleSelection: false, onCompletion: imageImport.complete, onCancellation: imageImport.cancel)
         .onDisappear { imageImport.cancel() }
-        .background { ProfileEditorFocusDismissal() }
+        .background { ClickOutsideEndsEditing() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 ProfileScopePicker(scope: editor.scope, guilds: model.guildIDs.compactMap { model.serverRailGuildsByID[$0] }, nicknames: nicknames) { scope in

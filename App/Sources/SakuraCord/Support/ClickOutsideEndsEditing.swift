@@ -3,7 +3,7 @@ import SwiftUI
 
 /// AppKit text views retain first responder when a SwiftUI background is clicked.
 /// Let the clicked control act first so editing accessories can retain focus.
-struct ProfileEditorFocusDismissal: NSViewRepresentable {
+struct ClickOutsideEndsEditing: NSViewRepresentable {
     func makeNSView(context: Context) -> FocusView { FocusView() }
     func updateNSView(_ view: FocusView, context: Context) {}
 
