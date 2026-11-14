@@ -289,15 +289,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
     let onHover: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(
-            sortOrder: sortOrder,
-            layout: layout,
-            tagMatch: tagMatch,
-            selectSortOrder: selectSortOrder,
-            selectLayout: selectLayout,
-            selectTagMatch: selectTagMatch,
-            reset: reset
-        )
+        Coordinator(parent: self)
     }
 
     func makeNSView(context: Context) -> ForumSortMenuNSButton {
@@ -319,61 +311,15 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
 
     func updateNSView(_ nsView: ForumSortMenuNSButton, context: Context) {
         nsView.onHover = onHover
-        context.coordinator.update(
-            sortOrder: sortOrder,
-            layout: layout,
-            tagMatch: tagMatch,
-            selectSortOrder: selectSortOrder,
-            selectLayout: selectLayout,
-            selectTagMatch: selectTagMatch,
-            reset: reset
-        )
+        context.coordinator.parent = self
     }
 
     @MainActor
     final class Coordinator: NSObject {
-        private var sortOrder: ForumSortOrder
-        private var layout: ForumLayout
-        private var tagMatch: ForumTagMatch
-        private var selectSortOrder: (ForumSortOrder) -> Void
-        private var selectLayout: (ForumLayout) -> Void
-        private var selectTagMatch: (ForumTagMatch) -> Void
-        private var reset: () -> Void
+        var parent: NativeForumSortMenuButton
 
-        init(
-            sortOrder: ForumSortOrder,
-            layout: ForumLayout,
-            tagMatch: ForumTagMatch,
-            selectSortOrder: @escaping (ForumSortOrder) -> Void,
-            selectLayout: @escaping (ForumLayout) -> Void,
-            selectTagMatch: @escaping (ForumTagMatch) -> Void,
-            reset: @escaping () -> Void
-        ) {
-            self.sortOrder = sortOrder
-            self.layout = layout
-            self.tagMatch = tagMatch
-            self.selectSortOrder = selectSortOrder
-            self.selectLayout = selectLayout
-            self.selectTagMatch = selectTagMatch
-            self.reset = reset
-        }
-
-        func update(
-            sortOrder: ForumSortOrder,
-            layout: ForumLayout,
-            tagMatch: ForumTagMatch,
-            selectSortOrder: @escaping (ForumSortOrder) -> Void,
-            selectLayout: @escaping (ForumLayout) -> Void,
-            selectTagMatch: @escaping (ForumTagMatch) -> Void,
-            reset: @escaping () -> Void
-        ) {
-            self.sortOrder = sortOrder
-            self.layout = layout
-            self.tagMatch = tagMatch
-            self.selectSortOrder = selectSortOrder
-            self.selectLayout = selectLayout
-            self.selectTagMatch = selectTagMatch
-            self.reset = reset
+        init(parent: NativeForumSortMenuButton) {
+            self.parent = parent
         }
 
         @objc func showMenu(_ sender: NSButton) {
@@ -392,7 +338,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Recently active",
-                    selected: sortOrder == .latestActivity,
+                    selected: parent.sortOrder == .latestActivity,
                     action: #selector(selectSort(_:)),
                     representedValue: ForumSortOrder.latestActivity.rawValue
                 )
@@ -400,7 +346,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Date posted",
-                    selected: sortOrder == .creationDate,
+                    selected: parent.sortOrder == .creationDate,
                     action: #selector(selectSort(_:)),
                     representedValue: ForumSortOrder.creationDate.rawValue
                 )
@@ -410,7 +356,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "List",
-                    selected: layout == .list,
+                    selected: parent.layout == .list,
                     action: #selector(selectForumLayout(_:)),
                     representedValue: ForumLayout.list.rawValue
                 )
@@ -418,7 +364,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Gallery",
-                    selected: layout == .gallery,
+                    selected: parent.layout == .gallery,
                     action: #selector(selectForumLayout(_:)),
                     representedValue: ForumLayout.gallery.rawValue
                 )
@@ -428,7 +374,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Match Some",
-                    selected: tagMatch == .matchSome,
+                    selected: parent.tagMatch == .matchSome,
                     action: #selector(selectTagMatching(_:)),
                     representedValue: ForumTagMatch.matchSome.rawValue
                 )
@@ -436,7 +382,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Match All",
-                    selected: tagMatch == .matchAll,
+                    selected: parent.tagMatch == .matchAll,
                     action: #selector(selectTagMatching(_:)),
                     representedValue: ForumTagMatch.matchAll.rawValue
                 )
@@ -500,25 +446,25 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
                   let value = ForumSortOrder(rawValue: rawValue)
             else { return }
-            selectSortOrder(value)
+            parent.selectSortOrder(value)
         }
 
         @objc private func selectForumLayout(_ sender: NSMenuItem) {
             guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
                   let value = ForumLayout(rawValue: rawValue)
             else { return }
-            selectLayout(value)
+            parent.selectLayout(value)
         }
 
         @objc private func selectTagMatching(_ sender: NSMenuItem) {
             guard let rawValue = sender.representedObject as? String,
                   let value = ForumTagMatch(rawValue: rawValue)
             else { return }
-            selectTagMatch(value)
+            parent.selectTagMatch(value)
         }
 
         @objc private func resetOptions() {
-            reset()
+            parent.reset()
         }
     }
 }
