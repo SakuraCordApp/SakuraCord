@@ -75,7 +75,7 @@ extension NativeTimelineCanvasView {
             effectiveAppearance.performAsCurrentDrawingAppearance {
                 NativeTimelineRowPainter.draw(
                     item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
-                    isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
+                    revealedTextSpoilerState: row.revealedTextSpoilerState,
                     spoilerRevealStore: spoilerRevealStore, pollPresentation: row.pollPresentation
                 )
             }

@@ -8,35 +8,44 @@ import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
+/// What the pointer hovers or presses in a row as it is drawn; `idle` for
+/// rows drawn without it, such as bitmaps and transition pictures.
+struct NativeTimelineRowInteraction {
+    var isHovered = false
+    var showsCompactTimestamp = false
+    var isAuthorHovered = false
+    var isServerTagHovered = false
+    var isCommandPillHovered = false
+    var hoveredMention: NativeTimelineMentionHover?
+    var hoveredTextLink: NativeTimelineTextLinkHover?
+    /// How far each text spoiler is hovered, easing in and out.
+    var textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat] = [:]
+    var hoveredComponentButton: NativeTimelineComponentButtonTarget?
+    var activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
+    var pressedComponentButton: NativeTimelineComponentButtonTarget?
+    var componentButtonPressProgress: CGFloat = 0
+    /// How far each file card part's hover has eased in.
+    var fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:]
+    /// How far each just-finished download's button has crossfaded.
+    var fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:]
+    var isForwardedSourceHovered = false
+    var threadCardInteraction: NativeTimelineThreadCard.Interaction = .idle
+    var isEphemeralDismissHovered = false
+    var isTranslationActionHovered = false
+    /// A hovered upload cancel or Retry of a local send.
+    var hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind?
+    var isSuppressedToggleHovered = false
+    var hoveredReactionID: String?
+    var isAddReactionHovered = false
+
+    static let idle = NativeTimelineRowInteraction()
+}
+
 struct NativeTimelineMessageDrawInput {
     let row: MessageRowPresentation
     let layout: NativeTimelineRowLayout
     let model: AppModel?
-    let isHovered: Bool
-    let showsCompactTimestamp: Bool
-    let isAuthorHovered: Bool
-    let isServerTagHovered: Bool
-    let isCommandPillHovered: Bool
-    let hoveredMention: NativeTimelineMentionHover?
-    let hoveredTextLink: NativeTimelineTextLinkHover?
-    /// How far each text spoiler is hovered, easing in and out.
-    let textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat]
-    let hoveredComponentButton: NativeTimelineComponentButtonTarget?
-    let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
-    let pressedComponentButton: NativeTimelineComponentButtonTarget?
-    let componentButtonPressProgress: CGFloat
-    /// How far each file card part's hover has eased in.
-    let fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
-    /// How far each just-finished download's button has crossfaded.
-    let fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat]
-    let isForwardedSourceHovered: Bool
-    let threadCardInteraction: NativeTimelineThreadCard.Interaction
-    let isEphemeralDismissHovered: Bool
-    let isTranslationActionHovered: Bool
-    /// A hovered upload cancel or Retry of a local send.
-    let hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind?
-    let hoveredReactionID: String?
-    let isAddReactionHovered: Bool
+    let interaction: NativeTimelineRowInteraction
     let textSelection: NativeTimelineTextSelection?
     let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
     let spoilerRevealStore: NativeTimelineSpoilerRevealStore?
@@ -185,7 +194,7 @@ extension NativeTimelineRowPainter {
             if let context = NSGraphicsContext.current?.cgContext {
                 if display == .inNames, let gradientColors {
                     input.layout.authorText?.draw(
-                        in: frame, gradientColors: gradientColors, context: context, isUnderlined: input.isAuthorHovered
+                        in: frame, gradientColors: gradientColors, context: context, isUnderlined: input.interaction.isAuthorHovered
                     )
                 } else {
                     input.layout.authorText?.draw(
@@ -194,7 +203,7 @@ extension NativeTimelineRowPainter {
                             ? .sakuraCordAccentColor
                             : display != .inNames
                             ? .labelColor : roleColor(author?.roleColorHex) ?? .labelColor,
-                        context: context, isUnderlined: input.isAuthorHovered
+                        context: context, isUnderlined: input.interaction.isAuthorHovered
                     )
                 }
             }
@@ -236,7 +245,7 @@ extension NativeTimelineRowPainter {
         if let region = input.layout.serverTagRegion,
            let context = NSGraphicsContext.current?.cgContext {
             region.presentation.draw(in: region.frame, badgeImage: nil,
-                                     isHighlighted: input.isServerTagHovered, context: context)
+                                     isHighlighted: input.interaction.isServerTagHovered, context: context)
             if let url = region.presentation.identity.badgeURL,
                let frame = region.presentation.badgeFrame(in: region.frame),
                let image = mediaImage(for: .media(url, maximumPixelDimension: 32)) {
@@ -265,7 +274,7 @@ extension NativeTimelineRowPainter {
         if let frame = input.layout.silentBadgeFrame {
             NativeTimelineSilentBadge.draw(in: frame)
         }
-        if input.showsCompactTimestamp || input.model?.interfaceSettings.alwaysShowsTimestamps == true,
+        if input.interaction.showsCompactTimestamp || input.model?.interfaceSettings.alwaysShowsTimestamps == true,
            let frame = input.layout.compactTimestampFrame
         {
             text(
@@ -326,7 +335,7 @@ extension NativeTimelineRowPainter {
                 bubbleConnector: input.layout.bubbleReferenceConnector,
                 message: input.row.message,
                 cosmeticPolicy: input.model?.cosmeticPolicy ?? .init(),
-                isPillHovered: input.isCommandPillHovered
+                isPillHovered: input.interaction.isCommandPillHovered
             )
         }
     }
@@ -383,9 +392,9 @@ extension NativeTimelineRowPainter {
         let model = input.model
         let message = row.message
         let textSelection = input.textSelection
-        let hoveredMention = input.hoveredMention
-        let hoveredTextLink = input.hoveredTextLink
-        let textSpoilerHover = input.textSpoilerHover
+        let hoveredMention = input.interaction.hoveredMention
+        let hoveredTextLink = input.interaction.hoveredTextLink
+        let textSpoilerHover = input.interaction.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
         if let frame = layout.contentFrame,
            let attributedContent = layout.attributedContent,
@@ -566,10 +575,10 @@ extension NativeTimelineRowPainter {
                 bubbleRegion: layout.bubbleRegion,
                 state: input.model?.attachmentDownloads.states[attachment.id],
                 upload: uploadState(of: attachment, in: input),
-                finishProgress: input.fileCardFinishProgress,
+                finishProgress: input.interaction.fileCardFinishProgress,
                 pointer: .init(
-                    hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
-                    pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                    hovered: input.interaction.hoveredComponentButton, hoverProgress: input.interaction.fileCardHoverProgress,
+                    pressed: input.interaction.pressedComponentButton, pressProgress: input.interaction.componentButtonPressProgress
                 )
             )
             if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
@@ -642,13 +651,13 @@ extension NativeTimelineRowPainter {
                 selectionRange: input.textSelection?.itemIdentifier == itemIdentifier
                     && input.textSelection?.region == textRegionID
                     ? input.textSelection?.range : nil,
-                hoveredMentionCharacterIndex: input.hoveredMention?.itemIdentifier == itemIdentifier
-                    && input.hoveredMention?.region == textRegionID
-                    ? input.hoveredMention?.characterIndex : nil,
-                hoveredLinkCharacterIndex: input.hoveredTextLink?.itemIdentifier == itemIdentifier
-                    && input.hoveredTextLink?.region == textRegionID
-                    ? input.hoveredTextLink?.characterIndex : nil,
-                spoilerHoverProgress: input.textSpoilerHover.progress(in: itemIdentifier, region: textRegionID),
+                hoveredMentionCharacterIndex: input.interaction.hoveredMention?.itemIdentifier == itemIdentifier
+                    && input.interaction.hoveredMention?.region == textRegionID
+                    ? input.interaction.hoveredMention?.characterIndex : nil,
+                hoveredLinkCharacterIndex: input.interaction.hoveredTextLink?.itemIdentifier == itemIdentifier
+                    && input.interaction.hoveredTextLink?.region == textRegionID
+                    ? input.interaction.hoveredTextLink?.characterIndex : nil,
+                spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: itemIdentifier, region: textRegionID),
                 revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: textRegionID)
             )
         }
@@ -709,15 +718,15 @@ extension NativeTimelineRowPainter {
         let model = input.model
         let message = row.message
         let textSelection = input.textSelection
-        let hoveredMention = input.hoveredMention
-        let hoveredTextLink = input.hoveredTextLink
-        let textSpoilerHover = input.textSpoilerHover
+        let hoveredMention = input.interaction.hoveredMention
+        let hoveredTextLink = input.interaction.hoveredTextLink
+        let textSpoilerHover = input.interaction.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
         let spoilerRevealStore = input.spoilerRevealStore
-        let hoveredComponentButton = input.hoveredComponentButton
-        let activeComponentChoiceTarget = input.activeComponentChoiceTarget
-        let pressedComponentButton = input.pressedComponentButton
-        let componentButtonPressProgress = input.componentButtonPressProgress
+        let hoveredComponentButton = input.interaction.hoveredComponentButton
+        let activeComponentChoiceTarget = input.interaction.activeComponentChoiceTarget
+        let pressedComponentButton = input.interaction.pressedComponentButton
+        let componentButtonPressProgress = input.interaction.componentButtonPressProgress
         for card in layout.inviteRegions {
             let target = NativeTimelineComponentButtonTarget(messageID: message.id, componentID: card.componentID)
             inviteCard(card, bubbleRegion: layout.bubbleRegion, isHovered: hoveredComponentButton == target,
@@ -760,8 +769,8 @@ extension NativeTimelineRowPainter {
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress,
-                fileCardHoverProgress: input.fileCardHoverProgress,
-                fileCardFinishProgress: input.fileCardFinishProgress,
+                fileCardHoverProgress: input.interaction.fileCardHoverProgress,
+                fileCardFinishProgress: input.interaction.fileCardFinishProgress,
                 animatedOverlayRoles: input.animatedOverlayRoles
             ))
         }
@@ -808,8 +817,8 @@ extension NativeTimelineRowPainter {
         let layout = input.layout
         let message = input.row.message
         let model = input.model
-        let hoveredReactionID = input.hoveredReactionID
-        let isAddReactionHovered = input.isAddReactionHovered
+        let hoveredReactionID = input.interaction.hoveredReactionID
+        let isAddReactionHovered = input.interaction.isAddReactionHovered
         drawForwardedSource(input)
         if let frame = layout.threadFrame, let thread = message.thread {
             if message.type == .threadCreated, let iconFrame = layout.systemIconFrame {
@@ -826,7 +835,7 @@ extension NativeTimelineRowPainter {
                 model: model,
                 in: frame,
                 bubbleRegion: layout.bubbleRegion,
-                interaction: input.threadCardInteraction
+                interaction: input.interaction.threadCardInteraction
             )
         }
         ComponentUnicodeEmojiRenderer.prepareImages(
@@ -850,7 +859,7 @@ extension NativeTimelineRowPainter {
             )
         }
         if let region = layout.ephemeralRegion {
-            ephemeralFooter(region, isDismissHovered: input.isEphemeralDismissHovered)
+            ephemeralFooter(region, isDismissHovered: input.interaction.isEphemeralDismissHovered)
         }
         if let frame = layout.failedFrame {
             failureNotice(
@@ -866,7 +875,7 @@ extension NativeTimelineRowPainter {
                 in: frame,
                 font: .interfacePreferredFont(forTextStyle: .caption2),
                 color: .sakuraCordAccentColor,
-                isInteractiveHovered: input.hoveredDeliveryAction == .retrySend
+                isInteractiveHovered: input.interaction.hoveredDeliveryAction == .retrySend
             )
         }
     }
@@ -892,7 +901,7 @@ extension NativeTimelineRowPainter {
 
     private static func drawForwardedSource(_ input: NativeTimelineMessageDrawInput) {
         if let source = input.layout.forwardedSourceRegion {
-            if input.isForwardedSourceHovered {
+            if input.interaction.isForwardedSourceHovered {
                 NSColor.labelColor.withAlphaComponent(0.10).setFill()
                 NSBezierPath(
                     concentricRoundedRect: source.frame,
@@ -927,7 +936,7 @@ extension NativeTimelineRowPainter {
                     ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
                     weight: .medium
                 ),
-                color: input.isForwardedSourceHovered ? .labelColor : .secondaryLabelColor,
+                color: input.interaction.isForwardedSourceHovered ? .labelColor : .secondaryLabelColor,
                 lineBreakMode: .byTruncatingTail
             )
         }

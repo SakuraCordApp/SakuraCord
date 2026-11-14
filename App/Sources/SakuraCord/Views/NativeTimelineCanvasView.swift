@@ -593,32 +593,8 @@ enum NativeTimelineRowPainter {
         layout: NativeTimelineRowLayout,
         in rowFrame: CGRect,
         model: AppModel?,
-        isHovered: Bool,
+        interaction: NativeTimelineRowInteraction = .idle,
         drawsBubbleBackground: Bool = true,
-        showsCompactTimestamp: Bool = false,
-        isAuthorHovered: Bool = false,
-        isServerTagHovered: Bool = false,
-        isCommandPillHovered: Bool = false,
-        hoveredMention: NativeTimelineMentionHover? = nil,
-        hoveredTextLink: NativeTimelineTextLinkHover? = nil,
-        textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat] = [:],
-        hoveredComponentButton:
-            NativeTimelineComponentButtonTarget? = nil,
-        activeComponentChoiceTarget:
-            NativeTimelineComponentSelectTarget? = nil,
-        pressedComponentButton:
-            NativeTimelineComponentButtonTarget? = nil,
-        componentButtonPressProgress: CGFloat = 0,
-        fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
-        fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
-        isForwardedSourceHovered: Bool = false,
-        threadCardInteraction: NativeTimelineThreadCard.Interaction = .idle,
-        isEphemeralDismissHovered: Bool = false,
-        isTranslationActionHovered: Bool = false,
-        hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind? = nil,
-        isSuppressedToggleHovered: Bool = false,
-        hoveredReactionID: String? = nil,
-        isAddReactionHovered: Bool = false,
         textSelection: NativeTimelineTextSelection? = nil,
         revealedTextSpoilerState:
             NativeTimelineTextSpoilerRevealState = .init(),
@@ -640,7 +616,7 @@ enum NativeTimelineRowPainter {
             in: layout.highlightFrame,
             bubbleRegion: layout.bubbleRegion,
             model: model,
-            isHovered: isHovered
+            isHovered: interaction.isHovered
         )
         switch item {
         case let .suppressedMessages(group):
@@ -649,7 +625,7 @@ enum NativeTimelineRowPainter {
             }
             if let frame = layout.unreadSeparatorFrame { newMessagesSeparator(frame: frame) }
             if let header = layout.suppressedHeader {
-                drawSuppressedHeader(group, layout: header, isToggleHovered: isSuppressedToggleHovered)
+                drawSuppressedHeader(group, layout: header, isToggleHovered: interaction.isSuppressedToggleHovered)
             }
         case .inboxGroup, .inboxForumPost, .inboxEvent:
             break
@@ -672,28 +648,7 @@ enum NativeTimelineRowPainter {
                 row: row,
                 layout: layout,
                 model: model,
-                isHovered: isHovered,
-                showsCompactTimestamp: showsCompactTimestamp,
-                isAuthorHovered: isAuthorHovered,
-                isServerTagHovered: isServerTagHovered,
-                isCommandPillHovered: isCommandPillHovered,
-                hoveredMention: hoveredMention,
-                hoveredTextLink: hoveredTextLink,
-                textSpoilerHover: textSpoilerHover,
-                hoveredComponentButton: hoveredComponentButton,
-                activeComponentChoiceTarget: activeComponentChoiceTarget,
-                pressedComponentButton: pressedComponentButton,
-                componentButtonPressProgress:
-                    componentButtonPressProgress,
-                fileCardHoverProgress: fileCardHoverProgress,
-                fileCardFinishProgress: fileCardFinishProgress,
-                isForwardedSourceHovered: isForwardedSourceHovered,
-                threadCardInteraction: threadCardInteraction,
-                isEphemeralDismissHovered: isEphemeralDismissHovered,
-                isTranslationActionHovered: isTranslationActionHovered,
-                hoveredDeliveryAction: hoveredDeliveryAction,
-                hoveredReactionID: hoveredReactionID,
-                isAddReactionHovered: isAddReactionHovered,
+                interaction: interaction,
                 textSelection: textSelection,
                 revealedTextSpoilerState:
                     revealedTextSpoilerState,

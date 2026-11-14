@@ -1400,7 +1400,6 @@ extension NativeTimelineCanvasView {
                     layout: layout,
                     in: CGRect(x: 0, y: 0, width: rowFrame.width, height: layout.height),
                     model: model,
-                    isHovered: false,
                     drawsBubbleBackground: false,
                     spoilerRevealStore: spoilerRevealStore
                 )
@@ -1440,7 +1439,6 @@ extension NativeTimelineCanvasView {
                         layout: layout,
                         in: CGRect(x: 0, y: 0, width: rowFrame.width, height: layout.height),
                         model: model,
-                        isHovered: false,
                         drawsBubbleBackground: false,
                         spoilerRevealStore: spoilerRevealStore
                     )

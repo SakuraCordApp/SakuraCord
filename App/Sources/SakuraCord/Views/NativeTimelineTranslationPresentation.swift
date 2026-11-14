@@ -155,7 +155,7 @@ extension NativeTimelineRowPainter {
             text("•", in: bulletFrame, font: font, color: secondary)
         }
         if let actionTitle = region.actionTitle, let actionFrame = region.actionFrame {
-            text(actionTitle, in: actionFrame, font: font, color: accent, isInteractiveHovered: input.isTranslationActionHovered)
+            text(actionTitle, in: actionFrame, font: font, color: accent, isInteractiveHovered: input.interaction.isTranslationActionHovered)
         }
         guard let textFrame = region.textFrame,
               let attributed = region.attributedText,
@@ -169,11 +169,11 @@ extension NativeTimelineRowPainter {
             bubble: input.layout.bubbleRegion,
             selectionRange: input.textSelection?.itemIdentifier == .message(input.row.identity)
                 && input.textSelection?.region == region.regionID ? input.textSelection?.range : nil,
-            hoveredMentionCharacterIndex: input.hoveredMention?.itemIdentifier == .message(input.row.identity)
-                && input.hoveredMention?.region == region.regionID ? input.hoveredMention?.characterIndex : nil,
-            hoveredLinkCharacterIndex: input.hoveredTextLink?.itemIdentifier == .message(input.row.identity)
-                && input.hoveredTextLink?.region == region.regionID ? input.hoveredTextLink?.characterIndex : nil,
-            spoilerHoverProgress: input.textSpoilerHover.progress(in: .message(input.row.identity), region: region.regionID),
+            hoveredMentionCharacterIndex: input.interaction.hoveredMention?.itemIdentifier == .message(input.row.identity)
+                && input.interaction.hoveredMention?.region == region.regionID ? input.interaction.hoveredMention?.characterIndex : nil,
+            hoveredLinkCharacterIndex: input.interaction.hoveredTextLink?.itemIdentifier == .message(input.row.identity)
+                && input.interaction.hoveredTextLink?.region == region.regionID ? input.interaction.hoveredTextLink?.characterIndex : nil,
+            spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: .message(input.row.identity), region: region.regionID),
             revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: region.regionID)
         )
     }
