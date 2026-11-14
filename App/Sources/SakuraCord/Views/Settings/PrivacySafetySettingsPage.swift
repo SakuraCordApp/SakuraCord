@@ -33,10 +33,7 @@ struct PrivacySafetySettingsPage: View {
         .onChange(of: value) { _, newValue in
             model.applyPrivacySafetySettings(newValue)
         }
-        .onChange(of: state.revealRequest?.id) {
-            guard state.revealRequest?.destination.page == .privacySafety else { return }
-            navigationPath.removeAll()
-        }
+        .settingsNavigationPathResetOnReveal($navigationPath, page: .privacySafety, state: state)
     }
 }
 

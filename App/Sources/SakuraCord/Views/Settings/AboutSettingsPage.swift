@@ -23,10 +23,7 @@ struct AboutSettingsPage: View {
                     }
                 }
         }
-        .onChange(of: state.revealRequest?.id) {
-            guard state.revealRequest?.destination.page == .about else { return }
-            navigationPath.removeAll()
-        }
+        .settingsNavigationPathResetOnReveal($navigationPath, page: .about, state: state)
     }
 
     private var aboutOverview: some View {

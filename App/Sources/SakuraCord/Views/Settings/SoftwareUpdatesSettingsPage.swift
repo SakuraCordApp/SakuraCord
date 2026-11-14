@@ -94,10 +94,7 @@ struct SoftwareUpdatesSettingsPage: View {
                 }
             }
         }
-        .onChange(of: state.revealRequest?.id) {
-            guard state.revealRequest?.destination.page == .softwareUpdates else { return }
-            navigationPath.removeAll()
-        }
+        .settingsNavigationPathResetOnReveal($navigationPath, page: .softwareUpdates, state: state)
         .windowModal(isPresented: $presentsBuildBrowser, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             PullRequestBuildBrowser(
                 isPreview: AppLaunchConfiguration.current.includesOfflineFlag,
