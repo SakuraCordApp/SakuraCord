@@ -512,7 +512,7 @@ extension NativeTimelineRowPainter {
                 )
             if let bubble = layout.bubbleRegion, let section = fileSectionFrame(layout) {
                 bubbleIntegratedSection(
-                    section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true, drawsNeutralRail: false
+                    section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true
                 )
             }
             for region in layout.attachmentRegions {
@@ -798,6 +798,7 @@ extension NativeTimelineRowPainter {
                 model: model,
                 in: frame,
                 bubbleRegion: layout.bubbleRegion,
+                drawsTopSeparator: layout.threadDrawsTopSeparator,
                 interaction: input.interaction.threadCardInteraction
             )
         }

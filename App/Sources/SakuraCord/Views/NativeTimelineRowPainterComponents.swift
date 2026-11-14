@@ -115,8 +115,7 @@ extension NativeTimelineRowPainter {
                         bubbleRegion: bubbleRegion,
                         accentColor: container.accentColor,
                         drawsTopSeparator: input.layout.drawsTopSeparator
-                            || container.chromeFrame.minY > input.layout.frame.minY + 0.5,
-                        drawsNeutralRail: false
+                            || container.chromeFrame.minY > input.layout.frame.minY + 0.5
                     )
                 }
             case .card:
@@ -334,7 +333,7 @@ extension NativeTimelineRowPainter {
         bubbleRegion: NativeTimelineBubbleRegion,
         accentColor: UInt32?,
         drawsTopSeparator: Bool,
-        drawsNeutralRail: Bool
+        drawsNeutralRail: Bool = false
     ) {
         let geometry = bubbleIntegratedSectionGeometry(
             frame,

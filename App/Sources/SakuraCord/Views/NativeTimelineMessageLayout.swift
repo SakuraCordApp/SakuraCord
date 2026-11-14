@@ -624,7 +624,8 @@ extension NativeTimelineRowLayout {
             }
             if let poll = message.poll {
                 if hasRichContent { verticalOffset += InterfaceScale.metric(6) }
-                let layout = NativeTimelinePollLayout(poll: poll, x: contentX, y: verticalOffset, width: contentWidth, integratesWithBubble: usesBubbles)
+                var layout = NativeTimelinePollLayout(poll: poll, x: contentX, y: verticalOffset, width: contentWidth, integratesWithBubble: usesBubbles)
+                layout.drawsTopSeparator = drawsTopSeparator(at: layout.frame)
                 result.pollLayout = layout
                 verticalOffset = layout.frame.maxY
                 hasRichContent = true
@@ -797,7 +798,7 @@ extension NativeTimelineRowLayout {
         private mutating func appendInviteCard(reference: ServerInviteReference?, preview: NativeServerCardContent?, index: Int) {
             let origin = CGPoint(x: contentX, y: verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0))
             let activityCard = NativeTimelineInviteLayout.activityContent(reference: reference, preview: preview, source: source)
-            let region = activityCard.flatMap { content in
+            var region = activityCard.flatMap { content in
                 content.activity.map {
                     NativeTimelineInviteLayout(activityCard: content, activity: $0, reference: reference, index: index,
                                                origin: origin, maximumWidth: inlineMediaMaximumWidth, source: source,
@@ -807,6 +808,7 @@ extension NativeTimelineRowLayout {
                                               maximumWidth: inlineMediaMaximumWidth, source: source,
                                               isOwnMessage: message.author.id == source?.currentUserID,
                                               integratesWithBubble: usesBubbles)
+            region.drawsTopSeparator = drawsTopSeparator(at: region.frame)
             result.inviteRegions.append(region)
             verticalOffset = region.frame.maxY
             hasRichContent = true
@@ -825,12 +827,13 @@ extension NativeTimelineRowLayout {
             if !usesComponentsV2 {
                 for (index, deepLink) in row.sakuraCordDeepLinks.enumerated() {
                     let deepLinkY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
-                    let region = NativeTimelineSakuraCordDeepLinkLayout.make(
+                    var region = NativeTimelineSakuraCordDeepLinkLayout.make(
                         deepLink,
                         componentIndex: index,
                         origin: CGPoint(x: contentX, y: deepLinkY),
                         maximumWidth: inlineMediaMaximumWidth, integratesWithBubble: usesBubbles
                     )
+                    region.drawsTopSeparator = drawsTopSeparator(at: region.frame)
                     result.sakuraCordDeepLinkRegions.append(region)
                     verticalOffset = region.frame.maxY
                     hasRichContent = true
@@ -1003,17 +1006,25 @@ extension NativeTimelineRowLayout {
 
         }
 
+        /// Whether a card's bubble section rules itself off from the content
+        /// above it, which starts the bubble at `bubbleStartY`.
+        private func drawsTopSeparator(at frame: CGRect) -> Bool {
+            frame.minY - bubbleStartY > 8.5
+        }
+
         private mutating func appendThreadAndBubble() {
             if message.thread != nil {
                 if hasRichContent {
                     verticalOffset += InterfaceScale.metric(8)
                 }
-                result.threadFrame = CGRect(
+                let frame = CGRect(
                     x: contentX,
                     y: verticalOffset,
                     width: usesBubbles ? contentWidth : min(contentWidth, InterfaceScale.metric(440)),
                     height: NativeTimelineThreadCard.height
                 )
+                result.threadFrame = frame
+                result.threadDrawsTopSeparator = drawsTopSeparator(at: frame)
                 verticalOffset += NativeTimelineThreadCard.height
                 hasRichContent = true
             }

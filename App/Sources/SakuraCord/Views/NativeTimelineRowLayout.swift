@@ -113,6 +113,7 @@ struct NativeTimelineRowLayout {
         let titleFrame: CGRect
         let paletteFrames: [CGRect]
         let buttonFrame: CGRect
+        var drawsTopSeparator = false
     }
 
     struct SearchSectionRegion {
@@ -260,6 +261,7 @@ struct NativeTimelineRowLayout {
     var componentLayouts: [NativeTimelineComponentLayout] = []
     var stickerFrames: [CGRect] = []
     var threadFrame: CGRect?
+    var threadDrawsTopSeparator = false
     var reactionRegions: [ReactionRegion] = []
     var addReactionFrame: CGRect?
     var ephemeralRegion: EphemeralRegion?

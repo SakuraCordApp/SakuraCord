@@ -17,6 +17,7 @@ struct NativeTimelinePollLayout {
     let expiryFrame: CGRect
     let revealFrame: CGRect
     let submitFrame: CGRect
+    var drawsTopSeparator = false
 
     /// Footer buttons sit 16 points from the card edges, and answers 16 points
     /// inside it, so both radii stay concentric with the 32-point capsules.
@@ -138,7 +139,7 @@ extension NativeTimelineRowPainter {
         let bubble = input.layout.bubbleRegion
         if let bubble {
             bubbleIntegratedSection(layout.frame, bubbleRegion: bubble, accentColor: nil,
-                drawsTopSeparator: layout.frame.minY - bubble.frame.minY > 8.5, drawsNeutralRail: false)
+                drawsTopSeparator: layout.drawsTopSeparator)
         } else {
             pollSurface(in: layout.frame, cornerRadius: NativeTimelinePollLayout.cornerRadius)
         }

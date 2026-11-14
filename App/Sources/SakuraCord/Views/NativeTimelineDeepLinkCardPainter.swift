@@ -19,7 +19,7 @@ extension NativeTimelineRowPainter {
 
         if let bubbleRegion {
             bubbleIntegratedSection(region.frame, bubbleRegion: bubbleRegion, accentColor: nil,
-                drawsTopSeparator: region.frame.minY - bubbleRegion.frame.minY > 8.5, drawsNeutralRail: false)
+                drawsTopSeparator: region.drawsTopSeparator)
         } else {
             NSGraphicsContext.saveGraphicsState()
             let glow = NSShadow()

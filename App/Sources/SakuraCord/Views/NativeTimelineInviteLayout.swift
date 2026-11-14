@@ -119,6 +119,7 @@ struct NativeTimelineInviteLayout {
     let isUnavailable: Bool
     let error: String?
     let integratesWithBubble: Bool
+    var drawsTopSeparator = false
     /// The speaker before an Activity card's channel line.
     var symbolFrame: CGRect?
     /// Faces of the people in the Activity, as Discord stacks them.

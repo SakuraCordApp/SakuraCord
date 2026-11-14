@@ -21,7 +21,7 @@ extension NativeTimelineRowPainter {
             ?? NSBezierPath(roundedRect: card.frame, xRadius: isModalPreview ? 0 : radius, yRadius: isModalPreview ? 0 : radius)
         if let bubble {
             bubbleIntegratedSection(card.frame, bubbleRegion: bubble, accentColor: card.content?.brandColor,
-                drawsTopSeparator: card.frame.minY - bubble.frame.minY > 8.5, drawsNeutralRail: false)
+                drawsTopSeparator: card.drawsTopSeparator)
         } else {
             background.setFill()
             shape.fill()

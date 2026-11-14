@@ -156,9 +156,10 @@ extension NativeTimelineRowPainter {
         model: AppModel?,
         in frame: CGRect,
         bubbleRegion: NativeTimelineBubbleRegion? = nil,
+        drawsTopSeparator: Bool,
         interaction: NativeTimelineThreadCard.Interaction = .idle
     ) {
-        threadCardSurface(in: frame, bubbleRegion: bubbleRegion, interaction: interaction)
+        threadCardSurface(in: frame, bubbleRegion: bubbleRegion, drawsTopSeparator: drawsTopSeparator, interaction: interaction)
         let isOutgoing = bubbleRegion?.isOutgoing == true
         let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion)
         let secondary = NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion)
@@ -237,12 +238,12 @@ extension NativeTimelineRowPainter {
     private static func threadCardSurface(
         in frame: CGRect,
         bubbleRegion: NativeTimelineBubbleRegion?,
+        drawsTopSeparator: Bool,
         interaction: NativeTimelineThreadCard.Interaction
     ) {
         if let bubbleRegion {
             bubbleIntegratedSection(
-                frame, bubbleRegion: bubbleRegion, accentColor: nil,
-                drawsTopSeparator: frame.minY - bubbleRegion.frame.minY > 8.5, drawsNeutralRail: false
+                frame, bubbleRegion: bubbleRegion, accentColor: nil, drawsTopSeparator: drawsTopSeparator
             )
             guard interaction != .idle else { return }
             NativeTimelineSemanticColor.opacity(
