@@ -33,6 +33,8 @@ Replay protection for repeated key ratchets adds these changes under
 - `src/mls_key_ratchet.h` and `src/mls_key_ratchet.cpp`:
   `MlsKeyRatchet::domainIdentity_` keeps the base secret, which is derived per
   epoch and user, as that identity.
+- `src/cryptor_manager.h`: `CryptorManager::GetDomainIdentity()` exposes its
+  ratchet's identity to the decryptor.
 - `src/decryptor.cpp`: `Decryptor::TransitionToKeyRatchet` ignores a ratchet
   whose domain already has a live cryptor manager, so processed frames do not
   get a fresh replay window and expiries are not extended.
