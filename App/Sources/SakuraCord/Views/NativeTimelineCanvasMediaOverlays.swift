@@ -189,6 +189,15 @@ extension NativeTimelineCanvasView {
             collectsKeys || canvas.reactionTransitions[row] == nil
         }
 
+        func animatedEmojiMedia(_ reference: EmojiReference) -> MediaImageKey? {
+            guard reference.isAnimated,
+                  let url = reference.id.flatMap({ canvas.model?.customEmojiURLsByID[$0] })
+                  ?? reference.imageURL(size: 64)
+            else { return nil }
+            return .media(url, maximumPixelDimension: 64)
+        }
+
+        /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
         mutating func appendInlineEmoji(
             row: NativeMessageTimelineItem.Identifier,
             role: (Int, Int) -> AnimatedMediaOverlayRole,
@@ -200,11 +209,20 @@ extension NativeTimelineCanvasView {
         ) {
             // The emoji tokens name every key without a Core Text layout.
             if collectsKeys {
-                canvas.appendAnimatedInlineKeys(
-                    from: value,
-                    revealedSpoilerLocations: revealedSpoilerLocations,
-                    into: &keys
+                let hiddenSpoilerRanges = NativeTimelineTextSpoilers.hiddenRanges(
+                    in: value,
+                    revealedLocations: revealedSpoilerLocations
                 )
+                value.enumerateAttribute(
+                    .discordEmojiToken,
+                    in: NSRange(location: 0, length: value.length)
+                ) { rawValue, tokenRange, _ in
+                    guard let rawToken = rawValue as? String,
+                          !hiddenSpoilerRanges.contains(where: { NSLocationInRange(tokenRange.location, $0) }),
+                          let media = animatedEmojiMedia(EmojiReference(rawToken: rawToken))
+                    else { return }
+                    keys.insert(media)
+                }
                 return
             }
             for (ordinal, region) in NativeTimelineInlineEmojiGeometry.regions(
@@ -214,16 +232,12 @@ extension NativeTimelineCanvasView {
                 selectionRange: selectionRange,
                 revealedSpoilerLocations: revealedSpoilerLocations
             ).enumerated() {
-                let reference = EmojiReference(rawToken: region.rawToken)
-                guard reference.isAnimated,
-                      let url = reference.id.flatMap({
-                          canvas.model?.customEmojiURLsByID[$0]
-                      }) ?? reference.imageURL(size: 64)
+                guard let media = animatedEmojiMedia(EmojiReference(rawToken: region.rawToken))
                 else { continue }
                 append(
                     row: row,
                     role: role(ordinal, region.characterRange.location),
-                    media: .media(url, maximumPixelDimension: 64),
+                    media: media,
                     frame: region.mediaFrame,
                     selectionFrame: region.selectionFrame,
                     cornerRadius: 0,
@@ -697,15 +711,12 @@ extension NativeTimelineCanvasView {
             )
         }
         for reaction in layout.reactionRegions where accumulator.walksReactions(in: identifier) {
-            let reference = reaction.reaction.emojiReference
-            guard reference.isAnimated,
-                  let url = reference.id.flatMap({ model?.customEmojiURLsByID[$0] })
-                    ?? reference.imageURL(size: 64)
+            guard let media = accumulator.animatedEmojiMedia(reaction.reaction.emojiReference)
             else { continue }
             accumulator.append(
                 row: identifier,
                 role: .reaction(reaction.reaction.id),
-                media: .media(url, maximumPixelDimension: 64),
+                media: media,
                 frame: reaction.emojiFrame,
                 cornerRadius: 0,
                 isLooping: true
@@ -1561,36 +1572,6 @@ extension NativeTimelineCanvasView {
             accumulator: &accumulator
         )
         return accumulator.keys
-    }
-
-    /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
-    func appendAnimatedInlineKeys(
-        from value: NSAttributedString,
-        revealedSpoilerLocations: Set<Int>,
-        into keys: inout Set<MediaImageKey>
-    ) {
-        let range = NSRange(location: 0, length: value.length)
-        let hiddenSpoilerRanges = NativeTimelineTextSpoilers.hiddenRanges(
-            in: value,
-            revealedLocations: revealedSpoilerLocations
-        )
-        value.enumerateAttribute(
-            .discordEmojiToken,
-            in: range
-        ) { rawValue, tokenRange, _ in
-            guard let rawToken = rawValue as? String,
-                  !hiddenSpoilerRanges.contains(where: {
-                      NSLocationInRange(tokenRange.location, $0)
-                  })
-            else { return }
-            let reference = EmojiReference(rawToken: rawToken)
-            guard reference.isAnimated,
-                  let url = reference.id.flatMap({
-                      model?.customEmojiURLsByID[$0]
-                  }) ?? reference.imageURL(size: 64)
-            else { return }
-            keys.insert(.media(url, maximumPixelDimension: 64))
-        }
     }
 
     static func isPotentiallyAnimated(_ url: URL) -> Bool {
