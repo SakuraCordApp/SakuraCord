@@ -12,7 +12,8 @@ struct FavoritesSidebarView: View {
     var body: some View {
         if let settings = model.displayedFavorites {
             // Discord's first-run sidebar: no favourite shown and no category.
-            let isEmpty = settings.categories.isEmpty && model.favoriteConversations().isEmpty
+            let isEmpty = settings.categories.isEmpty
+                && !settings.entries.contains { !$0.isCategory && model.favoriteConversation($0) != nil }
             List(selection: selection) {
                 FavoriteSuggestionsSection(model: model)
                 if isEmpty { FavoritesEmptySidebarHint(model: model) }

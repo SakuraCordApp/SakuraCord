@@ -63,12 +63,15 @@ extension DiscordRESTProvider {
         if channelAffinities == nil, let stored, let date = stored.channelsFetchedAt { channelAffinities = (stored.channelIDs, date) }
         if userAffinities == nil, let stored, let date = stored.usersFetchedAt { userAffinities = (stored.userIDs, date) }
         let now = Date.now
-        if channelAffinities.map({ now.timeIntervalSince($0.fetchedAt) > Self.channelAffinitiesLifetime }) ?? true,
-           let response: ChannelAffinitiesDTO = try? await request("/users/@me/affinities/v2/channels") {
+        // The two stores fetch independently, as Discord's do.
+        let refreshesChannels = channelAffinities.map { now.timeIntervalSince($0.fetchedAt) > Self.channelAffinitiesLifetime } ?? true
+        let refreshesUsers = userAffinities.map { now.timeIntervalSince($0.fetchedAt) > Self.userAffinitiesLifetime } ?? true
+        async let channelResponse: ChannelAffinitiesDTO? = refreshesChannels ? try? await request("/users/@me/affinities/v2/channels") : nil
+        async let userResponse: UserAffinitiesDTO? = refreshesUsers ? try? await request("/users/@me/affinities/v2/users") : nil
+        if let response = await channelResponse {
             channelAffinities = (Self.ranked(response.channelAffinities.map { ($0.channelID, $0.score ?? 0) }), now)
         }
-        if userAffinities.map({ now.timeIntervalSince($0.fetchedAt) > Self.userAffinitiesLifetime }) ?? true,
-           let response: UserAffinitiesDTO = try? await request("/users/@me/affinities/v2/users") {
+        if let response = await userResponse {
             userAffinities = (Self.ranked(response.userAffinities.map { ($0.otherUserID, $0.dmProbability ?? 0) }), now)
         }
         return ConversationAffinities(

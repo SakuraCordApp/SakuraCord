@@ -76,12 +76,14 @@ struct FavoritesPickerView: View {
         let request = SearchRequest(query: query, pinnedIDs: pinnedIDs)
         let history = model.forwardDestinationHistory
         let favoriteIDs = model.favoriteIDs
-        let found = await Task.detached(priority: .userInitiated) {
+        let search = Task.detached(priority: .userInitiated) {
             index.results(
                 query: request.query, recentChannelIDs: history,
                 pinnedDestinationIDs: request.pinnedIDs, excludedChannelIDs: favoriteIDs
             )
-        }.value
+        }
+        // A newer keystroke cancels this search rather than letting it finish.
+        let found = await withTaskCancellationHandler { await search.value } onCancel: { search.cancel() }
         guard !Task.isCancelled, request == SearchRequest(query: query, pinnedIDs: pinnedIDs) else { return }
         results = found
     }

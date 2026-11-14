@@ -26,7 +26,6 @@ struct FeaturesSettingsPage: View {
                     get: { model.favoritesAreEnabled },
                     set: { model.setFavoritesEnabled($0) }
                 ))
-                .tint(SakuraCordAccentColor.color)
                 .disabled(model.favorites.settings == nil)
                 .settingsControlAnchor(.showFavoritesServer, state: state)
                 .help("Syncs with Discord. Your Favorites stay saved when this is off.")
@@ -78,7 +77,6 @@ private struct FakeNitroSettingsSection: View {
             Toggle("FakeNitro stream quality", isOn: $value.fakeNitroStreamQuality)
                 .settingsControlAnchor(.fakeNitroStreamQuality, state: state)
             Toggle("Unlimited favorites", isOn: $value.unlimitedFavorites)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.unlimitedFavorites, state: state)
         } header: {
             Text("FakeNitro", bundle: #bundle)

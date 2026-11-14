@@ -91,6 +91,11 @@ struct ProtoReader {
 }
 
 extension ProtoReader {
+    /// The last occurrence of a length-delimited field, as protobuf merges it.
+    static func lastMessage(_ field: Int, in data: Data) -> Data? {
+        fields(data).last { $0.field == field }?.payload
+    }
+
     static func fields(_ data: Data) -> [RawProtoField] {
         var reader = ProtoReader(data: data)
         var result: [RawProtoField] = []

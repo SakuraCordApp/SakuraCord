@@ -20,6 +20,7 @@ extension AppModel {
 
     static func removeLocalFavorites(accountID: String) {
         UserDefaults.standard.removeObject(forKey: localFavoritesKey(accountID))
+        UserDefaults.standard.removeObject(forKey: favoriteAffinitiesKey(accountID))
     }
 
     /// The list Favorites shows: the synced favourites, then the local ones

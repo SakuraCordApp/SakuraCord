@@ -73,14 +73,14 @@ extension AppModel {
         }
         let choice = favoritesThreadSettingsChoice
         guard choice.autoAdd != .never, !isFavorite(threadID),
-              let thread = sidebarThread(threadID) ?? favorites.threads[threadID],
+              let thread = favoriteThread(threadID),
               thread.isPrivate || thread.parentID.flatMap(knownRootChannel).map(canViewFavoriteThreadParent) == true
         else { return }
         let serverName = choice.autoAdd == .perServer
             ? thread.guildID.flatMap { serverRailGuildsByID[$0]?.name.trimmingCharacters(in: .whitespacesAndNewlines) }
             : nil
         addFavorites(
-            [FavoriteAddition(id: threadID, channelType: thread.isPrivate ? 12 : 11)],
+            [FavoriteAddition(id: threadID, channelType: thread.favoriteChannelType)],
             categoryName: serverName.flatMap { $0.isEmpty ? nil : $0 } ?? FavoritesSettings.autoAddedThreadsCategoryName,
             isSilent: true
         )
@@ -93,16 +93,9 @@ extension AppModel {
     /// The categories auto-add files into: Auto-Added Threads and, per
     /// server, every category named after one of the account's servers.
     private func favoriteAutoAddCategoryIDs(in settings: FavoritesSettings) -> [ChannelID] {
-        var names = Set([FavoritesSettings.autoAddedThreadsCategoryName.lowercased()])
-        if favoritesThreadSettingsChoice.autoAdd == .perServer {
-            for guild in serverRailGuildsByID.values { names.insert(guild.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
-        }
-        var categoryIDs: [ChannelID] = []
-        for category in settings.entries where category.isCategory {
-            let name = category.nickname.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if names.remove(name) != nil { categoryIDs.append(category.id) }
-        }
-        return categoryIDs
+        var names = [FavoritesSettings.autoAddedThreadsCategoryName]
+        if favoritesThreadSettingsChoice.autoAdd == .perServer { names += serverRailGuildsByID.values.map(\.name) }
+        return Array(Set(names.compactMap { settings.category(named: $0)?.id }))
     }
 
     /// Discord's daily prune when Favorites opens: read favourited threads in
@@ -120,7 +113,7 @@ extension AppModel {
         let removals = settings.entries.compactMap { entry -> (id: ChannelID, activity: Date)? in
             guard !entry.isCategory, scope.map({ entry.parentID.map($0.contains) ?? false }) ?? true,
                   entry.id != presentedFavoriteChannelID,
-                  let thread = sidebarThread(entry.id) ?? favorites.threads[entry.id],
+                  let thread = favoriteThread(entry.id),
                   let parent = thread.parentID.flatMap(knownRootChannel), canViewFavoriteThreadParent(parent),
                   !readState.unread(channelID: entry.id), readState.mentions(channelID: entry.id) == 0
             else { return nil }

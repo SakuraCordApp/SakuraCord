@@ -53,8 +53,9 @@ extension AppModel {
         // Frecency orders the fallback; its arrival advances the source revision.
         if !hasLoadedDiscordEmojiSettings { Task { await loadDiscordEmojiSettings() } }
         let stored = storedFavoriteAffinities
+        async let fetched = account.provider.conversationAffinities(restoring: stored)
         if let stored { await publishFavoriteSuggestions(affinities: stored, account: account) }
-        let fresh = await account.provider.conversationAffinities(restoring: stored)
+        let fresh = await fetched
         guard isCurrentAccountSession(account) else { return }
         if fresh != stored {
             storedFavoriteAffinities = fresh
@@ -65,9 +66,9 @@ extension AppModel {
     /// Publishes the affinity pick at once; the destination index, needed only
     /// for the fallback after both affinity rankings, follows when it's needed.
     private func publishFavoriteSuggestions(affinities: ConversationAffinities, account: AppModelAccountSession) async {
-        publish(favoriteSuggestionPool(affinities: affinities, fallback: []))
-        guard favorites.suggestionPool.channels.count + favorites.suggestionPool.users.count < Self.favoriteSuggestionPoolDepth
-        else { return }
+        var pool = favoriteSuggestionPool(affinities: affinities)
+        publish(pool)
+        guard pool.channels.count + pool.users.count < Self.favoriteSuggestionPoolDepth else { return }
         let history = forwardDestinationHistory
         let favoriteIDs = favoriteIDs
         let index = await ForwardDestinationSearchIndexCache.shared.favoritesIndex(for: self)
@@ -76,7 +77,8 @@ extension AppModel {
             index.results(query: "", recentChannelIDs: history, excludedChannelIDs: favoriteIDs)
         }.value
         guard isCurrentAccountSession(account) else { return }
-        publish(favoriteSuggestionPool(affinities: affinities, fallback: fallback))
+        pool.fallback = Array(fallback.lazy.filter(isListableFavoriteCandidate).prefix(Self.favoriteSuggestionPoolDepth))
+        publish(pool)
     }
 
     private func publish(_ pool: FavoriteSuggestionPool) {
@@ -86,28 +88,32 @@ extension AppModel {
         if favorites.suggestions != suggestions { favorites.suggestions = suggestions }
     }
 
-    /// The account's affinities as last fetched, kept across launches.
+    /// The account's affinities as last fetched, kept across launches and
+    /// read from disk once per session.
     private var storedFavoriteAffinities: ConversationAffinities? {
         get {
-            guard let key = favoriteAffinitiesDefaultsKey, let data = UserDefaults.standard.data(forKey: key) else { return nil }
-            return try? JSONDecoder().decode(ConversationAffinities.self, from: data)
+            if let loaded = favorites.affinities { return loaded }
+            let stored = currentUser
+                .flatMap { UserDefaults.standard.data(forKey: Self.favoriteAffinitiesKey($0.id.description)) }
+                .flatMap { try? JSONDecoder().decode(ConversationAffinities.self, from: $0) }
+            favorites.affinities = stored
+            return stored
         }
         set {
-            guard let key = favoriteAffinitiesDefaultsKey else { return }
-            UserDefaults.standard.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: key)
+            favorites.affinities = newValue
+            guard let accountID = currentUser?.id.description else { return }
+            UserDefaults.standard.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: Self.favoriteAffinitiesKey(accountID))
         }
     }
 
-    private var favoriteAffinitiesDefaultsKey: String? {
-        currentUser.map { "dev.sakuracord.favorite-affinities.\($0.id)" }
+    static func favoriteAffinitiesKey(_ accountID: String) -> String {
+        "dev.sakuracord.favorite-affinities.\(accountID)"
     }
 
     /// The resolved candidates Suggested Channels pick from, enough beyond
     /// the four shown that adding or dismissing rows refills them at once.
-    private func favoriteSuggestionPool(
-        affinities: ConversationAffinities, fallback: [ForwardDestination]
-    ) -> FavoriteSuggestionPool {
-        let excludedUsers = ignoredUsers.blockedUserIDs.union(ignoredUsers.ignoredUserIDs)
+    private func favoriteSuggestionPool(affinities: ConversationAffinities) -> FavoriteSuggestionPool {
+        let excludedUsers = blockedOrIgnoredUserIDs
         let wantedChannelIDs = Set(affinities.channelIDs)
         let wantedUserIDs = Set(affinities.userIDs).subtracting(excludedUsers)
         // One pass collects just the affine channels and DMs.
@@ -131,10 +137,7 @@ extension AppModel {
         }
         return FavoriteSuggestionPool(
             channels: resolved(affinities.channelIDs),
-            users: resolved(affinities.userIDs.compactMap { directMessageIDs[$0] }),
-            fallback: Array(fallback.lazy.filter {
-                $0.resolvedChannelID.map(favoriteIDs.contains) != true && self.isListableFavoriteCandidate($0)
-            }.prefix(depth))
+            users: resolved(affinities.userIDs.compactMap { directMessageIDs[$0] })
         )
     }
 
@@ -152,7 +155,7 @@ extension AppModel {
                 return ForwardDestination(kind: .channel(channel), guild: channel.guildID.flatMap { serverRailGuildsByID[$0] })
             }
         }
-        guard let thread = sidebarThread(channelID) ?? favorites.threads[channelID],
+        guard let thread = favoriteThread(channelID),
               let parent = thread.parentID.flatMap({ channelsByID[$0] ?? knownRootChannel($0) }),
               canViewFavoriteCandidate(parent)
         else { return nil }
@@ -206,7 +209,7 @@ extension AppModel {
             case .channel(let channel):
                 additions.append(FavoriteAddition(id: channel.id, channelType: channel.favoriteChannelType))
             case .thread(let thread, _):
-                additions.append(FavoriteAddition(id: thread.id, channelType: thread.isPrivate ? 12 : 11))
+                additions.append(FavoriteAddition(id: thread.id, channelType: thread.favoriteChannelType))
             case .user(let user, let directMessage):
                 if let directMessage {
                     additions.append(FavoriteAddition(id: directMessage.id, channelType: 1))

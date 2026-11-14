@@ -19,6 +19,8 @@ final class FavoritesStore {
     /// Suggested Channels, most suggested first.
     var suggestions: [ForwardDestination] = []
     @ObservationIgnored var suggestionPool = FavoriteSuggestionPool()
+    /// The stored affinities, once read this session.
+    @ObservationIgnored var affinities: ConversationAffinities?
     @ObservationIgnored var suggestionsTask: Task<Void, Never>?
     @ObservationIgnored var suggestionsNeedRefresh = false
     var isPickerPresented = false
@@ -44,6 +46,7 @@ final class FavoritesStore {
         suggestionsDismissed = nil
         suggestions = []
         suggestionPool = FavoriteSuggestionPool()
+        affinities = nil
         suggestionsTask?.cancel()
         suggestionsTask = nil
         suggestionsNeedRefresh = false
@@ -167,12 +170,17 @@ extension AppModel {
     /// Unknown or hidden channels stay stored but unlisted, like Discord's
     /// list; a favourited thread shows once the account knows it and can
     /// view its parent.
+    /// A favourited thread as the sidebar or Favorites' own fetch knows it.
+    func favoriteThread(_ id: ChannelID) -> MessageThreadSummary? {
+        sidebarThread(id) ?? favorites.threads[id]
+    }
+
     func favoriteConversation(_ entry: FavoritesSettings.Entry) -> FavoriteConversation? {
         if let channel = knownRootChannel(entry.id) {
             guard conversationAccess(for: channel) != .hidden else { return nil }
             return FavoriteConversation(entry: entry, channel: channel)
         }
-        guard let thread = sidebarThread(entry.id) ?? favorites.threads[entry.id],
+        guard let thread = favoriteThread(entry.id),
               let parent = thread.parentID.flatMap(knownRootChannel),
               conversationAccess(for: parent) != .hidden
         else { return nil }
@@ -405,13 +413,22 @@ extension AppModel {
     /// Whether the rail's Favorites tile shows the unread pill and how many
     /// mentions its badge counts, across every shown favourite.
     var favoritesUnread: (isUnread: Bool, mentions: Int) {
-        favoriteConversations().reduce(into: (false, 0)) { result, favorite in
-            result.mentions += readState.mentions(channelID: favorite.id)
-            if !result.isUnread, !isFavoriteMuted(favorite), readState.unread(channelID: favorite.id) {
-                result.isUnread = true
-            }
+        var result = (isUnread: false, mentions: 0)
+        for entry in displayedFavorites?.entries ?? [] where !entry.isCategory {
+            // Read state is a lookup; only flagged favourites are resolved.
+            let mentions = readState.mentions(channelID: entry.id)
+            let isUnread = readState.unread(channelID: entry.id)
+            guard mentions > 0 || isUnread, let favorite = favoriteConversation(entry) else { continue }
+            result.mentions += mentions
+            if isUnread, !isFavoriteMuted(favorite) { result.isUnread = true }
         }
+        return result
     }
+}
+
+extension MessageThreadSummary {
+    /// The Discord channel type a favourited thread records.
+    var favoriteChannelType: Int { isPrivate ? 12 : 11 }
 }
 
 extension Channel {
