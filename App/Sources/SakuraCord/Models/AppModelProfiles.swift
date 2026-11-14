@@ -130,6 +130,13 @@ extension AppModel {
         return presentProfile(for: member, in: guildID, destination: .contextual)
     }
 
+    func systemMessageRecipient(for message: Message) -> User? {
+        guard message.type == .friendRequestAccepted,
+              let channel = messagePresentationChannelsByID[message.channelID],
+              channel.kind == .directMessage else { return nil }
+        return channel.recipients.first { $0.id != currentUser?.id }
+    }
+
     func showSystemMessageProfile(
         userID: UserID,
         sourceMessage: Message? = nil

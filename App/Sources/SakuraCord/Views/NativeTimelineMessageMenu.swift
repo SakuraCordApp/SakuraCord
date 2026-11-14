@@ -537,8 +537,7 @@ extension NativeTimelineCanvasView {
         } else if let mention = textHit?.hit.mention,
                   mention.isInteractive, case let .user(userID) = mention.target {
             user = model.systemMessageUser(userID: userID, sourceMessage: message)
-        } else if let url = textHit?.hit.url,
-                  url.scheme == "sakuracord-action", url.host == "profile", let userID = UserID(url.lastPathComponent) {
+        } else if let url = textHit?.hit.url, case let .profile(userID) = SystemMessagePresentation.Action(url: url) {
             user = model.systemMessageUser(userID: userID, sourceMessage: message)
         } else { return nil }
         guard let user else { return nil }
