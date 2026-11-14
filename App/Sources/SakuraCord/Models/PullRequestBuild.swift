@@ -48,6 +48,11 @@ nonisolated struct PullRequestBuild: Codable, Equatable, Identifiable, Sendable 
         URL(string: "https://github.com/SakuraCordApp/Builds/releases/download/\(id)/\(name)")
     }
 
+    /// The pull request number in a build ID such as `pr-12-run-…`.
+    static func pullRequestNumber(fromID id: String) -> Int? {
+        id.split(separator: "-").dropFirst().first.flatMap { Int($0) }
+    }
+
     private static func isHex(_ value: String, count: Int) -> Bool {
         value.count == count && value.utf8.allSatisfy {
             (48 ... 57).contains($0) || (97 ... 102).contains($0)

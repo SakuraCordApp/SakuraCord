@@ -6,7 +6,7 @@ import Security
 /// Preserves a launchable app outside the bundle Sparkle will replace. Recovery
 /// never depends on code in the subsequently installed preview being runnable.
 @MainActor
-final class PRBuildRecovery {
+final class PullRequestBuildRecovery {
     private static let bookmarkKey = "updates.pullRequestRecoveryFolder"
     private let defaults: UserDefaults
     private let sourceBundleURL: URL

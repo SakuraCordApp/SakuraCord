@@ -80,9 +80,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
     let installedPullRequestNumber: Int?
 
     var pullRequestFeedURL: URL? {
-        installedPullRequestNumber.flatMap {
-            URL(string: "https://github.com/SakuraCordApp/Builds/releases/download/pr-\($0)/appcast.xml")
-        }
+        installedPullRequestNumber.flatMap { PullRequestBuild.assetURL(id: "pr-\($0)", name: "appcast.xml") }
     }
     let publicEdKey: String?
     let unavailabilityReason: AppUpdateUnavailabilityReason?
@@ -110,9 +108,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
         )
         self.installedBuildVersion = installedBuildVersion
         installedPullRequestBuildID = preview
-        installedPullRequestNumber = preview.flatMap { identifier in
-            identifier.split(separator: "-").dropFirst().first.flatMap { Int($0) }
-        }
+        installedPullRequestNumber = preview.flatMap(PullRequestBuild.pullRequestNumber(fromID:))
         self.publicEdKey = publicEdKey
         if !enabled {
             unavailabilityReason = .disabledForBuild
@@ -463,7 +459,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate,
         defer { isPreparingBuildSwitch = false }
         do {
             try build.validate()
-            recoveryLocation = try await PRBuildRecovery().prepareRecovery()
+            recoveryLocation = try await PullRequestBuildRecovery().prepareRecovery()
             guard canCheckForUpdates, !updateSessionInProgress else { throw PullRequestBuildError.unavailable }
             selectedPullRequestBuild = build
             explicitReturnTrack = nil
@@ -478,7 +474,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate,
 
     func revealRecoveryCopy() async {
         do {
-            let url = try await PRBuildRecovery().retainedRecoveryURL()
+            let url = try await PullRequestBuildRecovery().retainedRecoveryURL()
             recoveryLocation = url
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
