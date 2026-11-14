@@ -1,10 +1,6 @@
 import AppKit
 import QuartzCore
 
-struct NativeTimelineSpoilerOverlayPresentation: Hashable {
-    let cornerRadius: CGFloat
-}
-
 /// The interactive part of a media spoiler cover. The row draws the cover
 /// itself, so the cover is never missing while this view comes and goes;
 /// this view adds hover, keyboard focus and activation.

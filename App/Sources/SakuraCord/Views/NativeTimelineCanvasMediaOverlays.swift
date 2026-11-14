@@ -1132,7 +1132,7 @@ extension NativeTimelineCanvasView {
     struct DesiredSpoilerOverlay {
         let key: NativeTimelineComponentRevealKey
         let frame: CGRect
-        let presentation: NativeTimelineSpoilerOverlayPresentation
+        let cornerRadius: CGFloat
     }
 
     func reconcileSpoilerOverlays() {
@@ -1354,7 +1354,7 @@ extension NativeTimelineCanvasView {
         desired.append(DesiredSpoilerOverlay(
             key: key,
             frame: frame.offsetBy(dx: 0, dy: rowOrigin),
-            presentation: NativeTimelineSpoilerOverlayPresentation(cornerRadius: cornerRadius)
+            cornerRadius: cornerRadius
         ))
     }
 
@@ -1363,12 +1363,11 @@ extension NativeTimelineCanvasView {
         for key in Array(spoilerOverlays.keys)
         where !desiredKeys.contains(key) {
             spoilerOverlays.removeValue(forKey: key)?.removeFromSuperview()
-            spoilerOverlayPresentations[key] = nil
         }
         for item in desired {
             let overlay: NativeTimelineSpoilerOverlayHost
             if let existing = spoilerOverlays[item.key],
-               spoilerOverlayPresentations[item.key] == item.presentation
+               existing.cornerRadius == item.cornerRadius
             {
                 overlay = existing
             } else {
@@ -1376,7 +1375,7 @@ extension NativeTimelineCanvasView {
                     .removeFromSuperview()
                 overlay = NativeTimelineSpoilerOverlayHost(
                     frame: item.frame,
-                    cornerRadius: item.presentation.cornerRadius
+                    cornerRadius: item.cornerRadius
                 ) { [weak self] in
                     guard let self, !glideBlocksPointer else { return false }
                     reveal(item.key)
@@ -1388,7 +1387,6 @@ extension NativeTimelineCanvasView {
                     relativeTo: mediaViewerHost
                 )
                 spoilerOverlays[item.key] = overlay
-                spoilerOverlayPresentations[item.key] = item.presentation
             }
             overlay.frame = item.frame
         }
@@ -1404,7 +1402,6 @@ extension NativeTimelineCanvasView {
             overlay.removeFromSuperview()
         }
         spoilerOverlays.removeAll()
-        spoilerOverlayPresentations.removeAll()
     }
 
 }

@@ -382,9 +382,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var spoilerOverlays:
         [NativeTimelineComponentRevealKey:
             NativeTimelineSpoilerOverlayHost] = [:]
-    var spoilerOverlayPresentations:
-        [NativeTimelineComponentRevealKey:
-            NativeTimelineSpoilerOverlayPresentation] = [:]
     var animatedMediaReconcileTask: Task<Void, Never>?
     var mediaInvalidationTask: Task<Void, Never>?
     var pendingMediaInvalidations:
