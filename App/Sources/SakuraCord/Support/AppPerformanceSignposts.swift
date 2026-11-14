@@ -405,6 +405,21 @@ enum AppPerformanceSignposts {
     }
 #endif
 
+    /// Brackets one benchmark run with its signpost interval and the
+    /// matching exact resource window, then emits its completion event.
+    static func measuredBenchmark(
+        _ name: StaticString,
+        completedEvent: StaticString,
+        operation: () async -> Void
+    ) async {
+        let interval = signposter.beginInterval(name)
+        beginResourceWindow(named: name.description)
+        await operation()
+        signposter.endInterval(name, interval)
+        endResourceWindow(named: name.description)
+        signposter.emitEvent(completedEvent)
+    }
+
     static func measure<T>(
         _ name: StaticString,
         operation: () async throws -> T

@@ -520,7 +520,7 @@ extension AppModel {
             guilds: value.guilds,
             retainedChannel: retainedChannel,
             avoidingGuildNamed:
-                runsLoadingOverlapBenchmark ? "Google Labs" : nil
+                runsLoadingOverlapBenchmark ? Self.benchmarkGuildName : nil
         )
     }
 

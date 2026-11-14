@@ -3,6 +3,12 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
+extension AppModel {
+    /// The real server the member-list and loading-overlap benchmarks open,
+    /// which bootstrap therefore keeps cold.
+    static let benchmarkGuildName = "Google Labs"
+}
+
 #if DEBUG
     private enum AuthenticatedNavigationBenchmarkKind {
         case directMessage
@@ -27,7 +33,7 @@ import SakuraCordModels
             guard !Task.isCancelled,
                   let snapshot,
                   let targetGuild = snapshot.guilds.first(where: {
-                      $0.name.localizedCaseInsensitiveCompare("Google Labs")
+                      $0.name.localizedCaseInsensitiveCompare(Self.benchmarkGuildName)
                           == .orderedSame
                   }),
                   let channel = benchmarkConversationChannels(
@@ -85,33 +91,55 @@ import SakuraCordModels
             {
                 let previousCount = messages.count
                 await loadEarlier()
-                await waitForSelectedEarlierHistoryRequest(channelID: channelID)
+                await waitForHistoryIdle(
+                    for: .zero,
+                    polling: .milliseconds(10),
+                    isLoading: { isLoadingEarlier },
+                    while: { selectedChannelID == channelID }
+                )
                 pageCount += 1
                 guard messages.count > previousCount else { break }
             }
             return messages.count >= 100
         }
 
-        private func waitForSelectedEarlierHistoryRequest(
-            channelID: ChannelID?
+        /// Waits up to 12 seconds until `isLoading` has stayed false for
+        /// `idleDuration`, stopping early once `staysRelevant` is false.
+        private func waitForHistoryIdle(
+            for idleDuration: Duration,
+            polling pollInterval: Duration,
+            isLoading: () -> Bool,
+            while staysRelevant: () -> Bool = { true }
         ) async {
             let clock = ContinuousClock()
             let deadline = clock.now.advanced(by: .seconds(12))
-            while !Task.isCancelled,
-                  selectedChannelID == channelID,
-                  isLoadingEarlier,
-                  clock.now < deadline
-            {
-                try? await Task.sleep(for: .milliseconds(10))
+            var idleSince: ContinuousClock.Instant?
+            while !Task.isCancelled, staysRelevant(), clock.now < deadline {
+                if isLoading() {
+                    idleSince = nil
+                } else {
+                    let since = idleSince ?? clock.now
+                    if since.duration(to: clock.now) >= idleDuration { return }
+                    idleSince = since
+                }
+                try? await Task.sleep(for: pollInterval)
             }
+        }
+
+        private func waitForSelectedEarlierHistoryIdle() async {
+            let channelID = selectedChannelID
+            await waitForHistoryIdle(
+                for: .milliseconds(250),
+                polling: .milliseconds(10),
+                isLoading: { isLoadingEarlier },
+                while: { selectedChannelID == channelID }
+            )
         }
 
         func runAuthenticatedHistoryPaginationPerformanceBenchmark() async {
             guard runsChatPerformanceBenchmark, sessionState == .workspace else { return }
             await channelLoadTask?.value
-            await waitForSelectedEarlierHistoryIdle(
-                channelID: selectedChannelID
-            )
+            await waitForSelectedEarlierHistoryIdle()
             if !hasMoreMessages, let snapshot {
                 let candidates = benchmarkEligibleChannels(snapshot.channels)
                 for channel in candidates where !hasMoreMessages {
@@ -120,9 +148,7 @@ import SakuraCordModels
                         channel: channel,
                         kind: channel.guildID == nil ? .directMessage : .channel
                     )
-                    await waitForSelectedEarlierHistoryIdle(
-                        channelID: selectedChannelID
-                    )
+                    await waitForSelectedEarlierHistoryIdle()
                 }
             }
             guard !Task.isCancelled, hasMoreMessages, selectedChannelID != nil else {
@@ -133,62 +159,26 @@ import SakuraCordModels
                 return
             }
 
-            let overall = AppPerformanceSignposts.signposter.beginInterval(
-                "AuthenticatedHistoryPaginationBenchmark"
-            )
-            AppPerformanceSignposts.beginResourceWindow(
-                named: "AuthenticatedHistoryPaginationBenchmark"
-            )
             var pageCount = 0
-            while pageCount < 5, hasMoreMessages, !Task.isCancelled {
-                let messageCount = messages.count
-                await loadEarlier()
-                if messages.count > messageCount {
-                    pageCount += 1
-                } else {
-                    break
-                }
-                await Task.yield()
-            }
-            AppPerformanceSignposts.signposter.endInterval(
+            await AppPerformanceSignposts.measuredBenchmark(
                 "AuthenticatedHistoryPaginationBenchmark",
-                overall
-            )
-            AppPerformanceSignposts.endResourceWindow(
-                named: "AuthenticatedHistoryPaginationBenchmark"
-            )
-            AppPerformanceSignposts.signposter.emitEvent(
-                "AuthenticatedHistoryPaginationBenchmarkCompleted"
-            )
+                completedEvent: "AuthenticatedHistoryPaginationBenchmarkCompleted"
+            ) {
+                while pageCount < 5, hasMoreMessages, !Task.isCancelled {
+                    let messageCount = messages.count
+                    await loadEarlier()
+                    if messages.count > messageCount {
+                        pageCount += 1
+                    } else {
+                        break
+                    }
+                    await Task.yield()
+                }
+            }
             writeAuthenticatedHistoryPaginationBenchmarkResult(
                 outcome: pageCount > 0 ? "completed" : "failed",
                 pageCount: pageCount
             )
-        }
-
-        private func waitForSelectedEarlierHistoryIdle(
-            channelID: ChannelID?
-        ) async {
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: .seconds(12))
-            var idleSince: ContinuousClock.Instant?
-            while !Task.isCancelled,
-                  selectedChannelID == channelID,
-                  clock.now < deadline
-            {
-                if isLoadingEarlier {
-                    idleSince = nil
-                } else if let idleSince {
-                    if idleSince.duration(to: clock.now)
-                        >= .milliseconds(250)
-                    {
-                        return
-                    }
-                } else {
-                    idleSince = clock.now
-                }
-                try? await Task.sleep(for: .milliseconds(10))
-            }
         }
 
         private func writeAuthenticatedHistoryPaginationBenchmarkResult(
@@ -239,15 +229,14 @@ import SakuraCordModels
             }
             guard !Task.isCancelled else { return }
 
-            let overall = AppPerformanceSignposts.signposter.beginInterval(
-                "AuthenticatedAccountSwitchBenchmark"
-            )
-            AppPerformanceSignposts.beginResourceWindow(
-                named: "AuthenticatedAccountSwitchBenchmark"
-            )
-            let switched = await switchAccount(to: target.accountID)
+            var switched = false
             var reachedFirstFrame = false
-            if switched, let selectedChannelID {
+            await AppPerformanceSignposts.measuredBenchmark(
+                "AuthenticatedAccountSwitchBenchmark",
+                completedEvent: "AuthenticatedAccountSwitchBenchmarkCompleted"
+            ) {
+                switched = await switchAccount(to: target.accountID)
+                guard switched, let selectedChannelID else { return }
                 async let firstFrame: Void =
                     AppPerformanceSignposts.waitForConversationFirstFrame(
                         channelID: selectedChannelID
@@ -257,16 +246,6 @@ import SakuraCordModels
                 reachedFirstFrame = hasCompletedInitialMessageLoad
                     && self.selectedChannelID == selectedChannelID
             }
-            AppPerformanceSignposts.signposter.endInterval(
-                "AuthenticatedAccountSwitchBenchmark",
-                overall
-            )
-            AppPerformanceSignposts.endResourceWindow(
-                named: "AuthenticatedAccountSwitchBenchmark"
-            )
-            AppPerformanceSignposts.signposter.emitEvent(
-                "AuthenticatedAccountSwitchBenchmarkCompleted"
-            )
 
             await savedAccountStore.setPreferredAccountID(
                 originalPreferredAccountID
@@ -307,26 +286,15 @@ import SakuraCordModels
             }
             guard !Task.isCancelled else { return }
 
-            let overall = AppPerformanceSignposts.signposter.beginInterval(
-                "AuthenticatedGestureScrollBenchmark"
-            )
-            AppPerformanceSignposts.beginResourceWindow(
-                named: "AuthenticatedGestureScrollBenchmark"
-            )
-            AppPerformanceSignposts.signposter.emitEvent(
-                "AuthenticatedGestureScrollBenchmarkReady"
-            )
-            try? await Task.sleep(for: .seconds(20))
-            AppPerformanceSignposts.signposter.endInterval(
+            await AppPerformanceSignposts.measuredBenchmark(
                 "AuthenticatedGestureScrollBenchmark",
-                overall
-            )
-            AppPerformanceSignposts.endResourceWindow(
-                named: "AuthenticatedGestureScrollBenchmark"
-            )
-            AppPerformanceSignposts.signposter.emitEvent(
-                "AuthenticatedGestureScrollBenchmarkCompleted"
-            )
+                completedEvent: "AuthenticatedGestureScrollBenchmarkCompleted"
+            ) {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "AuthenticatedGestureScrollBenchmarkReady"
+                )
+                try? await Task.sleep(for: .seconds(20))
+            }
             writeAuthenticatedScrollInteractionBenchmarkResult(
                 outcome: Task.isCancelled ? "cancelled" : "completed",
                 target: "current",
@@ -348,7 +316,7 @@ import SakuraCordModels
                 return
             }
             guard let targetGuild = serverRailGuildsByID.values.first(where: {
-                $0.name.localizedCaseInsensitiveCompare("Google Labs")
+                $0.name.localizedCaseInsensitiveCompare(Self.benchmarkGuildName)
                     == .orderedSame
             }) else {
                 writeAuthenticatedLoadingScrollUnavailable("target-guild-missing")
@@ -373,54 +341,45 @@ import SakuraCordModels
                 return
             }
 
-            let overall = AppPerformanceSignposts.signposter.beginInterval(
-                "AuthenticatedLoadingScrollOverlapBenchmark"
-            )
-            AppPerformanceSignposts.beginResourceWindow(
-                named: "AuthenticatedLoadingScrollOverlapBenchmark"
-            )
-            AppPerformanceSignposts.signposter.emitEvent(
-                "AuthenticatedLoadingScrollOverlapBenchmarkReady"
-            )
-            AppPerformanceSignposts.signposter.emitEvent(
-                "AuthenticatedLoadingScrollIdleControlReady"
-            )
-            let idleControl = AppPerformanceSignposts.signposter.beginInterval(
-                "AuthenticatedLoadingScrollIdleControl"
-            )
-            try? await Task.sleep(for: .seconds(8))
-            AppPerformanceSignposts.signposter.endInterval(
-                "AuthenticatedLoadingScrollIdleControl",
-                idleControl
-            )
-
-            let loadingWork = AppPerformanceSignposts.signposter.beginInterval(
-                "AuthenticatedLoadingScrollWork"
-            )
-            let opened = await runAuthenticatedNavigationBenchmarkOperation(
-                channel: channel,
-                kind: .server
-            )
-            let initialMessageCount = opened ? messages.count : 0
-            if opened {
-                await memberLoadTask?.value
-                _ = await prepareSelectedTimelineScrollHistory()
-            }
-            AppPerformanceSignposts.signposter.endInterval(
-                "AuthenticatedLoadingScrollWork",
-                loadingWork
-            )
-            try? await Task.sleep(for: .seconds(3))
-            AppPerformanceSignposts.signposter.endInterval(
+            var opened = false
+            var initialMessageCount = 0
+            await AppPerformanceSignposts.measuredBenchmark(
                 "AuthenticatedLoadingScrollOverlapBenchmark",
-                overall
-            )
-            AppPerformanceSignposts.endResourceWindow(
-                named: "AuthenticatedLoadingScrollOverlapBenchmark"
-            )
-            AppPerformanceSignposts.signposter.emitEvent(
-                "AuthenticatedLoadingScrollOverlapBenchmarkCompleted"
-            )
+                completedEvent: "AuthenticatedLoadingScrollOverlapBenchmarkCompleted"
+            ) {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "AuthenticatedLoadingScrollOverlapBenchmarkReady"
+                )
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "AuthenticatedLoadingScrollIdleControlReady"
+                )
+                let idleControl = AppPerformanceSignposts.signposter.beginInterval(
+                    "AuthenticatedLoadingScrollIdleControl"
+                )
+                try? await Task.sleep(for: .seconds(8))
+                AppPerformanceSignposts.signposter.endInterval(
+                    "AuthenticatedLoadingScrollIdleControl",
+                    idleControl
+                )
+
+                let loadingWork = AppPerformanceSignposts.signposter.beginInterval(
+                    "AuthenticatedLoadingScrollWork"
+                )
+                opened = await runAuthenticatedNavigationBenchmarkOperation(
+                    channel: channel,
+                    kind: .server
+                )
+                initialMessageCount = opened ? messages.count : 0
+                if opened {
+                    await memberLoadTask?.value
+                    _ = await prepareSelectedTimelineScrollHistory()
+                }
+                AppPerformanceSignposts.signposter.endInterval(
+                    "AuthenticatedLoadingScrollWork",
+                    loadingWork
+                )
+                try? await Task.sleep(for: .seconds(3))
+            }
             writeAuthenticatedScrollInteractionBenchmarkResult(
                 outcome:
                     opened
@@ -450,23 +409,11 @@ import SakuraCordModels
         }
 
         private func waitForSelectedTimelineHistoryIdle() async {
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: .seconds(12))
-            var idleSince: ContinuousClock.Instant?
-            while !Task.isCancelled, clock.now < deadline {
-                if isLoadingEarlier || isLoadingLater {
-                    idleSince = nil
-                } else if let idleSince {
-                    if idleSince.duration(to: clock.now)
-                        >= .milliseconds(500)
-                    {
-                        return
-                    }
-                } else {
-                    idleSince = clock.now
-                }
-                try? await Task.sleep(for: .milliseconds(20))
-            }
+            await waitForHistoryIdle(
+                for: .milliseconds(500),
+                polling: .milliseconds(20),
+                isLoading: { isLoadingEarlier || isLoadingLater }
+            )
         }
 
         private func awaitAuthenticatedBenchmarkReadiness() async {
@@ -481,23 +428,11 @@ import SakuraCordModels
         private func writeAuthenticatedLoadingScrollUnavailable(_ detail: String) {
             writeAuthenticatedScrollInteractionBenchmarkResult(
                 outcome: "unavailable",
-                target: "Google Labs",
+                target: Self.benchmarkGuildName,
                 messageCount: 0,
                 initialMessageCount: 0,
                 detail: detail
             )
-        }
-
-        private nonisolated static func prefersActiveBenchmarkChannel(
-            _ lhs: Channel,
-            _ rhs: Channel
-        ) -> Bool {
-            let lhsLastMessage = lhs.lastMessageID?.rawValue ?? 0
-            let rhsLastMessage = rhs.lastMessageID?.rawValue ?? 0
-            if lhsLastMessage != rhsLastMessage {
-                return lhsLastMessage > rhsLastMessage
-            }
-            return lhs.id.rawValue < rhs.id.rawValue
         }
 
         private nonisolated static func prefersStableLoadingBenchmarkChannel(
@@ -556,81 +491,67 @@ import SakuraCordModels
                 return
             }
 
-            let overall = AppPerformanceSignposts.signposter.beginInterval(
-                "AuthenticatedNavigationBenchmark"
-            )
-            AppPerformanceSignposts.beginResourceWindow(
-                named: "AuthenticatedNavigationBenchmark"
-            )
             var directMessageCount = 0
             var serverCount = 0
             var channelCount = 0
-            defer {
-                AppPerformanceSignposts.signposter.endInterval(
-                    "AuthenticatedNavigationBenchmark",
-                    overall
+            await AppPerformanceSignposts.measuredBenchmark(
+                "AuthenticatedNavigationBenchmark",
+                completedEvent: "AuthenticatedNavigationBenchmarkCompleted"
+            ) {
+                let initialChannelID = selectedChannelID
+                let privateNavigation = await runAuthenticatedPrivateNavigationBenchmark(
+                    snapshot: snapshot,
+                    initialChannelID: initialChannelID
                 )
-                AppPerformanceSignposts.endResourceWindow(
-                    named: "AuthenticatedNavigationBenchmark"
-                )
-                AppPerformanceSignposts.signposter.emitEvent(
-                    "AuthenticatedNavigationBenchmarkCompleted"
-                )
-                writeAuthenticatedNavigationBenchmarkResult(
-                    outcome: Task.isCancelled ? "cancelled" : "completed",
-                    directMessageCount: directMessageCount,
-                    serverCount: serverCount,
-                    channelCount: channelCount
-                )
-            }
+                directMessageCount = privateNavigation.count
+                var visitedChannelIDs = privateNavigation.visitedChannelIDs
 
-            let initialChannelID = selectedChannelID
-            let privateNavigation = await runAuthenticatedPrivateNavigationBenchmark(
-                snapshot: snapshot,
-                initialChannelID: initialChannelID
+                let initialGuildID = selectedGuildID
+                let orderedGuildIDs = serverRailItems.flatMap { item -> [GuildID] in
+                    switch item {
+                    case .guild(let guildID): [guildID]
+                    case .folder(let folder): folder.guildIDs
+                    }
+                }
+                var visitedGuildIDs: Set<GuildID> = []
+                for guildID in orderedGuildIDs where serverCount < 3 {
+                    guard !Task.isCancelled else { return }
+                    guard guildID != initialGuildID,
+                          visitedGuildIDs.insert(guildID).inserted
+                    else { continue }
+                    let candidates = benchmarkEligibleChannels(
+                        snapshot.channels.filter { $0.guildID == guildID }
+                    )
+                    guard let serverChannel = candidates.first(where: {
+                        !visitedChannelIDs.contains($0.id)
+                    }) else { continue }
+                    visitedChannelIDs.insert(serverChannel.id)
+                    if await runAuthenticatedNavigationBenchmarkOperation(
+                        channel: serverChannel,
+                        kind: .server
+                    ) {
+                        serverCount += 1
+                    }
+                    guard !Task.isCancelled,
+                          let secondChannel = candidates.first(where: {
+                              !visitedChannelIDs.contains($0.id)
+                          })
+                    else { continue }
+                    visitedChannelIDs.insert(secondChannel.id)
+                    if await runAuthenticatedNavigationBenchmarkOperation(
+                        channel: secondChannel,
+                        kind: .channel
+                    ) {
+                        channelCount += 1
+                    }
+                }
+            }
+            writeAuthenticatedNavigationBenchmarkResult(
+                outcome: Task.isCancelled ? "cancelled" : "completed",
+                directMessageCount: directMessageCount,
+                serverCount: serverCount,
+                channelCount: channelCount
             )
-            directMessageCount = privateNavigation.count
-            var visitedChannelIDs = privateNavigation.visitedChannelIDs
-
-            let initialGuildID = selectedGuildID
-            let orderedGuildIDs = serverRailItems.flatMap { item -> [GuildID] in
-                switch item {
-                case .guild(let guildID): [guildID]
-                case .folder(let folder): folder.guildIDs
-                }
-            }
-            var visitedGuildIDs: Set<GuildID> = []
-            for guildID in orderedGuildIDs where serverCount < 3 {
-                guard !Task.isCancelled else { return }
-                guard guildID != initialGuildID,
-                      visitedGuildIDs.insert(guildID).inserted
-                else { continue }
-                let candidates = benchmarkEligibleChannels(
-                    snapshot.channels.filter { $0.guildID == guildID }
-                )
-                guard let serverChannel = candidates.first(where: {
-                    !visitedChannelIDs.contains($0.id)
-                }) else { continue }
-                visitedChannelIDs.insert(serverChannel.id)
-                if await runAuthenticatedNavigationBenchmarkOperation(
-                    channel: serverChannel,
-                    kind: .server
-                ) {
-                    serverCount += 1
-                }
-                guard !Task.isCancelled,
-                      let secondChannel = candidates.first(where: {
-                          !visitedChannelIDs.contains($0.id)
-                      })
-                else { continue }
-                visitedChannelIDs.insert(secondChannel.id)
-                if await runAuthenticatedNavigationBenchmarkOperation(
-                    channel: secondChannel,
-                    kind: .channel
-                ) {
-                    channelCount += 1
-                }
-            }
         }
 
         private func runAuthenticatedPrivateNavigationBenchmark(
@@ -660,9 +581,8 @@ import SakuraCordModels
         }
 
         private func benchmarkEligibleChannels(_ channels: [Channel]) -> [Channel] {
-            benchmarkConversationChannels(channels).filter { channel in
-                guard conversationAccess(for: channel).isReadable else { return false }
-                return true
+            benchmarkConversationChannels(channels).filter {
+                conversationAccess(for: $0).isReadable
             }
         }
 
