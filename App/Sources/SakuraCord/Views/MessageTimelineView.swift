@@ -78,18 +78,10 @@ struct MessageTimelineView: View {
             onUserScrollEnded: handleUserScrollEnded,
             onUserScrollTowardNewest: handleUserScrollTowardNewest
         )
-        .scrollEdgeEffectStyle(.soft, for: .top)
-        .ignoresSafeArea(.container, edges: .top)
-        .opacity(showsLoadingSkeleton ? 0 : 1)
-        .allowsHitTesting(!showsLoadingSkeleton)
-        .accessibilityHidden(showsLoadingSkeleton)
-        .overlay {
-            if showsLoadingSkeleton {
-                MessageTimelineLoadingSkeleton(
-                    bottomContentInset: bottomContentInset
-                )
-            }
-        }
+        .modifier(MessageTimelineLoadingChrome(
+            showsLoadingSkeleton: showsLoadingSkeleton,
+            bottomContentInset: bottomContentInset
+        ))
         .overlay(alignment: .top) {
             VStack(spacing: InterfaceScale.metric(8)) {
                 if let error = model.messageLoadError {
@@ -740,6 +732,29 @@ enum MessageTimelineLoadingPolicy {
     ) -> Bool {
         isLoadingEarlierPage
             || (isLoadingInitialPage && messageCount > 0)
+    }
+}
+
+/// A timeline's top edge, with the timeline hidden behind its loading
+/// skeleton while `showsLoadingSkeleton`.
+struct MessageTimelineLoadingChrome: ViewModifier {
+    let showsLoadingSkeleton: Bool
+    let bottomContentInset: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .ignoresSafeArea(.container, edges: .top)
+            .opacity(showsLoadingSkeleton ? 0 : 1)
+            .allowsHitTesting(!showsLoadingSkeleton)
+            .accessibilityHidden(showsLoadingSkeleton)
+            .overlay {
+                if showsLoadingSkeleton {
+                    MessageTimelineLoadingSkeleton(
+                        bottomContentInset: bottomContentInset
+                    )
+                }
+            }
     }
 }
 

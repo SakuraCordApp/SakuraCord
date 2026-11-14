@@ -15,12 +15,10 @@ struct ComposerAttachmentTray: View {
     /// Files still being checked; they show at once but cannot be sent yet.
     var checkingIDs: Set<UUID> = []
     let uploads: AttachmentUploadProgressStore
-    var sendTransitionAnchor: ComposerSendTransitionAnchor?
-    /// The tile the media viewer is zoomed out of, which hides meanwhile.
-    /// Read here rather than by the composer, which would otherwise redraw
-    /// as the viewer opens.
-    var mediaViewerSourceID: () -> String? = { nil }
-    var scrolled: () -> Void = {}
+    let sendTransitionAnchor: ComposerSendTransitionAnchor
+    /// Read for the media viewer, here rather than by the composer, which
+    /// would otherwise redraw as the viewer opens.
+    let model: AppModel
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
     let update: (ForumPostAttachment) -> Void
@@ -28,7 +26,8 @@ struct ComposerAttachmentTray: View {
     @State private var editingTarget: ComposerAttachmentEditorTarget?
 
     var body: some View {
-        let mediaViewerSourceID = mediaViewerSourceID()
+        // The tile the media viewer is zoomed out of, which hides meanwhile.
+        let mediaViewerSourceID = model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
         return ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: InterfaceScale.metric(9)) {
@@ -56,7 +55,10 @@ struct ComposerAttachmentTray: View {
                 .animation(reduceMotion ? .smooth(duration: 0.2) : ComposerResizeMotion.tile, value: attachments.map(\.id))
             }
             .scrollIndicators(.hidden)
-            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x }, action: { _, _ in scrolled() })
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x }, action: { _, _ in
+                guard let link = model.mediaViewerPresentation?.transitionLink else { return }
+                sendTransitionAnchor.followMediaViewerSources(in: link)
+            })
             .onChange(of: attachments.map(\.id)) { previous, current in
                 // Bring a newly added file into view as it arrives.
                 guard let added = current.last(where: { !previous.contains($0) }) else { return }

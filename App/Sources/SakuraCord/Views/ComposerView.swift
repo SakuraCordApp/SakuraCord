@@ -97,13 +97,7 @@ struct ComposerView: View {
                             checkingIDs: model.composer.checkingAttachmentIDs,
                             uploads: model.attachmentUploads,
                             sendTransitionAnchor: sendTransitionAnchor,
-                            mediaViewerSourceID: {
-                                model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
-                            },
-                            scrolled: {
-                                guard let link = model.mediaViewerPresentation?.transitionLink else { return }
-                                sendTransitionAnchor.followMediaViewerSources(in: link)
-                            },
+                            model: model,
                             open: openComposerAttachment,
                             toggleSpoiler: {
                                 model.toggleComposerAttachmentSpoiler($0, in: conversation)

@@ -447,18 +447,10 @@ private struct ThreadMessageTimelineView: View {
             onUserScrollEnded: handleUserScrollEnded,
             onUserScrollTowardNewest: handleUserScrollTowardNewest
         )
-        .scrollEdgeEffectStyle(.soft, for: .top)
-        .ignoresSafeArea(.container, edges: .top)
-        .opacity(showsLoadingSkeleton ? 0 : 1)
-        .allowsHitTesting(!showsLoadingSkeleton)
-        .accessibilityHidden(showsLoadingSkeleton)
-        .overlay {
-            if showsLoadingSkeleton {
-                MessageTimelineLoadingSkeleton(
-                    bottomContentInset: bottomContentInset
-                )
-            }
-        }
+        .modifier(MessageTimelineLoadingChrome(
+            showsLoadingSkeleton: showsLoadingSkeleton,
+            bottomContentInset: bottomContentInset
+        ))
         .overlay(alignment: .top) {
             if let summary = overlays.unreadSummary {
                 UnreadMessagesBanner(

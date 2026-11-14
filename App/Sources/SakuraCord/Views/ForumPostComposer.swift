@@ -189,13 +189,7 @@ struct ForumPostComposer: View {
             checkingIDs: draft.checkingAttachmentIDs,
             uploads: model.attachmentUploads,
             sendTransitionAnchor: sendTransitionAnchor,
-            mediaViewerSourceID: {
-                model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
-            },
-            scrolled: {
-                guard let link = model.mediaViewerPresentation?.transitionLink else { return }
-                sendTransitionAnchor.followMediaViewerSources(in: link)
-            },
+            model: model,
             open: openAttachment,
             toggleSpoiler: { id in updateAttachment(id) { $0.isSpoiler.toggle() } },
             update: { attachment in updateAttachment(attachment.id) { $0 = attachment } },
