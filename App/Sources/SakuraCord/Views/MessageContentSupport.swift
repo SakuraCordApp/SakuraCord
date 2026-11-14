@@ -2,42 +2,6 @@ import MessageRendering
 import SakuraCordModels
 import SwiftUI
 
-/// Resolves mention metadata for a message through the app model.
-struct MessageMentionResolver {
-    let model: AppModel
-    let message: Message?
-
-    init(model: AppModel, message: Message? = nil) {
-        self.model = model
-        self.message = message
-    }
-
-    func label(_ mention: RenderedMention) -> String {
-        presentation(mention).label
-    }
-
-    /// Every mention in prepared text, keyed by token: resolved through the
-    /// model when there is one, else its fallback.
-    static func presentations(
-        for prepared: RichMessageAttributedText.Prepared, model: AppModel?, message: Message?
-    ) -> [String: MentionPresentation] {
-        let resolver = model.map { MessageMentionResolver(model: $0, message: message) }
-        return prepared.tokens.reduce(into: [:]) { result, token in
-            guard case let .mention(mention) = token else { return }
-            result[mention.rawToken] = resolver?.presentation(mention) ?? MentionPresentation.fallback(for: mention)
-        }
-    }
-
-    /// Every mention a draft holds, keyed by token, as an editor shows them.
-    func presentations(in text: String) -> [String: MentionPresentation] {
-        MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
-            if case let .mention(mention) = segment {
-                values[mention.rawToken] = presentation(mention)
-            }
-        }
-    }
-}
-
 extension MessageMentionResolver {
     private func member(_ id: UserID) -> Member? {
         sourceGuildID.flatMap { model.membersByGuildID[$0]?[id] }
