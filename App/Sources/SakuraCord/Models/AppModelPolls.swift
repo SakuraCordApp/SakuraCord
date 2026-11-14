@@ -65,7 +65,7 @@ extension AppModel {
               (isThread ? openThreadAccess : conversationAccess(for: channel)).canSend else { return false }
         guard channel.guildID != nil else { return true }
         guard let permissions = effectiveMessagePermissions(in: channel) else { return false }
-        return permissions & (DiscordPermissionBits.sendPolls | DiscordPermissionBits.administrator) != 0
+        return permissions & DiscordPermissionBits.sendPolls != 0
     }
 
     func createPoll(_ poll: PollDraft, in channelID: ChannelID) async -> ComposerSubmissionResult {

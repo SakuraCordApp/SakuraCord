@@ -17,14 +17,7 @@ extension AppModel {
         else { return nil }
         if let guildID = channel.guildID {
             guard let basis = conversationPermissionBasis(for: guildID),
-                  let permissions = ConversationPermissionResolver.effectivePermissions(
-                      guild: basis.guild,
-                      channel: channel,
-                      resolvedBasePermissions: basis.resolvedBasePermissions,
-                      overwritePrincipals: basis.overwritePrincipals,
-                      hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
-            communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
-                  ),
+                  let permissions = basis.effectivePermissions(in: channel),
                   !basis.currentUserIsPending,
                   permissions & DiscordPermissionBits.attachFiles != 0
             else { return nil }

@@ -211,7 +211,7 @@ extension AppModel {
     func canStartActivity(in channel: Channel) -> Bool {
         guard channel.guildID != nil else { return true }
         guard let permissions = effectiveMessagePermissions(in: channel) else { return false }
-        return permissions & (DiscordPermissionBits.useEmbeddedActivities | DiscordPermissionBits.administrator) != 0
+        return permissions & DiscordPermissionBits.useEmbeddedActivities != 0
     }
 
     func retryActivity() async {

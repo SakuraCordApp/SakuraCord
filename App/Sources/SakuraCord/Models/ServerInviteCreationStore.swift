@@ -86,13 +86,7 @@ extension AppModel {
               !basis.currentUserIsPending else { return nil }
         let required = DiscordPermissionBits.viewChannel | DiscordPermissionBits.createInstantInvite
         func allowsInvite(_ channel: Channel) -> Bool {
-            guard let permissions = ConversationPermissionResolver.effectivePermissions(
-                guild: basis.guild, channel: channel,
-                resolvedBasePermissions: basis.resolvedBasePermissions,
-                overwritePrincipals: basis.overwritePrincipals,
-                hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
-            communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
-            ) else { return false }
+            guard let permissions = basis.effectivePermissions(in: channel) else { return false }
             return permissions & required == required
         }
         if selectedGuildID == guildID, let channel = selectedChannel, channel.guildID == guildID,

@@ -117,7 +117,7 @@ final class ForwardDestinationSearchIndexCache {
                     unresolvedGuildIDs.insert(guildID)
                     permissionBasis = nil
                 }
-                permissionsByChannelID[channel.id] = permissionBasis.flatMap { permissions(for: channel, basis: $0) }
+                permissionsByChannelID[channel.id] = permissionBasis.flatMap { $0.effectivePermissions(in: channel) }
             }
             let searchableChannelIDs = Set(
                 channels.lazy.filter { channel in
@@ -177,14 +177,6 @@ final class ForwardDestinationSearchIndexCache {
                 usageOrder: usageOrder,
                 searchableChannelIDs: searchableChannelIDs,
                 eligibleChannelIDs: eligibleChannelIDs
-            )
-        }
-
-        private func permissions(for channel: Channel, basis: ConversationPermissionBasis) -> UInt64? {
-            ConversationPermissionResolver.effectivePermissions(
-                guild: basis.guild, channel: channel, resolvedBasePermissions: basis.resolvedBasePermissions,
-                overwritePrincipals: basis.overwritePrincipals, hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
-                communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
             )
         }
 

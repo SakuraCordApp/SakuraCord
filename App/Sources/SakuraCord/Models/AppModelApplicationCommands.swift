@@ -348,7 +348,7 @@ extension AppModel {
         }
         let threadable = channel.kind == .text || channel.kind == .announcement
         let canCreateThread = threadable && channel.guildID != nil
-            && (channelPermissions.map { $0 & (DiscordPermissionBits.createPublicThreads | DiscordPermissionBits.administrator) != 0 } ?? false)
+            && (channelPermissions.map { $0 & DiscordPermissionBits.createPublicThreads != 0 } ?? false)
         return DiscordBuiltInCommands.Context(
             isPrivate: channel.guildID == nil,
             isGroupDirectMessage: channel.kind == .groupDirectMessage,

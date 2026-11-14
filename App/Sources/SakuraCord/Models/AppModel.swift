@@ -40,6 +40,17 @@ nonisolated struct ConversationPermissionBasis: Sendable {
     var currentUserCommunicationDisabledUntil: Date?
     var currentUserRequiresOnboarding: Bool = false
     var currentUserOnboardingIsKnown: Bool = true
+
+    func effectivePermissions(in channel: Channel) -> UInt64? {
+        ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            resolvedBasePermissions: resolvedBasePermissions,
+            overwritePrincipals: overwritePrincipals,
+            hasCurrentRoleIdentity: hasCurrentRoleIdentity,
+            communicationDisabledUntil: currentUserCommunicationDisabledUntil
+        )
+    }
 }
 
 struct CommandMemberQuery: Hashable {
@@ -742,14 +753,7 @@ final class AppModel {
         guard let guildID = channel.guildID,
               let basis = conversationPermissionBasis(for: guildID)
         else { return channel.guildID == nil ? .max : nil }
-        return ConversationPermissionResolver.effectivePermissions(
-            guild: basis.guild,
-            channel: channel,
-            resolvedBasePermissions: basis.resolvedBasePermissions,
-            overwritePrincipals: basis.overwritePrincipals,
-            hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
-            communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
-        )
+        return basis.effectivePermissions(in: channel)
     }
 
     func conversationAccess(
