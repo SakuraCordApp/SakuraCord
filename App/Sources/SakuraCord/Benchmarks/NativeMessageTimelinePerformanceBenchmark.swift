@@ -87,16 +87,15 @@ extension NativeMessageTimelineCoordinator {
         let initialRect = scrollView.contentView.bounds
         let scrollsTowardLater =
             parent.conversation.loaderKind == .pins
-        let positionShift =
-            bottomInset + min(160, initialRect.height * 0.25)
+        let positionShift = min(160, initialRect.height * 0.25)
         // An idle run stays where the conversation opened, pinned
         // to its newest message.
         if !NativeTimelineBenchmarkScrollPolicy.isIdle {
             scroll(
                 toDocumentY:
                 scrollsTowardLater
-                    ? initialRect.minY + positionShift
-                    : materializedHistoryMaximumY(viewportHeight: initialRect.height) - initialRect.height - min(160, initialRect.height * 0.25),
+                    ? initialRect.minY + (bottomInset + positionShift)
+                    : materializedHistoryMaximumY(viewportHeight: initialRect.height) - initialRect.height - positionShift,
                 scrollView: scrollView
             )
         }

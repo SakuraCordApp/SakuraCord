@@ -41,20 +41,25 @@ enum ServerRailPerformanceBenchmark {
         let guildIDs = model.serverRailPresentation.orderedNavigationGuildIDs
         var result = Result(guilds: guildIDs.count)
         var churn = BadgeChurn(model: model, guildIDs: guildIDs)
+        var railScroll = RailScroll(scrollView: scrollView)
         // The pointer rests over the rail, as when scrolling it.
         pointPointer(at: 0.5, in: scrollView)
-        result.scroll = await measure(scrollView, seconds: 20) { scroll(scrollView, interval: $0) }
-        endScroll(scrollView)
+        result.scroll = await measure(scrollView, seconds: 20) { railScroll.advance(interval: $0) }
+        railScroll.end()
         result.scrollWithBadges = await measure(scrollView, seconds: 20) {
-            scroll(scrollView, interval: $0)
+            railScroll.advance(interval: $0)
             churn.advance()
         }
-        endScroll(scrollView)
+        railScroll.end()
         result.scrollWithBadges.badgeUpdates = churn.takeCount()
         result.badgesIdle = await measure(scrollView, seconds: 10) { _ in churn.advance() }
         result.badgesIdle.badgeUpdates = churn.takeCount()
         churn.clear()
-        result.pointerSweep = await measure(scrollView, seconds: 10) { _ in sweepPointer(over: scrollView) }
+        var sweepStep = 0
+        result.pointerSweep = await measure(scrollView, seconds: 10) { _ in
+            sweepStep += 1
+            sweepPointer(step: sweepStep, over: scrollView)
+        }
 
         var latencies: [Double] = []
         var pending: (id: GuildID, start: TimeInterval)?
@@ -151,26 +156,29 @@ enum ServerRailPerformanceBenchmark {
         }
     }
 
-    private static var scrollDirection: CGFloat = 1
-    private static var scrollPhase = CGScrollPhase.began
-
     /// Scrolls with trackpad scroll events, so the rail sees a gesture as
     /// it does in use, turning at either end.
-    private static func scroll(_ scrollView: NSScrollView, interval: TimeInterval) {
-        let clip = scrollView.contentView
-        let range = PerformanceBenchmarkHarness.scrollRange(of: scrollView)
-        if clip.bounds.minY >= range.upperBound - 1 {
-            scrollDirection = -1
-        } else if clip.bounds.minY <= range.lowerBound + 1 {
-            scrollDirection = 1
-        }
-        sendScroll(-scrollDirection * 2_400 * CGFloat(min(interval, 0.05)), phase: scrollPhase, to: scrollView)
-        scrollPhase = .changed
-    }
+    private struct RailScroll {
+        let scrollView: NSScrollView
+        var direction: CGFloat = 1
+        var phase = CGScrollPhase.began
 
-    private static func endScroll(_ scrollView: NSScrollView) {
-        sendScroll(0, phase: .ended, to: scrollView)
-        scrollPhase = .began
+        mutating func advance(interval: TimeInterval) {
+            let clip = scrollView.contentView
+            let range = PerformanceBenchmarkHarness.scrollRange(of: scrollView)
+            if clip.bounds.minY >= range.upperBound - 1 {
+                direction = -1
+            } else if clip.bounds.minY <= range.lowerBound + 1 {
+                direction = 1
+            }
+            sendScroll(-direction * 2_400 * CGFloat(min(interval, 0.05)), phase: phase, to: scrollView)
+            phase = .changed
+        }
+
+        mutating func end() {
+            sendScroll(0, phase: .ended, to: scrollView)
+            phase = .began
+        }
     }
 
     private static func sendScroll(_ deltaY: CGFloat, phase: CGScrollPhase, to scrollView: NSScrollView) {
@@ -182,12 +190,9 @@ enum ServerRailPerformanceBenchmark {
         if let event = NSEvent(cgEvent: cgEvent) { scrollView.scrollWheel(with: event) }
     }
 
-    private static var sweepStep = 0
-
     /// Moves the pointer down and up the visible icons over four seconds.
-    private static func sweepPointer(over scrollView: NSScrollView) {
-        sweepStep += 1
-        let phase = CGFloat(sweepStep % 240) / 120
+    private static func sweepPointer(step: Int, over scrollView: NSScrollView) {
+        let phase = CGFloat(step % 240) / 120
         pointPointer(at: phase <= 1 ? phase : 2 - phase, in: scrollView)
     }
 
