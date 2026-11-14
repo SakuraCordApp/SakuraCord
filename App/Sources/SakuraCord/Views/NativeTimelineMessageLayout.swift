@@ -1220,3 +1220,153 @@ extension NativeTimelineRowLayout {
         }
     }
 }
+
+enum MessageRowLayoutMetrics {
+    nonisolated static var horizontalInset: CGFloat { InterfaceScale.metric(14) }
+    nonisolated static var avatarDiameter: CGFloat { InterfaceScale.metric(38) }
+    nonisolated static var avatarColumnGap: CGFloat { InterfaceScale.metric(12) }
+    /// Forwarded content's indent past its 3-point bar.
+    nonisolated static var forwardedContentInset: CGFloat { InterfaceScale.metric(11) }
+    /// The forwarded header and source rows grow with their caption text,
+    /// which keeps its 10 pt floor below the default message size.
+    nonisolated static var forwardedLineHeight: CGFloat {
+        InterfaceScale.metric(max(22, InterfaceTypographyMetrics.message(22)))
+    }
+    nonisolated static var compactContentHeight: CGFloat { InterfaceScale.metric(18) }
+    nonisolated static var authorLineHeight: CGFloat { InterfaceScale.metric(16) }
+    nonisolated static var authorContentSpacing: CGFloat { InterfaceScale.metric(2) }
+    nonisolated static var commandAuthorContentSpacing: CGFloat { InterfaceScale.metric(0) }
+    nonisolated static var messageGroupSeparation: CGFloat { InterfaceScale.metric(12) }
+    // Message density is set in points and is independent of interface size.
+    nonisolated static let visibleHighlightInset: CGFloat = 3
+    nonisolated static let defaultMessageSpacing = visibleHighlightInset * 2
+    nonisolated static var replyPreviewIntrinsicTopInset: CGFloat { InterfaceScale.metric(3) }
+    nonisolated static var editFooterIntrinsicBottomInset: CGFloat { InterfaceScale.metric(3) }
+    nonisolated static var commandInvocationHeight: CGFloat { InterfaceScale.metric(20) }
+    nonisolated static var commandInvocationContentInset: CGFloat { InterfaceScale.metric(3) }
+
+    /// The gap after the avatar column, which widens with the compact
+    /// timestamp gutter so grouped content stays aligned.
+    static func columnGap(timestampGutterWidth: CGFloat) -> CGFloat {
+        avatarColumnGap + max(avatarDiameter, timestampGutterWidth) - avatarDiameter
+    }
+
+    nonisolated static func highlightInsets(
+        hasReplyPreview: Bool,
+        isEditing: Bool,
+        messageSpacing: CGFloat = defaultMessageSpacing
+    ) -> MessageRowHighlightInsets {
+        let intrinsicTopInset = hasReplyPreview ? replyPreviewIntrinsicTopInset : 0
+        let intrinsicBottomInset = isEditing ? editFooterIntrinsicBottomInset : 0
+        let edgeSpacing = max(0, messageSpacing) / 2
+        return MessageRowHighlightInsets(
+            top: max(0, edgeSpacing - intrinsicTopInset),
+            bottom: max(0, edgeSpacing - intrinsicBottomInset),
+            intrinsicTop: intrinsicTopInset,
+            intrinsicBottom: intrinsicBottomInset
+        )
+    }
+
+    nonisolated static func separation(
+        startsGroup: Bool,
+        followsTimelineSeparator: Bool = false,
+        highlightTopInset: CGFloat,
+        messageSpacing: CGFloat = defaultMessageSpacing
+    ) -> CGFloat {
+        // Date and unread separators already provide the complete visual gap
+        // between adjacent messages. Applying the ordinary author-group
+        // separation after either one makes the lower half visibly larger
+        // than the upper half.
+        guard startsGroup, !followsTimelineSeparator else { return 0 }
+        let adjustedSeparation = messageGroupSeparation
+            + messageSpacing
+            - defaultMessageSpacing
+        return max(0, adjustedSeparation - highlightTopInset)
+    }
+
+    nonisolated static func authorToContentSpacing(isCommandResponse: Bool) -> CGFloat {
+        isCommandResponse
+            ? commandAuthorContentSpacing
+            : authorContentSpacing
+    }
+}
+
+struct MessageRowHighlightInsets: Equatable {
+    let top: CGFloat
+    let bottom: CGFloat
+    let intrinsicTop: CGFloat
+    let intrinsicBottom: CGFloat
+}
+
+nonisolated enum MessageRowPersistentHighlight: Equatable {
+    case none
+    case failed
+    case ephemeral
+    case mention
+
+    static func resolve(
+        message: Message,
+        currentUserID: UserID?,
+        currentUserRoleIDs: Set<RoleID> = []
+    ) -> Self {
+        if message.outboxState == .failed {
+            return .failed
+        }
+        if message.flags.contains(.ephemeral) {
+            return .ephemeral
+        }
+        guard let currentUserID else {
+            return .none
+        }
+        if message.mentionedUsers.contains(where: {
+            $0.id == currentUserID
+        }) {
+            return .mention
+        }
+        if message.mentionsEveryone {
+            return .mention
+        }
+        if !message.flags.contains(.failedToMentionRoles),
+           !currentUserRoleIDs.isDisjoint(
+                with: message.mentionedRoleIDs
+           )
+        {
+            return .mention
+        }
+        return .none
+    }
+}
+
+enum MessageEditLayoutMetrics {
+    /// The timeline's plain message text, so a draft is set in the font,
+    /// colour and line height the row drew the message in.
+    static func textStyle(isOnOutgoingBubble: Bool) -> ComposerTextStyle {
+        let style = messageTextStyle
+        guard isOnOutgoingBubble else { return style }
+        // The timeline sets an outgoing bubble's text in the label colour for the accent fill.
+        var attributes = style.attributes
+        attributes[.foregroundColor] = NSColor.sakuraCordLabelOnAccentColor
+        return ComposerTextStyle(font: style.font, attributes: attributes, usesMessageLineHeight: true)
+    }
+
+    /// The message text style at the current interface size, worked out once per size.
+    private static var messageTextStyle: ComposerTextStyle {
+        let fontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
+        if let cached = messageTextCache, cached.fontSize == fontSize { return cached.style }
+        let attributes = DiscordMarkdown.appKitAttributed(
+            DiscordMarkdown.appKitPlan("x"), baseFontSize: fontSize, usesMessageLineHeight: true
+        ).attributes(at: 0, effectiveRange: nil)
+        guard let font = attributes[.font] as? NSFont else {
+            preconditionFailure("The markdown renderer sets a font on message text.")
+        }
+        let style = ComposerTextStyle(font: font, attributes: attributes, usesMessageLineHeight: true)
+        messageTextCache = (fontSize, style)
+        return style
+    }
+
+    private static var messageTextCache: (fontSize: CGFloat, style: ComposerTextStyle)?
+
+    nonisolated static var actionHorizontalPadding: CGFloat { InterfaceScale.metric(5) }
+    nonisolated static var keycapHorizontalPadding: CGFloat { InterfaceScale.metric(5) }
+    nonisolated static var keycapVerticalPadding: CGFloat { InterfaceScale.metric(1) }
+}
