@@ -138,10 +138,7 @@ extension AppModel {
 
         do {
             try await session.provider.subscribeToPrivateCall(channelID: channel.id)
-            guard isCurrentPrivateCallAction(
-                channelID: channel.id,
-                generation: generation
-            ), isCurrentAccountSession(session) else { return }
+            guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
             let shouldRing: Bool
             if channel.kind == .groupDirectMessage {
                 shouldRing = true
@@ -150,10 +147,7 @@ extension AppModel {
                     channelID: channel.id
                 )
             }
-            guard isCurrentPrivateCallAction(
-                channelID: channel.id,
-                generation: generation
-            ), isCurrentAccountSession(session) else { return }
+            guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
             await completePrivateCallStart(
                 in: channel,
                 withVideo: withVideo,
@@ -161,15 +155,8 @@ extension AppModel {
                 generation: generation
             )
         } catch {
-            guard isCurrentAccountSession(session),
-                  isCurrentPrivateCallAction(
-                      channelID: channel.id,
-                      generation: generation
-                  )
-            else { return }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
+            reportPrivateCallFailure(error)
         }
     }
 
@@ -181,20 +168,13 @@ extension AppModel {
     ) async {
         let session = accountSession()
         await joinVoice(channel)
-        guard isCurrentPrivateCallAction(
-            channelID: channel.id,
-            generation: generation
-        ),
+        guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session),
               activeVoiceChannel?.id == channel.id,
-              voiceSessionState == .connected,
-              isCurrentAccountSession(session)
+              voiceSessionState == .connected
         else { return }
         if withVideo, !isCameraEnabled {
             await toggleCamera()
-            guard isCurrentPrivateCallAction(
-                channelID: channel.id,
-                generation: generation
-            ), isCurrentAccountSession(session) else { return }
+            guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
         }
         guard shouldRing else { return }
         beginLocalOutgoingPrivateCallRing(channelID: channel.id)
@@ -204,18 +184,11 @@ extension AppModel {
                 recipients: nil
             )
         } catch {
-            guard isCurrentAccountSession(session),
-                  isCurrentPrivateCallAction(
-                      channelID: channel.id,
-                      generation: generation
-                  )
-            else { return }
+            guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
             endLocalOutgoingPrivateCallRing(channelID: channel.id)
             // Joining succeeded and is not replayed. Surface the bounded
             // ring failure without turning it into a second call action.
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            reportPrivateCallFailure(error)
         }
     }
 
@@ -239,16 +212,9 @@ extension AppModel {
         let session = accountSession()
         do {
             try await session.provider.subscribeToPrivateCall(channelID: channel.id)
-            guard isCurrentPrivateCallAction(
-                channelID: channel.id,
-                generation: generation
-            ), isCurrentAccountSession(session) else { return }
+            guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
             await joinVoice(channel)
-            if isCurrentPrivateCallAction(
-                channelID: channel.id,
-                generation: generation
-            ),
-               isCurrentAccountSession(session),
+            if isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session),
                withVideo,
                activeVoiceChannel?.id == channel.id,
                voiceSessionState == .connected,
@@ -257,15 +223,8 @@ extension AppModel {
                 await toggleCamera()
             }
         } catch {
-            guard isCurrentAccountSession(session),
-                  isCurrentPrivateCallAction(
-                      channelID: channel.id,
-                      generation: generation
-                  )
-            else { return }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            guard isCurrentPrivateCallAction(channelID: channel.id, generation: generation, account: session) else { return }
+            reportPrivateCallFailure(error)
         }
     }
 
@@ -307,25 +266,15 @@ extension AppModel {
                 channelID: call.channelID,
                 recipients: [currentUserID]
             )
-            guard isCurrentPrivateCallAction(
-                channelID: call.channelID,
-                generation: generation
-            ), isCurrentAccountSession(session) else { return }
+            guard isCurrentPrivateCallAction(channelID: call.channelID, generation: generation, account: session) else { return }
             if var updated = privateCallsByChannel[call.channelID] {
                 updated.ongoingRings.removeAll { $0.recipientID == currentUserID }
                 privateCallsByChannel[call.channelID] = updated
                 reconcilePrivateCallSounds()
             }
         } catch {
-            guard isCurrentAccountSession(session),
-                  isCurrentPrivateCallAction(
-                      channelID: call.channelID,
-                      generation: generation
-                  )
-            else { return }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
+            guard isCurrentPrivateCallAction(channelID: call.channelID, generation: generation, account: session) else { return }
+            reportPrivateCallFailure(error)
         }
     }
 
@@ -347,10 +296,19 @@ extension AppModel {
 
     func isCurrentPrivateCallAction(
         channelID: ChannelID,
-        generation: UInt64
+        generation: UInt64,
+        account session: AppModelAccountSession
     ) -> Bool {
-        generation == privateCallActionGeneration
+        isCurrentAccountSession(session)
+            && generation == privateCallActionGeneration
             && privateCallActionChannelIDs.contains(channelID)
+    }
+
+    /// `operation` keeps naming the call action that failed in diagnostics.
+    private func reportPrivateCallFailure(_ error: any Error, operation: StaticString = #function) {
+        DiscordAPIDiagnosticStore.shared.recordClientFailure(error, operation: operation)
+        voiceErrorMessage = error.localizedDescription
+        errorMessage = error.localizedDescription
     }
 
     func resetPrivateCallActions() {
