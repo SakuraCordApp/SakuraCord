@@ -355,7 +355,7 @@ extension NativeMessageTimelineCoordinator {
                 maximumConsecutiveHistoryStarvedTicks:
                     state.maximumHistoryStarvedTicks,
                 renderTelemetry: canvas?.renderTelemetry,
-                mainThreadCPUTime: NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
+                mainThreadCPUTime: PerformanceBenchmarkHarness.currentThreadCPUTime()
                     - state.mainThreadCPUTimeAtStart,
                 timelineUpdates: timelineUpdates
             )
@@ -427,7 +427,7 @@ final class NativeTimelineBenchmarkStartupState {
 @MainActor
 final class NativeTimelineBenchmarkRunState {
     let startedAt = ProcessInfo.processInfo.systemUptime
-    let mainThreadCPUTimeAtStart = NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
+    let mainThreadCPUTimeAtStart = PerformanceBenchmarkHarness.currentThreadCPUTime()
     let ticker = DisplayLinkTicker()
     let scrollsTowardLater: Bool
     let closeMeasurement: () -> Void

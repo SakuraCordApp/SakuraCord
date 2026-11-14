@@ -672,18 +672,9 @@ enum NativeTimelineBenchmarkArtifact {
            let maximumConsecutiveHistoryStarvedTicks
         {
             let sortedTickIntervals = tickIntervals.sorted()
-            let medianTickInterval = percentile(
-                sortedTickIntervals,
-                percentile: 0.50
-            )
-            let p95TickInterval = percentile(
-                sortedTickIntervals,
-                percentile: 0.95
-            )
-            let p99TickInterval = percentile(
-                sortedTickIntervals,
-                percentile: 0.99
-            )
+            let medianTickInterval = PerformanceBenchmarkHarness.nearestRankPercentile(sortedTickIntervals, 0.50)
+            let p95TickInterval = PerformanceBenchmarkHarness.nearestRankPercentile(sortedTickIntervals, 0.95)
+            let p99TickInterval = PerformanceBenchmarkHarness.nearestRankPercentile(sortedTickIntervals, 0.99)
             let delayedTickRate = completedTicks > 0
                 ? Double(delayedTicks) / Double(completedTicks)
                 : 0
@@ -736,34 +727,6 @@ enum NativeTimelineBenchmarkArtifact {
             atomically: true,
             encoding: .utf8
         )
-    }
-
-    /// CPU time the calling thread has used, user and system.
-    static func currentThreadCPUTime() -> TimeInterval {
-        let thread = mach_thread_self()
-        defer { mach_port_deallocate(mach_task_self_, thread) }
-        var info = thread_basic_info()
-        var count = mach_msg_type_number_t(
-            MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<integer_t>.size
-        )
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                thread_info(thread, thread_flavor_t(THREAD_BASIC_INFO), $0, &count)
-            }
-        }
-        guard result == KERN_SUCCESS else { return 0 }
-        let seconds = info.user_time.seconds + info.system_time.seconds
-        let microseconds = info.user_time.microseconds + info.system_time.microseconds
-        return TimeInterval(seconds) + TimeInterval(microseconds) / 1_000_000
-    }
-
-    private static func percentile(
-        _ sortedValues: [TimeInterval],
-        percentile: Double
-    ) -> TimeInterval {
-        guard !sortedValues.isEmpty else { return 0 }
-        let rank = Int(ceil(percentile * Double(sortedValues.count)))
-        return sortedValues[min(max(rank - 1, 0), sortedValues.count - 1)]
     }
 }
 

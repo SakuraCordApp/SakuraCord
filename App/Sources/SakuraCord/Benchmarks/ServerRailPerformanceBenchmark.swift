@@ -13,7 +13,7 @@ enum ServerRailPerformanceBenchmark {
 
     struct Phase: Codable {
         var frames = 0
-        var frameIntervalsMS: FriendsPerformanceBenchmark.Summary?
+        var frameIntervalsMS: PerformanceBenchmarkHarness.Summary?
         var delayedFrames = 0
         var mainThreadCPUMS: Double = 0
         var badgeUpdates = 0
@@ -26,14 +26,16 @@ enum ServerRailPerformanceBenchmark {
         var badgesIdle = Phase()
         var pointerSweep = Phase()
         var selection = Phase()
-        var selectionLatenciesMS: FriendsPerformanceBenchmark.Summary?
+        var selectionLatenciesMS: PerformanceBenchmarkHarness.Summary?
     }
 
     static func run(model: AppModel) async {
         NSApp.activate(ignoringOtherApps: true)
         try? await Task.sleep(for: .seconds(4))
         guard let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
-              let scrollView = railScrollView(in: window.contentView) else {
+              let scrollView = PerformanceBenchmarkHarness.tallestScrollView(
+                  in: window.contentView, where: { abs($0.frame.width - ChatChromeMetrics.serverRailWidth) < 1 }
+              ) else {
             logger.error("Server rail benchmark could not find the rail")
             return
         }
@@ -72,14 +74,27 @@ enum ServerRailPerformanceBenchmark {
             pending = (id, now)
             model.selectGuild(id)
         }
-        result.selectionLatenciesMS = FriendsPerformanceBenchmark.Summary(latencies)
+        result.selectionLatenciesMS = PerformanceBenchmarkHarness.Summary(latencies)
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = (try? encoder.encode(result)) ?? Data()
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-server-rail-benchmark.json")
-        try? data.write(to: url, options: .atomic)
-        logger.notice("SERVER_RAIL_BENCHMARK \(String(bytes: data, encoding: .utf8) ?? "", privacy: .public)")
+        PerformanceBenchmarkHarness.writeResult(
+            result, fileName: "sakuracord-server-rail-benchmark.json", logPrefix: "SERVER_RAIL_BENCHMARK", logger: logger
+        )
+    }
+
+    /// Runs `tick` with each frame's interval for `seconds`, after the
+    /// rail has settled.
+    private static func measure(
+        _ view: NSView,
+        seconds: Double,
+        tick: @escaping (TimeInterval) -> Void
+    ) async -> Phase {
+        let measured = await PerformanceBenchmarkHarness.measure(view, seconds: seconds, settles: true) { tick($0.interval) }
+        return Phase(
+            frames: measured.frames,
+            frameIntervalsMS: measured.frameIntervalsMS,
+            delayedFrames: measured.delayedFrames,
+            mainThreadCPUMS: measured.mainThreadCPUMS
+        )
     }
 
     /// Mention changes in a fixed rotation, as a busy account receives them:
@@ -137,21 +152,6 @@ enum ServerRailPerformanceBenchmark {
         }
     }
 
-    /// The narrow scroll view holding the most content: the server rail.
-    private static func railScrollView(in root: NSView?) -> NSScrollView? {
-        guard let root else { return nil }
-        var candidates: [NSScrollView] = []
-        func visit(_ view: NSView) {
-            if let scrollView = view as? NSScrollView,
-               abs(scrollView.frame.width - ChatChromeMetrics.serverRailWidth) < 1 {
-                candidates.append(scrollView)
-            }
-            view.subviews.forEach(visit)
-        }
-        visit(root)
-        return candidates.max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
-    }
-
     private static var scrollDirection: CGFloat = 1
     private static var scrollPhase = CGScrollPhase.began
 
@@ -207,39 +207,5 @@ enum ServerRailPerformanceBenchmark {
         ) {
             window.sendEvent(event)
         }
-    }
-
-    /// Runs `tick` on every display-link frame for `seconds`, recording frame
-    /// intervals and the main thread's CPU time.
-    private static func measure(
-        _ view: NSView,
-        seconds: Double,
-        tick: @escaping (TimeInterval) -> Void
-    ) async -> Phase {
-        try? await Task.sleep(for: .milliseconds(500))
-        let ticker = DisplayLinkTicker()
-        var intervals: [Double] = []
-        var previous = ProcessInfo.processInfo.systemUptime
-        let start = previous
-        let cpuStart = NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            ticker.start(on: view) {
-                let now = ProcessInfo.processInfo.systemUptime
-                let interval = now - previous
-                previous = now
-                if now - start > 0.2 { intervals.append(interval * 1_000) }
-                tick(interval)
-                if now - start >= seconds {
-                    ticker.stop()
-                    continuation.resume()
-                }
-            }
-        }
-        var phase = Phase()
-        phase.frames = intervals.count
-        phase.frameIntervalsMS = FriendsPerformanceBenchmark.Summary(intervals)
-        phase.delayedFrames = intervals.count { $0 > 25 }
-        phase.mainThreadCPUMS = (NativeTimelineBenchmarkArtifact.currentThreadCPUTime() - cpuStart) * 1_000
-        return phase
     }
 }

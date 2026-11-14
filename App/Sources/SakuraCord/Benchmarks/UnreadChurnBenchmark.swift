@@ -16,7 +16,7 @@ enum UnreadChurnBenchmark {
     struct Phase: Codable {
         var frames = 0
         var delayedFrames = 0
-        var frameIntervalsMS: FriendsPerformanceBenchmark.Summary?
+        var frameIntervalsMS: PerformanceBenchmarkHarness.Summary?
         var mainThreadCPUMS: Double = 0
         var mentions = 0
     }
@@ -66,52 +66,27 @@ enum UnreadChurnBenchmark {
         let quietRate = result.quiet.mainThreadCPUMS / 10
         result.mainThreadMSPerMention = sent == 0 ? 0 : (result.mentions.mainThreadCPUMS - quietRate * 10) / Double(sent)
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = (try? encoder.encode(result)) ?? Data()
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-unread-benchmark.json")
-        try? data.write(to: url, options: .atomic)
-        logger.notice("UNREAD_BENCHMARK \(String(bytes: data, encoding: .utf8) ?? "", privacy: .public)")
+        PerformanceBenchmarkHarness.writeResult(
+            result, fileName: "sakuracord-unread-benchmark.json", logPrefix: "UNREAD_BENCHMARK", logger: logger
+        )
     }
 
-    /// Runs `tick` with the current uptime on every display-link frame for
-    /// `seconds`, recording frame intervals and the main thread's CPU time.
+    /// Runs `tick` with the current uptime on every frame for `seconds`;
+    /// the display link stops firing if the window closes, so a wall-clock
+    /// deadline also ends the phase.
     private static func measure(
         _ view: NSView,
         seconds: Double,
         tick: @escaping (TimeInterval) -> Void
     ) async -> Phase {
-        let ticker = DisplayLinkTicker()
-        var intervals: [Double] = []
-        var previous = ProcessInfo.processInfo.systemUptime
-        let start = previous
-        let cpuStart = NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
-        let completion = ForumBenchmarkCompletion()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            completion.continuation = continuation
-            // The display link stops firing if the window closes, so a
-            // wall-clock deadline also ends the phase.
-            completion.deadline = Task { @MainActor in
-                guard (try? await Task.sleep(for: .seconds(seconds + 5))) != nil else { return }
-                ticker.stop()
-                completion.finish()
-            }
-            ticker.start(on: view) {
-                let now = ProcessInfo.processInfo.systemUptime
-                intervals.append((now - previous) * 1_000)
-                previous = now
-                tick(now)
-                if now - start >= seconds {
-                    ticker.stop()
-                    completion.finish()
-                }
-            }
-        }
-        var phase = Phase()
-        phase.frames = intervals.count
-        phase.frameIntervalsMS = FriendsPerformanceBenchmark.Summary(intervals)
-        phase.delayedFrames = intervals.count { $0 > 25 }
-        phase.mainThreadCPUMS = (NativeTimelineBenchmarkArtifact.currentThreadCPUTime() - cpuStart) * 1_000
-        return phase
+        let measured = await PerformanceBenchmarkHarness.measure(
+            view, seconds: seconds, settles: false, endsByDeadline: true
+        ) { tick($0.now) }
+        return Phase(
+            frames: measured.frames,
+            delayedFrames: measured.delayedFrames,
+            frameIntervalsMS: measured.frameIntervalsMS,
+            mainThreadCPUMS: measured.mainThreadCPUMS
+        )
     }
 }

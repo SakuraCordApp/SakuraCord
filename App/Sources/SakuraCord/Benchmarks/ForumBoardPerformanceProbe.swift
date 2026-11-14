@@ -1,19 +1,5 @@
 import SakuraCordModels
 
-/// Resumes a benchmark run exactly once, from its last frame or its deadline.
-@MainActor
-final class ForumBenchmarkCompletion {
-    var continuation: CheckedContinuation<Void, Never>?
-    var deadline: Task<Void, Never>?
-
-    func finish() {
-        deadline?.cancel()
-        deadline = nil
-        continuation?.resume()
-        continuation = nil
-    }
-}
-
 #if DEBUG
 import AppKit
 import OSLog
@@ -103,9 +89,7 @@ struct ForumFrameTimingSampler {
     func summary(nominalInterval: TimeInterval, duration: TimeInterval) -> Summary {
         let sorted = intervals.sorted()
         func percentile(_ fraction: Double) -> Double {
-            guard !sorted.isEmpty else { return 0 }
-            let rank = Int((fraction * Double(sorted.count)).rounded(.up))
-            return sorted[min(max(rank - 1, 0), sorted.count - 1)] * 1_000
+            PerformanceBenchmarkHarness.nearestRankPercentile(sorted, fraction) * 1_000
         }
         return Summary(
             frameCount: sorted.count,
@@ -188,48 +172,32 @@ enum ForumBoardBenchmark {
     }
 
     private static func scroll(_ scrollView: NSScrollView, model: AppModel, into result: inout Result) async {
-        let ticker = DisplayLinkTicker()
         let framesPerSecond = scrollView.window?.screen?.maximumFramesPerSecond ?? 60
         let nominalInterval = 1 / Double(max(framesPerSecond, 1))
         var sampler = ForumFrameTimingSampler()
         var distance: CGFloat = 0
         var framesAtEnd = 0
         let start = ProcessInfo.processInfo.systemUptime
-        var previous = start
-        let completion = ForumBenchmarkCompletion()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            completion.continuation = continuation
-            // The display link stops firing if the board leaves the window,
-            // so a wall-clock deadline also ends the run.
-            completion.deadline = Task { @MainActor in
-                guard (try? await Task.sleep(for: .seconds(scrollDuration + 5))) != nil else { return }
-                ticker.stop()
-                completion.finish()
-            }
-            ticker.start(on: scrollView) {
-                let now = ProcessInfo.processInfo.systemUptime
-                let interval = now - previous
-                previous = now
-                sampler.record(interval: interval)
-                let clip = scrollView.contentView
-                let maximumY = max(
-                    -scrollView.contentInsets.top,
-                    (scrollView.documentView?.frame.height ?? 0) - clip.bounds.height
-                        + scrollView.contentInsets.bottom
-                )
-                // An interval is capped so one long hitch cannot skip the
-                // posts that pagination is about to deliver.
-                let proposedY = clip.bounds.minY + scrollSpeed * CGFloat(min(interval, 0.1))
-                let offsetY = min(proposedY, maximumY)
-                if proposedY > maximumY { framesAtEnd += 1 }
-                distance += offsetY - clip.bounds.minY
-                clip.scroll(to: NSPoint(x: clip.bounds.minX, y: offsetY))
-                scrollView.reflectScrolledClipView(clip)
-                if now - start >= scrollDuration {
-                    ticker.stop()
-                    completion.finish()
-                }
-            }
+        // The display link stops firing if the board leaves the window,
+        // so a wall-clock deadline also ends the run.
+        await PerformanceBenchmarkHarness.runDisplayLink(
+            on: scrollView, seconds: scrollDuration, endsByDeadline: true
+        ) { frame in
+            sampler.record(interval: frame.interval)
+            let clip = scrollView.contentView
+            let maximumY = max(
+                -scrollView.contentInsets.top,
+                (scrollView.documentView?.frame.height ?? 0) - clip.bounds.height
+                    + scrollView.contentInsets.bottom
+            )
+            // An interval is capped so one long hitch cannot skip the
+            // posts that pagination is about to deliver.
+            let proposedY = clip.bounds.minY + scrollSpeed * CGFloat(min(frame.interval, 0.1))
+            let offsetY = min(proposedY, maximumY)
+            if proposedY > maximumY { framesAtEnd += 1 }
+            distance += offsetY - clip.bounds.minY
+            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: offsetY))
+            scrollView.reflectScrolledClipView(clip)
         }
         let duration = ProcessInfo.processInfo.systemUptime - start
         result.scrollDistance = Double(distance)
@@ -285,32 +253,14 @@ enum ForumBoardBenchmark {
         seconds: TimeInterval,
         step: @escaping (CGFloat) -> Void
     ) async -> ForumFrameTimingSampler.Summary {
-        let ticker = DisplayLinkTicker()
         let nominalInterval = 1 / Double(max(view.window?.screen?.maximumFramesPerSecond ?? 60, 1))
         var sampler = ForumFrameTimingSampler()
         let start = ProcessInfo.processInfo.systemUptime
-        var previous = start
-        let completion = ForumBenchmarkCompletion()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            completion.continuation = continuation
-            // The display link stops firing if the board leaves the window,
-            // so a wall-clock deadline also ends the run.
-            completion.deadline = Task { @MainActor in
-                guard (try? await Task.sleep(for: .seconds(seconds + 5))) != nil else { return }
-                ticker.stop()
-                completion.finish()
-            }
-            ticker.start(on: view) {
-                let now = ProcessInfo.processInfo.systemUptime
-                sampler.record(interval: now - previous)
-                previous = now
-                let elapsed = now - start
-                step(CGFloat(0.5 - 0.5 * cos(elapsed * .pi / 2)))
-                if elapsed >= seconds {
-                    ticker.stop()
-                    completion.finish()
-                }
-            }
+        // The display link stops firing if the board leaves the window,
+        // so a wall-clock deadline also ends the run.
+        await PerformanceBenchmarkHarness.runDisplayLink(on: view, seconds: seconds, endsByDeadline: true) { frame in
+            sampler.record(interval: frame.interval)
+            step(CGFloat(0.5 - 0.5 * cos(frame.elapsed * .pi / 2)))
         }
         return sampler.summary(nominalInterval: nominalInterval, duration: ProcessInfo.processInfo.systemUptime - start)
     }
