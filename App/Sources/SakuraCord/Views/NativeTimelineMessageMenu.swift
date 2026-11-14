@@ -335,9 +335,7 @@ extension NativeTimelineCanvasView {
         perform delete: @escaping (Message) -> Void
     ) {
         removeActionCapsule()
-        if MessageDeleteConfirmationPolicy.isBypassed(
-            by: NSEvent.modifierFlags
-        ) {
+        if NSEvent.modifierFlags.contains(.shift) {
             delete(message)
             return
         }

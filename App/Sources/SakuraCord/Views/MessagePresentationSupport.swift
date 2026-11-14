@@ -97,14 +97,6 @@ nonisolated enum MessageOutboxPresentation {
     }
 }
 
-enum MessageDeleteConfirmationPolicy {
-    static func isBypassed(
-        by modifierFlags: NSEvent.ModifierFlags
-    ) -> Bool {
-        modifierFlags.contains(.shift)
-    }
-}
-
 enum MessageReplySummary {
     nonisolated struct Prepared: Sendable {
         let source: String
