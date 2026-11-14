@@ -34,10 +34,6 @@ enum MessageRowLayoutMetrics {
         avatarColumnGap + max(avatarDiameter, timestampGutterWidth) - avatarDiameter
     }
 
-    nonisolated static func avatarColumnHeight(startsGroup: Bool) -> CGFloat {
-        startsGroup ? avatarDiameter : compactContentHeight
-    }
-
     nonisolated static func highlightInsets(
         hasReplyPreview: Bool,
         isEditing: Bool,
@@ -76,41 +72,6 @@ enum MessageRowLayoutMetrics {
             ? commandAuthorContentSpacing
             : authorContentSpacing
     }
-
-    nonisolated static func geometry(
-        contentHeight: CGFloat,
-        startsGroup: Bool,
-        hasReplyPreview: Bool = false,
-        isEditing: Bool = false,
-        followsTimelineSeparator: Bool = false,
-        messageSpacing: CGFloat = defaultMessageSpacing
-    ) -> MessageRowLayoutGeometry {
-        let insets = highlightInsets(
-            hasReplyPreview: hasReplyPreview,
-            isEditing: isEditing,
-            messageSpacing: messageSpacing
-        )
-        let externalSeparation = separation(
-            startsGroup: startsGroup,
-            followsTimelineSeparator: followsTimelineSeparator,
-            highlightTopInset: insets.top,
-            messageSpacing: messageSpacing
-        )
-        let highlightMinY = externalSeparation
-        let contentMinY = highlightMinY + insets.top
-        let contentMaxY = contentMinY + contentHeight
-        let highlightMaxY = contentMaxY + insets.bottom
-        return MessageRowLayoutGeometry(
-            externalTopSeparation: externalSeparation,
-            highlightMinY: highlightMinY,
-            highlightMaxY: highlightMaxY,
-            contentMinY: contentMinY,
-            contentMaxY: contentMaxY,
-            visibleContentMinY: contentMinY + insets.intrinsicTop,
-            visibleContentMaxY: contentMaxY - insets.intrinsicBottom,
-            rowHeight: highlightMaxY
-        )
-    }
 }
 
 struct MessageRowHighlightInsets: Equatable {
@@ -118,23 +79,6 @@ struct MessageRowHighlightInsets: Equatable {
     let bottom: CGFloat
     let intrinsicTop: CGFloat
     let intrinsicBottom: CGFloat
-}
-
-struct MessageRowLayoutGeometry: Equatable {
-    let externalTopSeparation: CGFloat
-    let highlightMinY: CGFloat
-    let highlightMaxY: CGFloat
-    let contentMinY: CGFloat
-    let contentMaxY: CGFloat
-    let visibleContentMinY: CGFloat
-    let visibleContentMaxY: CGFloat
-    let rowHeight: CGFloat
-
-    nonisolated var highlightTopInset: CGFloat { contentMinY - highlightMinY }
-    nonisolated var highlightBottomInset: CGFloat { highlightMaxY - contentMaxY }
-    nonisolated var visibleHighlightTopInset: CGFloat { visibleContentMinY - highlightMinY }
-    nonisolated var visibleHighlightBottomInset: CGFloat { highlightMaxY - visibleContentMaxY }
-    nonisolated var contentHeight: CGFloat { contentMaxY - contentMinY }
 }
 
 nonisolated enum MessageRowPersistentHighlight: Equatable {
@@ -344,16 +288,6 @@ struct NativeTimelineInlineEditControls: View {
         .fixedSize()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Edit message")
-    }
-}
-
-enum MessageActionVisibilityPolicy {
-    nonisolated static func isVisible(
-        isRowHovered: Bool,
-        isReactionPickerPresented: Bool,
-        isEditing: Bool
-    ) -> Bool {
-        !isEditing && (isRowHovered || isReactionPickerPresented)
     }
 }
 

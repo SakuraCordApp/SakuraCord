@@ -30,9 +30,6 @@ nonisolated enum NativeTimelineMediaMemoryPolicy {
         + animatedImagePosterBytes
         + timelineAnimatedImageBytes
         + rowBitmapBytes
-
-    static let declaredMemoryCacheBytes =
-        decodedImageCacheBytes + SharedMediaDataMemoryPolicy.retainedBytes
 }
 
 struct NativeTimelineMediaKey: Hashable {

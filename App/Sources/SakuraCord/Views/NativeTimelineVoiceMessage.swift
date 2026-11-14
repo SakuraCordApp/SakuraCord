@@ -955,11 +955,6 @@ extension NativeTimelineCanvasView {
         reconcileVoiceMessageOverlay()
     }
 
-    func invalidateVoiceMessageRow(_ identifier: NativeMessageTimelineItem.Identifier) {
-        invalidateBitmap(identifier)
-        if let index = visibleRowIndex(of: identifier) { setNeedsDisplay(rowFrame(at: index)) }
-    }
-
     private func invalidateVoiceMessageBitmaps(playbackIDs: Set<VoiceMessagePlaybackID>? = nil) {
         // Bitmaps survive navigation, so the current layouts alone cannot
         // identify every row whose playback presentation has changed.
@@ -974,17 +969,6 @@ extension NativeTimelineCanvasView {
             invalidateBitmap(identifier)
         }
         setNeedsDisplay(visibleRect)
-    }
-
-    /// Searches only the rows on screen, so scrolling stays independent of
-    /// conversation length.
-    private func visibleRowIndex(of identifier: NativeMessageTimelineItem.Identifier) -> Int? {
-        guard var index = rowIndex(at: max(0, visibleRect.minY)) else { return nil }
-        while items.indices.contains(index), displayedRowOrigin(at: index) < visibleRect.maxY {
-            if items[index].identifier == identifier { return index }
-            index += 1
-        }
-        return nil
     }
 
     /// Shows the live overlay while the active voice message or audio file

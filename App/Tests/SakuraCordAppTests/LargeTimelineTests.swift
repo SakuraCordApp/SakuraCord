@@ -2148,7 +2148,7 @@ func `completed initial ten message page exposes history reserve before first up
 
     #expect(
         coordinator.leadingHistoryReserve
-            == NativeMessageTimelineCoordinator.leadingHistoryReserveChunk
+            == NativeMessageTimelineCoordinator.historyReserveChunk
     )
     #expect(!coordinator.followsMaterializedHistoryBoundary)
     #expect(canvas.historySkeleton == nil)

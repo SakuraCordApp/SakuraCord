@@ -306,19 +306,6 @@ extension NativeTimelineCanvasView {
     }
 
 #if DEBUG
-    func reconcileVisibleReactionPreviewLoadsForTesting() {
-        reconcileVisibleReactionPreviewLoads()
-    }
-
-    func hasVisibleReactionPreviewLoadForTesting(
-        messageID: MessageID,
-        reactionID: String
-    ) -> Bool {
-        visibleReactionPreviewLoadKeys.contains {
-            $0.messageID == messageID && $0.reactionID == reactionID
-        }
-    }
-
     var spoilerOverlayFramesForTesting:
         [NativeTimelineComponentRevealKey: CGRect]
     {

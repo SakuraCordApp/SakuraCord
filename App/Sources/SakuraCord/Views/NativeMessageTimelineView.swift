@@ -272,7 +272,6 @@ final class NativeMessageTimelineCoordinator: NSObject {
         /// is 18 points above its oldest loaded message.
         static let unreadConversationPrefetchDistance: CGFloat = -18
         static let historyReserveChunk: CGFloat = 65_536
-        static let leadingHistoryReserveChunk = historyReserveChunk
         static let maximumCachedItemLayouts = 750
         static let cachedItemLayoutsPerConversation = 256
         static let performanceSignposter = OSSignposter(

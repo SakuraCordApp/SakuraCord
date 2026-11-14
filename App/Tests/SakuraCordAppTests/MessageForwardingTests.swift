@@ -1196,8 +1196,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(results.map(\.id) == [.channel(visible.id)])
 }
 
-@MainActor @Test func `unresolved vocal access never becomes forward search connect access`() {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+@Test func `unresolved vocal access never becomes forward search connect access`() {
     let guildID = GuildID(rawValue: 1)
     let text = Channel(
         id: ChannelID(rawValue: 10), guildID: guildID,
@@ -1208,8 +1207,8 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         name: "voice-match", kind: .voice
     )
 
-    #expect(model.canSearchForwardDestination(text))
-    #expect(!model.canSearchForwardDestination(voice))
+    #expect(ForwardDestinationPermissionPolicy.canSearchChannel(text, permissions: nil))
+    #expect(!ForwardDestinationPermissionPolicy.canSearchChannel(voice, permissions: nil))
 }
 
 @Test func `active forum thread remains a forward destination while its parent does not`() {

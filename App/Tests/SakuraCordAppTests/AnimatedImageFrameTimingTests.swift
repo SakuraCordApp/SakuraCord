@@ -126,7 +126,7 @@ import Testing
             == 56 * 1_024 * 1_024
     )
     #expect(
-        NativeTimelineMediaMemoryPolicy.declaredMemoryCacheBytes
+        NativeTimelineMediaMemoryPolicy.decodedImageCacheBytes + SharedMediaDataMemoryPolicy.retainedBytes
             == 232 * 1_024 * 1_024
     )
 }

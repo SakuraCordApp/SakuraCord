@@ -654,54 +654,6 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
     }
 }
 
-struct EmojiWrappingLayout: Layout {
-    private struct LayoutResult {
-        let size: CGSize
-        let positions: [CGPoint]
-        let sizes: [CGSize]
-    }
-
-    let horizontalSpacing: CGFloat
-    let verticalSpacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        layout(proposal: proposal, subviews: subviews).size
-    }
-
-    func placeSubviews(
-        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
-    ) {
-        let result = layout(
-            proposal: ProposedViewSize(width: bounds.width, height: proposal.height), subviews: subviews
-        )
-        for (index, point) in result.positions.enumerated() where subviews.indices.contains(index) {
-            let size = result.sizes[index]
-            subviews[index].place(
-                at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y), anchor: .topLeading,
-                proposal: ProposedViewSize(width: size.width, height: size.height)
-            )
-        }
-    }
-
-    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> LayoutResult {
-        let maximumWidth = proposal.width ?? 640
-        let sizes = subviews.map {
-            $0.sizeThatFits(ProposedViewSize(width: maximumWidth, height: nil))
-        }
-        let plan = InlineWrappingLayoutPlan.frames(
-            sizes: sizes,
-            maximumWidth: maximumWidth,
-            horizontalSpacing: horizontalSpacing,
-            verticalSpacing: verticalSpacing
-        )
-        return LayoutResult(
-            size: CGSize(width: proposal.width ?? plan.size.width, height: plan.size.height),
-            positions: plan.frames.map(\.origin),
-            sizes: plan.frames.map(\.size)
-        )
-    }
-}
-
 nonisolated enum InlineWrappingLayoutPlan {
     static func frames(
         sizes: [CGSize], maximumWidth: CGFloat, horizontalSpacing: CGFloat, verticalSpacing: CGFloat

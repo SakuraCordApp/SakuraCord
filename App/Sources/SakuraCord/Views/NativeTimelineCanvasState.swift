@@ -255,10 +255,6 @@ final class NativeTimelineAccessibilityProxyStore<
         }
     }
 
-    func orderedRows() -> [NativeTimelineAccessibilityProxyView] {
-        order.compactMap { rows[$0] }
-    }
-
     func remove(_ identifier: Identifier) {
         rows.removeValue(forKey: identifier)?.removeFromSuperview()
         items.removeValue(forKey: identifier)
