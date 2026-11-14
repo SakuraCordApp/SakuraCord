@@ -18,9 +18,12 @@ extension DiscordRESTProvider {
         if let version, let current = userContentDataVersion, version < current { return }
         if let version { userContentDataVersion = version }
         let stored = message ?? Data()
+        confirmedUserContentMessage = stored
+        // A change still queued is newer than this copy and stays shown until
+        // its own save answers.
+        guard pendingUserContent == nil else { return }
         let wasDismissed = userContentMessage.map { DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: $0) }
         userContentMessage = stored
-        confirmedUserContentMessage = stored
         let isDismissed = DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: stored)
         if wasDismissed != isDismissed { continuation?.yield(.favoritesSuggestionsDismissed(isDismissed)) }
     }

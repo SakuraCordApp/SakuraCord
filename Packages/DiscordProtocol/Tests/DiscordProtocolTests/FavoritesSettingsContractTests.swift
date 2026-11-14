@@ -267,6 +267,36 @@ struct FavoritesSettingsContractTests {
         await provider.disconnect()
     }
 
+    /// An older save's answer never replaces a newer queued dismissal, so a
+    /// Reset made after that dismissal still restores Suggested Channels.
+    @Test func `a Reset after a queued dismissal still restores suggestions`() async throws {
+        FavoritesURLProtocol.reset()
+        FavoritesURLProtocol.holdResponses()
+        let provider = makeProvider()
+        var dismissed = [UInt8](repeating: 0, count: 101)
+        dismissed[100] = 0x80
+        try await receiveReady(provider, settings: (
+            DiscordSettingsProto.protoLengthDelimitedField(
+                DiscordUserContentProto.settingsField, DiscordSettingsProto.protoLengthDelimitedField(1, Data(dismissed))
+            ) + DiscordSettingsProto.protoLengthDelimitedField(DiscordFavoritesProto.settingsField, Data([0x1A, 0x00]))
+        ).base64EncodedString())
+        try await provider.updateFavorites([.reset])
+        #expect(await eventually { FavoritesURLProtocol.hasHeldResponse })
+        try await provider.setFavoritesSuggestionsDismissed(true)
+        FavoritesURLProtocol.releaseHeldResponses()
+        FavoritesURLProtocol.holdResponses()
+        #expect(await eventually { FavoritesURLProtocol.requests.count == 2 && FavoritesURLProtocol.hasHeldResponse })
+        let shown = try #require(await provider.userContentMessage)
+        #expect(DiscordUserContentProto.isDismissed(807, in: shown))
+
+        try await provider.updateFavorites([.reset])
+        FavoritesURLProtocol.releaseHeldResponses()
+        await provider.favoritesSaveTask?.value
+        let lastBody = try #require((FavoritesURLProtocol.requests.last?.body["settings"] as? String).flatMap { Data(base64Encoded: $0) })
+        #expect(try !DiscordUserContentProto.isDismissed(807, in: #require(DiscordUserContentProto.message(inSettings: lastBody))))
+        await provider.disconnect()
+    }
+
     @Test func `moving a favourite renumbers display order like the official client`() {
         var settings = FavoritesSettings(entries: [
             .init(id: ChannelID(rawValue: 1), position: 3, channelType: 15),
