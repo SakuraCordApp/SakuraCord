@@ -1411,14 +1411,7 @@ extension AccountReadStateModel {
     }
 
     func guildMentions(_ guildID: GuildID) -> Int {
-        let policy = unreadPolicySource
-        return entries.values.reduce(0) { total, entry in
-            guard entry.guildID == guildID,
-                  entry.isAccessible,
-                  !policy.isGuildResourceChannel(entry)
-            else { return total }
-            return total + presentedMentionCount(entry)
-        }
+        mentionTotal { $0.guildID == guildID }
     }
 
     func directMessageUnread(now: Date = .now) -> Bool {
@@ -1429,21 +1422,20 @@ extension AccountReadStateModel {
     }
 
     var directMessageMentions: Int {
-        let policy = unreadPolicySource
-        return entries.values.reduce(0) { total, entry in
-            guard entry.kind == .directMessage
-                    || entry.kind == .groupDirectMessage,
-                  entry.isAccessible,
-                  !policy.isGuildResourceChannel(entry)
-            else { return total }
-            return total + presentedMentionCount(entry)
-        }
+        mentionTotal { $0.kind == .directMessage || $0.kind == .groupDirectMessage }
     }
 
     var totalMentions: Int {
+        mentionTotal { _ in true }
+    }
+
+    /// The mentions shown for the accessible conversations `isIncluded`
+    /// admits, leaving out server resource channels.
+    private func mentionTotal(where isIncluded: (Entry) -> Bool) -> Int {
         let policy = unreadPolicySource
         return entries.values.reduce(0) { total, entry in
-            guard entry.isAccessible,
+            guard isIncluded(entry),
+                  entry.isAccessible,
                   !policy.isGuildResourceChannel(entry)
             else { return total }
             return total + presentedMentionCount(entry)
