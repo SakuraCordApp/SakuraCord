@@ -6,16 +6,13 @@ public extension DiscordRESTProvider {
     /// Each kind uses the same exclusive cursor, so the merged page stays ordered.
     func reactionUsers(for emoji: String, messageID: MessageID, channelID: ChannelID, after: UserID?, limit: Int) async throws -> MessagePeoplePage {
         let limit = min(100, max(1, limit))
-        let encoded = Self.reactionAPIValue(emoji).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-            ?? Self.reactionAPIValue(emoji)
         var users: [User] = []
         var hasMore = false
         for kind in [MessageReactionKind.normal, .burst] {
             try Task.checkCancellation()
-            var query = [URLQueryItem(name: "type", value: String(kind.rawValue)), URLQueryItem(name: "limit", value: String(limit))]
-            if let after { query.append(URLQueryItem(name: "after", value: after.description)) }
-            let response: [UserDTO] = try await request(
-                "/channels/\(channelID)/messages/\(messageID)/reactions/\(encoded)", query: query
+            let response = try await reactionUserPage(
+                Self.reactionAPIValue(emoji), kind: kind, messageID: messageID, channelID: channelID,
+                limit: limit, after: after
             )
             try Task.checkCancellation()
             users += try response.map { try $0.domain() }
@@ -66,11 +63,9 @@ extension DiscordRESTProvider {
             Self.reactionAPIValue($0.emoji) == apiEmoji
         }
         guard (currentReaction?.didCurrentUserReact ?? false) != reacted else { return }
-        let encoded =
-            apiEmoji.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? apiEmoji
         let method = reacted ? "PUT" : "DELETE"
         let (data, response) = try await perform(
-            "/channels/\(channelID)/messages/\(messageID)/reactions/\(encoded)/@me",
+            Self.reactionPath(apiEmoji, messageID: messageID, channelID: channelID) + "/@me",
             method: method, query: [], body: nil
         )
         if response.statusCode == 429 {
@@ -137,22 +132,14 @@ extension DiscordRESTProvider {
             )
         }
 
-        let encoded =
-            apiEmoji.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? apiEmoji
         let loadID = UUID()
         reactionReactorTaskIDs[key] = loadID
         let task = Task { [self] in
             do {
-                let users: [UserDTO] = try await request(
-                "/channels/\(channelID)/messages/\(messageID)/reactions/\(encoded)",
-                query: [
-                    URLQueryItem(name: "type", value: "0"),
-                    URLQueryItem(
-                        name: "limit",
-                        value: String(Self.reactionReactorFetchLimit)
-                    ),
-                ]
-            )
+                let users = try await reactionUserPage(
+                    apiEmoji, kind: .normal, messageID: messageID, channelID: channelID,
+                    limit: Self.reactionReactorFetchLimit
+                )
                 #if DEBUG
                     await reactorResponseReceivedForTesting?()
                 #endif
@@ -208,6 +195,24 @@ extension DiscordRESTProvider {
             let evicted = reactionReactorCacheOrder.removeFirst()
             cachedReactionReactors[evicted] = nil
         }
+    }
+
+    private func reactionUserPage(
+        _ apiEmoji: String,
+        kind: MessageReactionKind,
+        messageID: MessageID,
+        channelID: ChannelID,
+        limit: Int,
+        after: UserID? = nil
+    ) async throws -> [UserDTO] {
+        var query = [URLQueryItem(name: "type", value: String(kind.rawValue)), URLQueryItem(name: "limit", value: String(limit))]
+        if let after { query.append(URLQueryItem(name: "after", value: after.description)) }
+        return try await request(Self.reactionPath(apiEmoji, messageID: messageID, channelID: channelID), query: query)
+    }
+
+    private static func reactionPath(_ apiEmoji: String, messageID: MessageID, channelID: ChannelID) -> String {
+        let encoded = apiEmoji.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? apiEmoji
+        return "/channels/\(channelID)/messages/\(messageID)/reactions/\(encoded)"
     }
 
     static func reactionAPIValue(_ emoji: String) -> String {
