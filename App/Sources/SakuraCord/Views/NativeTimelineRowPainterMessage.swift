@@ -1541,16 +1541,6 @@ extension NativeTimelineRowPainter {
                 : SakuraCordAccentColor.labelNSColor(on: colors.first ?? .sakuraCordAccentColor))
     }
 
-    static func sakuraCordDeepLinkButton(
-        _ region: NativeTimelineRowLayout.SakuraCordDeepLinkRegion,
-        isHovered: Bool,
-        pressProgress: CGFloat,
-        colors: [NSColor]
-    ) {
-        sakuraCordButton(title: region.action.buttonTitle, frame: region.buttonFrame,
-                         isHovered: isHovered, pressProgress: pressProgress, colors: colors)
-    }
-
     static func sakuraCordButton(
         title: String, frame: CGRect, isHovered: Bool, pressProgress: CGFloat = 0,
         colors: [NSColor], foreground: NSColor = .white, isEnabled: Bool = true

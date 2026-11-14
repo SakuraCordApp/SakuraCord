@@ -26,21 +26,6 @@ nonisolated struct MessageReactionPreviewPlan: Equatable, Sendable {
     }
 }
 
-nonisolated struct MessageReactionPreviewLoadKey: Equatable, Hashable, Sendable {
-    nonisolated struct Entry: Equatable, Hashable, Sendable {
-        let reactionID: String
-        let count: Int
-    }
-
-    let entries: [Entry]
-}
-
-nonisolated struct MessageReactionAutomaticLoadKey: Equatable, Hashable, Sendable {
-    let reactionID: String
-    let count: Int
-    let needsLoad: Bool
-}
-
 nonisolated enum MessageReactionTooltipSummary: Equatable, Sendable {
     case countOnly(Int)
     case knownReactors(names: [String], remainingCount: Int)
@@ -84,27 +69,8 @@ nonisolated enum MessageReactionPresentation {
         )
     }
 
-    static func previewLoadKey(for reactions: [Reaction]) -> MessageReactionPreviewLoadKey {
-        MessageReactionPreviewLoadKey(
-            entries: items(from: reactions).map {
-                MessageReactionPreviewLoadKey.Entry(reactionID: $0.id, count: $0.count)
-            })
-    }
-
     static func needsPreviewLoad(_ reaction: Reaction) -> Bool {
         previewPlan(for: reaction).placeholderCount > 0
-    }
-
-    static func previewLoadCandidates(from reactions: [Reaction]) -> [Reaction] {
-        items(from: reactions).filter(needsPreviewLoad)
-    }
-
-    static func previewLoadKey(forPresented reactions: [Reaction]) -> MessageReactionPreviewLoadKey
-    {
-        MessageReactionPreviewLoadKey(
-            entries: reactions.map {
-                MessageReactionPreviewLoadKey.Entry(reactionID: $0.id, count: $0.count)
-            })
     }
 
     static func previewLoadCandidates(fromPresented reactions: [Reaction]) -> [Reaction] {
@@ -186,160 +152,6 @@ nonisolated enum MessageReactionPresentation {
     }
 }
 
-struct MessageReactionStrip<AddReactionControl: View>: View {
-    let reactions: [Reaction]
-    let customEmojiURLsByID: CustomEmojiImageURLs
-    let react: (String) -> Void
-    let loadReactors: (Reaction) async -> Void
-    let addReactionControl: AddReactionControl
-
-    init(
-        reactions: [Reaction],
-        customEmojiURLsByID: CustomEmojiImageURLs,
-        react: @escaping (String) -> Void,
-        loadReactors: @escaping (Reaction) async -> Void,
-        @ViewBuilder addReactionControl: () -> AddReactionControl
-    ) {
-        self.reactions = reactions
-        self.customEmojiURLsByID = customEmojiURLsByID
-        self.react = react
-        self.loadReactors = loadReactors
-        self.addReactionControl = addReactionControl()
-    }
-
-    var body: some View {
-        EmojiWrappingLayout(
-            horizontalSpacing: MessageReactionMetrics.horizontalSpacing,
-            verticalSpacing: MessageReactionMetrics.verticalSpacing
-        ) {
-            ForEach(reactions) { reaction in
-                MessageReactionPill(
-                    reaction: reaction,
-                    emojiURL: MessageReactionPresentation.emojiURL(
-                        for: reaction,
-                        customEmojiURLsByID: customEmojiURLsByID
-                    ),
-                    react: { react(reaction.emoji) },
-                    loadReactors: { await loadReactors(reaction) }
-                )
-            }
-            addReactionControl
-        }
-        .task(id: MessageReactionPresentation.previewLoadKey(forPresented: reactions)) {
-            for reaction in MessageReactionPresentation.previewLoadCandidates(
-                fromPresented: reactions
-            ) {
-                guard !Task.isCancelled else { return }
-                await loadReactors(reaction)
-            }
-        }
-    }
-}
-
-struct MessageReactionPill: View {
-    let reaction: Reaction
-    let emojiURL: URL?
-    let react: () -> Void
-    let loadReactors: () async -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered = false
-    @State private var hoverAnchorSnapshot: ReactionHoverAnchorSnapshot?
-
-    var body: some View {
-        Button(action: react) {
-            HStack(spacing: MessageReactionMetrics.horizontalPadding) {
-                MessageReactionEmoji(
-                    reaction: reaction,
-                    url: emojiURL,
-                    size: MessageReactionMetrics.emojiSize
-                )
-                if reaction.count > 0 {
-                    Text(String(reaction.count))
-                        .font(Font(NativeTimelineReactionFonts.count))
-                        .foregroundStyle(
-                            reaction.didCurrentUserReact ? SakuraCordAccentColor.color : .primary
-                        )
-                        .contentTransition(.numericText(value: Double(reaction.count)))
-                        .animation(
-                            reduceMotion ? nil : .smooth(duration: 0.24),
-                            value: reaction.count
-                        )
-                }
-                let previewPlan = MessageReactionPresentation.previewPlan(for: reaction)
-                if !previewPlan.isEmpty {
-                    MessageReactionAvatarStack(plan: previewPlan)
-                }
-            }
-            .padding(.horizontal, MessageReactionMetrics.horizontalPadding)
-            .frame(height: MessageReactionMetrics.pillHeight)
-            .background(
-                ConcentricRectangle(cornerRadius: InterfaceScale.metric(9), style: .continuous)
-                    .fill(backgroundColor)
-            )
-            .overlay {
-                ConcentricRectangle(cornerRadius: InterfaceScale.metric(9), style: .continuous)
-                    .stroke(borderColor, lineWidth: 1)
-                    .padding(0.5)
-            }
-            .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(9), style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .task(
-            id: MessageReactionAutomaticLoadKey(
-                reactionID: reaction.id,
-                count: reaction.count,
-                needsLoad: MessageReactionPresentation.needsPreviewLoad(reaction)
-            )
-        ) {
-            guard MessageReactionPresentation.needsPreviewLoad(reaction) else { return }
-            await loadReactors()
-        }
-        .onContinuousHover(coordinateSpace: .local) { phase in
-            switch phase {
-            case .active(let location):
-                let beganHovering = !isHovered
-                isHovered = true
-                hoverAnchorSnapshot = ReactionHoverAnchorSnapshot(
-                    mouseLocationInScreen: NSEvent.mouseLocation,
-                    mouseLocationInPill: location
-                )
-                if beganHovering {
-                    Task { await loadReactors() }
-                }
-            case .ended:
-                isHovered = false
-                hoverAnchorSnapshot = nil
-            }
-        }
-        .reactionHoverDetail(
-            isPresented: $isHovered,
-            anchorSnapshot: hoverAnchorSnapshot
-        ) {
-            MessageReactionTooltip(reaction: reaction, emojiURL: emojiURL)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(MessageReactionPresentation.accessibilityLabel(for: reaction))
-        .accessibilityValue(reaction.didCurrentUserReact ? "You reacted" : "You have not reacted")
-        .accessibilityHint(
-            reaction.didCurrentUserReact ? "Remove your reaction" : "Add the same reaction"
-        )
-    }
-
-    private var backgroundColor: Color {
-        if reaction.didCurrentUserReact {
-            return SakuraCordAccentColor.color.opacity(isHovered ? 0.22 : 0.16)
-        }
-        return Color.primary.opacity(isHovered ? 0.14 : 0.09)
-    }
-
-    private var borderColor: Color {
-        if reaction.didCurrentUserReact {
-            return SakuraCordAccentColor.color.opacity(0.95)
-        }
-        return isHovered ? Color.primary.opacity(0.28) : .clear
-    }
-}
-
 struct MessageReactionEmoji: View {
     let reaction: Reaction
     let url: URL?
@@ -379,41 +191,6 @@ struct MessageReactionEmoji: View {
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
-    }
-}
-
-private struct MessageReactionAvatarStack: View {
-    let plan: MessageReactionPreviewPlan
-
-    var body: some View {
-        HStack(spacing: MessageReactionMetrics.avatarStride - MessageReactionMetrics.avatarSize) {
-            ForEach(0 ..< plan.avatarCount, id: \.self) { index in
-                let reactor = index < plan.reactors.count ? plan.reactors[index] : nil
-                Group {
-                    if let reactor {
-                        AvatarView(
-                            name: reactor.displayName,
-                            url: reactor.avatarURL,
-                            size: MessageReactionMetrics.avatarSize
-                        )
-                        .background {
-                            Circle().fill(Color(nsColor: .quaternaryLabelColor))
-                        }
-                    } else {
-                        Circle()
-                            .fill(Color(nsColor: .quaternaryLabelColor))
-                            .frame(
-                                width: MessageReactionMetrics.avatarSize,
-                                height: MessageReactionMetrics.avatarSize
-                            )
-                    }
-                }
-                .overlay {
-                    Circle().strokeBorder(Color.primary.opacity(0.24), lineWidth: 1)
-                }
-                .accessibilityHidden(true)
-            }
-        }
     }
 }
 

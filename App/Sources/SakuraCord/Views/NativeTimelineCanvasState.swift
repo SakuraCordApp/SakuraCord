@@ -156,30 +156,6 @@ final class NativeTimelinePointerState {
         NSEvent.removeMonitor(reactionMouseMonitor)
         self.reactionMouseMonitor = nil
     }
-
-    var hasHoverOrPressTargets: Bool {
-        hoveredRow != nil
-            || hoveredCompactTimestampRow != nil
-            || hoveredAuthorMessageID != nil
-            || hoveredServerTagMessageID != nil
-            || hoveredCommandPillMessageID != nil
-            || hoveredMention != nil
-            || hoveredTextLink != nil
-            || hoveredTextSpoiler != nil
-            || hoveredCodeBlock != nil
-            || pressedCodeBlockCopyButton != nil
-            || hoveredComponentButton != nil
-            || hoveredForwardedSourceMessageID != nil
-            || hoveredThreadMessageID != nil
-            || hoveredFooterAction != nil
-            || pressedComponentButton != nil
-            || visualPressedComponentButton != nil
-            || componentButtonPressProgress != 0
-            || componentButtonPressAnimationTask != nil
-            || componentButtonPressAnimationDestination != nil
-            || pressedActivationTarget != nil
-            || hoveredReaction != nil
-    }
 }
 
 @MainActor
@@ -296,12 +272,6 @@ final class NativeTimelineAccessibilityProxyStore<
         rows.removeAll()
         items.removeAll()
         order.removeAll()
-    }
-
-    var isConsistent: Bool {
-        Set(rows.keys) == Set(items.keys)
-            && Set(order).isSubset(of: Set(rows.keys))
-            && order.count == Set(order).count
     }
 }
 

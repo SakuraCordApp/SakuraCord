@@ -278,14 +278,6 @@ struct ComposerVoiceMessageField: View {
     }
 }
 
-nonisolated enum VoiceMessageDurationFormat {
-    /// `m:ss`, rounding up like Discord's player.
-    static func string(_ seconds: TimeInterval) -> String {
-        let total = max(0, Int(seconds.rounded(.up)))
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
-}
-
 nonisolated struct VoiceWaveformMetrics {
     let height: CGFloat
     var barWidth: CGFloat { InterfaceScale.metric(3) }

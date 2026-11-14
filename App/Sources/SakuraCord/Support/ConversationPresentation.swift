@@ -544,19 +544,9 @@ nonisolated enum MessageTimelineSkeletonLayout {
             Int(ceil((availableHeight + rowSpacing) / (rowHeight + rowSpacing)))
         )
     }
-
-    static func coveredHeight(rowCount: Int) -> CGFloat {
-        verticalPadding
-            + CGFloat(max(0, rowCount)) * rowHeight
-            + CGFloat(max(0, rowCount - 1)) * rowSpacing
-    }
 }
 
 nonisolated enum ThreadTimelineLayoutPolicy {
-    static func minimumContentHeight(viewportHeight: CGFloat) -> CGFloat {
-        max(0, viewportHeight)
-    }
-
     static func showsFirstReplyDateSeparator(
         showsBeginning: Bool,
         starterDate: Date?,

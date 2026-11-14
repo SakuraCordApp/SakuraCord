@@ -122,17 +122,6 @@ final class NativeTimelineAccessibilityProxyView: NSView {
 }
 
 nonisolated enum NativeTimelineAccessibilityPresentation {
-    static func attachmentLabel(_ attachment: Attachment) -> String {
-        let label =
-            nonblank(attachment.description)
-            ?? nonblank(attachment.title)
-            ?? attachment.filename
-        if attachment.isSpoiler {
-            return "Spoiler attachment, \(label)"
-        }
-        return label
-    }
-
     static func stickerLabel(_ sticker: MessageSticker) -> String {
         nonblank(sticker.description) ?? sticker.name
     }

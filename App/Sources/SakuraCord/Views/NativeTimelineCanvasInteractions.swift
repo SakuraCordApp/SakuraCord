@@ -89,8 +89,8 @@ extension NativeTimelineCanvasView {
         }
         for attachment in message.attachments
         where attachment.mediaKind == .animatedImage {
-            if NativeTimelineSpoilerConcealmentPolicy
-                .shouldAnimate(
+            if !NativeTimelineSpoilerConcealmentPolicy
+                .isConcealed(
                     messageID: message.id,
                     contentID:
                         NativeTimelineComponentRevealKey

@@ -274,22 +274,6 @@ import Testing
     )
 }
 
-@Test func `unresolved unread boundaries do not draw a misleading divider`() {
-    let unreadID = MessageID(rawValue: 42)
-    #expect(
-        TimelineUnreadBoundaryPolicy.displayedMessageID(
-            firstUnreadMessageID: unreadID,
-            isLowerBound: false
-        ) == unreadID
-    )
-    #expect(
-        TimelineUnreadBoundaryPolicy.displayedMessageID(
-            firstUnreadMessageID: unreadID,
-            isLowerBound: true
-        ) == nil
-    )
-}
-
 /// Measured in the official desktop client (build 650389) with a window
 /// 794 CSS px tall at 100% zoom.
 @Test(arguments: [

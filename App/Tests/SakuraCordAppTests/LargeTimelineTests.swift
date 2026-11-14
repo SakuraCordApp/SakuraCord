@@ -93,15 +93,7 @@ func `concealed spoiler policy gates loading animation and nested containers unt
         )
     )
     #expect(
-        !NativeTimelineSpoilerConcealmentPolicy.shouldAnimate(
-            messageID: messageID,
-            contentID: contentID,
-            isSpoiler: true,
-            store: store
-        )
-    )
-    #expect(
-        NativeTimelineSpoilerConcealmentPolicy.shouldAnimate(
+        !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
             messageID: messageID,
             contentID: "ordinary-media",
             isSpoiler: false,
@@ -116,7 +108,7 @@ func `concealed spoiler policy gates loading animation and nested containers unt
         )
     )
     #expect(
-        NativeTimelineSpoilerConcealmentPolicy.shouldAnimate(
+        !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
             messageID: messageID,
             contentID: contentID,
             isSpoiler: true,

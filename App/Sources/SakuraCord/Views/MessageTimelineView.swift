@@ -375,51 +375,6 @@ struct MessageTimelineView: View {
     }
 }
 
-struct DateSeparator: View {
-    let date: Date
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(10)) {
-            separatorLine
-            Text(date, format: .dateTime.day().month(.wide).year())
-                .font(.interface(.caption2).weight(.semibold))
-                .foregroundStyle(.secondary)
-                .fixedSize()
-            separatorLine
-        }
-        .padding(.horizontal, InterfaceScale.metric(14))
-        .padding(.vertical, InterfaceScale.metric(12))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Messages from \(date.formatted(date: .long, time: .omitted))")
-    }
-
-    private var separatorLine: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.16))
-            .frame(maxWidth: .infinity, minHeight: 1, maxHeight: 1)
-    }
-}
-
-struct NewMessagesSeparator: View {
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(8)) {
-            Rectangle()
-                .fill(Color.red)
-                .frame(maxWidth: .infinity, minHeight: 1, maxHeight: 1)
-            Text("NEW")
-                .font(.interface(.caption2).weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, InterfaceScale.metric(7))
-                .padding(.vertical, InterfaceScale.metric(3))
-                .background(Color.red, in: Capsule())
-        }
-        .padding(.leading, InterfaceScale.metric(14))
-        .padding(.trailing, InterfaceScale.metric(10))
-        .padding(.vertical, InterfaceScale.metric(5))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("New messages")
-    }
-}
-
 struct UnreadMessagesBanner: View {
     let summary: AccountReadStateModel.TimelineUnreadSummary
     let isLoadingHistory: Bool
@@ -792,16 +747,6 @@ enum MessageTimelineLoadingPolicy {
     }
 }
 
-nonisolated enum TimelineUnreadBoundaryPolicy {
-    static func displayedMessageID(
-        firstUnreadMessageID: MessageID?,
-        isLowerBound: Bool
-    ) -> MessageID? {
-        guard !isLowerBound else { return nil }
-        return firstUnreadMessageID
-    }
-}
-
 struct MessageTimelineLoadingSkeleton: View {
     var bottomContentInset: CGFloat = 0
 
@@ -849,74 +794,6 @@ struct MessageTimelineLoadingSkeleton: View {
         .ignoresSafeArea(.container, edges: .top)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Loading messages")
-    }
-}
-
-struct ChannelBeginningView: View {
-    let channel: Channel
-    let rulesChannelID: ChannelID?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(9)) {
-            Image(systemName: symbol)
-                .font(.interfaceSystem(size: 34, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: InterfaceScale.metric(68), height: InterfaceScale.metric(68))
-                .background(.quaternary, in: Circle())
-
-            Text(title)
-                .font(.interface(.largeTitle).weight(.bold))
-                .textSelection(.enabled)
-
-            Text(description)
-                .font(.interface(.body))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-        .padding(.horizontal, InterfaceScale.metric(16))
-        .padding(.top, InterfaceScale.metric(28))
-        .padding(.bottom, InterfaceScale.metric(18))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var title: String {
-        return switch channel.kind {
-        case .directMessage, .groupDirectMessage:
-            "Beginning of your conversation with \(channel.name)"
-        case .voice:
-            "Welcome to \(channel.name)!"
-        default:
-            "Welcome to #\(channel.name)!"
-        }
-    }
-
-    private var description: String {
-        if let topic = channel.topic?.trimmingCharacters(in: .whitespacesAndNewlines), !topic.isEmpty {
-            return topic
-        }
-        switch channel.kind {
-        case .directMessage, .groupDirectMessage:
-            return "This is the beginning of your direct message history."
-        case .voice:
-            return "This is the start of the \(channel.name) voice channel chat."
-        default:
-            return "This is the start of the #\(channel.name) channel."
-        }
-    }
-
-    private var symbol: String {
-        if rulesChannelID == channel.id {
-            return "newspaper.fill"
-        }
-        return switch channel.kind {
-        case .directMessage: "person.fill"
-        case .groupDirectMessage: "person.2.fill"
-        case .announcement: "megaphone.fill"
-        case .forum: "bubble.left.and.bubble.right.fill"
-        case .voice: "bubble.left.fill"
-        default: "number"
-        }
     }
 }
 

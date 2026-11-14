@@ -516,3 +516,11 @@ private final class PlaybackFile {
         if removesOnRelease { try? FileManager.default.removeItem(at: url) }
     }
 }
+
+nonisolated enum VoiceMessageDurationFormat {
+    /// `m:ss`, rounding up like Discord's player.
+    static func string(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded(.up)))
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}

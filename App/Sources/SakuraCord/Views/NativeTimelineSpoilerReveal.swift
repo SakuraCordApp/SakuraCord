@@ -330,18 +330,4 @@ enum NativeTimelineSpoilerConcealmentPolicy {
             $0.contains(CGPoint(x: frame.midX, y: frame.midY))
         }
     }
-
-    static func shouldAnimate(
-        messageID: MessageID,
-        contentID: String,
-        isSpoiler: Bool,
-        store: NativeTimelineSpoilerRevealStore
-    ) -> Bool {
-        !isConcealed(
-            messageID: messageID,
-            contentID: contentID,
-            isSpoiler: isSpoiler,
-            store: store
-        )
-    }
 }
