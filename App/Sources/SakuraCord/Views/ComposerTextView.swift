@@ -146,8 +146,18 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onNavigateReplySelection = { [weak coordinator = context.coordinator] direction in
             coordinator?.parent.onNavigateReplySelection(direction) ?? false
         }
-        textView.onDropTargetChanged = onDropTargetChanged
-        textView.onReceiveAttachments = onReceiveAttachments
+        // Each editor either always or never takes drops; the text view reads
+        // a missing handler as "no drops".
+        if onDropTargetChanged != nil {
+            textView.onDropTargetChanged = { [weak coordinator = context.coordinator] isTargeted, isInstant in
+                coordinator?.parent.onDropTargetChanged?(isTargeted, isInstant)
+            }
+        }
+        if onReceiveAttachments != nil {
+            textView.onReceiveAttachments = { [weak coordinator = context.coordinator] attachments, isInstant in
+                coordinator?.parent.onReceiveAttachments?(attachments, isInstant) ?? false
+            }
+        }
         textView.canReceiveAttachments = { [weak coordinator = context.coordinator] in
             coordinator?.parent.canReceiveAttachments() ?? false
         }
@@ -211,27 +221,6 @@ struct ComposerTextView: NSViewRepresentable {
         textView.isEditable = context.environment.acceptsComposerInput
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.acceptsComposerInput
         context.coordinator.updateCompositionState(from: textView, deferringNotification: true)
-
-        textView.onReturn = { [weak coordinator = context.coordinator] event in
-            coordinator?.handleReturn(event) ?? false
-        }
-        textView.onAutocompleteCommand = { [weak coordinator = context.coordinator] command in
-            coordinator?.parent.onAutocompleteCommand(command) ?? false
-        }
-        textView.onEscape = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onEscape()
-        }
-        textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onEditLatestMessage() ?? false
-        }
-        textView.onNavigateReplySelection = { [weak coordinator = context.coordinator] direction in
-            coordinator?.parent.onNavigateReplySelection(direction) ?? false
-        }
-        textView.onDropTargetChanged = onDropTargetChanged
-        textView.onReceiveAttachments = onReceiveAttachments
-        textView.canReceiveAttachments = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.canReceiveAttachments() ?? false
-        }
 
         // During IME composition, NSTextView owns the marked range. Applying
         // the SwiftUI snapshot, selection, or typing attributes here can
