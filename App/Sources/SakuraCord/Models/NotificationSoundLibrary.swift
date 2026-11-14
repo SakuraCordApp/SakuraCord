@@ -22,6 +22,39 @@ nonisolated enum NotificationSoundKind: CaseIterable, Sendable {
         case .call: 300
         }
     }
+
+    var soundIDKey: String {
+        switch self {
+        case .message: NotificationSoundKeys.messageSoundID
+        case .call: NotificationSoundKeys.callRingtoneID
+        }
+    }
+
+    var soundNameKey: String {
+        switch self {
+        case .message: NotificationSoundKeys.messageSoundName
+        case .call: NotificationSoundKeys.callRingtoneName
+        }
+    }
+
+    var soundBookmarkKey: String {
+        switch self {
+        case .message: NotificationSoundKeys.messageSoundBookmark
+        case .call: NotificationSoundKeys.callRingtoneBookmark
+        }
+    }
+}
+
+/// One notification sound's choice: bundled, a system sound, or a custom
+/// file with its name and security-scoped bookmark.
+nonisolated struct NotificationSoundPreference: Equatable {
+    var soundID = NotificationSoundLibrary.bundledID
+    var name = ""
+    var bookmark: Data?
+
+    var choice: NotificationSoundLibrary.Choice {
+        NotificationSoundLibrary.Choice(soundID: soundID, bookmark: bookmark)
+    }
 }
 
 nonisolated enum NotificationSoundKeys {

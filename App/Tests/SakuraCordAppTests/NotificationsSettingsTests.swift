@@ -36,9 +36,8 @@ import UserNotifications
 @Test func `Settings export keeps system sounds and leaves out custom file sounds`() {
     let defaults = InMemoryPreferences()
     let preferences = NotificationPreferences(defaults: defaults)
-    preferences.messageSoundID = NotificationSoundLibrary.systemID(for: "Glass")
-    preferences.callRingtoneBookmark = Data([1])
-    preferences.callRingtoneID = NotificationSoundLibrary.customID
+    preferences.setSoundID(NotificationSoundLibrary.systemID(for: "Glass"), for: .message)
+    preferences.setCustomSound(bookmark: Data([1]), name: "", for: .call)
 
     let export = SettingsPreferenceStore(defaults: defaults).export(scope: .appWide, page: .notifications)
     #expect(

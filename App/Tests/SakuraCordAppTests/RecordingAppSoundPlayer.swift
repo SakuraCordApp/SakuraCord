@@ -1,3 +1,4 @@
+import Foundation
 @testable import SakuraCord
 
 @MainActor
@@ -18,4 +19,7 @@ final class RecordingAppSoundPlayer: AppSoundPlaying {
         stopAllCount += 1
         looping = [:]
     }
+
+    func togglePreview(_ effect: AppSoundEffect) -> TimeInterval? { nil }
+    func stopPreview() {}
 }

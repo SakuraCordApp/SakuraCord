@@ -196,12 +196,6 @@ final class NotificationPreferences {
         static let replies = "notifications.events.replies"
         static let incomingCalls = "notifications.events.incomingCalls"
         static let serverActivity = "notifications.events.serverActivity"
-        static let messageSound = NotificationSoundKeys.messageSoundID
-        static let messageSoundBookmark = NotificationSoundKeys.messageSoundBookmark
-        static let messageSoundName = NotificationSoundKeys.messageSoundName
-        static let callRingtone = NotificationSoundKeys.callRingtoneID
-        static let callRingtoneBookmark = NotificationSoundKeys.callRingtoneBookmark
-        static let callRingtoneName = NotificationSoundKeys.callRingtoneName
         static let suppressCurrentConversation = "notifications.suppressCurrentConversation"
         static let groupByConversation = "notifications.groupByConversation"
         static let clearWhenRead = "notifications.clearWhenRead"
@@ -233,65 +227,51 @@ final class NotificationPreferences {
     var notifiesServerActivity: Bool {
         didSet { defaults.set(notifiesServerActivity, forKey: Key.serverActivity) }
     }
-    var messageSoundID: String {
-        didSet { defaults.set(messageSoundID, forKey: Key.messageSound) }
+    /// The message sound and the ringtone, each saved under its kind's keys.
+    private(set) var messageSound = NotificationSoundPreference() {
+        didSet { persist(messageSound, for: .message) }
     }
-    var messageSoundName: String {
-        didSet { defaults.set(messageSoundName, forKey: Key.messageSoundName) }
+    private(set) var callRingtone = NotificationSoundPreference() {
+        didSet { persist(callRingtone, for: .call) }
     }
-    var messageSoundBookmark: Data? {
-        didSet {
-            if let messageSoundBookmark {
-                defaults.set(messageSoundBookmark, forKey: Key.messageSoundBookmark)
-            } else {
-                defaults.removeObject(forKey: Key.messageSoundBookmark)
-            }
-        }
-    }
-    var callRingtoneID: String {
-        didSet { defaults.set(callRingtoneID, forKey: Key.callRingtone) }
-    }
-    var callRingtoneName: String {
-        didSet { defaults.set(callRingtoneName, forKey: Key.callRingtoneName) }
-    }
-    var callRingtoneBookmark: Data? {
-        didSet {
-            if let callRingtoneBookmark {
-                defaults.set(callRingtoneBookmark, forKey: Key.callRingtoneBookmark)
-            } else {
-                defaults.removeObject(forKey: Key.callRingtoneBookmark)
-            }
-        }
-    }
-    func soundChoice(for kind: NotificationSoundKind) -> NotificationSoundLibrary.Choice {
+
+    func sound(for kind: NotificationSoundKind) -> NotificationSoundPreference {
         switch kind {
-        case .message: .init(soundID: messageSoundID, bookmark: messageSoundBookmark)
-        case .call: .init(soundID: callRingtoneID, bookmark: callRingtoneBookmark)
+        case .message: messageSound
+        case .call: callRingtone
         }
+    }
+
+    private func setSound(_ sound: NotificationSoundPreference, for kind: NotificationSoundKind) {
+        switch kind {
+        case .message: messageSound = sound
+        case .call: callRingtone = sound
+        }
+    }
+
+    private func persist(_ sound: NotificationSoundPreference, for kind: NotificationSoundKind) {
+        defaults.set(sound.soundID, forKey: kind.soundIDKey)
+        defaults.set(sound.name, forKey: kind.soundNameKey)
+        if let bookmark = sound.bookmark {
+            defaults.set(bookmark, forKey: kind.soundBookmarkKey)
+        } else {
+            defaults.removeObject(forKey: kind.soundBookmarkKey)
+        }
+    }
+
+    func soundChoice(for kind: NotificationSoundKind) -> NotificationSoundLibrary.Choice {
+        sound(for: kind).choice
     }
     func soundName(for kind: NotificationSoundKind) -> String {
-        switch kind {
-        case .message: messageSoundName
-        case .call: callRingtoneName
-        }
+        sound(for: kind).name
     }
     func setSoundID(_ soundID: String, for kind: NotificationSoundKind) {
-        switch kind {
-        case .message: messageSoundID = soundID
-        case .call: callRingtoneID = soundID
-        }
+        var sound = sound(for: kind)
+        sound.soundID = soundID
+        setSound(sound, for: kind)
     }
     func setCustomSound(bookmark: Data, name: String, for kind: NotificationSoundKind) {
-        switch kind {
-        case .message:
-            messageSoundBookmark = bookmark
-            messageSoundName = name
-            messageSoundID = NotificationSoundLibrary.customID
-        case .call:
-            callRingtoneBookmark = bookmark
-            callRingtoneName = name
-            callRingtoneID = NotificationSoundLibrary.customID
-        }
+        setSound(NotificationSoundPreference(soundID: NotificationSoundLibrary.customID, name: name, bookmark: bookmark), for: kind)
     }
     var suppressesCurrentConversation: Bool {
         didSet {
@@ -318,12 +298,6 @@ final class NotificationPreferences {
         notifiesReplies = true
         notifiesIncomingCalls = true
         notifiesServerActivity = true
-        messageSoundID = NotificationSoundLibrary.bundledID
-        messageSoundName = ""
-        messageSoundBookmark = nil
-        callRingtoneID = NotificationSoundLibrary.bundledID
-        callRingtoneName = ""
-        callRingtoneBookmark = nil
         suppressesCurrentConversation = true
         groupsByConversation = true
         clearsWhenRead = true
@@ -350,27 +324,22 @@ final class NotificationPreferences {
         notifiesReplies = bool(Key.replies, default: true)
         notifiesIncomingCalls = bool(Key.incomingCalls, default: true)
         notifiesServerActivity = bool(Key.serverActivity, default: true)
-        messageSoundID = defaults.string(forKey: Key.messageSound) ?? NotificationSoundLibrary.bundledID
-        messageSoundName = defaults.string(forKey: Key.messageSoundName) ?? ""
-        messageSoundBookmark = defaults.data(forKey: Key.messageSoundBookmark)
-        callRingtoneID = defaults.string(forKey: Key.callRingtone) ?? NotificationSoundLibrary.bundledID
-        callRingtoneName = defaults.string(forKey: Key.callRingtoneName) ?? ""
-        callRingtoneBookmark = defaults.data(forKey: Key.callRingtoneBookmark)
-        // Reset and Import only touch the sound IDs, so drop a custom file
-        // the ID no longer points at, and treat "custom" without one as default.
-        if messageSoundID != NotificationSoundLibrary.customID {
-            if messageSoundBookmark != nil { messageSoundBookmark = nil }
-            if !messageSoundName.isEmpty { messageSoundName = "" }
-        } else if messageSoundBookmark == nil {
-            messageSoundID = NotificationSoundLibrary.bundledID
-            messageSoundName = ""
-        }
-        if callRingtoneID != NotificationSoundLibrary.customID {
-            if callRingtoneBookmark != nil { callRingtoneBookmark = nil }
-            if !callRingtoneName.isEmpty { callRingtoneName = "" }
-        } else if callRingtoneBookmark == nil {
-            callRingtoneID = NotificationSoundLibrary.bundledID
-            callRingtoneName = ""
+        for kind in NotificationSoundKind.allCases {
+            var sound = NotificationSoundPreference(
+                soundID: defaults.string(forKey: kind.soundIDKey) ?? NotificationSoundLibrary.bundledID,
+                name: defaults.string(forKey: kind.soundNameKey) ?? "",
+                bookmark: defaults.data(forKey: kind.soundBookmarkKey)
+            )
+            // Reset and Import only touch the sound IDs, so drop a custom file
+            // the ID no longer points at, and treat "custom" without one as default.
+            if sound.soundID != NotificationSoundLibrary.customID {
+                sound.bookmark = nil
+                sound.name = ""
+            } else if sound.bookmark == nil {
+                sound.soundID = NotificationSoundLibrary.bundledID
+                sound.name = ""
+            }
+            setSound(sound, for: kind)
         }
         suppressesCurrentConversation = bool(Key.suppressCurrentConversation, default: true)
         groupsByConversation = bool(Key.groupByConversation, default: true)
