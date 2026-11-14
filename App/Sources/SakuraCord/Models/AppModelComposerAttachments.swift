@@ -391,7 +391,7 @@ extension AppModel {
     /// tile and back into it.
     func openComposerAttachment(_ id: UUID, in attachments: [ForumPostAttachment], from anchor: ComposerSendTransitionAnchor) {
         guard let currentUser,
-              let presentation = NativeTimelineMediaViewerPlan.composerAttachments(
+              let presentation = MediaViewerPlan.composerAttachments(
                   attachments,
                   selectedAttachmentID: id,
                   author: currentUser

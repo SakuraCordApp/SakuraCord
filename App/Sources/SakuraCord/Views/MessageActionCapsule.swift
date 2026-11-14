@@ -232,7 +232,7 @@ private struct ReactionActionMenu: View {
         .onModalHover { isHovering = $0 }
         .help("Add reaction")
         .background {
-            StableReactionPickerPresenter(
+            StablePickerPopoverPresenter(
                 isPresented: $isPickerPresented,
                 preferredEdge: presentation.popoverEdge,
                 accessibilityIdentifier: presentation.pickerAccessibilityIdentifier
@@ -301,7 +301,7 @@ enum ReactionActionMenuPresentation {
             : InterfaceScale.metric(9)
     }
     var popoverEdge: NSRectEdge {
-        StableReactionPickerAnchorPolicy.preferredEdge(isInline: self == .inline)
+        StablePickerPopoverAnchorPolicy.preferredEdge(isInline: self == .inline)
     }
     var pickerAccessibilityIdentifier: String {
         self == .inline ? "reaction-picker-inline" : "reaction-picker-toolbar"

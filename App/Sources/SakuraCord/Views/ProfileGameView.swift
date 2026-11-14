@@ -13,7 +13,7 @@ struct ProfileGameView: View {
     @State private var isLoading = true
     @State private var navigation: [ProfileGame] = []
     @State private var copiedLink = false
-    @State private var mediaPresentation: NativeTimelineMediaViewerPresentation?
+    @State private var mediaPresentation: MediaViewerPresentation?
     @Environment(\.windowModalContext) private var dismiss
 
     init(model: AppModel, game: ProfileGame, editor: ProfileEditorState? = nil) {

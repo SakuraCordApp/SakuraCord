@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-nonisolated enum StableReactionPickerAnchorPolicy {
+nonisolated enum StablePickerPopoverAnchorPolicy {
     static let freezesAnchorWhilePresented = true
     static var maximumContentSize: CGSize { CGSize(width: InterfaceScale.metric(520), height: InterfaceScale.metric(760)) }
 
@@ -10,7 +10,7 @@ nonisolated enum StableReactionPickerAnchorPolicy {
     }
 }
 
-struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
+struct StablePickerPopoverPresenter<Content: View>: NSViewRepresentable {
     @Binding var isPresented: Bool
     let preferredEdge: NSRectEdge
     let accessibilityIdentifier: String
@@ -21,11 +21,11 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
         Coordinator()
     }
 
-    func makeNSView(context: Context) -> StableReactionPickerSourceView {
-        StableReactionPickerSourceView()
+    func makeNSView(context: Context) -> StablePickerPopoverSourceView {
+        StablePickerPopoverSourceView()
     }
 
-    func updateNSView(_ nsView: StableReactionPickerSourceView, context: Context) {
+    func updateNSView(_ nsView: StablePickerPopoverSourceView, context: Context) {
         context.coordinator.update(
             sourceView: nsView,
             isPresented: isPresented,
@@ -38,7 +38,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
     }
 
     static func dismantleNSView(
-        _ nsView: StableReactionPickerSourceView,
+        _ nsView: StablePickerPopoverSourceView,
         coordinator: Coordinator
     ) {
         nsView.modalInputChanged = nil
@@ -60,7 +60,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
         var isShown: Bool { popover?.isShown == true }
 
         func update(
-            sourceView: StableReactionPickerSourceView,
+            sourceView: StablePickerPopoverSourceView,
             isPresented: Bool,
             preferredEdge: NSRectEdge,
             accessibilityIdentifier: String,
@@ -97,7 +97,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
         }
 
         private func show(
-            sourceView: StableReactionPickerSourceView,
+            sourceView: StablePickerPopoverSourceView,
             preferredEdge: NSRectEdge,
             accessibilityIdentifier: String,
             behavior: NSPopover.Behavior,
@@ -172,7 +172,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
         }
 
         private static var maximumContentSize: CGSize {
-            StableReactionPickerAnchorPolicy.maximumContentSize
+            StablePickerPopoverAnchorPolicy.maximumContentSize
         }
 
         func popoverWillClose(_ notification: Notification) {
@@ -247,12 +247,12 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
     }
 }
 
-final class StableReactionPickerSourceView: NSView, WindowModalInputParticipant {
+final class StablePickerPopoverSourceView: NSView, WindowModalInputParticipant {
     var followsScrolling = false
     var modalInputChanged: (() -> Void)?
     func modalInputDidChange() { modalInputChanged?() }
 
-    private let snapshotAnchor = StableReactionPickerSnapshotView()
+    private let snapshotAnchor = StablePickerPopoverSnapshotView()
 
     var installedSnapshotAnchor: NSView? { snapshotAnchor.superview == nil ? nil : snapshotAnchor }
 
@@ -294,7 +294,7 @@ final class StableReactionPickerSourceView: NSView, WindowModalInputParticipant 
     }
 }
 
-final class StableReactionPickerSnapshotView: NSView {
+final class StablePickerPopoverSnapshotView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }

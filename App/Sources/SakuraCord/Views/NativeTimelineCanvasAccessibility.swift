@@ -50,7 +50,7 @@ struct ComponentMediaA11yInput {
     let parent: NSAccessibilityElement
     /// The file a file component's element downloads; nil for media.
     let file: Attachment?
-    let viewerPresentation: NativeTimelineMediaViewerPresentation?
+    let viewerPresentation: MediaViewerPresentation?
 }
 
 private struct MessageIdentityA11yInput {
@@ -789,7 +789,7 @@ extension NativeTimelineCanvasView {
                 parent: parent
             ) {
                 if let presentation =
-                    NativeTimelineMediaViewerPlan.linkedImages(
+                    MediaViewerPlan.linkedImages(
                         in: message,
                         selectedReferenceID: region.reference.id
                     )
@@ -1592,7 +1592,7 @@ extension NativeTimelineCanvasView {
                     parent: parent,
                     file: nil,
                     viewerPresentation:
-                        NativeTimelineMediaViewerPlan.components(
+                        MediaViewerPlan.components(
                             in: message,
                             layouts: layouts,
                             selectedComponentID: region.componentID,
@@ -1623,7 +1623,7 @@ extension NativeTimelineCanvasView {
                     parent: parent,
                     file: nil,
                     viewerPresentation:
-                        NativeTimelineMediaViewerPlan.components(
+                        MediaViewerPlan.components(
                             in: message,
                             layouts: layouts,
                             selectedComponentID: region.componentID,
@@ -1654,7 +1654,7 @@ extension NativeTimelineCanvasView {
                     parent: parent,
                     file: region.attachment,
                     viewerPresentation:
-                        NativeTimelineMediaViewerPlan.components(
+                        MediaViewerPlan.components(
                             in: message,
                             layouts: layouts,
                             selectedComponentID: region.componentID,

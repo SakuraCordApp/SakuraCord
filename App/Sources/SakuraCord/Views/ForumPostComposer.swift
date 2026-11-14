@@ -287,7 +287,7 @@ struct ForumPostComposer: View {
     }
 
     private var emojiPicker: some View {
-        StableReactionPickerPresenter(
+        StablePickerPopoverPresenter(
             isPresented: $showsEmojiPicker,
             preferredEdge: .maxY,
             accessibilityIdentifier: "forum-post-emoji-picker"

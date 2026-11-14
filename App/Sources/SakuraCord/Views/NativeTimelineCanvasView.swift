@@ -302,9 +302,9 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             NativeMessageTimelineItem.Identifier,
             NativeTimelineAccessibilityRowState
         >()
-    let reactionPickerSource = StableReactionPickerSourceView()
+    let reactionPickerSource = StablePickerPopoverSourceView()
     let reactionPickerCoordinator =
-        StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
+        StablePickerPopoverPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
     var pendingRowMotionBaseline: NativeTimelineRowMotionBaseline?

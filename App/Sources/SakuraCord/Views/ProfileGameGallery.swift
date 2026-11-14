@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ProfileGameGallery: View {
     let game: ProfileGame
-    let present: (NativeTimelineMediaViewerPresentation) -> Void
+    let present: (MediaViewerPresentation) -> Void
     @State private var selectedIndex = 0
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
@@ -88,7 +88,7 @@ struct ProfileGameGallery: View {
     }
 
     private func expand(_ index: Int) {
-        present(NativeTimelineMediaViewerPresentation(items: items, selection: index, authorName: game.name,
+        present(MediaViewerPresentation(items: items, selection: index, authorName: game.name,
                                                       authorAvatarURL: game.iconURL, timestamp: game.metadata?.releaseDate ?? .now))
     }
 }

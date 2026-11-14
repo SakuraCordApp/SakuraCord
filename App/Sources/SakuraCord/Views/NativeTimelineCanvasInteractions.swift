@@ -559,7 +559,7 @@ extension NativeTimelineCanvasView {
         )
         if isSpoiler, !spoilerRevealStore.isMediaRevealed(key) {
             reveal(key, rowIndex: rowIndex)
-        } else if let presentation = NativeTimelineMediaViewerPlan.components(
+        } else if let presentation = MediaViewerPlan.components(
             in: message,
             layouts: layout.componentLayouts,
             selectedComponentID: id,

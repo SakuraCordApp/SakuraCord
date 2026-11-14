@@ -847,7 +847,7 @@ extension NativeTimelineCanvasView {
         if let linkedImage = layout.linkedImageRegions.first(
             where: { $0.frame.contains(point) }
         ) {
-            if let presentation = NativeTimelineMediaViewerPlan.linkedImages(
+            if let presentation = MediaViewerPlan.linkedImages(
                 in: row.message,
                 selectedReferenceID: linkedImage.reference.id
             ) {
@@ -1815,7 +1815,7 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout,
         rowIndex: Int
     ) -> Bool {
-        guard let presentation = NativeTimelineMediaViewerPlan.attachments(
+        guard let presentation = MediaViewerPlan.attachments(
             in: message,
             selectedAttachmentID: attachment.id,
             isRevealed: { [spoilerRevealStore] componentID in
@@ -1843,7 +1843,7 @@ extension NativeTimelineCanvasView {
         message: Message,
         rowIndex: Int
     ) -> Bool {
-        guard let presentation = NativeTimelineMediaViewerPlan.embed(in: message, id: id) else { return false }
+        guard let presentation = MediaViewerPlan.embed(in: message, id: id) else { return false }
         model?.mediaViewerPresentation = mediaViewerPresentation(
             presentation,
             sourceFrame: region?.mediaFrame ?? .zero,

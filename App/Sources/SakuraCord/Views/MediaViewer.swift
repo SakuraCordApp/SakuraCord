@@ -5,7 +5,7 @@ struct MediaViewer: View {
     @Environment(\.profileCosmeticPolicy) private var cosmeticPolicy
     /// The window's scheme; the viewer itself always renders dark.
     @Environment(\.colorScheme) private var windowColorScheme
-    let presentation: NativeTimelineMediaViewerPresentation
+    let presentation: MediaViewerPresentation
     let isVisible: Bool
     let transitionSources: [String: MediaViewerTransitionSource]
     let close: () -> Void
@@ -16,7 +16,7 @@ struct MediaViewer: View {
     @FocusState private var keyboardNavigationIsFocused: Bool
 
     init(
-        presentation: NativeTimelineMediaViewerPresentation,
+        presentation: MediaViewerPresentation,
         isVisible: Bool = true,
         transitionSources: [String: MediaViewerTransitionSource] = [:],
         close: @escaping () -> Void,

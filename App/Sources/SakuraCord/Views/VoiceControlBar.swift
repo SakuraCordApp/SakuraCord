@@ -384,7 +384,7 @@ struct VoiceCallControlDock: View {
                 }
                 .disabled(model.voiceSessionState != .connected || model.isVoiceDeafened)
                 .background {
-                    StableReactionPickerPresenter(
+                    StablePickerPopoverPresenter(
                         isPresented: $showSoundboard,
                         preferredEdge: .maxY,
                         accessibilityIdentifier: "voice-call-soundboard-picker"
@@ -409,7 +409,7 @@ struct VoiceCallControlDock: View {
             }
             .disabled(model.voiceSessionState != .connected || !model.canStartActivity(in: channel))
             .background {
-                StableReactionPickerPresenter(
+                StablePickerPopoverPresenter(
                     isPresented: $showActivities,
                     preferredEdge: .maxY,
                     accessibilityIdentifier: "voice-call-activity-shelf"

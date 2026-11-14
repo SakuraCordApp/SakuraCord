@@ -1670,7 +1670,7 @@ private extension ComposerView {
         ComposerIconView(icon: icon, appearance: appearance, action: toggle)
             .fixedSize()
             .background {
-                StableReactionPickerPresenter(
+                StablePickerPopoverPresenter(
                     isPresented: isPresented,
                     preferredEdge: .maxY,
                     accessibilityIdentifier: identifier,
@@ -1789,7 +1789,7 @@ extension ComposerView {
 
     /// The emoji and sticker pickers' popover, so the shelf shares their material.
     private var activityShelfPresenter: some View {
-        StableReactionPickerPresenter(
+        StablePickerPopoverPresenter(
             isPresented: $showActivityShelf,
             preferredEdge: .maxY,
             accessibilityIdentifier: "composer-activity-shelf"

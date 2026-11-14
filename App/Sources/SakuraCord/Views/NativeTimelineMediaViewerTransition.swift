@@ -34,20 +34,20 @@ final class MediaViewerTransitionLink {
 /// sources on its cards' live frames and leaves out the card the viewer
 /// stands in for.
 struct NativeTimelineMediaViewerTransition {
-    let presentation: NativeTimelineMediaViewerPresentation
+    let presentation: MediaViewerPresentation
     let row: NativeMessageTimelineItem.Identifier
     var coveredItemID: String?
 }
 
 extension NativeTimelineCanvasView {
     func mediaViewerPresentation(
-        _ presentation: NativeTimelineMediaViewerPresentation,
+        _ presentation: MediaViewerPresentation,
         sourceFrame: CGRect,
         rowIndex: Int,
         mediaKey: MediaImageKey?,
         cornerRadius: CGFloat,
         fillsFrame: Bool
-    ) -> NativeTimelineMediaViewerPresentation {
+    ) -> MediaViewerPresentation {
         linking(
             sourcedPresentation(
                 presentation, sourceFrame: sourceFrame, rowIndex: rowIndex,
@@ -58,13 +58,13 @@ extension NativeTimelineCanvasView {
     }
 
     private func sourcedPresentation(
-        _ presentation: NativeTimelineMediaViewerPresentation,
+        _ presentation: MediaViewerPresentation,
         sourceFrame: CGRect,
         rowIndex: Int,
         mediaKey: MediaImageKey?,
         cornerRadius: CGFloat,
         fillsFrame: Bool
-    ) -> NativeTimelineMediaViewerPresentation {
+    ) -> MediaViewerPresentation {
         let media = timelineMedia(for: presentation, rowIndex: rowIndex)
         let presentation = presentation.withTimelineMedia(
             previewImages: media.previewImages,
@@ -139,7 +139,7 @@ extension NativeTimelineCanvasView {
     /// their cards' current frames and with their images if the cache let
     /// them go.
     private func timelineMedia(
-        for presentation: NativeTimelineMediaViewerPresentation,
+        for presentation: MediaViewerPresentation,
         rowIndex: Int,
         refreshing previousSources: [String: MediaViewerTransitionSource]? = nil
     ) -> (
@@ -345,10 +345,10 @@ extension NativeTimelineCanvasView {
     }
 
     func mediaViewerPresentation(
-        _ presentation: NativeTimelineMediaViewerPresentation,
+        _ presentation: MediaViewerPresentation,
         componentID: String,
         rowIndex: Int
-    ) -> NativeTimelineMediaViewerPresentation {
+    ) -> MediaViewerPresentation {
         guard layouts.indices.contains(rowIndex) else { return presentation }
         if presentation.items.indices.contains(presentation.selection),
            presentation.items[presentation.selection].id == componentID,
@@ -395,9 +395,9 @@ extension NativeTimelineCanvasView {
 extension NativeTimelineCanvasView {
     /// Keeps a viewer that zooms from this canvas's cards on their live frames.
     private func linking(
-        _ presentation: NativeTimelineMediaViewerPresentation,
+        _ presentation: MediaViewerPresentation,
         rowIndex: Int
-    ) -> NativeTimelineMediaViewerPresentation {
+    ) -> MediaViewerPresentation {
         let link = presentation.transitionLink
         guard !link.sources.isEmpty, items.indices.contains(rowIndex) else { return presentation }
         mediaViewerTransition = NativeTimelineMediaViewerTransition(

@@ -290,7 +290,7 @@ final class AppModel {
     @ObservationIgnored var replyRevealRequestID: UInt64 = 0
     var conversationNewestRequest: ConversationNewestRequest?
     var presentedProfileGame: ProfileGame?
-    var mediaViewerPresentation: NativeTimelineMediaViewerPresentation?
+    var mediaViewerPresentation: MediaViewerPresentation?
     /// The item the open media viewer shows as the user pages through it.
     var mediaViewerSelectedItemID: String?
     var unreadDividerMessageIDs: [ChannelID: MessageID] = [:]
