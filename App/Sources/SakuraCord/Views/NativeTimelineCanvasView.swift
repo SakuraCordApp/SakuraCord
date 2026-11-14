@@ -11,7 +11,7 @@ import SwiftUI
 /// A viewless, virtualized message surface. One AppKit view owns the entire
 /// timeline; only rows intersecting the dirty rectangle are painted.
 @MainActor
-final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSViewToolTipOwner {
+final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     struct CachedRowBitmap {
         let item: NativeMessageTimelineItem
         let width: CGFloat
@@ -837,4 +837,20 @@ enum NativeTimelineRowPainter {
         )
     }
 
+}
+
+extension NativeTimelineCanvasView: NSViewToolTipOwner {
+    /// The tooltip of the timeline's buttons that have no label.
+    func view(_: NSView, stringForToolTip _: NSView.ToolTipTag, point: NSPoint, userData _: UnsafeMutableRawPointer?) -> String {
+        if codeBlockCopyButtonHit(at: point) != nil { return "Copy Code" }
+        guard let index = hitRowIndex(at: point.y) else { return "" }
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        if let roleRegion = layouts[index].roleIconRegion,
+           roleRegion.frame.contains(local) {
+            return roleRegion.role.name
+        }
+        guard let messageID = items[index].messageID else { return "" }
+        guard let card = fileCards(at: index, messageID: messageID).first(where: { $0.buttonFrame.contains(local) }) else { return "" }
+        return fileCardAction(card.attachment, name: card.attachment.filename).title
+    }
 }

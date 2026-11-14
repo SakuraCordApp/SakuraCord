@@ -140,54 +140,17 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    /// The tooltip of the timeline's buttons that have no label.
-    func view(_: NSView, stringForToolTip _: NSView.ToolTipTag, point: NSPoint, userData _: UnsafeMutableRawPointer?) -> String {
-        if codeBlockCopyButtonHit(at: point) != nil { return "Copy Code" }
-        guard let index = hitRowIndex(at: point.y) else { return "" }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        if let roleRegion = layouts[index].roleIconRegion,
-           roleRegion.frame.contains(local) {
-            return roleRegion.role.name
-        }
-        guard let messageID = items[index].messageID else { return "" }
-        guard let card = fileCards(at: index, messageID: messageID).first(where: { $0.buttonFrame.contains(local) }) else { return "" }
-        return fileCardAction(card.attachment, name: card.attachment.filename).title
-    }
-
     /// What activating a file card does in its current download state.
     func fileCardActionDescription(_ attachment: Attachment, name: String) -> String {
         fileCardAction(attachment, name: name).description
     }
 
-    private func fileCardAction(_ attachment: Attachment, name: String) -> (title: String, description: String) {
+    func fileCardAction(_ attachment: Attachment, name: String) -> (title: String, description: String) {
         switch model?.attachmentDownloads.states[attachment.id] {
         case .downloading: ("Cancel Download", "Cancel downloading \(name)")
         case .finished: ("Show in Finder", "Show \(name) in Finder")
         case .failed: ("Retry Download", "Retry downloading \(name)")
         case nil: ("Download", "Download \(name)")
         }
-    }
-}
-
-extension DangerousDownloadPolicy {
-    /// Asks with Discord's warning before a potentially dangerous download,
-    /// as a sheet on `window` or, over the media viewer, which sits above
-    /// sheets, as its own panel; true to download.
-    @MainActor static func confirm(in window: NSWindow?) async -> Bool {
-        guard window?.attachedSheet == nil else { return false }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Potentially Dangerous Download"
-        alert.informativeText = """
-            Whoa there! While programs downloaded from the internet may be beneficial, this type of file can damage \
-            your device or steal your personal data. Make sure to only run executables from developers that you trust!
-            """
-        alert.addButton(withTitle: "Close")
-        alert.addButton(withTitle: "Continue to Download").hasDestructiveAction = true
-        guard let window else {
-            await Task.yield()
-            return alert.runModal() == .alertSecondButtonReturn
-        }
-        return await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
     }
 }

@@ -1045,6 +1045,12 @@ nonisolated func coreTextFrame(value: NSAttributedString, framesetter: CTFramese
     )
 }
 
+nonisolated func coreTextLine(_ value: Any) -> CTLine {
+    let object = value as AnyObject
+    precondition(CFGetTypeID(object) == CTLineGetTypeID())
+    return unsafeDowncast(object, to: CTLine.self)
+}
+
 /// A Core Text frame with its lines and their origins.
 nonisolated struct CoreTextFrameLayout {
     let frame: CTFrame

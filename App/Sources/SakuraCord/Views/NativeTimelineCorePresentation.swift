@@ -2,12 +2,6 @@ import AppKit
 import CoreText
 import SakuraCordModels
 
-nonisolated func coreTextLine(_ value: Any) -> CTLine {
-    let object = value as AnyObject
-    precondition(CFGetTypeID(object) == CTLineGetTypeID())
-    return unsafeDowncast(object, to: CTLine.self)
-}
-
 enum NativeTimelineSemanticColor {
     static func opacity(
         _ color: NSColor,
