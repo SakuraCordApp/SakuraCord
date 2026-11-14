@@ -787,9 +787,8 @@ enum NativeTimelineEmbedLayout {
                 resolvedURL($0, attachments: attachments)
             } : nil
             let thumbnailSize: CGFloat = thumbnailURL == nil ? 0 : InterfaceScale.metric(80)
-            // The legacy HStack contains text, a zero-minimum Spacer, and the
-            // thumbnail. SwiftUI applies its 12-point spacing on both sides
-            // of that spacer even when the spacer collapses to zero.
+            // Text and thumbnail keep 12 points of spacing on each side of the
+            // collapsed gap between them; inside a bubble only one applies.
             let thumbnailAllowance: CGFloat =
                 thumbnailSize > 0
                     ? thumbnailSize + (integratesWithBubble ? 12 : 24)
@@ -1500,10 +1499,9 @@ enum NativeTimelineEmbedLayout {
             CGSize(width: max(1, width), height: 10_000),
             nil
         )
-        // TextKit reports the used fragment height before SwiftUI rounds the
-        // composed stack. Rounding every CoreText leaf upward makes a rich
-        // embed progressively taller than the previous renderer, especially
-        // across its title, description, field grid, and footer.
+        // Rounding every CoreText leaf upward would make a rich embed
+        // progressively taller across its title, description, field grid,
+        // and footer, so each leaf rounds down.
         return max(
             1,
             floor(size.height) - box.layoutHeightAdjustment
@@ -1853,12 +1851,11 @@ extension NativeTimelineRowLayout {
             CGSize(width: max(1, width), height: .greatestFiniteMagnitude),
             nil
         )
-        // SwiftUI's one-line message text fits exactly in the established
-        // 18-point compact row. CoreText reports that same line just under
-        // 19 points because its suggested bounds include fractional font
-        // leading. Multiline suggestions retain one trailing point that the
-        // preserved NSTextView usedRect omitted. A message's own line height
-        // (a minimum without a maximum) replaces that compact row, and a
+        // One-line message text fits an 18-point compact row, but CoreText
+        // reports that line just under 19 points because its suggested
+        // bounds include fractional font leading. Multiline suggestions keep
+        // one trailing point the row omits. A message's own line height (a
+        // minimum without a maximum) replaces that compact row, and a
         // one-line code block still needs room for its bottom padding.
         let style = length > 0 ? value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle : nil
         let overflow = NativeTimelineMarkdownChromeMetrics.trailingVisualOverflow(in: value)

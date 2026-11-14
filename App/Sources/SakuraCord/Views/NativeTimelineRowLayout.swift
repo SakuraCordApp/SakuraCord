@@ -362,7 +362,7 @@ struct NativeTimelineBeginningLayout {
             ofSize: NSFont.preferredFont(forTextStyle: .largeTitle).pointSize,
             weight: .bold
         )
-        let titleHeight = legacyLargeTitleHeight(
+        let titleHeight = largeTitleHeight(
             beginning.title,
             font: titleFont,
             width: contentWidth
@@ -419,7 +419,7 @@ struct NativeTimelineBeginningLayout {
         )
     }
 
-    private static func legacyLargeTitleHeight(
+    private static func largeTitleHeight(
         _ value: String,
         font: NSFont,
         width: CGFloat
@@ -441,9 +441,9 @@ struct NativeTimelineBeginningLayout {
             Int(ceil(bounds.height / measuredLineHeight))
         )
 
-        // SwiftUI's large-title Text uses the intrinsic height for its first
-        // line and one additional point of leading for each following line.
-        // Core Text's bounding rect omits that inter-line leading.
+        // A large title takes the intrinsic height for its first line and one
+        // more point of leading for each following line; Core Text's
+        // bounding rect omits that inter-line leading.
         return intrinsicLineHeight
             + CGFloat(lineCount - 1) * (intrinsicLineHeight + 1)
     }

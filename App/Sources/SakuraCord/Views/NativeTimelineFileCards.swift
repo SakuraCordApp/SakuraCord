@@ -151,21 +151,20 @@ extension NativeTimelineCanvasView {
         }
         guard let messageID = items[index].messageID else { return "" }
         guard let card = fileCards(at: index, messageID: messageID).first(where: { $0.buttonFrame.contains(local) }) else { return "" }
-        return switch model?.attachmentDownloads.states[card.attachment.id] {
-        case .downloading: "Cancel Download"
-        case .finished: "Show in Finder"
-        case .failed: "Retry Download"
-        case nil: "Download"
-        }
+        return fileCardAction(card.attachment, name: card.attachment.filename).title
     }
 
     /// What activating a file card does in its current download state.
     func fileCardActionDescription(_ attachment: Attachment, name: String) -> String {
+        fileCardAction(attachment, name: name).description
+    }
+
+    private func fileCardAction(_ attachment: Attachment, name: String) -> (title: String, description: String) {
         switch model?.attachmentDownloads.states[attachment.id] {
-        case .downloading: "Cancel downloading \(name)"
-        case .finished: "Show \(name) in Finder"
-        case .failed: "Retry downloading \(name)"
-        case nil: "Download \(name)"
+        case .downloading: ("Cancel Download", "Cancel downloading \(name)")
+        case .finished: ("Show in Finder", "Show \(name) in Finder")
+        case .failed: ("Retry Download", "Retry downloading \(name)")
+        case nil: ("Download", "Download \(name)")
         }
     }
 }
