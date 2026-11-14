@@ -318,19 +318,11 @@ private struct YouPopoverOptions: View {
             Button {
                 isStatusPopoverPresented.toggle()
             } label: {
-                HStack(spacing: InterfaceScale.metric(10)) {
+                PopoverDisclosureRowLabel(height: InterfaceScale.metric(38)) {
                     PresenceIndicator(status: currentStatus, size: InterfaceScale.metric(13))
                         .frame(width: InterfaceScale.metric(18))
                     Text(currentStatus.label)
-                    Spacer(minLength: InterfaceScale.metric(24))
-                    Image(systemName: "chevron.right")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .frame(maxWidth: .infinity)
-                .frame(height: InterfaceScale.metric(38))
-                .contentShape(Rectangle())
             }
             .buttonStyle(PopoverRowButtonStyle())
             .disabled(!isStatusEnabled)
@@ -348,19 +340,11 @@ private struct YouPopoverOptions: View {
             Button {
                 isAccountPopoverPresented.toggle()
             } label: {
-                HStack(spacing: InterfaceScale.metric(10)) {
+                PopoverDisclosureRowLabel(height: InterfaceScale.metric(38)) {
                     Image(systemName: "person.crop.circle")
                         .frame(width: InterfaceScale.metric(18))
                     Text("Switch Accounts")
-                    Spacer(minLength: InterfaceScale.metric(24))
-                    Image(systemName: "chevron.right")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .frame(maxWidth: .infinity)
-                .frame(height: InterfaceScale.metric(38))
-                .contentShape(Rectangle())
             }
             .buttonStyle(PopoverRowButtonStyle())
             .disabled(!isAccountSwitchingEnabled)

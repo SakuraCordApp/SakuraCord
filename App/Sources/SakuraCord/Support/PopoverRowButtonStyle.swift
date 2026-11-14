@@ -23,3 +23,23 @@ struct PopoverRowButtonStyle: ButtonStyle {
         }
     }
 }
+
+/// A popover row that opens another popover: its content, then a trailing chevron.
+struct PopoverDisclosureRowLabel<Content: View>: View {
+    let height: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(10)) {
+            content
+            Spacer(minLength: InterfaceScale.metric(24))
+            Image(systemName: "chevron.right")
+                .font(.interface(.caption).weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, InterfaceScale.metric(8))
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .contentShape(Rectangle())
+    }
+}

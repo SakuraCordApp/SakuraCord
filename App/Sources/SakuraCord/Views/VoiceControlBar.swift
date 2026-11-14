@@ -471,17 +471,9 @@ private struct ScreenShareControlsPopover: View {
             }
 
             Button { showFrameRateControls.toggle() } label: {
-                HStack(spacing: InterfaceScale.metric(10)) {
+                PopoverDisclosureRowLabel(height: InterfaceScale.metric(34)) {
                     Label("Frame Rate", systemImage: "gauge.with.dots.needle.67percent")
-                    Spacer(minLength: InterfaceScale.metric(24))
-                    Image(systemName: "chevron.right")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .frame(maxWidth: .infinity)
-                .frame(height: InterfaceScale.metric(34))
-                .contentShape(Rectangle())
             }
             .buttonStyle(PopoverRowButtonStyle())
             .escapeDismissiblePopover(
@@ -492,17 +484,9 @@ private struct ScreenShareControlsPopover: View {
             }
 
             Button { showQualityControls.toggle() } label: {
-                HStack(spacing: InterfaceScale.metric(10)) {
+                PopoverDisclosureRowLabel(height: InterfaceScale.metric(34)) {
                     Label("Stream Quality", systemImage: "sparkles.tv")
-                    Spacer(minLength: InterfaceScale.metric(24))
-                    Image(systemName: "chevron.right")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .frame(maxWidth: .infinity)
-                .frame(height: InterfaceScale.metric(34))
-                .contentShape(Rectangle())
             }
             .buttonStyle(PopoverRowButtonStyle())
             .escapeDismissiblePopover(
