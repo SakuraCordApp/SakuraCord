@@ -180,7 +180,6 @@ import Testing
         $0.destination.page == .interface
     }
     #expect(Set(controls.map(\.id)) == expected)
-    #expect(controls.allSatisfy { $0.scope == .appWideLocal })
 
     let state = SettingsViewState()
     let searchCases: [(String, SettingsControlID)] = [

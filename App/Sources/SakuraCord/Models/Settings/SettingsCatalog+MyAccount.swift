@@ -15,19 +15,14 @@ nonisolated extension SettingsCatalog {
 
     static let myAccountControls: [SettingsControlMetadata] = [
         control(.accountUsername, page: .myAccount, section: .accountIdentity,
-                label: "Username", help: "View your Discord username.", keywords: ["account name"],
-                owner: .appModel, scope: .discordSynchronized, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Username", help: "View your Discord username.", keywords: ["account name"]),
         control(.accountEmail, page: .myAccount, section: .accountIdentity,
-                label: "Email", help: "View or reveal your account's email address.", keywords: ["email address"],
-                owner: .appModel, scope: .discordSynchronized, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Email", help: "View or reveal your account's email address.", keywords: ["email address"]),
         control(.accountPhone, page: .myAccount, section: .accountIdentity,
-                label: "Phone Number", help: "View or reveal your account's phone number.", keywords: ["telephone", "mobile"],
-                owner: .appModel, scope: .discordSynchronized, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Phone Number", help: "View or reveal your account's phone number.", keywords: ["telephone", "mobile"]),
         control(.accountMFA, page: .myAccount, section: .accountIdentity,
-                label: "Multi-Factor Authentication", help: "Check whether multi-factor authentication is enabled.", keywords: ["MFA", "2FA", "security"],
-                owner: .appModel, scope: .discordSynchronized, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Multi-Factor Authentication", help: "Check whether multi-factor authentication is enabled.", keywords: ["MFA", "2FA", "security"]),
         control(.accountDevices, page: .myAccount, section: .accountIdentity,
-                label: "Logged-in Devices", help: "View your account's device sessions and their last activity.", keywords: ["sessions", "devices", "logins"],
-                owner: .appModel, scope: .discordSynchronized, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Logged-in Devices", help: "View your account's device sessions and their last activity.", keywords: ["sessions", "devices", "logins"]),
     ]
 }

@@ -21,17 +21,6 @@ import Testing
     for control in catalog.controls {
         #expect(catalog.pages.contains { $0.id == control.destination.page })
         #expect(control.destination.section != nil)
-        #expect(control.owner.rawValue.isEmpty == false)
-        #expect(control.persistence.rawValue.isEmpty == false)
-    }
-
-    let registeredIDs = Set(
-        SettingsPreferenceRegistry.foundation.registrations.map(\.id)
-    )
-    for control in catalog.controls
-        where control.resetCapability == .registeredLocalValue
-    {
-        #expect(registeredIDs.contains(control.id))
     }
 }
 

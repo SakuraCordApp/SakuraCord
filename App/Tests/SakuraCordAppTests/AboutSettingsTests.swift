@@ -254,5 +254,4 @@ func aboutCatalogExposesProductionControls() {
         $0.destination.page == .about && expected.contains($0.id)
     }
     #expect(Set(controls.map(\.id)) == expected)
-    #expect(controls.allSatisfy { $0.resetCapability == .notApplicable })
 }

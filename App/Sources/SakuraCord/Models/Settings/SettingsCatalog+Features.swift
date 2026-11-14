@@ -14,105 +14,104 @@ nonisolated extension SettingsCatalog {
         control(
             .readAllButton, page: .features, section: .featuresNotifications,
             label: "Read All button", help: "Show a button above the server list to mark all server channels as read after confirmation.",
-            keywords: ["unread", "notifications", "mark read", "servers"], scope: .appWideLocal
+            keywords: ["unread", "notifications", "mark read", "servers"]
         ),
         control(
             .translationEnabled, page: .features, section: .featuresTranslation,
             label: "Enable on-device translation", help: "Translate messages and drafts with Apple Translation after an explicit action.",
-            keywords: ["translation", "language", "Apple", "offline"], scope: .appWideLocal
+            keywords: ["translation", "language", "Apple", "offline"]
         ),
         control(
             .translationMessageLanguage, page: .features, section: .featuresTranslation,
             label: "Translate messages into", help: "Choose a supported target language for messages.",
-            keywords: ["translation", "language"], scope: .appWideLocal
+            keywords: ["translation", "language"]
         ),
         control(
             .translationDraftLanguage, page: .features, section: .featuresTranslation,
             label: "Translate drafts into", help: "Choose a supported target language for editable drafts.",
-            keywords: ["translation", "language", "composer"], scope: .appWideLocal
+            keywords: ["translation", "language", "composer"]
         ),
         control(
             .channelManagement, page: .features, section: .featuresChannels,
             label: "Channel customization", help: "Use each server’s channel selections. Turn off to show all channels and hide channel customization controls without changing server selections.",
-            keywords: ["onboarding", "channels", "roles", "default channels"], scope: .appWideLocal
+            keywords: ["onboarding", "channels", "roles", "default channels"]
         ),
         control(
             .showFavoritesServer, page: .features, section: .featuresChannels,
             label: "Show Favorites server", help: "Show your favourite channels and DMs as a server above your server list. Your Favorites stay saved when this is off.",
-            keywords: ["favorites", "favourites", "star", "server"],
-            owner: .appModel, scope: .discordSynchronized, persistence: .discordManaged, reset: .notApplicable
+            keywords: ["favorites", "favourites", "star", "server"]
         ),
         control(
             .showHiddenChannels, page: .features, section: .featuresChannels,
             label: "Show hidden channels", help: "Show channels you cannot access, including their available metadata.",
-            keywords: ["features", "hidden channels"], scope: .appWideLocal
+            keywords: ["features", "hidden channels"]
         ),
         control(
             .fakeNitroEmojis, page: .features, section: .featuresFakeNitro,
             label: "FakeNitro emojis", help: "Send unavailable custom emojis as image links.",
-            keywords: ["features", "FakeNitro"], scope: .appWideLocal
+            keywords: ["features", "FakeNitro"]
         ),
         control(
             .fakeNitroStickers, page: .features, section: .featuresFakeNitro,
             label: "FakeNitro stickers", help: "Send stickers from other servers as image uploads.",
-            keywords: ["features", "FakeNitro"], scope: .appWideLocal
+            keywords: ["features", "FakeNitro"]
         ),
         control(
             .fakeNitroSoundboard, page: .features, section: .featuresFakeNitro,
             label: "FakeNitro soundboard", help: "Play sounds from other servers through your outgoing audio.",
-            keywords: ["features", "FakeNitro"], scope: .appWideLocal
+            keywords: ["features", "FakeNitro"]
         ),
         control(
             .fakeNitroStreamQuality, page: .features, section: .featuresFakeNitro,
             label: "FakeNitro stream quality", help: "Use higher stream resolutions and frame rates without Nitro.",
-            keywords: ["features", "FakeNitro"], scope: .appWideLocal
+            keywords: ["features", "FakeNitro"]
         ),
         control(
             .unlimitedFavorites, page: .features, section: .featuresFakeNitro,
             label: "Unlimited favorites",
             help: "Keep favorites past Discord's limit on this Mac. Discord and your other devices only see the ones your account allows.",
-            keywords: ["features", "FakeNitro", "favorites", "favourites", "limit"], scope: .appWideLocal
+            keywords: ["features", "FakeNitro", "favorites", "favourites", "limit"]
         ),
         control(
             .messageHoverActions, page: .features, section: .featuresTimeline,
             label: "Message hover actions",
             help: "Show the floating reactions and actions menu when hovering a message.",
-            keywords: ["timeline", "hover", "actions", "reactions", "toolbar", "messages"], scope: .appWideLocal
+            keywords: ["timeline", "hover", "actions", "reactions", "toolbar", "messages"]
         ),
         control(
             .scrollToBottomButton, page: .features, section: .featuresTimeline,
             label: "Scroll to bottom button",
             help: "Show the floating button above the composer that jumps to the latest message after scrolling up.",
-            keywords: ["timeline", "scroll", "bottom", "jump", "latest", "new messages"], scope: .appWideLocal
+            keywords: ["timeline", "scroll", "bottom", "jump", "latest", "new messages"]
         ),
         control(
             .voiceMessageRecording, page: .features, section: .featuresVoiceMessages,
             label: "Record voice messages",
             help: "Show the composer’s record button. Voice messages in conversations play either way.",
-            keywords: ["voice message", "record", "microphone", "audio"], scope: .appWideLocal
+            keywords: ["voice message", "record", "microphone", "audio"]
         ),
         control(
             .attachmentCompactionPrompt, page: .features, section: .featuresAttachments,
             label: "Compress oversized images and videos",
             help: "Choose whether to compress oversized images and videos automatically, ask first, or never compress.",
-            keywords: ["attachment", "compression", "compaction", "upload", "file size"], scope: .appWideLocal
+            keywords: ["attachment", "compression", "compaction", "upload", "file size"]
         ),
         control(
             .attachmentExternalUploadPrompt, page: .features, section: .featuresAttachments,
             label: "Upload files that still exceed Discord’s limit",
             help: "Uploads to a third-party host and adds a link to your draft.",
-            keywords: ["attachment", "compression", "compaction", "upload", "file size"], scope: .appWideLocal
+            keywords: ["attachment", "compression", "compaction", "upload", "file size"]
         ),
         control(
             .attachmentExternalProvider, page: .features, section: .featuresAttachments,
             label: "File host", help: "Choose the third-party host for automatic oversized uploads.",
-            keywords: ["catbox", "litterbox", "upload"], scope: .appWideLocal
+            keywords: ["catbox", "litterbox", "upload"]
         ),
         control(
             .attachmentCompactionQuality, page: .features, section: .featuresAttachments,
             label: "Compression quality",
             help: "Choose between higher quality, balanced compression, and smaller files.",
-            keywords: ["attachment", "compression", "compaction", "upload", "file size"], scope: .appWideLocal
+            keywords: ["attachment", "compression", "compaction", "upload", "file size"]
         ),
     ]
 }

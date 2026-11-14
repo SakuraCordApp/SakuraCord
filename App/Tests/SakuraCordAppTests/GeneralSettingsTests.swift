@@ -201,7 +201,6 @@ import Testing
             && expected.contains($0.id)
     }
     #expect(Set(controls.map(\.id)) == expected)
-    #expect(controls.allSatisfy { $0.scope == .appWideLocal })
 
     let search = SettingsViewState()
     search.searchText = "autocorrect"

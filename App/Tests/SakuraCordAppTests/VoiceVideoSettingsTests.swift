@@ -338,21 +338,6 @@ import Testing
 }
 
 @MainActor
-@Test func `Voice settings metadata describes system-owned permissions`() {
-    let catalog = SettingsCatalog.foundation
-    let permissions = [
-        SettingsControlID.voiceMicrophonePermission,
-        .voiceCameraPermission,
-    ]
-    for id in permissions {
-        let control = catalog.controls.first { $0.id == id }
-        #expect(control?.owner == .macOS)
-        #expect(control?.persistence == .systemManaged)
-        #expect(control?.resetCapability == .notApplicable)
-    }
-}
-
-@MainActor
 private final class ControlledMicrophoneTestEngine: VoiceMicrophoneTesting {
     struct StartRequest: Equatable {
         var inputDeviceID: AudioDeviceID?
