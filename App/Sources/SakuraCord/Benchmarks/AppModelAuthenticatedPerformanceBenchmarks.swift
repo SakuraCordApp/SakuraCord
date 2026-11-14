@@ -36,9 +36,7 @@ extension AppModel {
                       $0.name.localizedCaseInsensitiveCompare(Self.benchmarkGuildName)
                           == .orderedSame
                   }),
-                  let channel = benchmarkConversationChannels(
-                      snapshot.channels.filter { $0.guildID == targetGuild.id }
-                  ).sorted(by: Self.prefersStableLoadingBenchmarkChannel).first
+                  let channel = benchmarkTargetChannel(in: targetGuild.id, of: snapshot)
             else {
                 AppPerformanceSignposts.signposter.emitEvent(
                     "MemberListAutoScrollBenchmarkTargetUnavailable"
@@ -221,12 +219,7 @@ extension AppModel {
                 return
             }
 
-            await channelLoadTask?.value
-            if let selectedChannelID {
-                await AppPerformanceSignposts.waitForConversationFirstFrame(
-                    channelID: selectedChannelID
-                )
-            }
+            await awaitAuthenticatedBenchmarkReadiness()
             guard !Task.isCancelled else { return }
 
             var switched = false
@@ -278,12 +271,7 @@ extension AppModel {
             guard runsChatPerformanceBenchmark,
                   sessionState == .workspace
             else { return }
-            await channelLoadTask?.value
-            if let selectedChannelID {
-                await AppPerformanceSignposts.waitForConversationFirstFrame(
-                    channelID: selectedChannelID
-                )
-            }
+            await awaitAuthenticatedBenchmarkReadiness()
             guard !Task.isCancelled else { return }
 
             await AppPerformanceSignposts.measuredBenchmark(
@@ -326,11 +314,7 @@ extension AppModel {
                 writeAuthenticatedLoadingScrollUnavailable("target-preselected")
                 return
             }
-            guard let channel = benchmarkConversationChannels(
-                snapshot.channels.filter {
-                    $0.guildID == targetGuild.id
-                }
-            ).sorted(by: Self.prefersStableLoadingBenchmarkChannel).first else {
+            guard let channel = benchmarkTargetChannel(in: targetGuild.id, of: snapshot) else {
                 writeAuthenticatedLoadingScrollUnavailable("target-channels-missing")
                 return
             }
@@ -433,6 +417,15 @@ extension AppModel {
                 initialMessageCount: 0,
                 detail: detail
             )
+        }
+
+        private func benchmarkTargetChannel(
+            in guildID: GuildID,
+            of snapshot: BootstrapSnapshot
+        ) -> Channel? {
+            benchmarkConversationChannels(
+                snapshot.channels.filter { $0.guildID == guildID }
+            ).sorted(by: Self.prefersStableLoadingBenchmarkChannel).first
         }
 
         private nonisolated static func prefersStableLoadingBenchmarkChannel(
