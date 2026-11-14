@@ -1553,65 +1553,18 @@ extension NativeTimelineCanvasView {
         for row: MessageRowPresentation,
         layout: NativeTimelineRowLayout
     ) -> Set<MediaImageKey> {
-        var keys: Set<MediaImageKey> = []
-        appendAnimatedAvatarKeys(for: row, layout: layout, into: &keys)
+        var accumulator = AnimatedMediaAccumulator(canvas: self, collectsKeys: true)
+        appendAnimatedAvatars(
+            row: row,
+            identifier: .message(row.identity),
+            layout: layout,
+            accumulator: &accumulator
+        )
+        var keys = accumulator.keys
         appendAnimatedContentKeys(for: row, layout: layout, into: &keys)
         appendAnimatedComponentKeys(for: row, layout: layout, into: &keys)
         appendAnimatedStickerAndReactionKeys(for: row, layout: layout, into: &keys)
         return keys
-    }
-
-    private func appendAnimatedAvatarKeys(
-        for row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        into keys: inout Set<MediaImageKey>
-    ) {
-        let message = row.message
-        let author =
-            model?.authorPresentation(for: message).user
-            ?? message.author
-        if layout.avatarFrame != nil {
-            if let url =
-                author.avatarURL
-                    ?? message.author.avatarURL,
-               UserAvatarPresentation
-                .shouldDecodeAnimation(for: url)
-            {
-                keys.insert(.avatar(url))
-            }
-            if let url =
-                author.avatarDecorationURL
-            {
-                // Discord serves both static PNG and animated APNG decoration
-                // assets from this route. Decode only for visible rows; the
-                // media store discards single-frame results from overlay use.
-                keys.insert(.avatarDecoration(url))
-            }
-        }
-        if layout.replyFrame != nil,
-           let url = row.replyPreview?.author.avatarURL,
-           UserAvatarPresentation
-            .shouldDecodeAnimation(for: url)
-        {
-            keys.insert(.avatar(url))
-        }
-        if layout.commandInvocationRegion?.avatarFrame != nil,
-           let url = message.interactionMetadata?.user?.avatarURL,
-           UserAvatarPresentation
-            .shouldDecodeAnimation(for: url)
-        {
-            keys.insert(.avatar(url))
-        }
-        for reaction in layout.reactionRegions {
-            for avatar in reaction.avatarRegions {
-                if let url = avatar.reactor.avatarURL,
-                   UserAvatarPresentation
-                    .shouldDecodeAnimation(for: url)
-                {
-                    keys.insert(.avatar(url))
-                }
-            }
-        }
     }
 
     private func appendAnimatedContentKeys(
