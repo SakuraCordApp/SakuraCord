@@ -1059,9 +1059,8 @@ final class AppModel {
     @ObservationIgnored var allServersReadTask: Task<Void, Never>?
     @ObservationIgnored var guildAcknowledgementTasks:
         [GuildID: Task<Void, Never>] = [:]
-    @ObservationIgnored var guildNotificationMutationTasks: [GuildID: Task<Void, Never>] = [:]
+    @ObservationIgnored var notificationMutationTasks: [NotificationMutationSlot: Task<Void, Never>] = [:]
     @ObservationIgnored var guildNotificationSettingsRevisions: [GuildID: UInt64] = [:]
-    @ObservationIgnored var channelNotificationMutationTasks: [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var categoryCollapseMutationTasks: [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var categoryCollapseMutationStates:
         [ChannelID: CategoryCollapseMutationState] = [:]
@@ -1070,8 +1069,6 @@ final class AppModel {
     @ObservationIgnored var channelPinMutationStates: [ChannelID: ChannelPinMutationState] = [:]
     var optimisticChannelPinnedByID: [ChannelID: Bool] = [:]
     @ObservationIgnored var channelNotificationMutationGeneration = 0
-    @ObservationIgnored var forumNotificationMutationTasks:
-        [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var mainWindowIsActive = false
     @ObservationIgnored var applicationIsActive = false
     /// The Dock bounce requested for a call ringing in the background.

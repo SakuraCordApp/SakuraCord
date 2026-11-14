@@ -479,16 +479,14 @@ extension AppModel {
 
     func resetChannelNotificationMutations() {
         channelNotificationMutationGeneration &+= 1
-        guildNotificationMutationTasks.cancelAll()
+        notificationMutationTasks.cancelAll()
         guildNotificationSettingsRevisions.removeAll()
-        channelNotificationMutationTasks.cancelAll()
         categoryCollapseMutationTasks.cancelAll()
         categoryCollapseMutationStates.removeAll()
         optimisticCategoryCollapsedByID.removeAll()
         channelPinMutationTasks.cancelAll()
         channelPinMutationStates.removeAll()
         optimisticChannelPinnedByID.removeAll()
-        forumNotificationMutationTasks.cancelAll()
     }
 
     /// Reads a server Mark as Read's conversations locally before Discord

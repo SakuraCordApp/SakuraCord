@@ -5,7 +5,7 @@ extension AppModel {
         guard let channel = snapshot?.channels.first(where: {
             $0.id == channelID
                 && $0.kind.isDirectMessage
-        }), !isNotificationMutationPending(.channel(channelID)) else { return }
+        }) else { return }
 
         let currentOverride = channelNotificationOverride(for: channel)
             ?? ChannelNotificationOverride(channelID: channelID)

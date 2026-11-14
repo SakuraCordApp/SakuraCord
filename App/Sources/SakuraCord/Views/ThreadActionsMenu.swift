@@ -147,7 +147,7 @@ struct ThreadActionsMenu {
         noun: String
     ) -> [ActionMenuEntry] {
         let settings = thread.notificationSettings
-        let isPending = model.isForumNotificationMutationPending(thread.id)
+        let isPending = model.isNotificationMutationPending(.forumPost(thread.id))
         let isMuted = SidebarThreadPolicy.isMuted(thread, now: .now)
         let mute = if isMuted {
             NotificationMenuItems.unmuteEntry(

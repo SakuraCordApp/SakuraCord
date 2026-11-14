@@ -34,8 +34,7 @@ extension AppModel {
     }
 
     func setThreadMute(_ thread: MessageThreadSummary, isMuted: Bool, until: Date?) {
-        guard threadActionPolicy(thread).canChangeNotifications,
-              !isNotificationMutationPending(.forumPost(thread.id)) else { return }
+        guard threadActionPolicy(thread).canChangeNotifications else { return }
         let post = ForumPost(thread: thread)
         runNotificationMutation(.forumPost(post.id), failureMessage: "Discord did not accept the mute setting.") {
             try await $0.updateForumPostMute(post, isMuted: isMuted, until: until)
@@ -45,8 +44,7 @@ extension AppModel {
     }
 
     func setThreadNotificationLevel(_ thread: MessageThreadSummary, level: MessageNotificationLevel) {
-        guard threadActionPolicy(thread).canChangeNotifications,
-              !isNotificationMutationPending(.forumPost(thread.id)) else { return }
+        guard threadActionPolicy(thread).canChangeNotifications else { return }
         let post = ForumPost(thread: thread)
         runNotificationMutation(.forumPost(post.id), failureMessage: "Discord did not accept the notification setting.") {
             try await $0.updateForumPostNotificationLevel(post, level: level)

@@ -743,8 +743,10 @@ extension AppModel {
         destinationSearchSourceRevision &+= 1
         // A replacement READY is authoritative even when its setting equals
         // the value from before an in-flight toggle started.
-        let pendingGuildIDs = Set(guildNotificationMutationTasks.keys)
-            .union(channelPinMutationStates.values.map(\.guildID))
+        let mutatingGuildIDs = notificationMutationTasks.keys.compactMap { slot -> GuildID? in
+            if case .guild(let id) = slot { id } else { nil }
+        }
+        let pendingGuildIDs = Set(mutatingGuildIDs).union(channelPinMutationStates.values.map(\.guildID))
         for guildID in pendingGuildIDs {
             guildNotificationSettingsRevisions[guildID, default: 0] &+= 1
         }

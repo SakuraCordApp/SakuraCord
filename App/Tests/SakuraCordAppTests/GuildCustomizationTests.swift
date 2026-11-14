@@ -167,17 +167,17 @@ struct GuildCustomizationTests {
         model.applyNotificationSettings(.init(guildID: guild.id))
         model.setGuildNotificationToggle(.hideMutedChannels, isEnabled: true, for: guild)
         #expect(await writes.next() == .notificationToggle(.hideMutedChannels, true))
-        let pending = model.guildNotificationMutationTasks[guild.id]
+        let pending = model.notificationMutationTasks[.guild(guild.id)]
         await model.consume(.notificationSettingsChanged(.init(guildID: guild.id, hideMutedChannels: true)))
         await model.consume(.notificationSettingsChanged(.init(guildID: guild.id, hideMutedChannels: false)))
         await provider.finish(success: true)
         await pending?.value
         #expect(!model.presentedGuildChannelSettings(in: guild.id).hideMutedChannels)
-        #expect(model.guildNotificationMutationTasks[guild.id] == nil)
+        #expect(model.notificationMutationTasks[.guild(guild.id)] == nil)
 
         model.setGuildNotificationToggle(.hideMutedChannels, isEnabled: true, for: guild)
         #expect(await writes.next() == .notificationToggle(.hideMutedChannels, true))
-        let reconnect = model.guildNotificationMutationTasks[guild.id]
+        let reconnect = model.notificationMutationTasks[.guild(guild.id)]
         var replacement = try #require(model.snapshot)
         replacement.notificationSettings.removeAll { $0.guildID == guild.id }
         replacement.notificationSettings.append(.init(guildID: guild.id, hideMutedChannels: false))
@@ -188,7 +188,7 @@ struct GuildCustomizationTests {
 
         model.setGuildNotificationToggle(.hideMutedChannels, isEnabled: true, for: guild)
         #expect(await writes.next() == .notificationToggle(.hideMutedChannels, true))
-        let fallback = model.guildNotificationMutationTasks[guild.id]
+        let fallback = model.notificationMutationTasks[.guild(guild.id)]
         model.updateLocalChannelNotificationOverride(channel: channel) { $0.isMuted = true }
         await provider.finish(success: true)
         await fallback?.value
@@ -196,7 +196,7 @@ struct GuildCustomizationTests {
         #expect(model.presentedGuildChannelSettings(in: guild.id).channelOverrides.first { $0.channelID == channel.id }?.isMuted == true)
         model.setGuildNotificationToggle(.hideMutedChannels, isEnabled: false, for: guild)
         #expect(await writes.next() == .notificationToggle(.hideMutedChannels, false))
-        let failed = model.guildNotificationMutationTasks[guild.id]
+        let failed = model.notificationMutationTasks[.guild(guild.id)]
         await provider.finish(success: false)
         await failed?.value
         #expect(model.presentedGuildChannelSettings(in: guild.id).hideMutedChannels)

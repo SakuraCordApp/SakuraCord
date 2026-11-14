@@ -38,7 +38,7 @@ extension AppModel {
     }
 
     func isChannelNotificationMutationPending(_ channelID: ChannelID) -> Bool {
-        channelNotificationMutationTasks[channelID] != nil
+        isNotificationMutationPending(.channel(channelID))
             || categoryCollapseMutationTasks[channelID] != nil
     }
 
@@ -51,12 +51,8 @@ extension AppModel {
     }
 
     func isGuildNotificationMutationPending(_ guildID: GuildID) -> Bool {
-        guildNotificationMutationTasks[guildID] != nil
+        isNotificationMutationPending(.guild(guildID))
             || guildAcknowledgementTasks[guildID] != nil
-    }
-
-    func isForumNotificationMutationPending(_ postID: ChannelID) -> Bool {
-        forumNotificationMutationTasks[postID] != nil
     }
 
     func inheritedForumPostNotificationLevel(
@@ -324,11 +320,7 @@ extension AppModel {
     /// Whether a notification change already holds `slot`; one runs at a
     /// time per server, per channel or category, and per forum post.
     func isNotificationMutationPending(_ slot: NotificationMutationSlot) -> Bool {
-        switch slot {
-        case .guild(let id): guildNotificationMutationTasks[id] != nil
-        case .channel(let id): channelNotificationMutationTasks[id] != nil
-        case .forumPost(let id): forumNotificationMutationTasks[id] != nil
-        }
+        notificationMutationTasks[slot] != nil
     }
 
     /// Sends one notification change in `slot`, or returns false while the
@@ -363,23 +355,15 @@ extension AppModel {
             }
             guard let self, self.isCurrentNotificationMutation(generation: generation, session: session)
             else { return }
-            self.setNotificationMutationTask(nil, for: slot)
+            self.notificationMutationTasks[slot] = nil
             finish(self)
         }
-        setNotificationMutationTask(task, for: slot)
+        notificationMutationTasks[slot] = task
         return true
     }
 
     private func isCurrentNotificationMutation(generation: Int, session: AppModelAccountSession) -> Bool {
         isCurrentAccountSession(session) && channelNotificationMutationGeneration == generation
-    }
-
-    private func setNotificationMutationTask(_ task: Task<Void, Never>?, for slot: NotificationMutationSlot) {
-        switch slot {
-        case .guild(let id): guildNotificationMutationTasks[id] = task
-        case .channel(let id): channelNotificationMutationTasks[id] = task
-        case .forumPost(let id): forumNotificationMutationTasks[id] = task
-        }
     }
 
     func setCategoryCollapsed(
@@ -539,7 +523,7 @@ extension AppModel {
 }
 
 /// What a notification change holds while it is in flight.
-nonisolated enum NotificationMutationSlot: Sendable {
+nonisolated enum NotificationMutationSlot: Hashable, Sendable {
     case guild(GuildID)
     /// A channel, category or direct message.
     case channel(ChannelID)
