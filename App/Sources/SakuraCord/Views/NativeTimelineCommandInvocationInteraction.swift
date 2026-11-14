@@ -20,8 +20,6 @@ extension NativeTimelineCanvasView {
             closeInlinePopover()
             return
         }
-        closeMessageProfilePopover()
-        closeServerTagPopover()
         model.loadMessageInteractionData(for: message)
         let messageID = message.id
         let anchor = StablePopoverAnchor(sourceView: self) { [weak self] in

@@ -798,8 +798,6 @@ extension NativeTimelineCanvasView {
         anchor: CGRect
     ) {
         guard let model else { return }
-        closeInlinePopover()
-        closeServerTagPopover()
         // One webhook can post with different names and avatars in adjacent messages.
         let presentationIdentity = sourceMessage.webhookID != nil && user.isWebhookIdentity
             ? AnyHashable(sourceMessage.id)
@@ -810,7 +808,7 @@ extension NativeTimelineCanvasView {
             closeMessageProfilePopover()
             return
         }
-        closeMessageProfilePopover()
+        closeCanvasPopovers()
         let requestID = model.showProfile(for: user, sourceMessage: sourceMessage)
         let popoverAnchor = StablePopoverAnchor(
             sourceView: self,
@@ -841,13 +839,20 @@ extension NativeTimelineCanvasView {
         activeMessageProfilePopoverAnchor = nil
     }
 
+    /// The canvas shows one anchored popover at a time, so opening one
+    /// closes the others. `kept` is left to update in place.
+    func closeCanvasPopovers(keeping kept: StableAnchoredPopoverPresenter<AnyView>.Coordinator? = nil) {
+        if kept !== messageProfilePopoverCoordinator { closeMessageProfilePopover() }
+        if kept !== inlinePopoverCoordinator { closeInlinePopover() }
+        if kept !== serverTagPopoverCoordinator { closeServerTagPopover() }
+    }
+
     func showMentionProfile(
         for user: User,
         sourceMessage: Message?,
         anchor: StablePopoverAnchor
     ) {
         guard let model else { return }
-        closeMessageProfilePopover()
         let requestID = model.showProfile(for: user, sourceMessage: sourceMessage)
         showInlinePopover(
             AnyView(
@@ -868,8 +873,6 @@ extension NativeTimelineCanvasView {
         anchor: StablePopoverAnchor
     ) {
         guard let model else { return }
-        closeMessageProfilePopover()
-        closeServerTagPopover()
         let guildID = sourceMessage.flatMap { model.messagePresentationGuildID(for: $0) } ?? model.selectedGuildID
         model.showMembers(withRole: roleID, in: guildID)
         showInlinePopover(
@@ -890,6 +893,7 @@ extension NativeTimelineCanvasView {
         configuration: StablePopoverConfiguration = .interactive,
         presentationIdentity: AnyHashable? = nil
     ) {
+        closeCanvasPopovers(keeping: inlinePopoverCoordinator)
         activeInlinePopoverAnchor = anchor
         inlinePopoverCoordinator.update(
             anchor: anchor,

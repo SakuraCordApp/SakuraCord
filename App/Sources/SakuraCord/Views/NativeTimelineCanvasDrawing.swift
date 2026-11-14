@@ -414,9 +414,7 @@ extension NativeTimelineCanvasView {
             reactionDetailsPopover?.close()
             clearPointerTargets()
             closeHoverTooltips()
-            closeMessageProfilePopover()
-            closeServerTagPopover()
-            closeInlinePopover()
+            closeCanvasPopovers()
             closeComponentChoiceOverlay()
             updateCodeCopyControl()
         }
@@ -549,10 +547,8 @@ extension NativeTimelineCanvasView {
             removeSpoilerOverlays()
             reactionPickerCoordinator.close(notifyBinding: false)
             closeHoverTooltips()
-            closeMessageProfilePopover()
-            closeServerTagPopover()
+            closeCanvasPopovers()
             closeComponentChoiceOverlay()
-            closeInlinePopover()
             reactionPickerSource.frame = .zero
             clearPointerTargets()
             removeAccessibilityProxies()
