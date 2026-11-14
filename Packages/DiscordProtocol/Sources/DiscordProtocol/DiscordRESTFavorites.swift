@@ -33,6 +33,12 @@ extension DiscordRESTProvider {
             userContentMessage = restored
             continuation?.yield(.favoritesSuggestionsDismissed(false))
         }
+        startFavoritesSave()
+    }
+
+    /// Favorites and Suggested Channels writes share one queue, so they reach
+    /// Discord in order and only the newest state of each is sent.
+    func startFavoritesSave() {
         guard favoritesSaveTask == nil else { return }
         let generation = favoritesGeneration
         favoritesSaveTask = Task { await saveFavorites(generation: generation) }
@@ -80,30 +86,34 @@ extension DiscordRESTProvider {
 
     private func saveFavorites(generation: UInt64) async {
         defer { if generation == favoritesGeneration { favoritesSaveTask = nil } }
-        while generation == favoritesGeneration, let target = pendingFavorites, let stored = favoritesMessage {
-            let message = DiscordFavoritesProto.message(for: target, preserving: stored)
+        while generation == favoritesGeneration, pendingFavorites != nil || pendingUserContent != nil {
+            let target = pendingFavorites
             let userContent = pendingUserContent
             pendingUserContent = nil
+            var settings = userContent.map { DiscordSettingsProto.protoLengthDelimitedField(DiscordUserContentProto.settingsField, $0) } ?? Data()
+            if let target, let stored = favoritesMessage {
+                settings += DiscordSettingsProto.protoLengthDelimitedField(
+                    DiscordFavoritesProto.settingsField, DiscordFavoritesProto.message(for: target, preserving: stored)
+                )
+            }
             do {
                 let response = try await patchUserSettings(
-                    ["settings": .string(
-                        ((userContent.map { DiscordSettingsProto.protoLengthDelimitedField(DiscordUserContentProto.settingsField, $0) } ?? Data())
-                            + DiscordSettingsProto.protoLengthDelimitedField(DiscordFavoritesProto.settingsField, message))
-                            .base64EncodedString()
-                    )],
+                    ["settings": .string(settings.base64EncodedString())],
                     retriesRateLimit: true
                 )
                 guard generation == favoritesGeneration else { return }
-                applyFavoritesSettingsProto(response.settings, replacesAllSettings: true)
+                if target != nil { applyFavoritesSettingsProto(response.settings, replacesAllSettings: true) }
                 if userContent != nil { applyUserContentSettingsProto(response.settings, replacesAllSettings: true) }
             } catch {
                 guard generation == favoritesGeneration else { return }
                 if error is UserSettingsRejection { await reloadUserSettings() }
                 gatewayLogger.error("Could not save Favorites: \(error.localizedDescription, privacy: .public)")
-                pendingFavorites = nil
-                publishStoredFavorites()
-                // A Reset queued behind this save is dropped with it, so its
-                // restored Suggested Channels return to what Discord confirmed.
+                if target != nil {
+                    pendingFavorites = nil
+                    publishStoredFavorites()
+                }
+                // Suggested Channels queued behind this save are dropped with
+                // it and return to what Discord confirmed.
                 let unsavedContent = pendingUserContent ?? userContent
                 pendingUserContent = nil
                 if let unsavedContent, userContentMessage == unsavedContent, let confirmed = confirmedUserContentMessage {
@@ -117,7 +127,7 @@ extension DiscordRESTProvider {
             }
             // A Reset made since may have returned the Favorites to this
             // target while its Suggested Channels still need saving.
-            guard pendingFavorites == target, pendingUserContent == nil else { continue }
+            guard let target, pendingFavorites == target, pendingUserContent == nil else { continue }
             pendingFavorites = nil
             publishStoredFavorites()
         }

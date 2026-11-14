@@ -209,8 +209,8 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     /// The UserContentSettings Discord last confirmed, which a failed write
     /// rolls back to.
     var confirmedUserContentMessage: Data?
-    /// UserContentSettings a pending Favorites save carries, as Reset brings
-    /// Suggested Channels back in the same write.
+    /// UserContentSettings waiting in the Favorites save queue: a Suggested
+    /// Channels dismissal, or the restore Reset sends in its own write.
     var pendingUserContent: Data?
     var personalizationConsented = false
     var channelAffinities: (ids: [ChannelID], fetchedAt: Date)?

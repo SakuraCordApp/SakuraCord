@@ -212,9 +212,9 @@ struct FavoritesSettingsContractTests {
         }
     }
 
-    /// Dismissing suggestions while a Reset waits behind a save carries the
-    /// dismissal into that queued write, so the Reset's follow-up save never
-    /// brings the suggestions back after the dismissal succeeded.
+    /// Dismissing suggestions while a Reset waits behind a save replaces the
+    /// Reset's queued restore, so the one follow-up save sends the dismissal
+    /// and nothing brings the suggestions back afterwards.
     @Test func `a dismissal made while a Reset is queued is what the follow-up save sends`() async throws {
         FavoritesURLProtocol.reset()
         FavoritesURLProtocol.holdResponses()
@@ -240,7 +240,7 @@ struct FavoritesSettingsContractTests {
         let sentContent = FavoritesURLProtocol.requests.dropFirst().compactMap { request in
             (request.body["settings"] as? String).flatMap { Data(base64Encoded: $0) }.flatMap(DiscordUserContentProto.message(inSettings:))
         }
-        #expect(sentContent.count == 2)
+        #expect(sentContent.count == 1)
         #expect(sentContent.allSatisfy { DiscordUserContentProto.isDismissed(807, in: $0) })
         await provider.disconnect()
     }

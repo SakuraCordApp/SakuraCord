@@ -26,7 +26,8 @@ extension DiscordRESTProvider {
     }
 
     /// Like the official dismissible-content writes: the complete
-    /// UserContentSettings with one bit changed, saved at once.
+    /// UserContentSettings with one bit changed, saved at once through the
+    /// Favorites queue so a Reset and a dismissal never land out of order.
     public func setFavoritesSuggestionsDismissed(_ dismissed: Bool) async throws {
         guard let current = userContentMessage else {
             throw ChatProviderError.invalidRequest("Wait for your account settings to finish loading.")
@@ -34,34 +35,10 @@ extension DiscordRESTProvider {
         let content = DiscordUserContentProto.favoritesSuggestions
         guard DiscordUserContentProto.isDismissed(content, in: current) != dismissed else { return }
         let message = DiscordUserContentProto.setting(content, dismissed: dismissed, in: current)
-        // Optimistic, so a Reset made before the response sees this choice,
-        // and a Reset still queued behind a Favorites save sends it too.
         userContentMessage = message
-        let queuedReset = pendingUserContent
-        if queuedReset != nil { pendingUserContent = message }
+        pendingUserContent = message
         continuation?.yield(.favoritesSuggestionsDismissed(dismissed))
-        do {
-            let response = try await patchUserSettings(
-                ["settings": .string(
-                    DiscordSettingsProto.protoLengthDelimitedField(DiscordUserContentProto.settingsField, message)
-                        .base64EncodedString()
-                )],
-                retriesRateLimit: true
-            )
-            applyUserContentSettingsProto(response.settings, replacesAllSettings: true)
-        } catch {
-            // Back to what Discord confirmed: `current` may hold a Reset whose
-            // own save has failed.
-            if userContentMessage == message, let confirmed = confirmedUserContentMessage {
-                userContentMessage = confirmed
-                if pendingUserContent == message { pendingUserContent = queuedReset }
-                continuation?.yield(.favoritesSuggestionsDismissed(
-                    DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: confirmed)
-                ))
-            }
-            if error is UserSettingsRejection { await reloadUserSettings() }
-            throw error
-        }
+        startFavoritesSave()
     }
 
     /// `GET /users/@me/affinities/v2/channels` and `…/users`, each kept for
