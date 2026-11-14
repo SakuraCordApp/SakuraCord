@@ -15,6 +15,34 @@ nonisolated extension SettingsCatalog {
                 help: "Manage accounts you have ignored on Discord.", keywords: ["ignore", "unignore", "people", "relationships"],
                 owner: .appModel, scope: .discordSynchronized, persistence: .discordManaged, reset: .notApplicable),
         control(
+            .activitySharing, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Share Activity Status",
+            help: "Broadcast your current activity and presence to Discord.",
+            keywords: ["activity", "presence", "rich presence", "status"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
+            .appleMusicPresence, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Share Apple Music & Spotify Playback",
+            help: "Display the song currently playing in macOS Apple Music or Spotify as your listening activity.",
+            keywords: ["apple music", "spotify", "music", "song", "listening", "presence"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
+            .localDiscordRPC, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Allow Local Discord RPC & Game Activity",
+            help: "Allow local apps and games on your Mac to connect via Discord IPC socket, and share detected game activities like Roblox (including detection without an IPC connection).",
+            keywords: ["rpc", "ipc", "socket", "games", "roblox", "rich presence"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
+            .activityStackOrder, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Activity Stack Priority",
+            help: "Customize the order in which multiple activities appear on your profile and status.",
+            keywords: ["activity", "priority", "stack", "order", "music", "games", "rpc"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
             .removeMediaMetadata, page: .privacySafety,
             section: .privacyDiscordActivity, label: "Remove metadata from images and videos",
             help: "Remove location, camera and other personal metadata before Discord or external uploads, preserving media quality.",

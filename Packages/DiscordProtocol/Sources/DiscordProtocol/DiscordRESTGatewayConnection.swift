@@ -371,6 +371,7 @@ extension DiscordRESTProvider {
                             )
                         }
                         lastSentPresenceStatus = nil
+                        lastSentActivities = nil
                         await sendPresenceIfChanged()
                         try await gatewaySession?.announceDesktopSession()
                     } catch {
@@ -511,7 +512,8 @@ extension DiscordRESTProvider {
         try await gatewaySession.send(data)
     }
 
-    func requestMembersByID(_ userIDs: [UserID], guildID: GuildID) async throws {
+    @discardableResult
+    public func requestMembersByID(_ userIDs: [UserID], guildID: GuildID, presences: Bool = false) async throws -> [Member] {
         guard gatewayReady else {
             throw ChatProviderError.invalidRequest(
                 "Discord Gateway is not ready to resolve role members.")
@@ -526,19 +528,21 @@ extension DiscordRESTProvider {
             )
         }
         let batches = userIDs.chunked(into: 100)
-        try await withThrowingTaskGroup(of: Void.self) { group in
+        return try await withThrowingTaskGroup(of: [Member].self) { group in
             for batch in batches {
                 group.addTask { [self] in
-                    _ = try await requestMemberBatch(batch, guildID: guildID)
+                    try await requestMemberBatch(batch, guildID: guildID, presences: presences)
                 }
             }
-            // Each chunk is merged by dispatch before its request completes.
-            // Replaying completed batches would overwrite newer live updates.
-            try await group.waitForAll()
+            var allMembers: [Member] = []
+            for try await batchMembers in group {
+                allMembers.append(contentsOf: batchMembers)
+            }
+            return allMembers
         }
     }
 
-    func requestMemberBatch(_ batch: [UserID], guildID: GuildID) async throws -> [Member] {
+    func requestMemberBatch(_ batch: [UserID], guildID: GuildID, presences: Bool = false) async throws -> [Member] {
             let batchRequest = discordPerformanceSignposter.beginInterval(
                 "GatewayMemberBatchRequest",
                 id: discordPerformanceSignposter.makeSignpostID()
@@ -568,7 +572,8 @@ extension DiscordRESTProvider {
                         try await self?.sendGateway(
                             DiscordGatewayPayloadFactory.requestMembers(
                                 guildID: guildID,
-                                userIDs: batch
+                                userIDs: batch,
+                                presences: presences
                             )
                         )
                     } catch {
@@ -586,6 +591,7 @@ extension DiscordRESTProvider {
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: members
         )
+        cachedMembersByID.removeValue(forKey: guildID)
         publishCurrentMemberTimeoutChange(previousMembers: previousMembers, guildID: guildID)
         publishThreadMembers(guildID: guildID)
         if let joinedUserIDs {

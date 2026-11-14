@@ -1,3 +1,4 @@
+import DiscordProtocol
 import Foundation
 import MediaPipeline
 
@@ -282,6 +283,30 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             page: .general,
             storage: .appWide(key: "settings.chat.smartDashes"),
             defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .activitySharing,
+            page: .privacySafety,
+            storage: .appWide(key: "settings.privacy.activitySharing"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .appleMusicPresence,
+            page: .privacySafety,
+            storage: .appWide(key: "settings.privacy.appleMusicPresence"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .localDiscordRPC,
+            page: .privacySafety,
+            storage: .appWide(key: "settings.privacy.localDiscordRPC"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .activityStackOrder,
+            page: .privacySafety,
+            storage: .appWide(key: "settings.privacy.activityStackOrder"),
+            defaultValue: .strings(ActivityCategory.defaultOrder.map(\.rawValue))
         ),
         SettingsPreferenceRegistration(
             id: .removeMediaMetadata,

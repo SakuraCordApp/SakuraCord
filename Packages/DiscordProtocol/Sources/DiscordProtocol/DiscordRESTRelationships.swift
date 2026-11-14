@@ -408,19 +408,26 @@ extension DiscordRESTProvider {
     /// Account-wide presence from the private presence cache. Other users'
     /// Invisible is never disclosed, so it reads as offline like an absent one.
     func relationshipPresence(for userID: UserID) -> UserPresence {
-        guard let member = cachedPrivateMembersByID[userID], member.status.isVisibleOnline else {
+        let member = cachedPrivateMembersByID[userID]
+            ?? cachedMembers.values.lazy.flatMap { $0 }.first { $0.id == userID && $0.status.isVisibleOnline }
+        guard let member, member.status.isVisibleOnline else {
             return UserPresence(status: .offline)
         }
         return UserPresence(
             status: member.status, customStatus: member.customStatus, activityText: member.activityText,
-            isListeningToMusic: member.isListeningToMusic, isMobileOnly: member.isMobileOnly
+            isListeningToMusic: member.isListeningToMusic, isMobileOnly: member.isMobileOnly,
+            richActivity: member.richActivity
         )
     }
 
     func publishRelationshipPresences(complete: Bool, userIDs: [UserID]? = nil) {
         let ids = userIDs ?? Array(cachedRelationships.keys)
         let presences = Dictionary(uniqueKeysWithValues: ids.lazy
-            .filter { self.cachedRelationships[$0] != nil }
+            .filter { id in
+                self.cachedRelationships[id] != nil
+                    || self.cachedPrivateMembersByID[id] != nil
+                    || self.cachedMembers.values.contains { members in members.contains { $0.id == id } }
+            }
             .map { ($0, self.relationshipPresence(for: $0)) })
         guard complete || !presences.isEmpty else { return }
         continuation?.yield(.relationshipPresencesChanged(presences, isComplete: complete))

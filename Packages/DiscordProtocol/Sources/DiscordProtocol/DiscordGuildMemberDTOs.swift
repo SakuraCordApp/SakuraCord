@@ -53,14 +53,64 @@ struct GuildActivityEmojiDTO: Decodable {
     var animated: Bool?
 }
 
+struct GuildActivityTimestampsDTO: Decodable {
+    var start: Int64?
+    var end: Int64?
+}
+
+struct GuildActivityAssetsDTO: Decodable {
+    var largeImage: String?
+    var largeText: String?
+    var smallImage: String?
+    var smallText: String?
+
+    enum CodingKeys: String, CodingKey {
+        case largeImage = "large_image"
+        case largeText = "large_text"
+        case smallImage = "small_image"
+        case smallText = "small_text"
+    }
+}
+
 struct GuildActivityDTO: Decodable {
     var name: String?
     var type: Int?
+    var url: String?
+    var details: String?
     var state: String?
     var emoji: GuildActivityEmojiDTO?
+    var timestamps: GuildActivityTimestampsDTO?
+    var assets: GuildActivityAssetsDTO?
+    var applicationId: String?
+    var syncId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, type, url, details, state, emoji, timestamps, assets
+        case applicationId = "application_id"
+        case syncId = "sync_id"
+    }
+
+    var asRichActivity: MemberRichActivity? {
+        guard let name else { return nil }
+        return MemberRichActivity(
+            name: name,
+            type: type ?? 0,
+            details: details,
+            state: state,
+            startTimestamp: timestamps?.start,
+            endTimestamp: timestamps?.end,
+            largeImage: assets?.largeImage,
+            largeText: assets?.largeText,
+            smallImage: assets?.smallImage,
+            smallText: assets?.smallText,
+            applicationID: applicationId,
+            url: url
+        )
+    }
 
     var displayText: String? {
         let activityState = state.flatMap { $0.isEmpty ? nil : $0 }
+        let activityDetails = details.flatMap { $0.isEmpty ? nil : $0 }
         if type == 4 {
             let emojiText = emoji.flatMap { emoji -> String? in
                 if let id = emoji.id {
@@ -71,13 +121,32 @@ struct GuildActivityDTO: Decodable {
             let parts = [emojiText, activityState].compactMap { $0 }
             return parts.isEmpty ? nil : parts.joined(separator: " ")
         }
-        return activityState ?? name
+        if type == 2 {
+            return activityDetails ?? activityState ?? name
+        }
+        let activityName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !activityName.isEmpty {
+            if type == 0 {
+                return activityName.lowercased().hasPrefix("playing ") ? activityName : "Playing \(activityName)"
+            } else if type == 1 {
+                return activityName.lowercased().hasPrefix("streaming ") ? activityName : "Streaming \(activityName)"
+            } else if type == 3 {
+                return activityName.lowercased().hasPrefix("watching ") ? activityName : "Watching \(activityName)"
+            } else if type == 5 {
+                return activityName.lowercased().hasPrefix("competing in ") ? activityName : "Competing in \(activityName)"
+            }
+            return activityName
+        }
+        return activityDetails ?? activityState
     }
 }
 
 extension [GuildActivityDTO] {
     var memberListActivity: GuildActivityDTO? {
-        first(where: { $0.type == 2 }) ?? first(where: { $0.type != 4 })
+        first(where: { $0.type == 2 }) ?? first(where: {
+            guard let type = $0.type else { return false }
+            return type != 4 && type != 6
+        })
     }
 }
 
@@ -85,6 +154,16 @@ struct GuildPresenceDTO: Decodable {
     var status: String?
     var activities: [GuildActivityDTO]?
     var clientStatus: ClientStatusDTO?
+
+    init(
+        status: String? = nil,
+        activities: [GuildActivityDTO]? = nil,
+        clientStatus: ClientStatusDTO? = nil
+    ) {
+        self.status = status
+        self.activities = activities
+        self.clientStatus = clientStatus
+    }
 
     enum CodingKeys: String, CodingKey {
         case status, activities
@@ -211,7 +290,8 @@ struct GuildMemberDTO: Decodable {
             flags: flags,
             communicationDisabledUntil: includesCommunicationDisabledUntil
                 ? communicationDisabledUntil.flatMap(DiscordDate.parse) : previousCommunicationDisabledUntil,
-            joinedAt: joinedAt.flatMap(DiscordDate.parse)
+            joinedAt: joinedAt.flatMap(DiscordDate.parse),
+            richActivity: primaryActivity?.asRichActivity
         )
     }
 
@@ -330,6 +410,7 @@ struct GatewayGuildMembersChunkDTO: Decodable {
     var chunkIndex: Int
     var chunkCount: Int
     var notFound: [String]?
+    var presences: [PresenceUpdateDTO]?
 
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
@@ -337,5 +418,6 @@ struct GatewayGuildMembersChunkDTO: Decodable {
         case chunkIndex = "chunk_index"
         case chunkCount = "chunk_count"
         case notFound = "not_found"
+        case presences
     }
 }

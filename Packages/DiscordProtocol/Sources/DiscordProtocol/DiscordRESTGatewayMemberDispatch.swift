@@ -61,6 +61,7 @@ extension DiscordRESTProvider {
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: members
         )
+        cachedMembersByID.removeValue(forKey: guildID)
         publishUserSearchAliases()
         if guildID == pendingMemberGuildID,
            update.id == selectedMemberListID[guildID]
@@ -127,15 +128,38 @@ extension DiscordRESTProvider {
         let guildRoles = cachedGuildRoles[guildID] ?? []
         let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
         let previousMembers = cachedMemberIndex(guildID: guildID)
+        let presencesByUserID: [String: GuildPresenceDTO] = Dictionary(
+            (chunk.presences ?? []).map {
+                ($0.user.id, GuildPresenceDTO(status: $0.status, activities: $0.activities, clientStatus: $0.clientStatus))
+            },
+            uniquingKeysWith: { _, newer in newer }
+        )
         let decodedMembers = chunk.members.compactMap {
             try? $0.domain(
                 currentUserID: currentUser?.id,
                 currentStatus: presenceStatus,
+                presence: presencesByUserID[$0.user.id],
                 guildRoles: guildRoles,
                 guildRoleCatalog: guildRoleCatalog,
                 guildID: guildID,
                 previousCommunicationDisabledUntil: UserID($0.user.id).flatMap { previousMembers[$0]?.communicationDisabledUntil }
             )
+        }
+        for member in chunk.members {
+            cacheGatewayUser(member.user, messageSearchEligible: false)
+        }
+        var updatedPresenceUserIDs: [UserID] = []
+        for presence in chunk.presences ?? [] {
+            if let userID = UserID(presence.user.id) {
+                var privateUpdate = presence
+                privateUpdate.guildID = nil
+                cachePrivatePresence(privateUpdate)
+                updatedPresenceUserIDs.append(userID)
+            }
+        }
+        if !updatedPresenceUserIDs.isEmpty {
+            continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
+            publishRelationshipPresences(complete: false, userIDs: updatedPresenceUserIDs)
         }
         let responseUserIDs = Set(decodedMembers.map(\.id)).union(
             (chunk.notFound ?? []).compactMap(UserID.init)
@@ -152,10 +176,6 @@ extension DiscordRESTProvider {
             // not expand message-search UserStore beyond Discord's live
             // source set.
             cacheLiveSearchUsers(chunk.members.map(\.user))
-        } else {
-            for member in chunk.members {
-                cacheGatewayUser(member.user, messageSearchEligible: false)
-            }
         }
         let joinedUserIDs = Set<UserID>(chunk.members.compactMap { member -> UserID? in
             guard member.joinedAt != nil, member.pending != true else { return nil }
@@ -294,6 +314,15 @@ extension DiscordRESTProvider {
             }
             return
         }
+        if let userID = UserID(update.user.id),
+           cachedRelationships[userID] != nil || cachedPrivateMembersByID[userID] != nil
+            || cachedChannels[nil]?.contains(where: { $0.recipients.contains(where: { $0.id == userID }) }) == true {
+            var privateUpdate = update
+            privateUpdate.guildID = nil
+            cachePrivatePresence(privateUpdate)
+            continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
+            publishRelationshipPresences(complete: false, userIDs: [userID])
+        }
         guard let guildID = update.guildID.flatMap(GuildID.init),
               let userID = UserID(update.user.id),
               let status = PresenceStatus(rawValue: update.status),
@@ -311,8 +340,10 @@ extension DiscordRESTProvider {
                 primaryActivity?.displayText
                     ?? members[index].customStatus
             members[index].isListeningToMusic = primaryActivity?.type == 2
+            members[index].richActivity = primaryActivity?.asRichActivity
         }
         cachedMembers[guildID] = members
+        cachedMembersByID.removeValue(forKey: guildID)
         if guildID == pendingMemberGuildID {
             publishMembers(
                 guildID: guildID,

@@ -145,6 +145,7 @@ extension DiscordRESTProvider {
         for guildID in cachedMembers.keys {
             guard let index = cachedMembers[guildID]?.firstIndex(where: { $0.id == userID }) else { continue }
             cachedMembers[guildID]?[index].customStatus = text
+            cachedMembersByID.removeValue(forKey: guildID)
         }
         continuation?.yield(.profileCustomStatusChanged(userID: userID, status: status))
         scheduleCustomStatusExpiration(status)

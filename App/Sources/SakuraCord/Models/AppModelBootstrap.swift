@@ -20,6 +20,7 @@ extension AppModel {
     }
 
     func start(publishesSessionState: Bool = true) async {
+        startActivityServicesIfNeeded()
         guard !awaitsOfflineSignIn else { return }
         let session = accountSession()
         let startSignpost = AppPerformanceSignposts.signposter.beginInterval("SessionStart")
@@ -341,6 +342,32 @@ extension AppModel {
         }
         requestCoalescedUnreadPresentationRefresh()
         publishBootstrapAuthenticationState()
+        let coordinator = activityCoordinator
+        Task {
+            await coordinator.resendActivities()
+        }
+        await accountPersistence
+        guard canPublishBootstrap(for: account), isAuthenticated || launchMode != .normal else { return }
+        await completeBootstrapWorkspaceActivation(
+            publishesSessionState: publishesSessionState,
+            initialGuildID: initialGuildID,
+            initialHistoryChannelID: initialHistoryChannelID,
+            retainedChannel: retainedChannel,
+            account: account,
+            value: value,
+            statusRevision: statusRevision
+        )
+    }
+
+    private func completeBootstrapWorkspaceActivation(
+        publishesSessionState: Bool,
+        initialGuildID: GuildID?,
+        initialHistoryChannelID: ChannelID?,
+        retainedChannel: Channel?,
+        account: AppModelAccountSession?,
+        value: BootstrapSnapshot,
+        statusRevision: UInt64
+    ) async {
         if publishesSessionState {
             sessionState = .workspace
         }
@@ -370,7 +397,6 @@ extension AppModel {
         {
             selectedChannelID = retainedChannel.id
         }
-        await accountPersistence
         guard canPublishBootstrap(for: account) else { return }
         await waitForUnreadPresentationPreparation()
         guard canPublishBootstrap(for: account) else { return }

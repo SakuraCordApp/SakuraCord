@@ -193,6 +193,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var profileDeveloperSettingsDataVersion: UInt32?
     var guildLayoutDataVersion: UInt32?
     var inboxSettingsFieldVersions: [Int: UInt32] = [:]
+    var presenceGeneration: UInt64 = 0
     /// The confirmed settings-proto/1 Favorites message; nil until settings load.
     var favoritesMessage: Data?
     var favoritesDataVersion: UInt32?
@@ -216,6 +217,12 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var channelAffinities: (ids: [ChannelID], fetchedAt: Date)?
     var userAffinities: (ids: [UserID], fetchedAt: Date)?
     var lastSentPresenceStatus: PresenceStatus?
+    var activeActivities: [String: OutgoingActivityPayload] = [:]
+    var activityCategoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder
+    var externalAssetCache: [String: String] = [:]
+    var externalAssetCacheKeys: [String] = []
+    var applicationAssetCatalogs: [String: (assets: [String: String], expiresAt: Date)] = [:]
+    var lastSentActivities: [OutgoingActivityPayload]?
     var presenceSendWindowEnds: [Date] = []
     var deferredPresenceTask: Task<Void, Never>?
     var globalRateLimitDate: Date = .distantPast

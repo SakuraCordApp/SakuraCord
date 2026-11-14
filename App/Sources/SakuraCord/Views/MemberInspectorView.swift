@@ -490,6 +490,10 @@ struct MemberRow: View {
                                     if member.isListeningToMusic {
                                         Image(systemName: "music.note")
                                             .foregroundStyle(Color(nsColor: NativeMemberActivityPresentation.iconColor))
+                                    } else if member.isPlayingGame {
+                                        Image(systemName: "gamecontroller.fill")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(Color(nsColor: NativeMemberActivityPresentation.iconColor))
                                     }
                                     if activityContent.separatesMusicIcon {
                                         activitySeparator

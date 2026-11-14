@@ -82,6 +82,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let activityTruncationToken: CTLine?
         let activityWidth: CGFloat
         let serverTag: NativeServerTagPresentation?
+        let activityIconType: MemberActivityIconType?
 
         init(
             nameFont: NSFont,
@@ -92,7 +93,8 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
             activity: CTLine?,
             activityTruncationToken: CTLine?,
             activityWidth: CGFloat,
-            serverTag: NativeServerTagPresentation?
+            serverTag: NativeServerTagPresentation?,
+            activityIconType: MemberActivityIconType? = nil
         ) {
             self.nameFont = nameFont
             self.name = name
@@ -103,6 +105,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
             self.activityTruncationToken = activityTruncationToken
             self.activityWidth = activityWidth
             self.serverTag = serverTag
+            self.activityIconType = activityIconType
         }
     }
 

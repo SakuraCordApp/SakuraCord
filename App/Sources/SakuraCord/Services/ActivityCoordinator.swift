@@ -1,0 +1,281 @@
+import DiscordProtocol
+import Foundation
+import os
+import SakuraCordModels
+
+public nonisolated enum ActivitySource: Hashable, Sendable, CustomStringConvertible {
+    case appleMusic
+    case localRPC(sourceID: String, clientID: String, processID: pid_t?)
+    case custom(sourceID: String)
+
+    public var sourceID: String {
+        switch self {
+        case .appleMusic:
+            return "apple_music"
+        case let .localRPC(sourceID, _, _):
+            return "rpc:\(sourceID)"
+        case let .custom(sourceID):
+            return "custom:\(sourceID)"
+        }
+    }
+
+    public static func == (lhs: ActivitySource, rhs: ActivitySource) -> Bool {
+        lhs.sourceID == rhs.sourceID
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceID)
+    }
+
+    public var description: String {
+        switch self {
+        case .appleMusic:
+            return "Apple Music"
+        case let .localRPC(sourceID, clientID, _):
+            return "Local RPC (\(clientID) / \(sourceID))"
+        case let .custom(sourceID):
+            return "Custom (\(sourceID))"
+        }
+    }
+}
+
+public nonisolated struct ActivityCoordinatorPreferences: Equatable, Sendable {
+    public var isActivitySharingEnabled: Bool
+    public var isAppleMusicPresenceEnabled: Bool
+    public var isLocalRPCEnabled: Bool
+    public var activityCategoryOrder: [ActivityCategory]
+
+    public init(
+        isActivitySharingEnabled: Bool = false,
+        isAppleMusicPresenceEnabled: Bool = false,
+        isLocalRPCEnabled: Bool = false,
+        activityCategoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder
+    ) {
+        self.isActivitySharingEnabled = isActivitySharingEnabled
+        self.isAppleMusicPresenceEnabled = isAppleMusicPresenceEnabled
+        self.isLocalRPCEnabled = isLocalRPCEnabled
+        self.activityCategoryOrder = ActivityCategory.normalizedOrder(activityCategoryOrder)
+    }
+
+    public static var enabledAll: ActivityCoordinatorPreferences {
+        ActivityCoordinatorPreferences(
+            isActivitySharingEnabled: true,
+            isAppleMusicPresenceEnabled: true,
+            isLocalRPCEnabled: true,
+            activityCategoryOrder: ActivityCategory.defaultOrder
+        )
+    }
+}
+
+/// Coordinates and arbitrates active activity/presence sources (Apple Music, local Discord RPC, etc.)
+/// and enforces user privacy preferences before dispatching presence updates to the active `ChatProvider`.
+public actor ActivityCoordinator {
+    private var provider: any ChatProvider
+    private var preferences: ActivityCoordinatorPreferences
+    private var registeredActivities: [ActivitySource: OutgoingActivityPayload] = [:]
+    private var sourceGenerations: [ActivitySource: UInt64] = [:]
+    private var publishedSourceIDs: Set<String> = []
+    private var inFlightSourceIDs: Set<String> = []
+    private var syncGeneration: UInt64 = 0
+    private var syncTask: Task<Void, Never>?
+    private var onActivityChangedHandler: (@Sendable (OutgoingActivityPayload?) -> Void)?
+    private let logger = Logger(subsystem: "dev.sakuracord", category: "ActivityCoordinator")
+
+    public init(
+        provider: any ChatProvider,
+        preferences: ActivityCoordinatorPreferences = ActivityCoordinatorPreferences()
+    ) {
+        self.provider = provider
+        self.preferences = preferences
+    }
+
+    public func setProvider(_ newProvider: any ChatProvider) async {
+        self.provider = newProvider
+        publishedSourceIDs.removeAll()
+        inFlightSourceIDs.removeAll()
+        syncGeneration &+= 1
+        await synchronizeProvider()
+    }
+
+    public func updatePreferences(_ newPreferences: ActivityCoordinatorPreferences) async {
+        guard preferences != newPreferences else { return }
+        preferences = newPreferences
+        syncGeneration &+= 1
+        await synchronizeProvider()
+    }
+
+    public func currentPreferences() -> ActivityCoordinatorPreferences {
+        preferences
+    }
+
+    public func isSourcePermitted(_ source: ActivitySource) -> Bool {
+        guard preferences.isActivitySharingEnabled else { return false }
+        switch source {
+        case .appleMusic:
+            return preferences.isAppleMusicPresenceEnabled
+        case .localRPC:
+            return preferences.isLocalRPCEnabled
+        case .custom(let sourceID):
+            if sourceID.hasPrefix("game:") || sourceID.hasPrefix("app:") {
+                return preferences.isLocalRPCEnabled
+            }
+            return true
+        }
+    }
+
+    public func setActivity(
+        _ activity: OutgoingActivityPayload?,
+        for source: ActivitySource,
+        generation: UInt64? = nil
+    ) async {
+        if let generation {
+            let lastGen = sourceGenerations[source] ?? 0
+            guard generation >= lastGen else {
+                logger.debug("Discarding stale setActivity for \(source.sourceID): gen \(generation) < \(lastGen)")
+                return
+            }
+            sourceGenerations[source] = generation
+        }
+        if let activity {
+            registeredActivities[source] = activity
+        } else {
+            registeredActivities.removeValue(forKey: source)
+        }
+        syncGeneration &+= 1
+        await synchronizeProvider()
+    }
+
+    public func clearActivity(for source: ActivitySource, generation: UInt64? = nil) async {
+        if let generation {
+            let lastGen = sourceGenerations[source] ?? 0
+            guard generation >= lastGen else {
+                logger.debug("Discarding stale clearActivity for \(source.sourceID): gen \(generation) < \(lastGen)")
+                return
+            }
+            sourceGenerations[source] = generation
+        }
+        registeredActivities.removeValue(forKey: source)
+        syncGeneration &+= 1
+        await synchronizeProvider()
+    }
+
+    public func clearAllActivities() async {
+        registeredActivities.removeAll()
+        sourceGenerations.removeAll()
+        syncGeneration &+= 1
+        await synchronizeProvider()
+    }
+
+    public func resendActivities() async {
+        publishedSourceIDs.removeAll()
+        inFlightSourceIDs.removeAll()
+        syncGeneration &+= 1
+        await synchronizeProvider()
+    }
+
+    public func currentActivities() -> [ActivitySource: OutgoingActivityPayload] {
+        registeredActivities
+    }
+
+    public func currentPermittedActivities() -> [ActivitySource: OutgoingActivityPayload] {
+        guard preferences.isActivitySharingEnabled else { return [:] }
+        return registeredActivities.filter { isSourcePermitted($0.key) }
+    }
+
+    public func currentPrimaryActivity() -> OutgoingActivityPayload? {
+        let permitted = currentPermittedActivities()
+        let order = preferences.activityCategoryOrder
+        return permitted.values.sorted {
+            $0.priorityRank(using: order) < $1.priorityRank(using: order)
+        }.first
+    }
+
+    public func isSourceActive(_ source: ActivitySource) -> Bool {
+        registeredActivities[source] != nil
+    }
+
+    public func setOnActivityChanged(_ handler: (@Sendable (OutgoingActivityPayload?) -> Void)?) {
+        self.onActivityChangedHandler = handler
+        let primary = currentPrimaryActivity()
+        handler?(primary)
+    }
+
+    private func synchronizeProvider() async {
+        let generation = syncGeneration
+        let previous = syncTask
+        let task = Task { [weak self] in
+            _ = await previous?.value
+            guard let self else { return }
+            await self.performSynchronize(generation: generation)
+        }
+        syncTask = task
+        await task.value
+    }
+
+    private func performSynchronize(generation: UInt64) async {
+        guard generation == syncGeneration else { return }
+        let permitted = currentPermittedActivities()
+        let order = preferences.activityCategoryOrder
+        let primary = permitted.values.sorted {
+            $0.priorityRank(using: order) < $1.priorityRank(using: order)
+        }.first
+        onActivityChangedHandler?(primary)
+        try? await provider.updateActivityCategoryOrder(order)
+        let permittedSourceIDs = Set(permitted.keys.map(\.sourceID))
+
+        // 1. Clear any sources that were previously published, registered, or in-flight but are no longer permitted/active
+        let registeredSourceIDs = Set(registeredActivities.keys.map(\.sourceID))
+        let allKnownSourceIDs = publishedSourceIDs.union(registeredSourceIDs).union(inFlightSourceIDs)
+        let staleSourceIDs = allKnownSourceIDs.subtracting(permittedSourceIDs)
+        for staleID in staleSourceIDs {
+            guard generation == syncGeneration else { return }
+            do {
+                try await provider.clearActivities(sourceID: staleID)
+                guard generation == syncGeneration else { return }
+                publishedSourceIDs.remove(staleID)
+            } catch {
+                logger.debug("Failed to clear activity source \(staleID): \(error.localizedDescription)")
+            }
+        }
+
+        // 2. Publish all permitted active activities
+        for (source, payload) in permitted {
+            guard generation == syncGeneration else { return }
+            guard isSourcePermitted(source) else { return }
+            inFlightSourceIDs.insert(source.sourceID)
+            do {
+                try await provider.updateActivity(payload, sourceID: source.sourceID)
+                inFlightSourceIDs.remove(source.sourceID)
+                guard generation == syncGeneration else {
+                    // Late update completed after superseding sync; if source is no longer permitted or registered, clean up immediately
+                    if !isSourcePermitted(source) || registeredActivities[source] == nil {
+                        try? await provider.clearActivities(sourceID: source.sourceID)
+                        publishedSourceIDs.remove(source.sourceID)
+                    } else {
+                        publishedSourceIDs.insert(source.sourceID)
+                    }
+                    return
+                }
+                guard isSourcePermitted(source) else {
+                    try? await provider.clearActivities(sourceID: source.sourceID)
+                    publishedSourceIDs.remove(source.sourceID)
+                    return
+                }
+                publishedSourceIDs.insert(source.sourceID)
+            } catch {
+                inFlightSourceIDs.remove(source.sourceID)
+                logger.debug("Failed to update activity for source \(source.sourceID): \(error.localizedDescription)")
+            }
+        }
+
+        // If completely empty and nothing published or in flight, ensure provider has no remaining activities
+        if permitted.isEmpty, publishedSourceIDs.isEmpty, inFlightSourceIDs.isEmpty {
+            guard generation == syncGeneration else { return }
+            do {
+                try await provider.clearActivities(sourceID: nil)
+            } catch {
+                logger.debug("Failed to clear all activities on provider: \(error.localizedDescription)")
+            }
+        }
+    }
+}

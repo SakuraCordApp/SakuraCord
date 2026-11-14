@@ -145,7 +145,7 @@ struct CustomEmojiRichText: View {
                 ?? model.membersByID[id]?.user
                 ?? model.knownMentionMembers[id]?.user
             guard let user else { return }
-            let requestID = model.showProfile(for: user)
+            let requestID = model.showProfile(for: user, sourceMessage: message)
             presentedMention = AnchoredMentionPresentation(
                 mention: mention,
                 anchor: anchor,

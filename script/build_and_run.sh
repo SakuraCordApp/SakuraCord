@@ -242,6 +242,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>NSMicrophoneUsageDescription</key><string>SakuraCord uses your microphone when you join a voice call or record a voice message.</string>
   <key>NSCameraUsageDescription</key><string>SakuraCord uses your camera when you enable video in a call.</string>
   <key>NSScreenCaptureUsageDescription</key><string>SakuraCord uses screen capture only when you choose a source to share in a voice call.</string>
+  <key>NSAppleEventsUsageDescription</key><string>SakuraCord displays your current music playback in Rich Presence.</string>
 </dict>
 </plist>
 PLIST

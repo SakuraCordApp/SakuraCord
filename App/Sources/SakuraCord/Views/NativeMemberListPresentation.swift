@@ -4,6 +4,11 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
+nonisolated enum MemberActivityIconType: Sendable {
+    case game
+    case music
+}
+
 extension Member {
     nonisolated var isListedOnline: Bool {
         isOnline || user.usesHTTPInteractions
@@ -13,10 +18,41 @@ extension Member {
         user.usesHTTPInteractions ? nil : status
     }
 
+    nonisolated var isPlayingGame: Bool {
+        if isListeningToMusic { return false }
+        if let richActivity {
+            return richActivity.type == 0
+        }
+        if let activityText {
+            return activityText.lowercased().hasPrefix("playing ")
+        }
+        return false
+    }
+
+    nonisolated var gameName: String? {
+        if let richActivity, richActivity.type == 0 {
+            return richActivity.name
+        }
+        if let activityText, activityText.lowercased().hasPrefix("playing ") {
+            return String(activityText.dropFirst("playing ".count)).trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
+
+    nonisolated var memberListActivityIconType: MemberActivityIconType? {
+        if isListeningToMusic {
+            return .music
+        }
+        if isPlayingGame {
+            return .game
+        }
+        return nil
+    }
+
     nonisolated var memberListActivityContent: NativeMemberActivityPresentation.Content {
         guard isListeningToMusic,
               let customStatus, !customStatus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return .init(text: activityText) }
+        else { return .init(text: memberListActivityText) }
         if NativeMemberActivityPresentation.isEmojiOnly(customStatus) {
             if let activityText, !activityText.isEmpty, activityText != customStatus {
                 return .init(text: activityText, trailingEmoji: customStatus)
@@ -24,6 +60,32 @@ extension Member {
             return .init(text: customStatus)
         }
         return .init(text: customStatus, separatesMusicIcon: true)
+    }
+
+    nonisolated var memberListActivityText: String? {
+        if isListeningToMusic {
+            if let customStatus, !customStatus.isEmpty {
+                return customStatus
+            }
+            if let richActivity {
+                return richActivity.details ?? richActivity.state ?? richActivity.name
+            }
+            if let activityText {
+                if activityText.lowercased().hasPrefix("listening to ") {
+                    return String(activityText.dropFirst("listening to ".count)).trimmingCharacters(in: .whitespaces)
+                }
+                return activityText
+            }
+            return nil
+        }
+        if isPlayingGame {
+            return gameName ?? activityText
+        }
+        return customStatus ?? activityText
+    }
+
+    nonisolated var memberListShowsMusicSeparator: Bool {
+        isListeningToMusic && customStatus?.isEmpty == false
     }
 
     /// Keeps the full activity, such as the track a custom status replaces

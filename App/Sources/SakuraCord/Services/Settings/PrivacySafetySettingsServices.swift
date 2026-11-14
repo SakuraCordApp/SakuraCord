@@ -1,3 +1,4 @@
+import DiscordProtocol
 import AppKit
 import Foundation
 
@@ -59,7 +60,11 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
     static let defaults = Self(
         sendsTypingIndicators: true,
         externalLinkConfirmationPolicy: .untrustedDomains,
-        trustedDomains: ExternalLinkTrustedDomain.defaults
+        trustedDomains: ExternalLinkTrustedDomain.defaults,
+        sharesActivity: false,
+        sharesAppleMusicActivity: false,
+        allowsLocalRPC: false,
+        activityStackOrder: ActivityCategory.defaultOrder
     )
 
     var removesMediaMetadata = true
@@ -67,6 +72,10 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
     var sendsTypingIndicators: Bool
     var externalLinkConfirmationPolicy: ExternalLinkConfirmationPolicy
     var trustedDomains: [String]
+    var sharesActivity: Bool = false
+    var sharesAppleMusicActivity: Bool = false
+    var allowsLocalRPC: Bool = false
+    var activityStackOrder: [ActivityCategory] = ActivityCategory.defaultOrder
 }
 
 @MainActor
@@ -82,6 +91,19 @@ final class PrivacySafetySettingsStore {
 
     func load() -> PrivacySafetySettingsSnapshot {
         var value = PrivacySafetySettingsSnapshot.defaults
+        if case let .bool(saved) = preferences.value(for: .activitySharing) {
+            value.sharesActivity = saved
+        }
+        if case let .bool(saved) = preferences.value(for: .appleMusicPresence) {
+            value.sharesAppleMusicActivity = saved
+        }
+        if case let .bool(saved) = preferences.value(for: .localDiscordRPC) {
+            value.allowsLocalRPC = saved
+        }
+        if case let .strings(order) = preferences.value(for: .activityStackOrder) {
+            let categories = order.compactMap(ActivityCategory.init(rawValue:))
+            value.activityStackOrder = ActivityCategory.normalizedOrder(categories)
+        }
         if case let .bool(saved) = preferences.value(for: .removeMediaMetadata) {
             value.removesMediaMetadata = saved
         }
@@ -103,6 +125,13 @@ final class PrivacySafetySettingsStore {
     }
 
     func save(_ value: PrivacySafetySettingsSnapshot) {
+        preferences.set(.bool(value.sharesActivity), for: .activitySharing)
+        preferences.set(.bool(value.sharesAppleMusicActivity), for: .appleMusicPresence)
+        preferences.set(.bool(value.allowsLocalRPC), for: .localDiscordRPC)
+        preferences.set(
+            .strings(value.activityStackOrder.map(\.rawValue)),
+            for: .activityStackOrder
+        )
         preferences.set(.bool(value.removesMediaMetadata), for: .removeMediaMetadata)
         preferences.set(.bool(value.anonymisesFileNames), for: .anonymiseFileNames)
         preferences.set(.bool(value.sendsTypingIndicators), for: .privacyTypingIndicators)
@@ -349,6 +378,37 @@ extension AppModel {
         privacySafetySettings = value
         if wasSendingTypingIndicators, !value.sendsTypingIndicators {
             stopLocalTyping(clearThrottle: false)
+        }
+        if launchMode == .normal {
+            if !value.sharesActivity || !value.sharesAppleMusicActivity {
+                appleMusicMonitor.stop()
+            }
+            if !value.sharesActivity || !value.allowsLocalRPC {
+                ipcServer.stop()
+                gameMonitor.stop()
+            }
+        }
+        Task {
+            await activityCoordinator.updatePreferences(
+                ActivityCoordinatorPreferences(
+                    isActivitySharingEnabled: value.sharesActivity,
+                    isAppleMusicPresenceEnabled: value.sharesAppleMusicActivity,
+                    isLocalRPCEnabled: value.allowsLocalRPC,
+                    activityCategoryOrder: value.activityStackOrder
+                )
+            )
+            if launchMode == .normal {
+                guard privacySafetySettings == value else { return }
+                if value.sharesActivity, value.sharesAppleMusicActivity {
+                    appleMusicMonitor.start()
+                }
+                if value.sharesActivity, value.allowsLocalRPC, !ipcServer.isServerRunning {
+                    try? ipcServer.start()
+                }
+                if value.sharesActivity, value.allowsLocalRPC {
+                    gameMonitor.start()
+                }
+            }
         }
     }
 }

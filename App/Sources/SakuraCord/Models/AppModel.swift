@@ -880,8 +880,57 @@ final class AppModel {
     var externalAttachmentUploadPresentation: ExternalAttachmentUploadPresentation?
     var inspectorVisibility = InspectorVisibility()
     var errorMessage: String?
+    var currentUserActivity: OutgoingActivityPayload?
+
+    var currentUserRichActivity: MemberRichActivity? {
+        guard let current = currentUserActivity else { return nil }
+        return MemberRichActivity(
+            name: current.name,
+            type: current.type.rawValue,
+            details: current.details,
+            state: current.state,
+            startTimestamp: current.timestamps?.start,
+            endTimestamp: current.timestamps?.end,
+            largeImage: current.assets?.largeImage,
+            largeText: current.assets?.largeText,
+            smallImage: current.assets?.smallImage,
+            smallText: current.assets?.smallText,
+            applicationID: current.applicationId,
+            url: current.url
+        )
+    }
+
+    var currentUserActivityDisplayText: String? {
+        guard let activity = currentUserActivity else { return nil }
+        if activity.type == .listening {
+            return activity.details ?? activity.state ?? activity.name
+        } else {
+            let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty {
+                if activity.type == .playing {
+                    return name.lowercased().hasPrefix("playing ") ? name : "Playing \(name)"
+                } else if activity.type == .streaming {
+                    return name.lowercased().hasPrefix("streaming ") ? name : "Streaming \(name)"
+                } else if activity.type == .watching {
+                    return name.lowercased().hasPrefix("watching ") ? name : "Watching \(name)"
+                } else if activity.type == .competing {
+                    return name.lowercased().hasPrefix("competing in ") ? name : "Competing in \(name)"
+                }
+                return name
+            }
+            return activity.details ?? activity.state
+        }
+    }
+
+    var isCurrentUserListeningToMusic: Bool {
+        currentUserActivity?.type == .listening
+    }
 
     @ObservationIgnored var provider: any ChatProvider
+    @ObservationIgnored let activityCoordinator: ActivityCoordinator
+    @ObservationIgnored let ipcServer: DiscordIPCServer
+    @ObservationIgnored let appleMusicMonitor: AppleMusicPresenceMonitor
+    @ObservationIgnored let gameMonitor: GamePresenceMonitor
     @ObservationIgnored var database: SakuraCordDatabase?
     @ObservationIgnored var accountSessionGeneration: UInt64 = 0
     @ObservationIgnored var installedAccountSessionRevision: UInt64 = 0
@@ -1129,7 +1178,10 @@ final class AppModel {
         privacySafetySettingsStore: PrivacySafetySettingsStore? = nil,
         uploadPrivacyPreparation: UploadPrivacyPreparation? = nil,
         translation: TranslationState? = nil,
-        composerPreferences: SettingsPreferenceStore? = nil
+        composerPreferences: SettingsPreferenceStore? = nil,
+        activityCoordinator: ActivityCoordinator? = nil,
+        ipcServer: DiscordIPCServer? = nil,
+        appleMusicMonitor: AppleMusicPresenceMonitor? = nil
     ) {
         self.launchMode = launchMode
         includesOfflineSignIn = launchMode == .offlineTesting && awaitsOfflineSignIn
@@ -1159,23 +1211,29 @@ final class AppModel {
         self.accessibilityMessageAnnouncer = accessibilityMessageAnnouncer ?? AccessibilityMessageAnnouncer()
         selectedCameraUID = resolvedVoicePreferences.remembersCamera && !resolvedVoicePreferences.cameraUID.isEmpty ? resolvedVoicePreferences.cameraUID : nil
         screenShareSettings = resolvedVoicePreferences.screenShareDefaults
-        self.provider =
+        let resolvedProvider =
             provider
                 ?? (launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider())
+        self.provider = resolvedProvider
+        let resolvedPrivacyStore = privacySafetySettingsStore ?? .shared
+        self.privacySafetySettingsStore = resolvedPrivacyStore
+        let activityServices = Self.makeActivityServices(
+            launchMode: launchMode,
+            privacyStore: resolvedPrivacyStore,
+            provider: resolvedProvider,
+            coordinator: activityCoordinator,
+            ipcServer: ipcServer,
+            appleMusicMonitor: appleMusicMonitor
+        )
+        self.activityCoordinator = activityServices.coordinator
+        self.ipcServer = activityServices.ipcServer
+        self.appleMusicMonitor = activityServices.monitor
+        self.gameMonitor = activityServices.gameMonitor
         hasPendingLaunchWelcome = includesOfflineSignIn
         typingState = TypingStateModel()
         self.localTypingTiming = localTypingTiming
         self.reactionMutationTiming = reactionMutationTiming
         self.readAcknowledgementTiming = readAcknowledgementTiming
-        let resolvedPrivacyStore = privacySafetySettingsStore ?? .shared
-        let anonymisesUploadFilenames: @Sendable () async -> Bool = { await resolvedPrivacyStore.load().anonymisesFileNames }
-        let uploadPrivacy = uploadPrivacyPreparation ?? UploadPrivacyPreparation(store: resolvedPrivacyStore)
-        self.uploadPrivacyPreparation = uploadPrivacy
-        let prepareUploadFile: @Sendable (URL) async throws -> PreparedUploadFile = { try await uploadPrivacy.prepare($0) }
-        self.externalAttachmentUploader = externalAttachmentUploader ?? CatboxAttachmentUploader(
-            anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
-        )
-        self.privacySafetySettingsStore = resolvedPrivacyStore
         runsChatPerformanceBenchmark =
             runsChatPerformanceBenchmarkOverride
                 ?? AppLaunchConfiguration(
@@ -1194,24 +1252,20 @@ final class AppModel {
                     && Bundle.main.object(
                         forInfoDictionaryKey: "SakuraCordInsecureDebugCredentialsEnabled"
                     ) as? Bool == true)
-        let resolvedCredentialStore = credentialStore ?? Self.defaultCredentialStore(
-            launchMode: launchMode, usesInsecureDebugCredentials: usesInsecureDebugCredentials
+        let uploadAndProviderServices = Self.makeUploadAndProviderServices(
+            launchMode: launchMode,
+            usesInsecureDebugCredentials: usesInsecureDebugCredentials,
+            privacyStore: resolvedPrivacyStore,
+            uploadPrivacyPreparation: uploadPrivacyPreparation,
+            externalAttachmentUploader: externalAttachmentUploader,
+            credentialStore: credentialStore
         )
-        self.credentialStore = resolvedCredentialStore
+        self.uploadPrivacyPreparation = uploadAndProviderServices.uploadPrivacyPreparation
+        self.externalAttachmentUploader = uploadAndProviderServices.externalAttachmentUploader
+        self.credentialStore = uploadAndProviderServices.credentialStore
+        self.authenticatedProviderFactory = authenticatedProviderFactory ?? uploadAndProviderServices.authenticatedProviderFactory
+        self.pendingAuthenticatedProviderFactory = pendingAuthenticatedProviderFactory ?? uploadAndProviderServices.pendingAuthenticatedProviderFactory
         self.savedAccountStore = savedAccountStore ?? UserDefaultsSavedAccountStore.shared
-        self.authenticatedProviderFactory =
-            authenticatedProviderFactory ?? { handle, installationID in
-                DiscordRESTProvider(
-                    credentials: resolvedCredentialStore, handle: handle,
-                    installationID: installationID, anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
-                )
-            }
-        self.pendingAuthenticatedProviderFactory =
-            pendingAuthenticatedProviderFactory ?? { credential, installationID in
-                DiscordRESTProvider(
-                    pendingCredential: credential, installationID: installationID, anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
-                )
-            }
         self.accountDatabaseFactory = accountDatabaseFactory ?? { accountID in
             try? SakuraCordDatabase(accountID: accountID)
         }
@@ -1222,17 +1276,39 @@ final class AppModel {
         database = launchMode == .offlineTesting
             ? try? SakuraCordDatabase(inMemory: true)
             : nil
-        commandComposer.configureFrecencyScope(
-            launchMode == .offlineTesting ? "offline" : "signed-out"
-        )
-        configureEmojiFrecency(scope: launchMode == .offlineTesting ? "offline" : "signed-out")
-        readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
         mediaDeviceMonitor = MediaDeviceMonitor { [weak self] snapshot in
             Task { @MainActor [weak self] in
                 await self?.installMediaDeviceSnapshot(snapshot)
             }
         }
-        configureAttachmentMedia()
+        postInitSetup(coordinator: activityServices.coordinator)
+    }
+
+    func applyCurrentUserActivity(_ payload: OutgoingActivityPayload?) {
+        currentUserActivity = payload
+        guard let currentUserID = currentUser?.id ?? snapshot?.currentUser.id else { return }
+
+        if let existing = membersByID[currentUserID] {
+            membersByID[currentUserID] = memberWithCurrentStatus(existing)
+        }
+
+        for guildID in membersByGuildID.keys {
+            if let existing = membersByGuildID[guildID]?[currentUserID] {
+                membersByGuildID[guildID]?[currentUserID] = memberWithCurrentStatus(existing)
+            }
+        }
+
+        for guildID in memberListsByGuildID.keys {
+            if let list = memberListsByGuildID[guildID],
+               let idx = list.firstIndex(where: { $0.id == currentUserID }) {
+                memberListsByGuildID[guildID]?[idx] = memberWithCurrentStatus(list[idx])
+            }
+        }
+
+        if let memberIndex = members.firstIndex(where: { $0.id == currentUserID }) {
+            members[memberIndex] = memberWithCurrentStatus(members[memberIndex])
+            rebuildMemberSections()
+        }
     }
 }
 
@@ -1242,7 +1318,7 @@ extension AppModel {
         category: "MessageSend"
     )
 
-    private static func defaultCredentialStore(launchMode: AppLaunchMode, usesInsecureDebugCredentials: Bool) -> any CredentialStore {
+    static func defaultCredentialStore(launchMode: AppLaunchMode, usesInsecureDebugCredentials: Bool) -> any CredentialStore {
         if launchMode == .offlineTesting { return OfflineCredentialStore() }
         if usesInsecureDebugCredentials { return InsecureDebugMigratingCredentialStore() }
         return KeychainCredentialStore()

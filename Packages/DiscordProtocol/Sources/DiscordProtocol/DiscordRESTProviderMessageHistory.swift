@@ -178,7 +178,7 @@ public extension DiscordRESTProvider {
                 requestedHistoryMemberIDs[guildID, default: []].formUnion(missing)
                 resolvingHistoryMemberIDs[guildID, default: []].formUnion(missing)
                 do {
-                    try await requestMembersByID(missing, guildID: guildID)
+                    try await requestMembersByID(missing, guildID: guildID, presences: false)
                     isComplete = !hasPendingResolution
                     resolvingHistoryMemberIDs[guildID]?.subtract(missing)
                     if resolvingHistoryMemberIDs[guildID]?.isEmpty == true {
