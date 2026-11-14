@@ -18,11 +18,7 @@ nonisolated enum MessageSearchSurfacePolicy {
 nonisolated enum MessageSearchChannelMergePolicy {
     static func canonicalPrivateChannels(in channels: [Channel]) -> [Channel] {
         channels.filter { channel in
-            channel.guildID == nil
-                && (
-                    channel.kind == .directMessage
-                        || channel.kind == .groupDirectMessage
-                )
+            channel.guildID == nil && channel.kind.isDirectMessage
         }
     }
 }
@@ -570,7 +566,7 @@ extension AppModel {
             if let selectedGuildID {
                 return channel.guildID == selectedGuildID
             }
-            return channel.kind == .directMessage || channel.kind == .groupDirectMessage
+            return channel.kind.isDirectMessage
         }
         // Message search reads ChannelStore directly. Keep READY insertion
         // order here; the quick switcher's persisted restoration order is a

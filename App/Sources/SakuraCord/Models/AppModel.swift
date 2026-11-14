@@ -829,7 +829,7 @@ final class AppModel {
             {
                 lastOpenedChannelIDsByGuild[guildID] = selectedChannel.id
             }
-            if let selectedChannel, selectedChannel.kind == .directMessage || selectedChannel.kind == .groupDirectMessage {
+            if let selectedChannel, selectedChannel.kind.isDirectMessage {
                 lastDirectMessageSelection = .channel(selectedChannel.id)
             }
             builtInExpressionPickerRequest = nil
@@ -859,7 +859,7 @@ final class AppModel {
                 beginSelectedChannelLoad()
             }
             if let channel = selectedChannel,
-               channel.kind == .directMessage || channel.kind == .groupDirectMessage
+               channel.kind.isDirectMessage
             {
                 let account = accountSession()
                 startAccountChildTask(account: account) { model, account in

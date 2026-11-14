@@ -596,7 +596,7 @@ private struct QuickSwitcherView: View {
         case .thread(_, let parent):
             return (parent?.name, destination.guild?.name)
         case .channel(let channel):
-            if channel.kind == .directMessage || channel.kind == .groupDirectMessage {
+            if channel.kind.isDirectMessage {
                 return (destination.detail.isEmpty ? nil : destination.detail, nil)
             }
             return (channel.category, destination.guild?.name)

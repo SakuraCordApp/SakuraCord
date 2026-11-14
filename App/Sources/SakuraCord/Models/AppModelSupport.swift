@@ -184,7 +184,7 @@ extension AppModel {
         in channel: Channel,
         account: AppModelAccountSession
     ) async {
-        guard channel.kind == .directMessage || channel.kind == .groupDirectMessage else {
+        guard channel.kind.isDirectMessage else {
             return
         }
         guard !Task.isCancelled, isCurrentAccountSession(account) else { return }

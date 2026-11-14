@@ -218,7 +218,7 @@ public extension MockChatProvider {
 
     func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws {
         guard let channel = snapshot.channels.first(where: { $0.id == channelID }),
-              channel.kind == .directMessage || channel.kind == .groupDirectMessage
+              channel.kind.isDirectMessage
         else {
             throw ChatProviderError.channelNotFound
         }

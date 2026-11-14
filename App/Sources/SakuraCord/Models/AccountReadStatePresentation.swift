@@ -6,7 +6,7 @@ extension AccountReadStateModel {
         Set(entries.values.compactMap { entry in
             guard entry.isAccessible,
                   entry.isUnread,
-                  entry.kind == .directMessage || entry.kind == .groupDirectMessage
+                  entry.kind.isDirectMessage
             else { return nil }
             return entry.channelID
         })

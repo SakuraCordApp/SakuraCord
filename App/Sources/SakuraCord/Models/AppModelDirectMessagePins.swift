@@ -4,7 +4,7 @@ extension AppModel {
     func toggleDirectMessagePin(_ channelID: ChannelID) {
         guard let channel = snapshot?.channels.first(where: {
             $0.id == channelID
-                && ($0.kind == .directMessage || $0.kind == .groupDirectMessage)
+                && $0.kind.isDirectMessage
         }), !isNotificationMutationPending(.channel(channelID)) else { return }
 
         let currentOverride = channelNotificationOverride(for: channel)

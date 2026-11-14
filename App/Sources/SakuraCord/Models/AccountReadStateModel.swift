@@ -846,7 +846,7 @@ extension AccountReadStateModel {
         for entry: Entry
     ) -> Bool {
         let isDirectMessage =
-            entry.kind == .directMessage || entry.kind == .groupDirectMessage
+            entry.kind.isDirectMessage
         let isThread = channelByID[entry.channelID] == nil && entry.parentID != nil
         if isDirectMessage || isThread || !usesNewNotifications {
             return true
@@ -1416,13 +1416,13 @@ extension AccountReadStateModel {
 
     func directMessageUnread(now: Date = .now) -> Bool {
         entries.values.contains { entry in
-            (entry.kind == .directMessage || entry.kind == .groupDirectMessage)
+            entry.kind.isDirectMessage
                 && unread(channelID: entry.channelID, now: now)
         }
     }
 
     var directMessageMentions: Int {
-        mentionTotal { $0.kind == .directMessage || $0.kind == .groupDirectMessage }
+        mentionTotal { $0.kind.isDirectMessage }
     }
 
     var totalMentions: Int {
@@ -1559,7 +1559,7 @@ extension AccountReadStateModel {
         if message.mentionedUsers.contains(where: { $0.id == currentUserID }) {
             return .direct
         }
-        if entry.kind == .directMessage || entry.kind == .groupDirectMessage {
+        if entry.kind.isDirectMessage {
             return policy.guildMuted || policy.channelMuted ? .none : .directMessage
         }
         let settings = settingsByGuild[entry.guildID]

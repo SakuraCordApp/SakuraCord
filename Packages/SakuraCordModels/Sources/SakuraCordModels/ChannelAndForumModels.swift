@@ -2,6 +2,11 @@ import Foundation
 
 public enum ChannelKindValue: String, Codable, Hashable, Sendable {
     case text, announcement, forum, voice, directMessage, groupDirectMessage, unknown
+
+    /// A 1:1 or group direct message.
+    public var isDirectMessage: Bool {
+        self == .directMessage || self == .groupDirectMessage
+    }
 }
 
 public struct ForumTag: Identifiable, Codable, Hashable, Sendable {
@@ -198,7 +203,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     /// A DM or group in the conversation list; message requests wait on
     /// their own page until accepted.
     public var isListedDirectMessage: Bool {
-        (kind == .directMessage || kind == .groupDirectMessage) && messageRequest == nil
+        kind.isDirectMessage && messageRequest == nil
     }
 
     /// The latest message, or the channel's creation for one without messages.

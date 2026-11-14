@@ -1083,7 +1083,7 @@ private struct ChatRootView: View {
 
     private var isDirectMessageSelected: Bool {
         guard let channel = model.selectedChannel else { return false }
-        return channel.kind == .directMessage || channel.kind == .groupDirectMessage
+        return channel.kind.isDirectMessage
     }
 
     private var inspectorToolbarLabel: some View {

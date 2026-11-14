@@ -81,7 +81,7 @@ struct VoiceVideoGrid: View {
                 .filter { $0.channelID == activeChannel.id }
                 .map { ($0.userID, $0) }
         )
-        if activeChannel.kind == .directMessage || activeChannel.kind == .groupDirectMessage {
+        if activeChannel.kind.isDirectMessage {
             for state in model.privateCall(in: activeChannel.id)?.voiceStates ?? [] {
                 statesByUserID[state.userID] = state
             }

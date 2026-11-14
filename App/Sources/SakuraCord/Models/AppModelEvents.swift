@@ -433,7 +433,7 @@ extension AppModel {
                 revalidateGuideResourceAfterReconnect()
             }
             if let channel = selectedChannel,
-               channel.kind == .directMessage || channel.kind == .groupDirectMessage
+               channel.kind.isDirectMessage
             {
                 let account = accountSession()
                 startAccountChildTask(account: account) { model, account in

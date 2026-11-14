@@ -167,7 +167,7 @@ private struct ChatWorkspacePrimaryContent: View {
         switch content {
         case .chat:
             if let channel = model.selectedChannel,
-               channel.kind == .directMessage || channel.kind == .groupDirectMessage,
+               channel.kind.isDirectMessage,
                model.joinablePrivateCall(in: channel.id) != nil
                     || model.activeVoiceChannel?.id == channel.id
             {
