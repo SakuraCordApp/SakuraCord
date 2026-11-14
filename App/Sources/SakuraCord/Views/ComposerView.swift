@@ -529,7 +529,7 @@ struct ComposerView: View {
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
                     highlight: { autocompleteIndex = $0 },
-                    select: { acceptAutocomplete($0, context: context) },
+                    select: { acceptAutocomplete($0, replacing: context.range) },
                     cornerRadius: commandPanelCornerRadius,
                     keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
                 )
@@ -552,14 +552,7 @@ struct ComposerView: View {
                     restoredSelection = insertInDraft(value, replacing: replacementSelection)
                 case let .custom(emoji):
                     ComposerEmojiImageStore.shared.register(emoji)
-                    let value = model.composerText(for: emoji)
-                    restoredSelection = applyDraftEdit(
-                        ComposerDraftEditing.insert(
-                            value,
-                            into: draft,
-                            replacing: replacementSelection
-                        )
-                    )
+                    restoredSelection = insertInDraft(model.composerText(for: emoji), replacing: replacementSelection)
                 }
                 if activation.keepsPickerPresented {
                     selectionBeforeEmojiPicker = restoredSelection
@@ -870,20 +863,7 @@ struct ComposerView: View {
                   $0.matchesCompletionName(context.query)
               })
         else { return false }
-
-        if let emoji = suggestion.customEmoji {
-            ComposerEmojiImageStore.shared.register(emoji)
-        }
-        let selection = applyDraftEdit(
-            ComposerDraftEditing.insert(
-                suggestion.value,
-                into: text,
-                replacing: context.range
-            )
-        )
-        draftSelection = selection
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
+        acceptAutocomplete(suggestion, replacing: context.range)
         return true
     }
 
@@ -953,12 +933,9 @@ struct ComposerView: View {
         if !hasActiveCommand, model.canPresentIssueReport,
            let command = SakuraCordBuiltInCommands.commands.first(where: {
                draft.trimmingCharacters(in: .whitespacesAndNewlines) == "/\($0.name)"
-           }), let kind = SakuraCordBuiltInCommands.issueReportKind(for: command)
+           }), SakuraCordBuiltInCommands.issueReportKind(for: command) != nil
         {
-            commandComposer.dismissPicker()
-            updateDraft("")
-            draftSelection = nil
-            model.presentIssueReport(kind)
+            activateCommand(command)
             return
         }
         guard allowsSubmission() else { return }
@@ -999,7 +976,7 @@ struct ComposerView: View {
         guard let context = autocompleteContext, !autocompleteSuggestions.isEmpty else { return false }
         let suggestions = autocompleteSuggestions
         return routeSuggestionList(command, count: suggestions.count) {
-            acceptAutocomplete(suggestions[$0], context: context)
+            acceptAutocomplete(suggestions[$0], replacing: context.range)
         }
     }
 
@@ -1070,27 +1047,17 @@ struct ComposerView: View {
         }
     }
 
-    private func acceptAutocomplete(
-        _ suggestion: ColonAutocompleteSuggestion, context: ColonAutocompleteContext
-    ) {
+    private func acceptAutocomplete(_ suggestion: ColonAutocompleteSuggestion, replacing range: NSRange) {
         if let emoji = suggestion.customEmoji {
             ComposerEmojiImageStore.shared.register(emoji)
         }
-        let result = insertInDraft(suggestion.value, replacing: context.range)
-        draftSelection = result
+        draftSelection = insertInDraft(suggestion.value, replacing: range)
         autocompleteIndex = 0
         isAutocompleteDismissed = true
     }
 
-    @discardableResult
-    private func insertInDraft(
-        _ insertedText: String,
-        replacing selection: NSRange?
-    ) -> NSRange {
-        applyDraftEdit(ComposerDraftEditing.insert(insertedText, into: draft, replacing: selection))
-    }
-
-    private func applyDraftEdit(_ edit: ComposerDraftEdit) -> NSRange {
+    private func insertInDraft(_ insertedText: String, replacing selection: NSRange?) -> NSRange {
+        let edit = ComposerDraftEditing.insert(insertedText, into: draft, replacing: selection)
         updateDraft(edit.text)
         return edit.selection
     }
