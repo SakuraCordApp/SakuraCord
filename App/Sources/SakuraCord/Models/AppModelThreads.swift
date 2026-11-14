@@ -556,12 +556,7 @@ extension AppModel {
             if clearsComposer { threadDraft = "" }
             return nil
         }
-        let optimistic = optimisticMessage(
-            for: draft,
-            replyPreview: replyPreview
-        )
-        appendOutgoingMessage(optimistic)
-        composer.outbox.draftsByNonce[draft.nonce] = draft
+        admitToOutbox(optimisticMessage(for: draft, replyPreview: replyPreview), draft: draft)
         if clearsComposer {
             threadDraft = ""
             threadReplyingTo = nil

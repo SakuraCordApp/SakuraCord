@@ -79,8 +79,7 @@ extension AppModel {
             attachments: [ForumPostAttachment(url: recording.fileURL, filename: VoiceMessageMetadata.filename)],
             voiceMessage: recording.metadata
         )
-        appendOutgoingMessage(optimisticMessage(for: outgoing, replyPreview: replyTo.map(MessageReplyPreview.init)))
-        composer.outbox.draftsByNonce[outgoing.nonce] = outgoing
+        admitToOutbox(optimisticMessage(for: outgoing, replyPreview: replyTo.map(MessageReplyPreview.init)), draft: outgoing)
         switch destination {
         case .channel: replyingTo = nil
         case .thread: threadReplyingTo = nil

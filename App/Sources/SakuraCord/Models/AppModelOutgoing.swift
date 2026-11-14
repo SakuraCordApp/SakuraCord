@@ -248,18 +248,20 @@ extension AppModel {
         if clearsComposer {
             stopLocalTyping(clearThrottle: true)
         }
-        let optimistic = optimisticMessage(
-            for: outgoing,
-            replyPreview: replyPreview
-        )
-        appendOutgoingMessage(optimistic)
-        composer.outbox.draftsByNonce[outgoing.nonce] = outgoing
+        admitToOutbox(optimisticMessage(for: outgoing, replyPreview: replyPreview), draft: outgoing)
         if clearsComposer {
             replyingTo = nil
             updateDraft("")
             translation.resetDraft(.channel)
         }
         return enqueueOutgoingSend(outgoing, isRetry: false, completesReading: true)
+    }
+
+    /// Shows an outgoing message in its conversation and keeps its draft for
+    /// delivery and retry.
+    func admitToOutbox(_ optimistic: Message, draft: SendMessageDraft) {
+        appendOutgoingMessage(optimistic)
+        composer.outbox.draftsByNonce[draft.nonce] = draft
     }
 
     @discardableResult

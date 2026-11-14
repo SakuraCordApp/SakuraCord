@@ -197,8 +197,7 @@ extension AppModel {
             )
             optimistic.outboxState = .uploading
             optimistic.attachments[0].proxyURL = sticker.pickerMediaURL ?? remoteURL
-            appendOutgoingMessage(optimistic)
-            composer.outbox.draftsByNonce[outgoing.nonce] = outgoing
+            admitToOutbox(optimistic, draft: outgoing)
             composer.outbox.stickerUploadSourceURLByNonce[outgoing.nonce] = remoteURL
             return await performStickerUpload(
                 outgoing,
