@@ -164,10 +164,8 @@ struct DiscordCaptchaView: NSViewRepresentable {
             if payload["action"] as? String == "cancel" {
                 stop()
                 onCancel?()
-            } else if let values = payload["bounds"] as? [Double], values.count == 4,
-                      values.allSatisfy(\.isFinite), values[2] > 0, values[3] > 0,
-                      values[2] <= 4096, values[3] <= 4096 {
-                onWidgetBoundsChanged?(CGRect(x: values[0], y: values[1], width: values[2], height: values[3]))
+            } else if let bounds = CGRect(captchaWidgetBounds: payload["bounds"]) {
+                onWidgetBoundsChanged?(bounds)
             }
         }
 
@@ -235,5 +233,16 @@ struct DiscordCaptchaPresentation: View {
         .allowsHitTesting(isVisible)
         .animation(.easeOut(duration: 0.16), value: isVisible)
         .zIndex(10)
+    }
+}
+
+extension CGRect {
+    /// A captcha widget's frame as its page reports it: four finite values
+    /// with a positive size of at most 4096 points.
+    init?(captchaWidgetBounds value: Any?) {
+        guard let values = value as? [Double], values.count == 4,
+              values.allSatisfy(\.isFinite), values[2] > 0, values[3] > 0,
+              values[2] <= 4096, values[3] <= 4096 else { return nil }
+        self.init(x: values[0], y: values[1], width: values[2], height: values[3])
     }
 }
