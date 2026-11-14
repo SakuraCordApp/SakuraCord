@@ -379,9 +379,6 @@ extension AppModel {
             updateOutgoingState(.failed, nonce: outgoing.nonce, channelID: outgoing.channelID)
             return false
         }
-        let uploadsAttachments = !outgoing.attachmentURLs.isEmpty
-        if uploadsAttachments { activeAttachmentUploadCount += 1 }
-        defer { if uploadsAttachments { activeAttachmentUploadCount -= 1 } }
         return await withAttachmentFileAccess(outgoing.attachmentURLs) {
             Self.messageSendLogger.info(
                 """
@@ -452,8 +449,12 @@ extension AppModel {
     }
 
     /// Keeps a send's files readable while `operation` uploads them: owned
-    /// promised files stay in use and security-scoped URLs stay open.
+    /// promised files stay in use, security-scoped URLs stay open, and the
+    /// upload counts as active.
     func withAttachmentFileAccess<Result>(_ urls: [URL], operation: () async -> Result) async -> Result {
+        let uploadsAttachments = !urls.isEmpty
+        if uploadsAttachments { activeAttachmentUploadCount += 1 }
+        defer { if uploadsAttachments { activeAttachmentUploadCount -= 1 } }
         beginUsingOwnedPromisedFiles(urls)
         let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
         defer {

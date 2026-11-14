@@ -316,9 +316,6 @@ extension AppModel {
         let fileURLs = form.fileURLs
         startAccountChildTask(account: session) { [weak self] _, session in
             guard let self else { return }
-            let uploadsFiles = !fileURLs.isEmpty
-            if uploadsFiles { activeAttachmentUploadCount += 1 }
-            defer { if uploadsFiles { activeAttachmentUploadCount -= 1 } }
             await withAttachmentFileAccess(fileURLs) {
                 do {
                     try await session.provider.submitModal(submission)
