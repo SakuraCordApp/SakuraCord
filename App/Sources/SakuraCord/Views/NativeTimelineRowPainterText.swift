@@ -9,7 +9,7 @@ import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineRowPainter {
-    private struct SingleLineTextInput {
+    struct SingleLineTextInput {
         let sourceLine: CTLine
         let sourceWidth: CGFloat
         let frame: CGRect
@@ -19,6 +19,16 @@ extension NativeTimelineRowPainter {
         let lineBreakMode: NSLineBreakMode
         let concealedSpoilerRanges: [NSRange]
         let context: CGContext
+    }
+
+    struct SingleLineTextLayout {
+        let line: CTLine
+        let baseline: CGFloat
+        let lineWidth: CGFloat
+        let ascent: CGFloat
+        let descent: CGFloat
+        let leading: CGFloat
+        let horizontalPosition: CGFloat
     }
 
     static func mediaPlayGlyph(in frame: CGRect) {
@@ -163,7 +173,8 @@ extension NativeTimelineRowPainter {
         )!
     }
 
-    private static func drawSingleLineText(_ input: SingleLineTextInput) {
+    @discardableResult
+    static func drawSingleLineText(_ input: SingleLineTextInput) -> SingleLineTextLayout {
         let sourceLine = input.sourceLine
         let sourceWidth = input.sourceWidth
         let frame = input.frame
@@ -219,6 +230,16 @@ extension NativeTimelineRowPainter {
         context.textPosition = CGPoint(x: horizontalPosition, y: baseline)
         CTLineDraw(line, context)
         context.restoreGState()
+
+        return SingleLineTextLayout(
+            line: line,
+            baseline: baseline,
+            lineWidth: lineWidth,
+            ascent: ascent,
+            descent: descent,
+            leading: leading,
+            horizontalPosition: horizontalPosition
+        )
     }
 
     private static func truncatedLine(

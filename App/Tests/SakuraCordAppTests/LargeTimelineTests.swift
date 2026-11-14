@@ -1130,6 +1130,59 @@ func `reply summaries keep spoilers concealed and their plain text unchanged`() 
 
 @Test
 @MainActor
+func `reply summaries preserve custom emojis and render them in accessibility text`() {
+    let content = "He's a machine <:sus:123456789>"
+    let summary = MessageReplySummary.summary(content: content)
+    #expect(summary.text == "He's a machine \u{FFFC}")
+    #expect(summary.emojis.count == 1)
+    #expect(summary.emojis.first?.emoji.name == "sus")
+    #expect(summary.emojis.first?.emoji.id == "123456789")
+    #expect(summary.emojis.first?.range == NSRange(location: 15, length: 1))
+    #expect(MessageReplySummary.accessibilityText(content: content) == "He's a machine :sus:")
+
+    let spoilerContent = "look ||<:sus:123456789>|| bye"
+    let spoilerSummary = MessageReplySummary.summary(content: spoilerContent)
+    #expect(spoilerSummary.text == "look \u{FFFC} bye")
+    #expect(spoilerSummary.spoilerRanges == [NSRange(location: 5, length: 1)])
+    #expect(MessageReplySummary.accessibilityText(content: spoilerContent) == "look Spoiler bye")
+
+    let plainSummary = MessageReplySummary.summary(content: "He's a machine ")
+    let emojiWidth = NativeTimelineReplyMetrics.summaryWidth(summary)
+    let plainWidth = NativeTimelineReplyMetrics.summaryWidth(plainSummary)
+    #expect(emojiWidth >= plainWidth + NativeTimelineReplyMetrics.emojiSize - 1)
+
+    let underscoreContent = "look <:a_b_c:123> and <:blob_dance:456>"
+    let underscoreSummary = MessageReplySummary.summary(content: underscoreContent)
+    #expect(underscoreSummary.text == "look \u{FFFC} and \u{FFFC}")
+    #expect(underscoreSummary.emojis.count == 2)
+    #expect(underscoreSummary.emojis[0].emoji.name == "a_b_c")
+    #expect(underscoreSummary.emojis[1].emoji.name == "blob_dance")
+    #expect(MessageReplySummary.accessibilityText(content: underscoreContent) == "look :a_b_c: and :blob_dance:")
+
+    let spoilerUnderscoreContent = "look ||<:blob_dance:456>|| bye"
+    let spoilerUnderscoreSummary = MessageReplySummary.summary(content: spoilerUnderscoreContent)
+    #expect(spoilerUnderscoreSummary.text == "look \u{FFFC} bye")
+    #expect(spoilerUnderscoreSummary.spoilerRanges == [NSRange(location: 5, length: 1)])
+    #expect(spoilerUnderscoreSummary.emojis.first?.emoji.name == "blob_dance")
+
+    let literalMarkerContent = "\u{E000} ||<:secret:123>||"
+    let literalMarkerSummary = MessageReplySummary.summary(content: literalMarkerContent)
+    #expect(literalMarkerSummary.text == "\u{E000} \u{FFFC}")
+    #expect(literalMarkerSummary.spoilerRanges == [NSRange(location: 2, length: 1)])
+    #expect(literalMarkerSummary.emojis.count == 1)
+    #expect(literalMarkerSummary.emojis.first?.emoji.name == "secret")
+    #expect(MessageReplySummary.accessibilityText(content: literalMarkerContent) == "\u{E000} Spoiler")
+
+    let droppedLinkMarkerContent = "[label](http://example.com/<:hidden:123>) <:shown:456>"
+    let droppedLinkMarkerSummary = MessageReplySummary.summary(content: droppedLinkMarkerContent)
+    #expect(droppedLinkMarkerSummary.text == "label \u{FFFC}")
+    #expect(droppedLinkMarkerSummary.emojis.count == 1)
+    #expect(droppedLinkMarkerSummary.emojis.first?.emoji.name == "shown")
+    #expect(MessageReplySummary.accessibilityText(content: droppedLinkMarkerContent) == "label :shown:")
+}
+
+@Test
+@MainActor
 func `adjacent text spoilers hit test and reveal independently`() throws {
     let source = "||one||||two||"
     let value = NativeTimelineCoreText.make(
@@ -1644,6 +1697,30 @@ func `benchmark run finalization does not require coordinator lifetime`() {
             == .avatar(avatarURL)
     )
     #expect(NativeTimelineReplyMediaPolicy.avatarKey(for: nil) == nil)
+}
+
+@MainActor
+@Test func `native reply media dependencies include custom emojis`() throws {
+    let preview = MessageReplyPreview(
+        messageID: MessageID(rawValue: 23),
+        author: User(
+            id: UserID(rawValue: 3),
+            username: "author",
+            displayName: "Author"
+        ),
+        content: "Look at this <:blob_dance:987654321>"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 24),
+        channelID: ChannelID(rawValue: 1),
+        author: preview.author,
+        content: "Replying to message"
+    )
+    let keys = NativeTimelineReplyMediaPolicy.emojiKeys(for: preview, in: message, model: nil)
+    let expectedURL = try #require(
+        URL(string: "https://cdn.discordapp.com/emojis/987654321.png?size=64&quality=lossless")
+    )
+    #expect(keys == [.media(expectedURL, maximumPixelDimension: 64)])
 }
 
 @Test func `native timeline identifies prepended rows without replacing existing rows`() {
