@@ -348,6 +348,7 @@ final class ListBackgroundMenuView: NSView {
     private func presentMenu(for event: NSEvent) -> Bool {
         guard event.type == .rightMouseDown || event.modifierFlags.contains(.control),
               let window, event.window === window, let menuProvider,
+              WindowModalCoordinator.allowsInput(for: self),
               bounds.contains(convert(event.locationInWindow, from: nil))
         else { return false }
         var view = window.contentView?.hitTest(event.locationInWindow)

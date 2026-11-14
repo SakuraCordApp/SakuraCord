@@ -33,8 +33,11 @@ extension DiscordRESTProvider {
         let content = DiscordUserContentProto.favoritesSuggestions
         guard DiscordUserContentProto.isDismissed(content, in: current) != dismissed else { return }
         let message = DiscordUserContentProto.setting(content, dismissed: dismissed, in: current)
-        // Optimistic, so a Reset made before the response sees this choice.
+        // Optimistic, so a Reset made before the response sees this choice,
+        // and a Reset still queued behind a Favorites save sends it too.
         userContentMessage = message
+        let queuedReset = pendingUserContent
+        if queuedReset != nil { pendingUserContent = message }
         continuation?.yield(.favoritesSuggestionsDismissed(dismissed))
         do {
             let response = try await patchUserSettings(
@@ -48,6 +51,7 @@ extension DiscordRESTProvider {
         } catch {
             if userContentMessage == message {
                 userContentMessage = current
+                if pendingUserContent == message { pendingUserContent = queuedReset }
                 continuation?.yield(.favoritesSuggestionsDismissed(!dismissed))
             }
             if error is UserSettingsRejection { await reloadUserSettings() }
