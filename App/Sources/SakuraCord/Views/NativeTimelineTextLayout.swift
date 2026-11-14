@@ -100,16 +100,9 @@ enum NativeTimelineTextPresentation {
         guard !message.flags.contains(.isComponentsV2) else {
             return empty
         }
-        let systemActorColor = source?.roleColorDisplay == .inNames ? source?.authorPresentation(for: message)
-            .roleColorHex.flatMap { value -> NSColor? in
-                guard value != 0 else { return nil }
-                return NSColor(
-                    red: CGFloat((value >> 16) & 0xFF) / 255,
-                    green: CGFloat((value >> 8) & 0xFF) / 255,
-                    blue: CGFloat(value & 0xFF) / 255,
-                    alpha: 1
-                )
-            } : nil
+        let systemActorColor = source?.roleColorDisplay == .inNames
+            ? NativeTimelineRowPainter.roleColor(source?.authorPresentation(for: message).roleColorHex)
+            : nil
         let plan = if message.type.hasGeneratedContent {
             NativeTimelineTextPlan.make(
                 for: message,
@@ -405,7 +398,7 @@ nonisolated enum NativeTimelineCoreText {
             }
         }
         let fullRange = NSRange(location: 0, length: output.length)
-        let placeholderRanges = ranges(of: "\u{FFFC}", in: output.string)
+        let placeholderRanges = RichMessageAttributedText.ranges(of: "\u{FFFC}", in: output.string)
         for (range, token) in zip(
             placeholderRanges.reversed(),
             prepared.tokens.reversed()
@@ -601,30 +594,6 @@ nonisolated enum NativeTimelineCoreText {
         )
         return (width, height)
     }
-
-    private static func ranges(
-        of value: String,
-        in source: String
-    ) -> [NSRange] {
-        let source = source as NSString
-        var result: [NSRange] = []
-        var searchRange = NSRange(location: 0, length: source.length)
-        while searchRange.length > 0 {
-            let range = source.range(
-                of: value,
-                options: [],
-                range: searchRange
-            )
-            guard range.location != NSNotFound else { break }
-            result.append(range)
-            let nextLocation = NSMaxRange(range)
-            searchRange = NSRange(
-                location: nextLocation,
-                length: source.length - nextLocation
-            )
-        }
-        return result
-    }
 }
 
 enum NativeTimelineEmbedLayout {
@@ -665,7 +634,7 @@ enum NativeTimelineEmbedLayout {
         private var mediaPreviewURL: URL? {
             guard embed.video != nil else { return nil }
             if let preview = embed.thumbnail ?? embed.image,
-               let url = resolvedURL(preview, attachments: attachments) { return url }
+               let url = NativeTimelineEmbedLayout.resolvedURL(preview, attachments: attachments) { return url }
             return DiscordVideoPosterURL.url(
                 proxyURL: embed.video?.proxyURL, width: mainMedia?.width, height: mainMedia?.height,
                 maximumPixelDimension: 1_024
@@ -686,7 +655,7 @@ enum NativeTimelineEmbedLayout {
             return nil
         case .bareMedia:
             guard let media = mainMedia,
-                  let url = resolvedURL(media, attachments: attachments)
+                  let url = NativeTimelineEmbedLayout.resolvedURL(media, attachments: attachments)
             else { return nil }
             let size = mediaSize(
                 media,
@@ -716,7 +685,7 @@ enum NativeTimelineEmbedLayout {
             let innerChrome = stripeWidth + cardPadding * 2
             let maximumContentWidth = max(InterfaceScale.metric(80), maximumWidth - innerChrome)
             let author = embed.author.map {
-                plainTextBox(
+                NativeTimelineEmbedLayout.plainTextBox(
                     $0.name,
                     font: .messageSystemFont(ofSize: 14, weight: .medium),
                     color: .labelColor,
@@ -724,7 +693,7 @@ enum NativeTimelineEmbedLayout {
                 )
             }
             let title = embed.title.map {
-                plainTextBox(
+                NativeTimelineEmbedLayout.plainTextBox(
                     $0,
                     font: .messageSystemFont(ofSize: 14, weight: .semibold),
                     color: embed.url == nil ? .labelColor : .linkColor,
@@ -732,7 +701,7 @@ enum NativeTimelineEmbedLayout {
                 )
             }
             let description = (["image", "video", "gifv"].contains(embed.type?.lowercased() ?? "") ? nil : embed.description).map {
-                resolvedTextBox(
+                NativeTimelineEmbedLayout.resolvedTextBox(
                     prepared: RichMessageAttributedText.prepare(source: $0),
                     scope: "description",
                     emojiSize: InterfaceTypographyMetrics.message(18),
@@ -745,12 +714,12 @@ enum NativeTimelineEmbedLayout {
             let fields = embed.fields.enumerated().map { index, field in
                 PreparedField(
                     field: field,
-                    name: plainTextBox(
+                    name: NativeTimelineEmbedLayout.plainTextBox(
                         field.name,
                         font: .messageSystemFont(ofSize: 11, weight: .bold),
                         color: .labelColor
                     ),
-                    value: resolvedTextBox(
+                    value: NativeTimelineEmbedLayout.resolvedTextBox(
                         prepared: RichMessageAttributedText.prepare(
                             source: field.value
                         ),
@@ -763,19 +732,20 @@ enum NativeTimelineEmbedLayout {
                 )
             }
             let provider = embed.provider?.name.map {
-                plainTextBox(
+                NativeTimelineEmbedLayout.plainTextBox(
                     $0,
                     font: .messageSystemFont(ofSize: 11),
                     color: .secondaryLabelColor,
                     link: embed.provider?.url
                 )
             }
-            let footerText = footerText(
+            let footerText = NativeTimelineEmbedLayout.footerText(
                 footer: embed.footer,
-                timestamp: embed.timestamp
+                timestamp: embed.timestamp,
+                settings: source?.interfaceSettings ?? .defaults
             )
             let footer = footerText.map {
-                plainTextBox(
+                NativeTimelineEmbedLayout.plainTextBox(
                     $0,
                     font: .messageSystemFont(ofSize: 11),
                     color: .secondaryLabelColor
@@ -784,7 +754,7 @@ enum NativeTimelineEmbedLayout {
 
             let showsSideThumbnail = embed.video == nil && (embed.image == nil || embed.type?.lowercased() == "rich")
             let thumbnailURL = showsSideThumbnail ? embed.thumbnail.flatMap {
-                resolvedURL($0, attachments: attachments)
+                NativeTimelineEmbedLayout.resolvedURL($0, attachments: attachments)
             } : nil
             let thumbnailSize: CGFloat = thumbnailURL == nil ? 0 : InterfaceScale.metric(80)
             // Text and thumbnail keep 12 points of spacing on each side of the
@@ -794,7 +764,7 @@ enum NativeTimelineEmbedLayout {
                     ? thumbnailSize + (integratesWithBubble ? 12 : 24)
                     : 0
 
-            let naturalTextWidth = textColumnIdealWidth(
+            let naturalTextWidth = NativeTimelineEmbedLayout.textColumnIdealWidth(
                 author: author,
                 authorHasIcon:
                     (embed.author?.proxyIconURL ?? embed.author?.iconURL) != nil,
@@ -813,7 +783,7 @@ enum NativeTimelineEmbedLayout {
                 )
             }
             let naturalFooterWidth = footer.map {
-                idealWidth($0)
+                NativeTimelineEmbedLayout.idealWidth($0)
                     + ((embed.footer?.proxyIconURL ?? embed.footer?.iconURL) == nil
                         ? 0 : 23)
             } ?? 0
@@ -849,7 +819,7 @@ enum NativeTimelineEmbedLayout {
                     textY += spacing
                 }
                 textY += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: box.value)
-                let height = measuredHeight(box, width: width)
+                let height = NativeTimelineEmbedLayout.measuredHeight(box, width: width)
                 textRegions.append(
                     .init(
                         frame: CGRect(
@@ -874,7 +844,7 @@ enum NativeTimelineEmbedLayout {
                     if hasTextSection {
                         textY += InterfaceScale.metric(7)
                     }
-                    let lineHeight = max(InterfaceScale.metric(22), measuredHeight(
+                    let lineHeight = max(InterfaceScale.metric(22), NativeTimelineEmbedLayout.measuredHeight(
                         author,
                         width: max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(28))
                     ))
@@ -893,7 +863,7 @@ enum NativeTimelineEmbedLayout {
                             placeholder: nil
                         )
                     )
-                    let authorHeight = measuredHeight(
+                    let authorHeight = NativeTimelineEmbedLayout.measuredHeight(
                         author,
                         width: max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(28))
                     )
@@ -922,7 +892,7 @@ enum NativeTimelineEmbedLayout {
                 if hasTextSection {
                     textY += InterfaceScale.metric(7)
                 }
-                layoutFields(
+                NativeTimelineEmbedLayout.layoutFields(
                     fields,
                     x: contentX,
                     y: &textY,
@@ -956,7 +926,7 @@ enum NativeTimelineEmbedLayout {
             }
 
             let mediaURL = mainMedia.flatMap {
-                resolvedURL($0, attachments: attachments)
+                NativeTimelineEmbedLayout.resolvedURL($0, attachments: attachments)
             }
             let mediaSize = mainMedia.flatMap { media -> CGSize? in
                 guard mediaURL != nil else { return nil }
@@ -991,7 +961,7 @@ enum NativeTimelineEmbedLayout {
                     30,
                     contentWidth - (footerIconURL == nil ? 0 : InterfaceScale.metric(23))
                 )
-                let footerTextHeight = measuredHeight(
+                let footerTextHeight = NativeTimelineEmbedLayout.measuredHeight(
                     footer,
                     width: footerTextWidth
                 )
@@ -1059,96 +1029,6 @@ enum NativeTimelineEmbedLayout {
         }
         }
 
-        private func resolvedTextBox(
-            prepared: RichMessageAttributedText.Prepared,
-            scope: String,
-            emojiSize: CGFloat,
-            fontSizeAdjustment: CGFloat = 0,
-            embed: MessageEmbed,
-            message: Message,
-            source: AppModel?
-        ) -> NativeTimelineAttributedTextBox {
-            NativeTimelineEmbedLayout.resolvedTextBox(
-                prepared: prepared,
-                scope: scope,
-                emojiSize: emojiSize,
-                fontSizeAdjustment: fontSizeAdjustment,
-                embed: embed,
-                message: message,
-                source: source
-            )
-        }
-
-        private func plainTextBox(
-            _ value: String,
-            font: NSFont,
-            color: NSColor,
-            link: URL? = nil
-        ) -> NativeTimelineAttributedTextBox {
-            NativeTimelineEmbedLayout.plainTextBox(
-                value,
-                font: font,
-                color: color,
-                link: link
-            )
-        }
-
-        private func textColumnIdealWidth(
-            author: NativeTimelineAttributedTextBox?,
-            authorHasIcon: Bool,
-            title: NativeTimelineAttributedTextBox?,
-            description: NativeTimelineAttributedTextBox?,
-            fields: [PreparedField],
-            provider: NativeTimelineAttributedTextBox?
-        ) -> CGFloat {
-            NativeTimelineEmbedLayout.textColumnIdealWidth(
-                author: author,
-                authorHasIcon: authorHasIcon,
-                title: title,
-                description: description,
-                fields: fields,
-                provider: provider
-            )
-        }
-
-        private func layoutFields(
-            _ fields: [PreparedField],
-            x horizontalPosition: CGFloat,
-            y verticalOffset: inout CGFloat,
-            width: CGFloat,
-            into regions: inout [NativeTimelineRowLayout.EmbedRegion.TextRegion]
-        ) {
-            NativeTimelineEmbedLayout.layoutFields(
-                fields,
-                x: horizontalPosition,
-                y: &verticalOffset,
-                width: width,
-                into: &regions
-            )
-        }
-
-        private func footerText(
-            footer: MessageEmbedFooter?,
-            timestamp: Date?
-        ) -> String? {
-            NativeTimelineEmbedLayout.footerText(
-                footer: footer,
-                timestamp: timestamp,
-                settings: source?.interfaceSettings ?? .defaults
-            )
-        }
-
-        private func idealWidth(_ box: NativeTimelineAttributedTextBox) -> CGFloat {
-            NativeTimelineEmbedLayout.idealWidth(box)
-        }
-
-        private func measuredHeight(
-            _ box: NativeTimelineAttributedTextBox,
-            width: CGFloat
-        ) -> CGFloat {
-            NativeTimelineEmbedLayout.measuredHeight(box, width: width)
-        }
-
         private func mediaSize(
             _ media: MessageEmbedMedia,
             maximumWidth: CGFloat,
@@ -1162,16 +1042,6 @@ enum NativeTimelineEmbedLayout {
                 media,
                 maximumWidth: maximumWidth,
                 maximumHeight: maximumHeight
-            )
-        }
-
-        private func resolvedURL(
-            _ media: MessageEmbedMedia,
-            attachments: [Attachment]
-        ) -> URL? {
-            NativeTimelineEmbedLayout.resolvedURL(
-                media,
-                attachments: attachments
             )
         }
     }
