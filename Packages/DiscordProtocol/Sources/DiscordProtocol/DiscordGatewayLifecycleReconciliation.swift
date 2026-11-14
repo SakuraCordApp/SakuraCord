@@ -32,10 +32,10 @@ extension DiscordRESTProvider {
         }
         cachedMemberListItems[guildID] = nil
         selectedMemberListID[guildID] = nil
-        memberListSubscriptions[guildID] = nil
-        memberListSubscriptionOrder[guildID] = nil
-        memberListViewportRequests[guildID] = nil
-        memberListsNeedingRefresh[guildID] = nil
+        memberListState.memberListSubscriptions[guildID] = nil
+        memberListState.memberListSubscriptionOrder[guildID] = nil
+        memberListState.memberListViewportRequests[guildID] = nil
+        memberListState.memberListsNeedingRefresh[guildID] = nil
         cachedMemberListGroups[guildID] = nil
         requestedHistoryMemberIDs[guildID] = nil
         resolvingHistoryMemberIDs[guildID] = nil
@@ -106,11 +106,11 @@ extension DiscordRESTProvider {
             // subscription. The opcode cooldown is shared; without guild
             // metadata any retained selected subscription may have been refused.
             let guildIDs = rateLimit.metadata?.guildID.flatMap(GuildID.init)
-                .map { [$0] } ?? Array(Set(memberListSubscriptions.keys)
-                    .union(memberListViewportRequests.keys).union(memberListInFlightRequests.keys))
+                .map { [$0] } ?? Array(Set(memberListState.memberListSubscriptions.keys)
+                    .union(memberListState.memberListViewportRequests.keys).union(memberListInFlightRequests.keys))
             for guildID in guildIDs {
-                var memberListIDs = Set(memberListSubscriptions[guildID].map { Array($0.keys) } ?? [])
-                if let viewport = memberListViewportRequests[guildID] {
+                var memberListIDs = Set(memberListState.memberListSubscriptions[guildID].map { Array($0.keys) } ?? [])
+                if let viewport = memberListState.memberListViewportRequests[guildID] {
                     memberListIDs.insert(viewport.memberListID)
                 }
                 if let inFlight = memberListInFlightRequests[guildID] {

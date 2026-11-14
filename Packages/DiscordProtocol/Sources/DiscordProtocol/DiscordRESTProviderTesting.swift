@@ -48,7 +48,7 @@ import SakuraCordModels
             }
             guard let task = memberListRefreshRetryTasks.removeValue(forKey: guildID),
                   let memberListID = selectedMemberListID[guildID],
-                  let refresh = memberListsNeedingRefresh[guildID]?[memberListID]
+                  let refresh = memberListState.memberListsNeedingRefresh[guildID]?[memberListID]
             else { return false }
             task.cancel()
             gatewayOpcodeRateLimitDates[37] = nil

@@ -273,7 +273,7 @@ extension DiscordRESTProvider {
         guildID: GuildID, memberListID: String,
         subscription requestedSubscription: DiscordMemberListSubscription? = nil
     ) -> Bool {
-        guard let subscription = requestedSubscription ?? memberListSubscriptions[guildID]?[memberListID],
+        guard let subscription = requestedSubscription ?? memberListState.memberListSubscriptions[guildID]?[memberListID],
               let channel = cachedChannels[guildID]?.first(where: {
                   $0.id == subscription.channelID
               })

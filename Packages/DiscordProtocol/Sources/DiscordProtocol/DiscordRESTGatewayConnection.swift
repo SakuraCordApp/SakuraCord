@@ -414,7 +414,7 @@ extension DiscordRESTProvider {
             memberListViewportRestoreTasks.removeValue(forKey: guildID)?.cancel()
         }
         selectedMemberListID[guildID] = memberListID
-        memberListViewportRequests[guildID] = (
+        memberListState.memberListViewportRequests[guildID] = (
             memberListID, DiscordMemberListSubscription(channelID: selectedChannel.id, ranges: ranges)
         )
         try await enqueueGuildSubscription(
@@ -426,7 +426,7 @@ extension DiscordRESTProvider {
     func attemptMemberSubscription(guildID: GuildID, restoringViewport: Bool = false) async {
         // RESUMED retains the selected channel and its latest requested ranges.
         // A fresh READY clears the viewport and starts with the initial block.
-        let viewport = restoringViewport ? memberListViewportRequests[guildID]?.subscription : nil
+        let viewport = restoringViewport ? memberListState.memberListViewportRequests[guildID]?.subscription : nil
         do {
             try await subscribeToMemberList(
                 guildID: guildID, channelID: viewport?.channelID,
@@ -455,7 +455,7 @@ extension DiscordRESTProvider {
         )
         let changedSelection = selectedMemberListID[guildID] != memberListID
         selectedMemberListID[guildID] = memberListID
-        memberListViewportRequests[guildID] = (
+        memberListState.memberListViewportRequests[guildID] = (
             memberListID, DiscordMemberListSubscription(channelID: channelID, ranges: ranges)
         )
         if changedSelection {
@@ -479,12 +479,12 @@ extension DiscordRESTProvider {
                 groups: cachedMemberListGroups[guildID]?[memberListID] ?? []
             )
         }
-        let needsRefresh = memberListsNeedingRefresh[guildID]?[memberListID] != nil
+        let needsRefresh = memberListState.memberListsNeedingRefresh[guildID]?[memberListID] != nil
         if !needsRefresh,
            !DiscordMemberListRangePolicy.requiresSubscriptionUpdate(
                memberListID: memberListID,
                ranges: ranges,
-               currentSubscriptions: memberListSubscriptions[guildID] ?? [:]
+               currentSubscriptions: memberListState.memberListSubscriptions[guildID] ?? [:]
            )
         {
             return

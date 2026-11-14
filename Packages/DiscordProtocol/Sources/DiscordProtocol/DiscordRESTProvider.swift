@@ -233,18 +233,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var threadMemberSubscriptionRequestIDs: [GuildID: [ChannelID: UUID]] = [:]
     var cachedThreadMemberIDs: [ChannelID: [UserID]] = [:]
     var selectedMemberListID: [GuildID: String] = [:]
-    var memberListSubscriptions:
-        [GuildID: [String: DiscordMemberListSubscription]] = [:]
-    var memberListSubscriptionOrder: [GuildID: [String]] = [:]
-    /// The selected viewport can move while a cooldown prevents committing it.
-    var memberListViewportRequests:
-        [GuildID: (memberListID: String, subscription: DiscordMemberListSubscription)] = [:]
+    var memberListState = MemberListSubscriptionState()
     /// Selection can replace the desired viewport while an older send is suspended.
     var memberListInFlightRequests:
         [GuildID: DiscordMemberListInFlightRequest] = [:]
-    /// Retained member lists whose subscribed ranges were invalidated and
-    /// still need a subscription send to get a fresh SYNC.
-    var memberListsNeedingRefresh: [GuildID: [String: UUID]] = [:]
     var guildSubscriptionTasks: [GuildID: Task<Void, any Error>] = [:]
     #if DEBUG
         var guildSubscriptionQueueWaitersForTesting:

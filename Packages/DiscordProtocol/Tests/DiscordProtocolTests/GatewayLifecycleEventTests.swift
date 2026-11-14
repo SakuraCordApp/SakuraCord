@@ -366,14 +366,14 @@ struct GatewayLifecycleEventTests {
                 name: "RATE_LIMITED",
                 data: .object(["opcode": .number(37), "retry_after": .number(60)])
             )
-            let refresh = try #require(await provider.memberListsNeedingRefresh[guildID]?[memberListID])
+            let refresh = try #require(await provider.memberListState.memberListsNeedingRefresh[guildID]?[memberListID])
             await socket.releaseHeldSend()
             try await first.value
-            #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] == refresh)
+            #expect(await provider.memberListState.memberListsNeedingRefresh[guildID]?[memberListID] == refresh)
             #expect(await provider.runScheduledMemberListRefreshForTesting(guildID: guildID))
         }
         #expect(await socket.sentPayloadCount(opcode: 37) == sends + 1)
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] == nil)
+        #expect(await provider.memberListState.memberListsNeedingRefresh[guildID]?[memberListID] == nil)
         #expect(await provider.orderedMemberListIDsForTesting(
             guildID: guildID, memberListID: memberListID
         ) == [UserID(rawValue: 2), UserID(rawValue: 3)])
@@ -429,7 +429,7 @@ struct GatewayLifecycleEventTests {
         await #expect(throws: CancellationError.self) {
             try await earlierSubscription.value
         }
-        #expect(await provider.memberListSubscriptions[guildID]?[memberListID] == nil)
+        #expect(await provider.memberListState.memberListSubscriptions[guildID]?[memberListID] == nil)
         await provider.disconnect()
     }
 
@@ -890,17 +890,17 @@ extension GatewayLifecycleEventTests {
             "meta": .object(["guild_id": .string("100")]),
         ])
         await provider.receiveGatewayDispatchForTesting(name: "RATE_LIMITED", data: rateLimit)
-        let refresh = try #require(await provider.memberListsNeedingRefresh[guildID]?[memberListID])
+        let refresh = try #require(await provider.memberListState.memberListsNeedingRefresh[guildID]?[memberListID])
         await socket.releaseHeldSend()
         try await first.value
         await invalidation.value
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] == refresh)
+        #expect(await provider.memberListState.memberListsNeedingRefresh[guildID]?[memberListID] == refresh)
         await #expect(throws: ChatProviderError.self) {
             try await provider.updateMemberListViewport(
                 in: guildID, channelID: textChannelID, visibleRange: 500 ... 510
             )
         }
-        #expect(await provider.memberListSubscriptions[guildID]?[memberListID]?.ranges == [0 ... 199])
+        #expect(await provider.memberListState.memberListSubscriptions[guildID]?[memberListID]?.ranges == [0 ... 199])
         let sends = await socket.sentPayloadCount(opcode: 37)
         // Advance the first cooldown, then block a normal send ahead of the
         // deferred refresh. A newer rejection arrives while it is queued.
@@ -923,14 +923,14 @@ extension GatewayLifecycleEventTests {
         #expect(await socket.sentPayloadCount(opcode: 37) == sends + 1)
         #expect(await provider.memberListRefreshRetryAttempts[guildID]?.contains(memberListID) != true)
         #expect(await provider.memberListRefreshRetryTasks[guildID] != nil)
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] != nil)
+        #expect(await provider.memberListState.memberListsNeedingRefresh[guildID]?[memberListID] != nil)
         #expect(await provider.runScheduledMemberListRefreshForTesting(guildID: guildID))
         #expect(await socket.sentPayloadCount(opcode: 37) == sends + 2)
-        #expect(await provider.memberListSubscriptions[guildID]?[memberListID]?.ranges
+        #expect(await provider.memberListState.memberListSubscriptions[guildID]?[memberListID]?.ranges
             == [0 ... 99, 400 ... 499, 500 ... 599])
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] == nil)
+        #expect(await provider.memberListState.memberListsNeedingRefresh[guildID]?[memberListID] == nil)
         await provider.receiveGatewayDispatchForTesting(name: "RATE_LIMITED", data: rateLimit)
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] != nil)
+        #expect(await provider.memberListState.memberListsNeedingRefresh[guildID]?[memberListID] != nil)
         #expect(await provider.memberListRefreshRetryTasks[guildID] == nil)
         await provider.disconnect()
     }

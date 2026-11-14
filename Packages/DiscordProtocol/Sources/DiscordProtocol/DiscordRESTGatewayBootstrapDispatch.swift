@@ -130,10 +130,7 @@ extension DiscordRESTProvider {
         cachedMemberListItems = [:]
         cachedMemberListGroups = [:]
         selectedMemberListID = [:]
-        memberListSubscriptions = [:]
-        memberListsNeedingRefresh = [:]
-        memberListSubscriptionOrder = [:]
-        memberListViewportRequests = [:]
+        memberListState = MemberListSubscriptionState()
         cachedGuildChannelDTOs = [:]
         cachedGuildRoles = [:]
         cachedStickersByGuild = [:]

@@ -68,12 +68,12 @@ extension DiscordRESTProvider {
             guard pendingMemberGuildID == guildID,
                   selectedMemberListID[guildID] == memberListID
             else { return }
-            let viewport = memberListViewportRequests[guildID]
+            let viewport = memberListState.memberListViewportRequests[guildID]
             let requested = viewport?.memberListID == memberListID ? viewport?.subscription : nil
-            guard let current = requested ?? memberListSubscriptions[guildID]?[memberListID]
+            guard let current = requested ?? memberListState.memberListSubscriptions[guildID]?[memberListID]
             else { return }
             if isDeferred {
-                guard memberListsNeedingRefresh[guildID]?[memberListID] != nil,
+                guard memberListState.memberListsNeedingRefresh[guildID]?[memberListID] != nil,
                       memberListRefreshRetryAttempts[guildID]?.contains(memberListID) != true,
                       isMemberListAccessible(guildID: guildID, memberListID: memberListID, subscription: current)
                 else { return }
@@ -97,18 +97,18 @@ extension DiscordRESTProvider {
             let memberListID = DiscordMemberListIdentity.id(
                 for: channel, guildID: guildID, roles: cachedGuildRoles[guildID] ?? []
             )
-            let accessible = (memberListSubscriptions[guildID] ?? [:]).filter {
+            let accessible = (memberListState.memberListSubscriptions[guildID] ?? [:]).filter {
                 isMemberListAccessible(guildID: guildID, memberListID: $0.key)
             }
             let hadCommittedSubscription = accessible[memberListID] != nil
             let state = DiscordMemberListRangePolicy.subscriptionState(
                 selecting: memberListID, channelID: channelID, ranges: ranges,
                 currentSubscriptions: accessible,
-                currentOrder: (memberListSubscriptionOrder[guildID] ?? []).filter {
+                currentOrder: (memberListState.memberListSubscriptionOrder[guildID] ?? []).filter {
                     accessible[$0] != nil
                 }
             )
-            let refresh = memberListsNeedingRefresh[guildID]?[memberListID]
+            let refresh = memberListState.memberListsNeedingRefresh[guildID]?[memberListID]
             memberListInFlightRequests[guildID] = DiscordMemberListInFlightRequest(
                 generation: generation, memberListID: memberListID,
                 subscription: DiscordMemberListSubscription(channelID: channelID, ranges: ranges)
@@ -126,10 +126,10 @@ extension DiscordRESTProvider {
             guard guildSubscriptionGenerations[guildID] == generation else {
                 throw CancellationError()
             }
-            memberListSubscriptionOrder[guildID] = state.memberListOrder
-            memberListSubscriptions[guildID] = state.subscriptionsByMemberListID
-            if let refresh, memberListsNeedingRefresh[guildID]?[memberListID] == refresh {
-                memberListsNeedingRefresh[guildID]?[memberListID] = nil
+            memberListState.memberListSubscriptionOrder[guildID] = state.memberListOrder
+            memberListState.memberListSubscriptions[guildID] = state.subscriptionsByMemberListID
+            if let refresh, memberListState.memberListsNeedingRefresh[guildID]?[memberListID] == refresh {
+                memberListState.memberListsNeedingRefresh[guildID]?[memberListID] = nil
                 memberListRefreshRetryTasks.removeValue(forKey: guildID)?.cancel()
             }
             memberListRefreshRetryAttempts[guildID]?.formIntersection(state.subscriptionsByMemberListID.keys)
@@ -158,7 +158,7 @@ extension DiscordRESTProvider {
         if resetRetryBudget {
             memberListRefreshRetryAttempts[guildID]?.remove(memberListID)
         }
-        memberListsNeedingRefresh[guildID, default: [:]][memberListID] = UUID()
+        memberListState.memberListsNeedingRefresh[guildID, default: [:]][memberListID] = UUID()
     }
 
     /// One deferred attempt per invalidation, only for a selected list and a
@@ -168,7 +168,7 @@ extension DiscordRESTProvider {
         // cancel one before it runs, then return during the same cooldown.
         guard gatewayReady, pendingMemberGuildID == guildID,
               let memberListID = selectedMemberListID[guildID],
-              let refresh = memberListsNeedingRefresh[guildID]?[memberListID],
+              let refresh = memberListState.memberListsNeedingRefresh[guildID]?[memberListID],
               !memberListSubscriptionsForRefresh(guildID: guildID, memberListID: memberListID).isEmpty,
               let cooldown = gatewayOpcodeRateLimitDates[37], cooldown > Date.now,
               memberListRefreshRetryAttempts[guildID]?.contains(memberListID) != true
@@ -186,7 +186,7 @@ extension DiscordRESTProvider {
     func retryMemberListRefresh(guildID: GuildID, memberListID: String, refresh: UUID) async {
         guard pendingMemberGuildID == guildID,
               selectedMemberListID[guildID] == memberListID,
-              memberListsNeedingRefresh[guildID]?[memberListID] == refresh,
+              memberListState.memberListsNeedingRefresh[guildID]?[memberListID] == refresh,
               memberListRefreshRetryAttempts[guildID]?.contains(memberListID) != true
         else { return }
         memberListRefreshRetryTasks[guildID] = nil
@@ -232,8 +232,8 @@ extension DiscordRESTProvider {
     func memberListSubscriptionsForRefresh(
         guildID: GuildID, memberListID: String
     ) -> [DiscordMemberListSubscription] {
-        var subscriptions = memberListSubscriptions[guildID]?[memberListID].map { [$0] } ?? []
-        if let viewport = memberListViewportRequests[guildID], viewport.memberListID == memberListID {
+        var subscriptions = memberListState.memberListSubscriptions[guildID]?[memberListID].map { [$0] } ?? []
+        if let viewport = memberListState.memberListViewportRequests[guildID], viewport.memberListID == memberListID {
             subscriptions.append(viewport.subscription)
         }
         if let inFlight = memberListInFlightRequests[guildID], inFlight.memberListID == memberListID {
@@ -292,20 +292,20 @@ extension DiscordRESTProvider {
     func discardInaccessibleMemberLists(guildID: GuildID) -> Bool {
         var selectedWasDiscarded = false
         var discardedSubscription = false
-        let viewport = memberListViewportRequests[guildID]
+        let viewport = memberListState.memberListViewportRequests[guildID]
         let inFlight = memberListInFlightRequests[guildID]
-        var memberListIDs = Set(memberListSubscriptions[guildID].map { Array($0.keys) } ?? [])
+        var memberListIDs = Set(memberListState.memberListSubscriptions[guildID].map { Array($0.keys) } ?? [])
         if let viewport { memberListIDs.insert(viewport.memberListID) }
         if let inFlight { memberListIDs.insert(inFlight.memberListID) }
         for memberListID in memberListIDs {
             // A first subscription may still be in flight. Its requested
             // channel must lose its rows and send generation on access loss,
             // even before there is a committed subscription to discard.
-            let requested = memberListViewportRequests[guildID].flatMap {
+            let requested = memberListState.memberListViewportRequests[guildID].flatMap {
                 $0.memberListID == memberListID ? $0.subscription : nil
             }
             let subscriptions = [
-                memberListSubscriptions[guildID]?[memberListID], requested,
+                memberListState.memberListSubscriptions[guildID]?[memberListID], requested,
                 inFlight.flatMap { $0.memberListID == memberListID ? $0.subscription : nil },
             ].compactMap { $0 }
             guard subscriptions.contains(where: {
@@ -314,9 +314,9 @@ extension DiscordRESTProvider {
             discardedSubscription = true
             cachedMemberListItems[guildID]?[memberListID] = nil
             cachedMemberListGroups[guildID]?[memberListID] = nil
-            memberListSubscriptions[guildID]?[memberListID] = nil
-            memberListSubscriptionOrder[guildID]?.removeAll { $0 == memberListID }
-            memberListsNeedingRefresh[guildID]?[memberListID] = nil
+            memberListState.memberListSubscriptions[guildID]?[memberListID] = nil
+            memberListState.memberListSubscriptionOrder[guildID]?.removeAll { $0 == memberListID }
+            memberListState.memberListsNeedingRefresh[guildID]?[memberListID] = nil
             memberListRefreshRetryAttempts[guildID]?.remove(memberListID)
             if selectedMemberListID[guildID] == memberListID {
                 selectedWasDiscarded = true
@@ -331,9 +331,9 @@ extension DiscordRESTProvider {
                         for: channel, guildID: guildID, roles: cachedGuildRoles[guildID] ?? []
                     )
                     selectedMemberListID[guildID] = currentListID
-                    memberListViewportRequests[guildID] = (currentListID, requested)
+                    memberListState.memberListViewportRequests[guildID] = (currentListID, requested)
                 } else {
-                    memberListViewportRequests[guildID] = nil
+                    memberListState.memberListViewportRequests[guildID] = nil
                 }
                 memberListRefreshRetryTasks.removeValue(forKey: guildID)?.cancel()
             }
@@ -346,7 +346,7 @@ extension DiscordRESTProvider {
             // selection. Restore its desired viewport without requiring a
             // second native viewport callback.
             if gatewayReady, pendingMemberGuildID == guildID,
-               let current = memberListViewportRequests[guildID],
+               let current = memberListState.memberListViewportRequests[guildID],
                selectedMemberListID[guildID] == current.memberListID,
                isMemberListAccessible(
                    guildID: guildID, memberListID: current.memberListID,
@@ -375,7 +375,7 @@ extension DiscordRESTProvider {
         }
         guard !Task.isCancelled, gatewayReady, guildSubscriptionGenerations[guildID] == generation,
               pendingMemberGuildID == guildID,
-              let viewport = memberListViewportRequests[guildID],
+              let viewport = memberListState.memberListViewportRequests[guildID],
               selectedMemberListID[guildID] == viewport.memberListID,
               isMemberListAccessible(
                   guildID: guildID, memberListID: viewport.memberListID,
@@ -391,4 +391,17 @@ extension DiscordRESTProvider {
             gatewayLogger.error("Member-list subscription after access change failed: \(error.localizedDescription, privacy: .public)")
         }
     }
+}
+
+/// The member-list subscriptions a session holds, dropped together when a
+/// new Gateway session replaces them.
+struct MemberListSubscriptionState {
+    var memberListSubscriptions: [GuildID: [String: DiscordMemberListSubscription]] = [:]
+    var memberListSubscriptionOrder: [GuildID: [String]] = [:]
+    /// The selected viewport can move while a cooldown prevents committing it.
+    var memberListViewportRequests:
+        [GuildID: (memberListID: String, subscription: DiscordMemberListSubscription)] = [:]
+    /// Retained member lists whose subscribed ranges were invalidated and
+    /// still need a subscription send to get a fresh SYNC.
+    var memberListsNeedingRefresh: [GuildID: [String: UUID]] = [:]
 }
