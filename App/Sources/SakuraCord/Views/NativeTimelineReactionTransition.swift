@@ -429,13 +429,13 @@ extension NativeTimelineCanvasView {
     }
 
     private func emojiPicture(_ region: NativeTimelineRowLayout.ReactionRegion) -> ReactionPicture {
-        let url = MessageReactionPresentation.emojiURL(
+        let emojiKey = MessageReactionPresentation.emojiMediaKey(
             for: region.reaction,
             customEmojiURLsByID: model?.customEmojiURLsByID ?? [:]
         )
         let key: [AnyHashable] = [
-            "emoji", region.reaction.emojiReference.name, url,
-            url.map { NativeTimelineRowPainter.mediaImage(for: .media($0, maximumPixelDimension: 64)) != nil },
+            "emoji", region.reaction.emojiReference.name, emojiKey,
+            emojiKey.map { NativeTimelineRowPainter.mediaImage(for: $0) != nil },
         ]
         return reactionPicture(key, covering: region.emojiFrame) {
             if region.reaction.emojiReference.id == nil {

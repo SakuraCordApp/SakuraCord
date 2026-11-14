@@ -103,6 +103,10 @@ nonisolated enum MessageReactionPresentation {
         return customEmojiURLsByID[id] ?? reference.imageURL(size: 64)
     }
 
+    @MainActor static func emojiMediaKey(for reaction: Reaction, customEmojiURLsByID: CustomEmojiImageURLs) -> MediaImageKey? {
+        emojiURL(for: reaction, customEmojiURLsByID: customEmojiURLsByID).map { .media($0, maximumPixelDimension: 64) }
+    }
+
     static func tooltipDescription(for reaction: Reaction) -> String {
         switch tooltipSummary(for: reaction) {
         case .countOnly(let count):

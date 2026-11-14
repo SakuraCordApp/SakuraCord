@@ -17,8 +17,8 @@ extension ForumBoardView {
                 if let key = tag.emoji?.mediaKey { postKeys.insert(key) }
             }
             if let reaction = presentation.reaction?.reaction {
-                if let url = MessageReactionPresentation.emojiURL(for: reaction, customEmojiURLsByID: customEmojiURLsByID) {
-                    postKeys.insert(.media(url, maximumPixelDimension: 64))
+                if let key = MessageReactionPresentation.emojiMediaKey(for: reaction, customEmojiURLsByID: customEmojiURLsByID) {
+                    postKeys.insert(key)
                 }
             }
             keys.formUnion(postKeys)

@@ -564,12 +564,11 @@ extension NativeTimelineRowPainter {
     ) {
         let reference = region.reaction.emojiReference
         if reference.id != nil {
-            if let url = MessageReactionPresentation.emojiURL(
-                for: region.reaction, customEmojiURLsByID: model?.customEmojiURLsByID ?? [:]
-            ),
-               let image = mediaImage(
-                   for: .media(url, maximumPixelDimension: 64)
-               )
+            if let key = MessageReactionPresentation.emojiMediaKey(
+                   for: region.reaction,
+                   customEmojiURLsByID: model?.customEmojiURLsByID ?? [:]
+               ),
+               let image = mediaImage(for: key)
             {
                 drawImage(
                     image,

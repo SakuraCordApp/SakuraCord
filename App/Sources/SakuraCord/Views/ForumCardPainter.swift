@@ -723,7 +723,7 @@ enum ForumCardPainter {
     /// emoji finishes loading.
     private struct ReactionPillKey: Hashable {
         let reaction: Reaction
-        let emojiURL: URL?
+        let emojiKey: MediaImageKey?
         let isEmojiLoaded: Bool
         let isHovered: Bool
         let isDisabled: Bool
@@ -736,11 +736,11 @@ enum ForumCardPainter {
         model: AppModel?
     ) -> ReactionPillKey {
         let reaction = summary.reaction
-        let emojiURL = MessageReactionPresentation.emojiURL(for: reaction, customEmojiURLsByID: model?.customEmojiURLsByID ?? [:])
+        let emojiKey = MessageReactionPresentation.emojiMediaKey(for: reaction, customEmojiURLsByID: model?.customEmojiURLsByID ?? [:])
         return ReactionPillKey(
             reaction: reaction,
-            emojiURL: emojiURL,
-            isEmojiLoaded: emojiURL.map { NativeTimelineRowPainter.mediaImage(for: .media($0, maximumPixelDimension: 64)) != nil } ?? false,
+            emojiKey: emojiKey,
+            isEmojiLoaded: emojiKey.map { NativeTimelineRowPainter.mediaImage(for: $0) != nil } ?? false,
             isHovered: isHovered,
             isDisabled: summary.isDisabled,
             accent: NSColor.sakuraCordAccentColor.cgColor.components ?? []
