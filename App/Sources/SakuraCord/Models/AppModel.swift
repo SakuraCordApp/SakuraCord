@@ -835,14 +835,10 @@ final class AppModel {
             translation.resetDraft(.channel)
             synchronizeSideConversationsWithSelection(keepsGuildPage: keepsGuildPage)
             if let selectedChannelID {
-                _ = readState.updatePresentation(
+                readState.beginPresentation(
                     channelID: selectedChannelID,
                     isPresented: isConversationPresented(selectedChannelID),
-                    initialHistoryLoaded: false,
-                    initialPositionEstablished: false,
-                    windowIsActive: mainWindowIsActive,
-                    hasReachedReadBoundary: false,
-                    blocksAutomaticAcknowledgement: false
+                    windowIsActive: mainWindowIsActive
                 )
             }
             if selectedChannel?.kind == .forum {
@@ -853,14 +849,7 @@ final class AppModel {
             } else {
                 beginSelectedChannelLoad()
             }
-            if let channel = selectedChannel,
-               channel.kind.isDirectMessage
-            {
-                let account = accountSession()
-                startAccountChildTask(account: account) { model, account in
-                    await model.observePrivateCall(in: channel, account: account)
-                }
-            }
+            observeSelectedPrivateCall()
         }
     }
 

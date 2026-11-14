@@ -415,14 +415,7 @@ extension AppModel {
                 revalidateOpenThreadAfterReconnect()
                 revalidateGuideResourceAfterReconnect()
             }
-            if let channel = selectedChannel,
-               channel.kind.isDirectMessage
-            {
-                let account = accountSession()
-                startAccountChildTask(account: account) { model, account in
-                    await model.observePrivateCall(in: channel, account: account)
-                }
-            }
+            observeSelectedPrivateCall()
         }
     }
 

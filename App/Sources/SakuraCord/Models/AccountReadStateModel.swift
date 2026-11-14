@@ -1149,6 +1149,20 @@ extension AccountReadStateModel {
         return canAcknowledge(channelID) ? newestUnacknowledgedMessage(in: channelID) : nil
     }
 
+    /// A newly opened conversation: nothing loaded, positioned or read yet,
+    /// and no acknowledgement hold.
+    func beginPresentation(channelID: ChannelID, isPresented: Bool, windowIsActive: Bool) {
+        _ = updatePresentation(
+            channelID: channelID,
+            isPresented: isPresented,
+            initialHistoryLoaded: false,
+            initialPositionEstablished: false,
+            windowIsActive: windowIsActive,
+            hasReachedReadBoundary: false,
+            blocksAutomaticAcknowledgement: false
+        )
+    }
+
     func canAcknowledge(_ channelID: ChannelID) -> Bool {
         self[presentation: channelID]?.meetsViewingConditions == true
             && !holdsAutomaticAcknowledgement(channelID)

@@ -166,6 +166,15 @@ extension AppModel {
         )
     }
 
+    /// Subscribes to call state for the selected DM or group DM.
+    func observeSelectedPrivateCall() {
+        guard let channel = selectedChannel, channel.kind.isDirectMessage else { return }
+        let account = accountSession()
+        startAccountChildTask(account: account) { model, account in
+            await model.observePrivateCall(in: channel, account: account)
+        }
+    }
+
     func observePrivateCall(
         in channel: Channel,
         account: AppModelAccountSession

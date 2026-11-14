@@ -114,14 +114,10 @@ extension AppModel {
             suspendSelectedConversationPresentation()
         }
         recordConversationDestinationVisit(thread.id)
-        _ = readState.updatePresentation(
+        readState.beginPresentation(
             channelID: thread.id,
             isPresented: isConversationPresented(thread.id),
-            initialHistoryLoaded: false,
-            initialPositionEstablished: false,
-            windowIsActive: mainWindowIsActive,
-            hasReachedReadBoundary: false,
-            blocksAutomaticAcknowledgement: false
+            windowIsActive: mainWindowIsActive
         )
         openThreadStarter = starter
         openThreadStartedAt = startedAt
