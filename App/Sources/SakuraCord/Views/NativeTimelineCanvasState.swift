@@ -40,20 +40,6 @@ nonisolated struct NativeTimelineTextSelectionGesture {
 
 @MainActor
 final class NativeTimelinePointerState {
-    struct ClearedTargets {
-        let row: Int?
-        let compactTimestampRow: Int?
-        let mention: NativeTimelineMentionHover?
-        let textLink: NativeTimelineTextLinkHover?
-        let textSpoiler: NativeTimelineTextSpoilerHover?
-        let componentButton: NativeTimelineComponentButtonTarget?
-        let forwardedSourceMessageID: MessageID?
-        let threadMessageID: MessageID?
-        let footerAction: NativeTimelineFooterActionTarget?
-        let serverTagMessageID: MessageID?
-        let commandPillMessageID: MessageID?
-    }
-
     var hoveredRow: Int?
     var hoveredCompactTimestampRow: Int?
     var hoveredAuthorMessageID: MessageID?
@@ -93,22 +79,9 @@ final class NativeTimelinePointerState {
     var rowTrackingAreas: [NSTrackingArea] = []
     var reactionMouseMonitor: Any?
 
-    @discardableResult
-    func clearHoverAndPressTargets() -> ClearedTargets {
-        let cleared = ClearedTargets(
-            row: hoveredRow,
-            compactTimestampRow: hoveredCompactTimestampRow,
-            mention: hoveredMention,
-            textLink: hoveredTextLink,
-            textSpoiler: hoveredTextSpoiler,
-            componentButton:
-                visualPressedComponentButton ?? hoveredComponentButton,
-            forwardedSourceMessageID: hoveredForwardedSourceMessageID,
-            threadMessageID: hoveredThreadMessageID,
-            footerAction: hoveredFooterAction,
-            serverTagMessageID: hoveredServerTagMessageID,
-            commandPillMessageID: hoveredCommandPillMessageID
-        )
+    /// Returns the button whose press or hover it dropped.
+    func clearHoverAndPressTargets() -> NativeTimelineComponentButtonTarget? {
+        let componentButton = visualPressedComponentButton ?? hoveredComponentButton
         hoveredRow = nil
         hoveredCompactTimestampRow = nil
         hoveredAuthorMessageID = nil
@@ -137,7 +110,7 @@ final class NativeTimelinePointerState {
         componentButtonHoverAnimationTask = nil
         pressedActivationTarget = nil
         hoveredReaction = nil
-        return cleared
+        return componentButton
     }
 
     func removeTrackingAreas(from view: NSView) {

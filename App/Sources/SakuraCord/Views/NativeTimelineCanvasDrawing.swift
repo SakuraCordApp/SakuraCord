@@ -352,70 +352,15 @@ extension NativeTimelineCanvasView {
         MediaImageStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
-        let clearedTargets = clearPointerTargets()
+        // Each target's setter redraws what it leaves.
+        updateHoverTargets(at: nil)
+        clearPointerTargets()
         closeHoverTooltips()
         closeMessageProfilePopover()
         closeServerTagPopover()
         removeActionCapsule()
         freezeEditingRowForScroll()
         reconcileAccessibilityProxiesIfActive()
-        if let old = clearedTargets.row {
-            setNeedsDisplay(rowFrame(at: old))
-        }
-        if let oldCompactTimestamp = clearedTargets.compactTimestampRow,
-           oldCompactTimestamp != clearedTargets.row {
-            setNeedsDisplay(rowFrame(at: oldCompactTimestamp))
-        }
-        if let oldMention = clearedTargets.mention,
-           let oldMentionIndex = items.firstIndex(where: {
-               $0.identifier == oldMention.itemIdentifier
-           }),
-           oldMentionIndex != clearedTargets.row,
-           oldMentionIndex != clearedTargets.compactTimestampRow
-        {
-            setNeedsDisplay(rowFrame(at: oldMentionIndex))
-        }
-        if let oldTextLink = clearedTargets.textLink,
-           let oldTextLinkIndex = items.firstIndex(where: {
-               $0.identifier == oldTextLink.itemIdentifier
-           }),
-           oldTextLinkIndex != clearedTargets.row,
-           oldTextLinkIndex != clearedTargets.compactTimestampRow
-        {
-            setNeedsDisplay(rowFrame(at: oldTextLinkIndex))
-        }
-        if let oldTextSpoiler = clearedTargets.textSpoiler,
-           let oldTextSpoilerIndex = items.firstIndex(where: {
-               $0.identifier == oldTextSpoiler.itemIdentifier
-           }),
-           oldTextSpoilerIndex != clearedTargets.row,
-           oldTextSpoilerIndex != clearedTargets.compactTimestampRow
-        {
-            setNeedsDisplay(rowFrame(at: oldTextSpoilerIndex))
-        }
-        updateCodeCopyControl()
-        if let oldComponentButton = clearedTargets.componentButton {
-            invalidateComponentButton(oldComponentButton)
-        }
-        if let messageID = clearedTargets.forwardedSourceMessageID,
-           let index = items.firstIndex(where: { $0.messageID == messageID })
-        {
-            setNeedsDisplay(rowFrame(at: index))
-        }
-        if let messageID = clearedTargets.threadMessageID {
-            invalidateThreadCard(messageID: messageID)
-        }
-        if let messageID = clearedTargets.serverTagMessageID {
-            invalidateVisibleMessageRow(messageID: messageID)
-        }
-        if let messageID = clearedTargets.commandPillMessageID {
-            invalidateVisibleMessageRow(messageID: messageID)
-        }
-        if let messageID = clearedTargets.footerAction?.messageID,
-           let index = items.firstIndex(where: { $0.messageID == messageID })
-        {
-            setNeedsDisplay(rowFrame(at: index))
-        }
     }
 
     func allowHoverPresentationAfterScroll() {

@@ -355,14 +355,13 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    /// Clears hover and press state; a cancelled press also returns its
-    /// button's live emoji to rest.
-    @discardableResult
-    func clearPointerTargets() -> NativeTimelinePointerState.ClearedTargets {
+    /// Clears hover and press state without redrawing what was hovered; a
+    /// cancelled press redraws its button and returns its live emoji to rest.
+    func clearPointerTargets() {
         hoveredReaction = nil
-        let cleared = pointer.clearHoverAndPressTargets()
-        if let button = cleared.componentButton { positionComponentButtonEmoji(button) }
-        return cleared
+        guard let button = pointer.clearHoverAndPressTargets() else { return }
+        invalidateComponentButton(button)
+        positionComponentButtonEmoji(button)
     }
 
     /// A live button emoji follows its button's dip; other overlays stay put.
