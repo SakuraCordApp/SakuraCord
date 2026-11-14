@@ -376,6 +376,38 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    func restorePointerInteractions() {
+        guard !glideBlocksPointer else { return }
+        updateTrackingAreas()
+        window?.invalidateCursorRects(for: self)
+        synchronizeHoverWithCurrentPointer()
+    }
+
+    func suppressPointerInteractions() {
+        // A press begun before the rows moved must not activate on release.
+        clearPointerTargets()
+        pressedPollTarget = nil
+        hoveredPollTarget = nil
+        textSelectionGesture = nil
+        if let press = voiceMessagePress {
+            voiceMessagePress = nil
+            // A scrub paused playback, which its release would resume.
+            if case .waveform = press.control { model?.voiceMessagePlayback.endScrub(press.region.playbackID) }
+        }
+        updateCodeCopyControl()
+        closeHoverTooltips()
+        removeActionCapsule()
+        updateTrackingAreas()
+        window?.invalidateCursorRects(for: self)
+        setNeedsDisplay(visibleRect)
+    }
+
+    /// An edit's lines easing, as a send's glide, leave the pointer nothing
+    /// to hit: the rows' regions sit where they land.
+    var glideBlocksPointer: Bool {
+        sendTransitionBlocksInteractions || !editedTextBands.isEmpty
+    }
+
     override func mouseDown(with event: NSEvent) {
         pointer.didForceClickLookup = false
         guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
