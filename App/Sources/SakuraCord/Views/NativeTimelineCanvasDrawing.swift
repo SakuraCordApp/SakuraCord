@@ -855,7 +855,7 @@ extension NativeTimelineCanvasView {
         } else {
             drawPicture(paintFrame)
         }
-        if item.messageID == editingMessageID, let editingRowScrollSnapshot {
+        if item.messageID == editing.messageID, let editingRowScrollSnapshot = editing.scrollSnapshot {
             editingRowScrollSnapshot.draw(
                 in: editingOverlayFrame(at: index), from: .zero, operation: .sourceOver,
                 fraction: 1, respectFlipped: true, hints: nil
@@ -907,7 +907,7 @@ extension NativeTimelineCanvasView {
         revealState: NativeTimelineTextSpoilerRevealState
     ) -> Bool {
         isPreviewingWidth
-            || item.messageID == editingMessageID
+            || item.messageID == editing.messageID
             || layouts[index].pollLayout != nil
             || hoveredPollTarget?.messageID == item.messageID
             || hoveredRow == index
@@ -916,18 +916,18 @@ extension NativeTimelineCanvasView {
             || hoveredAuthorMessageID == item.messageID
             || hoveredServerTagMessageID == item.messageID
             || serverTagCardPresentation?.messageID == item.messageID
-            || hoveredCommandPillMessageID == item.messageID
+            || pointer.hoveredCommandPillMessageID == item.messageID
             || hoveredMention?.itemIdentifier == item.identifier
             || hoveredTextLink?.itemIdentifier == item.identifier
             || hoveredTextSpoiler?.itemIdentifier == item.identifier
-            || textSpoilerHoverFades.keys.contains { $0.itemIdentifier == item.identifier }
+            || pointer.textSpoilerHoverFades.keys.contains { $0.itemIdentifier == item.identifier }
             || hoveredComponentButton?.messageID == item.messageID
             || activeComponentChoiceTarget?.messageID == item.messageID
             || visualPressedComponentButton?.messageID == item.messageID
-            || componentButtonHoverFades.keys.contains { $0.messageID == item.messageID }
-            || fileCardFinishFades.keys.contains { $0.messageID == item.messageID }
+            || pointer.componentButtonHoverFades.keys.contains { $0.messageID == item.messageID }
+            || pointer.fileCardFinishFades.keys.contains { $0.messageID == item.messageID }
             || hoveredForwardedSourceMessageID == item.messageID
-            || hoveredThreadMessageID == item.messageID
+            || pointer.hoveredThreadMessageID == item.messageID
             || hoveredFooterAction?.messageID == item.messageID
             || isSuppressedToggleHovered(item)
             || textSelection?.itemIdentifier == item.identifier
@@ -958,7 +958,7 @@ extension NativeTimelineCanvasView {
                 showsCompactTimestamp: hoveredCompactTimestampRow == index,
                 isAuthorHovered: hoveredAuthorMessageID == item.messageID,
                 isServerTagHovered: hoveredServerTagMessageID == item.messageID || serverTagCardPresentation?.messageID == item.messageID,
-                isCommandPillHovered: hoveredCommandPillMessageID == item.messageID,
+                isCommandPillHovered: pointer.hoveredCommandPillMessageID == item.messageID,
                 hoveredMention: hoveredMention?.itemIdentifier == item.identifier ? hoveredMention : nil,
                 hoveredTextLink: hoveredTextLink?.itemIdentifier == item.identifier ? hoveredTextLink : nil,
                 textSpoilerHover: textSpoilerHoverProgress(in: item.identifier),

@@ -26,7 +26,7 @@ extension NativeTimelineCanvasView {
         if actionCapsuleState?.isPresentationActive == true {
             // An edited row shows Cancel and Save where its actions would be.
             guard let messageID = actionCapsuleMessageID,
-                  messageID != editingMessageID,
+                  messageID != editing.messageID,
                   let index = items.firstIndex(where: {
                       $0.messageID == messageID
                   }),
@@ -50,7 +50,7 @@ extension NativeTimelineCanvasView {
                 }),
               items.indices.contains(index),
               case let .message(row, _, _) = items[index],
-              row.message.id != editingMessageID,
+              row.message.id != editing.messageID,
               MessageOutboxPresentation.interactionMode(
                 for: row.message
               ).allowsHoverActions,

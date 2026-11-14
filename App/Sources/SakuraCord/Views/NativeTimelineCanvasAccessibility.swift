@@ -80,7 +80,7 @@ extension NativeTimelineCanvasView {
                 && !inboxEventHosts.values.contains { $0 === childView }
                 && !inboxForumPostHosts.values.contains { $0 === childView }
         }
-        if let editingRowHost,
+        if let editingRowHost = editing.host,
            let hostIndex = additionalChildren.firstIndex(where: {
                ($0 as? NSView) === editingRowHost
            }),
@@ -88,7 +88,7 @@ extension NativeTimelineCanvasView {
                NativeTimelineAccessibilityPolicy
                    .editingOverlayInsertionIndex(
                        in: accessibilityProxies.order,
-                       editingItemIdentifier: editingMessageID.flatMap { messageID in
+                       editingItemIdentifier: editing.messageID.flatMap { messageID in
                            items.first(where: {
                                $0.messageID == messageID
                            })?.identifier
@@ -725,7 +725,7 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex,
                 parent: parent
             ))
-        } else if let frame = layout.contentFrame, message.id != editingMessageID {
+        } else if let frame = layout.contentFrame, message.id != editing.messageID {
             // While editing, the editor over the text reads it instead.
             let content = accessibilityMessageText(message)
             if !content.isEmpty {

@@ -9,9 +9,9 @@ extension NativeTimelineCanvasView {
     }
 
     func setHoveredThreadMessageID(_ value: MessageID?) {
-        guard hoveredThreadMessageID != value else { return }
-        let old = hoveredThreadMessageID
-        hoveredThreadMessageID = value
+        guard pointer.hoveredThreadMessageID != value else { return }
+        let old = pointer.hoveredThreadMessageID
+        pointer.hoveredThreadMessageID = value
         for messageID in [old, value].compactMap({ $0 }) {
             invalidateThreadCard(messageID: messageID)
         }
@@ -35,7 +35,7 @@ extension NativeTimelineCanvasView {
     }
 
     func threadCardInteraction(forMessageID messageID: MessageID?) -> NativeTimelineThreadCard.Interaction {
-        guard let messageID, hoveredThreadMessageID == messageID else { return .idle }
+        guard let messageID, pointer.hoveredThreadMessageID == messageID else { return .idle }
         if case let .thread(pressedID, _)? = pressedActivationTarget, pressedID == messageID { return .pressed }
         return .hovered
     }

@@ -177,18 +177,18 @@ extension NativeTimelineCanvasView {
         // shows its result. The saved edit hands the editor over to its row
         // as a remote edit would change it.
         guard AppMotionPolicy.animatesUncategorized, window != nil, !items.isEmpty,
-              editingMessageID == nil || editing.committedContent != nil
+              editing.messageID == nil || editing.committedContent != nil
         else { return }
         let originY = contentOriginY - viewportMinY
         // While scrolling, the editor shows as its snapshot.
-        let editor = (editingRowScrollSnapshot ?? editingHostSnapshot()).flatMap { picture in
-            editingOverlayLocalFrame.map { NativeTimelineRowMotionBaseline.Editor(picture: picture, frame: $0) }
+        let editor = (editing.scrollSnapshot ?? editingHostSnapshot()).flatMap { picture in
+            editing.overlayLocalFrame.map { NativeTimelineRowMotionBaseline.Editor(picture: picture, frame: $0) }
         }
         var rows: [NativeMessageTimelineItem.Identifier: NativeTimelineRowMotionBaseline.Row] = [:]
         forEachDisplayedRow(in: rowMotionBaselineRect) { index in
             let item = items[index]
             let revealState = textSpoilerRevealState(at: index)
-            let isEdited = item.messageID == editingMessageID
+            let isEdited = item.messageID == editing.messageID
             rows[item.identifier] = .init(
                 index: index,
                 top: originY + transientRowOrigin(at: index),
@@ -753,7 +753,7 @@ extension NativeTimelineCanvasView {
 
     var editingHeightDelta: CGFloat {
         guard let index = editingRowIndex,
-              let editingRowHeight
+              let editingRowHeight = editing.layout?.height
         else { return 0 }
         return editingRowHeight - storage.layouts[index].height
     }
@@ -770,7 +770,7 @@ extension NativeTimelineCanvasView {
         contentOriginY
             + NativeTimelineTransientRowGeometry.contentHeight(
                 base: contentHeight,
-                replacementHeight: editingRowHeight,
+                replacementHeight: editing.layout?.height,
                 baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
             )
             + bottomSpacerHeight
@@ -787,7 +787,7 @@ extension NativeTimelineCanvasView {
             base: rowOrigins[index],
             rowIndex: index,
             replacementIndex: editingRowIndex,
-            replacementHeight: editingRowHeight,
+            replacementHeight: editing.layout?.height,
             baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
         )
     }
@@ -797,7 +797,7 @@ extension NativeTimelineCanvasView {
             base: layouts[index].height,
             rowIndex: index,
             replacementIndex: editingRowIndex,
-            replacementHeight: editingRowHeight
+            replacementHeight: editing.layout?.height
         ) - rowMotionRemainingHeight(at: index)
     }
 }

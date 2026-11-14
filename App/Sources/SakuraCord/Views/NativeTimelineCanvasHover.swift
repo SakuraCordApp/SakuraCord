@@ -51,9 +51,9 @@ extension NativeTimelineCanvasView {
     }
 
     func setHoveredCommandPillMessageID(_ value: MessageID?) {
-        guard hoveredCommandPillMessageID != value else { return }
-        let old = hoveredCommandPillMessageID
-        hoveredCommandPillMessageID = value
+        guard pointer.hoveredCommandPillMessageID != value else { return }
+        let old = pointer.hoveredCommandPillMessageID
+        pointer.hoveredCommandPillMessageID = value
         for messageID in [old, value].compactMap({ $0 }) { invalidateVisibleMessageRow(messageID: messageID) }
     }
 
@@ -128,8 +128,8 @@ extension NativeTimelineCanvasView {
         let now = ProcessInfo.processInfo.systemUptime
         for (spoiler, isHovered) in [(old, false), (value, true)] {
             guard let spoiler else { continue }
-            textSpoilerHoverFades[spoiler] = Self.hoverFade(
-                from: textSpoilerHoverFades[spoiler]?.progress(at: now) ?? 0, isHovered: isHovered, at: now
+            pointer.textSpoilerHoverFades[spoiler] = Self.hoverFade(
+                from: pointer.textSpoilerHoverFades[spoiler]?.progress(at: now) ?? 0, isHovered: isHovered, at: now
             )
         }
         animateHoverFades()
@@ -140,7 +140,7 @@ extension NativeTimelineCanvasView {
         in itemIdentifier: NativeMessageTimelineItem.Identifier
     ) -> [NativeTimelineTextSpoilerHover: CGFloat] {
         let now = ProcessInfo.processInfo.systemUptime
-        return textSpoilerHoverFades.filter { $0.key.itemIdentifier == itemIdentifier }.mapValues { $0.progress(at: now) }
+        return pointer.textSpoilerHoverFades.filter { $0.key.itemIdentifier == itemIdentifier }.mapValues { $0.progress(at: now) }
     }
 
     /// A hover easing in or out from wherever it is; Reduce Motion lands at once.
@@ -195,8 +195,8 @@ extension NativeTimelineCanvasView {
     private func fadeFileCardHover(_ target: NativeTimelineComponentButtonTarget, isHovered: Bool) {
         guard target.componentID.hasPrefix("file:") else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        componentButtonHoverFades[target] = Self.hoverFade(
-            from: componentButtonHoverFades[target]?.progress(at: now) ?? 0, isHovered: isHovered, at: now
+        pointer.componentButtonHoverFades[target] = Self.hoverFade(
+            from: pointer.componentButtonHoverFades[target]?.progress(at: now) ?? 0, isHovered: isHovered, at: now
         )
         animateHoverFades()
     }
@@ -204,7 +204,7 @@ extension NativeTimelineCanvasView {
     /// Crossfades a download's button from its full ring to its next step.
     func fadeFileCardFinish(_ target: NativeTimelineComponentButtonTarget) {
         guard AppMotionPolicy.animatesUncategorized else { return }
-        fileCardFinishFades[target] = .init(from: 0, to: 1, start: ProcessInfo.processInfo.systemUptime)
+        pointer.fileCardFinishFades[target] = .init(from: 0, to: 1, start: ProcessInfo.processInfo.systemUptime)
         animateHoverFades()
     }
 
@@ -224,18 +224,18 @@ extension NativeTimelineCanvasView {
                     let resume = { (fade: NativeTimelineHoverFade) in
                         fade.isSettled(at: stallStart) ? fade : fade.delayed(by: now - max(stallStart, fade.start))
                     }
-                    componentButtonHoverFades = componentButtonHoverFades.mapValues(resume)
-                    textSpoilerHoverFades = textSpoilerHoverFades.mapValues(resume)
-                    fileCardFinishFades = fileCardFinishFades.mapValues(resume)
+                    pointer.componentButtonHoverFades = pointer.componentButtonHoverFades.mapValues(resume)
+                    pointer.textSpoilerHoverFades = pointer.textSpoilerHoverFades.mapValues(resume)
+                    pointer.fileCardFinishFades = pointer.fileCardFinishFades.mapValues(resume)
                 }
                 redrawFadingHovers()
                 // A faded-out part is forgotten; a hovered one holds.
-                componentButtonHoverFades = componentButtonHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
-                textSpoilerHoverFades = textSpoilerHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
-                fileCardFinishFades = fileCardFinishFades.filter { !$0.value.isSettled(at: now) }
-                guard componentButtonHoverFades.values.contains(where: { !$0.isSettled(at: now) })
-                    || textSpoilerHoverFades.values.contains(where: { !$0.isSettled(at: now) })
-                    || !fileCardFinishFades.isEmpty
+                pointer.componentButtonHoverFades = pointer.componentButtonHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
+                pointer.textSpoilerHoverFades = pointer.textSpoilerHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
+                pointer.fileCardFinishFades = pointer.fileCardFinishFades.filter { !$0.value.isSettled(at: now) }
+                guard pointer.componentButtonHoverFades.values.contains(where: { !$0.isSettled(at: now) })
+                    || pointer.textSpoilerHoverFades.values.contains(where: { !$0.isSettled(at: now) })
+                    || !pointer.fileCardFinishFades.isEmpty
                 else {
                     pointer.componentButtonHoverAnimationTask = nil
                     return
@@ -248,9 +248,9 @@ extension NativeTimelineCanvasView {
     /// Redraws the file card parts and text spoilers still easing their
     /// hover, so dropping their fades leaves none on its last frame.
     func redrawFadingHovers() {
-        for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
-        for target in fileCardFinishFades.keys { invalidateComponentButton(target) }
-        for identifier in Set(textSpoilerHoverFades.keys.map(\.itemIdentifier)) {
+        for target in pointer.componentButtonHoverFades.keys { invalidateComponentButton(target) }
+        for target in pointer.fileCardFinishFades.keys { invalidateComponentButton(target) }
+        for identifier in Set(pointer.textSpoilerHoverFades.keys.map(\.itemIdentifier)) {
             guard let index = items.firstIndex(where: { $0.identifier == identifier }) else { continue }
             setNeedsDisplay(rowFrame(at: index))
         }
@@ -259,13 +259,13 @@ extension NativeTimelineCanvasView {
     /// How far each download finishing in a message has crossfaded.
     func fileCardFinishProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
         let now = ProcessInfo.processInfo.systemUptime
-        return fileCardFinishFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
+        return pointer.fileCardFinishFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
     }
 
     /// The file card parts' hover in a message at this moment.
     func fileCardHoverProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
         let now = ProcessInfo.processInfo.systemUptime
-        return componentButtonHoverFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
+        return pointer.componentButtonHoverFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
     }
 
     func setHoveredForwardedSourceMessageID(_ value: MessageID?) {

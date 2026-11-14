@@ -1061,7 +1061,7 @@ extension NativeTimelineCanvasView {
 
     /// Whether the inline editor, its suggestions or its controls are under `point`.
     func editingOverlayContains(_ point: CGPoint) -> Bool {
-        editingRowHost?.frame.contains(point) == true || editing.controlsHost?.frame.contains(point) == true
+        editing.host?.frame.contains(point) == true || editing.controlsHost?.frame.contains(point) == true
     }
 
     func actionCapsuleContains(_ point: CGPoint) -> Bool {

@@ -260,11 +260,6 @@ extension NativeTimelineCanvasView {
         set { pointer.hoveredServerTagMessageID = newValue }
     }
 
-    var hoveredCommandPillMessageID: MessageID? {
-        get { pointer.hoveredCommandPillMessageID }
-        set { pointer.hoveredCommandPillMessageID = newValue }
-    }
-
     var hoveredAuthorMessageID: MessageID? {
         get { pointer.hoveredAuthorMessageID }
         set { pointer.hoveredAuthorMessageID = newValue }
@@ -305,11 +300,6 @@ extension NativeTimelineCanvasView {
         set { pointer.hoveredForwardedSourceMessageID = newValue }
     }
 
-    var hoveredThreadMessageID: MessageID? {
-        get { pointer.hoveredThreadMessageID }
-        set { pointer.hoveredThreadMessageID = newValue }
-    }
-
     var hoveredFooterAction: NativeTimelineFooterActionTarget? {
         get { pointer.hoveredFooterAction }
         set { pointer.hoveredFooterAction = newValue }
@@ -338,21 +328,6 @@ extension NativeTimelineCanvasView {
     var componentButtonPressAnimationDestination: CGFloat? {
         get { pointer.componentButtonPressAnimationDestination }
         set { pointer.componentButtonPressAnimationDestination = newValue }
-    }
-
-    var componentButtonHoverFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
-        get { pointer.componentButtonHoverFades }
-        set { pointer.componentButtonHoverFades = newValue }
-    }
-
-    var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] {
-        get { pointer.textSpoilerHoverFades }
-        set { pointer.textSpoilerHoverFades = newValue }
-    }
-
-    var fileCardFinishFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
-        get { pointer.fileCardFinishFades }
-        set { pointer.fileCardFinishFades = newValue }
     }
 
     var pressedActivationTarget: NativeTimelinePointerActivationTarget? {
@@ -410,39 +385,5 @@ extension NativeTimelineCanvasView {
     var rowTrackingAreas: [NSTrackingArea] {
         get { pointer.rowTrackingAreas }
         set { pointer.rowTrackingAreas = newValue }
-    }
-
-    var editingRowHost: NativeTimelineEditingHost? {
-        get { editing.host }
-        set { editing.host = newValue }
-    }
-
-    var editingTextView: ComposerNSTextView? {
-        get { editing.textView }
-        set { editing.textView = newValue }
-    }
-
-    var editingMessageID: MessageID? {
-        get { editing.messageID }
-        set { editing.messageID = newValue }
-    }
-
-    var editingRowIndexCache: Int? {
-        get { editing.rowIndex }
-        set { editing.rowIndex = newValue }
-    }
-
-    var editingRowHeight: CGFloat? {
-        editing.layout?.height
-    }
-
-    var editingOverlayLocalFrame: CGRect? {
-        get { editing.overlayLocalFrame }
-        set { editing.overlayLocalFrame = newValue }
-    }
-
-    var editingRowScrollSnapshot: NSImage? {
-        get { editing.scrollSnapshot }
-        set { editing.scrollSnapshot = newValue }
     }
 }

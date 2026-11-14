@@ -31,7 +31,7 @@ extension NativeTimelineCanvasView {
         guard !glideBlocksPointer,
               WindowModalCoordinator.allowsInput(for: self),
               !overlayBlocksInteractions,
-              editingMessageID == nil
+              editing.messageID == nil
         else { return nil }
         guard let index = hitRowIndex(at: point.y),
               items[index].messageID != nil
@@ -91,7 +91,7 @@ extension NativeTimelineCanvasView {
                       !self.glideBlocksPointer,
                       WindowModalCoordinator.allowsInput(for: self),
                       !self.overlayBlocksInteractions,
-                      self.editingMessageID == nil
+                      self.editing.messageID == nil
                 else { return }
                 self.showDefinition(
                     for: lookupText,

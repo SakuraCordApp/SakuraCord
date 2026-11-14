@@ -14,7 +14,7 @@ extension NativeTimelineCanvasView {
         at index: Int
     ) {
         guard !sendTransitionBlocksInteractions,
-              !row.message.hasPoll, !row.message.flags.contains(.voiceMessage), editingMessageID != row.id,
+              !row.message.hasPoll, !row.message.flags.contains(.voiceMessage), editing.messageID != row.id,
               items.indices.contains(index),
               items[index].messageID == row.id,
               let model,
@@ -23,9 +23,9 @@ extension NativeTimelineCanvasView {
         else { return }
         // Editing another message discards that edit, as Cancel does; one
         // still saving keeps its editor.
-        if editingMessageID != nil {
+        if editing.messageID != nil {
             endEditing(commit: nil)
-            guard editingMessageID == nil else { return }
+            guard editing.messageID == nil else { return }
         }
         finishRowMotions()
         removeActionCapsule()
@@ -47,17 +47,17 @@ extension NativeTimelineCanvasView {
         componentButtonPressAnimationTask?.cancel()
         componentButtonPressAnimationTask = nil
 
-        editingMessageID = row.id
-        editingRowIndexCache = index
+        editing.messageID = row.id
+        editing.rowIndex = index
         editing.item = items[index]
-        editingRowScrollSnapshot = nil
+        editing.scrollSnapshot = nil
         let draft = NativeTimelineInlineEditDraft(text: row.message.content)
         editing.draft = draft
         let host = makeEditingHost(
             for: row, model: model, draft: draft,
             isOnOutgoingBubble: editingLayout.bubbleRegion?.isOutgoing == true
         )
-        editingRowHost = host
+        editing.host = host
         addSubview(host, positioned: .above, relativeTo: nil)
         let controls = NativeTimelineActionCapsuleHost(rootView: AnyView(
             NativeTimelineInlineEditControls(
@@ -78,7 +78,7 @@ extension NativeTimelineCanvasView {
         focusEditingTextView(in: host)
         DispatchQueue.main.async { [weak self, weak host] in
             guard let self, let host,
-                  self.editingRowHost === host
+                  self.editing.host === host
             else { return }
             self.focusEditingTextView(in: host)
         }
@@ -102,12 +102,12 @@ extension NativeTimelineCanvasView {
                 self?.endEditing(commit: nil)
             },
             editorHeightDidChange: { [weak self] height in
-                guard let self, self.editingMessageID == row.id else { return }
+                guard let self, self.editing.messageID == row.id else { return }
                 self.editing.editorHeight = ceil(height)
                 self.relayoutEditingRow()
             },
             draftDidChange: { [weak self] in
-                guard let self, self.editingMessageID == row.id,
+                guard let self, self.editing.messageID == row.id,
                       self.editing.keepsRenderedHeight != self.editing.draftMatches(row.message)
                 else { return }
                 self.relayoutEditingRow()
@@ -116,7 +116,7 @@ extension NativeTimelineCanvasView {
         let editingHost = NativeTimelineEditingHost(rootView: AnyView(root))
         editingHost.setAccessibilityIdentifier("message-editing-row-\(row.id)")
         editingHost.fittingHeightDidChange = { [weak self, weak editingHost] _ in
-            guard let self, self.editingRowHost === editingHost else { return }
+            guard let self, self.editing.host === editingHost else { return }
             self.positionEditingRow()
         }
         return editingHost
@@ -132,19 +132,19 @@ extension NativeTimelineCanvasView {
               row.message.author.id == currentUserID
         else { return false }
         beginEditing(row: row, at: index)
-        return editingMessageID == messageID
+        return editing.messageID == messageID
     }
 
     /// Follows the edited row through storage updates; an update to its
     /// message lays the row out again around the editor.
     func reconcileEditingRow() {
-        guard let messageID = editingMessageID else { return }
+        guard let messageID = editing.messageID else { return }
         if editingRowIndex == nil {
             // A message deleted mid-edit, or mid-save, takes its editor with it.
             guard let index = items.firstIndex(where: { $0.messageID == messageID }) else {
                 return finishEditing(at: nil)
             }
-            editingRowIndexCache = index
+            editing.rowIndex = index
         }
         guard let index = editingRowIndex else { return }
         // A saved edit has arrived; the row now draws what the editor showed.
@@ -181,7 +181,7 @@ extension NativeTimelineCanvasView {
 
     private func applyEditingLayout(_ layout: NativeTimelineRowLayout) {
         guard let index = editingRowIndex else { return }
-        let previousHeight = editingRowHeight ?? storage.layouts[index].height
+        let previousHeight = editing.layout?.height ?? storage.layouts[index].height
         editing.layout = layout
         invalidateBitmap(items[index].identifier)
         clearPointerRegionCaches()
@@ -195,7 +195,7 @@ extension NativeTimelineCanvasView {
     /// The editor sits on the text it replaces; emoji suggestions open
     /// above it, over the rows before.
     func positionEditingRow() {
-        guard let host = editingRowHost,
+        guard let host = editing.host,
               let index = editingRowIndex,
               let content = editing.layout?.contentFrame
         else { return }
@@ -215,7 +215,7 @@ extension NativeTimelineCanvasView {
             width: content.width,
             height: height
         )
-        editingOverlayLocalFrame = localFrame
+        editing.overlayLocalFrame = localFrame
         let frame = localFrame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
         if host.frame != frame {
             host.frame = frame
@@ -227,7 +227,7 @@ extension NativeTimelineCanvasView {
     }
 
     func endEditing(commit value: String?) {
-        guard let messageID = editingMessageID, editing.committedContent == nil else { return }
+        guard let messageID = editing.messageID, editing.committedContent == nil else { return }
         let index = editingRowIndex ?? items.firstIndex(where: { $0.messageID == messageID })
         let message: Message?
         if let index,
@@ -296,11 +296,11 @@ extension NativeTimelineCanvasView {
     }
 
     var editingRowIndex: Int? {
-        guard let index = editingRowIndexCache,
+        guard let index = editing.rowIndex,
               items.indices.contains(index),
               layouts.indices.contains(index),
               rowOrigins.indices.contains(index),
-              items[index].messageID == editingMessageID
+              items[index].messageID == editing.messageID
         else { return nil }
         return index
     }
@@ -327,7 +327,7 @@ extension NativeTimelineCanvasView {
     }
 
     func editingOverlayFrame(at index: Int) -> CGRect {
-        guard let localFrame = editingOverlayLocalFrame else {
+        guard let localFrame = editing.overlayLocalFrame else {
             return .zero
         }
         return localFrame.offsetBy(
@@ -338,7 +338,7 @@ extension NativeTimelineCanvasView {
 
     /// A picture of the inline editor as it shows now.
     func editingHostSnapshot() -> NSImage? {
-        guard let host = editingRowHost,
+        guard let host = editing.host,
               host.alphaValue > 0.5,
               host.bounds.width > 0,
               host.bounds.height > 0,
@@ -352,30 +352,30 @@ extension NativeTimelineCanvasView {
     }
 
     func freezeEditingRowForScroll() {
-        guard editingRowScrollSnapshot == nil,
-              let host = editingRowHost,
+        guard editing.scrollSnapshot == nil,
+              let host = editing.host,
               let image = editingHostSnapshot()
         else { return }
-        editingRowScrollSnapshot = image
+        editing.scrollSnapshot = image
         host.alphaValue = 0
-        if let index = editingRowIndexCache, items.indices.contains(index) {
+        if let index = editing.rowIndex, items.indices.contains(index) {
             setNeedsDisplay(rowFrame(at: index))
         }
     }
 
     func restoreEditingRowAfterScroll() {
-        guard let host = editingRowHost, host.alphaValue < 0.5 else {
+        guard let host = editing.host, host.alphaValue < 0.5 else {
             return
         }
         host.alphaValue = 1
-        editingRowScrollSnapshot = nil
+        editing.scrollSnapshot = nil
         if window?.isKeyWindow == true,
-           let editingTextView,
+           let editingTextView = editing.textView,
            window?.firstResponder !== editingTextView
         {
             window?.makeFirstResponder(editingTextView)
         }
-        if let index = editingRowIndexCache, items.indices.contains(index) {
+        if let index = editing.rowIndex, items.indices.contains(index) {
             setNeedsDisplay(rowFrame(at: index))
         }
     }
@@ -384,7 +384,7 @@ extension NativeTimelineCanvasView {
         in host: NSView
     ) {
         guard let textView = host.firstDescendant(of: ComposerNSTextView.self) else { return }
-        editingTextView = textView
+        editing.textView = textView
         guard let window = textView.window ?? self.window else { return }
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(textView)

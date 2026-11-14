@@ -1111,7 +1111,7 @@ extension NativeTimelineCanvasView {
         for (key, player) in inlinePlayers {
             guard let index = rowIndex(forIdentifier: key.row),
                   layouts.indices.contains(index),
-                  let messageID = items[index].messageID, messageID != editingMessageID,
+                  let messageID = items[index].messageID, messageID != editing.messageID,
                   let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index], messageID: messageID)
             else {
                 player.stop()
