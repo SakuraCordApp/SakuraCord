@@ -1,6 +1,7 @@
 @testable import DiscordProtocol
 import Foundation
 import SakuraCordModels
+import Synchronization
 import Testing
 
 /// Request bodies captured from the official client (web build 670026) on
@@ -339,41 +340,44 @@ private struct CapturedFavoritesRequest: @unchecked Sendable {
 
 /// Records every request and echoes a settings save back, as Discord does.
 private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var requests: [CapturedFavoritesRequest] = []
-    /// Guards the held-response state, which URLSession's loading thread and the test share.
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var holdsResponses = false
-    /// Each held request's completion, which fails it when passed true.
-    nonisolated(unsafe) private static var heldResponses: [(Bool) -> Void] = []
+    /// Shared by URLSession's loading thread and the test.
+    private struct State: Sendable {
+        var requests: [CapturedFavoritesRequest] = []
+        var holdsResponses = false
+        /// Each held request's completion, which fails it when passed true.
+        var heldResponses: [@Sendable (Bool) -> Void] = []
+    }
+
+    private static let state = Mutex(State())
+
+    static var requests: [CapturedFavoritesRequest] {
+        state.withLock { $0.requests }
+    }
 
     static func reset() {
-        requests = []
-        lock.withLock {
-            holdsResponses = false
-            heldResponses = []
-        }
+        state.withLock { $0 = State() }
     }
 
     /// Holds responses until released, so later edits arrive while a save is in flight.
     static func holdResponses() {
-        lock.withLock { holdsResponses = true }
+        state.withLock { $0.holdsResponses = true }
     }
 
     static var hasHeldResponse: Bool {
-        lock.withLock { !heldResponses.isEmpty }
+        state.withLock { !$0.heldResponses.isEmpty }
     }
 
     static func releaseHeldResponses(failing: Bool = false) {
-        lock.withLock { holdsResponses = false }
+        state.withLock { $0.holdsResponses = false }
         releaseHeldResponsesKeepingHold(failing: failing)
     }
 
     /// Completes the held requests and keeps holding, so the next request is
     /// held however soon it follows.
     static func releaseHeldResponsesKeepingHold(failing: Bool = false) {
-        let held = lock.withLock {
-            defer { heldResponses = [] }
-            return heldResponses
+        let held = state.withLock { state in
+            defer { state.heldResponses = [] }
+            return state.heldResponses
         }
         for finish in held { finish(failing) }
     }
@@ -386,14 +390,15 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
         let body = Self.requestBody(request).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
         } ?? [:]
-        Self.requests.append(CapturedFavoritesRequest(
+        let captured = CapturedFavoritesRequest(
             method: request.httpMethod ?? "",
             path: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? "",
             body: body
-        ))
+        )
+        Self.state.withLock { $0.requests.append(captured) }
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
         let payload = try? JSONSerialization.data(withJSONObject: ["settings": body["settings"] as? String ?? ""])
-        let finish = { [self] (fails: Bool) in
+        let finish: @Sendable (Bool) -> Void = { [self] fails in
             guard !fails else {
                 client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
                 return
@@ -402,9 +407,9 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: payload ?? Data())
             client?.urlProtocolDidFinishLoading(self)
         }
-        let isHeld = Self.lock.withLock {
-            if Self.holdsResponses { Self.heldResponses.append(finish) }
-            return Self.holdsResponses
+        let isHeld = Self.state.withLock { state in
+            if state.holdsResponses { state.heldResponses.append(finish) }
+            return state.holdsResponses
         }
         if !isHeld { finish(false) }
     }

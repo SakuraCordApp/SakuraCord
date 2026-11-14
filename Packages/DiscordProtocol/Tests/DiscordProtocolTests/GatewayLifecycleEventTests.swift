@@ -475,7 +475,7 @@ struct GatewayLifecycleEventTests {
         session: URLSession = URLSession(configuration: .ephemeral)
     ) -> DiscordRESTProvider {
         DiscordRESTProvider(
-            credentials: GatewayLifecycleCredentialStore(),
+            credentials: TestCredentialStore(token: "unused", handles: []),
             handle: CredentialHandle(accountID: "1"),
             session: session
         )
@@ -646,19 +646,6 @@ struct GatewayLifecycleEventTests {
             "global_name": .string(globalName),
         ])
     }
-}
-
-private actor GatewayLifecycleCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("unused".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private final class GatewayDispatchCountingURLProtocol: URLProtocol, @unchecked Sendable {

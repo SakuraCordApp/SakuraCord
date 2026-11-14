@@ -126,7 +126,7 @@ extension ProviderRequestContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RateLimitURLProtocol.self]
         return DiscordRESTProvider(
-            credentials: ServerContractCredentialStore(),
+            credentials: TestCredentialStore(),
             handle: CredentialHandle(accountID: "1"),
             session: URLSession(configuration: configuration)
         )
@@ -149,21 +149,5 @@ private struct GuildNotificationToggleExpectation {
         self.isEnabled = isEnabled
         self.key = key
         self.value = value
-    }
-}
-
-private actor ServerContractCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("test-session-credential-value".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "1")]
     }
 }

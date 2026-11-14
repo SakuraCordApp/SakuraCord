@@ -73,7 +73,7 @@ struct RelationshipContractTests {
     }
 
     @Test func `READY, Gateway events and a racing full read reduce to one authoritative record set`() async throws {
-        let credentials = RelationshipInterleavingCredentials()
+        let credentials = NicknameInterleavingCredentials()
         let (provider, session) = await makeProvider(credentials: credentials)
         defer { session.invalidateAndCancel() }
         await provider.handleGatewayDispatch(name: "READY", body: .object([
@@ -152,7 +152,7 @@ struct RelationshipContractTests {
 
     @Test(arguments: ["relationship", "nickname", "identity"])
     func `older full reads preserve newer relationship metadata and user identities`(change: String) async throws {
-        let credentials = RelationshipInterleavingCredentials()
+        let credentials = NicknameInterleavingCredentials()
         let (provider, session) = await makeProvider(credentials: credentials)
         defer { session.invalidateAndCancel() }
         await provider.handleGatewayDispatch(name: "RELATIONSHIP_ADD", body: row("2", type: 1, extra: [
@@ -434,24 +434,6 @@ private extension DiscordRESTProvider {
     func replaceCurrentUser(id: UInt64 = 99) {
         currentUser = User(id: .init(rawValue: id), username: "fixture\(id)", displayName: "Fixture")
     }
-}
-
-private actor RelationshipInterleavingCredentials: CredentialStore {
-    private let base = TestCredentialStore()
-    private var action: (@Sendable () async -> Void)?
-
-    func interleave(_ action: @escaping @Sendable () async -> Void) { self.action = action }
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        let pending = action
-        action = nil
-        await pending?()
-        return try await base.credential(for: handle)
-    }
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        try await base.store(credential, accountID: accountID)
-    }
-    func remove(_ handle: CredentialHandle) async throws { try await base.remove(handle) }
-    func handles() async throws -> [CredentialHandle] { try await base.handles() }
 }
 
 private final class RelationshipFixture: NSObject, URLSessionTaskDelegate {

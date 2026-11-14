@@ -10,7 +10,7 @@ struct ReactionReactorProviderTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ReactionReactorURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ReactionReactorCredentialStore(), handle: CredentialHandle(accountID: "1"),
+            credentials: TestCredentialStore(token: "reaction-test-session"), handle: CredentialHandle(accountID: "1"),
             session: URLSession(configuration: configuration)
         )
         let first = try await provider.reactionUsers(
@@ -42,7 +42,7 @@ struct ReactionReactorProviderTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ReactionReactorURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ReactionReactorCredentialStore(),
+            credentials: TestCredentialStore(token: "reaction-test-session"),
             handle: CredentialHandle(accountID: "1"),
             session: URLSession(configuration: configuration)
         )
@@ -95,7 +95,7 @@ struct ReactionReactorProviderTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ReactionReactorURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ReactionReactorCredentialStore(),
+            credentials: TestCredentialStore(token: "reaction-test-session"),
             handle: CredentialHandle(accountID: "1"),
             session: URLSession(configuration: configuration)
         )
@@ -115,7 +115,7 @@ struct ReactionReactorProviderTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ReactionReactorURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ReactionReactorCredentialStore(), handle: CredentialHandle(accountID: "1"),
+            credentials: TestCredentialStore(token: "reaction-test-session"), handle: CredentialHandle(accountID: "1"),
             session: URLSession(configuration: configuration)
         )
         let received = AsyncStream<Void>.makeStream()
@@ -178,22 +178,6 @@ struct ReactionReactorProviderTests {
 private extension DiscordRESTProvider {
     func setReactorResponseGate(_ callback: @escaping @Sendable () async -> Void) {
         reactorResponseReceivedForTesting = callback
-    }
-}
-
-private actor ReactionReactorCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("reaction-test-session".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "1")]
     }
 }
 

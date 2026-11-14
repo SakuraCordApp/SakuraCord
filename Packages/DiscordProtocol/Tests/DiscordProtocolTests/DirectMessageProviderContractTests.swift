@@ -385,7 +385,7 @@ extension DirectMessageProviderContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DirectMessageURLProtocol.self]
         return DiscordRESTProvider(
-            credentials: DirectMessageCredentialStore(),
+            credentials: TestCredentialStore(token: "dm-contract-session", handles: [CredentialHandle(accountID: "dm-contract")]),
             handle: CredentialHandle(accountID: "dm-contract"),
             session: URLSession(configuration: configuration)
         )
@@ -472,25 +472,6 @@ private func privateCallPayload(
         "ongoing_rings": .object([:]),
         "voice_states": .array(voiceState.map { [$0] } ?? [])
     ])
-}
-
-actor DirectMessageCredentialStore: CredentialStore {
-    func store(
-        _ credential: Data,
-        accountID: String
-    ) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("dm-contract-session".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "dm-contract")]
-    }
 }
 
 private actor ProfileSaveReceipt {

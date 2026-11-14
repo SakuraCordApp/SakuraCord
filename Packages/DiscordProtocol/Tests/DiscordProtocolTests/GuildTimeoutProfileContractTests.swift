@@ -10,7 +10,7 @@ extension DirectMessageProviderContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DirectMessageURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: DirectMessageCredentialStore(), handle: CredentialHandle(accountID: "dm-contract"),
+            credentials: TestCredentialStore(token: "dm-contract-session", handles: [CredentialHandle(accountID: "dm-contract")]), handle: CredentialHandle(accountID: "dm-contract"),
             session: URLSession(configuration: configuration)
         )
         let account: JSONValue = .object([

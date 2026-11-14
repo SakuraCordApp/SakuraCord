@@ -100,15 +100,12 @@ struct InboxContractTests {
     private func makeProvider() -> DiscordRESTProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [InboxContractURLProtocol.self]
-        return DiscordRESTProvider(credentials: InboxContractCredentials(), handle: CredentialHandle(accountID: "inbox-contract"), session: URLSession(configuration: configuration))
+        return DiscordRESTProvider(
+            credentials: TestCredentialStore(token: "inbox-contract", handles: []),
+            handle: CredentialHandle(accountID: "inbox-contract"),
+            session: URLSession(configuration: configuration)
+        )
     }
-}
-
-private actor InboxContractCredentials: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle { CredentialHandle(accountID: accountID) }
-    func credential(for handle: CredentialHandle) async throws -> Data { Data("inbox-contract".utf8) }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private final class InboxContractURLProtocol: URLProtocol, @unchecked Sendable {

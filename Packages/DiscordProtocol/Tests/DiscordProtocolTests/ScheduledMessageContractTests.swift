@@ -1,5 +1,6 @@
 import Foundation
 import SakuraCordModels
+import Synchronization
 import Testing
 @testable import DiscordProtocol
 
@@ -84,22 +85,11 @@ struct ScheduledMessageContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ScheduledURLProtocol.self]
         return DiscordRESTProvider(
-            credentials: ScheduledCredentialStore(),
+            credentials: TestCredentialStore(token: "scheduled-contract-session", handles: []),
             handle: CredentialHandle(accountID: "scheduled-contract"),
             session: URLSession(configuration: configuration)
         )
     }
-}
-
-private actor ScheduledCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("scheduled-contract-session".utf8)
-    }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private struct CapturedScheduledRequest: @unchecked Sendable {
@@ -110,12 +100,20 @@ private struct CapturedScheduledRequest: @unchecked Sendable {
 }
 
 private final class ScheduledURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var requests: [CapturedScheduledRequest] = []
-    nonisolated(unsafe) static var rejectsCreate = false
+    /// Shared by URLSession's loading thread and the test.
+    private struct State: Sendable {
+        var requests: [CapturedScheduledRequest] = []
+        var rejectsCreate = false
+    }
+
+    private static let state = Mutex(State())
+
+    static var requests: [CapturedScheduledRequest] {
+        state.withLock { $0.requests }
+    }
 
     static func reset(rejectsCreate: Bool = false) {
-        requests = []
-        self.rejectsCreate = rejectsCreate
+        state.withLock { $0 = State(rejectsCreate: rejectsCreate) }
     }
 
     override static func canInit(with request: URLRequest) -> Bool { true }
@@ -124,14 +122,18 @@ private final class ScheduledURLProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         let method = request.httpMethod ?? ""
         let path = request.url?.path ?? ""
-        Self.requests.append(CapturedScheduledRequest(
+        let captured = CapturedScheduledRequest(
             method: method,
             path: path,
             context: request.value(forHTTPHeaderField: "X-Context-Properties"),
             body: requestBody().flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        ))
+        )
+        let rejectsCreate = Self.state.withLock { state in
+            state.requests.append(captured)
+            return state.rejectsCreate
+        }
         let (status, body): (Int, String) = switch (method, path.hasSuffix("/send")) {
-        case ("POST", false) where Self.rejectsCreate:
+        case ("POST", false) where rejectsCreate:
             (400, #"{"message":"You have too many scheduled messages","code":640003}"#)
         case ("DELETE", _): (204, "")
         case (_, true): (200, Self.sentMessage)

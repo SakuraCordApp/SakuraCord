@@ -10,7 +10,7 @@ struct MessageForwardingContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ForwardingURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ForwardingCredentialStore(),
+            credentials: TestCredentialStore(token: "forwarding-contract-session", handles: [CredentialHandle(accountID: "forwarding")]),
             handle: CredentialHandle(accountID: "forwarding"),
             session: URLSession(configuration: configuration)
         )
@@ -67,7 +67,7 @@ struct MessageForwardingContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ForwardingURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ForwardingCredentialStore(),
+            credentials: TestCredentialStore(token: "forwarding-contract-session", handles: [CredentialHandle(accountID: "forwarding")]),
             handle: CredentialHandle(accountID: "forwarding"),
             session: URLSession(configuration: configuration)
         )
@@ -98,7 +98,7 @@ struct MessageForwardingContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ForwardingURLProtocol.self]
         let provider = DiscordRESTProvider(
-            credentials: ForwardingCredentialStore(),
+            credentials: TestCredentialStore(token: "forwarding-contract-session", handles: [CredentialHandle(accountID: "forwarding")]),
             handle: CredentialHandle(accountID: "forwarding"),
             session: URLSession(configuration: configuration)
         )
@@ -117,22 +117,6 @@ struct MessageForwardingContractTests {
         #expect(Set(body.keys) == ["recipients"])
         #expect(body["recipients"] as? [String] == ["2"])
         await provider.disconnect()
-    }
-}
-
-private actor ForwardingCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("forwarding-contract-session".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "forwarding")]
     }
 }
 

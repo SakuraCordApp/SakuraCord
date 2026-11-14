@@ -70,22 +70,11 @@ struct PinnedMessagesContractTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PinURLProtocol.self]
         return DiscordRESTProvider(
-            credentials: PinCredentialStore(),
+            credentials: TestCredentialStore(token: "pins-contract-session", handles: []),
             handle: CredentialHandle(accountID: "pins-contract"),
             session: URLSession(configuration: configuration)
         )
     }
-}
-
-private actor PinCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("pins-contract-session".utf8)
-    }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private struct CapturedPinRequest: Sendable {

@@ -3,8 +3,20 @@ import Foundation
 import SakuraCordModels
 import Testing
 
+/// Serves one fixed session credential; suites give theirs a distinct value
+/// to tell their requests apart.
 actor TestCredentialStore: CredentialStore {
+    private let token: String
+    private let storedHandles: [CredentialHandle]
     private(set) var credentialReadCount = 0
+
+    init(
+        token: String = "test-session-credential-value",
+        handles: [CredentialHandle] = [CredentialHandle(accountID: "1")]
+    ) {
+        self.token = token
+        storedHandles = handles
+    }
 
     func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
         CredentialHandle(accountID: accountID)
@@ -12,12 +24,12 @@ actor TestCredentialStore: CredentialStore {
 
     func credential(for handle: CredentialHandle) async throws -> Data {
         credentialReadCount += 1
-        return Data("test-session-credential-value".utf8)
+        return Data(token.utf8)
     }
 
     func remove(_ handle: CredentialHandle) async throws {}
     func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "1")]
+        storedHandles
     }
 }
 

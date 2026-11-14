@@ -53,23 +53,12 @@ struct AttachmentLinkContractTests {
         let handle = CredentialHandle(accountID: "attachment-link-contract")
         if let diagnostics {
             return DiscordRESTProvider(
-                credentials: AttachmentRefreshCredentialStore(), handle: handle, session: session,
+                credentials: TestCredentialStore(token: "attachment-link-contract-session", handles: []), handle: handle, session: session,
                 apiDiagnostics: diagnostics
             )
         }
-        return DiscordRESTProvider(credentials: AttachmentRefreshCredentialStore(), handle: handle, session: session)
+        return DiscordRESTProvider(credentials: TestCredentialStore(token: "attachment-link-contract-session", handles: []), handle: handle, session: session)
     }
-}
-
-private actor AttachmentRefreshCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("attachment-link-contract-session".utf8)
-    }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private struct CapturedAttachmentRefreshRequest: @unchecked Sendable {
