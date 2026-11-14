@@ -87,7 +87,7 @@ extension AppModel {
                 }
             } else {
                 add("ignore", "Ignore…", "eye.slash", .destructive, enabled: !pending) { model in
-                    guard !model.isUserIgnored(user.id), model.relationships.first(where: { $0.id == user.id })?.type != .blocked else { return }
+                    guard !model.isUserIgnored(user.id), model.relationshipType(with: user.id) != .blocked else { return }
                     model.friends.confirmation = .ignore(user, location)
                 }
             }
@@ -112,7 +112,7 @@ extension AppModel {
         case .none, .implicit:
             guard !user.username.isEmpty else { break }
             add("add-friend", "Add Friend", "person.badge.plus", .relationship, !pending) { model in
-                let type = model.relationships.first { $0.id == user.id }?.type ?? .none
+                let type = model.relationshipType(with: user.id) ?? .none
                 guard type == .none || type == .implicit else { return }
                 model.sendFriendRequest(to: user, location: location)
             }
@@ -125,16 +125,16 @@ extension AppModel {
                 }
             }
             add("accept", "Accept Friend Request", "checkmark", .relationship, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type == .incomingRequest else { return }
+                guard model.relationshipType(with: user.id) == .incomingRequest else { return }
                 model.acceptFriendRequest(from: user)
             }
             add("decline", "Decline Request", "xmark", .destructive, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type == .incomingRequest else { return }
+                guard model.relationshipType(with: user.id) == .incomingRequest else { return }
                 model.removeRelationship(with: user.id, as: .declineIncomingRequest)
             }
         case .outgoingRequest:
             add("cancel-request", "Cancel Request", "xmark", .destructive, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type == .outgoingRequest else { return }
+                guard model.relationshipType(with: user.id) == .outgoingRequest else { return }
                 model.removeRelationship(with: user.id, as: .cancelOutgoingRequest)
             }
         case .friend:
@@ -147,12 +147,12 @@ extension AppModel {
         }
         if relationship?.type == .blocked {
             add("unblock", "Unblock", "hand.raised.slash", .destructive, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type == .blocked else { return }
+                guard model.relationshipType(with: user.id) == .blocked else { return }
                 model.removeRelationship(with: user.id, as: .unblock)
             }
         } else {
             add("block", "Block…", "hand.raised", .destructive, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type != .blocked else { return }
+                guard model.relationshipType(with: user.id) != .blocked else { return }
                 model.friends.confirmation = .block(user)
             }
         }
@@ -189,7 +189,7 @@ extension AppModel {
 
     private func callUserFromMenu(_ user: User) {
         guard user.id != currentUser?.id, !user.isBot,
-              relationships.first(where: { $0.id == user.id })?.type != .blocked else { return }
+              relationshipType(with: user.id) != .blocked else { return }
         startAccountChildTask(account: accountSession()) { model, session in
             do {
                 let channel = try await session.provider.ensurePrivateChannel(for: user.id)

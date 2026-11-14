@@ -196,16 +196,19 @@ extension AppModel {
         }
     }
 
+    /// The type of the current account's relationship with a user, if any.
+    func relationshipType(with userID: UserID) -> RelationshipType? {
+        relationships.first { $0.id == userID }?.type
+    }
+
     func setUserIgnored(_ user: User, ignored: Bool, location: IgnoreActionLocation = .contextMenu) {
-        guard user.id != currentUser?.id, !user.isWebhookIdentity, !user.isSystem,
-              relationships.first(where: { $0.id == user.id })?.type != .blocked,
-              isUserIgnored(user.id) != ignored else { return }
+        guard !user.isWebhookIdentity, !user.isSystem else { return }
         setUserIgnored(user.id, ignored: ignored, location: location)
     }
 
     func setUserIgnored(_ userID: UserID, ignored: Bool, location: IgnoreActionLocation) {
         guard userID != currentUser?.id,
-              relationships.first(where: { $0.id == userID })?.type != .blocked,
+              relationshipType(with: userID) != .blocked,
               isUserIgnored(userID) != ignored else { return }
         performRelationshipAction(on: userID) { _, session in
             try await session.provider.setUserIgnored(userID, ignored: ignored, location: location)
@@ -227,10 +230,10 @@ extension AppModel {
         case .ignore(let user, let location):
             setUserIgnored(user, ignored: true, location: location)
         case .block(let user):
-            guard relationships.first(where: { $0.id == user.id })?.type != .blocked else { return }
+            guard relationshipType(with: user.id) != .blocked else { return }
             blockUser(user)
         case .acceptStranger(let user):
-            guard relationships.first(where: { $0.id == user.id })?.type == .incomingRequest else { return }
+            guard relationshipType(with: user.id) == .incomingRequest else { return }
             acceptFriendRequest(from: user, confirmingStranger: true)
         }
     }
