@@ -1,11 +1,11 @@
 import Foundation
 
-/// Thread and forum-post names: Discord accepts 1–100 characters.
 /// Discord's three-day auto-archive, for a thread whose channel sets none.
 public enum ThreadAutoArchive {
     public static let defaultDuration = 4_320
 }
 
+/// Thread and forum-post names: Discord accepts 1–100 characters.
 public enum ThreadNamePolicy {
     public static let maximumLength = 100
     /// Fallback when a starter message yields no usable text.

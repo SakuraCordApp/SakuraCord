@@ -50,10 +50,6 @@ public struct DiscordEmoji: Identifiable, Codable, Hashable, Sendable {
         "<\(isAnimated ? "a" : ""):\(name):\(id)>"
     }
 
-    public var reactionToken: String {
-        "\(name):\(id)"
-    }
-
     public var imageURL: URL? {
         assetURL ?? Self.imageURL(id: id, isAnimated: isAnimated)
     }

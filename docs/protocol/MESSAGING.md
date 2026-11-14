@@ -1066,7 +1066,7 @@ re-observed on 11 November 2026 from the desktop client's own recorder
 [Discord's message documentation](https://docs.discord.com/developers/resources/message#voice-messages).
 
 - **Recording.** Mono 48 kHz Ogg Opus. Apple frameworks encode Opus but write it
-  only into CAF, so [MediaPipeline](../../Packages/MediaPipeline/Sources/MediaPipeline/OggOpusWriter.swift)
+  only into CAF, so [MediaPipeline](../../Packages/MediaPipeline/Sources/MediaPipeline/OggOpus.swift)
   muxes the packets itself: 312-sample pre-skip, with the final granule trimming
   encoder padding. Never upload CAF renamed to `.ogg`. Recordings stop at
   Discord's 20-minute limit. Capture applies no gain, so the recording is

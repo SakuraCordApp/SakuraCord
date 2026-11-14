@@ -18,12 +18,6 @@ public enum DiscordProfileImageAssets {
         return URL(string: "https://discord.com/assets/\(assets[Int(index)])")
     }
 
-    /// Artwork used by the official image chooser, in reading order.
-    public static let gifPickerArtwork: [URL] = [
-        "1071e0c5ceaf6ef7.png", "6d14801ca95f25f1.png",
-        "4637e85fff87537c.png", "ca693e3ef16951f4.png"
-    ].compactMap { URL(string: "https://discord.com/assets/\($0)") }
-
     /// Profile cropping uses the first-party asset proxy. Picker thumbnails
     /// continue to use the response-provided media origin.
     public static func editableGIFURL(_ candidate: URL?) -> URL? {
