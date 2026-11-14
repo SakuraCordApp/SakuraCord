@@ -501,7 +501,6 @@ enum MentionAutocompleteSuggestionFactory {
         currentMember: Member?,
         roles: [GuildRole]
     ) -> Bool {
-        let viewChannel: UInt64 = 1 << 10
         guard let permissions = resolvedPermissions(
             in: channel,
             guild: guild,
@@ -509,7 +508,7 @@ enum MentionAutocompleteSuggestionFactory {
             currentMember: currentMember,
             roles: roles
         ) else { return true }
-        return permissions & viewChannel != 0
+        return permissions & DiscordPermissionBits.viewChannel != 0
     }
 
     static func canMentionNonMentionableRoles(
@@ -528,8 +527,7 @@ enum MentionAutocompleteSuggestionFactory {
                   roles: roles
               )
         else { return false }
-        let mentionEveryone: UInt64 = 1 << 17
-        return permissions & mentionEveryone != 0
+        return permissions & DiscordPermissionBits.mentionEveryone != 0
     }
 
     private static func resolvedPermissions(
@@ -567,8 +565,7 @@ enum MentionAutocompleteSuggestionFactory {
                 permissions |= role.permissions ?? 0
             }
         }
-        let administrator: UInt64 = 1 << 3
-        if permissions & administrator != 0 { return .max }
+        if permissions & DiscordPermissionBits.administrator != 0 { return .max }
 
         let overwrites = channel.permissionOverwrites ?? []
         if let overwrite = overwrites.first(where: {

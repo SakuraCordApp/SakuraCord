@@ -347,10 +347,9 @@ extension AppModel {
             guard let basis = conversationPermissionBasis(for: guildID) else { return nil }
             return basis.guild.isOwnedByCurrentUser == true ? .max : basis.resolvedBasePermissions
         }
-        let createPublicThreads: UInt64 = 1 << 35
         let threadable = channel.kind == .text || channel.kind == .announcement
         let canCreateThread = threadable && channel.guildID != nil
-            && (channelPermissions.map { $0 & (createPublicThreads | DiscordPermissionBits.administrator) != 0 } ?? false)
+            && (channelPermissions.map { $0 & (DiscordPermissionBits.createPublicThreads | DiscordPermissionBits.administrator) != 0 } ?? false)
         return DiscordBuiltInCommands.Context(
             isPrivate: channel.guildID == nil,
             isGroupDirectMessage: channel.kind == .groupDirectMessage,

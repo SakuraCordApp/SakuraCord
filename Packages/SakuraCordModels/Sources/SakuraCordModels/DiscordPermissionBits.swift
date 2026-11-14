@@ -13,6 +13,7 @@ public enum DiscordPermissionBits {
     public static let embedLinks: UInt64 = 1 << 14
     public static let attachFiles: UInt64 = 1 << 15
     public static let readMessageHistory: UInt64 = 1 << 16
+    public static let mentionEveryone: UInt64 = 1 << 17
     public static let useExternalEmojis: UInt64 = 1 << 18
     public static let connect: UInt64 = 1 << 20
     public static let speak: UInt64 = 1 << 21
