@@ -1,25 +1,5 @@
 import CryptoKit
 import Foundation
-import SakuraCordModels
-
-public struct GIFResult: Identifiable, Hashable, Sendable {
-    public let id: String
-    public let title: String
-    public let previewURL: URL
-    public let mediaURL: URL
-
-    public init(id: String, title: String, previewURL: URL, mediaURL: URL) {
-        self.id = id
-        self.title = title
-        self.previewURL = previewURL
-        self.mediaURL = mediaURL
-    }
-}
-
-public protocol GIFProvider: Sendable {
-    func search(query: String) async throws -> [GIFResult]
-    func trending() async throws -> [GIFResult]
-}
 
 public actor MediaCache {
     public enum EvictionStatus: Equatable, Sendable {
@@ -374,16 +354,5 @@ public actor MediaCache {
         let url: URL
         let byteCount: Int64
         var lastAccess: Date
-    }
-}
-
-public struct URLFallbackGIFProvider: GIFProvider {
-    public init() {}
-    public func search(query: String) async throws -> [GIFResult] {
-        []
-    }
-
-    public func trending() async throws -> [GIFResult] {
-        []
     }
 }

@@ -110,6 +110,10 @@ extension Data {
         Swift.withUnsafeBytes(of: &value) { append(contentsOf: $0) }
     }
 
+    mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
+        Swift.withUnsafeBytes(of: value.littleEndian) { append(contentsOf: $0) }
+    }
+
     func readUInt16BigEndian(at offset: Int) -> UInt16? {
         guard offset >= 0, count >= offset + 2 else { return nil }
         let first = index(startIndex, offsetBy: offset)
