@@ -108,16 +108,6 @@ nonisolated enum TimelineHistoryLoadingPolicy {
     }
 }
 
-nonisolated enum TimelineHistoryScrollIntentPolicy {
-    static func shouldRetain(
-        hasIntent: Bool,
-        isGestureActive: Bool,
-        isInProvisionalHistory: Bool
-    ) -> Bool {
-        hasIntent && (isGestureActive || isInProvisionalHistory)
-    }
-}
-
 enum NativeTimelineConversation: Hashable {
     case channel(ChannelID?)
     case thread(ChannelID?)

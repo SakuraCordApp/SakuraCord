@@ -500,11 +500,7 @@ struct TimelineHistoryScrollIntent: Equatable {
 
     func retained(isInProvisionalHistory: Bool) -> Self {
         var next = self
-        next.hasIntent = TimelineHistoryScrollIntentPolicy.shouldRetain(
-            hasIntent: hasIntent,
-            isGestureActive: isGestureActive,
-            isInProvisionalHistory: isInProvisionalHistory
-        )
+        next.hasIntent = hasIntent && (isGestureActive || isInProvisionalHistory)
         return next
     }
 }

@@ -214,28 +214,15 @@ import Testing
     )
 }
 
-@Test func `earlier history intent survives an active gesture or requested skeleton viewport`() {
-    #expect(
-        TimelineHistoryScrollIntentPolicy.shouldRetain(
-            hasIntent: true,
-            isGestureActive: true,
-            isInProvisionalHistory: false
-        )
-    )
-    #expect(
-        TimelineHistoryScrollIntentPolicy.shouldRetain(
-            hasIntent: true,
-            isGestureActive: false,
-            isInProvisionalHistory: true
-        )
-    )
-    #expect(
-        !TimelineHistoryScrollIntentPolicy.shouldRetain(
-            hasIntent: true,
-            isGestureActive: false,
-            isInProvisionalHistory: false
-        )
-    )
+@MainActor @Test func `earlier history intent survives an active gesture or requested skeleton viewport`() {
+    var intent = TimelineHistoryScrollIntent()
+    intent.gestureBegan(grantsIntent: true)
+    #expect(intent.retained(isInProvisionalHistory: false).hasIntent)
+    var ended = intent
+    ended.gestureEnded(isInProvisionalHistory: true)
+    #expect(ended.hasIntent)
+    ended.gestureEnded(isInProvisionalHistory: false)
+    #expect(!ended.hasIntent)
 }
 
 @Test func `later history loads only at the loaded window boundary`() {
