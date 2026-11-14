@@ -195,9 +195,7 @@ import SakuraCordModels
             outcome: String,
             pageCount: Int
         ) {
-            guard let path = ProcessInfo.processInfo.environment[
-                "SAKURACORD_PERFORMANCE_RESULT_PATH"
-            ] else { return }
+            guard let path = PerformanceBenchmarkHarness.resultPath else { return }
             let contents = """
             outcome\t\(outcome)
             page_count\t\(pageCount)
@@ -295,9 +293,7 @@ import SakuraCordModels
             sourceAccountID: String?,
             targetAccountID: String?
         ) {
-            guard let path = ProcessInfo.processInfo.environment[
-                "SAKURACORD_PERFORMANCE_RESULT_PATH"
-            ] else { return }
+            guard let path = PerformanceBenchmarkHarness.resultPath else { return }
             let contents = """
             outcome\t\(outcome)
             switch_count\t\(switchCount)
@@ -542,9 +538,7 @@ import SakuraCordModels
             detail: String = "",
             channel: Channel? = nil
         ) {
-            guard let path = ProcessInfo.processInfo.environment[
-                "SAKURACORD_PERFORMANCE_RESULT_PATH"
-            ] else { return }
+            guard let path = PerformanceBenchmarkHarness.resultPath else { return }
             let contents = """
             outcome\t\(outcome)
             detail\t\(detail)
@@ -741,9 +735,7 @@ import SakuraCordModels
             serverCount: Int,
             channelCount: Int
         ) {
-            guard let path = ProcessInfo.processInfo.environment[
-                "SAKURACORD_PERFORMANCE_RESULT_PATH"
-            ] else { return }
+            guard let path = PerformanceBenchmarkHarness.resultPath else { return }
             let contents = """
             outcome\t\(outcome)
             direct_message_count\t\(directMessageCount)

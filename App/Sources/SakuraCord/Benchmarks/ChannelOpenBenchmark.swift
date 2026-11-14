@@ -24,7 +24,7 @@ enum ChannelOpenBenchmark {
             opens.append(Double(elapsed.components.seconds) * 1_000 + Double(elapsed.components.attoseconds) / 1e15)
             try? await Task.sleep(for: .seconds(1))
         }
-        if let path = ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_RESULT_PATH"],
+        if let path = PerformanceBenchmarkHarness.resultPath,
            let data = try? JSONEncoder().encode(["opensMS": opens]) {
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
         }

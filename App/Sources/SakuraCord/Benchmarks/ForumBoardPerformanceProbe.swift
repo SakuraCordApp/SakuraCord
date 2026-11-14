@@ -271,7 +271,7 @@ enum ForumBoardBenchmark {
         let data = (try? encoder.encode(result)) ?? Data()
         // The sandboxed app can only write beneath its own container, so
         // scripts pass a path under it, as the other offline benchmarks do.
-        let path = ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_RESULT_PATH"]
+        let path = PerformanceBenchmarkHarness.resultPath
             ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("sakuracord-forum-benchmark.json").path
         do {

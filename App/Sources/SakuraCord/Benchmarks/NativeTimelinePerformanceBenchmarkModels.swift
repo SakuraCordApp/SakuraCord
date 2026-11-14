@@ -113,9 +113,7 @@ enum NativeTimelineBenchmarkArtifact {
         mainThreadCPUTime: TimeInterval? = nil,
         timelineUpdates: (count: Int, milliseconds: Double)? = nil
     ) {
-        guard let path = ProcessInfo.processInfo.environment[
-            "SAKURACORD_PERFORMANCE_RESULT_PATH"
-        ] else { return }
+        guard let path = PerformanceBenchmarkHarness.resultPath else { return }
         let duration = NativeTimelineBenchmarkScrollPolicy.duration
         let overshoot = max(0, elapsed - duration)
         var contents = """

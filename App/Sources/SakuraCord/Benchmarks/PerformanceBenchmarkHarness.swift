@@ -145,6 +145,11 @@ enum PerformanceBenchmarkHarness {
 
     /// Writes `result` as sorted, pretty-printed JSON to `fileName` in the
     /// temporary directory and logs it after `logPrefix`.
+    /// Where a script asked a benchmark to write its result, if it did.
+    nonisolated static var resultPath: String? {
+        ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_RESULT_PATH"]
+    }
+
     static func writeResult(_ result: some Encodable, fileName: String, logPrefix: String, logger: Logger) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
