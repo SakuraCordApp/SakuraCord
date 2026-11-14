@@ -1,5 +1,4 @@
 import AppKit
-import OSLog
 import SakuraCordModels
 import SwiftUI
 
@@ -25,54 +24,6 @@ struct WorkspaceNavigationOverlayView: View {
     }
 }
 
-private nonisolated struct QuickSwitcherSearchInput: Sendable {
-    let index: ConversationDestinationSearchPolicy.Index
-    let userIndex: ConversationDestinationSearchPolicy.Index
-    let guilds: [Guild]
-    let usageScores: [String: Int]
-    let history: [ChannelID]
-    let currentChannelID: ChannelID?
-    let currentGuildID: GuildID?
-    let currentUserID: UserID?
-    let searchableUserIDs: Set<UserID>
-    let friendUserIDs: Set<UserID>
-    let currentGuildMemberIDs: Set<UserID>
-    let currentGuildLiveMemberIDs: Set<UserID>
-    let unreadChannelIDs: Set<ChannelID>
-    let mutedChannelIDs: Set<ChannelID>
-    let mentionedChannelIDs: [ChannelID]
-    let draftChannelIDs: [ChannelID]
-    let recentlyTalkedUserIDs: [UserID]
-
-    func results(query: String) -> [QuickSwitcherResult] {
-        let signposter = AppPerformanceSignposts.signposter
-        let interval = signposter.beginInterval("QuickSwitcherRanking")
-        defer { signposter.endInterval("QuickSwitcherRanking", interval) }
-        return QuickSwitcherSearchPolicy.results(
-            query: query,
-            context: QuickSwitcherSearchContext(
-                index: index,
-                userIndex: userIndex,
-                guilds: guilds,
-                usageScores: usageScores,
-                history: history,
-                currentChannelID: currentChannelID,
-                currentGuildID: currentGuildID,
-                currentUserID: currentUserID,
-                searchableUserIDs: searchableUserIDs,
-                friendUserIDs: friendUserIDs,
-                currentGuildMemberIDs: currentGuildMemberIDs,
-                currentGuildLiveMemberIDs: currentGuildLiveMemberIDs,
-                unreadChannelIDs: unreadChannelIDs,
-                mutedChannelIDs: mutedChannelIDs,
-                mentionedChannelIDs: mentionedChannelIDs,
-                draftChannelIDs: draftChannelIDs,
-                recentlyTalkedUserIDs: recentlyTalkedUserIDs
-            )
-        )
-    }
-}
-
 private nonisolated struct QuickSwitcherSearchRequest: Hashable, Sendable {
     let query: String
     let indexRevision: UInt64
@@ -94,7 +45,7 @@ private struct QuickSwitcherView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var query = ""
     @State private var searchIndex: ConversationDestinationSearchPolicy.Index?
-    @State private var searchInput: QuickSwitcherSearchInput?
+    @State private var searchContext: QuickSwitcherSearchContext?
     @State private var searchIndexRevision: UInt64 = 0
     @State private var contextRevision: UInt64 = 0
     @State private var displayedResults: [QuickSwitcherResult] = []
@@ -185,7 +136,7 @@ private struct QuickSwitcherView: View {
                     ) {
                         applySearchIndex(exact)
                     } else if let searchIndex {
-                        searchInput = makeSearchInput(searchIndex: searchIndex)
+                        searchContext = makeSearchContext(searchIndex: searchIndex)
                     }
                     contextRevision &+= 1
                     framePresentationID &+= 1
@@ -204,7 +155,7 @@ private struct QuickSwitcherView: View {
                 // the live member store instead of freezing that early,
                 // incomplete eligibility snapshot for the whole session.
                 if animationState.isVisible, let searchIndex {
-                    searchInput = makeSearchInput(searchIndex: searchIndex)
+                    searchContext = makeSearchContext(searchIndex: searchIndex)
                     contextRevision &+= 1
                 }
             }
@@ -259,7 +210,7 @@ private struct QuickSwitcherView: View {
                     // Membership/read-state projections are small live inputs
                     // to the retained index. Refresh those without rebuilding
                     // or swapping the expensive immutable search corpus.
-                    searchInput = makeSearchInput(searchIndex: searchIndex)
+                    searchContext = makeSearchContext(searchIndex: searchIndex)
                     contextRevision &+= 1
                 }
                 // Show the retained index immediately, then adopt the exact
@@ -319,13 +270,13 @@ private struct QuickSwitcherView: View {
         _ index: ConversationDestinationSearchPolicy.Index
     ) {
         searchIndex = index
-        searchInput = makeSearchInput(searchIndex: index)
+        searchContext = makeSearchContext(searchIndex: index)
         searchIndexRevision &+= 1
     }
 
-    private func makeSearchInput(
+    private func makeSearchContext(
         searchIndex: ConversationDestinationSearchPolicy.Index
-    ) -> QuickSwitcherSearchInput? {
+    ) -> QuickSwitcherSearchContext? {
         guard let snapshot = model.snapshot else { return nil }
         let guildsByID = Dictionary(
             snapshot.guilds.map { ($0.id, $0) },
@@ -362,7 +313,7 @@ private struct QuickSwitcherView: View {
                 ? message.author.id : nil
         }
         mentionCountsByChannelID = projection.mentionsByChannelID
-        return QuickSwitcherSearchInput(
+        return QuickSwitcherSearchContext(
             index: searchIndex,
             userIndex: searchIndex.quickSwitcherUserIndex(
                 // SearchContextManager seeds every live nickname held by
@@ -415,7 +366,7 @@ private struct QuickSwitcherView: View {
     private func refreshDisplayedResults(
         for request: QuickSwitcherSearchRequest
     ) async {
-        guard let input = searchInput else {
+        guard let context = searchContext else {
             displayedResults = []
             selectableResults = []
             selectedResultID = nil
@@ -424,7 +375,9 @@ private struct QuickSwitcherView: View {
         // Ranking is a bounded, local index operation. Keeping it in this
         // presentation task avoids a detached-task hop plus a second main-actor
         // hop before rows can be committed to the native viewport.
-        let results = input.results(query: request.query)
+        let results = AppPerformanceSignposts.measureSync("QuickSwitcherRanking") {
+            QuickSwitcherSearchPolicy.results(query: request.query, context: context)
+        }
         guard !Task.isCancelled, activeSearchRequest == request else { return }
         let selectable = results.filter(\.isSelectable)
         let preservesSelection = completedQuery == request.query
