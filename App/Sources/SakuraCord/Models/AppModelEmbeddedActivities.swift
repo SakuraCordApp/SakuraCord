@@ -26,6 +26,8 @@ final class EmbeddedActivityStore {
         let launchID = UUID()
 
         var location: EmbeddedActivityLocation { .of(channel) }
+        /// Launching or running; a failed launch is not.
+        var isActive: Bool { phase == .launching || phase == .running }
     }
 
     /// Where the shelf a launch came from was opened, as Discord's launch reports it.
@@ -278,8 +280,7 @@ extension AppModel {
         let store = embeddedActivities
         let account = accountSession()
         let location = EmbeddedActivityLocation.of(channel)
-        if let current = store.session, current.application.id == application.id, current.location == location,
-           current.phase == .launching || current.phase == .running {
+        if let current = store.session, current.application.id == application.id, current.location == location, current.isActive {
             return
         }
         guard await confirmLaunch(of: application), isCurrentAccountSession(account) else { return }
@@ -411,7 +412,7 @@ extension AppModel {
             guard await store.ask(.confirmAge, applicationName: application.name) else { return false }
             store.ageConfirmedApplications.insert(application.id)
         }
-        guard let current = store.session, current.phase == .launching || current.phase == .running else { return true }
+        guard let current = store.session, current.isActive else { return true }
         return await store.ask(
             .replace(activity: current.application.name, channel: current.channel.name),
             applicationName: application.name
