@@ -169,7 +169,7 @@ extension ForumBoardView {
                 source: placeholder,
                 mentionPresentations: [:],
                 fontSize: fontSize,
-                emojiSize: (fontSize * 1.375).rounded(),
+                emojiSize: ForumPostPreviewTextRenderer.Configuration.emojiSize(forFontSize: fontSize),
                 maximumNumberOfLines: lines,
                 isEmphasized: isEmphasized,
                 underlinesLinks: presentation.underlinesLinks,
