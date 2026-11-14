@@ -151,7 +151,7 @@ public extension DiscordRESTProvider {
         resolvesMissingMembers: Bool = true
     ) async -> (members: [Member], isComplete: Bool) {
         let thread = cachedJoinedThreads[channelID]
-            ?? cachedForumPosts.values.lazy.compactMap { $0[channelID]?.thread }.first
+            ?? cachedForumPost(threadID: channelID)?.thread
         let parentID = thread?.parentID ?? channelID
         let guildID = thread?.guildID ?? cachedChannel(parentID)?.guildID ?? values.first?.guildID
         if let guildID {

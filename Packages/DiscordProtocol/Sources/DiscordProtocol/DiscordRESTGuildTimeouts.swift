@@ -46,7 +46,7 @@ extension DiscordRESTProvider {
         let guildID = guildID
             ?? cachedJoinedThreads[channelID]?.guildID
             ?? cachedChannel(channelID)?.guildID
-            ?? cachedForumPosts.values.lazy.compactMap { $0[channelID]?.thread.guildID }.first
+            ?? cachedForumPost(threadID: channelID)?.thread.guildID
             ?? cachedMessages.values.lazy.compactMap { $0.channelID == channelID ? $0.guildID : nil }.first
         guard let guildID, let userID = currentUser?.id,
               let member = cachedMemberIndex(guildID: guildID)[userID],

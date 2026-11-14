@@ -136,7 +136,7 @@ import SakuraCordModels
         }
 
         func cachedForumPostForTesting(threadID: ChannelID) -> ForumPost? {
-            cachedForumPosts.values.lazy.compactMap { $0[threadID] }.first
+            cachedForumPost(threadID: threadID)
         }
 
         func activeJoinedThreadsForTesting() -> [MessageThreadSummary] {

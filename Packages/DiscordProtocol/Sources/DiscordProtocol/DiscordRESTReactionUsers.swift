@@ -232,8 +232,7 @@ extension DiscordRESTProvider {
         } else {
             // Forum previews outlive the working set. Update each retained value
             // once, without replaying a delta already applied through that set.
-            for (parentID, posts) in cachedForumPosts {
-                guard var post = posts[update.channelID] else { continue }
+            updateCachedForumPost(threadID: update.channelID) { post in
                 if var message = post.firstMessage, message.id == update.messageID {
                     _ = message.applyReactionUpdate(update, currentUserID: currentUser?.id)
                     post.firstMessage = message
@@ -242,7 +241,6 @@ extension DiscordRESTProvider {
                     _ = message.applyReactionUpdate(update, currentUserID: currentUser?.id)
                     post.mostRecentMessage = message
                 }
-                cachedForumPosts[parentID]?[post.id] = post
             }
         }
         continuation?.yield(.messageReactionUpdated(update))

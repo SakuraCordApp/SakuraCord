@@ -224,6 +224,18 @@ extension DiscordRESTProvider {
         cachedForumPosts.values.lazy.compactMap { $0[threadID] }.first
     }
 
+    /// Mutates a thread's cached post and returns its parent, or nil when the
+    /// thread has no cached post.
+    @discardableResult
+    func updateCachedForumPost(threadID: ChannelID, _ update: (inout ForumPost) -> Void) -> ChannelID? {
+        guard let parentID = cachedForumPostParentID(threadID: threadID),
+              var post = cachedForumPosts[parentID]?[threadID]
+        else { return nil }
+        update(&post)
+        cachedForumPosts[parentID]?[threadID] = post
+        return parentID
+    }
+
     public func createForumPost(
         _ draft: CreateForumPostDraft,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
@@ -947,14 +959,10 @@ extension DiscordRESTProvider {
     /// A thread's newest history page supplies its card preview, as in
     /// Discord's client. Only a newer message republishes the catalogue.
     func recordLoadedThreadLatestMessage(_ message: Message) {
-        for (parentID, posts) in cachedForumPosts {
-            guard var post = posts[message.channelID] else { continue }
-            guard post.mostRecentMessage.map({ message.id > $0.id }) ?? true else { return }
-            post.mostRecentMessage = message
-            cachedForumPosts[parentID]?[post.id] = post
-            publishForumPosts(parentID: parentID)
-            return
-        }
+        guard cachedForumPost(threadID: message.channelID)?.mostRecentMessage.map({ message.id > $0.id }) ?? true,
+              let parentID = updateCachedForumPost(threadID: message.channelID, { $0.mostRecentMessage = message })
+        else { return }
+        publishForumPosts(parentID: parentID)
     }
 
     func updateForumPostForMessage(
@@ -962,8 +970,7 @@ extension DiscordRESTProvider {
         marksUnread: Bool = false,
         publishesChange: Bool = true
     ) {
-        for (parentID, posts) in cachedForumPosts {
-            guard var post = posts[message.channelID] else { continue }
+        let parentID = updateCachedForumPost(threadID: message.channelID) { post in
             // The type-21 starter reference is not a reply Discord counts.
             let isNewerReply =
                 marksUnread
@@ -987,11 +994,9 @@ extension DiscordRESTProvider {
             {
                 post.isUnread = true
             }
-            cachedForumPosts[parentID]?[post.id] = post
-            if publishesChange {
-                publishForumPosts(parentID: parentID)
-            }
-            return
+        }
+        if publishesChange, let parentID {
+            publishForumPosts(parentID: parentID)
         }
     }
 
