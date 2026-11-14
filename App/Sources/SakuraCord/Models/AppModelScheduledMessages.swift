@@ -132,12 +132,12 @@ extension AppModel {
         in destination: MessageComposerDestination
     ) -> (SendMessageDraft, reply: Message?)? {
         guard let channelID = composerSendChannelID(in: destination) else { return nil }
-        let reply = destination == .channel ? replyingTo : threadReplyingTo
+        let reply = replyingTo(in: destination)
         let outgoing = SendMessageDraft(
             channelID: channelID,
             content: content,
             replyTo: reply?.id,
-            mentionsRepliedUser: destination == .channel ? replyMentionsAuthor : threadReplyMentionsAuthor,
+            mentionsRepliedUser: replyMentionsAuthor(in: destination),
             attachments: attachments,
             stickerIDs: stickerIDs
         )
@@ -146,10 +146,7 @@ extension AppModel {
 
     /// Clears the reply that was scheduled, unless another was chosen meanwhile.
     private func clearReply(_ reply: Message?, in destination: MessageComposerDestination) {
-        switch destination {
-        case .channel: if replyingTo?.id == reply?.id { replyingTo = nil }
-        case .thread: if threadReplyingTo?.id == reply?.id { threadReplyingTo = nil }
-        }
+        if replyingTo(in: destination)?.id == reply?.id { setReplyingTo(nil, in: destination) }
     }
 
     /// One create at a time per conversation; returns whether Discord accepted it.

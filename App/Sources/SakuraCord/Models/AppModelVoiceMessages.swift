@@ -49,14 +49,12 @@ extension AppModel {
         let state = voiceMessageComposer(for: destination)
         guard let submittedRecording = state.phase.recording, canSendVoiceMessages(in: destination) else { return .rejected }
         let channelID: ChannelID
-        let replyTo: Message?
-        let mentionsRepliedUser: Bool
+        let replyTo = replyingTo(in: destination)
+        let mentionsRepliedUser = replyMentionsAuthor(in: destination)
         switch destination {
         case .channel:
             guard let selected = selectedChannelID else { return .rejected }
             guard allowSlowmodeSubmission(in: selected), allowOutgoingQueueSubmission() else { return .rejected }
-            replyTo = replyingTo
-            mentionsRepliedUser = replyMentionsAuthor
             guard await prepareChannelMessageSubmission(channelID: selected, account: accountSession()) else {
                 return .rejected
             }
@@ -64,8 +62,6 @@ extension AppModel {
         case .thread:
             guard let thread = openThread, allowOnboardingSubmission(in: thread.id) else { return .rejected }
             channelID = thread.id
-            replyTo = threadReplyingTo
-            mentionsRepliedUser = threadReplyMentionsAuthor
         }
         guard state.phase.recording == submittedRecording, canSendVoiceMessages(in: destination),
               allowSlowmodeSubmission(in: channelID), allowOutgoingQueueSubmission(),
@@ -80,10 +76,7 @@ extension AppModel {
             voiceMessage: recording.metadata
         )
         admitToOutbox(optimisticMessage(for: outgoing, replyPreview: replyTo.map(MessageReplyPreview.init)), draft: outgoing)
-        switch destination {
-        case .channel: replyingTo = nil
-        case .thread: threadReplyingTo = nil
-        }
+        setReplyingTo(nil, in: destination)
         return .enqueued(delivery: enqueueOutgoingSend(outgoing, isRetry: false, completesReading: true))
     }
 

@@ -5,7 +5,7 @@ extension AppModel {
     func draftTranslation(for destination: MessageComposerDestination) -> DraftTranslation? {
         guard let state = translation.drafts[destination] else { return nil }
         if state.phase == .showingOriginal {
-            return state.translated != nil && draftText(for: destination) == state.original ? state : nil
+            return state.translated != nil && draft(in: destination) == state.original ? state : nil
         }
         return state
     }
@@ -26,7 +26,7 @@ extension AppModel {
     /// while the original is unchanged.
     func translateDraft(in destination: MessageComposerDestination) {
         guard translation.settings.isEnabled else { return }
-        let text = draftText(for: destination)
+        let text = draft(in: destination)
         let language = translation.settings.draftLanguage
         if isDraftTranslationBlocked(in: destination) {
             translation.resetDraft(destination)
@@ -63,7 +63,7 @@ extension AppModel {
         guard !isDraftTranslationBlocked(in: destination),
               var state = translation.drafts[destination], state.phase == .translated else { return }
         // Keep edits made to the translated draft for the next toggle.
-        state.translated = draftText(for: destination)
+        state.translated = draft(in: destination)
         state.phase = .showingOriginal
         translation.drafts[destination] = state
         setDraftText(state.original, for: destination)
@@ -103,7 +103,7 @@ extension AppModel {
 
     private func draftTranslationRefusal(for destination: MessageComposerDestination) -> LocalTranslationError? {
         guard translation.settings.isEnabled else { return .disabled }
-        let text = draftText(for: destination)
+        let text = draft(in: destination)
         let command = commandComposer(for: destination)
         if command.activeCommand != nil || command.isPickerPresented { return .slashCommand }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") { return .slashCommand }
@@ -149,7 +149,7 @@ extension AppModel {
         // A result for text the user has since changed would overwrite their edits.
         guard !isDraftTranslationBlocked(in: destination),
               draftRevision(for: destination) == state.requestRevision,
-              draftText(for: destination) == state.original,
+              draft(in: destination) == state.original,
               draftTranslationRefusal(for: destination) == nil
         else {
             translation.drafts[destination] = nil
@@ -167,19 +167,12 @@ extension AppModel {
         }
     }
 
-    private func draftText(for destination: MessageComposerDestination) -> String {
-        destination == .channel ? draft : threadDraft
-    }
-
     private func draftRevision(for destination: MessageComposerDestination) -> UInt64 {
         destination == .channel ? composer.draftRevision : composer.threadDraftRevision
     }
 
     private func setDraftText(_ value: String, for destination: MessageComposerDestination) {
         translation.draftEditIDs[destination] = UUID()
-        switch destination {
-        case .channel: updateDraft(value)
-        case .thread: updateThreadDraft(value)
-        }
+        updateDraft(value, in: destination)
     }
 }

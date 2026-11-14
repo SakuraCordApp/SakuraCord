@@ -27,6 +27,24 @@ extension AppModel {
         composer.replyMentionsAuthorChoice
             && (threadReplyingTo == nil || threadReplyingTo?.author.id != currentUser?.id)
     }
+    func replyingTo(in destination: MessageComposerDestination) -> Message? {
+        switch destination {
+        case .channel: replyingTo
+        case .thread: threadReplyingTo
+        }
+    }
+    func setReplyingTo(_ message: Message?, in destination: MessageComposerDestination) {
+        switch destination {
+        case .channel: replyingTo = message
+        case .thread: threadReplyingTo = message
+        }
+    }
+    func replyMentionsAuthor(in destination: MessageComposerDestination) -> Bool {
+        switch destination {
+        case .channel: replyMentionsAuthor
+        case .thread: threadReplyMentionsAuthor
+        }
+    }
     var draft: String {
         get { composer.draft }
         set { composer.draft = newValue }
@@ -34,6 +52,12 @@ extension AppModel {
     var threadDraft: String {
         get { composer.threadDraft }
         set { composer.threadDraft = newValue }
+    }
+    func draft(in destination: MessageComposerDestination) -> String {
+        switch destination {
+        case .channel: draft
+        case .thread: threadDraft
+        }
     }
     var channelComposerAttachments: [ForumPostAttachment] {
         get { composer.channelAttachments }
@@ -71,16 +95,11 @@ extension AppModel {
         in destination: MessageComposerDestination,
         direction: MessageReplyNavigationDirection
     ) -> Bool {
-        let availableMessages: [Message]
-        let currentReply: Message?
-        switch destination {
-        case .channel:
-            availableMessages = messages
-            currentReply = replyingTo
-        case .thread:
-            availableMessages = threadMessages
-            currentReply = threadReplyingTo
+        let availableMessages = switch destination {
+        case .channel: messages
+        case .thread: threadMessages
         }
+        let currentReply = replyingTo(in: destination)
         guard !availableMessages.isEmpty else { return false }
 
         let nextIndex: Int
@@ -110,12 +129,7 @@ extension AppModel {
     }
 
     func cancelReply(in destination: MessageComposerDestination = .channel) {
-        switch destination {
-        case .channel:
-            replyingTo = nil
-        case .thread:
-            threadReplyingTo = nil
-        }
+        setReplyingTo(nil, in: destination)
         NotificationCenter.default.post(
             name: .sakuracordFocusComposer,
             object: destination
@@ -126,11 +140,7 @@ extension AppModel {
     func consumeEscapeForReply(
         in destination: MessageComposerDestination
     ) -> Bool {
-        let hasReply = switch destination {
-        case .channel: replyingTo != nil
-        case .thread: threadReplyingTo != nil
-        }
-        guard hasReply else { return false }
+        guard replyingTo(in: destination) != nil else { return false }
         cancelReply(in: destination)
         return true
     }
@@ -139,11 +149,7 @@ extension AppModel {
         _ mentionsAuthor: Bool,
         in destination: MessageComposerDestination
     ) {
-        let reply = switch destination {
-        case .channel: replyingTo
-        case .thread: threadReplyingTo
-        }
-        guard let reply, reply.author.id != currentUser?.id else { return }
+        guard let reply = replyingTo(in: destination), reply.author.id != currentUser?.id else { return }
         composer.rememberReplyMentionsAuthor(mentionsAuthor)
     }
 
@@ -167,6 +173,13 @@ extension AppModel {
         let session = accountSession()
         guard isCurrentAccountSession(session) else { return }
         composer.persistDraft(value, channelID: channelID, database: session.database)
+    }
+
+    func updateDraft(_ value: String, in destination: MessageComposerDestination) {
+        switch destination {
+        case .channel: updateDraft(value)
+        case .thread: updateThreadDraft(value)
+        }
     }
 
     func updateThreadDraft(_ value: String) {

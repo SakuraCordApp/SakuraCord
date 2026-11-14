@@ -1674,33 +1674,19 @@ extension ComposerView {
 
 private extension ComposerView {
     var draft: String {
-        switch conversation {
-        case .channel: model.draft
-        case .thread: model.threadDraft
-        }
+        model.draft(in: conversation)
     }
 
     func updateDraft(_ value: String) {
-        switch conversation {
-        case .channel:
-            model.updateDraft(value)
-        case .thread:
-            model.updateThreadDraft(value)
-        }
+        model.updateDraft(value, in: conversation)
     }
 
     var activeReply: Message? {
-        switch conversation {
-        case .channel: model.replyingTo
-        case .thread: model.threadReplyingTo
-        }
+        model.replyingTo(in: conversation)
     }
 
     var activeReplyMentionsAuthor: Bool {
-        switch conversation {
-        case .channel: model.replyMentionsAuthor
-        case .thread: model.threadReplyMentionsAuthor
-        }
+        model.replyMentionsAuthor(in: conversation)
     }
 
     var attachments: [ForumPostAttachment] {
