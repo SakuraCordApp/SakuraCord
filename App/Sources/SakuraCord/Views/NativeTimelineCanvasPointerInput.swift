@@ -233,65 +233,10 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        let kind = event.trackingArea?.userInfo?[
-            "nativeTimelineTrackingKind"
-        ] as? String
-        if kind == "row" {
-            setHoveredPollTarget(nil)
-            guard !actionCapsuleContains(currentMouseLocationInCanvas()) else {
-                return
-            }
-            if let index = event.trackingArea?.userInfo?[
-                "nativeTimelineRowIndex"
-            ] as? Int {
-                clearHoverTargets(leavingRow: index)
-            }
-            return
-        }
-        if kind == "canvas" {
-            updateHoverTargets(at: nil)
-        }
-    }
-
-    /// Clears the hover targets in a row the pointer's tracking area left.
-    private func clearHoverTargets(leavingRow index: Int) {
-        if hoveredRow == index {
-            setHoveredRow(nil)
-        }
-        if hoveredCompactTimestampRow == index {
-            setHoveredCompactTimestampRow(nil)
-        }
-        guard items.indices.contains(index) else { return }
-        let item = items[index]
-        if item.messageID == hoveredAuthorMessageID {
-            setHoveredAuthorMessageID(nil)
-        }
-        if item.messageID == hoveredServerTagMessageID {
-            setHoveredServerTagMessageID(nil)
-        }
-        if hoveredMention?.itemIdentifier == item.identifier {
-            setHoveredMention(nil)
-        }
-        if hoveredTextLink?.itemIdentifier == item.identifier {
-            setHoveredTextLink(nil)
-        }
-        if hoveredTextSpoiler?.itemIdentifier == item.identifier {
-            setHoveredTextSpoiler(nil)
-        }
-        if hoveredCodeBlock?.itemIdentifier == item.identifier {
-            setHoveredCodeBlock(nil)
-        }
-        if item.messageID == hoveredComponentButton?.messageID {
-            setHoveredComponentButton(nil)
-        }
-        if item.messageID == hoveredForwardedSourceMessageID {
-            setHoveredForwardedSourceMessageID(nil)
-        }
-        if item.messageID == hoveredThreadMessageID {
-            setHoveredThreadMessageID(nil)
-        }
-        if item.messageID == hoveredFooterAction?.messageID {
-            setHoveredFooterAction(nil)
+        switch event.trackingArea?.userInfo?["nativeTimelineTrackingKind"] as? String {
+        case "row": followPointer(event)
+        case "canvas": updateHoverTargets(at: nil)
+        default: break
         }
     }
 
