@@ -53,7 +53,7 @@ public struct FavoritesSettings: Equatable, Sendable {
         /// Voice and stage favourites follow the others in each section, and
         /// local favourites follow the synced ones.
         var sortKey: UInt64 {
-            UInt64(position) + (channelType == 2 || channelType == 13 ? 10_000 : 0) + (isLocal ? 1 << 32 : 0)
+            UInt64(position) + (channelType == DiscordChannelType.voice || channelType == DiscordChannelType.stageVoice ? 10_000 : 0) + (isLocal ? 1 << 32 : 0)
         }
     }
 

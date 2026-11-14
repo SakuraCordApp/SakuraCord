@@ -179,10 +179,7 @@ struct ChannelDTO: Decodable {
     }
 
     var isThread: Bool {
-        switch type {
-        case 10, 11, 12: true
-        default: false
-        }
+        DiscordChannelType.threads.contains(type)
     }
 
     /// Channel types Discord shows in the guild channel list. Directories (14)
@@ -252,18 +249,10 @@ struct ChannelDTO: Decodable {
             channelType: type
         )
         let users = try recipientDTOs.map { try $0.domain() }
-        let kind: ChannelKindValue =
-            switch type {
-            case 1: .directMessage
-            case 3: .groupDirectMessage
-            case 2, 13: .voice
-            case 5: .announcement
-            // Media channels (16) share the forum-style surface locally. The
-            // distinction is not yet rendered separately, but retaining them
-            // as non-text destinations is required for forwarding eligibility.
-            case 15, 16: .forum
-            default: .text
-            }
+        // Media channels share the forum-style surface locally. The
+        // distinction is not yet rendered separately, but retaining them as
+        // non-text destinations is required for forwarding eligibility.
+        let kind = ChannelKindValue(discordChannelType: type)
         let explicitName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let recipientName = users.map(\.displayName).joined(separator: ", ")
         let ownerGroupName = ownerID
@@ -358,7 +347,7 @@ struct ChannelDTO: Decodable {
                 notificationSettings: member?.domain,
                 rateLimitPerUser: rateLimitPerUser ?? 0,
                 lastNonMessageActivityAt: lastNonMessageActivityTimestamp.flatMap(DiscordDate.parse),
-                isPrivate: type == 12
+                isPrivate: type == DiscordChannelType.privateThread
             ),
             owner: ownerUser ?? firstMessage?.author,
             firstMessage: firstMessage,

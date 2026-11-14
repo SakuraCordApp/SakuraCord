@@ -453,30 +453,7 @@ extension AppModel {
     }
 }
 
-/// Discord's numeric channel types that SakuraCord's channel kinds do not name.
-nonisolated enum DiscordChannelType {
-    static let directMessage = 1
-    static let announcementThread = 10
-    static let publicThread = 11
-    static let privateThread = 12
-    static let stageVoice = 13
-    static let threads = announcementThread ... privateThread
-}
-
 extension Channel {
-    /// Discord's type for the channel's kind; nil when the kind is unknown.
-    var discordChannelType: Int? {
-        switch kind {
-        case .text: 0
-        case .directMessage: DiscordChannelType.directMessage
-        case .voice: 2
-        case .groupDirectMessage: 3
-        case .announcement: 5
-        case .forum: 15
-        case .unknown: nil
-        }
-    }
-
     /// The Discord channel type a new favourite records when the provider
     /// has not cached the server's own value.
     var favoriteChannelType: Int {
