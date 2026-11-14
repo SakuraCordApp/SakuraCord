@@ -91,7 +91,7 @@ extension AppModel {
     }
 
     func startPrivateCall(in channel: Channel, withVideo: Bool = false) async {
-        guard channel.isListedDirectMessage, !channel.isOfficialSystemDirectMessage else { return }
+        guard channel.kind.isDirectMessage, channel.acceptsPrivateInteraction else { return }
 
         await performPrivateCallAction(in: channel.id) { generation in
             await self.startPrivateCall(
@@ -174,7 +174,7 @@ extension AppModel {
     }
 
     func joinPrivateCall(in channel: Channel, withVideo: Bool = false) async {
-        guard channel.isListedDirectMessage, !channel.isOfficialSystemDirectMessage else { return }
+        guard channel.kind.isDirectMessage, channel.acceptsPrivateInteraction else { return }
 
         await performPrivateCallAction(in: channel.id) { generation in
             await self.joinPrivateCall(

@@ -105,7 +105,7 @@ extension AppModel {
         let channel = context.channel
         if channel.guildID == nil {
             // A message request stays read-only until it is accepted.
-            return !channel.isOfficialSystemDirectMessage && channel.messageRequest == nil
+            return channel.acceptsPrivateInteraction
         }
         guard context.isThread || selectedChannelSupportsPins(channel) else {
             return false

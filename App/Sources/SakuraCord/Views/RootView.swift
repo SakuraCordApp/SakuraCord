@@ -1040,8 +1040,8 @@ private struct ChatRootView: View {
     /// offers no call until it is accepted.
     private var selectedPrivateChannel: Channel? {
         guard let channel = model.selectedChannel,
-              channel.isListedDirectMessage,
-              !channel.isOfficialSystemDirectMessage
+              channel.kind.isDirectMessage,
+              channel.acceptsPrivateInteraction
         else { return nil }
         return channel
     }
