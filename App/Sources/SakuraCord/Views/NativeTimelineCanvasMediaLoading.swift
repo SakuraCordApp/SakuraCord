@@ -402,10 +402,7 @@ extension NativeTimelineCanvasView {
             keys.append(key)
         }
         for region in layout.linkedImageRegions {
-            keys.append(.media(
-                region.reference.displayURL,
-                maximumPixelDimension: region.reference.isEmoji ? 96 : 720
-            ))
+            keys.append(region.mediaKey)
         }
     }
 
@@ -445,12 +442,7 @@ extension NativeTimelineCanvasView {
     ) {
         for region in regions {
             for image in region.imageRegions {
-                keys.append(
-                    .media(
-                        image.url,
-                        maximumPixelDimension: image.maximumPixelDimension
-                    )
-                )
+                keys.append(image.mediaKey)
             }
             for textRegion in region.textRegions {
                 let value = textRegion.text.value
@@ -497,12 +489,7 @@ extension NativeTimelineCanvasView {
         // Hidden spoilers load too, so their covers can blur them.
         for componentLayout in layouts {
             for image in componentLayout.images {
-                keys.append(
-                    .media(
-                        image.displayURL,
-                        maximumPixelDimension: image.maximumPixelDimension
-                    )
-                )
+                keys.append(image.mediaKey)
             }
             for media in componentLayout.media {
                 if let previewURL = media.previewURL {

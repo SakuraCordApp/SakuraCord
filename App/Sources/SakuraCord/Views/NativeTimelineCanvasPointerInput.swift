@@ -709,14 +709,9 @@ extension NativeTimelineCanvasView {
                     presentation,
                     sourceFrame: linkedImage.frame,
                     rowIndex: rowIndex,
-                    mediaKey: .media(
-                        linkedImage.reference.displayURL,
-                        maximumPixelDimension:
-                            linkedImage.reference.isEmoji ? 96 : 720
-                    ),
-                    cornerRadius: linkedImage.reference.isEmoji ? 7 : 10,
-                    fillsFrame: !linkedImage.reference.isEmoji
-                        && !linkedImage.reference.isSticker
+                    mediaKey: linkedImage.mediaKey,
+                    cornerRadius: linkedImage.cornerRadius,
+                    fillsFrame: linkedImage.fillsFrame
                 )
             } else {
                 NSWorkspace.shared.open(linkedImage.reference.url)

@@ -209,7 +209,7 @@ extension NativeTimelineRowPainter {
             in: region.frame,
             cornerRadius: region.cornerRadius,
             backdrop: NSColor.secondaryLabelColor.withAlphaComponent(0.08),
-            image: mediaImage(for: .media(region.displayURL, maximumPixelDimension: region.maximumPixelDimension)),
+            image: mediaImage(for: region.mediaKey),
             fillsFrame: true,
             placeholder: region.placeholder,
             fallbackSymbol: ("photo", InterfaceScale.metric(22))

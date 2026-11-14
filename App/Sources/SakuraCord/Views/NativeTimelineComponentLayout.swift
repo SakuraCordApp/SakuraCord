@@ -110,6 +110,8 @@ struct NativeTimelineComponentLayout {
         let cornerRadius: CGFloat
         let maximumPixelDimension: Int
         let placeholder: NativeTimelineMediaPlaceholder?
+
+        var mediaKey: MediaImageKey { .media(displayURL, maximumPixelDimension: maximumPixelDimension) }
     }
 
     struct MediaRegion {

@@ -445,12 +445,9 @@ extension NativeTimelineCanvasView {
             accumulator.append(
                 row: identifier,
                 role: .linkedImage(linkedIndex),
-                media: .media(
-                    region.reference.displayURL,
-                    maximumPixelDimension: region.reference.isEmoji ? 96 : 720
-                ),
+                media: region.mediaKey,
                 frame: region.frame,
-                cornerRadius: region.reference.isEmoji ? 7 : 10,
+                cornerRadius: region.cornerRadius,
                 isLooping: true
             )
         }
@@ -511,10 +508,7 @@ extension NativeTimelineCanvasView {
                 accumulator.append(
                     row: identifier,
                     role: .embedImage(embed.embedID, imageIndex),
-                    media: .media(
-                        imageRegion.url,
-                        maximumPixelDimension: imageRegion.maximumPixelDimension
-                    ),
+                    media: imageRegion.mediaKey,
                     frame: imageRegion.frame,
                     cornerRadius: imageRegion.cornerRadius,
                     isLooping: false
@@ -580,10 +574,7 @@ extension NativeTimelineCanvasView {
             accumulator.append(
                 row: identifier,
                 role: .componentImage(componentIndex, image.componentID),
-                media: .media(
-                    image.displayURL,
-                    maximumPixelDimension: image.maximumPixelDimension
-                ),
+                media: image.mediaKey,
                 frame: image.frame,
                 cornerRadius: image.cornerRadius,
                 isLooping: false,

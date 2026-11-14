@@ -42,6 +42,14 @@ struct NativeTimelineRowLayout {
     struct LinkedImageRegion {
         let frame: CGRect
         let reference: LinkedImageReference
+
+        var mediaKey: MediaImageKey {
+            .media(reference.displayURL, maximumPixelDimension: reference.isEmoji ? 96 : 720)
+        }
+
+        var cornerRadius: CGFloat { reference.isEmoji ? 7 : 10 }
+
+        var fillsFrame: Bool { !reference.isEmoji && !reference.isSticker }
     }
 
     struct EmbedRegion {
@@ -66,6 +74,8 @@ struct NativeTimelineRowLayout {
             let fallbackSystemImage: String
             let maximumPixelDimension: Int
             let placeholder: NativeTimelineMediaPlaceholder?
+
+            var mediaKey: MediaImageKey { .media(url, maximumPixelDimension: maximumPixelDimension) }
         }
 
         let embedID: String

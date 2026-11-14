@@ -430,16 +430,12 @@ extension NativeTimelineRowPainter {
     private static func drawMessageLinkedImages(_ input: NativeTimelineMessageDrawInput) {
         let layout = input.layout
         for region in layout.linkedImageRegions {
-            let key = MediaImageKey.media(
-                region.reference.displayURL,
-                maximumPixelDimension: region.reference.isEmoji ? 96 : 720
-            )
-            if let image = mediaImage(for: key) {
+            if let image = mediaImage(for: region.mediaKey) {
                 drawImage(
                     image,
                     in: region.frame,
-                    cornerRadius: region.reference.isEmoji ? 7 : 10,
-                    fillsFrame: !region.reference.isEmoji && !region.reference.isSticker
+                    cornerRadius: region.cornerRadius,
+                    fillsFrame: region.fillsFrame
                 )
             } else {
                 card(
@@ -659,7 +655,7 @@ extension NativeTimelineRowPainter {
                 in: imageRegion.frame,
                 cornerRadius: imageRegion.cornerRadius,
                 backdrop: nil,
-                image: mediaImage(for: .media(imageRegion.url, maximumPixelDimension: imageRegion.maximumPixelDimension)),
+                image: mediaImage(for: imageRegion.mediaKey),
                 fillsFrame: false,
                 placeholder: imageRegion.placeholder,
                 placeholderFillsFrame: false,

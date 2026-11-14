@@ -195,25 +195,17 @@ extension NativeTimelineCanvasView {
         for region in layout.linkedImageRegions {
             insert(
                 region.reference.id,
-                key: .media(
-                    region.reference.displayURL,
-                    maximumPixelDimension:
-                        region.reference.isEmoji ? 96 : 720
-                ),
+                key: region.mediaKey,
                 frame: region.frame,
-                cornerRadius: region.reference.isEmoji ? 7 : 10,
-                fillsFrame: !region.reference.isEmoji
-                    && !region.reference.isSticker
+                cornerRadius: region.cornerRadius,
+                fillsFrame: region.fillsFrame
             )
         }
         for component in layout.componentLayouts {
             for region in component.images {
                 insert(
                     region.componentID,
-                    key: .media(
-                        region.displayURL,
-                        maximumPixelDimension: region.maximumPixelDimension
-                    ),
+                    key: region.mediaKey,
                     frame: region.frame,
                     cornerRadius: region.cornerRadius,
                     // The row crops a thumbnail to fill its square.
@@ -367,10 +359,7 @@ extension NativeTimelineCanvasView {
                     presentation,
                     sourceFrame: region.frame,
                     rowIndex: rowIndex,
-                    mediaKey: .media(
-                        region.displayURL,
-                        maximumPixelDimension: region.maximumPixelDimension
-                    ),
+                    mediaKey: region.mediaKey,
                     cornerRadius: region.cornerRadius,
                     fillsFrame: true
                 )
