@@ -66,19 +66,6 @@ extension AppModel {
     @discardableResult
     func forward(
         _ message: Message,
-        to destinationChannelIDs: [ChannelID],
-        context: String
-    ) async -> Bool {
-        await forward(
-            message,
-            to: destinationChannelIDs.map(ConversationDestinationID.channel),
-            context: context
-        )
-    }
-
-    @discardableResult
-    func forward(
-        _ message: Message,
         to destinationIDs: [ConversationDestinationID],
         context: String
     ) async -> Bool {

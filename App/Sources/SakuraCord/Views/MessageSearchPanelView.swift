@@ -41,50 +41,6 @@ struct MessageSearchPanelView: View {
     }
 }
 
-private struct MessageSearchFilterSummary: View {
-    let filters: MessageSearchFilters
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: InterfaceScale.metric(6)) {
-                if !filters.authorIDs.isEmpty {
-                    chip("From \(filters.authorIDs.count)", image: "person.fill")
-                }
-                if !filters.channelIDs.isEmpty {
-                    chip("In \(filters.channelIDs.count)", image: "number")
-                }
-                if !filters.contentTypes.isEmpty {
-                    chip("Has \(filters.contentTypes.count)", image: "paperclip")
-                }
-                if !filters.mentionedUserIDs.isEmpty {
-                    chip("Mentions \(filters.mentionedUserIDs.count)", image: "at")
-                }
-                if !filters.authorTypes.isEmpty {
-                    chip("Author \(filters.authorTypes.count)", image: "person.badge.shield.checkmark")
-                }
-                if let pinned = filters.pinned {
-                    chip(pinned ? "Pinned" : "Not pinned", image: "pin.fill")
-                }
-                if filters.minimumMessageID != nil {
-                    chip("After", image: "calendar")
-                }
-                if filters.maximumMessageID != nil {
-                    chip("Before", image: "calendar")
-                }
-            }
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    private func chip(_ title: String, image: String) -> some View {
-        Label(title, systemImage: image)
-            .font(.interface(.caption).weight(.medium))
-            .padding(.horizontal, InterfaceScale.metric(8))
-            .padding(.vertical, InterfaceScale.metric(4))
-            .background(.quaternary, in: Capsule())
-    }
-}
-
 private struct MessageSearchResultsHeader: View {
     let model: AppModel
     let search: MessageSearchState

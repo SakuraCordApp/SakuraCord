@@ -195,15 +195,6 @@ nonisolated enum MediaViewerFilePolicy {
 }
 
 nonisolated enum MediaViewerDetails {
-    static func dimensions(_ item: RichMediaItem) -> String? {
-        guard let width = item.width,
-              let height = item.height,
-              width > 0,
-              height > 0
-        else { return nil }
-        return "\(width) × \(height) pixels"
-    }
-
     static func fileSize(_ item: RichMediaItem) -> String? {
         guard item.size > 0 else { return nil }
         return item.size.formatted(.byteCount(style: .file))

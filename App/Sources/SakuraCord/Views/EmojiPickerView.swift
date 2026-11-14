@@ -290,28 +290,6 @@ nonisolated enum NativeEmojiSkinTone: String, CaseIterable, Identifiable, Sendab
         case .dark: "👋🏿"
         }
     }
-
-    var modifierCodePoint: UInt32? {
-        switch self {
-        case .standard: nil
-        case .light: 0x1F3FB
-        case .mediumLight: 0x1F3FC
-        case .medium: 0x1F3FD
-        case .mediumDark: 0x1F3FE
-        case .dark: 0x1F3FF
-        }
-    }
-
-    init?(modifierCodePoint: UInt32) {
-        switch modifierCodePoint {
-        case 0x1F3FB: self = .light
-        case 0x1F3FC: self = .mediumLight
-        case 0x1F3FD: self = .medium
-        case 0x1F3FE: self = .mediumDark
-        case 0x1F3FF: self = .dark
-        default: return nil
-        }
-    }
 }
 
 struct EmojiPickerView: View {

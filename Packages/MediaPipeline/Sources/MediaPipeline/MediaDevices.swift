@@ -23,20 +23,6 @@ public struct AudioDeviceInfo: Identifiable, Equatable, Sendable {
         self.isDefault = isDefault
         self.transportType = transportType
     }
-
-    public var isBluetooth: Bool {
-        transportType == kAudioDeviceTransportTypeBluetooth
-            || transportType == kAudioDeviceTransportTypeBluetoothLE
-    }
-
-    public var isBuiltIn: Bool {
-        transportType == kAudioDeviceTransportTypeBuiltIn
-    }
-
-    public var isVirtual: Bool {
-        transportType == kAudioDeviceTransportTypeVirtual
-            || transportType == kAudioDeviceTransportTypeAggregate
-    }
 }
 
 public struct CameraDeviceInfo: Identifiable, Equatable, Sendable {
