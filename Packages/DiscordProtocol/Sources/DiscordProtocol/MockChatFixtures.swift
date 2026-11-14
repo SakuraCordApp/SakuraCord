@@ -542,8 +542,12 @@ private struct MockFixtureAssembly {
         let auroraVoiceCategoryID = ChannelID(rawValue: 193)
         let labCategoryID = ChannelID(rawValue: 290)
         let labVoiceCategoryID = ChannelID(rawValue: 291)
-        let textPermissions: UInt64 = (1 << 0) | (1 << 10) | (1 << 11) | (1 << 15) | (1 << 16) | (1 << 20) | (1 << 46)
-            | (1 << 34) | (1 << 35) | (1 << 38) | (1 << 51)
+        let textPermissions: UInt64 = DiscordPermissionBits.createInstantInvite | DiscordPermissionBits.viewChannel
+            | DiscordPermissionBits.sendMessages | DiscordPermissionBits.attachFiles
+            | DiscordPermissionBits.readMessageHistory | DiscordPermissionBits.connect
+            | DiscordPermissionBits.sendVoiceMessages | DiscordPermissionBits.manageThreads
+            | DiscordPermissionBits.createPublicThreads | DiscordPermissionBits.sendMessagesInThreads
+            | DiscordPermissionBits.pinMessages
         let auroraIcon = demoAsset("guild-aurora")
         let nativeLabIcon = demoAsset("guild-native-lab")
         let animatedFixture = animatedDemoAsset()
@@ -765,7 +769,7 @@ private struct MockFixtureAssembly {
                     ChannelPermissionOverwrite(
                         id: nova.id.description,
                         type: 1,
-                        deny: (1 << 10) | (1 << 16)
+                        deny: DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
                     )
                 ],
                 lastMessageID: MessageID(

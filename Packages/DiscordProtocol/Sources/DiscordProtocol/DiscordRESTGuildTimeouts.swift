@@ -58,7 +58,7 @@ extension DiscordRESTProvider {
             ?? (cachedGuildRoles[guildID] ?? []).filter {
                 $0.id == guildID.description || roleIDs.contains($0.id)
             }.reduce(UInt64(0)) { $0 | ($1.permissions.flatMap(UInt64.init) ?? 0) }
-        guard permissions & (1 << 3) == 0 else { return }
+        guard permissions & DiscordPermissionBits.administrator == 0 else { return }
         throw ChatProviderError.invalidRequest("You are timed out in this server.")
     }
 }
