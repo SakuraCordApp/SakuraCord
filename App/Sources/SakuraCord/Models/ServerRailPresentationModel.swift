@@ -367,6 +367,15 @@ extension AppModel {
         )
     }
 
+    func updateServerRail(from snapshot: BootstrapSnapshot) {
+        replaceServerRailGuilds(
+            Dictionary(
+                uniqueKeysWithValues: snapshot.guilds.map { ($0.id, $0) }
+            )
+        )
+        serverRailItems = snapshot.guildRailItems
+    }
+
     func replaceServerRailGuilds(_ guildsByID: [GuildID: Guild]) {
         if serverRailGuildsByID != guildsByID {
             serverRailGuildsByID = guildsByID

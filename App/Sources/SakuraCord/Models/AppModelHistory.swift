@@ -956,14 +956,6 @@ extension AppModel {
         errorMessage = nil
     }
 
-    func storedDraft(
-        in channelID: ChannelID,
-        account: AppModelAccountSession
-    ) async -> String {
-        guard isCurrentAccountSession(account), let database = account.database else { return "" }
-        return (try? await composer.storedDraft(in: channelID, database: database)) ?? ""
-    }
-
     /// Records that messages retained for `channelID` after this point may
     /// follow a gap. An earlier, more conservative boundary is kept.
     func markHistoryContiguous(through messages: [Message]?, in channelID: ChannelID) {

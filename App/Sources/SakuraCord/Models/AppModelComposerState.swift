@@ -4,6 +4,8 @@ import SakuraCordModels
 import SakuraCordPersistence
 
 extension AppModel {
+    /// The conversation a composer can send to right now; unlike
+    /// `composerChannelID(in:)`, nil while the user may not send there.
     func composerSendChannelID(in destination: MessageComposerDestination) -> ChannelID? {
         switch destination {
         case .channel: selectedConversationAccess.canSend ? selectedChannelID : nil
@@ -185,6 +187,14 @@ extension AppModel {
         let session = accountSession()
         guard isCurrentAccountSession(session) else { return }
         composer.persistDraft(value, channelID: channelID, database: session.database)
+    }
+
+    func storedDraft(
+        in channelID: ChannelID,
+        account: AppModelAccountSession
+    ) async -> String {
+        guard isCurrentAccountSession(account), let database = account.database else { return "" }
+        return (try? await composer.storedDraft(in: channelID, database: database)) ?? ""
     }
 
     func updateDraft(_ value: String, in destination: MessageComposerDestination) {

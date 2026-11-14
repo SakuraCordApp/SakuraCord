@@ -152,10 +152,8 @@ extension AppModel {
         // Files the user left while they were checked stay with that conversation.
         if attachmentComposerContext(for: destination) != context,
            case let .conversation(conversationID)? = context,
-           var kept = composer.keptDrafts[conversationID]
+           let kept = removeKeptAttachments(rejectedIDs, in: conversationID)
         {
-            kept.attachments.removeAll { rejectedIDs.contains($0.id) }
-            composer.keptDrafts[conversationID] = kept.isEmpty ? nil : kept
             pruneOwnedPromisedAttachmentFiles()
             preuploadComposerAttachments(kept.attachments.filter { stagedIDs.contains($0.id) }, in: context)
             return true
@@ -373,6 +371,16 @@ extension AppModel {
             threadComposerAttachments = attachments
         }
         pruneOwnedPromisedAttachmentFiles()
+    }
+
+    /// Takes attachments out of a conversation's kept draft, forgetting a draft
+    /// left empty. Returns the remaining draft when one was kept.
+    @discardableResult
+    func removeKeptAttachments(_ ids: Set<UUID>, in channelID: ChannelID) -> KeptComposerDraft? {
+        guard var kept = composer.keptDrafts[channelID] else { return nil }
+        kept.attachments.removeAll { ids.contains($0.id) }
+        composer.keptDrafts[channelID] = kept.isEmpty ? nil : kept
+        return kept
     }
 
     /// Like Discord, rejects the whole batch rather than keeping the files that fit.

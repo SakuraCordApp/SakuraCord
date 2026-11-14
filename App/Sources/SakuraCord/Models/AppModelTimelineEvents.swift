@@ -3,15 +3,6 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
-    func updateServerRail(from snapshot: BootstrapSnapshot) {
-        replaceServerRailGuilds(
-            Dictionary(
-                uniqueKeysWithValues: snapshot.guilds.map { ($0.id, $0) }
-            )
-        )
-        serverRailItems = snapshot.guildRailItems
-    }
-
     func reconcile(
         _ message: Message,
         preparedTextPlan: NativeTimelineTextPlan? = nil

@@ -200,10 +200,7 @@ extension AppModel {
         let channelID = outgoing.channelID
         let sent = Set(outgoing.attachments.map(\.id))
         guard composerSendChannelID(in: destination) == channelID else {
-            if var kept = composer.keptDrafts[channelID] {
-                kept.attachments.removeAll { sent.contains($0.id) }
-                composer.keptDrafts[channelID] = kept.isEmpty ? nil : kept
-            }
+            removeKeptAttachments(sent, in: channelID)
             if let database = session.database,
                (try? await composer.storedDraft(in: channelID, database: database))?
                .trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content
