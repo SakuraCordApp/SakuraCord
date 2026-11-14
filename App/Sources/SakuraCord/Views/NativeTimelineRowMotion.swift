@@ -42,8 +42,9 @@ enum NativeTimelineSnapshotRenderer {
 /// the first changed one are displaced by `shift`, and each changed row hides
 /// the part of its height change that has not happened yet, which displaces
 /// every row after it. Updates overlap freely; each one's displacement simply
-/// adds to the others'. The NEW divider's gap is a row motion too, held with
-/// what it draws besides by `NativeTimelineUnreadDividerGap`.
+/// adds to the others'. The NEW divider's gap and a group opening or closing
+/// are row motions too, held with what they draw besides by
+/// `NativeTimelineUnreadDividerGap` and `NativeTimelineRowDisclosure`.
 struct NativeTimelineRowMotion {
     struct Step {
         /// Where the step displaces rows from.
@@ -51,6 +52,9 @@ struct NativeTimelineRowMotion {
             /// The row's own height change: the rows after it move, and the
             /// row hides the part that has not happened yet.
             case height
+            /// The rows after the row move, as a group opens or closes below
+            /// its header.
+            case belowRow
             /// The row and the rows after it move, as the NEW divider's space
             /// opens or closes above its row.
             case aboveRow
@@ -84,7 +88,7 @@ struct NativeTimelineRowMotion {
     /// Set on the first frame, as for a chip transition.
     var startUptime: TimeInterval?
     var timing = NativeTimelineRowMotionTiming.quart
-    let shift: CGFloat
+    var shift: CGFloat
     var steps: [Step]
 
     func progress(at uptime: TimeInterval) -> CGFloat {
@@ -575,13 +579,14 @@ extension NativeTimelineCanvasView {
         if hadChips { positionAnimatedMediaOverlays() }
     }
 
-    /// Recomputes the cached displacement read by `displayedRowOrigin(at:)`,
-    /// on whole device pixels so moving rows stay sharp. True when any row
-    /// moved.
+    /// Recomputes the cached displacement read by `displayedRowOrigin(at:)`
+    /// from every row motion, and the clip of the rows a gap or group shows
+    /// only part of. True when any row moved.
     @discardableResult
     func refreshRowMotionGeometry(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         deferGlides(pastStallBefore: uptime)
-        guard !rowMotions.isEmpty || unreadDividerGap != nil || !rowMotionSteps.isEmpty else { return false }
+        guard !rowMotions.isEmpty || unreadDividerGap != nil || rowDisclosure != nil || !rowMotionSteps.isEmpty
+        else { return false }
         if let pendingRowMotionBaseline { handOverDepartedMotion(in: pendingRowMotionBaseline, at: uptime) }
         // A motion whose row is gone no longer describes the layout.
         removeRowMotions { motion in
@@ -605,7 +610,10 @@ extension NativeTimelineCanvasView {
         }
         for motionIndex in rowMotions.indices { add(&rowMotions[motionIndex]) }
         if unreadDividerGap != nil { add(&unreadDividerGap!.motion) }
-        return storeRowMotionSteps(shift: shift)
+        if rowDisclosure != nil { add(&rowDisclosure!.motion) }
+        let moved = storeRowMotionSteps(shift: shift)
+        refreshClippedRows()
+        return moved
     }
 
     /// Sums the step offsets just collected into the displacement rows read,
@@ -647,12 +655,38 @@ extension NativeTimelineCanvasView {
         return moved
     }
 
+    /// The rows an opening or closing group shows only part of, and the span
+    /// they show: from where the rows before them end to where the rows after
+    /// them start.
+    private func refreshClippedRows() {
+        guard let disclosure = rowDisclosure, !disclosure.rows.isEmpty else {
+            clippedRows = 0 ..< 0
+            clippedRowsRelativeMinY = -.greatestFiniteMagnitude
+            clippedRowsRelativeMaxY = .greatestFiniteMagnitude
+            return
+        }
+        clippedRows = disclosure.rows
+        clippedRowsRelativeMinY = rowMotionOffset(at: disclosure.rows.lowerBound - 1)
+        clippedRowsRelativeMaxY = disclosure.rowsHeight + rowMotionOffset(at: disclosure.rows.upperBound)
+    }
+
+    var clippedRowsMinY: CGFloat {
+        guard !clippedRows.isEmpty else { return -.greatestFiniteMagnitude }
+        return contentOriginY + rowOrigins[clippedRows.lowerBound] + clippedRowsRelativeMinY
+    }
+
+    var clippedRowsMaxY: CGFloat {
+        guard !clippedRows.isEmpty else { return .greatestFiniteMagnitude }
+        return contentOriginY + rowOrigins[clippedRows.lowerBound] + clippedRowsRelativeMaxY
+    }
+
     /// The part of the viewport whose rows move: from the top when rows
     /// before the first changed one are displaced, to the bottom when rows
-    /// after the last one are. A gap also clips its row and moves its overlay.
+    /// after the last one are. A gap or group also clips rows and moves
+    /// overlays.
     private var rowMotionFrame: CGRect {
         let visible = visibleRect
-        guard unreadDividerGap == nil, let first = rowMotionSteps.first, let last = rowMotionSteps.last,
+        guard unreadDividerGap == nil, rowDisclosure == nil, let first = rowMotionSteps.first, let last = rowMotionSteps.last,
               items.indices.contains(first.index), items.indices.contains(last.index)
         else { return visible }
         let minY = rowMotionShift == 0 ? displayedRowOrigin(at: first.index) : visible.minY
@@ -735,11 +769,7 @@ extension NativeTimelineCanvasView {
     }
 
     func displayedRowOrigin(at index: Int) -> CGFloat {
-        contentOriginY
-            + (index >= disclosureRange.upperBound ? disclosureShiftAfter
-                : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
-            + rowMotionOffset(at: index)
-            + transientRowOrigin(at: index)
+        contentOriginY + rowMotionOffset(at: index) + transientRowOrigin(at: index)
     }
 
     /// A row's top within the content with the edited row at its editing

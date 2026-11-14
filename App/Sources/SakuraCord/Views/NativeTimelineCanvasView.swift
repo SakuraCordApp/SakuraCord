@@ -249,13 +249,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var inboxForumPostHosts: [ChannelID: NSHostingView<InboxForumPostView>] = [:]
     var inboxHeaderHosts: [ChannelID: NSHostingView<InboxGroupHeaderView>] = [:]
     var rowDisclosure: NativeTimelineRowDisclosure?
-    var disclosureRange: Range<Int> = 0 ..< 0
-    var disclosureShiftBefore: CGFloat = 0
-    var disclosureShiftAfter: CGFloat = 0
-    /// The visible span of the group's rows, relative to its first row, so a
-    /// content-origin change can never leave the clip behind the rows.
-    var disclosureRelativeClipMinY = -CGFloat.greatestFiniteMagnitude
-    var disclosureRelativeClipMaxY = CGFloat.greatestFiniteMagnitude
     var disclosureMaskedViews: [NSView] = []
     /// A header whose viewport position the next structural update keeps.
     var pendingDisclosureScrollAnchor: NativeTimelineRowDisclosure.Key?
@@ -321,6 +314,12 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var rowMotionRemainingHeights: [Int: CGFloat] = [:]
     /// The part of each row's remaining height that its edited text's band still has to glide.
     var rowMotionTextRemainingHeights: [Int: CGFloat] = [:]
+    /// Rows an opening or closing group shows only part of, and the span they
+    /// show, relative to the first one's static top, so a content-origin
+    /// change can never leave the clip behind the rows.
+    var clippedRows: Range<Int> = 0 ..< 0
+    var clippedRowsRelativeMinY = -CGFloat.greatestFiniteMagnitude
+    var clippedRowsRelativeMaxY = CGFloat.greatestFiniteMagnitude
     var editedTextBands: [NativeMessageTimelineItem.Identifier: NativeTimelineEditedTextBand] = [:] {
         didSet {
             guard oldValue.isEmpty != editedTextBands.isEmpty else { return }

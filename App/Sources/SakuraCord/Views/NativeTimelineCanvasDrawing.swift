@@ -48,7 +48,7 @@ extension NativeTimelineCanvasView {
         self.contentOriginY = transientContentOriginY
         // After the content origin settles: an expansion measures where its
         // rows landed the header.
-        refreshDisclosureGeometry()
+        followDisclosureRows()
         refreshRowMotionGeometry()
         positionReactionBandViews()
         reconcileServerTagCardPresentation()
@@ -761,15 +761,15 @@ extension NativeTimelineCanvasView {
         for index in displayedRows {
             let rowFrame = rowFrame(at: index)
             guard rowFrame.intersects(dirtyRect) else { continue }
-            guard disclosureRange.contains(index) else {
+            guard clippedRows.contains(index) else {
                 drawTimelineRowClippedToUnreadDividerGap(
                     at: index, rowFrame: rowFrame, dirtyRect: dirtyRect, visibleMediaKeys: visibleMediaKeys
                 )
                 continue
             }
             // An animating group is clipped to its revealed height.
-            let minY = max(rowFrame.minY, disclosureClipMinY)
-            let maxY = min(rowFrame.maxY, disclosureClipMaxY)
+            let minY = max(rowFrame.minY, clippedRowsMinY)
+            let maxY = min(rowFrame.maxY, clippedRowsMaxY)
             guard minY < maxY, let context = NSGraphicsContext.current?.cgContext else { continue }
             context.saveGState()
             context.clip(to: CGRect(x: rowFrame.minX, y: minY, width: rowFrame.width, height: maxY - minY))

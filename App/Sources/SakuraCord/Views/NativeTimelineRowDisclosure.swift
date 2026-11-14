@@ -5,8 +5,9 @@ import SakuraCordModels
 ///
 /// Rows stay real canvas content throughout. The group's own rows never move;
 /// they are clipped to `revealedHeight`. The hidden height is taken up by
-/// displacing the rows on either side: rows before the group (including its
-/// header) move by `beforeShift`, and rows after it by `beforeShift - hidden`.
+/// displacing the rows on either side, as a row motion (`motion`): rows before
+/// the group (including its header) move by `beforeShift`, and rows after it
+/// by `beforeShift - hidden`.
 ///
 /// Each motion ends on the geometry the timeline will have once its rows
 /// change, so the structural update that follows is invisible: an expanding
@@ -48,6 +49,14 @@ struct NativeTimelineRowDisclosure {
     var startUptime: TimeInterval?
     var headerIndexHint: Int?
     var isFinished = false
+    /// Where the rows around the group are, as a row motion. The disclosure
+    /// eases them itself, toward a target that follows the layout and that a
+    /// closing group holds until its rows go, so this motion never starts:
+    /// its steps are where the rows are now.
+    var motion = NativeTimelineRowMotion(shift: 0, steps: [])
+    /// The group's rows as last followed, and their laid-out height.
+    var rows: Range<Int> = 0 ..< 0
+    var rowsHeight: CGFloat = 0
 
     /// Ease-out with a soft landing, close to AppKit's disclosure motion.
     static func progress(at elapsed: TimeInterval) -> CGFloat {
@@ -100,21 +109,16 @@ extension NativeTimelineCanvasView {
         return rowDisclosure.heldItems
     }
 
-    /// Recomputes the cached geometry read by `displayedRowOrigin(at:)`.
-    func refreshDisclosureGeometry() {
-        guard var disclosure = rowDisclosure,
-              let headerIndex = disclosureHeaderIndex(for: disclosure.key, hint: disclosure.headerIndexHint) else {
+    /// Finds the group's rows again after the layout changed, for the next
+    /// geometry refresh.
+    func followDisclosureRows() {
+        guard var disclosure = rowDisclosure else { return }
+        guard let headerIndex = disclosureHeaderIndex(for: disclosure.key, hint: disclosure.headerIndexHint) else {
             clearDisclosure()
             return
         }
-        disclosure.headerIndexHint = headerIndex
-        let range = disclosureContentRange(for: disclosure.key, headerIndex: headerIndex)
-        guard !range.isEmpty else {
-            rowDisclosure = disclosure
-            if disclosure.isCollapsing { clearDisclosure() } else { resetDisclosureGeometry() }
-            return
-        }
-        if let previousY = disclosure.pendingHeaderViewportY {
+        let rows = disclosureContentRange(for: disclosure.key, headerIndex: headerIndex)
+        if let previousY = disclosure.pendingHeaderViewportY, !rows.isEmpty {
             // The expansion's rows have landed: start from where the header was.
             let landedY = contentOriginY + rowOrigins[headerIndex] - viewportMinY
             disclosure.pendingHeaderViewportY = nil
@@ -122,37 +126,15 @@ extension NativeTimelineCanvasView {
             disclosure.beforeShift = disclosure.startBeforeShift
             disclosure.startHeight = disclosure.revealedHeight
         }
-        rowDisclosure = disclosure
-        // Rows are measured before applying the shift, which never moves the group's own rows.
-        disclosureRange = range
-        let hiddenHeight = max(0, contentHeight(of: range) - disclosure.revealedHeight)
-        disclosureShiftBefore = disclosure.beforeShift
-        disclosureShiftAfter = disclosure.beforeShift - hiddenHeight
-        disclosureRelativeClipMinY = disclosure.beforeShift
-        disclosureRelativeClipMaxY = disclosure.beforeShift + disclosure.revealedHeight
-    }
-
-    var disclosureClipMinY: CGFloat {
-        guard !disclosureRange.isEmpty else { return -.greatestFiniteMagnitude }
-        return contentOriginY + rowOrigins[disclosureRange.lowerBound] + disclosureRelativeClipMinY
-    }
-
-    var disclosureClipMaxY: CGFloat {
-        guard !disclosureRange.isEmpty else { return .greatestFiniteMagnitude }
-        return contentOriginY + rowOrigins[disclosureRange.lowerBound] + disclosureRelativeClipMaxY
-    }
-
-    func finishDisclosure() {
-        guard rowDisclosure != nil else { return }
-        clearDisclosure()
+        storeDisclosure(&disclosure, holding: rows, below: headerIndex)
+        if rows.isEmpty, disclosure.isCollapsing { clearDisclosure() }
     }
 
     func clearDisclosure(redraws: Bool = true) {
-        let disclosure = rowDisclosure
+        guard let disclosure = rowDisclosure else { return }
         rowDisclosure = nil
         stopRowMotionTickerIfIdle()
-        resetDisclosureGeometry()
-        guard let disclosure else { return }
+        refreshRowMotionGeometry()
         if redraws { redrawForRowMotion() }
         // Drops held rows from the next published item list.
         if disclosure.isCollapsing, !disclosure.isFinished { releaseHeldRows(of: disclosure) }
@@ -167,7 +149,7 @@ extension NativeTimelineCanvasView {
         let range = suppressedContentRange(group, headerIndex: headerIndex)
         guard let last = range.last else { return frame }
         var maxY = displayedRowOrigin(at: last) + layouts[last].height
-        if range == disclosureRange { maxY = min(maxY, disclosureClipMaxY) }
+        if range == clippedRows { maxY = min(maxY, clippedRowsMaxY) }
         return CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(frame.height, maxY - frame.minY))
     }
 
@@ -193,8 +175,8 @@ extension NativeTimelineCanvasView {
         while items.indices.contains(index) {
             let span = visibleRowSpan(at: index)
             if span.lowerBound >= rect.maxY { return }
-            if disclosureRange.contains(index), span.lowerBound >= disclosureClipMaxY {
-                index = disclosureRange.upperBound
+            if clippedRows.contains(index), span.lowerBound >= clippedRowsMaxY {
+                index = clippedRows.upperBound
                 continue
             }
             if span.upperBound > span.lowerBound { body(index) }
@@ -207,9 +189,9 @@ extension NativeTimelineCanvasView {
     func visibleRowSpan(at index: Int) -> Range<CGFloat> {
         let minY = displayedRowOrigin(at: index)
         let maxY = minY + displayedRowHeight(at: index)
-        guard disclosureRange.contains(index) else { return unreadDividerGapSpan(at: index, minY: minY, maxY: maxY) }
-        let clippedMin = min(disclosureClipMaxY, max(disclosureClipMinY, minY))
-        let clippedMax = min(disclosureClipMaxY, max(disclosureClipMinY, maxY))
+        guard clippedRows.contains(index) else { return unreadDividerGapSpan(at: index, minY: minY, maxY: maxY) }
+        let clippedMin = min(clippedRowsMaxY, max(clippedRowsMinY, minY))
+        let clippedMax = min(clippedRowsMaxY, max(clippedRowsMinY, maxY))
         return clippedMin ..< clippedMax
     }
 
@@ -243,7 +225,7 @@ extension NativeTimelineCanvasView {
         finishRowMotions()
         let previous = rowDisclosure?.key == key ? rowDisclosure : nil
         // Reversing the same group continues from where it is; another group snaps to its end.
-        if previous == nil { finishDisclosure() } else { rowDisclosure = nil }
+        if previous == nil { clearDisclosure() } else { rowDisclosure = nil }
         guard AppMotionPolicy.animatesUncategorized,
               let headerIndex = disclosureHeaderIndex(for: key),
               displayedRowOrigin(at: headerIndex) < visibleRect.maxY,
@@ -283,7 +265,8 @@ extension NativeTimelineCanvasView {
     }
 
     private func startDisclosureMotion() {
-        refreshDisclosureGeometry()
+        followDisclosureRows()
+        refreshRowMotionGeometry()
         startRowMotionTicker()
     }
 
@@ -315,22 +298,48 @@ extension NativeTimelineCanvasView {
         disclosure.beforeShift = disclosure.startBeforeShift
             + (disclosure.targetBeforeShift - disclosure.startBeforeShift) * progress
         if progress >= 1 {
-            if disclosure.isCollapsing {
-                disclosure.isFinished = true
-                rowDisclosure = disclosure
-                stopRowMotionTickerIfIdle()
-                refreshDisclosureGeometry()
-                redrawForRowMotion()
-                if case .suppressedMessages = disclosure.key { pendingDisclosureScrollAnchor = disclosure.key }
-                releaseHeldRows(of: disclosure)
-            } else {
+            guard disclosure.isCollapsing else {
                 clearDisclosure()
+                return
             }
-            return
+            disclosure.isFinished = true
         }
-        rowDisclosure = disclosure
-        refreshDisclosureGeometry()
+        storeDisclosure(&disclosure, holding: range, below: headerIndex)
+        guard disclosure.isFinished else { return }
+        stopRowMotionTickerIfIdle()
+        refreshRowMotionGeometry()
         redrawForRowMotion()
+        if case .suppressedMessages = disclosure.key { pendingDisclosureScrollAnchor = disclosure.key }
+        releaseHeldRows(of: disclosure)
+    }
+
+    /// Stores `disclosure` holding the rows around the group's `rows`: those
+    /// before them `beforeShift` lower, its own rows in place, and those after
+    /// them the height still hidden above those before. Rewrites the motion's
+    /// steps in place, since this runs every frame.
+    private func storeDisclosure(
+        _ disclosure: inout NativeTimelineRowDisclosure,
+        holding rows: Range<Int>,
+        below headerIndex: Int
+    ) {
+        // The stored copy goes first, so the steps are not copied.
+        rowDisclosure = nil
+        let height = contentHeight(of: rows)
+        let shift = rows.isEmpty ? 0 : disclosure.beforeShift
+        let last = rows.last ?? headerIndex
+        disclosure.headerIndexHint = headerIndex
+        disclosure.rows = rows
+        disclosure.rowsHeight = height
+        disclosure.motion.shift = shift
+        disclosure.motion.steps.removeAll(keepingCapacity: true)
+        disclosure.motion.steps.append(.init(
+            identifier: items[headerIndex].identifier, rowIndex: headerIndex, delta: shift, edge: .belowRow
+        ))
+        disclosure.motion.steps.append(.init(
+            identifier: items[last].identifier, rowIndex: last,
+            delta: max(0, height - disclosure.revealedHeight) - shift, edge: .belowRow
+        ))
+        rowDisclosure = disclosure
     }
 
     private func releaseHeldRows(of disclosure: NativeTimelineRowDisclosure) {
@@ -357,20 +366,12 @@ extension NativeTimelineCanvasView {
         return min(contentHeight(of: range), max(0, visibleRect.maxY - top))
     }
 
-    private func resetDisclosureGeometry() {
-        disclosureRange = 0 ..< 0
-        disclosureShiftBefore = 0
-        disclosureShiftAfter = 0
-        disclosureRelativeClipMinY = -.greatestFiniteMagnitude
-        disclosureRelativeClipMaxY = .greatestFiniteMagnitude
-    }
-
     /// Hosted views inside the group follow the same clip as its drawn rows.
     func maskDisclosureSubviews() {
         for view in disclosureMaskedViews { view.layer?.mask = nil }
         disclosureMaskedViews = []
-        guard rowDisclosure != nil, !disclosureRange.isEmpty else { return }
-        let rows = items[disclosureRange]
+        guard rowDisclosure != nil, !clippedRows.isEmpty else { return }
+        let rows = items[clippedRows]
         let identifiers = Set(rows.map(\.identifier))
         let messageIDs = Set(rows.compactMap(\.messageID))
         var views: [NSView] = []
@@ -390,8 +391,8 @@ extension NativeTimelineCanvasView {
             view.wantsLayer = true
             let mask = CALayer()
             mask.backgroundColor = NSColor.black.cgColor
-            let minY = max(view.frame.minY, disclosureClipMinY)
-            let maxY = min(view.frame.maxY, disclosureClipMaxY)
+            let minY = max(view.frame.minY, clippedRowsMinY)
+            let maxY = min(view.frame.maxY, clippedRowsMaxY)
             let visible = CGRect(x: view.frame.minX, y: minY, width: view.frame.width, height: max(0, maxY - minY))
             mask.frame = view.convert(visible, from: self)
             view.layer?.mask = mask
