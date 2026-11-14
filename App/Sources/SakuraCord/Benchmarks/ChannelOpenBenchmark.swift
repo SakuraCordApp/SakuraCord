@@ -8,9 +8,11 @@ import SakuraCordModels
 /// Read-only against the offline fixture.
 @MainActor
 enum ChannelOpenBenchmark {
-    static func run(model: AppModel, channelID: ChannelID) async {
+    private static let start = ChannelID(rawValue: 200)
+    private static let channelID = ChannelID(rawValue: 210)
+
+    static func run(model: AppModel) async {
         NSApp.activate(ignoringOtherApps: true)
-        let start = ChannelID(rawValue: 200)
         let clock = ContinuousClock()
         var opens: [Double] = []
         for _ in 0 ..< 11 {

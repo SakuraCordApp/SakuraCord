@@ -35,6 +35,8 @@ MODES=(
   --offline-chat-performance
   --offline-chat-performance-autoscroll
   --offline-chat-performance-live-autoscroll
+  --offline-chat-reaction-storm-autoscroll
+  --offline-chat-reaction-storm-idle
   --offline-chat-media-performance-autoscroll
   --offline-chat-voice-performance
   --offline-chat-voice-performance-autoscroll

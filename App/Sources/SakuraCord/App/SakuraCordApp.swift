@@ -170,7 +170,7 @@ struct SakuraCordApp: App {
                         await UnreadChurnBenchmark.run(model: model, provider: performanceMockProvider)
                     }
                     if launch.runsChannelOpenBenchmark {
-                        await ChannelOpenBenchmark.run(model: model, channelID: ChannelID(rawValue: 210))
+                        await ChannelOpenBenchmark.run(model: model)
                     }
 #if SAKURACORD_MOTION_BENCHMARK
                     if let sideChatMotionOptions {
