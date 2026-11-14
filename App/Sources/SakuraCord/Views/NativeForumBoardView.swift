@@ -471,15 +471,15 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         }
         let anchor = restoring ?? (transition == .none && !scrollsToTop ? scrollAnchor() : nil)
         let counter = titleCounter
-        let signpost = AppPerformanceSignposts.signposter.beginInterval("ForumBoardLayout")
-        let newLayout = ForumBoardLayout.make(
-            items: items,
-            mode: snapshot?.mode ?? .list,
-            width: width,
-            metrics: metrics,
-            titleLines: { counter.lines($0, width: $1) }
-        )
-        AppPerformanceSignposts.signposter.endInterval("ForumBoardLayout", signpost)
+        let newLayout = AppPerformanceSignposts.measureSync("ForumBoardLayout") {
+            ForumBoardLayout.make(
+                items: items,
+                mode: snapshot?.mode ?? .list,
+                width: width,
+                metrics: metrics,
+                titleLines: { counter.lines($0, width: $1) }
+            )
+        }
         let widthChanged = abs(width - lastLayoutWidth) > 0.5
         // A width change that alters the column count moves cards to new
         // slots; those realized now glide there from where they are.
