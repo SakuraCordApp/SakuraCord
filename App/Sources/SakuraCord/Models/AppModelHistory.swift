@@ -905,10 +905,6 @@ extension AppModel {
         return persistedMessage
     }
 
-    func recordAuthoritativeMessageUpsert(_ message: Message) {
-        journalAuthoritativeMessageUpsert(message)
-    }
-
     func dismissError() {
         errorMessage = nil
     }

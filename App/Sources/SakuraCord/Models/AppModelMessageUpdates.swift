@@ -111,7 +111,7 @@ extension AppModel {
             guard isCurrentAccountSession(session) else { return nil }
             invalidateMessageTranslation(updated.id, content: updated.content)
             let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)
-            recordAuthoritativeMessageUpsert(reconciled)
+            journalAuthoritativeMessageUpsert(reconciled)
             return reconciled
         } catch {
             guard isCurrentAccountSession(session) else { return nil }

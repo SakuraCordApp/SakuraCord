@@ -600,7 +600,7 @@ struct ComposerView: View {
                     ComposerEmojiImageStore.shared.register(emoji)
                     let value = model.composerText(for: emoji)
                     restoredSelection = applyDraftEdit(
-                        ComposerDraftEditing.insertCustomEmoji(
+                        ComposerDraftEditing.insert(
                             value,
                             into: draft,
                             replacing: replacementSelection

@@ -458,7 +458,7 @@ extension AppModel {
             forgetOutgoingDraft(nonce: nonce)
             pruneOwnedPromisedAttachmentFiles()
         }
-        recordAuthoritativeMessageUpsert(message)
+        journalAuthoritativeMessageUpsert(message)
         if message.channelID == openThread?.id {
             reconcileThread(message)
         }
@@ -526,7 +526,7 @@ extension AppModel {
         // history refresh or local reconciliation may have changed the source.
         let matchingTextPlan = recordsRefreshMutation || preparedTextPlanSource == message
             ? preparedTextPlan : nil
-        if recordsRefreshMutation { recordAuthoritativeMessageUpsert(message) }
+        if recordsRefreshMutation { journalAuthoritativeMessageUpsert(message) }
         if message.channelID == openThread?.id {
             reconcileThreadUpdate(message)
         }

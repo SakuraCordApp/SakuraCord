@@ -146,7 +146,7 @@ extension AppModel {
             latest.isSending = false
             model.pollVoteMutations[messageID] = latest
             if let message = model.retainedMessage(channelID: channelID, messageID: messageID) {
-                model.recordAuthoritativeMessageUpsert(message)
+                model.journalAuthoritativeMessageUpsert(message)
                 model.reconcilePollSearchMessage(message)
                 model.reconcileInboxMessage(message)
             }
@@ -187,7 +187,7 @@ extension AppModel {
             let updated = try await session.provider.endPoll(messageID: message.id, channelID: message.channelID)
             guard isCurrentAccountSession(session) else { return }
             let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)
-            recordAuthoritativeMessageUpsert(reconciled)
+            journalAuthoritativeMessageUpsert(reconciled)
         } catch {
             guard isCurrentAccountSession(session) else { return }
             errorMessage = error.localizedDescription

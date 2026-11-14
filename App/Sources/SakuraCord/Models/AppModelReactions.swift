@@ -175,12 +175,12 @@ extension AppModel {
             reactionMutations[key] = nil
             reactionMutationTasks[key] = nil
             if let message = reactionMessage(for: key) {
-                recordAuthoritativeMessageUpsert(message)
+                journalAuthoritativeMessageUpsert(message)
             }
         } else {
             reactionMutations[key] = latest
             if let message = reactionMessage(for: key) {
-                recordAuthoritativeMessageUpsert(message)
+                journalAuthoritativeMessageUpsert(message)
             }
             scheduleReactionMutation(for: key)
         }
@@ -551,7 +551,7 @@ extension AppModel {
         }
 
         if persistsResult, let messageToPersist {
-            recordAuthoritativeMessageUpsert(messageToPersist)
+            journalAuthoritativeMessageUpsert(messageToPersist)
         }
         NotificationCenter.default.post(name: .sakuracordMessageReactionDidChange, object: self, userInfo: ["update": update])
     }

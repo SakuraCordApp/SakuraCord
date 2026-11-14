@@ -42,14 +42,6 @@ nonisolated enum ComposerDraftEditing {
         )
     }
 
-    static func insertCustomEmoji(
-        _ token: String,
-        into source: String,
-        replacing selection: NSRange?
-    ) -> ComposerDraftEdit {
-        insert(token, into: source, replacing: selection)
-    }
-
     private static func resolvedRange(_ selection: NSRange?, in source: String) -> NSRange {
         let end = NSRange(location: source.utf16.count, length: 0)
         guard let selection,
