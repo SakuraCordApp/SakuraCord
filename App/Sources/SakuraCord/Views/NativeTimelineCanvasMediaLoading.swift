@@ -445,33 +445,7 @@ extension NativeTimelineCanvasView {
                 keys.append(image.mediaKey)
             }
             for textRegion in region.textRegions {
-                let value = textRegion.text.value
-                let range = NSRange(location: 0, length: value.length)
-                value.enumerateAttribute(
-                    .discordEmojiToken,
-                    in: range
-                ) { rawValue, _, _ in
-                    guard let rawToken = rawValue as? String else { return }
-                    let reference = EmojiReference(rawToken: rawToken)
-                    let customURL = reference.id.flatMap { id in
-                        model?.customEmojiURLsByID[id]
-                    }
-                    guard let url = customURL
-                        ?? reference.imageURL(size: 64)
-                    else { return }
-                    keys.append(.media(url, maximumPixelDimension: 64))
-                }
-                value.enumerateAttribute(
-                    .nativeTimelineMention,
-                    in: range
-                ) { rawValue, _, _ in
-                    guard let mention =
-                        (rawValue as? NativeTimelineMentionBox)?
-                        .presentation,
-                        let url = mention.avatarURL
-                    else { return }
-                    keys.append(.avatar(url))
-                }
+                appendInlineMediaKeys(from: textRegion.text.value, model: model, into: &keys)
             }
             // A covered video's poster is what its spoiler cover blurs.
             if concealedEmbeds[region.embedID] != nil || !region.mediaIsVideo || !region.mediaAutoplaysInline,
@@ -525,11 +499,9 @@ extension NativeTimelineCanvasView {
             }
         }
         for region in layout.reactionRegions {
-            let reference = region.reaction.emojiReference
-            if let id = reference.id,
-               let url = model?.customEmojiURLsByID[id]
-                    ?? reference.imageURL(size: 64)
-            {
+            if let url = MessageReactionPresentation.emojiURL(
+                for: region.reaction, customEmojiURLsByID: model?.customEmojiURLsByID ?? [:]
+            ) {
                 keys.append(.media(url, maximumPixelDimension: 64))
             }
             for avatar in region.avatarRegions {
