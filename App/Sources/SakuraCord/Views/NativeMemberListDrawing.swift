@@ -129,14 +129,7 @@ extension NativeMemberListCanvasView {
         style: SkeletonDrawingStyle
     ) {
         let row = paintedRowRect(at: index)
-        let contentX = row.minX + 4
-        let container = CGRect(
-            x: contentX,
-            y: row.minY
-                + (row.height - NativeMemberListMetrics.avatarContainerSize) / 2,
-            width: NativeMemberListMetrics.avatarContainerSize,
-            height: NativeMemberListMetrics.avatarContainerSize
-        )
+        let container = avatarContainerRect(at: index, leadingInset: 4)
         let avatar = CGRect(
             x: container.midX - NativeMemberListMetrics.avatarSize / 2,
             y: container.midY - NativeMemberListMetrics.avatarSize / 2,
@@ -164,8 +157,7 @@ extension NativeMemberListCanvasView {
             style: style
         )
 
-        let textX = contentX
-            + NativeMemberListMetrics.avatarContainerSize + 8
+        let textX = textOriginX(at: index)
         drawSkeletonShape(
             in: CGRect(x: textX, y: row.minY + InterfaceScale.metric(6), width: InterfaceScale.metric(104), height: InterfaceScale.metric(10)),
             radius: InterfaceScale.metric(5),
@@ -298,7 +290,7 @@ extension NativeMemberListCanvasView {
 
         drawMemberAvatar(member, at: index, context: context)
 
-        let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+        let textX = textOriginX(at: index)
         let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
         let botBadgeWidth = NativeAppBadgePresentation.width(isVerified: member.user.isVerifiedBot)
         let tagPresentation = prepared.serverTag
@@ -389,14 +381,7 @@ extension NativeMemberListCanvasView {
         at index: Int,
         context: CGContext
     ) {
-        let container = CGRect(
-            x: NativeMemberListMetrics.horizontalInset + InterfaceScale.metric(4),
-            y: origins[index] + 1
-                + (NativeMemberListMetrics.paintedRowHeight
-                    - NativeMemberListMetrics.avatarContainerSize) / 2,
-            width: NativeMemberListMetrics.avatarContainerSize,
-            height: NativeMemberListMetrics.avatarContainerSize
-        )
+        let container = avatarContainerRect(at: index, leadingInset: InterfaceScale.metric(4))
         let avatar = CGRect(
             x: container.midX - NativeMemberListMetrics.avatarSize / 2,
             y: container.midY - NativeMemberListMetrics.avatarSize / 2,

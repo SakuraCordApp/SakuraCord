@@ -101,7 +101,7 @@ extension NativeMemberListCanvasView {
 
     func activityTextFrame(at index: Int) -> CGRect {
         let row = paintedRowRect(at: index)
-        let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+        let textX = textOriginX(at: index)
         return CGRect(
             x: textX,
             y: row.minY + InterfaceScale.metric(24),

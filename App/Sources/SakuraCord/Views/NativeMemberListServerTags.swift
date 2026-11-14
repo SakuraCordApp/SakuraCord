@@ -30,7 +30,7 @@ extension NativeMemberListCanvasView {
             return cached
         }
         let row = paintedRowRect(at: index)
-        let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+        let textX = textOriginX(at: index)
         let hasRoleIndicator = presentation.roleColorDisplay == .nextToNames
             && MessageAuthorPresentation.topRoleColor(in: member.roles) != nil
         let nameX = textX + (hasRoleIndicator ? InterfaceScale.metric(13) : 0)
