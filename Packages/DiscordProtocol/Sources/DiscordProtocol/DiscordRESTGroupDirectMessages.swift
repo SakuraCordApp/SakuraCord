@@ -37,7 +37,7 @@ public extension DiscordRESTProvider {
             status == 403 ? ChatProviderError.invalidRequest("You can no longer edit this group.") : nil
         }
         guard currentUser?.id == user.id else { throw CancellationError() }
-        guard dto.id == channelID.description, dto.type == 3 else {
+        guard dto.id == channelID.description, dto.type == DiscordChannelType.groupDirectMessage else {
             throw ChatProviderError.invalidRequest("Discord saved the group, but its response could not be loaded.")
         }
         let saved = try privateChannel(from: dto)

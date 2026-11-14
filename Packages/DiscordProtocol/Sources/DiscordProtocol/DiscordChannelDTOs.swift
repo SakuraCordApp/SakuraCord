@@ -182,11 +182,16 @@ struct ChannelDTO: Decodable {
         DiscordChannelType.threads.contains(type)
     }
 
+    var isPrivate: Bool {
+        type == DiscordChannelType.directMessage || type == DiscordChannelType.groupDirectMessage
+    }
+
     /// Channel types Discord shows in the guild channel list. Directories (14)
     /// and Server Hub spaces (20) are separate surfaces, and unknown types stay out.
     var isGuildChannelListEntry: Bool {
         switch type {
-        case 0, 2, 5, 6, 13, 15, 16, 21: true
+        case DiscordChannelType.text, DiscordChannelType.voice, DiscordChannelType.announcement, DiscordChannelType.store,
+             DiscordChannelType.stageVoice, DiscordChannelType.forum, DiscordChannelType.media, 21: true
         default: false
         }
     }
@@ -264,10 +269,10 @@ struct ChannelDTO: Decodable {
             resolvedName = explicitName
         } else if !recipientName.isEmpty {
             resolvedName = recipientName
-        } else if type == 3, let ownerGroupName {
+        } else if type == DiscordChannelType.groupDirectMessage, let ownerGroupName {
             resolvedName = ownerGroupName
         } else {
-            resolvedName = type == 3 ? "Group Direct Message" : "Direct Message"
+            resolvedName = type == DiscordChannelType.groupDirectMessage ? "Group Direct Message" : "Direct Message"
         }
         let iconURL = icon.flatMap { hash in
             URL(

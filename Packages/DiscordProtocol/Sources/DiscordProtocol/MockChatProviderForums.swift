@@ -136,7 +136,7 @@ public extension MockChatProvider {
             value.description = item.description.isEmpty ? nil : item.description
             value.isSpoiler = item.isSpoiler
             if item.isSpoiler, !value.filename.hasPrefix(UploadFilename.spoilerPrefix) {
-                value.filename = "SPOILER_\(value.filename)"
+                value.filename = UploadFilename.spoilerPrefix + value.filename
             }
             return value
         }

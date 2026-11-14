@@ -4,7 +4,10 @@ public enum DiscordChannelType {
     public static let directMessage = 1
     public static let voice = 2
     public static let groupDirectMessage = 3
+    public static let category = 4
     public static let announcement = 5
+    /// `GUILD_STORE`.
+    public static let store = 6
     public static let announcementThread = 10
     public static let publicThread = 11
     public static let privateThread = 12
