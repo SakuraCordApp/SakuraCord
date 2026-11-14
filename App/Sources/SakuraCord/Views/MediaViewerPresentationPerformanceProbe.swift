@@ -23,10 +23,6 @@ final class MediaViewerPresentationPerformanceProbe {
         subsystem: "dev.sakuracord.SakuraCord",
         category: "MediaViewerPerformance"
     )
-    private static let signposter = OSSignposter(
-        subsystem: "dev.sakuracord.SakuraCord",
-        category: "PointsOfInterest"
-    )
     private static let isEnabled =
         ProcessInfo.processInfo.environment[
             "SAKURACORD_MEDIA_VIEWER_BENCHMARK"
@@ -39,7 +35,7 @@ final class MediaViewerPresentationPerformanceProbe {
         guard Self.isEnabled else { return }
         finishPending(outcome: "superseded")
         pending = PendingPresentation(
-            interval: Self.signposter.beginInterval(
+            interval: AppPerformanceSignposts.signposter.beginInterval(
                 "MediaViewerInputToFirstAnimationFrame"
             ),
             startedAt: ProcessInfo.processInfo.systemUptime,
@@ -60,14 +56,14 @@ final class MediaViewerPresentationPerformanceProbe {
         pending.visibleSourceRatio = visibleSourceRatio
         pending.hasTransitionSource = hasTransitionSource
         self.pending = pending
-        Self.signposter.emitEvent("MediaViewerSourcePrepared")
+        AppPerformanceSignposts.signposter.emitEvent("MediaViewerSourcePrepared")
     }
 
     func reportOverlayAttached(to view: NSView) {
         guard var pending else { return }
         pending.overlayAttachedAt = ProcessInfo.processInfo.systemUptime
         self.pending = pending
-        Self.signposter.emitEvent("MediaViewerOverlayAttached")
+        AppPerformanceSignposts.signposter.emitEvent("MediaViewerOverlayAttached")
 
         let ticker = DisplayLinkTicker()
         displayLinkTicker = ticker
@@ -81,7 +77,7 @@ final class MediaViewerPresentationPerformanceProbe {
         pending.animationTransactionStartedAt =
             ProcessInfo.processInfo.systemUptime
         self.pending = pending
-        Self.signposter.emitEvent(
+        AppPerformanceSignposts.signposter.emitEvent(
             "MediaViewerAnimationTransactionStarted"
         )
     }
@@ -117,7 +113,7 @@ final class MediaViewerPresentationPerformanceProbe {
                 max(0, finishedAt - $0) * 1_000
             } ?? 0
 
-        Self.signposter.endInterval(
+        AppPerformanceSignposts.signposter.endInterval(
             "MediaViewerInputToFirstAnimationFrame",
             pending.interval
         )

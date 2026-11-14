@@ -29,10 +29,7 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
     var observesAppScrollWorkGate: Bool
 
     func prepare() -> PreparedUnreadPresentation? {
-        let signposter = OSSignposter(
-            subsystem: "dev.sakuracord.SakuraCord",
-            category: "PointsOfInterest"
-        )
+        let signposter = AppPerformanceSignposts.signposter
         let preparation = signposter.beginInterval(
             "UnreadPresentationPreparation"
         )

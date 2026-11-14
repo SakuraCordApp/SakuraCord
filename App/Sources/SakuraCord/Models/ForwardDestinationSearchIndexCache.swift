@@ -368,10 +368,7 @@ final class ForwardDestinationSearchIndexCache {
                 makeSource(for: model)
             }
             let newTask = Task.detached(priority: priority) {
-                let signposter = OSSignposter(
-                    subsystem: "dev.sakuracord.SakuraCord",
-                    category: "PointsOfInterest"
-                )
+                let signposter = AppPerformanceSignposts.signposter
                 let preparation = signposter.beginInterval(
                     "ForwardDestinationIndexPreparation"
                 )

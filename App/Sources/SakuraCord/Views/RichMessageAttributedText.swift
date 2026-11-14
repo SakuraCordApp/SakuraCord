@@ -23,10 +23,6 @@ nonisolated enum RichMessageAttributedText {
 
     private static let maximumPreparedCacheEntries = 2_048
     private static let preparedCache = Mutex(PreparedCacheState())
-    private static let performanceSignposter = OSSignposter(
-        subsystem: "dev.sakuracord.SakuraCord",
-        category: "PointsOfInterest"
-    )
 
     enum InlineToken: Hashable, Sendable {
         case customEmoji(RenderedEmoji)
@@ -43,12 +39,12 @@ nonisolated enum RichMessageAttributedText {
         if let cached = preparedCache.withLock({ $0.values[source] }) {
             return cached
         }
-        let signpost = performanceSignposter.beginInterval(
+        let signpost = AppPerformanceSignposts.signposter.beginInterval(
             "RichTextParse",
-            id: performanceSignposter.makeSignpostID()
+            id: AppPerformanceSignposts.signposter.makeSignpostID()
         )
         defer {
-            performanceSignposter.endInterval("RichTextParse", signpost)
+            AppPerformanceSignposts.signposter.endInterval("RichTextParse", signpost)
         }
         let document = MessageDocument(source: source)
         var transformed = ""

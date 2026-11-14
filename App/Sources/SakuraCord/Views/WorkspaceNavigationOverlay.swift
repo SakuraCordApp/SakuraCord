@@ -45,10 +45,7 @@ private nonisolated struct QuickSwitcherSearchInput: Sendable {
     let recentlyTalkedUserIDs: [UserID]
 
     func results(query: String) -> [QuickSwitcherResult] {
-        let signposter = OSSignposter(
-            subsystem: "dev.sakuracord.SakuraCord",
-            category: "PointsOfInterest"
-        )
+        let signposter = AppPerformanceSignposts.signposter
         let interval = signposter.beginInterval("QuickSwitcherRanking")
         defer { signposter.endInterval("QuickSwitcherRanking", interval) }
         return QuickSwitcherSearchPolicy.results(

@@ -15,7 +15,6 @@ import SwiftUI
 enum SideChatMotionBenchmark {
     static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "SideChatMotionBenchmark")
     /// Brackets each action so Instruments captures can be split per action.
-    static let signposter = OSSignposter(subsystem: "dev.sakuracord.SakuraCord", category: .pointsOfInterest)
 
     struct Options {
         var cycles = 6
@@ -113,13 +112,13 @@ enum SideChatMotionBenchmark {
         func perform(_ steps: [Step], cycle: Int) async {
             for step in steps {
                 recorder.recordAction(step, cycle: cycle)
-                let interval = signposter.beginInterval(
-                    "SideChatMotionAction", id: signposter.makeSignpostID(),
+                let interval = AppPerformanceSignposts.signposter.beginInterval(
+                    "SideChatMotionAction", id: AppPerformanceSignposts.signposter.makeSignpostID(),
                     "\(step.name, privacy: .public) \(step.variant ?? "-", privacy: .public) \(cycle, privacy: .public)"
                 )
                 step.perform(model)
                 try? await Task.sleep(for: .seconds(options.settleSeconds))
-                signposter.endInterval("SideChatMotionAction", interval)
+                AppPerformanceSignposts.signposter.endInterval("SideChatMotionAction", interval)
             }
         }
         for cycle in 0 ..< options.cycles {
@@ -191,12 +190,12 @@ enum SideChatMotionBenchmark {
                 try? await Task.sleep(for: .seconds(options.settleSeconds))
                 let step = Step(name: "window-resize", variant: variant, movingProbe: nil, edge: nil) { _ in }
                 recorder.recordAction(step, cycle: cycle)
-                let interval = signposter.beginInterval(
-                    "SideChatMotionAction", id: signposter.makeSignpostID(),
+                let interval = AppPerformanceSignposts.signposter.beginInterval(
+                    "SideChatMotionAction", id: AppPerformanceSignposts.signposter.makeSignpostID(),
                     "window-resize \(variant, privacy: .public) \(cycle, privacy: .public)"
                 )
                 await WindowResizeDriver(window: window).run(narrowing: 440, seconds: 1.6)
-                signposter.endInterval("SideChatMotionAction", interval)
+                AppPerformanceSignposts.signposter.endInterval("SideChatMotionAction", interval)
                 try? await Task.sleep(for: .seconds(options.settleSeconds))
             }
         }
