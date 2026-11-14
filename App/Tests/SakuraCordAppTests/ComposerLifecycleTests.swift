@@ -413,10 +413,10 @@ func `clearing drafts invalidates unpublished restorations`(clearsAll: Bool, edi
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
     model.snapshot?.forwardChannelStoreOrder = [ChannelID(rawValue: 200), ChannelID(rawValue: 201)]
-    let revision = model.forwardSearchSourceRevision
+    let revision = model.destinationSearchSourceRevision
     try await model.clearLocalActivity()
     #expect(model.snapshot?.forwardChannelStoreOrder.isEmpty == true)
-    #expect(model.forwardSearchSourceRevision > revision)
+    #expect(model.destinationSearchSourceRevision > revision)
 }
 
 @MainActor

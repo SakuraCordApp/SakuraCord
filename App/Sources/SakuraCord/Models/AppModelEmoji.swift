@@ -96,7 +96,7 @@ extension AppModel {
         // best available frecency signal until the next authenticated session.
         hasLoadedDiscordEmojiSettings = true
         applyPersistedDiscordFrecencyUsageDeltas()
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
     }
 
     func applyDiscordEmojiSettings(_ settings: EmojiUserSettings) {
@@ -126,7 +126,7 @@ extension AppModel {
             guard isCurrentAccountSession(session) else { return false }
             applyDiscordEmojiSettings(settings)
             hasLoadedDiscordEmojiSettings = true
-            forwardSearchSourceRevision &+= 1
+            destinationSearchSourceRevision &+= 1
             return true
         } catch { return false }
     }

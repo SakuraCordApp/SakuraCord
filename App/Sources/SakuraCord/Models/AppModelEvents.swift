@@ -238,7 +238,7 @@ extension AppModel {
             applyDiscordEmojiSettings(settings)
             didAttemptDiscordEmojiSettings = true
             hasLoadedDiscordEmojiSettings = true
-            forwardSearchSourceRevision &+= 1
+            destinationSearchSourceRevision &+= 1
         case .stickerUserSettingsChanged, .stickersChanged:
             consumeStickerEvent(event)
         case let .applicationCommandFrecencyChanged(history):
@@ -273,7 +273,7 @@ extension AppModel {
     }
 
     func consumePresenceAndCommandEvent(_ event: ClientEvent) {
-        if consumeForwardSearchPeopleEvent(event) { return }
+        if consumeSearchPeopleEvent(event) { return }
         if consumeFavoritesEvent(event) { return }
         if consumeApplicationStreamEvent(event) { return }
         if consumeProfileEvent(event) { return }
@@ -615,7 +615,7 @@ extension AppModel {
                 value.channels.append(contentsOf: channels)
             }
             snapshot = value
-            forwardSearchSourceRevision &+= 1
+            destinationSearchSourceRevision &+= 1
         }
         if guildID == selectedGuildID {
             visibleChannels = channels
@@ -644,7 +644,7 @@ extension AppModel {
         discardUnreachableKeptComposerDrafts()
     }
 
-    func replaceForwardDestinationThreads(
+    func replaceSnapshotThreads(
         parentID: ChannelID,
         with threads: [MessageThreadSummary]
     ) {
@@ -657,7 +657,7 @@ extension AppModel {
         snapshot = value
     }
 
-    func mergeForwardDestinationThreads(_ threads: [MessageThreadSummary]) {
+    func mergeSnapshotThreads(_ threads: [MessageThreadSummary]) {
         guard var value = snapshot, !threads.isEmpty else { return }
         var indicesByID = Dictionary(
             value.threads.enumerated().map { ($0.element.id, $0.offset) },
@@ -740,7 +740,7 @@ extension AppModel {
             receiveOnboardingMember(member, guildID: guildID)
         }
         reconcileGuildTimeoutExpiries()
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         // A replacement READY is authoritative even when its setting equals
         // the value from before an in-flight toggle started.
         let pendingGuildIDs = Set(guildNotificationMutationTasks.keys)
@@ -841,7 +841,7 @@ extension AppModel {
         value.guilds[index] = projectedGuild
         snapshot = value
         updateServerRailGuild(projectedGuild)
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         readState.merge(guilds: [guild])
         // Gateway guild payloads do not carry SakuraCord's presentation-only
         // unread and mention counts. Re-project them after every metadata
@@ -867,7 +867,7 @@ extension AppModel {
         }
         value.guildRailItems = railItems
         snapshot = value
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         currentUserRoleIDsByGuild = currentUserRoleIDsByGuild.filter {
             retainedGuildIDs.contains($0.key)
         }

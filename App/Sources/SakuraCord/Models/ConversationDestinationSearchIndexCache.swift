@@ -299,7 +299,7 @@ final class ConversationDestinationSearchIndexCache {
         corpus: Corpus = .forward
     ) async -> ConversationDestinationSearchPolicy.Index? {
         let currentUserID = model.snapshot?.currentUser.id
-        let sourceRevision = model.forwardSearchSourceRevision
+        let sourceRevision = model.destinationSearchSourceRevision
         if let cached = value(
             for: model,
             userID: currentUserID,

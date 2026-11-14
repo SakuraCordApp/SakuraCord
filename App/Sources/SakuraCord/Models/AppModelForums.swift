@@ -331,7 +331,7 @@ extension AppModel {
             AppPerformanceSignposts.measureSync(
                 "ForumForwardDestinationReplacement"
             ) {
-                replaceForwardDestinationThreads(
+                replaceSnapshotThreads(
                     parentID: channelID,
                     with: threads
                 )
@@ -356,7 +356,7 @@ extension AppModel {
     func consumeForumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost]) {
         refreshTimelineThreadCards(parentID: channelID, posts: posts, replacesAll: false)
         reconcileInboxForumPosts(channelID: channelID, posts: posts, replacesAll: false)
-        mergeForwardDestinationThreads(posts.map(\.thread))
+        mergeSnapshotThreads(posts.map(\.thread))
         for post in posts { readState.merge(thread: post.thread) }
         requestCoalescedUnreadPresentationRefresh()
         guard presentsForum(channelID) else { return }

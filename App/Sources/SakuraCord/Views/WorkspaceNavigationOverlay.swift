@@ -177,7 +177,7 @@ private struct QuickSwitcherView: View {
             .onChange(of: animationState.isVisible) { _, isVisible in
                 if isVisible {
                     let currentUserID = model.currentUser?.id
-                    let sourceRevision = model.forwardSearchSourceRevision
+                    let sourceRevision = model.destinationSearchSourceRevision
                     if let exact = ConversationDestinationSearchIndexCache.shared.value(
                         for: model,
                         userID: currentUserID,
@@ -294,7 +294,7 @@ private struct QuickSwitcherView: View {
     private var activeIndexRequest: QuickSwitcherIndexRequest? {
         guard animationState.isVisible else { return nil }
         return QuickSwitcherIndexRequest(
-            revision: model.forwardSearchSourceRevision
+            revision: model.destinationSearchSourceRevision
         )
     }
 

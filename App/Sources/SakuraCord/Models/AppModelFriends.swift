@@ -122,7 +122,7 @@ extension AppModel {
             reconcilePrivateCallSounds()
             reconcileIgnoredVoiceParticipants()
         }
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         let ids = Set(relationships.map(\.id))
         friends.pendingUserIDs.formIntersection(ids)
     }
@@ -247,7 +247,7 @@ extension AppModel {
     func mergeOpenedPrivateChannel(_ channel: Channel) {
         guard snapshot?.channels.contains(where: { $0.id == channel.id }) == false else { return }
         snapshot?.channels.append(channel)
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
     }
 
     /// Opens the existing conversation, or creates it through the provider.

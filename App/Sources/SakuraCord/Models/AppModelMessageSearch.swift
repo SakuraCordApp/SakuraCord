@@ -666,6 +666,6 @@ extension AppModel {
         for channel in privateChannels where known.insert(channel.id).inserted {
             snapshot?.channels.append(channel)
         }
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
     }
 }

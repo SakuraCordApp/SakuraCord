@@ -471,7 +471,7 @@ final class AppModel {
     var isForwardingMessages = false
     var conversationDestinationHistory: [ChannelID] = []
     var quickSwitcherDraftChannelIDs: [ChannelID] = []
-    var forwardSearchSourceRevision: UInt64 = 0
+    var destinationSearchSourceRevision: UInt64 = 0
     var forumCreateGeneration: UInt64 = 0
     var forumSearchText = ""
     var forumSelectedTagIDs: Set<ForumTagID> = []

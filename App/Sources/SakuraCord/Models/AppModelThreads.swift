@@ -316,7 +316,7 @@ extension AppModel {
             if var value = snapshot {
                 value.activeJoinedThreads = threads
                 snapshot = value
-                forwardSearchSourceRevision &+= 1
+                destinationSearchSourceRevision &+= 1
             }
             refreshUnreadPresentation()
             reconcileInboxEligibility()

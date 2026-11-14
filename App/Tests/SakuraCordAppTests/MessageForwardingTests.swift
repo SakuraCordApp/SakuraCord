@@ -92,7 +92,7 @@ func `forward destination index warms before the menu is presented`() async thro
     #expect(ConversationDestinationSearchIndexCache.shared.value(
         for: model,
         userID: currentUser.id,
-        revision: model.forwardSearchSourceRevision
+        revision: model.destinationSearchSourceRevision
     ) != nil)
 }
 
@@ -137,7 +137,7 @@ func `open forward search observes live user and guild nickname store updates`()
         members: []
     )
 
-    let initialRevision = model.forwardSearchSourceRevision
+    let initialRevision = model.destinationSearchSourceRevision
     let snapshotChanges = AsyncStream<Void>.makeStream()
     withObservationTracking {
         _ = model.snapshot
@@ -147,13 +147,13 @@ func `open forward search observes live user and guild nickname store updates`()
     var snapshotInvalidations = 0
     for await _ in snapshotChanges.stream { snapshotInvalidations += 1 }
     #expect(snapshotInvalidations == 0)
-    #expect(model.forwardSearchSourceRevision == initialRevision + 1)
+    #expect(model.destinationSearchSourceRevision == initialRevision + 1)
     #expect(model.snapshot?.knownUsers.contains(observedUser) == true)
 
     model.consumeImmediately(.userSearchAliasesChanged([
         observedUser.id: ["Guild nickname"],
     ]))
-    #expect(model.forwardSearchSourceRevision == initialRevision + 2)
+    #expect(model.destinationSearchSourceRevision == initialRevision + 2)
     #expect(model.snapshot?.userSearchAliasesByUserID[observedUser.id] == [
         "Guild nickname",
     ])

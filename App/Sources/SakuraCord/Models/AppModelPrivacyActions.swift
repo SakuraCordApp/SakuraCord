@@ -24,7 +24,7 @@ extension AppModel {
         try await session.provider.clearLocalSearchCache()
         guard isCurrentAccountSession(session) else { throw LocalPrivacyActionError.accountChanged }
         snapshot?.forwardChannelStoreOrder = []
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         clearLocalDestinationHistory()
         clearLocallyLearnedEmojiRanking()
     }

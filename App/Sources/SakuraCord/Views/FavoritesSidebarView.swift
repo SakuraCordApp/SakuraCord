@@ -35,7 +35,7 @@ struct FavoritesSidebarView: View {
             .padding(.top, ChatChromeMetrics.channelListTopPadding)
             .clipped()
             // Discord recomputes suggestions whenever a source they read changes.
-            .onChange(of: model.forwardSearchSourceRevision) { model.refreshFavoriteSuggestions() }
+            .onChange(of: model.destinationSearchSourceRevision) { model.refreshFavoriteSuggestions() }
         }
     }
 

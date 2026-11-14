@@ -9,28 +9,28 @@ private struct ForwardDestinationResolution: Sendable {
 }
 
 extension AppModel {
-    func consumeForwardSearchPeopleEvent(_ event: ClientEvent) -> Bool {
+    func consumeSearchPeopleEvent(_ event: ClientEvent) -> Bool {
         switch event {
         case .privateMembersChanged(let value):
             if selectedGuildID == nil { members = value }
         case .knownUsersChanged(let users):
-            updateForwardSnapshot { $0.knownUsers = users }
+            updateSearchSnapshot { $0.knownUsers = users }
         case .quickSwitcherUserIDsChanged(let userIDs):
-            updateForwardSnapshot { $0.quickSwitcherUserIDs = userIDs }
+            updateSearchSnapshot { $0.quickSwitcherUserIDs = userIDs }
         case .messageSearchUsersChanged(let users):
-            // Only message search reads this cache, so the forwarding and quick
-            // switcher index revision stays put.
+            // Only message search reads this cache, so the destination search
+            // index revision stays put.
             guard snapshotStorage != nil else { break }
             snapshotStorage?.messageSearchUsers = users
             refreshSearchSnapshotPresentation()
         case .userSearchAliasesChanged(let aliases):
-            updateForwardSnapshot { $0.userSearchAliasesByUserID = aliases }
+            updateSearchSnapshot { $0.userSearchAliasesByUserID = aliases }
         case .quickSwitcherGuildMemberUserIDsChanged(let userIDsByGuildID):
-            updateForwardSnapshot { $0.quickSwitcherGuildMemberUserIDs = userIDsByGuildID }
+            updateSearchSnapshot { $0.quickSwitcherGuildMemberUserIDs = userIDsByGuildID }
         case .quickSwitcherJoinedMemberIDsChanged(let userIDsByGuildID):
-            updateForwardSnapshot { $0.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID }
+            updateSearchSnapshot { $0.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID }
         case .quickSwitcherGuildMemberAliasesChanged(let aliasesByGuildID):
-            updateForwardSnapshot { $0.quickSwitcherGuildMemberAliases = aliasesByGuildID }
+            updateSearchSnapshot { $0.quickSwitcherGuildMemberAliases = aliasesByGuildID }
         case .relationshipsChanged(let relationships):
             applyRelationships(relationships)
         case let .relationshipPresencesChanged(presences, isComplete):
@@ -42,14 +42,14 @@ extension AppModel {
     }
 
     // Search caches invalidate search consumers without rebuilding workspace chrome.
-    private func updateForwardSnapshot(
+    private func updateSearchSnapshot(
         _ update: (inout BootstrapSnapshot) -> Void
     ) {
         guard var value = snapshotStorage else { return }
         update(&value)
         snapshotStorage = value
         refreshSearchSnapshotPresentation()
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
     }
 
     func presentForwarding(_ message: Message) {

@@ -54,7 +54,7 @@ struct FavoritesPickerView: View {
         }
         // Discord reads the latest frecency when the picker opens; the index
         // follows the destination sources as Forward's does.
-        .task(id: model.forwardSearchSourceRevision) {
+        .task(id: model.destinationSearchSourceRevision) {
             if !model.hasLoadedDiscordEmojiSettings { Task { await model.loadDiscordEmojiSettings() } }
             // nil when a newer source revision's task owns the index now.
             guard let built = await ConversationDestinationSearchIndexCache.shared.prepare(

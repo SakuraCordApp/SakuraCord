@@ -126,7 +126,7 @@ struct ForwardMessageOverlay: View {
         // the modal is open. Rebuild only when those source stores advance;
         // typing changes the lightweight result task below and never rebuilds
         // the index.
-        .task(id: model.forwardSearchSourceRevision) {
+        .task(id: model.destinationSearchSourceRevision) {
             await rebuildSearchIndex()
         }
         .task(id: SearchRequest(

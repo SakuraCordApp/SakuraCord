@@ -226,7 +226,7 @@ extension AppModel {
         if old?.communicationDisabledUntil != member.communicationDisabledUntil {
             scheduleGuildTimeoutExpiry(in: guildID)
             timelinePresentationRevision &+= 1
-            forwardSearchSourceRevision &+= 1
+            destinationSearchSourceRevision &+= 1
         }
         // Flags can arrive without a role change. Rebuild the same projection
         // that owns sidebar locks and resumes an initial history load waiting
