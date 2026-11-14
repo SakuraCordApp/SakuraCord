@@ -246,19 +246,35 @@ extension AppModel {
             poll: poll,
             isTTS: isTTS
         )
+        return enqueueMessage(outgoing, replyPreview: replyPreview, clearsComposer: clearsComposer, in: .channel)
+    }
+
+    /// The enqueue steps both composers share once their own guards pass.
+    func enqueueMessage(
+        _ outgoing: SendMessageDraft,
+        replyPreview: MessageReplyPreview?,
+        clearsComposer: Bool,
+        in destination: MessageComposerDestination
+    ) -> Task<Bool, Never>? {
+        func clearText() {
+            switch destination {
+            case .channel: updateDraft("")
+            case .thread: threadDraft = ""
+            }
+        }
         guard !outgoing.isEmpty else {
             // Discord sends nothing for a bare `@silent`, but clears the text.
-            if clearsComposer { updateDraft("") }
+            if clearsComposer { clearText() }
             return nil
         }
-        if clearsComposer {
+        if clearsComposer, destination == .channel {
             stopLocalTyping(clearThrottle: true)
         }
         admitToOutbox(optimisticMessage(for: outgoing, replyPreview: replyPreview), draft: outgoing)
         if clearsComposer {
-            replyingTo = nil
-            updateDraft("")
-            translation.resetDraft(.channel)
+            setReplyingTo(nil, in: destination)
+            clearText()
+            translation.resetDraft(destination)
         }
         return enqueueOutgoingSend(outgoing, isRetry: false, completesReading: true)
     }

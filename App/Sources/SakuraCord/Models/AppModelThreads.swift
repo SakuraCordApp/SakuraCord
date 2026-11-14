@@ -551,18 +551,7 @@ extension AppModel {
             mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments
         )
-        guard !draft.isEmpty else {
-            // Discord sends nothing for a bare `@silent`, but clears the text.
-            if clearsComposer { threadDraft = "" }
-            return nil
-        }
-        admitToOutbox(optimisticMessage(for: draft, replyPreview: replyPreview), draft: draft)
-        if clearsComposer {
-            threadDraft = ""
-            threadReplyingTo = nil
-            translation.resetDraft(.thread)
-        }
-        return enqueueOutgoingSend(draft, isRetry: false, completesReading: true)
+        return enqueueMessage(draft, replyPreview: replyPreview, clearsComposer: clearsComposer, in: .thread)
     }
 
 }
