@@ -36,8 +36,10 @@ struct FriendsActionPresentation: ViewModifier {
             ),
             presenting: alertConfirmation
         ) { confirmation in
-            Button(confirmation.action, role: confirmation.role) {
-                model.confirmFriendsAction(confirmation.confirmation)
+            if let action = confirmation.alertAction {
+                Button(action.title, role: action.role) {
+                    model.confirmFriendsAction(confirmation)
+                }
             }
             Button("Cancel", role: .cancel) { friends.confirmation = nil }
         } message: { confirmation in
@@ -76,61 +78,38 @@ struct FriendsActionPresentation: ViewModifier {
         }
     }
 
-    private var alertConfirmation: AlertConfirmation? {
-        AlertConfirmation(model.friends.confirmation)
+    private var alertConfirmation: FriendsConfirmation? {
+        model.friends.confirmation.flatMap { $0.alertAction == nil ? nil : $0 }
     }
 
     // Official stable633029 copy for removal.
-    private func confirmationTitle(_ confirmation: AlertConfirmation?) -> String {
+    private func confirmationTitle(_ confirmation: FriendsConfirmation?) -> String {
         switch confirmation {
         case .removeFriend(let user): "Remove ‘\(model.friendDisplayName(user))’"
         case .acceptStranger: "Accept Friend Request?"
-        case nil: ""
+        case .block, .ignore, nil: ""
         }
     }
 
-    private func confirmationMessage(_ confirmation: AlertConfirmation) -> String {
+    private func confirmationMessage(_ confirmation: FriendsConfirmation) -> String {
         switch confirmation {
         case .removeFriend(let user):
             "Are you sure you want to remove \(model.friendDisplayName(user)) from your friends?"
         case .acceptStranger(let user):
             "Discord wants you to confirm that you know \(model.friendDisplayName(user)) before accepting their request."
+        case .block, .ignore: ""
         }
     }
 }
 
-/// The confirmations that stay alerts; Ignore and Block use the relationship
-/// modal.
-private enum AlertConfirmation {
-    case removeFriend(User)
-    case acceptStranger(User)
-
-    init?(_ confirmation: FriendsConfirmation?) {
-        switch confirmation {
-        case .removeFriend(let user): self = .removeFriend(user)
-        case .acceptStranger(let user): self = .acceptStranger(user)
-        case .block, .ignore, nil: return nil
-        }
-    }
-
-    var confirmation: FriendsConfirmation {
+private extension FriendsConfirmation {
+    /// The confirming button for the confirmations that stay alerts; Ignore
+    /// and Block use the relationship modal.
+    var alertAction: (title: String, role: ButtonRole?)? {
         switch self {
-        case .removeFriend(let user): .removeFriend(user)
-        case .acceptStranger(let user): .acceptStranger(user)
-        }
-    }
-
-    var action: String {
-        switch self {
-        case .removeFriend: "Remove Friend"
-        case .acceptStranger: "Accept"
-        }
-    }
-
-    var role: ButtonRole? {
-        switch self {
-        case .removeFriend: .destructive
-        case .acceptStranger: nil
+        case .removeFriend: ("Remove Friend", .destructive)
+        case .acceptStranger: ("Accept", nil)
+        case .block, .ignore: nil
         }
     }
 }
