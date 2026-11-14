@@ -4,33 +4,8 @@ import AppKit
 ///
 /// The divider is the top `spaceHeight` of its row, so the static layout
 /// already holds its final size. The motion displaces rows instead of laying
-/// them out again: rows before the divider's row move by `shiftBefore`, and the
-/// row itself and everything after it by `shiftAfter`. `gap` is how much of the
-/// divider's space is open on screen. Both shifts reach zero when the motion
-/// ends, so it finishes exactly on the static layout.
+/// them out again (see `NativeTimelineUnreadDividerGap`).
 nonisolated enum NativeTimelineUnreadDividerGapGeometry {
-    nonisolated struct Frame: Equatable {
-        let gap: CGFloat
-        let shiftBefore: CGFloat
-        let shiftAfter: CGFloat
-    }
-
-    /// The gap, and the shifts that put every row where it was on screen when
-    /// `progress` is zero and on the static layout when it is one.
-    static func frame(
-        isAppearing: Bool,
-        spaceHeight: CGFloat,
-        startGap: CGFloat,
-        startBeforeShift: CGFloat,
-        progress: CGFloat
-    ) -> Frame {
-        // The static layout holds the divider's space only while it exists.
-        let staticGap = isAppearing ? spaceHeight : 0
-        let gap = startGap + (staticGap - startGap) * progress
-        let before = startBeforeShift * (1 - progress)
-        return Frame(gap: gap, shiftBefore: before, shiftAfter: before + gap - staticGap)
-    }
-
     /// How far rows before the divider must still be displaced for the
     /// picture to match what was on screen before the update.
     static func startBeforeShift(
@@ -90,39 +65,45 @@ nonisolated enum NativeTimelineUnreadDividerGapGeometry {
     }
 }
 
-/// An in-flight opening or closing of the divider's space.
+/// An in-flight opening or closing of the divider's space: a row motion
+/// whose one step, above the divider's row, is the part of the space still
+/// to open or close, while its shift keeps the rows before it where they were
+/// on screen. Both reach zero together, so it lands on the static layout.
 struct NativeTimelineUnreadDividerGap {
-    let identifier: NativeMessageTimelineItem.Identifier
     let isAppearing: Bool
     let spaceHeight: CGFloat
     let dividerHeight: CGFloat
-    let startGap: CGFloat
-    let startBeforeShift: CGFloat
     /// The divider and header that are closing, as they were on screen, when
     /// the space holds a header the row no longer paints.
     let snapshot: NativeTimelineUnreadDividerSnapshot?
     /// The closing author avatar's part below `snapshot`.
     let snapshotTail: NativeTimelineUnreadDividerSnapshot?
-    var rowIndex: Int
     /// A divider a send acknowledged stays open until the send lands, so the
     /// message arrives where it was aimed before the space above it closes.
+    /// Its motion starts then.
     var waitsForSend: Bool
-    var startUptime: TimeInterval?
-    var frame: NativeTimelineUnreadDividerGapGeometry.Frame
+    var motion: NativeTimelineRowMotion
+
+    var identifier: NativeMessageTimelineItem.Identifier { motion.steps[0].identifier }
+    var rowIndex: Int { motion.steps[0].rowIndex }
+    /// The space the static layout holds above the divider's row.
+    var staticGap: CGFloat { isAppearing ? spaceHeight : 0 }
 }
 
 extension NativeTimelineCanvasView {
-    /// The top of the divider's gap in canvas coordinates. Rows before it are
-    /// displaced by `shiftBefore`, so this is where the gap really starts.
+    /// The top of the divider's gap in canvas coordinates: where the rows
+    /// before it end, displaced as they are.
     var unreadDividerGapTop: CGFloat {
         guard let gap = unreadDividerGap, rowOrigins.indices.contains(gap.rowIndex) else { return 0 }
-        return contentOriginY + rowOrigins[gap.rowIndex] + gap.frame.shiftBefore
+        return contentOriginY + rowOrigins[gap.rowIndex] + rowMotionOffset(at: gap.rowIndex - 1)
     }
 
-    /// Displacement of a row by the running gap motion.
-    func unreadDividerGapShift(at index: Int) -> CGFloat {
+    /// How much of the divider's space is open on screen: what the static
+    /// layout holds, less what the divider's row is still displaced by
+    /// against the rows before it.
+    var unreadDividerGapOpening: CGFloat {
         guard let gap = unreadDividerGap else { return 0 }
-        return index < gap.rowIndex ? gap.frame.shiftBefore : gap.frame.shiftAfter
+        return gap.staticGap - rowMotionOffset(at: gap.rowIndex - 1) + rowMotionOffset(at: gap.rowIndex)
     }
 
     /// The divider's own row never draws above its gap while it slides in.
@@ -205,72 +186,46 @@ extension NativeTimelineCanvasView {
         guard NativeTimelineUnreadDividerGapGeometry.isFeasible(spaceHeight: space, startBeforeShift: startShift),
               CGRect(x: 0, y: staticTop - space, width: 1, height: space * 3).intersects(visibleRect)
         else { return false }
-        let start = NativeTimelineUnreadDividerGapGeometry.frame(
-            isAppearing: appearing,
-            spaceHeight: space,
-            startGap: startGap,
-            startBeforeShift: startShift,
-            progress: 0
-        )
         // Two row motions would fight over the same displacement.
         finishRowMotions()
         unreadDividerGap = NativeTimelineUnreadDividerGap(
-            identifier: source.identifier,
             isAppearing: appearing,
             spaceHeight: space,
             dividerHeight: frame.height,
-            startGap: startGap,
-            startBeforeShift: startShift,
             snapshot: snapshot,
             snapshotTail: snapshotTail,
-            rowIndex: index,
             waitsForSend: !appearing && sendTransitionBlocksInteractions,
-            frame: start
+            motion: NativeTimelineRowMotion(shift: startShift, steps: [.init(
+                identifier: source.identifier, rowIndex: index, delta: (appearing ? space : 0) - startGap, edge: .aboveRow
+            )])
         )
         startRowMotionTicker()
+        refreshRowMotionGeometry()
         redrawForRowMotion()
         return true
     }
 
+    /// Starts the gap's motion once nothing holds it, and lands it when done.
+    /// The row motion geometry follows its row meanwhile.
     func stepUnreadDividerGap(at now: TimeInterval) {
-        guard var gap = unreadDividerGap else { return }
-        guard let index = rowIndex(forIdentifier: gap.identifier, hint: gap.rowIndex) else {
+        guard let gap = unreadDividerGap else { return }
+        guard rowIndex(forIdentifier: gap.identifier, hint: gap.rowIndex) != nil else {
             finishUnreadDividerGap()
             return
         }
         if gap.waitsForSend {
-            // Rows can change under a waiting divider, so it follows its row.
-            let moved = gap.rowIndex != index
-            gap.rowIndex = index
-            guard !sendTransitionBlocksInteractions else {
-                unreadDividerGap = gap
-                if moved { redrawForRowMotion() }
-                return
-            }
-            gap.waitsForSend = false
-            unreadDividerGap = gap
+            guard !sendTransitionBlocksInteractions else { return }
+            unreadDividerGap?.waitsForSend = false
             if let fade = unreadDividerFades[gap.identifier] {
                 beginUnreadDividerFade(
                     identifier: gap.identifier, frameInRow: fade.frameInRow, appearing: false, usesGap: true
                 )
             }
         }
-        let start = gap.startUptime ?? now
-        gap.startUptime = start
-        let progress = NativeTimelineRowDisclosure.progress(at: now - start)
-        gap.frame = NativeTimelineUnreadDividerGapGeometry.frame(
-            isAppearing: gap.isAppearing,
-            spaceHeight: gap.spaceHeight,
-            startGap: gap.startGap,
-            startBeforeShift: gap.startBeforeShift,
-            progress: progress
-        )
-        gap.rowIndex = index
-        unreadDividerGap = gap
-        if progress >= 1 {
+        if gap.motion.startUptime == nil {
+            unreadDividerGap?.motion.startUptime = now
+        } else if gap.motion.progress(at: now) >= 1 {
             finishUnreadDividerGap()
-        } else {
-            redrawForRowMotion()
         }
     }
 
@@ -282,6 +237,7 @@ extension NativeTimelineCanvasView {
         guard let gap = unreadDividerGap else { return }
         unreadDividerGap = nil
         stopRowMotionTickerIfIdle()
+        refreshRowMotionGeometry()
         if gap.identifier != identifier {
             finishUnreadDividerFade(gap.identifier)
         }

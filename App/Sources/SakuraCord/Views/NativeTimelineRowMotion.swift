@@ -42,9 +42,20 @@ enum NativeTimelineSnapshotRenderer {
 /// the first changed one are displaced by `shift`, and each changed row hides
 /// the part of its height change that has not happened yet, which displaces
 /// every row after it. Updates overlap freely; each one's displacement simply
-/// adds to the others'.
+/// adds to the others'. The NEW divider's gap is a row motion too, held with
+/// what it draws besides by `NativeTimelineUnreadDividerGap`.
 struct NativeTimelineRowMotion {
     struct Step {
+        /// Where the step displaces rows from.
+        enum Edge {
+            /// The row's own height change: the rows after it move, and the
+            /// row hides the part that has not happened yet.
+            case height
+            /// The row and the rows after it move, as the NEW divider's space
+            /// opens or closes above its row.
+            case aboveRow
+        }
+
         /// A deleted row hands its steps to the row before it.
         var identifier: NativeMessageTimelineItem.Identifier
         var rowIndex: Int
@@ -54,6 +65,17 @@ struct NativeTimelineRowMotion {
         var closesGap = false
         /// A step of an edited row's text, which its band draws.
         var movesText = false
+        var edge = Edge.height
+    }
+
+    /// A step's displacement while the geometry is summed: rows after `index`
+    /// are displaced `value` less than those before, its own offset and then
+    /// the running total.
+    struct Offset {
+        let index: Int
+        var value: CGFloat
+        /// Part of the height of the row at `index`, which hides it.
+        var hidesHeight: Bool
     }
 
     /// Tells the pieces of departed runs which motion they close with.
@@ -470,7 +492,7 @@ extension NativeTimelineCanvasView {
         // Frames that move no row by a whole pixel redraw only the chips; the
         // last one also hands hover back to the rows where they landed.
         let moved = refreshRowMotionGeometry(at: now)
-        let redrawsRows = hadMotion && (moved || endsBands || rowMotions.isEmpty)
+        let redrawsRows = moved || (hadMotion && (endsBands || rowMotions.isEmpty))
         var reconcilesMedia = endsBands
         for (identifier, transition) in reactionTransitions {
             guard let index = rowIndex(forIdentifier: identifier, hint: transition.rowIndex) else {
@@ -559,7 +581,7 @@ extension NativeTimelineCanvasView {
     @discardableResult
     func refreshRowMotionGeometry(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         deferGlides(pastStallBefore: uptime)
-        guard !rowMotions.isEmpty || !rowMotionSteps.isEmpty else { return false }
+        guard !rowMotions.isEmpty || unreadDividerGap != nil || !rowMotionSteps.isEmpty else { return false }
         if let pendingRowMotionBaseline { handOverDepartedMotion(in: pendingRowMotionBaseline, at: uptime) }
         // A motion whose row is gone no longer describes the layout.
         removeRowMotions { motion in
@@ -575,11 +597,14 @@ extension NativeTimelineCanvasView {
                 let step = motion.steps[stepIndex]
                 guard let index = rowIndex(forIdentifier: step.identifier, hint: step.rowIndex) else { continue }
                 if index != step.rowIndex { motion.steps[stepIndex].rowIndex = index }
-                rowMotionStepScratch.append((index, step.delta * left))
+                rowMotionStepScratch.append(.init(
+                    index: step.edge == .aboveRow ? index - 1 : index, value: step.delta * left, hidesHeight: step.edge == .height
+                ))
                 if step.movesText { rowMotionTextRemainingHeights[index, default: 0] += step.delta * left }
             }
         }
         for motionIndex in rowMotions.indices { add(&rowMotions[motionIndex]) }
+        if unreadDividerGap != nil { add(&unreadDividerGap!.motion) }
         return storeRowMotionSteps(shift: shift)
     }
 
@@ -596,8 +621,12 @@ extension NativeTimelineCanvasView {
         for position in rowMotionStepScratch.indices {
             let step = rowMotionStepScratch[position]
             total += step.value
-            if count > 0, rowMotionStepScratch[count - 1].index == step.index { count -= 1 }
-            rowMotionStepScratch[count] = (step.index, snapped(total))
+            var hidesHeight = step.hidesHeight
+            if count > 0, rowMotionStepScratch[count - 1].index == step.index {
+                count -= 1
+                hidesHeight = hidesHeight || rowMotionStepScratch[count].hidesHeight
+            }
+            rowMotionStepScratch[count] = .init(index: step.index, value: snapped(total), hidesHeight: hidesHeight)
             count += 1
         }
         rowMotionStepScratch.removeLast(rowMotionStepScratch.count - count)
@@ -611,17 +640,19 @@ extension NativeTimelineCanvasView {
             let step = rowMotionStepScratch[position]
             rowMotionSteps.append((step.index, step.value))
             // A row's hidden height is the step its own change adds.
-            rowMotionRemainingHeights[step.index] = step.value - (position > 0 ? rowMotionStepScratch[position - 1].value : 0)
+            if step.hidesHeight {
+                rowMotionRemainingHeights[step.index] = step.value - (position > 0 ? rowMotionStepScratch[position - 1].value : 0)
+            }
         }
         return moved
     }
 
     /// The part of the viewport whose rows move: from the top when rows
     /// before the first changed one are displaced, to the bottom when rows
-    /// after the last one are.
+    /// after the last one are. A gap also clips its row and moves its overlay.
     private var rowMotionFrame: CGRect {
         let visible = visibleRect
-        guard let first = rowMotionSteps.first, let last = rowMotionSteps.last,
+        guard unreadDividerGap == nil, let first = rowMotionSteps.first, let last = rowMotionSteps.last,
               items.indices.contains(first.index), items.indices.contains(last.index)
         else { return visible }
         let minY = rowMotionShift == 0 ? displayedRowOrigin(at: first.index) : visible.minY
@@ -707,7 +738,6 @@ extension NativeTimelineCanvasView {
         contentOriginY
             + (index >= disclosureRange.upperBound ? disclosureShiftAfter
                 : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
-            + unreadDividerGapShift(at: index)
             + rowMotionOffset(at: index)
             + transientRowOrigin(at: index)
     }

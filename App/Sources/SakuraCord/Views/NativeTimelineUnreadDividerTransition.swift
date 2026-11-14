@@ -230,15 +230,15 @@ extension NativeTimelineCanvasView {
         else { return nil }
         let identifier = items[index].identifier
         let frame = layouts[index].unreadDividerFrame
-        let activeGap = unreadDividerGap?.identifier == identifier ? unreadDividerGap : nil
-        let top = activeGap == nil ? displayedRowOrigin(at: index) : unreadDividerGapTop
+        let hasGap = unreadDividerGap?.identifier == identifier
+        let top = hasGap ? unreadDividerGapTop : displayedRowOrigin(at: index)
         return NativeTimelineUnreadDividerSource(
             identifier: identifier,
             frameInRow: frame,
             topInViewport: top - viewportMinY,
             height: layouts[index].height,
-            startGap: activeGap?.frame.gap,
-            topSnapshot: capturingTop && frame != nil && activeGap == nil && unreadDividerFades.isEmpty
+            startGap: hasGap ? unreadDividerGapOpening : nil,
+            topSnapshot: capturingTop && frame != nil && !hasGap && unreadDividerFades.isEmpty
                 ? unreadDividerTopSnapshot(at: index)
                 : nil,
             foldedDay: layouts[index].foldedUnreadDay
@@ -343,7 +343,7 @@ extension NativeTimelineCanvasView {
                 y: unreadDividerGapTop,
                 width: showsSnapshot ? row.width : frameInRow.width,
                 height: NativeTimelineUnreadDividerGapGeometry.overlayHeight(
-                    gap: gap.frame.gap, spaceHeight: gap.spaceHeight, dividerHeight: gap.dividerHeight,
+                    gap: unreadDividerGapOpening, spaceHeight: gap.spaceHeight, dividerHeight: gap.dividerHeight,
                     showsSpaceSnapshot: showsSnapshot,
                     snapshotTailHeight: gap.snapshotTail?.height ?? 0
                 )
