@@ -17,6 +17,12 @@ extension NativeTimelineCanvasView {
         )
     }
 
+    /// Inline videos hold still under Reduce Motion and while the window
+    /// does not permit playback.
+    var playsInlineVideos: Bool {
+        !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && permitsAnimatedMediaPlayback
+    }
+
     @objc
     func mediaPlaybackVisibilityDidChange(_ notification: Notification) {
         if let changedWindow = notification.object as? NSWindow,
@@ -32,12 +38,7 @@ extension NativeTimelineCanvasView {
             MediaImageStore.shared.cancelAnimatedRequests(owner: visibleMediaPinOwner)
         }
         reconcileAnimatedMedia(allowsScrolling: true)
-        let reduceMotion =
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            || !permitsAnimatedMediaPlayback
-        reconcileInlineVideoOverlays(
-            plays: !reduceMotion
-        )
+        reconcileInlineVideoOverlays(plays: playsInlineVideos)
     }
 
     func scheduleAnimatedMediaReconciliation() {
@@ -73,9 +74,6 @@ extension NativeTimelineCanvasView {
     }
 
     func startVisibleInlineVideosImmediately() {
-        let reduceMotion =
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            || !permitsAnimatedMediaPlayback
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {
@@ -111,7 +109,7 @@ extension NativeTimelineCanvasView {
         reconcileInlineVideoOverlays(
             // Created while scrolling so the embed is not blank, but paused
             // until scrolling settles.
-            plays: !reduceMotion && !suppressesHoverPresentation
+            plays: playsInlineVideos && !suppressesHoverPresentation
         )
     }
 
@@ -716,6 +714,7 @@ extension NativeTimelineCanvasView {
 
         var didCreateOverlay = false
         let hoveredGroup = hoveredGroupIdentifiers()
+        let hoveredIdentifier = hoveredRowIdentifier
         for item in desired {
             let rowOrigin: CGFloat
             guard let rowIndex = items.firstIndex(where: {
@@ -757,11 +756,10 @@ extension NativeTimelineCanvasView {
                 didCreateOverlay = true
             }
             overlay.frame = hostFrame
-            let isHoverActive = switch item.key.role {
-            case .authorAvatar, .authorAvatarDecoration: hoveredGroup.contains(item.key.row)
-            default: hoveredRow == rowIndex
-            }
-            overlay.setHoverPlaybackEnabled(!item.key.role.playsOnHover || isHoverActive)
+            overlay.setHoverPlaybackEnabled(
+                !item.key.role.playsOnHover
+                    || isHoverActive(item.key, hoveredGroup: hoveredGroup, hoveredIdentifier: hoveredIdentifier)
+            )
             overlay.setPlaybackSuppressed(suppressesHoverPresentation)
             overlay.display(
                 item.image,
@@ -831,15 +829,29 @@ extension NativeTimelineCanvasView {
 
     func updateAvatarPlayback() {
         let hoveredGroup = hoveredGroupIdentifiers()
-        let hoveredIdentifier = hoveredRow.flatMap {
-            items.indices.contains($0) ? items[$0].identifier : nil
-        }
+        let hoveredIdentifier = hoveredRowIdentifier
         for (key, overlay) in animatedMediaOverlays where key.role.playsOnHover {
-            let isHoverActive = switch key.role {
-            case .authorAvatar, .authorAvatarDecoration: hoveredGroup.contains(key.row)
-            default: hoveredIdentifier != nil && key.row == hoveredIdentifier
-            }
-            overlay.setHoverPlaybackEnabled(isHoverActive && !suppressesHoverPresentation)
+            overlay.setHoverPlaybackEnabled(
+                isHoverActive(key, hoveredGroup: hoveredGroup, hoveredIdentifier: hoveredIdentifier)
+                    && !suppressesHoverPresentation
+            )
+        }
+    }
+
+    private var hoveredRowIdentifier: NativeMessageTimelineItem.Identifier? {
+        hoveredRow.flatMap { items.indices.contains($0) ? items[$0].identifier : nil }
+    }
+
+    /// An author's avatar plays while any row of its group is hovered;
+    /// other hover-played media while its own row is.
+    private func isHoverActive(
+        _ key: AnimatedMediaOverlayKey,
+        hoveredGroup: Set<NativeMessageTimelineItem.Identifier>,
+        hoveredIdentifier: NativeMessageTimelineItem.Identifier?
+    ) -> Bool {
+        switch key.role {
+        case .authorAvatar, .authorAvatarDecoration: hoveredGroup.contains(key.row)
+        default: hoveredIdentifier != nil && key.row == hoveredIdentifier
         }
     }
 
