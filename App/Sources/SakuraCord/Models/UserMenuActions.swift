@@ -174,9 +174,9 @@ extension AppModel {
     private func mentionUserFromMenu(_ user: User, context: UserMenuContext) {
         guard let destination = userMenuMentionDestination(in: context) else { return }
         rememberMentionMember(userMenuMember(user, context: context))
-        let current = destination == .thread ? threadDraft : draft
+        let current = draft(in: destination)
         let value = current + (current.isEmpty || current.last?.isWhitespace == true ? "" : " ") + "<@\(user.id)> "
-        if destination == .thread { updateThreadDraft(value) } else { updateDraft(value) }
+        updateDraft(value, in: destination)
         NotificationCenter.default.post(name: .sakuracordFocusComposer, object: destination,
                                         userInfo: ["selection": NSRange(location: value.utf16.count, length: 0)])
     }

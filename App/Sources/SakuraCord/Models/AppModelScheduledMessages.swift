@@ -99,7 +99,7 @@ extension AppModel {
         in destination: MessageComposerDestination,
         attachments: [ForumPostAttachment]
     ) async {
-        let content = (destination == .channel ? draft : threadDraft).trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = draft(in: destination).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty, attachmentBatchFits(attachments.count),
               let (outgoing, reply) = scheduledDraft(content: content, attachments: attachments, in: destination),
               await submitSchedule(outgoing)
@@ -215,9 +215,8 @@ extension AppModel {
         setComposerAttachments(composerAttachments(for: destination).filter { !sent.contains($0.id) }, for: destination)
         clearReply(reply, in: destination)
         // Text typed meanwhile stays; a draft restored unchanged on return does not.
-        let text = destination == .channel ? draft : threadDraft
-        guard text.trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
-        if destination == .channel { updateDraft("") } else { updateThreadDraft("") }
+        guard draft(in: destination).trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
+        updateDraft("", in: destination)
         stopLocalTyping(clearThrottle: true)
         translation.resetDraft(destination)
     }

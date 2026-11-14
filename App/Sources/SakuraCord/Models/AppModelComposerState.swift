@@ -53,6 +53,21 @@ extension AppModel {
         get { composer.threadDraft }
         set { composer.threadDraft = newValue }
     }
+    /// The conversation a composer writes to.
+    func composerChannelID(in destination: MessageComposerDestination) -> ChannelID? {
+        switch destination {
+        case .channel: selectedChannelID
+        case .thread: openThread?.id
+        }
+    }
+
+    func messages(in destination: MessageComposerDestination) -> [Message] {
+        switch destination {
+        case .channel: messages
+        case .thread: threadMessages
+        }
+    }
+
     func draft(in destination: MessageComposerDestination) -> String {
         switch destination {
         case .channel: draft
@@ -95,10 +110,7 @@ extension AppModel {
         in destination: MessageComposerDestination,
         direction: MessageReplyNavigationDirection
     ) -> Bool {
-        let availableMessages = switch destination {
-        case .channel: messages
-        case .thread: threadMessages
-        }
+        let availableMessages = messages(in: destination)
         let currentReply = replyingTo(in: destination)
         guard !availableMessages.isEmpty else { return false }
 

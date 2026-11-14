@@ -1244,17 +1244,11 @@ struct ComposerView: View {
     }
 
     private var activeConversationID: ChannelID? {
-        switch conversation {
-        case .channel: model.selectedChannelID
-        case .thread: model.openThread?.id
-        }
+        model.composerChannelID(in: conversation)
     }
 
     private var activeMessages: [Message] {
-        switch conversation {
-        case .channel: model.messages
-        case .thread: model.threadMessages
-        }
+        model.messages(in: conversation)
     }
 
     private func cancelReply() {

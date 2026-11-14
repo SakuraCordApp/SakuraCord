@@ -117,7 +117,7 @@ extension AppModel {
     ) {
         let requestID = UUID()
         let settings = translation.settings
-        let channelID = destination == .channel ? selectedChannelID : openThread?.id
+        let channelID = composerChannelID(in: destination)
         translation.draftTasks[destination]?.cancel()
         translation.drafts[destination] = DraftTranslation(
             original: text, language: language, phase: .translating,
@@ -138,7 +138,7 @@ extension AppModel {
             }
             guard let self, !Task.isCancelled, isCurrentAccountSession(session),
                   state.settings == settings, state.drafts[destination]?.requestID == requestID,
-                  (destination == .channel ? selectedChannelID : openThread?.id) == channelID else { return }
+                  composerChannelID(in: destination) == channelID else { return }
             finishDraftTranslation(outcome, for: destination)
         }
     }

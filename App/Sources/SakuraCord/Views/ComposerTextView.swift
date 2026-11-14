@@ -91,10 +91,7 @@ nonisolated enum ComposerLatestMessageEditingPolicy {
 
 extension ComposerView {
     func editLatestMessage() -> Bool {
-        let messages = switch conversation {
-        case .channel: model.messages
-        case .thread: model.threadMessages
-        }
+        let messages = model.messages(in: conversation)
         guard let messageID = ComposerLatestMessageEditingPolicy.messageID(
             in: messages,
             currentUserID: model.currentUser?.id

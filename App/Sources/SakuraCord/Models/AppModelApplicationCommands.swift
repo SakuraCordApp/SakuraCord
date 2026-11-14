@@ -397,10 +397,7 @@ extension AppModel {
         commandComposer.recordUse(of: invocation.command, guildID: invocation.guildID)
         for composer in commandComposers where composer !== commandComposer { composer.refreshFrecency() }
         commandComposer.cancelActiveCommand()
-        switch destination {
-        case .channel: updateDraft("")
-        case .thread: updateThreadDraft("")
-        }
+        updateDraft("", in: destination)
         if DiscordBuiltInCommands.isBuiltIn(invocation.command) {
             runBuiltInCommand(invocation)
         } else {
@@ -486,7 +483,7 @@ extension AppModel {
                 // newer draft or automatically repeating the account action.
                 if let submittedDraft, commandContext(for: destination)?.channelID == channelID,
                    commandComposer.conversationGeneration == generation,
-                   (destination == .thread ? threadDraft : draft).isEmpty, commandComposer.draft == nil {
+                   draft(in: destination).isEmpty, commandComposer.draft == nil {
                     commandComposer.activate(submittedDraft.command)
                     commandComposer.applyEditorDraft(submittedDraft, caret: nil)
                 }
