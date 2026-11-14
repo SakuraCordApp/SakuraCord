@@ -62,7 +62,7 @@ private struct ForumSearchInput: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let field = ForumSearchTextField()
         field.delegate = context.coordinator
         field.setAccessibilityPlaceholderValue("Search posts")
         field.isBordered = false
@@ -107,11 +107,6 @@ private struct ForumSearchInput: NSViewRepresentable {
             parent.text = field.stringValue
         }
 
-        func controlTextDidBeginEditing(_ notification: Notification) {
-            ((notification.object as? NSTextField)?.currentEditor() as? NSTextView)?
-                .applySakuraCordTextSelectionAppearance()
-        }
-
         /// Escape clears the search and leaves the field, as the toolbar
         /// search field's Escape returns focus to the window.
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -124,5 +119,13 @@ private struct ForumSearchInput: NSViewRepresentable {
             control.window?.makeFirstResponder(nil)
             return true
         }
+    }
+}
+
+/// Shows the text cursor only while no modal covers the forum.
+private final class ForumSearchTextField: NSTextField {
+    override func resetCursorRects() {
+        guard WindowModalCoordinator.allowsInput(for: self) else { return }
+        super.resetCursorRects()
     }
 }

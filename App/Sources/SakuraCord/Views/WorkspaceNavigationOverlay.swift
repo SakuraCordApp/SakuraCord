@@ -148,7 +148,6 @@ private struct QuickSwitcherView: View {
                             AppPerformanceSignposts.reportQuickSwitcherFirstFrame()
                         }
                     },
-                    enableMouseFocus: { mouseFocusDisabled = false },
                     focus: { selectedResultID = $0 },
                     activate: activate
                 )
@@ -750,532 +749,197 @@ nonisolated enum QuickSwitcherIconGeometry {
     }
 }
 
-private struct QuickSwitcherResultList: NSViewRepresentable {
+private struct QuickSwitcherResultList: View {
     let rows: [QuickSwitcherRowPresentation]
     let selectedResultID: QuickSwitcherResultID?
     let keyboardNavigationActive: Bool
     let presentationID: UInt64
     let reportFrame: @MainActor () -> Void
-    let enableMouseFocus: () -> Void
     let focus: (QuickSwitcherResultID) -> Void
     let activate: (QuickSwitcherResult) -> Void
+    @State private var contentChangePointer = ContentChangePointer()
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let canvas = QuickSwitcherResultCanvas()
-        canvas.autoresizingMask = [.width]
-        canvas.setAccessibilityIdentifier("quick-switch-results")
-        let scrollView = NSScrollView()
-        scrollView.documentView = canvas
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = false
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentView.postsBoundsChangedNotifications = true
-        canvas.installViewportObservation(on: scrollView.contentView)
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let canvas = scrollView.documentView as? QuickSwitcherResultCanvas else { return }
-        AppPerformanceSignposts.measureSync("QuickSwitcherViewportUpdate") {
-            canvas.update(QuickSwitcherCanvasConfiguration(
-                rows: rows,
-                selectedResultID: selectedResultID,
-                keyboardNavigationActive: keyboardNavigationActive,
-                presentationID: presentationID,
-                reportFrame: reportFrame,
-                enableMouseFocus: enableMouseFocus,
-                focus: focus,
-                activate: activate
-            ))
-        }
-    }
-}
-
-private struct QuickSwitcherCanvasConfiguration {
-    let rows: [QuickSwitcherRowPresentation]
-    let selectedResultID: QuickSwitcherResultID?
-    let keyboardNavigationActive: Bool
-    let presentationID: UInt64
-    let reportFrame: @MainActor () -> Void
-    let enableMouseFocus: () -> Void
-    let focus: (QuickSwitcherResultID) -> Void
-    let activate: (QuickSwitcherResult) -> Void
-}
-
-private final class QuickSwitcherResultCanvas: NSView, WindowModalInputParticipant {
-    func modalInputDidChange() {
-        if !WindowModalCoordinator.allowsInput(for: self) { hoveredIndex = nil; pressedIndex = nil }
-        updateTrackingAreas()
-    }
-
-    private static var horizontalInset: CGFloat { InterfaceScale.metric(8) }
-    private static var contentInset: CGFloat { InterfaceScale.metric(10) }
-    private static var topInset: CGFloat { InterfaceScale.metric(8) }
-    private static var spacing: CGFloat { InterfaceScale.metric(2) }
-    private static var headingHeight: CGFloat { InterfaceScale.metric(28) }
-    private static var resultHeight: CGFloat { InterfaceScale.metric(34) }
-
-    override var isFlipped: Bool { true }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
-        layer?.setNeedsDisplay()
-    }
-
-    private var rows: [QuickSwitcherRowPresentation] = []
-    private var origins: [CGFloat] = []
-    private var selectedResultID: QuickSwitcherResultID?
-    private var keyboardNavigationActive = true
-    private var enableMouseFocus: () -> Void = {}
-    private var focus: (QuickSwitcherResultID) -> Void = { _ in }
-    private var activate: (QuickSwitcherResult) -> Void = { _ in }
-    private var hoveredIndex: Int?
-    private var pressedIndex: Int?
-    private var trackingArea: NSTrackingArea?
-    private var viewportObserver: NSObjectProtocol?
-    private var accessibilityRows: [QuickSwitcherResultID: QuickSwitcherAccessibilityRow] = [:]
-    private var images: [URL: CGImage] = [:]
-    private var imageTasks: [URL: Task<Void, Never>] = [:]
-    private var reportedPresentationID: UInt64?
-    private var pendingPresentationID: UInt64?
-    private var pendingReport: (@MainActor () -> Void)?
-
-    func installViewportObservation(on clipView: NSClipView) {
-        if let viewportObserver { NotificationCenter.default.removeObserver(viewportObserver) }
-        viewportObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: clipView,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.viewportDidChange()
-            }
-        }
-    }
-
-    func update(_ configuration: QuickSwitcherCanvasConfiguration) {
-        let previousSelection = self.selectedResultID
-        rows = configuration.rows
-        selectedResultID = configuration.selectedResultID
-        keyboardNavigationActive = configuration.keyboardNavigationActive
-        enableMouseFocus = configuration.enableMouseFocus
-        focus = configuration.focus
-        activate = configuration.activate
-        rebuildDocument()
-        if configuration.keyboardNavigationActive,
-           previousSelection != configuration.selectedResultID,
-           let selectedResultID = configuration.selectedResultID,
-           let index = configuration.rows.firstIndex(where: { $0.id == selectedResultID })
-        {
-            scrollToVisible(rowRect(at: index))
-        }
-        if reportedPresentationID != configuration.presentationID {
-            pendingPresentationID = configuration.presentationID
-            pendingReport = configuration.reportFrame
-        }
-        reconcileVisibleResources()
-        needsDisplay = true
-    }
-
-    private func rebuildDocument() {
-        var verticalOffset = Self.topInset
-        origins = rows.map { row in
-            defer {
-                verticalOffset += (row.heading == nil ? Self.resultHeight : Self.headingHeight)
-                    + Self.spacing
-            }
-            return verticalOffset
-        }
-        let height = max(1, verticalOffset + Self.topInset - Self.spacing)
-        let width = enclosingScrollView?.contentSize.width ?? frame.width
-        frame = CGRect(x: 0, y: 0, width: width, height: height)
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        reconcileVisibleResources()
-    }
-
-    override func updateTrackingAreas() {
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        let trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
-            owner: self
-        )
-        addTrackingArea(trackingArea)
-        self.trackingArea = trackingArea
-        super.updateTrackingAreas()
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        let index = selectableIndex(at: convert(event.locationInWindow, from: nil))
-        guard index != hoveredIndex else { return }
-        hoveredIndex = index
-        guard let index else { return }
-        if keyboardNavigationActive {
-            keyboardNavigationActive = false
-            enableMouseFocus()
-        }
-        focus(rows[index].id)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        hoveredIndex = nil
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        pressedIndex = selectableIndex(at: convert(event.locationInWindow, from: nil))
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        let index = selectableIndex(at: convert(event.locationInWindow, from: nil))
-        defer { pressedIndex = nil }
-        guard index == pressedIndex, let index else { return }
-        activate(rows[index].result)
-    }
-
-    private func selectableIndex(at point: CGPoint) -> Int? {
-        guard point.x >= Self.horizontalInset,
-              point.x <= bounds.maxX - Self.horizontalInset
-        else { return nil }
-        return rows.indices.first { index in
-            rows[index].heading == nil && rowRect(at: index).contains(point)
-        }
-    }
-
-    private func rowRect(at index: Int) -> CGRect {
-        CGRect(
-            x: Self.horizontalInset,
-            y: origins[index],
-            width: max(0, bounds.width - Self.horizontalInset * 2),
-            height: rows[index].heading == nil ? Self.resultHeight : Self.headingHeight
-        )
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.saveGState()
-        context.setAllowsAntialiasing(true)
-        for index in rows.indices where rowRect(at: index).intersects(dirtyRect) {
-            draw(row: rows[index], at: index, in: context)
-        }
-        context.restoreGState()
-        guard let presentationID = pendingPresentationID,
-              reportedPresentationID != presentationID,
-              let report = pendingReport
-        else { return }
-        reportedPresentationID = presentationID
-        pendingPresentationID = nil
-        pendingReport = nil
-        report()
-    }
-
-    private func draw(
-        row: QuickSwitcherRowPresentation,
-        at index: Int,
-        in context: CGContext
-    ) {
-        let rect = rowRect(at: index)
-        if let heading = row.heading {
-            drawText(
-                heading.uppercased(),
-                font: .interfaceSystemFont(ofSize: 11, weight: .semibold),
-                color: .secondaryLabelColor,
-                rect: CGRect(x: rect.minX + InterfaceScale.metric(10), y: rect.minY + InterfaceScale.metric(10), width: rect.width - InterfaceScale.metric(20), height: InterfaceScale.metric(15))
-            )
-            return
-        }
-
-        if selectedResultID == row.id {
-            NSColor.labelColor.withAlphaComponent(0.09).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: InterfaceScale.metric(6), yRadius: InterfaceScale.metric(6)).fill()
-        }
-
-        let iconRect = CGRect(x: rect.minX + Self.contentInset, y: rect.minY + InterfaceScale.metric(6), width: InterfaceScale.metric(22), height: InterfaceScale.metric(22))
-        drawIcon(for: row, in: iconRect, context: context)
-
-        let trailingFont = NSFont.interfaceSystemFont(ofSize: 13, weight: .semibold)
-        let trailingWidth = row.trailingDetail.map {
-            min(150, ceil(textSize($0, font: trailingFont).width))
-        } ?? 0
-        let trailingX = rect.maxX - Self.contentInset - trailingWidth
-        if let trailing = row.trailingDetail, trailingWidth > 0 {
-            drawText(
-                trailing,
-                font: trailingFont,
-                color: .secondaryLabelColor,
-                rect: CGRect(x: trailingX, y: rect.minY + InterfaceScale.metric(9), width: trailingWidth, height: InterfaceScale.metric(18)),
-                alignment: .right
-            )
-        }
-
-        let textX = iconRect.maxX + 8
-        let remainingWidth = max(0, trailingX - (trailingWidth > 0 ? InterfaceScale.metric(10) : 0) - textX)
-        let titleFont = NSFont.interfaceSystemFont(ofSize: 15, weight: .medium)
-        let inlineFont = NSFont.interfaceSystemFont(ofSize: 12, weight: .medium)
-        let mentionFont = NSFont.interfaceSystemFont(ofSize: 11, weight: .bold)
-        let mentionWidth = row.mentionCount > 0
-            ? max(20, ceil(textSize(String(row.mentionCount), font: mentionFont).width) + 12) : 0
-        let inlineWidth = row.inlineDetail.map {
-            min(max(0, remainingWidth * 0.45), ceil(textSize($0, font: inlineFont).width))
-        } ?? 0
-        let maximumTitleWidth = max(0, remainingWidth - inlineWidth - mentionWidth
-            - (inlineWidth > 0 ? 6 : 0) - (mentionWidth > 0 ? 6 : 0))
-        let titleWidth = min(maximumTitleWidth, ceil(textSize(row.title, font: titleFont).width))
-        drawText(
-            row.title,
-            font: titleFont,
-            color: .labelColor,
-            rect: CGRect(x: textX, y: rect.minY + InterfaceScale.metric(8), width: titleWidth, height: InterfaceScale.metric(19))
-        )
-        var horizontalOffset = textX + titleWidth
-        if let inline = row.inlineDetail, inlineWidth > 0 {
-            horizontalOffset += InterfaceScale.metric(6)
-            drawText(
-                inline,
-                font: inlineFont,
-                color: .secondaryLabelColor,
-                rect: CGRect(
-                    x: horizontalOffset,
-                    y: rect.minY + InterfaceScale.metric(10),
-                    width: inlineWidth,
-                    height: InterfaceScale.metric(16)
-                )
-            )
-            horizontalOffset += inlineWidth
-        }
-        if row.mentionCount > 0 {
-            horizontalOffset += InterfaceScale.metric(6)
-            let badge = CGRect(
-                x: horizontalOffset,
-                y: rect.minY + InterfaceScale.metric(7),
-                width: mentionWidth,
-                height: InterfaceScale.metric(20)
-            )
-            NSColor.systemRed.setFill()
-            NSBezierPath(roundedRect: badge, xRadius: InterfaceScale.metric(5), yRadius: InterfaceScale.metric(5)).fill()
-            drawText(
-                String(row.mentionCount),
-                font: mentionFont,
-                color: .white,
-                rect: badge.offsetBy(dx: 0, dy: InterfaceScale.metric(3)),
-                alignment: .center
-            )
-        }
-    }
-
-    private func drawIcon(
-        for row: QuickSwitcherRowPresentation,
-        in rect: CGRect,
-        context: CGContext
-    ) {
-        if case .guild = row.result {
-            context.saveGState()
-            let clipPath = NSBezierPath(
-                concentricRoundedRect: rect,
-                cornerRadius: QuickSwitcherIconGeometry.serverCornerRadius(
-                    iconSize: rect.width
-                )
-            )
-            context.addPath(clipPath.cgPath)
-            context.clip()
-            context.setFillColor(NSColor.secondaryLabelColor.withAlphaComponent(0.16).cgColor)
-            context.fill(rect)
-            if let url = row.imageURL {
-                if let image = images[url] {
-                    drawImage(image, in: rect, context: context)
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: InterfaceScale.metric(2)) {
+                    ForEach(rows) { row in
+                        if let heading = row.heading {
+                            QuickSwitcherHeadingRow(title: heading)
+                        } else {
+                            QuickSwitcherResultRow(
+                                row: row,
+                                isSelected: row.id == selectedResultID,
+                                isPointerFocusEnabled: !keyboardNavigationActive,
+                                hover: hover,
+                                activate: activate
+                            )
+                            .equatable()
+                        }
+                    }
                 }
-                context.restoreGState()
-                return
+                .padding(InterfaceScale.metric(8))
             }
-            context.restoreGState()
-        } else if let url = row.imageURL {
-            context.saveGState()
-            context.addEllipse(in: rect)
-            context.clip()
-            if let image = images[url] {
-                drawImage(image, in: rect, context: context)
-            } else {
-                NSColor.sakuraCordAccentColor.setFill()
-                context.fillEllipse(in: rect)
-                drawText(
-                    String(row.title.prefix(1)).uppercased(),
-                    font: .interfaceSystemFont(ofSize: 10, weight: .semibold),
-                    color: .white,
-                    rect: rect.offsetBy(dx: 0, dy: InterfaceScale.metric(5)),
-                    alignment: .center
-                )
+            .scrollIndicators(.hidden)
+            .onScrollGeometryChange(for: CGFloat.self, of: \.contentOffset.y) { _, _ in
+                contentChangePointer.location = NSEvent.mouseLocation
             }
-            context.restoreGState()
-            return
-        }
-        drawSystemImage(row.systemImage, in: rect)
-    }
-
-    private func drawImage(
-        _ image: CGImage,
-        in rect: CGRect,
-        context: CGContext
-    ) {
-        let destination = QuickSwitcherIconGeometry.aspectFillRect(
-            imageSize: CGSize(width: image.width, height: image.height),
-            in: rect
-        )
-        context.interpolationQuality = .high
-        context.translateBy(
-            x: 0,
-            y: destination.minY * 2 + destination.height
-        )
-        context.scaleBy(x: 1, y: -1)
-        context.draw(image, in: destination)
-    }
-
-    private func drawSystemImage(_ name: String, in rect: CGRect) {
-        let configuration = NSImage.SymbolConfiguration(
-            pointSize: 15,
-            weight: .medium
-        ).applying(
-            NSImage.SymbolConfiguration(paletteColors: [.secondaryLabelColor])
-        )
-        guard let image = NSImage(
-            systemSymbolName: name,
-            accessibilityDescription: nil
-        )?.withSymbolConfiguration(configuration)
-        else { return }
-        let destination = NativeTimelineSymbolGeometry.opticallyFitted(
-            sourceSize: image.size,
-            alignmentRect: image.alignmentRect,
-            in: rect.insetBy(dx: InterfaceScale.metric(2), dy: InterfaceScale.metric(2))
-        )
-        image.draw(
-            in: destination,
-            from: .zero,
-            operation: .sourceOver,
-            fraction: 1,
-            respectFlipped: true,
-            hints: [.interpolation: NSImageInterpolation.high]
-        )
-    }
-
-    private func drawText(
-        _ value: String,
-        font: NSFont,
-        color: NSColor,
-        rect: CGRect,
-        alignment: NSTextAlignment = .left
-    ) {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
-        paragraph.alignment = alignment
-        (value as NSString).draw(
-            in: rect,
-            withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph]
-        )
-    }
-
-    private func textSize(_ value: String, font: NSFont) -> CGSize {
-        (value as NSString).size(withAttributes: [.font: font])
-    }
-
-    private func viewportDidChange() {
-        reconcileVisibleResources()
-        needsDisplay = true
-    }
-
-    private func visibleIndexes() -> [Int] {
-        let visible = enclosingScrollView?.documentVisibleRect ?? bounds
-        return rows.indices.filter { rowRect(at: $0).intersects(visible) }
-    }
-
-    private func reconcileVisibleResources() {
-        let visible = visibleIndexes()
-        var visibleIDs: Set<QuickSwitcherResultID> = []
-        var wantedURLs: Set<URL> = []
-        for index in visible {
-            let row = rows[index]
-            visibleIDs.insert(row.id)
-            if let url = row.imageURL {
-                wantedURLs.insert(url)
-                requestImage(url)
+            .onChange(of: presentationID) {
+                contentChangePointer.location = NSEvent.mouseLocation
             }
-            let proxy = accessibilityRows[row.id] ?? {
-                let proxy = QuickSwitcherAccessibilityRow()
-                addSubview(proxy)
-                accessibilityRows[row.id] = proxy
-                return proxy
-            }()
-            proxy.configure(
-                row: row,
-                isSelected: selectedResultID == row.id,
-                activate: { [weak self] in self?.activate(row.result) }
-            )
-            proxy.frame = rowRect(at: index)
-        }
-        for (id, proxy) in accessibilityRows where !visibleIDs.contains(id) {
-            proxy.removeFromSuperview()
-            accessibilityRows[id] = nil
-        }
-        setAccessibilityChildren(visible.compactMap { accessibilityRows[rows[$0].id] })
-        for (url, task) in imageTasks where !wantedURLs.contains(url) {
-            task.cancel()
-            imageTasks[url] = nil
-        }
-        for url in images.keys.filter({ !wantedURLs.contains($0) }) {
-            images[url] = nil
-        }
-    }
-
-    private func requestImage(_ url: URL) {
-        guard images[url] == nil, imageTasks[url] == nil else { return }
-        imageTasks[url] = Task { [weak self] in
-            let image = await SharedDecodedImageLoader.shared.image(
-                for: url,
-                maximumPixelDimension: 96,
-                priority: .visible
-            )
-            guard !Task.isCancelled, let self else { return }
-            imageTasks[url] = nil
-            guard let image else { return }
-            images[url] = image
-            for index in rows.indices where rows[index].imageURL == url {
-                setNeedsDisplay(rowRect(at: index))
+            .accessibilityIdentifier("quick-switch-results")
+            .onChange(of: selectedResultID) { _, selectedResultID in
+                guard keyboardNavigationActive, let selectedResultID else { return }
+                proxy.scrollTo(selectedResultID)
+            }
+            .background {
+                DisplayCompleteFrameReporter(presentationID: presentationID, report: reportFrame)
             }
         }
     }
 
+    /// Rows scrolling or re-ranking under a resting pointer report hover
+    /// too; only a pointer that moved since then may take the selection.
+    private var hover: (QuickSwitcherResultID) -> Void {
+        { [contentChangePointer, focus] id in
+            guard NSEvent.mouseLocation != contentChangePointer.location else { return }
+            focus(id)
+        }
+    }
 }
 
-private final class QuickSwitcherAccessibilityRow: NSView {
-    private var activation: (() -> Void)?
+/// A reference, so recording the pointer on every scroll frame does not
+/// invalidate the list.
+private final class ContentChangePointer {
+    var location: CGPoint?
+}
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+private struct QuickSwitcherHeadingRow: View {
+    let title: String
 
-    func configure(
-        row: QuickSwitcherRowPresentation,
-        isSelected: Bool,
-        activate: @escaping () -> Void
-    ) {
-        activation = row.heading == nil ? activate : nil
-        setAccessibilityElement(true)
-        setAccessibilityRole(row.heading == nil ? .button : .staticText)
-        setAccessibilityLabel(row.accessibilityLabel)
-        setAccessibilityIdentifier(
-            row.accessibilityResultIdentifier.map { "quick-switch-result-\($0)" }
-        )
-        setAccessibilityValue(isSelected ? "Selected" : "")
+    var body: some View {
+        Text(title.uppercased())
+            .font(.interfaceSystem(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, InterfaceScale.metric(10))
+            .padding(.bottom, InterfaceScale.metric(3))
+            .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(28), alignment: .bottomLeading)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct QuickSwitcherResultRow: View, Equatable {
+    let row: QuickSwitcherRowPresentation
+    let isSelected: Bool
+    let isPointerFocusEnabled: Bool
+    let hover: (QuickSwitcherResultID) -> Void
+    let activate: (QuickSwitcherResult) -> Void
+    @Environment(\.windowModalInputAllowed) private var inputAllowed
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.row == rhs.row
+            && lhs.isSelected == rhs.isSelected
+            && lhs.isPointerFocusEnabled == rhs.isPointerFocusEnabled
     }
 
-    override func accessibilityPerformPress() -> Bool {
-        guard let activation else { return false }
-        activation()
-        return true
+    var body: some View {
+        Button {
+            activate(row.result)
+        } label: {
+            HStack(spacing: InterfaceScale.metric(8)) {
+                QuickSwitcherRowIcon(row: row)
+                HStack(spacing: InterfaceScale.metric(6)) {
+                    Text(row.title)
+                        .font(.interfaceSystem(size: 15, weight: .medium))
+                    if let inlineDetail = row.inlineDetail {
+                        Text(inlineDetail)
+                            .font(.interfaceSystem(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    if row.mentionCount > 0 {
+                        Text(row.mentionCount, format: .number)
+                            .font(.interfaceSystem(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, InterfaceScale.metric(6))
+                            .frame(minWidth: InterfaceScale.metric(20), minHeight: InterfaceScale.metric(20))
+                            .background(Color(hex: MentionRed.hex), in: .rect(cornerRadius: InterfaceScale.metric(5)))
+                            .layoutPriority(2)
+                    }
+                }
+                Spacer(minLength: InterfaceScale.metric(10))
+                if let trailingDetail = row.trailingDetail {
+                    Text(trailingDetail)
+                        .font(.interfaceSystem(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: InterfaceScale.metric(150), alignment: .trailing)
+                }
+            }
+            .lineLimit(1)
+            .padding(.horizontal, InterfaceScale.metric(10))
+            .frame(height: InterfaceScale.metric(34))
+            .background(
+                isSelected ? Color.primary.opacity(0.09) : .clear,
+                in: .rect(cornerRadius: InterfaceScale.metric(6), style: .continuous)
+            )
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onContinuousHover { phase in
+            // The panel enables pointer focus only after real movement.
+            if case .active = phase, inputAllowed, isPointerFocusEnabled, !isSelected {
+                hover(row.id)
+            }
+        }
+        .accessibilityLabel(row.accessibilityLabel)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier(
+            row.accessibilityResultIdentifier.map { "quick-switch-result-\($0)" } ?? ""
+        )
+    }
+}
+
+private struct QuickSwitcherRowIcon: View {
+    let row: QuickSwitcherRowPresentation
+
+    private var size: CGFloat { InterfaceScale.metric(22) }
+
+    var body: some View {
+        Group {
+            if case .guild(let guild) = row.result {
+                let cornerRadius = QuickSwitcherIconGeometry.serverCornerRadius(iconSize: size)
+                GuildIconView(
+                    name: guild.name,
+                    iconURL: guild.iconURL,
+                    size: size,
+                    cornerRadius: cornerRadius,
+                    animates: false
+                )
+                // Shown while the icon loads; GuildIconView draws its own tile without one.
+                .background(
+                    guild.iconURL == nil ? Color.clear : Color.secondary.opacity(0.16),
+                    in: .rect(cornerRadius: cornerRadius, style: .continuous)
+                )
+            } else if let imageURL = row.imageURL {
+                AvatarView(name: row.title, url: imageURL, size: size, animates: false, isHovered: false)
+                    .background {
+                        // The initial shows until the image loads, or if it fails.
+                        Circle()
+                            .fill(SakuraCordAccentColor.color.gradient)
+                            .overlay {
+                                Text(row.title.prefix(1).uppercased())
+                                    .font(.system(size: size * 0.42, weight: .semibold))
+                                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
+                            }
+                    }
+            } else {
+                Image(systemName: row.systemImage)
+                    .font(.interfaceSystem(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: size, height: size)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -1343,12 +1007,6 @@ private struct QuickSwitcherSearchField: NSViewRepresentable {
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }
             text = field.stringValue
-        }
-
-        func controlTextDidBeginEditing(_ notification: Notification) {
-            guard let field = notification.object as? NSTextField else { return }
-            (field.currentEditor() as? NSTextView)?
-                .applySakuraCordTextSelectionAppearance()
         }
 
         func control(

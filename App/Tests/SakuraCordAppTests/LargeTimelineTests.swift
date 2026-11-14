@@ -1322,7 +1322,8 @@ func `benchmark run finalization does not require coordinator lifetime`() {
             performBookkeeping: { _ in bookkeepingCount += 1 }
         )
 
-        #expect(elapsed == 2)
+        // `(uptime + 2) - uptime` rounds when the sum crosses a power of two.
+        #expect(elapsed.map { abs($0 - 2) < 1e-6 } == true)
         #expect(state.didFinish)
         #expect(state.ticker.tick == nil)
         #expect(activityEndCount == 1)

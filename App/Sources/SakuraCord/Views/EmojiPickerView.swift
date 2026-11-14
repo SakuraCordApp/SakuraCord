@@ -263,7 +263,7 @@ nonisolated enum NativeEmojiSkinTone: String, CaseIterable, Identifiable, Sendab
 
     /// The picker's stored tone, shared by autocomplete and quick reactions.
     static var preferred: NativeEmojiSkinTone {
-        NativeEmojiSkinTone(rawValue: PRBuildProfile.defaults.string(forKey: "emojiSkinTone") ?? "") ?? .standard
+        NativeEmojiSkinTone(rawValue: UserDefaults.standard.string(forKey: "emojiSkinTone") ?? "") ?? .standard
     }
 
     var id: String {
@@ -329,7 +329,7 @@ struct EmojiPickerView: View {
     @State private var visibleGuildLoadTask: Task<Void, Never>?
     @State private var emojiLockMessage: String?
     @FocusState private var keyboardNavigationIsFocused: Bool
-    @AppStorage("emojiSkinTone", store: PRBuildProfile.defaults) private var skinToneRawValue = NativeEmojiSkinTone.standard.rawValue
+    @AppStorage("emojiSkinTone") private var skinToneRawValue = NativeEmojiSkinTone.standard.rawValue
 
     init(
         model: AppModel,
@@ -811,7 +811,6 @@ private struct PickerSearchTextField: NSViewRepresentable {
             guard let textField = notification.object as? NSTextField else { return }
             let editor = textField.currentEditor() as? NSTextView
             PickerSearchTextField.disableCompletionFeatures(in: editor)
-            editor?.applySakuraCordTextSelectionAppearance()
         }
     }
 }

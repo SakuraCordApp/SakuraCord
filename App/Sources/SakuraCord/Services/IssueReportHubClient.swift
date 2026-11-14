@@ -153,6 +153,10 @@ nonisolated enum IssueReportHubError: LocalizedError, Equatable {
     case server(String)
     case unavailable
 
+    static let attachmentLimit = Self.server(
+        "Attach at most 5 files, each no larger than 10 MB and 25 MB in total."
+    )
+
     var errorDescription: String? {
         switch self {
         case let .server(message): message
@@ -166,6 +170,7 @@ nonisolated enum IssueReportHubError: LocalizedError, Equatable {
 nonisolated struct IssueReportHubClient: Sendable {
     static let maximumFileCount = 5
     static let maximumFileBytes = 10 * 1024 * 1024
+    static let maximumTotalBytes = 25 * 1024 * 1024
 
     private let baseURL: URL
     private let session: URLSession
@@ -210,8 +215,9 @@ nonisolated struct IssueReportHubClient: Sendable {
         session hubSession: IssueReportHubSession
     ) async throws -> IssueReportFiled {
         guard files.count <= Self.maximumFileCount,
-              files.allSatisfy({ $0.data.count <= Self.maximumFileBytes })
-        else { throw IssueReportHubError.server("Attach at most 5 files, each no larger than 10 MB.") }
+              files.allSatisfy({ $0.data.count <= Self.maximumFileBytes }),
+              files.reduce(0, { $0 + $1.data.count }) <= Self.maximumTotalBytes
+        else { throw IssueReportHubError.attachmentLimit }
         let boundary = "SakuraCord-\(UUID().uuidString)"
         var body = Data()
         func append(_ string: String) { body.append(Data(string.utf8)) }
@@ -270,7 +276,7 @@ nonisolated struct IssueReportHubClient: Sendable {
             {
                 throw IssueReportHubError.server(failure.error)
             }
-            throw IssueReportHubError.unavailable
+            throw http.statusCode == 413 ? IssueReportHubError.attachmentLimit : IssueReportHubError.unavailable
         }
         return try JSONDecoder().decode(Response.self, from: data)
     }

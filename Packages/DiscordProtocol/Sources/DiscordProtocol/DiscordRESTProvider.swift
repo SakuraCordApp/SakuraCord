@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import SakuraCordModels
+import UniformTypeIdentifiers
 
 let gatewayLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "Gateway")
 let discordPerformanceSignposter = OSSignposter(
@@ -9,18 +10,40 @@ let discordPerformanceSignposter = OSSignposter(
 )
 
 nonisolated struct AttachmentUploadFile: Equatable, Sendable {
-    let url: URL
+    var url: URL
     let name: String
     let description: String?
+    let isSpoiler: Bool
+    /// The attached file's type, kept when a prepared copy replaces `url`.
+    let contentType: String
     /// The draft attachment this file came from, which lets the user stop it alone.
     let id: UUID?
 
-    init(url: URL, name: String, description: String? = nil, id: UUID? = nil) {
+    init(url: URL, name: String, description: String? = nil, isSpoiler: Bool = false, id: UUID? = nil) {
         self.url = url
         self.name = name
         self.description = description
+        self.isSpoiler = isSpoiler
+        contentType = Self.contentType(forPathExtension: url.pathExtension)
         self.id = id
     }
+
+    /// The desktop client's `original_content_type` is Chromium's `File.type`:
+    /// Chromium's own table wins over the platform's, and an unknown type is
+    /// empty rather than omitted.
+    static func contentType(forPathExtension pathExtension: String) -> String {
+        let pathExtension = pathExtension.lowercased()
+        return chromiumContentTypes[pathExtension]
+            ?? UTType(filenameExtension: pathExtension)?.preferredMIMEType ?? ""
+    }
+
+    /// Chromium's hard-coded types where macOS reports another or none,
+    /// as observed from the desktop client (web build 670026).
+    private static let chromiumContentTypes = [
+        "apng": "image/apng", "jfif": "image/jpeg", "m4v": "video/mp4",
+        "mka": "audio/matroska", "mkv": "video/matroska", "wasm": "application/wasm",
+        "wav": "audio/wav", "weba": "audio/webm", "xml": "text/xml",
+    ]
 }
 
 public actor DiscordRESTProvider: PendingCredentialChatProvider {
@@ -71,6 +94,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     let restSessionConfiguration: URLSessionConfiguration?
     var restSessionGeneration = 0
     let gatewayTransport: any GatewayTransport
+    let gatewayClock: any GatewayClock
     let gatewayCodec: any GatewayCodec
     let gatewayEncoding: String
     let gatewayCompression: GatewayCompression
@@ -123,6 +147,8 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var attachmentUploadDelegates: [UUID: AttachmentUploadTaskDelegate] = [:]
     var cancelledAttachmentUploads: Set<UUID> = []
     var postingAttachmentUploads: Set<UUID> = []
+    /// Numbers voice-message files as Discord's recorder does: `0recording.ogg`, `1recording.ogg`, …
+    var voiceMessageCount = 0
     /// Staged files storing ahead of their message, by draft attachment ID; each yields its stored name.
     var attachmentPreuploads: [UUID: Task<String, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
@@ -168,6 +194,28 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var guildLayoutDataVersion: UInt32?
     var inboxSettingsFieldVersions: [Int: UInt32] = [:]
     var presenceGeneration: UInt64 = 0
+    /// The confirmed settings-proto/1 Favorites message; nil until settings load.
+    var favoritesMessage: Data?
+    var favoritesDataVersion: UInt32?
+    /// The settings data version of `userContentMessage`; older copies, such as
+    /// a late response to an earlier write, are ignored.
+    var userContentDataVersion: UInt32?
+    /// The optimistic Favorites state while a save is pending or in flight.
+    var pendingFavorites: FavoritesSettings?
+    var favoritesSaveTask: Task<Void, Never>?
+    var favoritesGeneration: UInt64 = 0
+    /// The settings-proto/1 UserContentSettings message, with any write still
+    /// awaiting Discord's answer applied.
+    var userContentMessage: Data?
+    /// The UserContentSettings Discord last confirmed, which a failed write
+    /// rolls back to.
+    var confirmedUserContentMessage: Data?
+    /// UserContentSettings waiting in the Favorites save queue: a Suggested
+    /// Channels dismissal, or the restore Reset sends in its own write.
+    var pendingUserContent: Data?
+    var personalizationConsented = false
+    var channelAffinities: (ids: [ChannelID], fetchedAt: Date)?
+    var userAffinities: (ids: [UserID], fetchedAt: Date)?
     var lastSentPresenceStatus: PresenceStatus?
     var activeActivities: [String: OutgoingActivityPayload] = [:]
     var activityCategoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder
@@ -469,6 +517,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         restSession = resolvedSession
         restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
         gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
+        gatewayClock = ContinuousGatewayClock()
         gatewayCodec = ETFGatewayCodec()
         gatewayEncoding = DiscordProductionBaseline.current.desktopGatewayEncoding
         gatewayCompression = .zstdStream
@@ -505,6 +554,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         restSession = resolvedSession
         restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
         gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
+        gatewayClock = ContinuousGatewayClock()
         gatewayCodec = ETFGatewayCodec()
         gatewayEncoding = DiscordProductionBaseline.current.desktopGatewayEncoding
         gatewayCompression = .zstdStream
@@ -526,6 +576,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         handle: CredentialHandle,
         session: URLSession,
         gatewayTransport: any GatewayTransport,
+        gatewayClock: any GatewayClock = ContinuousGatewayClock(),
         gatewayCodec: any GatewayCodec = JSONGatewayCodec(),
         gatewayEncoding: String = "json",
         gatewayCompression: GatewayCompression = .zlibStream,
@@ -542,6 +593,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         restSession = session
         restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
+        self.gatewayClock = gatewayClock
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
         self.gatewayCompression = gatewayCompression
@@ -575,6 +627,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         restSession = session
         restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
+        gatewayClock = ContinuousGatewayClock()
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
         self.gatewayCompression = gatewayCompression

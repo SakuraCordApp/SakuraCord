@@ -260,10 +260,10 @@ extension DiscordRESTProvider {
         guard draft.content.count <= 2_000 else {
             throw ChatProviderError.invalidRequest("Post messages cannot exceed 2,000 characters.")
         }
-        guard
-            !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !draft.attachments.isEmpty
-        else {
+        // Discord's post action reads `@silent` from the trimmed text like a
+        // message send, but omits `flags` when none are set.
+        let prefix = SilentMessagePrefix.split(draft.content.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !prefix.content.isEmpty || !draft.attachments.isEmpty else {
             throw ChatProviderError.invalidRequest("Add a message or attachment before posting.")
         }
         guard draft.attachments.count <= 10 else {
@@ -297,7 +297,10 @@ extension DiscordRESTProvider {
         progress(.preparing)
         // Build 649389 omits `sticker_ids`, and SakuraCord does not expose
         // forum sticker sending.
-        var message: [String: JSONValue] = ["content": .string(draft.content)]
+        var message: [String: JSONValue] = ["content": .string(prefix.content)]
+        if prefix.isSilent {
+            message["flags"] = .number(Double(MessageFlags.suppressNotifications.rawValue))
+        }
         if !draft.attachments.isEmpty {
             message["attachments"] = try await .array(
                 uploadForumAttachments(
@@ -717,7 +720,7 @@ extension DiscordRESTProvider {
             merged.firstMessage = existing.firstMessage
             merged.isFirstMessageLoaded = existing.isFirstMessageLoaded
         }
-        merged.mostRecentMessage = incoming.mostRecentMessage ?? existing.mostRecentMessage
+        merged.keepNewerLatestMessage(from: existing)
         merged.thread.lastNonMessageActivityAt = incoming.thread.lastNonMessageActivityAt
             ?? existing.thread.lastNonMessageActivityAt
         merged.owner = incoming.owner ?? existing.owner

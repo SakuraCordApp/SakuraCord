@@ -15,34 +15,74 @@ import tempfile
 import time
 
 
-def process_group(pid):
+def session_processes(pid):
     listing = subprocess.check_output(
-        ["ps", "-axo", "pid=,ppid=,pgid=,stat=,etime=,comm="],
-        text=True, timeout=5,
+        ["ps", "-axo", "pid=,ppid=,pgid=,stat=,etime=,comm="], text=True,
     )
-    return [line for line in listing.splitlines()
-            if len(line.split()) >= 6 and line.split()[2] == str(pid)]
+    rows = [line for line in listing.splitlines() if len(line.split()) >= 6]
+    # The launcher leads its own session. SwiftPM starts its test helper in a
+    # separate process group of that session, which the helper keeps even when
+    # the launcher exits and it is reparented.
+    return [row for row in rows if in_session(int(row.split()[0]), pid)]
+
+
+def in_session(pid, session):
+    try:
+        return os.getsid(pid) == session
+    except OSError:
+        # The process exited, or belongs to another user.
+        return False
 
 
 def signal_group(pid, sig):
     try:
         os.killpg(pid, sig)
         return True
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
+        # macOS reports EPERM for a group that holds only unreaped zombies.
         return False
 
 
 def stop(process):
     # The launcher may have exited while a child still owns the output pipe.
-    if signal_group(process.pid, signal.SIGTERM):
+    groups = {process.pid} | {int(row.split()[2]) for row in session_processes(process.pid)}
+    if any([signal_group(group, signal.SIGTERM) for group in groups]):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             process.poll()
-            if not signal_group(process.pid, 0):
+            if not any(signal_group(group, 0) for group in groups):
                 break
             time.sleep(0.1)
-        signal_group(process.pid, signal.SIGKILL)
-    process.wait(timeout=5)
+        for group in groups:
+            signal_group(group, signal.SIGKILL)
+    # Like ps and sample, a killed process always finishes, but a starved
+    # machine can take longer than any fixed limit.
+    process.wait()
+
+
+def sample(pid, path):
+    # A loaded machine can stretch sample's attach, sampling and symbol phases
+    # far beyond their nominal length, and killing it discards the report.
+    # SIGINT ends sampling and still writes the report, but only while sampling:
+    # after the stderr announcement, and before a requested duration far longer
+    # than the two seconds actually sampled.
+    with subprocess.Popen(["/usr/bin/sample", pid, "60", "-file", str(path)],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                          text=True) as sampler:
+        try:
+            if sampler.stderr.readline().startswith("Sampling process"):
+                try:
+                    sampler.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    sampler.send_signal(signal.SIGINT)
+            _, error = sampler.communicate()
+        except BaseException:
+            # A cancelled run must reach test-host cleanup without waiting
+            # for the sampler to finish.
+            sampler.kill()
+            raise
+    if not path.exists():
+        print(f"Could not sample PID {pid}: {error.strip()}", flush=True)
 
 
 def diagnose(process, directory):
@@ -62,19 +102,16 @@ def diagnose(process, directory):
                     pending.discard(event["testID"])
         print("Tests started without an end event:\n" + "\n".join(sorted(pending)), flush=True)
     try:
-        rows = process_group(process.pid)
+        rows = session_processes(process.pid)
         (directory / "processes.txt").write_text("\n".join(rows) + "\n")
         print("\n".join(rows), flush=True)
-        # Sample children before the SwiftPM launcher, with a bounded total cost.
+        # Sample up to six children before the SwiftPM launcher.
         for row in sorted(rows, key=lambda row: int(row.split()[0]) == process.pid)[:6]:
             pid = row.split()[0]
             path = directory / f"{pid}.sample.txt"
             try:
-                subprocess.run(
-                    ["/usr/bin/sample", pid, "2", "-file", str(path)],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8,
-                )
-            except (OSError, subprocess.TimeoutExpired) as error:
+                sample(pid, path)
+            except OSError as error:
                 print(f"Could not sample PID {pid}: {error}", flush=True)
             if path.exists():
                 print(f"Stack sample: {path}", flush=True)

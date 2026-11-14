@@ -71,10 +71,10 @@ extension DiscordSettingsProto {
         guard let status else { return updatingStatusSettings(in: current, replacing: [2: nil]) }
         var payload = Data()
         if !status.text.isEmpty { payload.append(protoLengthDelimitedField(1, Data(status.text.utf8))) }
-        if let emojiID = status.emojiID.flatMap(UInt64.init), emojiID != 0 { payload.append(statusFixed64Field(2, emojiID)) }
+        if let emojiID = status.emojiID.flatMap(UInt64.init), emojiID != 0 { payload.append(protoFixed64Field(2, emojiID)) }
         if let name = status.emojiName, !name.isEmpty { payload.append(protoLengthDelimitedField(3, Data(name.utf8))) }
-        if let expiry = status.expiresAt { payload.append(statusFixed64Field(4, UInt64(expiry.timeIntervalSince1970 * 1000))) }
-        if let createdAt = status.createdAt { payload.append(statusFixed64Field(5, UInt64(createdAt.timeIntervalSince1970 * 1000))) }
+        if let expiry = status.expiresAt { payload.append(protoFixed64Field(4, UInt64(expiry.timeIntervalSince1970 * 1000))) }
+        if let createdAt = status.createdAt { payload.append(protoFixed64Field(5, UInt64(createdAt.timeIntervalSince1970 * 1000))) }
         return updatingStatusSettings(in: current, replacing: [2: protoLengthDelimitedField(2, payload)])
     }
 
@@ -107,11 +107,5 @@ extension DiscordSettingsProto {
         }
         for case let (number, bytes?) in replacements { fields.append((number, bytes)) }
         return protoLengthDelimitedField(11, fields.sorted { $0.number < $1.number }.reduce(into: Data()) { $0.append($1.bytes) })
-    }
-
-    private static func statusFixed64Field(_ field: Int, _ value: UInt64) -> Data {
-        var result = Data([UInt8(field << 3 | 1)])
-        for offset in 0 ..< 8 { result.append(UInt8(truncatingIfNeeded: value >> UInt64(offset * 8))) }
-        return result
     }
 }

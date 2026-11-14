@@ -45,6 +45,6 @@ extension ComposerBarAppearance {
     var accessoryButtonSize: CGFloat {
         self == .defaultStyle
             ? ChatChromeMetrics.composerAccessoryButtonSize
-            : ChatChromeMetrics.composerControlHeight
+            : ChatChromeMetrics.composerButtonSize
     }
 }

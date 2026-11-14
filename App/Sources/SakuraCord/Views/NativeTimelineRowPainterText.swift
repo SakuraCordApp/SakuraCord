@@ -279,6 +279,7 @@ extension NativeTimelineRowPainter {
         _ box: NativeTimelineAttributedTextBox,
         in frame: CGRect,
         model: AppModel?,
+        bubble: NativeTimelineBubbleRegion? = nil,
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
         hoveredLinkCharacterIndex: Int? = nil,
@@ -292,6 +293,7 @@ extension NativeTimelineRowPainter {
             framesetter: box.framesetter,
             in: drawingFrame,
             model: model,
+            bubble: bubble,
             selectionRange: selectionRange,
             hoveredMentionCharacterIndex:
                 hoveredMentionCharacterIndex,
@@ -321,7 +323,7 @@ extension NativeTimelineRowPainter {
         framesetter: CTFramesetter,
         in frame: CGRect,
         model: AppModel?,
-        isOutgoingBubble: Bool = false,
+        bubble: NativeTimelineBubbleRegion? = nil,
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
         hoveredLinkCharacterIndex: Int? = nil,
@@ -331,13 +333,28 @@ extension NativeTimelineRowPainter {
         guard frame.width > 0, frame.height > 0,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
-        let (drawingValue, drawingFramesetter) = preparedDrawingText(
+        let isOutgoingBubble = bubble?.isOutgoing == true
+        var (drawingValue, drawingFramesetter) = preparedDrawingText(
             value,
             framesetter: framesetter,
             hoveredLinkCharacterIndex: hoveredLinkCharacterIndex,
             underlinesLinks: model?.accessibilitySettings.underlinesLinks == true,
             revealedSpoilerLocations: revealedSpoilerLocations
         )
+        if isOutgoingBubble, let selectionRange, selectionRange.length > 0 {
+            // As in an NSTextView, selected text takes the selected-text colour;
+            // the light label on an accent fill vanishes on the light selection.
+            let selected = NSMutableAttributedString(attributedString: drawingValue)
+            let range = NSIntersectionRange(selectionRange, NSRange(location: 0, length: selected.length))
+            let textColor: NSColor = drawsEmphasizedSelection ? .selectedTextColor : .unemphasizedSelectedTextColor
+            selected.addAttribute(.foregroundColor, value: textColor, range: range)
+            for spoiler in NativeTimelineTextSpoilers.ranges(in: value)
+                where !revealedSpoilerLocations.contains(spoiler.location) {
+                NativeTimelineSpoilerAppearance.concealText(in: selected, range: spoiler)
+            }
+            drawingValue = selected
+            drawingFramesetter = CTFramesetterCreateWithAttributedString(selected)
+        }
         let path = CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil)
         let textFrame = CTFramesetterCreateFrame(
             drawingFramesetter,
@@ -374,7 +391,7 @@ extension NativeTimelineRowPainter {
             outerFrame: frame,
             attributedText: drawingValue,
             model: model,
-            isOutgoingBubble: isOutgoingBubble,
+            bubble: bubble,
             selectionRange: selectionRange,
             hoveredMentionCharacterIndex: hoveredMentionCharacterIndex
         )
@@ -701,7 +718,7 @@ extension NativeTimelineRowPainter {
         outerFrame: CGRect,
         attributedText: NSAttributedString,
         model: AppModel?,
-        isOutgoingBubble: Bool = false,
+        bubble: NativeTimelineBubbleRegion? = nil,
         selectionRange: NSRange?,
         hoveredMentionCharacterIndex: Int?
     ) {
@@ -715,7 +732,7 @@ extension NativeTimelineRowPainter {
         for draw in draws {
             renderInlineAttachment(
                 draw,
-                isOutgoingBubble: isOutgoingBubble,
+                bubble: bubble,
                 hoveredMentionCharacterIndex: hoveredMentionCharacterIndex
             )
         }
@@ -844,7 +861,7 @@ extension NativeTimelineRowPainter {
 
     private static func renderInlineAttachment(
         _ draw: InlineAttachmentDraw,
-        isOutgoingBubble: Bool,
+        bubble: NativeTimelineBubbleRegion?,
         hoveredMentionCharacterIndex: Int?
     ) {
         switch draw {
@@ -856,7 +873,7 @@ extension NativeTimelineRowPainter {
                 fontSize: mention.fontSize,
                 in: frame,
                 isHovered: hoveredMentionCharacterIndex == characterIndex,
-                isOutgoingBubble: isOutgoingBubble
+                bubble: bubble
             )
         case let .emojiFallback(frame, _):
             text(
@@ -874,11 +891,11 @@ extension NativeTimelineRowPainter {
     }
 
     static var textSelectionHighlightColor: NSColor {
-        NSColor.sakuraCordTextSelectionBackgroundColor
+        drawsEmphasizedSelection ? .selectedTextBackgroundColor : .unemphasizedSelectedTextBackgroundColor
     }
 
     static var attachmentSelectionHighlightColor: NSColor {
-        NSColor.sakuraCordTextSelectionBackgroundColor.withAlphaComponent(0.5)
+        textSelectionHighlightColor.withAlphaComponent(0.5)
     }
 
     static func drawMention(
@@ -886,10 +903,11 @@ extension NativeTimelineRowPainter {
         fontSize: CGFloat,
         in frame: CGRect,
         isHovered: Bool,
-        isOutgoingBubble: Bool = false
+        bubble: NativeTimelineBubbleRegion? = nil
     ) {
-        let color: NSColor = isOutgoingBubble
-            ? .white : presentation.isTimestamp ? .labelColor : roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
+        let isOutgoingBubble = bubble?.isOutgoing == true
+        let color = isOutgoingBubble
+            ? .white : NativeTimelineMentionAppearance.color(for: presentation, inBubble: bubble != nil)
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: InterfaceScale.metric(5.5)
@@ -964,24 +982,18 @@ extension NativeTimelineRowPainter {
             }
             labelX = avatarFrame.maxX + metrics.leadingGap
         }
-        mentionLabel(
-            presentation,
+        // The mention's own weight: Discord sets timestamps in regular text.
+        text(
+            presentation.label,
             in: CGRect(
                 x: labelX,
                 y: frame.minY,
                 width: max(1, frame.maxX - labelX - metrics.horizontalPadding),
                 height: frame.height
             ),
-            font: .systemFont(ofSize: fontSize, weight: .semibold),
+            font: .systemFont(ofSize: fontSize, weight: presentation.labelWeight),
             color: color
         )
-    }
-
-    /// A mention's label at `font`'s size and the mention's own weight:
-    /// Discord sets timestamps in regular text.
-    private static func mentionLabel(_ presentation: MentionPresentation, in frame: CGRect, font: NSFont, color: NSColor) {
-        text(presentation.label, in: frame, font: .systemFont(ofSize: font.pointSize, weight: presentation.labelWeight),
-             color: color)
     }
 
     static func inlineEmojiImage(

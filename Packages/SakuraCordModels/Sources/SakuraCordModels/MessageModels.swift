@@ -521,11 +521,31 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// Discord's `@silent` send prefix (web module 677413): a case-sensitive
+/// `@silent` that opens the message and is followed by whitespace or the
+/// end. Discord removes it, trims what remains, and sends
+/// `SUPPRESS_NOTIFICATIONS`. Composers trim their text first, so leading
+/// whitespace never hides the prefix.
+public enum SilentMessagePrefix {
+    public static let token = "@silent"
+
+    public static func isSilent(_ content: String) -> Bool {
+        content.hasPrefix(token) && (content.dropFirst(token.count).first?.isWhitespace ?? true)
+    }
+
+    public static func split(_ content: String) -> (isSilent: Bool, content: String) {
+        guard isSilent(content) else { return (false, content) }
+        return (true, content.dropFirst(token.count).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
 public struct SendMessageDraft: Equatable, Sendable {
     public static let maximumAttachmentCount = 10
 
     public var channelID: ChannelID
+    /// The text Discord receives, without a `@silent` prefix.
     public var content: String
+    public var suppressesNotifications: Bool
     public var replyTo: MessageID?
     public var mentionsRepliedUser: Bool
     public var attachments: [ForumPostAttachment]
@@ -548,10 +568,15 @@ public struct SendMessageDraft: Equatable, Sendable {
         attachments: [ForumPostAttachment]? = nil,
         nonce: String = ClientNonce.make(), stickerIDs: [String] = [], poll: PollDraft? = nil,
         isTTS: Bool = false,
-        voiceMessage: VoiceMessageMetadata? = nil
+        voiceMessage: VoiceMessageMetadata? = nil,
+        suppressesNotifications: Bool = false
     ) {
+        // Like Discord's send action, every send reads the prefix once,
+        // adding to any flag the caller already chose.
+        let prefix = SilentMessagePrefix.split(content)
         self.channelID = channelID
-        self.content = content
+        self.content = prefix.content
+        self.suppressesNotifications = suppressesNotifications || prefix.isSilent
         self.replyTo = replyTo
         self.mentionsRepliedUser = mentionsRepliedUser
         self.attachments =
@@ -562,12 +587,24 @@ public struct SendMessageDraft: Equatable, Sendable {
         self.isTTS = isTTS
         self.voiceMessage = voiceMessage
     }
+
+    /// Like Discord's send action, a draft with nothing to post is not sent.
+    public var isEmpty: Bool {
+        content.isEmpty && attachments.isEmpty && stickerIDs.isEmpty && poll == nil
+    }
+
+    public var messageFlags: MessageFlags {
+        var flags: MessageFlags = []
+        if voiceMessage != nil { flags.insert(.voiceMessage) }
+        if suppressesNotifications { flags.insert(.suppressNotifications) }
+        return flags
+    }
 }
 
 /// The attachment metadata Discord requires on a voice message.
 public struct VoiceMessageMetadata: Equatable, Sendable {
+    /// The recording's local file name. The upload uses the desktop recorder's numbered name instead.
     public static let filename = "voice-message.ogg"
-    public static let contentType = "audio/ogg; codecs=opus"
 
     public var durationSeconds: Double
     /// Base64 of 0–255 waveform bins.

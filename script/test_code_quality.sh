@@ -88,6 +88,9 @@ chmod +x \
   "$FIXTURE_ROOT/script/pre_push_code_quality.sh"
 
 git -C "$FIXTURE_ROOT" init -q
+# Commits otherwise start detached maintenance that can rewrite the object
+# store while the fixture clones it.
+git -C "$FIXTURE_ROOT" config maintenance.auto false
 git -C "$FIXTURE_ROOT" config user.name "SakuraCord Code Quality Test"
 git -C "$FIXTURE_ROOT" config user.email "code-quality-test@sakuracord.invalid"
 git -C "$FIXTURE_ROOT" add .

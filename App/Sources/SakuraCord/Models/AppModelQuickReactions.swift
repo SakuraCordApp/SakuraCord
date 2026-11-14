@@ -8,6 +8,17 @@ extension AppModel {
     func canUpdateReactions(on message: Message) -> Bool {
         guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
             && !awaitsMessageRequestDecision(in: message.channelID)
+            && canReopenIfArchived(threadID: message.channelID)
+    }
+
+    /// Reacting reopens an archived thread first, as Discord does, which
+    /// needs the Reopen permission: Manage Threads when locked.
+    private func canReopenIfArchived(threadID: ChannelID) -> Bool {
+        // Most messages are in a channel, not a thread; rows ask on every draw.
+        guard messagePresentationChannelsByID[threadID] == nil,
+              let thread = knownThreadSummary(threadID), thread.isArchived
+        else { return true }
+        return threadActionPolicy(thread).canReopen
     }
 
     /// Whether new reactions can be created on this message.
@@ -38,9 +49,7 @@ extension AppModel {
 
     /// Discord's `disableReactionCreates`: private channels other than the
     /// system DM, or guild channels where the member can chat and has
-    /// ADD_REACTIONS. Discord also allows archived threads it can reopen
-    /// because it unarchives before reacting; the shared reaction path does
-    /// not, so archived threads are excluded.
+    /// ADD_REACTIONS, including archived threads the member can reopen.
     private func reactionCreationContext(for message: Message) -> (channel: Channel, permissions: UInt64)? {
         guard message.outboxState == .confirmed, !message.flags.contains(.ephemeral),
               let context = messagePermissionContext(for: message.channelID),
@@ -52,11 +61,9 @@ extension AppModel {
         }
         guard !requiresOnboarding(in: guildID), onboardingMember(in: guildID)?.isPending != true,
               permissions & DiscordPermissionBits.viewChannel != 0,
-              permissions & DiscordPermissionBits.addReactions != 0
+              permissions & DiscordPermissionBits.addReactions != 0,
+              canReopenIfArchived(threadID: message.channelID)
         else { return nil }
-        if context.isThread, let thread = openThread, thread.id == message.channelID, thread.isArchived {
-            return nil
-        }
         return (channel, permissions)
     }
 }

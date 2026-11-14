@@ -122,6 +122,7 @@ struct MarkdownBlockLayout {
                 in: tableIntent, row: row, column: column, outerBlocks: placement.textBlocks, indent: placement.indent
             ) else { return }
             alignment = cell.alignment
+            if content.string == MarkdownTableRows.marker { content.setAttributedString(NSAttributedString()) }
             placement.textBlocks.append(cell.block)
             placement.indent = 0
         case let .footnote(number):
@@ -388,7 +389,7 @@ struct MarkdownBlockLayout {
         // Sized to fit the list gutter before the 4 px gap to the text.
         return NSAttributedString(attachment: MarkdownInlineStyle.symbol(
             isDone ? "checkmark.square.fill" : "square", font: .systemFont(ofSize: px(10)),
-            colors: isDone ? [.white, .controlAccentColor] : [.secondaryLabelColor]
+            colors: isDone ? [.sakuraCordLabelOnAccentColor, .controlAccentColor] : [.secondaryLabelColor]
         ))
     }
 

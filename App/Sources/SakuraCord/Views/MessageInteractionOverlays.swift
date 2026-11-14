@@ -10,6 +10,11 @@ enum MessageRowLayoutMetrics {
     nonisolated static var avatarColumnGap: CGFloat { InterfaceScale.metric(12) }
     /// Forwarded content's indent past its 3-point bar.
     nonisolated static var forwardedContentInset: CGFloat { InterfaceScale.metric(11) }
+    /// The forwarded header and source rows grow with their caption text,
+    /// which keeps its 10 pt floor below the default message size.
+    nonisolated static var forwardedLineHeight: CGFloat {
+        InterfaceScale.metric(max(22, InterfaceTypographyMetrics.message(22)))
+    }
     nonisolated static var compactContentHeight: CGFloat { InterfaceScale.metric(18) }
     nonisolated static var authorLineHeight: CGFloat { InterfaceScale.metric(16) }
     nonisolated static var authorContentSpacing: CGFloat { InterfaceScale.metric(2) }
@@ -826,9 +831,9 @@ enum MessageEditLayoutMetrics {
     static func textStyle(isOnOutgoingBubble: Bool) -> ComposerTextStyle {
         let style = messageTextStyle
         guard isOnOutgoingBubble else { return style }
-        // The timeline sets an outgoing bubble's text in white.
+        // The timeline sets an outgoing bubble's text in the label colour for the accent fill.
         var attributes = style.attributes
-        attributes[.foregroundColor] = NSColor.white
+        attributes[.foregroundColor] = NSColor.sakuraCordLabelOnAccentColor
         return ComposerTextStyle(font: style.font, attributes: attributes, usesMessageLineHeight: true)
     }
 
@@ -879,6 +884,7 @@ private struct InlineMessageEditor: View {
     @State private var timeQueryNeedsPick = false
     @State private var timeKeyboardSelectionRevision = 0
     @State private var timestampClock = RelativeTimestampDisplayClock()
+    @State private var emojiSuggestionCache = ColonAutocompleteSuggestionCache()
 
     /// Game names and people resolve as they do in the message, and update
     /// as games load.
@@ -913,7 +919,7 @@ private struct InlineMessageEditor: View {
                 onAutocompleteCommand: handleAutocomplete,
                 capturesUnfocusedTyping: true,
                 maximumHeight: .greatestFiniteMagnitude,
-                insertionPointColor: isOnOutgoingBubble ? .white : nil,
+                insertionPointColor: isOnOutgoingBubble ? .sakuraCordLabelOnAccentColor : nil,
                 textStyle: MessageEditLayoutMetrics.textStyle(isOnOutgoingBubble: isOnOutgoingBubble),
                 scrolls: false,
                 accessibilityHint: "Press Return to save, Shift-Return for a new line, or Escape to cancel.",
@@ -973,15 +979,7 @@ private struct InlineMessageEditor: View {
 
     private var suggestions: [ColonAutocompleteSuggestion] {
         guard let context else { return [] }
-        return ColonAutocompleteSuggestionFactory.suggestions(
-            query: context.query,
-            customEmojis: model.composerCustomEmojis,
-            customValue: model.composerText(for:),
-            customSource: { model.serverRailGuildsByID[$0.guildID]?.name },
-            discordFavoriteKeys: Set(model.discordFavoriteEmojiKeys),
-            discordUsageScores: model.discordEmojiUsageScores,
-            discordSettingsAreLoaded: model.hasLoadedDiscordEmojiSettings
-        )
+        return emojiSuggestionCache.suggestions(query: context.query, model: model)
     }
 
     private var timeContext: KeywordMentionContext? {

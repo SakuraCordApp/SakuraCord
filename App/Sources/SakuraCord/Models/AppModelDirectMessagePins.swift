@@ -9,14 +9,15 @@ extension AppModel {
 
         let currentOverride = channelNotificationOverride(for: channel)
             ?? ChannelNotificationOverride(channelID: channelID)
-        let isPinned = !currentOverride.isPinnedDirectMessage
-        let flags = currentOverride.flags(settingPinnedDirectMessage: isPinned)
+        let isPinned = !currentOverride.isPinned
+        let flags = currentOverride.flags(settingPinned: isPinned)
         let generation = channelNotificationMutationGeneration
         let session = accountSession()
         let activeProvider = session.provider
         channelNotificationMutationTasks[channelID] = Task { [weak self] in
             do {
-                try await activeProvider.updateDirectMessagePin(
+                try await activeProvider.updateChannelPin(
+                    guildID: nil,
                     channelID: channelID,
                     flags: flags
                 )
@@ -25,7 +26,7 @@ extension AppModel {
                       generation == self.channelNotificationMutationGeneration
                 else { return }
                 self.updateLocalChannelNotificationOverride(channel: channel) {
-                    $0.flags = $0.flags(settingPinnedDirectMessage: isPinned)
+                    $0.flags = $0.flags(settingPinned: isPinned)
                 }
             } catch is CancellationError {
                 return

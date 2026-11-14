@@ -204,7 +204,6 @@ struct SelectableMessageTextView: NSViewRepresentable {
             .foregroundColor: NSColor.linkColor,
             .underlineStyle: 0
         ]
-        textView.applySakuraCordTextSelectionAppearance()
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.onMentionClick = onMentionClick
         textView.onURLClick = onURLClick
@@ -219,7 +218,6 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.onRevealSpoiler = onRevealSpoiler
         textView.model = model
         textView.isSelectable = isSelectable
-        textView.applySakuraCordTextSelectionAppearance()
         configureTextContainer(textView.textContainer)
         let coordinator = context.coordinator
         if !TimestampMentionPresentation.tokens(in: source).isEmpty {
@@ -483,7 +481,7 @@ nonisolated enum RichMessageAttributedText {
         mentionPresentations: [String: MentionPresentation]
     ) -> NSAttributedString {
         let resolvedBaseFontSize = baseFontSize
-            ?? (prepared.isEmojiOnly ? emojiSize : InterfaceScale.fontSize(15))
+            ?? (prepared.isEmojiOnly ? emojiSize : InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize))
         let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize)
         let output = NSMutableAttributedString(
             attributedString: NativeTimelineCoreText.scaledMarkdown(
@@ -559,12 +557,14 @@ nonisolated enum RichMessageAttributedText {
         }
     }
 
-    private static func ranges(of value: String, in source: String) -> [NSRange] {
+    static func ranges(
+        of value: String, in source: String, options: NSString.CompareOptions = []
+    ) -> [NSRange] {
         let source = source as NSString
         var ranges: [NSRange] = []
         var searchRange = NSRange(location: 0, length: source.length)
         while searchRange.length > 0 {
-            let range = source.range(of: value, options: [], range: searchRange)
+            let range = source.range(of: value, options: options, range: searchRange)
             guard range.location != NSNotFound else { break }
             ranges.append(range)
             let nextLocation = NSMaxRange(range)

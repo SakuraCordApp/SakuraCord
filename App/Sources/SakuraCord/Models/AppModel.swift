@@ -138,6 +138,13 @@ final class AppModel {
         var desiredCollapsed: Bool
     }
 
+    struct ChannelPinMutationState {
+        var guildID: GuildID
+        var confirmedPinned: Bool
+        var desiredPinned: Bool
+        var editedAt: ContinuousClock.Instant
+    }
+
     @ObservationIgnored var snapshotStorage: BootstrapSnapshot?
     // Keep workspace chrome independent of unrelated channel and member changes.
     private(set) var currentUser: User?
@@ -169,6 +176,7 @@ final class AppModel {
     @ObservationIgnored let onboarding = GuildOnboardingStore()
     @ObservationIgnored let serverInvites = ServerInvitePresentationStore()
     @ObservationIgnored let guildJoinRequests = GuildJoinRequestStore()
+    @ObservationIgnored let favorites = FavoritesStore()
     @ObservationIgnored let embeddedActivities = EmbeddedActivityStore()
     @ObservationIgnored let captcha = HumanCaptchaStore()
     @ObservationIgnored let friends = FriendsState()
@@ -218,7 +226,7 @@ final class AppModel {
     var pinnedDirectMessageIDs: Set<ChannelID> {
         guard let settings = readState.settingsByGuild[nil]
         else { return [] }
-        return Set(settings.channelOverrides.filter(\.isPinnedDirectMessage).map(\.channelID))
+        return Set(settings.channelOverrides.filter(\.isPinned).map(\.channelID))
     }
     var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>] = [:]
     var hiddenChannelIDs: Set<ChannelID> = [] {
@@ -232,6 +240,7 @@ final class AppModel {
     let pinnedMessages = PinnedMessagesState()
     let threadBrowser = ThreadBrowserState()
     let inbox = InboxState()
+    let scheduledMessages = ScheduledMessagesState()
     @ObservationIgnored var lastDirectMessageSelection: DirectMessageSidebarSelection?
     @ObservationIgnored var lastOpenedChannelIDsByGuild: [GuildID: ChannelID] = [:]
     @ObservationIgnored var threadTimelinePosition = TimelineReadingPosition()
@@ -420,6 +429,9 @@ final class AppModel {
     var forumActionError: String?
     var forumPaginationError: String?
     var forumCreateProgress: MessageSendProgress?
+    /// Unposted forum posts by forum, kept for the session so closing the
+    /// composer doesn't lose them.
+    var forumPostDrafts: [ChannelID: ForumPostComposerDraft] = [:]
     var forwardingMessage: Message?
     var forwardingErrorMessage: String?
     var isForwardingMessages = false
@@ -432,7 +444,7 @@ final class AppModel {
     var forumSortOrder: ForumSortOrder = .latestActivity
     var forumLayout: ForumLayout = .list
     var forumTagMatch: ForumTagMatch = .matchSome
-    @ObservationIgnored lazy var forumViewMemory = ForumViewMemory(defaults: launchMode == .normal ? PRBuildProfile.defaults : nil)
+    @ObservationIgnored lazy var forumViewMemory = ForumViewMemory(defaults: launchMode == .normal ? UserDefaults.standard : nil)
     var interactionModalForm: InteractionModalFormState?
     /// The open side chats: the single source of truth for threads, voice
     /// chat, Guide resources and channel previews beside the primary
@@ -829,8 +841,8 @@ final class AppModel {
             builtInExpressionPickerRequest = nil
             cancelApplicationCommandAutocompleteTask()
             cancelApplicationCommandMemberSearch()
-            commandComposer.resetForChannelChange()
-            clearComposerAttachments(for: .channel)
+            leaveComposerConversation(.channel, conversationID: oldValue, in: oldValue)
+            restoreComposerConversation(.channel, conversationID: selectedChannelID)
             translation.resetDraft(.channel)
             synchronizeSideConversationsWithSelection(keepsGuildPage: keepsGuildPage)
             if let selectedChannelID {
@@ -1101,6 +1113,9 @@ final class AppModel {
     @ObservationIgnored var categoryCollapseMutationStates:
         [ChannelID: CategoryCollapseMutationState] = [:]
     var optimisticCategoryCollapsedByID: [ChannelID: Bool] = [:]
+    @ObservationIgnored var channelPinMutationTasks: [ChannelID: Task<Void, Never>] = [:]
+    @ObservationIgnored var channelPinMutationStates: [ChannelID: ChannelPinMutationState] = [:]
+    var optimisticChannelPinnedByID: [ChannelID: Bool] = [:]
     @ObservationIgnored var channelNotificationMutationGeneration = 0
     @ObservationIgnored var forumNotificationMutationTasks:
         [ChannelID: Task<Void, Never>] = [:]
@@ -1174,7 +1189,9 @@ final class AppModel {
         composer = MessageComposerState(
             preferences: composerPreferences ?? (launchMode == .normal ? .shared : nil)
         )
-        appearanceSettings = AppearanceSettingsStore.shared.load()
+        let appearanceSettings = AppearanceSettingsStore.shared.load()
+        InterfaceTypographyMetrics.updateMessageTextSize(appearanceSettings.messageTextSize)
+        self.appearanceSettings = appearanceSettings
         interfaceSettings = InterfaceSettingsStore.shared.load()
         generalInputSettings = GeneralInputSettingsStore.shared.load()
         featuresSettings = FeaturesSettingsStore.shared.load()

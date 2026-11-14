@@ -13,8 +13,6 @@ import Testing
     )
 
     let file = DiscordRESTProvider.forumUploadFile(attachment)
-    #expect(file.name == "SPOILER_renamed.png")
-    #expect(file.description == "A pink SakuraCord flower")
     #expect(
         DiscordRESTProvider.uploadedAttachmentPayload(
             id: 0,
@@ -22,11 +20,23 @@ import Testing
             uploadFilename: "cloud-token"
         ) == .object([
             "id": .string("0"),
-            "filename": .string("SPOILER_renamed.png"),
+            "filename": .string("renamed.png"),
             "uploaded_filename": .string("cloud-token"),
             "description": .string("A pink SakuraCord flower"),
+            "is_spoiler": .bool(true),
+            "original_content_type": .string("image/png"),
         ])
     )
+}
+
+/// Values the desktop client sent as `original_content_type` (web build 670026).
+@Test(arguments: [
+    ("PNG", "image/png"), ("heic", "image/heic"), ("mov", "video/quicktime"), ("wav", "audio/wav"),
+    ("mkv", "video/matroska"), ("xml", "text/xml"), ("txt", "text/plain"), ("zip", "application/zip"),
+    ("log", ""), ("", ""),
+])
+func `attachment content types match the desktop client`(pathExtension: String, contentType: String) {
+    #expect(AttachmentUploadFile.contentType(forPathExtension: pathExtension) == contentType)
 }
 
 @Test func `forum post deletion uses one authenticated delete channel request`() async throws {
@@ -1095,6 +1105,34 @@ private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
     #expect(merged.firstMessage == message)
     #expect(merged.mostRecentMessage == message)
     #expect(merged.isUnread)
+}
+
+@Test func `catalogue merge keeps a reply that arrived during the read`() {
+    let threadID = ChannelID(rawValue: 100)
+    let author = User(id: UserID(rawValue: 7), username: "author", displayName: "Author")
+    func post(repliesThrough lastID: UInt64, count: Int) -> ForumPost {
+        let latest = Message(
+            id: MessageID(rawValue: lastID), channelID: threadID, author: author,
+            content: "Reply \(lastID)", timestamp: Date(timeIntervalSince1970: TimeInterval(lastID))
+        )
+        return ForumPost(
+            thread: MessageThreadSummary(
+                id: threadID, name: "Post", messageCount: count,
+                lastMessageID: latest.id, totalMessageSent: count
+            ),
+            mostRecentMessage: latest
+        )
+    }
+    let read = post(repliesThrough: 102, count: 2)
+    let advanced = post(repliesThrough: 103, count: 3)
+
+    let kept = DiscordRESTProvider.mergingForumPostCatalogueMetadata(incoming: read, existing: advanced)
+    #expect(kept.thread == advanced.thread)
+    #expect(kept.mostRecentMessage == advanced.mostRecentMessage)
+
+    let refreshed = DiscordRESTProvider.mergingForumPostCatalogueMetadata(incoming: advanced, existing: read)
+    #expect(refreshed.thread == advanced.thread)
+    #expect(refreshed.mostRecentMessage == advanced.mostRecentMessage)
 }
 
 @Test func `superseded forum catalogue refreshes leave only the latest query active`() async throws {

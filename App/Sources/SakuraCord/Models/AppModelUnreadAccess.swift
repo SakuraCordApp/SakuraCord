@@ -371,10 +371,11 @@ extension AppModel {
             && selectedChannelID.map(projectedHiddenChannelIDs.contains) == true
         if redirectsAutomaticSelection {
             pendingAutomaticChannelAccessID = nil
-            selectedChannelID = Self.preferredInitialChannelID(
-                in: visibleChannels.filter {
+            selectedChannelID = defaultChannelID(
+                among: visibleChannels.filter {
                     projection.accessByChannelID[$0.id]?.isReadable == true
-                }
+                },
+                guildID: selectedGuildID
             )
         } else if pendingAutomaticChannelAccessID == selectedChannelID,
                   selectedChannelID.map(projectedCheckingChannelIDs.contains) != true

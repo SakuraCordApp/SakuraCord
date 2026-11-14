@@ -87,6 +87,7 @@ struct AttachmentEditor: View {
         Button { isSpoiler.toggle() } label: {
             Label("Spoiler", systemImage: isSpoiler ? "eye.slash.fill" : "eye.slash")
                 .font(.interface(.callout).weight(.semibold))
+                .foregroundStyle(isSpoiler ? SakuraCordAccentColor.labelOnFill : .primary)
                 .padding(.horizontal, InterfaceScale.metric(12))
                 .frame(height: InterfaceScale.metric(32))
                 .contentShape(Capsule())
@@ -103,7 +104,6 @@ struct AttachmentEditor: View {
             rowIcon("doc")
             TextField("Filename", text: $filename)
                 .textFieldStyle(.plain)
-                .tint(SakuraCordAccentColor.color)
                 .focused($focus, equals: .filename)
                 .onSubmit(commit)
         }
@@ -116,7 +116,6 @@ struct AttachmentEditor: View {
             TextField("Description (alt text)", text: $description, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(3 ... 6)
-                .tint(SakuraCordAccentColor.color)
                 .focused($focus, equals: .description)
                 // Centres the first line on the 32-point icon.
                 .padding(.vertical, InterfaceScale.metric(7))

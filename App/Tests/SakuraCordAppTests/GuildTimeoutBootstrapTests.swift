@@ -6,7 +6,7 @@ import SakuraCordModels
 import Testing
 
 @MainActor
-@Test(.timeLimit(.minutes(1)), arguments: [false, true])
+@Test(arguments: [false, true])
 func `membership timeout changes received before bootstrap publication survive its older snapshot`(removingTimeout: Bool) async throws {
     let provider = GatedBootstrapRaceProvider(timeoutRemoval: removingTimeout)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)

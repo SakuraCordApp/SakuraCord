@@ -138,7 +138,7 @@ final class NativeTimelineUploadRingView: NSView {
     }
 
     override func resetCursorRects() {
-        guard activate != nil else { return }
+        guard activate != nil, WindowModalCoordinator.allowsInput(for: self) else { return }
         addCursorRect(controlFrame, cursor: .pointingHand)
     }
 

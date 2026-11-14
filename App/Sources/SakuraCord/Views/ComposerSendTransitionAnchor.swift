@@ -298,3 +298,25 @@ struct ComposerSendTransitionAttachmentReader: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
+
+extension AppModel {
+    /// Opens a staged file in the media viewer, which zooms it out of its
+    /// tile and back into it.
+    func openComposerAttachment(_ id: UUID, in attachments: [ForumPostAttachment], from anchor: ComposerSendTransitionAnchor) {
+        guard let currentUser,
+              let presentation = NativeTimelineMediaViewerPlan.composerAttachments(
+                  attachments,
+                  selectedAttachmentID: id,
+                  author: currentUser
+              )
+        else { return }
+        // Every staged file zooms back into its own tile, whichever the
+        // viewer shows when it closes.
+        let sources = attachments.compactMap(anchor.mediaViewerSource)
+        mediaViewerSelectedItemID = id.uuidString
+        mediaViewerPresentation = presentation.withTimelineMedia(
+            previewImages: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0.image) }),
+            transitionSources: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0) })
+        )
+    }
+}

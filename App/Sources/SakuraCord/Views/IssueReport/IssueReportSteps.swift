@@ -62,7 +62,6 @@ struct IssueReportDescribeStep: View {
             .textFieldStyle(.plain)
             .font(.interfaceSystem(size: 18, weight: .medium))
             .lineLimit(1 ... 3)
-            .tint(SakuraCordAccentColor.color)
             .focused($focus, equals: .title)
             .onSubmit { focus = store.primaryField.map { .field($0.id) } }
             .accessibilityLabel("Title")
@@ -87,7 +86,7 @@ private struct IssueReportKindPicker: View {
                             Text(option == .bug ? "Bug" : "Feature")
                         }
                             .font(.interface(.callout).weight(.semibold))
-                            .foregroundStyle(option == kind ? .white : .primary)
+                            .foregroundStyle(option == kind ? SakuraCordAccentColor.labelOnFill : .primary)
                             .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(34))
                             .contentShape(Capsule())
                     }
@@ -207,7 +206,7 @@ private struct IssueReportSimilarCard: View {
             Button("Follow #\(number) and Share Details") { model.followExistingIssueReport(number) }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("Your description and steps will be posted publicly with your Discord identity. You’ll receive updates on this report.")
+            Text("Your description and steps will be posted publicly with your Discord identity. You’ll be pinged when this report is completed.")
         }
     }
 

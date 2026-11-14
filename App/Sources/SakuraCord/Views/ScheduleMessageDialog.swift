@@ -1,0 +1,237 @@
+import SakuraCordModels
+import SwiftUI
+
+/// SakuraCord's schedule dialog: a day from today to Discord's last allowed
+/// day and a time in the official dialog's 15-minute steps. Arrow keys move
+/// the day (left and right) and the time (up and down); scrolling or dragging
+/// the time runs through the allowed days.
+struct ScheduleMessageDialog: View {
+    let timeFormat: InterfaceTimestampFormat
+    /// Bounds a reschedule to 30 days after its message was first scheduled.
+    var scheduledMessageID: ScheduledMessageID?
+    let commit: (Date) -> Void
+    @Environment(\.windowModalContext) private var modal
+    /// Today through the last day Discord accepts; an old message's 30-day
+    /// bound may leave only today, which then reads as too far away.
+    private let days: [Day]
+    @State private var date: Date
+    /// Steps already taken by the drag under way.
+    @State private var draggedSteps = 0
+    @FocusState private var isFocused: Bool
+
+    init(
+        initialDate: Date?,
+        timeFormat: InterfaceTimestampFormat,
+        scheduledMessageID: ScheduledMessageID? = nil,
+        commit: @escaping (Date) -> Void
+    ) {
+        let calendar = Calendar.current
+        self.timeFormat = timeFormat
+        self.scheduledMessageID = scheduledMessageID
+        self.commit = commit
+        let last = calendar.startOfDay(for: ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID))
+        var dates = [calendar.startOfDay(for: .now)]
+        while let next = calendar.date(byAdding: .day, value: 1, to: dates[dates.count - 1]), next <= last {
+            dates.append(next)
+        }
+        days = dates.map(Day.init)
+        _date = State(initialValue: initialDate ?? Self.nextWholeHour())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(scheduledMessageID == nil ? "Schedule Message" : "Update Scheduled Message")
+                .font(.title2.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, 12)
+            dayPicker
+            timePicker
+            // The allowed range moves with the clock while the dialog stays open.
+            TimelineView(.periodic(from: .now, by: 15)) { context in
+                let issue = issue(now: context.date)
+                VStack(alignment: .leading, spacing: 16) {
+                    Group {
+                        if let issue {
+                            Label(issue, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
+                        } else {
+                            Label("Sends \(date.formatted(.dateTime.weekday(.wide).day().month(.wide))) at \(ScheduleTimeText.time(date, format: timeFormat))", systemImage: "paperplane")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.callout)
+                    .padding(.horizontal, 12)
+                    // Keep the 12-point footer inset that makes the capsules concentric with the panel.
+                    HStack {
+                        ModalGlassButton(symbol: "xmark", label: "Cancel") { modal?.dismiss() }
+                        Spacer(minLength: 16)
+                        ModalGlassButton(
+                            symbol: "calendar.badge.clock",
+                            label: scheduledMessageID == nil ? "Schedule" : "Update",
+                            primary: true
+                        ) {
+                            commit(date)
+                            modal?.dismiss()
+                        }
+                        .disabled(issue != nil)
+                        .keyboardShortcut(.defaultAction)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+        }
+        .padding(.top, 12)
+        .padding(12)
+        .frame(width: 400)
+        .focusable()
+        .focused($isFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) { moveDay(by: -1) }
+        .onKeyPress(.rightArrow) { moveDay(by: 1) }
+        .onKeyPress(.upArrow) { step(by: 1) }
+        .onKeyPress(.downArrow) { step(by: -1) }
+        .task {
+            await Task.yield()
+            isFocused = true
+        }
+    }
+
+    private var dayPicker: some View {
+        let selectedDay = day
+        return HStack(spacing: 6) {
+            ForEach(days, id: \.date) { candidate in
+                let isSelected = candidate.date == selectedDay
+                Button { select(candidate.date) } label: {
+                    VStack(spacing: 2) {
+                        Text(candidate.weekday)
+                            .font(.caption)
+                            .foregroundStyle(isSelected ? AnyShapeStyle(SakuraCordAccentColor.labelOnFill.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        Text(candidate.number)
+                            .font(.body.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(isSelected ? AnyShapeStyle(SakuraCordAccentColor.labelOnFill) : AnyShapeStyle(.primary))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(isSelected ? .regular.tint(SakuraCordAccentColor.color).interactive() : .regular.interactive(), in: Capsule())
+                .help(candidate.help)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+    }
+
+    private var timePicker: some View {
+        HStack(spacing: 12) {
+            stepButton(systemImage: "chevron.left", help: "15 Minutes Earlier") { _ = step(by: -1) }
+            Text(ScheduleTimeText.time(date, format: timeFormat))
+                .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
+                .contentTransition(.numericText())
+                .animation(.snappy(duration: 0.2), value: date)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .background(ScrollStepInput { scrub(by: $0) })
+                .gesture(
+                    DragGesture(minimumDistance: 3)
+                        .onChanged { value in
+                            // Up or right is later, as with scrolling; a refused step drops the rest.
+                            let steps = Int(((value.translation.width - value.translation.height) / 16).rounded(.towardZero))
+                            let delta = steps - draggedSteps
+                            draggedSteps = steps
+                            for _ in 0 ..< abs(delta) {
+                                guard scrub(by: delta.signum()) else { break }
+                            }
+                        }
+                        .onEnded { _ in draggedSteps = 0 }
+                )
+            stepButton(systemImage: "chevron.right", help: "15 Minutes Later") { _ = step(by: 1) }
+        }
+        .padding(6)
+        .background(.primary.opacity(0.05), in: Capsule())
+    }
+
+    private func stepButton(systemImage: String, help: LocalizedStringResource, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .frame(width: 40, height: 40)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .help(String(localized: help))
+        .accessibilityLabel(Text(help))
+    }
+
+    private var day: Date { Calendar.current.startOfDay(for: date) }
+
+    private func issue(now: Date) -> LocalizedStringResource? {
+        if date < ScheduledMessagePolicy.earliestSendDate(now: now) { return "Scheduled time is too soon" }
+        if date > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID, now: now) { return "Scheduled time is too far away" }
+        return nil
+    }
+
+    /// Moves to the neighbouring quarter hour within the day.
+    private func step(by direction: Int) -> KeyPress.Result {
+        let candidate = quarterHour(direction)
+        if Calendar.current.isDate(candidate, inSameDayAs: date) { date = candidate }
+        return .handled
+    }
+
+    /// The neighbouring quarter hour in elapsed time, so steps pass through both
+    /// runs of a repeated daylight-saving hour. Every time zone's offset is a
+    /// multiple of 15 minutes, so it is a quarter hour on the clock too; a time
+    /// set elsewhere may fall between them.
+    private func quarterHour(_ direction: Int) -> Date {
+        let quarters = date.timeIntervalSinceReferenceDate / 900
+        let target = direction > 0 ? quarters.rounded(.down) + 1 : quarters.rounded(.up) - 1
+        return Date(timeIntervalSinceReferenceDate: target * 900)
+    }
+
+    /// Scrolling and dragging run through the allowed days in 15-minute steps
+    /// and stop at either end, each step ticking.
+    private func scrub(by direction: Int) -> Bool {
+        let candidate = quarterHour(direction)
+        if direction > 0, candidate > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID) { return false }
+        if direction < 0, candidate < ScheduledMessagePolicy.earliestSendDate() { return false }
+        date = candidate
+        StepHaptics.performStep()
+        return true
+    }
+
+    private func moveDay(by offset: Int) -> KeyPress.Result {
+        let current = day
+        guard let index = days.firstIndex(where: { $0.date == current }) else { return .ignored }
+        select(days[min(max(index + offset, 0), days.count - 1)].date)
+        return .handled
+    }
+
+    /// Moves by whole days, which keeps the clock time and, for the current
+    /// day, the exact time.
+    private func select(_ newDay: Date) {
+        let calendar = Calendar.current
+        let offset = calendar.dateComponents([.day], from: day, to: newDay).day ?? 0
+        if let moved = calendar.date(byAdding: .day, value: offset, to: date) { date = moved }
+    }
+
+    /// The next whole hour, or the one after when that is under ten minutes away.
+    static func nextWholeHour(now: Date = .now, calendar: Calendar = .current) -> Date {
+        let hour = calendar.dateInterval(of: .hour, for: now)?.end ?? now
+        return hour < ScheduledMessagePolicy.earliestSendDate(now: now) ? hour.addingTimeInterval(3600) : hour
+    }
+
+    /// A selectable day, its labels formatted once rather than on every step.
+    private struct Day {
+        let date: Date
+        let weekday: String
+        let number: String
+        let help: String
+
+        init(_ date: Date) {
+            self.date = date
+            weekday = date.formatted(.dateTime.weekday(.abbreviated))
+            number = date.formatted(.dateTime.day())
+            help = date.formatted(date: .complete, time: .omitted)
+        }
+    }
+}

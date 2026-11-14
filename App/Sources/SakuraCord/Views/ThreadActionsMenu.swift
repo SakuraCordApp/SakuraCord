@@ -31,6 +31,7 @@ struct ThreadMenuEntry: Identifiable {
 @MainActor
 struct ThreadActionsMenu {
     static let tagsSlotID = "tags"
+    static let favoriteID = "favorite"
 
     let sections: [[ThreadMenuEntry]]
 
@@ -79,6 +80,14 @@ struct ThreadActionsMenu {
                 isEnabled: policy.canRead && isUnread,
                 content: Self.guarded(model, thread, \.canRead) { model.markConversationRead(channelID: thread.id) }
             )])
+            if model.favorites.settings != nil {
+                let isFavorite = model.isFavorite(thread.id)
+                sections.append([ThreadMenuEntry(
+                    id: Self.favoriteID, title: isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                    systemImage: isFavorite ? "star.slash.fill" : "star.fill",
+                    content: .action { model.toggleFavorite(thread.id, channelType: model.favoriteChannelType(for: thread)) }
+                )])
+            }
         }
         if policy.canManage, isForumPost {
             sections.append([ThreadMenuEntry(

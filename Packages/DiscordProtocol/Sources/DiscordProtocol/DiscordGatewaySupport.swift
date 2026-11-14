@@ -906,6 +906,8 @@ struct GatewayReadyGuildsDTO: Decodable {
     var userGuildSettings: [GatewayUserGuildSettingsDTO]
     var userGuildSettingsPartial: Bool
     var usesNewNotifications: Bool
+    /// READY `consents.personalization.consented`, which gates affinity reads.
+    var personalizationConsented: Bool?
 
     enum CodingKeys: String, CodingKey {
         case guilds
@@ -922,6 +924,12 @@ struct GatewayReadyGuildsDTO: Decodable {
         case readState = "read_state"
         case userGuildSettings = "user_guild_settings"
         case notificationSettings = "notification_settings"
+        case consents
+    }
+
+    private struct ConsentsDTO: Decodable {
+        struct Consent: Decodable { var consented: Bool }
+        var personalization: Consent?
     }
 
     init(from decoder: any Decoder) throws {
@@ -997,6 +1005,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         )
         usesNewNotifications =
             accountNotificationSettings.map { $0.flags & (1 << 4) != 0 } ?? true
+        personalizationConsented = (try? container.decode(ConsentsDTO.self, forKey: .consents))?.personalization?.consented
     }
 
     var privatePresences: [PresenceUpdateDTO] {

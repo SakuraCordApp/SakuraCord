@@ -76,6 +76,10 @@ extension AppModel {
         categoryCollapseMutationTasks.removeAll()
         categoryCollapseMutationStates.removeAll()
         optimisticCategoryCollapsedByID.removeAll()
+        channelPinMutationTasks.values.forEach { $0.cancel() }
+        channelPinMutationTasks.removeAll()
+        channelPinMutationStates.removeAll()
+        optimisticChannelPinnedByID.removeAll()
         forumNotificationMutationGeneration &+= 1
         forumNotificationMutationTasks.values.forEach { $0.cancel() }
         forumNotificationMutationTasks.removeAll()
@@ -344,6 +348,7 @@ extension AppModel {
 
     func consumePresenceAndCommandEvent(_ event: ClientEvent) {
         if consumeForwardSearchPeopleEvent(event) { return }
+        if consumeFavoritesEvent(event) { return }
         if consumeApplicationStreamEvent(event) { return }
         if consumeProfileEvent(event) { return }
         if consumeVoiceEvent(event) { return }
@@ -426,6 +431,7 @@ extension AppModel {
         guard currentUserRoleIDsByGuild[guildID] != roleIDs else { return }
         currentUserRoleIDsByGuild[guildID] = roleIDs
         readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+        discardUnreachableKeptComposerDrafts()
         guard selectedGuildID == guildID else { return }
         refreshUnreadPresentation(
             appliesAccessImmediately: true,
@@ -731,8 +737,8 @@ extension AppModel {
                 {
                     // The guild's authoritative list removed the selected channel,
                     // possibly its last one. Reselection closes any open thread.
-                    self.selectedChannelID = Self.preferredInitialChannelID(
-                        in: channels.filter { conversationAccess(for: $0) != .hidden }
+                    self.selectedChannelID = defaultChannelID(
+                        among: channels.filter { conversationAccess(for: $0) != .hidden }, guildID: guildID
                     )
                 }
             }
@@ -743,6 +749,7 @@ extension AppModel {
             channels: channels,
             previousChannels: previousChannels
         )
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
@@ -922,7 +929,9 @@ extension AppModel {
         forwardSearchSourceRevision &+= 1
         // A replacement READY is authoritative even when its setting equals
         // the value from before an in-flight toggle started.
-        for guildID in guildNotificationMutationTasks.keys {
+        let pendingGuildIDs = Set(guildNotificationMutationTasks.keys)
+            .union(channelPinMutationStates.values.map(\.guildID))
+        for guildID in pendingGuildIDs {
             guildNotificationSettingsRevisions[guildID, default: 0] &+= 1
         }
         for channelID in readState.replaceSnapshot(value) { cancelNativeNotifications(channelID: channelID) }
@@ -949,8 +958,8 @@ extension AppModel {
                    $0.id == selectedChannelID && $0.guildID == selectedGuildID
                }) == true
             {
-                self.selectedChannelID = Self.preferredInitialChannelID(
-                    in: visibleChannels.filter { conversationAccess(for: $0) != .hidden }
+                self.selectedChannelID = defaultChannelID(
+                    among: visibleChannels.filter { conversationAccess(for: $0) != .hidden }, guildID: selectedGuildID
                 )
             }
         }
@@ -1003,6 +1012,7 @@ extension AppModel {
         }
         reconcileInboxEligibility()
         selectGuild(retainedGuildID)
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeGuildChanged(_ guild: Guild) {
@@ -1066,6 +1076,7 @@ extension AppModel {
         {
             selectGuild(guilds.first?.id)
         }
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeCurrentUserChanged(_ user: User) {

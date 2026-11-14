@@ -659,6 +659,7 @@ private struct VoiceStreamTile: View {
                     systemImage: "rectangle.on.rectangle.angled"
                 )
                     .font(metrics.font(12, weight: .semibold))
+                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                     .frame(
                         minWidth: metrics.value(isCentered ? 132 : 88),
                         minHeight: metrics.value(isCentered ? 42 : 34)
@@ -1011,7 +1012,6 @@ private struct ParticipantVolumeControl: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 18)
                 Slider(value: $volume, in: 0 ... 2)
-                    .tint(SakuraCordAccentColor.color)
                     .frame(width: 180)
                 Text("\(Int(volume * 100))%")
                     .font(.interface(.caption).monospacedDigit())

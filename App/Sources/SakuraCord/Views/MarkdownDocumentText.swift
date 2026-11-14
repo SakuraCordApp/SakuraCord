@@ -169,7 +169,7 @@ struct MarkdownLeaf {
 enum MarkdownInlineStyle {
     /// Marks inline and preformatted code, where footnote references aren't read.
     static let codeKey = NSAttributedString.Key("dev.sakuracord.markdown.document-code")
-    static let bodySize = InterfaceTypographyMetrics.messageTextSize
+    static var bodySize: CGFloat { InterfaceTypographyMetrics.messageTextSize }
 
     static func font(for kind: MarkdownLeaf.Kind) -> NSFont {
         switch kind {
@@ -418,6 +418,35 @@ private struct MarkdownFence {
     }
 }
 
+/// Foundation drops a table's trailing rows whose cells are all empty. This
+/// marks the first cell of each such row, so the row stays; the layout
+/// empties the cell again. Pipes in code or escaped ones make a row non-empty.
+struct MarkdownTableRows {
+    nonisolated static let marker = MarkdownFootnotes.marker
+    private var isInTable = false
+    private var previous = ""
+
+    nonisolated init() {}
+
+    /// A line of a document in source order, outside fenced code.
+    nonisolated mutating func read(_ line: String) -> String {
+        defer { previous = line }
+        let content = line.drop { $0 == ">" || $0.isWhitespace }
+        guard !content.isEmpty else {
+            isInTable = false
+            return line
+        }
+        guard isInTable else {
+            // A table starts at its delimiter row, under a header that has pipes.
+            isInTable = previous.contains("|") && content.contains("|") && content.contains("-")
+                && content.allSatisfy { "|:- \t".contains($0) }
+            return line
+        }
+        guard content.allSatisfy({ $0 == "|" || $0.isWhitespace }), let pipe = line.firstIndex(of: "|") else { return line }
+        return line[...pipe] + Self.marker + line[line.index(after: pipe)...]
+    }
+}
+
 /// GitHub's footnotes, which Foundation leaves as text: each `[^label]`
 /// becomes a numbered link, and the definitions move to the end in the
 /// order they're first referenced.
@@ -477,7 +506,7 @@ enum MarkdownFootnotes {
     }
 
     /// Marks a definition, so text that only looks like one stays as written.
-    private nonisolated static let marker = "\u{2060}"
+    nonisolated static let marker = "\u{2060}"
     private static let definitionPrefix = /\[\u{2060}\^([^\]\s]+)\]:[ \t]*/
 
     /// Readies definitions for Foundation, which would read `[^1]: https://…`
@@ -489,6 +518,7 @@ enum MarkdownFootnotes {
         var fence: MarkdownFence?
         var isInDefinition = false
         var hasPendingBlank = false
+        var tables = MarkdownTableRows()
         // `\r\n` is one Character, so lines split on any newline, which also normalizes them.
         for line in markdown.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init) {
             if let open = fence {
@@ -516,6 +546,7 @@ enum MarkdownFootnotes {
             if let opening = MarkdownFence(line, isOpening: true) {
                 fence = opening
                 isInDefinition = false
+                tables = MarkdownTableRows()
             } else if line.contains("[^"), line.prefixMatch(of: /^ {0,3}\[\^[^\]\s]+\]:/) != nil, let bracket = line.firstIndex(of: "[") {
                 if !(lines.last?.allSatisfy(\.isWhitespace) ?? true) { lines.append("") }
                 lines.append(line[..<bracket] + "\\[" + marker + line[line.index(after: bracket)...])
@@ -524,7 +555,7 @@ enum MarkdownFootnotes {
             } else if isBlank {
                 isInDefinition = false
             }
-            lines.append(line)
+            lines.append(tables.read(line))
         }
         return lines.joined(separator: "\n")
     }

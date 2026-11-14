@@ -129,6 +129,7 @@ extension DiscordRESTProvider {
             ), let channelID = ChannelID(deleted.id)
         else { return }
         invalidateApplicationCommandCatalog(.channel(channelID))
+        await removeDeletedFavorite(channelID)
         let guildID = deleted.guildID.flatMap(GuildID.init)
             ?? cachedGuildChannelDTOs.first(where: { $0.value[deleted.id] != nil })?.key
         if let guildID {

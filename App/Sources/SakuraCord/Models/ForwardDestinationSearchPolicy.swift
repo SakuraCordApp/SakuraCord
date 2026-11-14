@@ -231,13 +231,17 @@ nonisolated enum ForwardDestinationSearchPolicy {
             recentChannelIDs: [ChannelID] = [],
             pinnedDestinationIDs: [ForwardDestinationID] = [],
             originChannelID: ChannelID? = nil,
+            excludedChannelIDs: Set<ChannelID> = [],
             categories: Set<ResultCategory>? = nil,
             limitPerCategory: Int = ForwardDestinationSearchPolicy.resultLimitPerCategory
         ) -> [ForwardDestination] {
             let normalizedQuery = ForwardDestinationSearchPolicy.normalize(query)
+            func isIncluded(_ destination: ForwardDestination) -> Bool {
+                destination.resolvedChannelID.map(excludedChannelIDs.contains) != true
+            }
             guard !normalizedQuery.isEmpty else {
                 return ForwardDestinationSearchPolicy.unqueriedResults(
-                    destinations: destinations,
+                    destinations: excludedChannelIDs.isEmpty ? destinations : destinations.filter(isIncluded),
                     usageScores: usageScores,
                     usageOrder: usageOrder,
                     recentChannelIDs: recentChannelIDs,
@@ -247,7 +251,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 )
             }
             return ForwardDestinationSearchPolicy.searchedResults(
-                searchRecords,
+                excludedChannelIDs.isEmpty ? searchRecords : searchRecords.filter { isIncluded($0.destination) },
                 query: normalizedQuery,
                 categories: categories,
                 limitPerCategory: limitPerCategory

@@ -20,7 +20,10 @@ extension NativeTimelineRowLayout {
         private var translationPresentation: NativeTimelineTranslationPresentation?
         private var usesBubbles = false
         private var isOutgoingBubble = false
-        private var horizontalInset: CGFloat = 0
+        // The narrow search sidebar keeps less of its width as margin.
+        private var horizontalInset: CGFloat {
+            searchContext == nil ? MessageRowLayoutMetrics.horizontalInset : InterfaceScale.metric(12)
+        }
         private var contentX: CGFloat = 0
         private var contentWidth: CGFloat = 0
         private var ordinaryContentWidth: CGFloat = 0
@@ -137,9 +140,6 @@ extension NativeTimelineRowLayout {
         private mutating func prepareColumns() {
             usesBubbles = bubbleContext.isEnabled && !row.isResource
             isOutgoingBubble = bubbleContext.isOutgoing && !row.isResource
-            horizontalInset = searchContext == nil
-                ? MessageRowLayoutMetrics.horizontalInset
-                : 22
             let columnGap = MessageRowLayoutMetrics.columnGap(timestampGutterWidth: metrics.timestampGutterWidth)
             if isOutgoingBubble {
                 contentPresentation = NativeTimelineTextPresentation.outgoingBubble(contentPresentation)
@@ -392,14 +392,21 @@ extension NativeTimelineRowLayout {
             let editedWidth: CGFloat = message.editedTimestamp != nil
                 ? NativeTimelineRowLayout.measuredTextWidth("(edited)", font: metrics.editedFont) + InterfaceScale.metric(7)
                 : 0
-            // The timestamp and edited label stay whole beside long names, but
+            let silentBadgeWidth = message.flags.contains(.suppressNotifications)
+                ? NativeTimelineSilentBadge.side(for: metrics.timestampFont) + NativeTimelineSilentBadge.spacing
+                : 0
+            // The timestamp and its labels stay whole beside long names, but
             // never take more than a third of a narrow header.
-            let timestampReserve = min(timestampWidth + editedWidth, availableWidth / 3) + InterfaceScale.metric(7)
-            let badge = author.isSystem ? "OFFICIAL" : author.isBot ? "APP" : nil
-            let botText = badge.map { NativeIdentityTextPresentation(
-                $0, font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
-            ) }
-            let naturalBotWidth = botText.map { $0.width + ServerTagAppearance.horizontalPadding * 2 } ?? 0
+            let timestampReserve = min(timestampWidth + silentBadgeWidth + editedWidth, availableWidth / 3)
+                + InterfaceScale.metric(7)
+            let botText = author.isSystem
+                ? NativeIdentityTextPresentation(
+                    "OFFICIAL", font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize, weight: .medium)
+                )
+                : author.isBot ? NativeAppBadgePresentation.text : nil
+            let naturalBotWidth = botText.map {
+                NativeAppBadgePresentation.width(isVerified: author.isVerifiedBot, text: $0)
+            } ?? 0
             let botWidth = availableWidth >= naturalBotWidth + 7 + 12 ? naturalBotWidth : 0
             let botReserve = botWidth > 0 ? botWidth + 7 : 0
             let role = presentation?.topRoleWithIcon
@@ -412,7 +419,7 @@ extension NativeTimelineRowLayout {
                 author.displayName, font: authorFont,
                 maximumWidth: max(0, availableWidth - botReserve - tagReserve - roleIconReserve - timestampReserve)
             )
-            let badgeHeight = ServerTagAppearance.height + InterfaceScale.metric(1)
+            let badgeHeight = ServerTagAppearance.height
             let botBaseline = botText?.baselineOffset(inHeight: badgeHeight) ?? 0
             let headerHeight = ceil(max(
                 authorFont.ascender - authorFont.descender,
@@ -451,8 +458,9 @@ extension NativeTimelineRowLayout {
             if botWidth > 0 {
                 headerX += InterfaceScale.metric(7)
                 result.botBadgeText = botText
+                result.botBadgeIsVerified = author.isVerifiedBot
                 result.botBadgeFrame = CGRect(
-                    x: headerX, y: baselineY - botBaseline,
+                    x: headerX, y: baselineY - botBaseline - InterfaceScale.metric(1),
                     width: botWidth, height: badgeHeight
                 )
                 headerX += botWidth
@@ -473,9 +481,13 @@ extension NativeTimelineRowLayout {
         ) {
             let maxHeaderX = contentX + ordinaryContentWidth
             headerX += InterfaceScale.metric(7)
+            let silentBadgeSide: CGFloat? = message.flags.contains(.suppressNotifications)
+                ? NativeTimelineSilentBadge.side(for: metrics.timestampFont) : nil
+            // A shortened timestamp leaves the badge its room in a narrow header.
+            let badgeReserve = silentBadgeSide.map { $0 + NativeTimelineSilentBadge.spacing } ?? 0
             let timestampText = NativeIdentityTextPresentation(
                 timestamp, font: metrics.timestampFont,
-                maximumWidth: max(0, maxHeaderX - headerX)
+                maximumWidth: max(0, maxHeaderX - headerX - badgeReserve)
             )
             result.timestampText = timestampText
             result.timestampFrame = CGRect(
@@ -483,6 +495,15 @@ extension NativeTimelineRowLayout {
                 width: timestampText.width, height: headerHeight
             )
             headerX += timestampText.width
+            if let side = silentBadgeSide {
+                headerX += NativeTimelineSilentBadge.spacing
+                // Centred on the timestamp's capitals, as Discord centres its badges.
+                result.silentBadgeFrame = CGRect(
+                    x: headerX, y: (baselineY - (metrics.timestampFont.capHeight + side) / 2).rounded(),
+                    width: side, height: side
+                )
+                headerX += side
+            }
             if message.editedTimestamp != nil {
                 headerX += InterfaceScale.metric(7)
                 let editedText = NativeIdentityTextPresentation(
@@ -538,10 +559,10 @@ extension NativeTimelineRowLayout {
                     x: contentX,
                     y: verticalOffset,
                     width: contentWidth,
-                    height: InterfaceScale.metric(18)
+                    height: MessageRowLayoutMetrics.forwardedLineHeight - InterfaceScale.metric(4)
                 )
                 forwardedBarStartY = verticalOffset
-                verticalOffset += InterfaceScale.metric(22)
+                verticalOffset += MessageRowLayoutMetrics.forwardedLineHeight
             } else {
                 forwardedBarStartY = nil
             }
@@ -942,7 +963,7 @@ extension NativeTimelineRowLayout {
                     time: .shortened
                 )
                 let sourceText = "\(sourceLabel)  •  \(dateText)  ›"
-                let sourceFont = NSFont.interfaceSystemFont(
+                let sourceFont = NSFont.messageSystemFont(
                     ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
                     weight: .medium
                 )
@@ -958,7 +979,7 @@ extension NativeTimelineRowLayout {
                         x: contentX,
                         y: verticalOffset,
                         width: sourceWidth,
-                        height: InterfaceScale.metric(22)
+                        height: MessageRowLayoutMetrics.forwardedLineHeight
                     ),
                     label: sourceLabel,
                     iconURL: sameGuild ? nil : sourceGuild?.iconURL,
@@ -967,7 +988,7 @@ extension NativeTimelineRowLayout {
                     messageID: reference.messageID,
                     timestamp: snapshot.timestamp
                 )
-                verticalOffset += InterfaceScale.metric(22)
+                verticalOffset += MessageRowLayoutMetrics.forwardedLineHeight
                 hasRichContent = true
             }
             if let forwardedBarStartY {

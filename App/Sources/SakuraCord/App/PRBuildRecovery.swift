@@ -99,8 +99,8 @@ final class PRBuildRecovery {
             To restore your usual installation, quit SakuraCord and use Finder to copy this app
             back to the location of your installed SakuraCord.app, replacing the experimental app.
 
-            Pull request builds keep their settings and drafts in a separate profile.
-            This recovery app uses your original settings and drafts.
+            Pull request builds share your settings but keep drafts separate.
+            This recovery app uses your original drafts and keeps any settings changed in the pull request build.
             Keep this folder until you have successfully returned to Regular or Nightly.
             """
             try instructions.write(to: folder.appending(path: "Recovery Instructions.txt"), atomically: true, encoding: .utf8)

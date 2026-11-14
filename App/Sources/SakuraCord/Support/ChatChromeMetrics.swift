@@ -3,12 +3,21 @@ import SwiftUI
 nonisolated enum ChatChromeMetrics {
     static let sidebarSpring = Spring.smooth(duration: 0.24)
     static var controlHeight: CGFloat { InterfaceScale.metric(48) }
-    static var composerControlHeight: CGFloat { InterfaceScale.metric(36) }
+    /// The input bar grows with the message text it holds and stays a capsule.
+    static var composerControlHeight: CGFloat { composerMetric(36) }
     static var composerCornerRadius: CGFloat { composerControlHeight / 2 }
-    static var composerTextVerticalInset: CGFloat { InterfaceScale.metric(9) }
-    static var composerAccessoryButtonSize: CGFloat { InterfaceScale.metric(32) }
+    static var composerTextVerticalInset: CGFloat { composerMetric(9) }
+    static var composerTextLeadingInset: CGFloat { composerMetric(11) }
+    /// Modal text fields hold interface text, so they keep the input bar's
+    /// default radius at every message font size.
+    static var modalFieldCornerRadius: CGFloat { InterfaceScale.metric(18) }
+    /// Buttons beside and inside the input bar shrink with a smaller font but
+    /// never grow past the interface size, so a larger font doesn't take
+    /// typing width from narrow panes.
+    static var composerButtonSize: CGFloat { composerButtonMetric(36) }
+    static var composerAccessoryButtonSize: CGFloat { composerButtonMetric(32) }
     static var composerAccessoryEdgeInset: CGFloat {
-        (composerControlHeight - composerAccessoryButtonSize) / 2
+        (composerButtonSize - composerAccessoryButtonSize) / 2
     }
     static var composerSegmentSpacing: CGFloat { InterfaceScale.metric(8) }
     static var controlCornerRadius: CGFloat { InterfaceScale.metric(16) }
@@ -28,6 +37,16 @@ nonisolated enum ChatChromeMetrics {
             width: InterfaceScale.windowLength(860, axis: .horizontal),
             height: InterfaceScale.windowLength(560, axis: .vertical)
         )
+    }
+
+    /// Kept on the half-point grid, like `InterfaceScale.metric`, so the bar's
+    /// edges stay crisp at every font size.
+    private static func composerMetric(_ value: CGFloat) -> CGFloat {
+        (InterfaceScale.metric(InterfaceTypographyMetrics.messageLength(value)) * 2).rounded() / 2
+    }
+
+    private static func composerButtonMetric(_ value: CGFloat) -> CGFloat {
+        min(InterfaceScale.metric(value), composerMetric(value))
     }
 
     static func sidebarTitleTopOffset(height: CGFloat) -> CGFloat {

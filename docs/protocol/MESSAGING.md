@@ -46,6 +46,19 @@ outside this queue; forwarding keeps the single-attempt mutation budget.
 A reply includes reference type 0, message ID and channel ID. To disable the reply
 ping, include `allowed_mentions` with normal users/roles/everyone parsing and
 `replied_user:false`; do not suppress unrelated content mentions accidentally.
+A message that opens with `@silent` (case-sensitive, then whitespace or the end,
+after the composer trims its text) is sent without the prefix, the remainder
+trimmed, and with `flags: 4096` (`SUPPRESS_NOTIFICATIONS`); a bare `@silent`
+clears the composer and sends nothing. Discord's send action (web module 677413,
+build 671535, captured 13 November 2026) reads it for every send entry point,
+forum posts (which omit `flags` when zero) and a forward's accompanying message,
+whose flag also goes on the forward. Edits and application-command interactions do not read it.
+`SilentMessagePrefix` is that single parser. Recipients keep unread state,
+mention counts and badges but get no desktop notification or sound. Such a
+message starts a new group after an ordinary one, and a mention after it does
+too, so its header can show the bell badge whose tooltip reads "This is a
+@silent message."
+
 Current permissions, membership gates and slowmode are checked before consuming
 a draft or dispatching any send entry point. REST/Gateway confirmations reconcile
 the same optimistic message rather than creating duplicates.
@@ -206,6 +219,16 @@ If the target is absent from the working set, read `around={message}&limit=1`
 before deciding whether PUT/DELETE is needed. Missing/failed reads prevent the
 mutation; an already satisfied intent sends nothing.
 
+Like the official client, whose reaction path unarchives the thread before its
+PUT (web build `634304`, inspected 10 October 2026), a needed PUT or DELETE in
+a thread the app knows is archived first sends the
+[thread unarchive](#thread-actions-and-browser) PATCH `{"archived":false}`, the
+same provider mutation as Reopen and Mark Unread; the thread stays open even if
+the reaction then fails. Removal follows the same path; no first-party removal
+in an archived thread has been observed. Adding and removing reactions there
+requires the [Reopen permission](#sidebar-threads): Manage Threads for a locked
+thread, otherwise the send permissions.
+
 Reaction changes invalidate the affected emoji's saved previews and pending reads
 in both the model and provider, preserving other emojis' loads and previews.
 Clearing all reactions invalidates the whole message. A response for an affected
@@ -293,6 +316,57 @@ An explicit results read can repeat once if overlapping votes make its unversion
 tally ambiguous; a second overlap reports failure rather than starting polling.
 Poll rejections follow the shared operation-scoped error policy; they do not
 stop unrelated REST or Gateway traffic.
+
+## Scheduled messages
+
+Discord holds a scheduled message and posts it as the account at its time
+(official web build 670026, observed 11 November 2026). The composer's +
+menu offers it wherever the account may send: a DM, a group DM, or a channel
+or thread with `SEND_MESSAGES`. Like the official client, the picked time is
+kept per conversation until it is sent or cleared (× or Escape); sending the
+draft stores any staged files exactly as a send does, then makes one
+`POST /users/@me/scheduled-messages` with `channel_id`, `content`,
+`scheduled_timestamp` (ISO 8601 with milliseconds, UTC), `flags` and
+`attachments` (always present, possibly empty), plus `message_reference`
+(`guild_id` when in a server, `channel_id`, `message_id`; no `type`) and the
+quiet-reply `allowed_mentions` for a reply. A GIF or sticker picked while a
+time is set is scheduled the same way (the GIF's URL as content; a sticker as
+`sticker_ids`, or as its image file when it would be sent as one), leaving the
+typed draft in place. There is no nonce and no
+`X-Context-Properties` header, and nothing enters the timeline. The composer
+clears only when Discord accepts it, so a refusal loses nothing.
+
+Discord's server, for both create and Edit Schedule Time, refuses a time in
+the past (`400` code `640001`), more than eight days away (`640002`) or less
+than ten minutes away (`640004`), checking the time before the account's limit
+(observed 13 November 2026). It accepts any minute; the official dialog offers
+today through the eighth day ahead and 15-minute steps, defaulting to the next
+whole hour, and SakuraCord's dialog does the same. A reschedule also stays
+within 30 days of the message's snowflake time (official client; not
+reproducible live). Failures show Discord's reason after the action's title, as
+the official client does. Full Nitro (premium type 2) may hold 25 scheduled
+messages at once and every other plan one. The client does not check the count
+first: Discord answers an extra create with `400` code `640003`, which shows
+the limit alert (with Nitro's higher limit where it would help) and a way to
+manage scheduled messages.
+
+The Inbox's Scheduled tab (tab `7` in the synced Inbox settings) reads
+`GET /users/@me/scheduled-messages` each time it is shown; no Gateway event
+reports scheduled messages, so another client's changes appear on the next
+read. Rows list the latest send time first; a sticker appears only in the
+object's `message_preview.sticker_items`. Edit Schedule Time sends
+`PATCH …/{id}` with only `scheduled_timestamp`; Edit Message sends only
+`content` and the message's existing `flags`, and saving it without text
+cancels the message instead, even one with files; Send Now is a bodiless
+`POST …/{id}/send` whose message arrives through the ordinary
+`MESSAGE_CREATE`, usually before the response; Cancel is
+`DELETE …/{id}` (`204`). Sent and cancelled rows stay, marked pending, until
+Discord confirms. A due message is posted within seconds as an ordinary
+`MESSAGE_CREATE` without a nonce. A message whose channel was deleted stays
+listed, still state `0` until its time and then `4` (channel not found), until
+it is cancelled; like the official list, its row shows only that its channel
+was not found and Cancel. Every mutation is single-attempt. See
+[ScheduledMessageContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ScheduledMessageContractTests.swift).
 
 ## Forums, threads and commands
 
@@ -789,16 +863,43 @@ Send posts a stored file by its `uploaded_filename` without uploading it again,
 with the spoiler and filename chosen by then. Files still uploading show their
 progress cards and the message posts once they are stored. Removing a staged file
 stops its PUT, or deletes the stored file with one `DELETE
-/attachments/{uploaded_filename}` attempt. The official client keeps a
-channel's staged files across conversation switches; SakuraCord clears the
-composer on a switch and so deletes them. A thread still being created stores
+/attachments/{uploaded_filename}` attempt. Like the official client, a
+conversation keeps its staged files, and their uploads keep running, while the
+user is elsewhere in the session. They are deleted the same way when that
+conversation, its parent channel or its server is deleted, hidden or left;
+signing out or switching accounts drops them. A thread still being created stores
 its files at Send. With metadata removal off, files also wait for Send, since
 turning it on before then must still strip them.
 
-Files not stored early share one reservation at Send, then every storage PUT
-starts at once. Each file reports its own progress and can be stopped alone:
-its PUT is cancelled and the message is posted without it. Stopping every file
-posts nothing. The official client resumes a failed PUT by itself every few
+Files not stored early are reserved and stored at Send, all at once.
+
+Every upload path (messages, replies, threads, forum posts, interactions and
+voice messages) uses one request shape, matched field by field against the
+official client (web build 670026, observed 11 November 2026):
+
+- **Reservation.** One `POST /channels/{id}/attachments` per file, with
+  `files: [{filename, file_size, id, is_clip: false, original_content_type}]`.
+  `id` is only echoed back: Discord uses a session counter, SakuraCord the
+  file's index. `filename` is the name at reservation; a later rename only
+  changes the message.
+- **Storage.** `PUT` to the returned URL with `Content-Type:
+  application/octet-stream` and no Discord credentials.
+- **Attachment entry.** `id` is the file's index in the message, then
+  `filename`, `uploaded_filename` and `original_content_type`, plus
+  `description` when alt text is set and `is_spoiler: true` for a spoiler. A
+  spoiler keeps its filename; Discord adds no `SPOILER_` prefix.
+- **Content type.** `original_content_type` is Chromium's `File.type` for the
+  attached file's extension: Chromium's built-in table (for example `wav` →
+  `audio/wav`, `xml` → `text/xml`, `mkv` → `video/matroska`) wins over the
+  platform's UTType, and an unknown type is sent as `""`. It does not follow a
+  rename. The official client can convert HEIC to JPEG first, adding
+  `X-Discord-Original-MD5` to the reservation; it uploaded HEIC unchanged in
+  this observation, as SakuraCord does.
+
+Each file reports its own progress and can be stopped alone: its pending
+reservation and its PUT are cancelled, so the message is posted without it
+and never waits for it, as with the official client's cancel. Stopping every
+file posts nothing. The official client resumes a failed PUT by itself every few
 seconds; SakuraCord does not replay storage PUTs. A file whose early upload
 failed is stored again when the user sends. A failed send keeps its files stored
 on attach: the explicit Retry posts them again as they are, like the official
@@ -825,9 +926,10 @@ code, not in the transport-wide baseline.
 
 ## Voice messages
 
-Discord's desktop client has no recorder. The send contract was observed on
-9 October 2026 (web build `web.ae482d0492df0fb9.js`) through Equicord's
-VoiceMessages plugin, which reuses Discord's uploader, and cross-checked against
+The send contract was first observed on 9 October 2026 (web build
+`web.ae482d0492df0fb9.js`) through Equicord's VoiceMessages plugin, and
+re-observed on 11 November 2026 from the desktop client's own recorder
+(**+ › Record Voice Message**, web build 670026). It is cross-checked against
 [Discord's message documentation](https://docs.discord.com/developers/resources/message#voice-messages).
 
 - **Recording.** Mono 48 kHz Ogg Opus. Apple frameworks encode Opus but write it
@@ -841,15 +943,16 @@ VoiceMessages plugin, which reuses Discord's uploader, and cross-checked against
   the plugin's eased peak normalization, base64-encoded as raw bytes. Follow
   upstream Vencord's contiguous windows; the installed Equicord copy contains an
   indexing bug.
-- **Upload.** The reservation names `voice-message.ogg` and adds
-  `original_content_type: "audio/ogg; codecs=opus"`. Storage receives the raw
-  bytes as `application/octet-stream`. The message POST sets `flags: 8192` and
-  empty `content`, plus one attachment with `filename`, `uploaded_filename`,
-  `duration_secs` and `waveform`. The attachment's `content_type` is omitted.
+- **Upload.** The shared [attachment](#attachments) path, with the recorder's
+  numbered filename (`0recording.ogg`, `1recording.ogg`, … per session) and
+  `original_content_type: "audio/ogg"`. The message POST sets `flags: 8192`,
+  empty `content` and `X-Context-Properties` `{"location":"voice_message"}`;
+  its one attachment entry adds `duration_secs`, in whole milliseconds as the
+  recorder reports it, and `waveform`.
 - **Rules.** Guild channels require Send Voice Messages (`1 << 46`). A voice
   message carries no text, stickers or poll, and Discord does not allow it to be
   edited.
-- **Delivery.** Unlike the plugin's direct POST, SakuraCord sends through the
+- **Delivery.** Like the desktop recorder, SakuraCord sends through the
   ordinary [outbox](#sends-and-history). It keeps the nonce, idempotency field,
   send budget and reply reference.
 - **Receipt.** `MESSAGE_CREATE` and history carry `flags: 8192`, plus an

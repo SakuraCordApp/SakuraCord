@@ -335,6 +335,12 @@ enum DiscordSettingsProto {
         return data
     }
 
+    static func protoFixed64Field(_ field: Int, _ value: UInt64) -> Data {
+        var data = protoVarint(UInt64(field << 3 | 1))
+        for offset in 0 ..< 8 { data.append(UInt8(truncatingIfNeeded: value >> UInt64(offset * 8))) }
+        return data
+    }
+
     static func protoVarintField(_ field: Int, _ value: UInt64) -> Data {
         var data = protoVarint(UInt64(field << 3))
         data.append(protoVarint(value))

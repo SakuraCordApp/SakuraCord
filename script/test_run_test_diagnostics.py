@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -47,27 +48,40 @@ class TestDiagnosticsTests(unittest.TestCase):
     def test_timeout_samples_and_kills_host_after_output_closes(self):
         # EOF must not disable the deadline while the test host is still alive.
         source = """import os, signal, time
-print(os.getpid(), flush=True)
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 os.close(1)
 os.close(2)
 time.sleep(60)
 """
+        # No wall-clock limit: a broken deadline still ends with the host's
+        # sleep, and sampling on a loaded machine has no fixed duration.
         result = subprocess.run(self.command(source, timeout=0.5),
-                                capture_output=True, text=True, timeout=25)
+                                capture_output=True, text=True)
         self.assertEqual(result.returncode, 124, result.stdout)
         directory = next(self.root.iterdir())
-        pid = int((directory / "console.log").read_text().strip())
+        # The host may not have started Python before the deadline.
+        pid = int(re.search(r"\(PID (\d+),", result.stdout)[1])
         self.assert_stopped(pid)
         self.assertIn(str(pid), (directory / "processes.txt").read_text())
         self.assertTrue(list(directory.glob("*.sample.txt")))
 
     def test_cancellation_kills_child_even_after_launcher_exits(self):
-        ready = self.root / "child-pid"
+        # SwiftPM starts its test helper in its own process group; the helper
+        # can outlive the launcher.
+        for own_group in (False, True):
+            for launcher_waits in (False, True):
+                with self.subTest(own_group=own_group, launcher_waits=launcher_waits):
+                    self.assert_cancellation_kills_child(own_group, launcher_waits)
+
+    def assert_cancellation_kills_child(self, own_group, launcher_waits):
+        ready = self.root / f"child-pid-{own_group}-{launcher_waits}"
         child = ("import os, signal, time; "
                  "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
                  f"open({str(ready)!r}, 'w').write(str(os.getpid())); time.sleep(60)")
-        source = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {child!r}])"
+        group = "os.setpgrp" if own_group else "None"
+        wait = "; time.sleep(60)" if launcher_waits else ""
+        source = ("import os, subprocess, sys, time; "
+                  f"subprocess.Popen([sys.executable, '-c', {child!r}], preexec_fn={group}){wait}")
         with subprocess.Popen(self.command(source), stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True) as process:
             try:

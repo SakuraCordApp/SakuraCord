@@ -152,7 +152,7 @@ extension NativeTimelineCanvasView {
         let animates = !frame.isNull && !frame.isEmpty
             && !isHiddenOrHasHiddenAncestor
             && window?.occlusionState.contains(.visible) == true
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            && AppMotionPolicy.animatesUncategorized
         effectiveAppearance.performAsCurrentDrawingAppearance {
             historySkeletonShimmer.update(
                 frame: frame.isNull ? .zero : frame,
@@ -1093,6 +1093,8 @@ extension NativeTimelineCanvasView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        NativeTimelineRowPainter.drawsEmphasizedSelection =
+            window?.isKeyWindow == true && window?.firstResponder === self
         AppPerformanceSignposts.measureSync("TimelineCanvasDraw") {
             drawTimeline(in: dirtyRect)
         }

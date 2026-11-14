@@ -30,6 +30,7 @@ final class NativeMemberListCoordinator: NSObject {
     var lastViewportRange: ClosedRange<Int>?
     var pendingViewportRange: ClosedRange<Int>?
     var viewportIdentity: ChannelID?
+    private var animatesShimmer: Bool?
     var contentIdentity: String?
     var contentPreparations: [String: NativeMemberListCanvasView.PreparationSnapshot] = [:]
     var performanceTicker: NativeTimelineDisplayLinkTicker?
@@ -50,7 +51,7 @@ final class NativeMemberListCoordinator: NSObject {
         self.parent = parent
     }
 
-    func makeScrollView() -> NSScrollView {
+    func makeScrollView() -> NativeMemberListScrollView {
         let canvas = NativeMemberListCanvasView(frame: .zero)
         canvas.selectMember = { [weak self] member in
             guard let self else { return }
@@ -138,6 +139,13 @@ final class NativeMemberListCoordinator: NSObject {
         }
         self.parent = parent
         guard let canvas else { return }
+        // The loading shimmer starts or stops with the motion settings, not
+        // only when members change.
+        let animatesShimmer = !parent.reduceMotion && !parent.disablesAllAnimations
+        if self.animatesShimmer != animatesShimmer {
+            self.animatesShimmer = animatesShimmer
+            canvas.reconcilePlaceholderShimmer()
+        }
         canvas.selectMember = { [weak self] member in
             guard let self else { return }
             let original = self.parent.sections.lazy.flatMap(\.members).first { $0.id == member.id } ?? member

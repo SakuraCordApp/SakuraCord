@@ -179,7 +179,7 @@ private struct ProfileQuickMessageSendButtonStyle: ButtonStyle {
         // Both states keep the same layers and only animate their opacity and
         // color, so enabling the button fades instead of swapping styles.
         configuration.label
-            .foregroundStyle(isEnabled ? Color.white : Color(nsColor: .tertiaryLabelColor))
+            .foregroundStyle(isEnabled ? SakuraCordAccentColor.labelOnFill : Color(nsColor: .tertiaryLabelColor))
             .frame(width: ProfileQuickMessageMetrics.buttonSize, height: ProfileQuickMessageMetrics.buttonSize)
             .background {
                 ZStack {

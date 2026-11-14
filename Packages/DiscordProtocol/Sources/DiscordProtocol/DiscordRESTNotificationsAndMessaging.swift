@@ -2,14 +2,25 @@ import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
-    public func updateDirectMessagePin(
+    public func updateChannelPin(
+        guildID: GuildID?,
         channelID: ChannelID,
         flags: UInt64
     ) async throws {
-        try await updateChannelNotificationSettings(
-            guildID: nil,
-            channelID: channelID,
-            override: ["flags": .number(Double(flags))]
+        let override: [String: JSONValue] = ["flags": .number(Double(flags))]
+        guard let guildID else {
+            try await updateChannelNotificationSettings(
+                guildID: nil,
+                channelID: channelID,
+                override: override
+            )
+            return
+        }
+        // The first-party channel pin saves a server override through the bulk
+        // route, unlike its per-guild route for DMs.
+        try await updateGuildNotificationSettings(
+            guildID: guildID,
+            settings: ["channel_overrides": .object([channelID.description: .object(override)])]
         )
     }
 
@@ -228,7 +239,7 @@ extension DiscordRESTProvider {
             "content": .string(""),
             "nonce": .string(draft.nonce),
             "tts": .bool(false),
-            "flags": .number(0),
+            "flags": .number(draft.suppressesNotifications ? Double(MessageFlags.suppressNotifications.rawValue) : 0),
             "mobile_network_type": .string("unknown"),
             "message_reference": .object(reference),
         ]
@@ -273,20 +284,28 @@ extension DiscordRESTProvider {
         do {
             message = try await task.value
         } catch {
-            // Discord rejects a stored file it no longer has (code 50146 once it
-            // expires), so after a rejected post Retry stores the files again.
-            if case let ChatProviderError.transport(status, _) = error, (400 ..< 500).contains(status), status != 429 {
-                for attachment in draft.attachments {
-                    Task { await discardPreuploadedAttachment(attachment.id) }
-                }
-            }
+            settlePreuploads(of: draft, after: error)
             throw error
         }
-        // The message now holds its files. Any other failed send keeps them,
-        // so Retry reuses them, as the official resend does, and discarding
-        // the message deletes them.
-        for attachment in draft.attachments { attachmentPreuploads[attachment.id] = nil }
+        settlePreuploads(of: draft)
         return message
+    }
+
+    /// Once Discord answers a post, the message holds its stored files. Discord
+    /// rejects a stored file it no longer has (code 50146 once it expires), so
+    /// after a rejected post Retry stores the files again. Any other failure
+    /// keeps them, so Retry reuses them, as the official resend does, and
+    /// discarding the message deletes them.
+    func settlePreuploads(of draft: SendMessageDraft, after error: (any Error)? = nil) {
+        guard let error else {
+            for attachment in draft.attachments { attachmentPreuploads[attachment.id] = nil }
+            return
+        }
+        if case let ChatProviderError.transport(status, _) = error, (400 ..< 500).contains(status), status != 429 {
+            for attachment in draft.attachments {
+                Task { await discardPreuploadedAttachment(attachment.id) }
+            }
+        }
     }
 
     func uploadAttachments(
@@ -318,19 +337,18 @@ extension DiscordRESTProvider {
         _ attachment: ForumPostAttachment
     ) -> AttachmentUploadFile {
         let chosenName = attachment.filename.trimmingCharacters(in: .whitespacesAndNewlines)
-        let original = chosenName.isEmpty ? attachment.url.lastPathComponent : chosenName
-        let name =
-            attachment.isSpoiler && !original.hasPrefix("SPOILER_")
-                ? "SPOILER_\(original)" : original
         let description = attachment.description.trimmingCharacters(in: .whitespacesAndNewlines)
         return AttachmentUploadFile(
             url: attachment.url,
-            name: name,
+            name: chosenName.isEmpty ? attachment.url.lastPathComponent : chosenName,
             description: description.isEmpty ? nil : description,
+            isSpoiler: attachment.isSpoiler,
             id: attachment.id
         )
     }
 
+    /// The first-party attachment entry, shared by messages, forum posts and
+    /// interactions. A spoiler keeps its filename and is flagged instead.
     nonisolated static func uploadedAttachmentPayload(
         id: Int,
         file: AttachmentUploadFile,
@@ -340,9 +358,13 @@ extension DiscordRESTProvider {
             "id": .string(String(id)),
             "filename": .string(file.name),
             "uploaded_filename": .string(uploadFilename),
+            "original_content_type": .string(file.contentType),
         ]
         if let description = file.description {
             payload["description"] = .string(description)
+        }
+        if file.isSpoiler {
+            payload["is_spoiler"] = .bool(true)
         }
         return .object(payload)
     }
@@ -396,7 +418,7 @@ extension DiscordRESTProvider {
         return uploaded
     }
 
-    /// Reserves storage for the files together, then sends every file at once,
+    /// Reserves and sends every file at once, each with its own reservation,
     /// like the first-party uploader. Returns each file's stored name, or nil
     /// for a file the user stopped.
     func storeAttachmentFiles(
@@ -414,16 +436,13 @@ extension DiscordRESTProvider {
             try Task.checkCancellation()
             guard profileEditingGeneration == generation, currentUser?.id == userID else { throw ChatProviderError.unauthenticated }
         }
-        let files = zip(files, prepared).map {
-            AttachmentUploadFile(url: $1.url, name: $0.name, description: $0.description, id: $0.id)
+        let files = zip(files, prepared).map { file, prepared in
+            var file = file
+            file.url = prepared.url
+            return file
         }
         let descriptors = try attachmentReservationDescriptors(for: files)
-        let reservation = try await reserveAttachmentSlots(
-            descriptors: descriptors,
-            channelID: channelID,
-            fileCount: files.count,
-            progress: progress
-        )
+        progress(.reserving(files: files.count))
         let delegates = files.map { file in
             let delegate = AttachmentUploadTaskDelegate { sent, expected in
                 progress(.uploading(fileID: file.id, fileName: file.name, completed: sent, total: expected))
@@ -436,15 +455,16 @@ extension DiscordRESTProvider {
         }
         defer { for id in files.compactMap(\.id) { attachmentUploadDelegates[id] = nil } }
         return try await withThrowingTaskGroup(of: (Int, String?).self) { group in
-            for (index, (file, slot)) in zip(files, reservation.attachments).enumerated() {
+            for (index, (file, descriptor)) in zip(files, descriptors).enumerated() {
                 let delegate = delegates[index]
                 group.addTask {
                     do {
+                        let slot = try await delegate.reserve { try await self.reserveAttachmentSlot(descriptor, channelID: channelID) }
                         try await self.uploadAttachmentFile(file, to: slot, delegate: delegate, progress: progress)
+                        return (index, slot.uploadFilename)
                     } catch where delegate.isCancelled {
                         return (index, nil)
                     }
-                    return (index, slot.uploadFilename)
                 }
             }
             var names = [String?](repeating: nil, count: files.count)
@@ -473,8 +493,11 @@ extension DiscordRESTProvider {
 
     /// Drops a staged file's early upload: an unfinished transfer stops and a
     /// stored file is deleted, as the first-party composer does on removal.
+    /// A file a message being posted refers to is kept; the post settles it.
     public func discardPreuploadedAttachment(_ attachmentID: UUID) async {
-        guard let preupload = attachmentPreuploads.removeValue(forKey: attachmentID) else { return }
+        guard !postingAttachmentUploads.contains(attachmentID),
+              let preupload = attachmentPreuploads.removeValue(forKey: attachmentID)
+        else { return }
         attachmentUploadDelegates[attachmentID]?.cancel()
         preupload.cancel()
         guard let uploadFilename = try? await preupload.value,
@@ -528,29 +551,23 @@ extension DiscordRESTProvider {
                     "file_size": .number(Double(size)),
                     "id": .string(String(index)),
                     "is_clip": .bool(false),
+                    "original_content_type": .string(file.contentType),
                 ])
             )
         }
         return descriptors
     }
 
-    func reserveAttachmentSlots(
-        descriptors: [JSONValue],
-        channelID: ChannelID,
-        fileCount: Int,
-        progress: @escaping @Sendable (MessageSendProgress) -> Void
-    ) async throws -> AttachmentReservationDTO {
-        progress(.reserving(files: fileCount))
+    func reserveAttachmentSlot(_ descriptor: JSONValue, channelID: ChannelID) async throws -> AttachmentSlotDTO {
         let reservation: AttachmentReservationDTO = try await request(
             "/channels/\(channelID)/attachments",
             method: "POST",
-            body: ["files": .array(descriptors)]
+            body: ["files": .array([descriptor])]
         )
-        guard reservation.attachments.count == fileCount else {
-            throw ChatProviderError.invalidRequest(
-                "Discord did not reserve every selected attachment.")
+        guard let slot = reservation.attachments.first else {
+            throw ChatProviderError.invalidRequest("Discord did not reserve the selected attachment.")
         }
-        return reservation
+        return slot
     }
 
     func uploadAttachmentFile(

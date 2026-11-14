@@ -60,7 +60,6 @@ struct SoftwareUpdatesSettingsPage: View {
                             set: { updateController.setAutomaticallyChecksForUpdates($0) }
                         )
                     )
-                    .tint(SakuraCordAccentColor.color)
                     .disabled(!updateController.isEnabled)
                     .settingsControlAnchor(.updateAutomaticChecks, state: state)
 
@@ -71,7 +70,6 @@ struct SoftwareUpdatesSettingsPage: View {
                             set: { updateController.setAutomaticallyDownloadsUpdates($0) }
                         )
                     )
-                    .tint(SakuraCordAccentColor.color)
                     .disabled(
                         !updateController.isEnabled
                             || !updateController.allowsAutomaticUpdates
@@ -146,7 +144,7 @@ private struct CurrentPullRequestBuildRow: View {
             HStack(spacing: InterfaceScale.metric(12)) {
                 Image(systemName: "arrow.triangle.pull")
                     .font(.interface(.body).weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                     .frame(width: InterfaceScale.metric(36), height: InterfaceScale.metric(36))
                     .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Circle())
                     .accessibilityHidden(true)

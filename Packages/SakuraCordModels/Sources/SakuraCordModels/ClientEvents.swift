@@ -13,6 +13,13 @@ public enum ClientEvent: Equatable, Sendable {
     case channelPinsInvalidated(channelID: ChannelID)
     case inboxMentionDismissed(MessageID)
     case inboxSettingsChanged(InboxSettings)
+    /// `isConfirmed` is false while an edit awaits Discord's answer.
+    case favoritesChanged(FavoritesSettings, isConfirmed: Bool)
+    case favoritesSaveFailed(reason: String)
+    /// Whether the account dismissed the Favorites server's Suggested Channels.
+    case favoritesSuggestionsDismissed(Bool)
+    /// The current user just joined a thread, or left one; Favorites follows both.
+    case currentUserThreadMembershipChanged(threadID: ChannelID, isJoined: Bool)
     case inboxScheduledEventsChanged(InboxScheduledEvents)
     case readStateSnapshot([ChannelReadState], version: Int? = nil)
     case readStateChanged(ChannelReadState)

@@ -275,20 +275,21 @@ enum NativeTimelineVoiceMessagePainter {
 
         init(style: NativeTimelineVoiceMessageRegion.Style) {
             let accent = NSColor.sakuraCordAccentColor
+            let label = NSColor.sakuraCordLabelOnAccentColor
             switch style {
             case .outgoingBubble:
-                buttonFill = .white
+                buttonFill = label
                 glyph = accent
-                played = .white
-                unplayed = NSColor.white.withAlphaComponent(0.42)
-                text = NSColor.white.withAlphaComponent(0.88)
-                chipFill = NSColor.white.withAlphaComponent(0.2)
-                chipHoverFill = NSColor.white.withAlphaComponent(0.32)
-                chipText = .white
-                symbol = .white
+                played = label
+                unplayed = label.withAlphaComponent(0.42)
+                text = label.withAlphaComponent(0.88)
+                chipFill = label.withAlphaComponent(0.2)
+                chipHoverFill = label.withAlphaComponent(0.32)
+                chipText = label
+                symbol = label
             case .plain, .incomingBubble, .audioFile:
                 buttonFill = accent
-                glyph = .white
+                glyph = label
                 played = accent
                 unplayed = NSColor.labelColor.withAlphaComponent(0.3)
                 text = .secondaryLabelColor
@@ -657,7 +658,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
     /// The canvas's cursor rects stop at this view, so an audio file's
     /// controls point here too, at the frames their clicks land on.
     override func resetCursorRects() {
-        guard region.style == .audioFile else { return }
+        guard region.style == .audioFile, WindowModalCoordinator.allowsInput(for: self) else { return }
         let origin = Self.frame(of: region).origin
         for (_, frame) in NativeTimelineCanvasView.controlHitFrames(of: region) where !frame.isNull && !frame.isEmpty {
             addCursorRect(frame.offsetBy(dx: -origin.x, dy: -origin.y), cursor: .pointingHand)

@@ -79,11 +79,11 @@ extension AppModel {
             return
         }
         forwardDestinationHistory = Array(
-            (PRBuildProfile.defaults.stringArray(forKey: historyKey) ?? [])
+            (UserDefaults.standard.stringArray(forKey: historyKey) ?? [])
                 .compactMap(ChannelID.init)
                 .prefix(8)
         )
-        if let data = PRBuildProfile.defaults.data(forKey: discordFrecencyUsageDeltasDefaultsKey),
+        if let data = UserDefaults.standard.data(forKey: discordFrecencyUsageDeltasDefaultsKey),
            let value = try? JSONDecoder().decode(
                [String: DiscordFrecencyUsage].self,
                from: data
@@ -107,7 +107,7 @@ extension AppModel {
             visiting: channelID
         )
         guard launchMode == .normal else { return }
-        PRBuildProfile.defaults.set(
+        UserDefaults.standard.set(
             forwardDestinationHistory.map(\.description),
             forKey: forwardDestinationHistoryDefaultsKey
         )
@@ -202,7 +202,7 @@ extension AppModel {
         delta.recentUses = Array(delta.recentUses.suffix(10))
         persistedDiscordFrecencyUsageDeltas[key] = delta
         if let data = try? JSONEncoder().encode(persistedDiscordFrecencyUsageDeltas) {
-            PRBuildProfile.defaults.set(data, forKey: discordFrecencyUsageDeltasDefaultsKey)
+            UserDefaults.standard.set(data, forKey: discordFrecencyUsageDeltasDefaultsKey)
         }
     }
 
@@ -408,7 +408,8 @@ extension AppModel {
                 group.addTask {
                     await self.sendForward(
                         message, to: destinationID,
-                        context: contextDestinationIDs.contains(destinationID) ? context : "",
+                        context: context,
+                        sendsContext: contextDestinationIDs.contains(destinationID),
                         session: session
                     )
                 }
@@ -423,7 +424,7 @@ extension AppModel {
 
     private func sendForward(
         _ message: Message, to destinationID: ChannelID,
-        context: String, session: AppModelAccountSession
+        context: String, sendsContext: Bool, session: AppModelAccountSession
     ) async -> String? {
         guard isCurrentAccountSession(session) else { return nil }
         guard allowSlowmodeSubmission(in: destinationID) else {
@@ -433,21 +434,26 @@ extension AppModel {
         defer {
             if isCurrentAccountSession(session) { composer.slowmode.end(in: destinationID) }
         }
+        // Discord reads `@silent` from the accompanying message and silences
+        // the forward with it, even where slowmode holds that message back.
+        // The message's own send reads the prefix again, as Discord's does,
+        // and sends nothing if no text is left.
+        let (isSilent, comment) = SilentMessagePrefix.split(context)
+        let accompanying = SendMessageDraft(channelID: destinationID, content: comment, suppressesNotifications: isSilent)
         do {
             let confirmed = try await session.provider.forward(ForwardMessageDraft(
                 sourceMessageID: message.id,
                 sourceChannelID: message.channelID,
                 sourceGuildID: message.guildID,
-                destinationChannelID: destinationID
+                destinationChannelID: destinationID,
+                suppressesNotifications: isSilent
             ))
             guard isCurrentAccountSession(session) else { return nil }
             confirmSlowmodeMessage(confirmed)
-            if !context.isEmpty, shouldSendForwardContext(to: destinationID) {
-                let confirmedContext = try await session.provider.send(SendMessageDraft(
-                    channelID: destinationID, content: context
-                ))
+            if sendsContext, !accompanying.isEmpty, shouldSendForwardContext(to: destinationID) {
+                let confirmedContext = try await session.provider.send(accompanying)
                 guard isCurrentAccountSession(session) else { return nil }
-                recordMessageEmojiUsage(context)
+                recordMessageEmojiUsage(accompanying.content)
                 confirmSlowmodeMessage(confirmedContext)
             }
             return nil

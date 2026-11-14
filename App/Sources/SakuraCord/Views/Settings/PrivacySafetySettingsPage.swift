@@ -338,13 +338,10 @@ private struct PrivacyDiscordActivitySection: View {
                 )
             }
             Toggle("Remove metadata from images and videos", isOn: $value.removesMediaMetadata)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.removeMediaMetadata, state: state)
             Toggle("Anonymise file names", isOn: $value.anonymisesFileNames)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.anonymiseFileNames, state: state)
             Toggle("Send typing indicators", isOn: $value.sendsTypingIndicators)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.privacyTypingIndicators, state: state)
         } header: {
             Text("Discord Activity & Presence", bundle: #bundle)

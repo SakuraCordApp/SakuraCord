@@ -437,7 +437,7 @@ extension DiscordRESTProvider {
     /// becomes an edit without a data version; any other device value is dropped.
     func loadPendingStatusEdit() {
         guard let accountID else { return }
-        let defaults = DiscordLocalPreferences.defaults
+        let defaults = UserDefaults.standard
         let stored = defaults.dictionary(forKey: Self.pendingStatusEditKey(accountID))
         let legacy = defaults.string(forKey: Self.legacyPresenceKey(accountID)) == PresenceStatus.invisible.rawValue
             ? PresenceStatus.invisible : nil
@@ -458,18 +458,18 @@ extension DiscordRESTProvider {
         guard let accountID else { return }
         let key = Self.pendingStatusEditKey(accountID)
         guard let edit = pendingStatusEdit else {
-            DiscordLocalPreferences.defaults.removeObject(forKey: key)
+            UserDefaults.standard.removeObject(forKey: key)
             return
         }
         var value: [String: Any] = ["status": edit.status.rawValue]
         if let version = edit.requiredDataVersion ?? settingsDataVersion { value["requiredDataVersion"] = Int(version) }
-        DiscordLocalPreferences.defaults.set(value, forKey: key)
+        UserDefaults.standard.set(value, forKey: key)
     }
 
     // Official stable622805 module617617 LOGOUT.
     /// Drops an account's unsaved edit when the account is removed.
     public static func removePendingStatusEdit(accountID: String) {
-        DiscordLocalPreferences.defaults.removeObject(forKey: pendingStatusEditKey(accountID))
-        DiscordLocalPreferences.defaults.removeObject(forKey: legacyPresenceKey(accountID))
+        UserDefaults.standard.removeObject(forKey: pendingStatusEditKey(accountID))
+        UserDefaults.standard.removeObject(forKey: legacyPresenceKey(accountID))
     }
 }

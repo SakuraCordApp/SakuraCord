@@ -126,7 +126,7 @@ struct ApplicationCommandComposerBadge: View {
                     .foregroundStyle(.secondary)
                     .opacity(isHovered ? 1 : 0)
             }
-            .frame(width: ChatChromeMetrics.composerControlHeight, height: ChatChromeMetrics.composerControlHeight)
+            .frame(width: ChatChromeMetrics.composerButtonSize, height: ChatChromeMetrics.composerButtonSize)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)

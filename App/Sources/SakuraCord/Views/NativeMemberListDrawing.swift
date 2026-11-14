@@ -60,7 +60,7 @@ extension NativeMemberListCanvasView {
             ofSize: InterfaceTypographyMetrics.interfaceTextSize,
             weight: .semibold
         )
-        let color = NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7)
+        let color = NSColor.labelColor.withAlphaComponent(0.5)
         let labelY = origins[index] + InterfaceScale.metric(16)
         var labelX = InterfaceScale.metric(14)
         if let role = section.role, role.hasIcon {
@@ -85,8 +85,7 @@ extension NativeMemberListCanvasView {
     }
 
     func skeletonDrawingStyle() -> SkeletonDrawingStyle {
-        let reducesMotion = NSWorkspace.shared
-            .accessibilityDisplayShouldReduceMotion
+        let reducesMotion = !AppMotionPolicy.animatesUncategorized
         return SkeletonDrawingStyle(
             phase: reducesMotion ? nil : SkeletonShimmerStyle.phase(at: Date()),
             fullOpacityGradient: reducesMotion
@@ -301,7 +300,7 @@ extension NativeMemberListCanvasView {
 
         let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
         let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
-        let botBadgeWidth = NativeAppBadgePresentation.width
+        let botBadgeWidth = NativeAppBadgePresentation.width(isVerified: member.user.isVerifiedBot)
         let tagPresentation = prepared.serverTag
         let roleColor = presentation.roleColorDisplay == .nextToNames
             ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Self.color(hex:)) : nil
@@ -333,7 +332,7 @@ extension NativeMemberListCanvasView {
         }
         if member.user.isBot, let accessory = nameLayout.accessoryFrames.first {
             if accessory.width >= botBadgeWidth {
-                drawBotBadge(at: nameX + accessory.minX, nameY: nameY, context: context)
+                drawBotBadge(at: nameX + accessory.minX, nameY: nameY, isVerified: member.user.isVerifiedBot, context: context)
             }
         }
         if let tagPresentation, let frame = geometry.serverTagFrame {
@@ -351,63 +350,36 @@ extension NativeMemberListCanvasView {
                 maximumPixelDimension: 32
             )
         }
-        drawMemberActivity(prepared: prepared, row: row, textX: textX, index: index, context: context)
-    }
-
-    private func drawMemberActivity(
-        prepared: PreparedText,
-        row: CGRect,
-        textX: CGFloat,
-        index: Int,
-        context: CGContext
-    ) {
-        guard let activity = prepared.activity,
-              let truncationToken = prepared.activityTruncationToken
-        else { return }
-
-        let iconOffset: CGFloat
-        if let iconType = prepared.activityIconType,
-           let iconData = MemberActivityIconCache.shared.icon(for: iconType)
+        if let activity = prepared.activity,
+           let truncationToken = prepared.activityTruncationToken
         {
-            let iconWidth = InterfaceScale.metric(iconData.size.width)
-            let iconHeight = InterfaceScale.metric(iconData.size.height)
-            let iconRect = CGRect(
-                x: textX,
-                y: row.minY + InterfaceScale.metric(24) + (InterfaceScale.metric(14) - iconHeight) / 2,
-                width: iconWidth,
-                height: iconHeight
+            let activityFrame = activityTextFrame(at: index)
+            let visibleActivity = cachedFittedTextLine(
+                activity,
+                token: truncationToken,
+                maximumWidth: activityFrame.width
             )
-            Self.draw(image: iconData.image, in: iconRect, context: context, fills: false)
-            iconOffset = iconWidth + InterfaceScale.metric(4)
-        } else {
-            iconOffset = 0
-        }
-        let maximumWidth = max(0, row.maxX - (textX + iconOffset) - 4 - InterfaceScale.metric(presentation.trailingAccessoryWidth))
-        let visibleActivity = cachedFittedTextLine(
-            activity,
-            token: truncationToken,
-            maximumWidth: maximumWidth
-        )
-        let origin = CGPoint(x: textX + iconOffset, y: row.minY + InterfaceScale.metric(24))
-        Self.draw(line: visibleActivity, at: origin, context: context)
-        for region in NativeMemberActivityPresentation.emojiRegions(
-            in: visibleActivity,
-            origin: origin
-        ) {
-            guard let url = activityEmojiURL(for: region.reference) else { continue }
-            if let image = images[url] {
-                Self.draw(
-                    image: image,
-                    aspectFitIn: region.frame,
-                    context: context
-                )
-            } else {
-                requestImageIfNeeded(
-                    url: url,
-                    index: index,
-                    priority: .visible,
-                    maximumPixelDimension: 64
-                )
+            let origin = activityFrame.origin
+            Self.draw(line: visibleActivity, at: origin, context: context)
+            for region in NativeMemberActivityPresentation.emojiRegions(
+                in: visibleActivity,
+                origin: origin
+            ) {
+                guard let url = activityEmojiURL(for: region.reference) else { continue }
+                if let image = images[url] {
+                    Self.draw(
+                        image: image,
+                        aspectFitIn: region.frame,
+                        context: context
+                    )
+                } else {
+                    requestImageIfNeeded(
+                        url: url,
+                        index: index,
+                        priority: .visible,
+                        maximumPixelDimension: 64
+                    )
+                }
             }
         }
     }
@@ -547,7 +519,7 @@ extension NativeMemberListCanvasView {
                 ofSize: NativeMemberListMetrics.avatarSize * 0.42,
                 weight: .semibold
             ),
-            color: .white
+            color: .sakuraCordLabelOnAccentColor
         )
         let bounds = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
         var ascent: CGFloat = 0
@@ -586,12 +558,12 @@ extension NativeMemberListCanvasView {
         context.restoreGState()
     }
 
-    func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, context: CGContext) {
+    func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, isVerified: Bool, context: CGContext) {
         let badge = CGRect(
             x: badgeX, y: nameY + InterfaceScale.metric(8) - ServerTagAppearance.height / 2,
-            width: NativeAppBadgePresentation.width, height: ServerTagAppearance.height
+            width: NativeAppBadgePresentation.width(isVerified: isVerified), height: ServerTagAppearance.height
         )
-        NativeAppBadgePresentation.draw(in: badge, color: .systemIndigo, context: context)
+        NativeAppBadgePresentation.draw(in: badge, color: .sakuraCordAccentColor, context: context, isVerified: isVerified)
     }
 
     /// Discord shows role icons on member-list section headers, not beside names.

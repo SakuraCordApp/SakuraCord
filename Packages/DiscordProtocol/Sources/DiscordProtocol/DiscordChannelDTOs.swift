@@ -185,6 +185,15 @@ struct ChannelDTO: Decodable {
         }
     }
 
+    /// Channel types Discord shows in the guild channel list. Directories (14)
+    /// and Server Hub spaces (20) are separate surfaces, and unknown types stay out.
+    var isGuildChannelListEntry: Bool {
+        switch type {
+        case 0, 2, 5, 6, 13, 15, 16, 21: true
+        default: false
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case guildID = "guild_id"

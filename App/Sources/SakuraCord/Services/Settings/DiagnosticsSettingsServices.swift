@@ -14,7 +14,7 @@ nonisolated enum DiagnosticsPreferences {
     static let savesDiagnosticsToDiskKey = "saveAPIDiagnosticsToDisk"
 
     static func restore(
-        defaults: any PreferenceStoring = PRBuildProfile.defaults,
+        defaults: any PreferenceStoring = UserDefaults.standard,
         store: DiscordAPIDiagnosticStore = .shared
     ) {
         store.capturesConnectionMetrics = defaults.bool(forKey: capturesConnectionMetricsKey)

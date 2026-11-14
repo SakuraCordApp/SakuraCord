@@ -589,6 +589,7 @@ extension DirectMessageProviderContractTests {
             handle: CredentialHandle(accountID: accountID),
             session: URLSession(configuration: configuration),
             gatewayTransport: ReadyGatewayTransport(socket: socket),
+            gatewayClock: HeldGatewayClock(),
             usesDesktopHeartbeat: true,
             installationID: "server-issued-installation"
         )

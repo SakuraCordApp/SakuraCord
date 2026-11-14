@@ -197,6 +197,12 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
         ),
         SettingsPreferenceRegistration(
+            id: .messageFontSize,
+            page: .interface,
+            storage: .appWide(key: "settings.appearance.messageFontSize"),
+            defaultValue: .double(InterfaceTypographyMetrics.defaultMessageTextSize)
+        ),
+        SettingsPreferenceRegistration(
             id: .messageDensity,
             page: .interface,
             storage: .appWide(key: "settings.appearance.messageDensity"),
@@ -365,6 +371,10 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         SettingsPreferenceRegistration(
             id: .fakeNitroStreamQuality, page: .features,
             storage: .appWide(key: "settings.features.fakeNitroStreamQuality"), defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .unlimitedFavorites, page: .features,
+            storage: .appWide(key: "settings.features.unlimitedFavorites"), defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .voiceMessageRecording, page: .features,
@@ -846,7 +856,7 @@ final class SettingsPreferenceStore {
 
     init(
         registry: SettingsPreferenceRegistry = .foundation,
-        defaults: any PreferenceStoring = PRBuildProfile.defaults
+        defaults: any PreferenceStoring = UserDefaults.standard
     ) {
         self.registry = registry
         self.defaults = defaults

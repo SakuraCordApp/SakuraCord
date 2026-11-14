@@ -81,11 +81,7 @@ private final class ReportedFrame {
     /// Whether the reported frame comes to satisfy `condition`: reports
     /// arrive on a later turn of the main queue.
     func becomes(_ condition: (CGRect) -> Bool) async -> Bool {
-        for _ in 0 ..< 200 {
-            if condition(frame) { return true }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        return condition(frame)
+        await eventually { condition(frame) }
     }
 }
 

@@ -51,7 +51,7 @@ final class InboxState {
     var scheduledEvents = InboxScheduledEvents()
     var selectedEvent: InboxScheduledEvent?
     var ageRestrictedGuildID: GuildID?
-    var acceptedAgeRestrictedGuildIDs = Set((PRBuildProfile.defaults.stringArray(forKey: "dev.sakuracord.inbox-age-agreements") ?? []).compactMap(GuildID.init))
+    var acceptedAgeRestrictedGuildIDs = Set((UserDefaults.standard.stringArray(forKey: "dev.sakuracord.inbox-age-agreements") ?? []).compactMap(GuildID.init))
     @ObservationIgnored var ageRestrictedAction: (@MainActor () -> Void)?
     @ObservationIgnored var eventMutationTasks: [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored var pendingEventAcknowledgements: [GuildID: ScheduledEventID] = [:]

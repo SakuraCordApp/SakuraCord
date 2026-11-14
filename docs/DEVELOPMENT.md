@@ -219,7 +219,7 @@ for the exact commit reuse rules and cache boundaries.
 Each package's test execution has a three-minute process deadline, separate
 from compilation. The test runner streams console output, records Swift Testing
 events, and captures process listings and macOS stack samples before terminating
-a stalled process group. Diagnostics live in `.codex-runtime/test-diagnostics/`;
+the stalled launcher and test host. Diagnostics live in `.codex-runtime/test-diagnostics/`;
 failed or cancelled CI runs upload them as a seven-day artifact. A timeout fails
 validation without retrying or skipping tests. The CI build-and-test step also
 has a 30-minute outer limit covering compilation and framework staging.

@@ -193,12 +193,13 @@ extension AppModel {
 
     func openSidebarThread(
         _ thread: MessageThreadSummary,
-        historyDestination: ConversationNavigationHistory.Destination? = nil
+        historyDestination: ConversationNavigationHistory.Destination? = nil,
+        presentsFavorites: Bool? = nil
     ) {
         onboarding.presentedGuildID = nil
         let target = ConversationNavigationTarget.thread(thread.id, fullWidth: true)
-        if historyDestination == nil, isNavigating(to: target) { return }
-        startConversationNavigation(target: target, to: historyDestination) { model, account in
+        if historyDestination == nil, isNavigating(to: target, presentsFavorites: presentsFavorites) { return }
+        startConversationNavigation(target: target, to: historyDestination, presentsFavorites: presentsFavorites) { model, account in
             let guildID = thread.guildID ?? model.selectedGuildID
             if model.selectedGuildID != guildID {
                 await model.activateGuild(guildID, account: account)

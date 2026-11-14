@@ -35,7 +35,6 @@ struct MediaViewerFile: View {
                 MediaViewerFilePage(item: item) {
                     ProgressView(value: fraction)
                         .progressViewStyle(.linear)
-                        .tint(SakuraCordAccentColor.color)
                         .frame(width: InterfaceScale.metric(220))
                         .accessibilityLabel("Loading preview")
                 }
@@ -55,7 +54,6 @@ struct MediaViewerFile: View {
                         .foregroundStyle(.secondary)
                     Button("Download", systemImage: "arrow.down.to.line", action: download)
                         .buttonStyle(.glassProminent)
-                        .tint(SakuraCordAccentColor.color)
                         .controlSize(.large)
                 }
             }

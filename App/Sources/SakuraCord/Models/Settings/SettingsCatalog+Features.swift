@@ -3,9 +3,9 @@ import Foundation
 nonisolated extension SettingsCatalog {
     static let featuresPage = page(
         .features, group: .preferences, title: "Features", image: "square.stack.3d.up.fill",
-        help: "Manage hidden channels, FakeNitro, the message timeline, voice messages, attachments, and on-device translation.",
+        help: "Manage hidden channels, the Favorites server, FakeNitro, the message timeline, voice messages, attachments, and on-device translation.",
         keywords: [
-            "channels", "hidden", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
+            "channels", "hidden", "favorites", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
             "language",
         ]
     )
@@ -37,6 +37,12 @@ nonisolated extension SettingsCatalog {
             keywords: ["onboarding", "channels", "roles", "default channels"], scope: .appWideLocal
         ),
         control(
+            .showFavoritesServer, page: .features, section: .featuresChannels,
+            label: "Show Favorites server", help: "Show your favourite channels and DMs as a server above your server list. Your Favorites stay saved when this is off.",
+            keywords: ["favorites", "favourites", "star", "server"],
+            owner: .appModel, scope: .discordSynchronized, persistence: .discordManaged, reset: .notApplicable
+        ),
+        control(
             .showHiddenChannels, page: .features, section: .featuresChannels,
             label: "Show hidden channels", help: "Show channels you cannot access, including their available metadata.",
             keywords: ["features", "hidden channels"], scope: .appWideLocal
@@ -60,6 +66,12 @@ nonisolated extension SettingsCatalog {
             .fakeNitroStreamQuality, page: .features, section: .featuresFakeNitro,
             label: "FakeNitro stream quality", help: "Use higher stream resolutions and frame rates without Nitro.",
             keywords: ["features", "FakeNitro"], scope: .appWideLocal
+        ),
+        control(
+            .unlimitedFavorites, page: .features, section: .featuresFakeNitro,
+            label: "Unlimited favorites",
+            help: "Keep favorites past Discord's limit on this Mac. Discord and your other devices only see the ones your account allows.",
+            keywords: ["features", "FakeNitro", "favorites", "favourites", "limit"], scope: .appWideLocal
         ),
         control(
             .messageHoverActions, page: .features, section: .featuresTimeline,

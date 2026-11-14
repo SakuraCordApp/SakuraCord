@@ -25,7 +25,7 @@ struct ProfilePersonalWidgetCard: View {
             .padding(.trailing, editor == nil ? 0 : InterfaceScale.metric(24))
             if let editor, editor.canEditPersonalWidget, !hasCover {
                 ProfileWidgetSectionInsertion(title: String(localized: "Add Header", bundle: #bundle)) {
-                    editor.updatePersonalWidget(id: id) { $0.sections.insert(.cover(ProfileWidgetCover()), at: 0) }
+                    editor.insertWidgetCover(id: id)
                 }
             }
             ForEach(Array(widget.sections.enumerated()), id: \.offset) { index, section in
@@ -104,7 +104,7 @@ private struct ProfilePersonalWidgetCover: View {
         .background {
             if cover.image != nil || editor?.showsEditablePersonalWidget == true {
                 GeometryReader { geometry in
-                    ProfileWidgetEditableImage(image: cover.image, slot: "\(id)/\(section)", purpose: .widgetCover, animates: animates, editor: editor,
+                    ProfileWidgetEditableImage(image: cover.image, slot: ProfileWidgetImageSlot(widgetID: id, section: section), purpose: .widgetCover, animates: animates, editor: editor,
                                                aspectRatio: geometry.size.width / max(geometry.size.height, 1),
                                                isCoverHovered: isHovered && !isTitleHovered && !isSubtitleHovered) { image in
                         editor?.updateWidgetCover(id: id, section: section) { $0.image = image }
@@ -143,10 +143,7 @@ private struct ProfilePersonalWidgetCover: View {
     }
 
     private func removeBlock() {
-        editor?.updatePersonalWidget(id: id) { value in
-            guard value.sections.indices.contains(section), case .cover = value.sections[section] else { return }
-            value.sections.remove(at: section)
-        }
+        editor?.removeWidgetCover(id: id, section: section)
     }
 }
 
@@ -167,7 +164,7 @@ private struct ProfilePersonalWidgetFields: View {
             ForEach(fields.filter { !$0.isEmpty || editor?.showsEditablePersonalWidget == true }) { field in
                 // Field IDs are regenerated when the profile reloads; positions aren't.
                 let position = fields.firstIndex { $0.id == field.id } ?? 0
-                ProfilePersonalWidgetField(id: id, section: section, slot: "\(id)/\(section)/\(position)", field: field, animates: animates, editor: editor,
+                ProfilePersonalWidgetField(id: id, section: section, slot: ProfileWidgetImageSlot(widgetID: id, section: section, position: position), field: field, animates: animates, editor: editor,
                                            imageVisibilityOverrides: $imageVisibilityOverrides)
             }
             if let editor, editor.canEditPersonalWidget, fields.count % 2 == 1, fields.count < 4 {
@@ -186,7 +183,7 @@ private struct ProfilePersonalWidgetField: View {
     let id: String
     let section: Int
     /// The editor's key for this field's image slot.
-    let slot: String
+    let slot: ProfileWidgetImageSlot
     let field: ProfileWidgetField
     let animates: Bool
     let editor: ProfileEditorState?

@@ -35,7 +35,7 @@ struct AvatarView: View {
                     .scaledToFill()
             } else if showsFallback {
                 Circle().fill(SakuraCordAccentColor.color.gradient)
-                fallback
+                fallback.foregroundStyle(SakuraCordAccentColor.labelOnFill)
             }
             if let url {
                 if animates,

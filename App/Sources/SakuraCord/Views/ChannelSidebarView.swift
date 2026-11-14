@@ -141,65 +141,21 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if let guildID = voiceModel.presentedGuildJoinRequestID {
-                // A pending server has no channels; its sidebar describes it instead.
-                GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
-            } else if guild == nil {
-                DirectMessageInboxView(
-                    model: voiceModel,
-                    channels: channels,
-                    membersByID: voiceModel.membersByID,
-                    privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
-                        !$0.value.isUnavailable
-                    },
-                    animatesAvatars: true,
-                    selection: directMessageSelection,
-                    bottomContentInset: accountControlHeight
-                )
-            } else {
-                let preparedThreads = threadLayout(at: .now)
-                // Re-evaluate when a timed-relevant thread expires. An explicit
-                // schedule reports its next entry as `context.date`, so read the clock.
-                TimelineView(.explicit(preparedThreads.relevanceDeadlines)) { _ in
-                    let now = Date.now
-                    let threads = preparedThreads.relevanceDeadlines.first.map { $0 <= now } == true
-                        ? threadLayout(at: now)
-                        : preparedThreads
-                    GuildChannelList(
-                        input: GuildChannelListInput(
-                            modelIdentity: ObjectIdentifier(voiceModel),
-                            guildID: guild?.id,
-                            customizationTitle: voiceModel.customizationTitle(in: guild?.id),
-                            hasCustomization: guild.map { voiceModel.hasChannelsAndRoles(in: $0.id) } ?? false,
-                            hasGuide: guild.map { voiceModel.hasGuildGuide(in: $0.id) } ?? false,
-                            channelGroups: voiceModel.selectedChannelGroups(
-                                channelGroups,
-                                guildID: guild?.id,
-                                threadsByParentID: threads.threadsByParentID
-                            ),
-                            rulesChannelID: guild?.rulesChannelID,
-                            activeVoiceChannelID: activeVoiceChannelID,
-                            hiddenChannelIDs: hiddenChannelIDs,
-                            checkingChannelIDs: checkingChannelIDs,
-                            // Read here so another server's unread categories
-                            // do not invalidate the workspace around the sidebar.
-                            unreadCategoryIDs: guild.map { voiceModel.unreadCategoryIDsByGuild[$0.id] ?? [] } ?? [],
-                            sidebarSelection: guildSelection,
-                            threadsByParentID: threads.threadsByParentID,
-                            bottomContentInset: accountControlHeight
-                        ),
-                        model: voiceModel,
-                        selection: deferredGuildSelection
-                    )
-                    .equatable()
-                }
-                .onChange(of: guildSelection) { _, newSelection in
-                    selectionCommitter.selectedValueChanged(
-                        to: newSelection
-                    )
-                }
-                .onChange(of: guild?.id) { _, _ in selectionCommitter.cancel() }
-            }
+            // Both lists stay mounted and Favorites only shows or hides them. A
+            // list removed in the same update that changes its rows throws
+            // inside AppKit ("no common ancestor"), and the window then never
+            // draws again.
+            let showsFavorites = voiceModel.favorites.isPresented
+            conversationList
+                .opacity(showsFavorites ? 0 : 1)
+                .disabled(showsFavorites)
+                .accessibilityHidden(showsFavorites)
+                .zIndex(showsFavorites ? 0 : 1)
+            FavoritesSidebarView(model: voiceModel, bottomContentInset: accountControlHeight)
+                .opacity(showsFavorites ? 1 : 0)
+                .disabled(!showsFavorites)
+                .accessibilityHidden(!showsFavorites)
+                .zIndex(showsFavorites ? 1 : 0)
 
             AccountControlView(
                 voiceModel: voiceModel,
@@ -218,7 +174,7 @@ struct ChannelSidebarView: View {
                 guard height.isFinite, height >= 0 else { return }
                 accountControlHeight = height
             }
-            .zIndex(1)
+            .zIndex(2)
         }
         .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .environment(
@@ -238,6 +194,68 @@ struct ChannelSidebarView: View {
             .stroke(Color(nsColor: .separatorColor), lineWidth: separatorLineWidth)
             .ignoresSafeArea(.container, edges: isFullScreen ? .top : [])
             .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder private var conversationList: some View {
+        if let guildID = voiceModel.presentedGuildJoinRequestID {
+            // A pending server has no channels; its sidebar describes it instead.
+            GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
+        } else if guild == nil {
+            DirectMessageInboxView(
+                model: voiceModel,
+                channels: channels,
+                membersByID: voiceModel.membersByID,
+                privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
+                    !$0.value.isUnavailable
+                },
+                animatesAvatars: true,
+                selection: directMessageSelection,
+                bottomContentInset: accountControlHeight
+            )
+        } else {
+            let preparedThreads = threadLayout(at: .now)
+            // Re-evaluate when a timed-relevant thread expires. An explicit
+            // schedule reports its next entry as `context.date`, so read the clock.
+            TimelineView(.explicit(preparedThreads.relevanceDeadlines)) { _ in
+                let now = Date.now
+                let threads = preparedThreads.relevanceDeadlines.first.map { $0 <= now } == true
+                    ? threadLayout(at: now)
+                    : preparedThreads
+                GuildChannelList(
+                    input: GuildChannelListInput(
+                        modelIdentity: ObjectIdentifier(voiceModel),
+                        guildID: guild?.id,
+                        customizationTitle: voiceModel.customizationTitle(in: guild?.id),
+                        hasCustomization: guild.map { voiceModel.hasChannelsAndRoles(in: $0.id) } ?? false,
+                        hasGuide: guild.map { voiceModel.hasGuildGuide(in: $0.id) } ?? false,
+                        channelGroups: voiceModel.selectedChannelGroups(
+                            channelGroups,
+                            guildID: guild?.id,
+                            threadsByParentID: threads.threadsByParentID
+                        ),
+                        rulesChannelID: guild?.rulesChannelID,
+                        activeVoiceChannelID: activeVoiceChannelID,
+                        hiddenChannelIDs: hiddenChannelIDs,
+                        checkingChannelIDs: checkingChannelIDs,
+                        // Read here so another server's unread categories
+                        // do not invalidate the workspace around the sidebar.
+                        unreadCategoryIDs: guild.map { voiceModel.unreadCategoryIDsByGuild[$0.id] ?? [] } ?? [],
+                        sidebarSelection: guildSelection,
+                        threadsByParentID: threads.threadsByParentID,
+                        bottomContentInset: accountControlHeight
+                    ),
+                    model: voiceModel,
+                    selection: deferredGuildSelection
+                )
+                .equatable()
+            }
+            .onChange(of: guildSelection) { _, newSelection in
+                selectionCommitter.selectedValueChanged(
+                    to: newSelection
+                )
+            }
+            .onChange(of: guild?.id) { _, _ in selectionCommitter.cancel() }
         }
     }
 
@@ -418,14 +436,17 @@ private struct GuildChannelList: View, Equatable {
                         input.unreadCategoryIDs.contains
                     ) ?? false
                 )
+                // Discord divides its pinned section from the channels below.
+                if group.isPinnedSection, group.id != input.channelGroups.last?.id {
+                    Divider()
+                        .listRowInsets(EdgeInsets())
+                        .selectionDisabled()
+                        .accessibilityHidden(true)
+                }
             }
 
         }
-        .listStyle(.sidebar)
-        .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
-        .environment(\.defaultMinListRowHeight, ChannelSidebarLayoutMetrics.minimumRowHeight)
-        .scrollContentBackground(.hidden)
-        .scrollClipDisabled()
+        .modifier(ChannelSidebarListStyle())
         .overlayPreferenceValue(SidebarUnreadRowAnchors.self) { anchors in
             GeometryReader { geometry in
                 let width = InterfaceScale.metric(4)
@@ -472,6 +493,44 @@ private struct GuildChannelList: View, Equatable {
         .overlay { ChannelRowHoverBridge(isSelected: isSelected) }
     }
 
+}
+
+/// The server channel list's presentation, which Favorites shares.
+struct ChannelSidebarListStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .listStyle(.sidebar)
+            .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
+            .environment(\.defaultMinListRowHeight, ChannelSidebarLayoutMetrics.minimumRowHeight)
+            .scrollContentBackground(.hidden)
+            .scrollClipDisabled()
+    }
+}
+
+/// A collapsible category header in a sidebar channel list. `menu` is the
+/// row bridge that supplies the header's native hover and context menu.
+struct ChannelCategoryHeaderButton<Menu: View>: View {
+    let name: String
+    let isExpanded: Bool
+    let toggle: () -> Void
+    @ViewBuilder let menu: Menu
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: InterfaceScale.metric(5)) {
+                Text(name)
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.interface(.caption2).weight(.semibold))
+                    .frame(width: InterfaceScale.metric(8))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Color.primary.opacity(0.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
+        .overlay { menu }
+    }
 }
 
 struct SidebarBottomScrollSpacer: View {
@@ -529,6 +588,49 @@ nonisolated struct ChannelGroup: Identifiable, Equatable, Sendable {
             }
             return lhs.position < rhs.position
         }
+    }
+
+    static let pinnedSectionID = "pinned"
+
+    var isPinnedSection: Bool { id == Self.pinnedSectionID }
+
+    /// Discord's Pinned Channels section leads the list and takes its channels
+    /// out of their categories. It orders them by their own position, voice
+    /// channels after the rest, with equal positions in `pinnedIDs` order.
+    static func pinning(
+        _ pinnedIDs: [ChannelID],
+        in groups: [ChannelGroup],
+        guildID: GuildID,
+        excluding hiddenIDs: Set<ChannelID>
+    ) -> [ChannelGroup] {
+        guard !pinnedIDs.isEmpty else { return groups }
+        let order = Dictionary(
+            pinnedIDs.enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var pinned: [(key: (Int, Int), channel: Channel)] = []
+        func isListedPin(_ channel: Channel) -> Bool {
+            order[channel.id] != nil && !hiddenIDs.contains(channel.id)
+        }
+        let remaining = groups.compactMap { group -> ChannelGroup? in
+            guard group.channels.contains(where: isListedPin) else { return group }
+            var group = group
+            group.channels.removeAll { channel in
+                guard isListedPin(channel), let rank = order[channel.id] else { return false }
+                pinned.append(((channel.position + (channel.kind == .voice ? 10_000 : 0), rank), channel))
+                return true
+            }
+            return group.channels.isEmpty ? nil : group
+        }
+        guard !pinned.isEmpty else { return groups }
+        return [ChannelGroup(
+            id: pinnedSectionID,
+            categoryID: nil,
+            guildID: guildID,
+            name: "Pinned Channels",
+            position: -1,
+            channels: pinned.sorted { $0.key < $1.key }.map(\.channel)
+        )] + remaining
     }
 
     private static func channelOrder(_ lhs: Channel, _ rhs: Channel) -> Bool {
@@ -686,7 +788,8 @@ private struct ChannelGroupRows: View {
                         rulesChannelID: rulesChannelID,
                         isVoiceConnected: activeVoiceChannelID == channel.id,
                         isHidden: hiddenChannelIDs.contains(channel.id),
-                        isChecking: checkingChannelIDs.contains(channel.id)
+                        isChecking: checkingChannelIDs.contains(channel.id),
+                        isPinned: group.isPinnedSection
                     )
                     .tag(GuildSidebarSelection.channel(channel.id))
                     ForEach(
@@ -702,7 +805,8 @@ private struct ChannelGroupRows: View {
                         isSelected: sidebarSelection == .channel(channel.id),
                         rulesChannelID: rulesChannelID,
                         isHidden: hiddenChannelIDs.contains(channel.id),
-                        isChecking: checkingChannelIDs.contains(channel.id)
+                        isChecking: checkingChannelIDs.contains(channel.id),
+                        isPinned: group.isPinnedSection
                     )
                     .tag(GuildSidebarSelection.channel(channel.id))
                     let threads = threadsByParentID[channel.id] ?? []
@@ -725,11 +829,16 @@ private struct ChannelGroupRows: View {
 
     private var categoryHeader: some View {
             VStack(spacing: 0) {
-                if let name = group.name,
+                if group.isPinnedSection, let name = group.name {
+                    // Discord's Pinned Channels header neither collapses nor has a menu.
+                    Text(name)
+                        .foregroundStyle(Color.primary.opacity(0.5))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let name = group.name,
                    let categoryID = group.categoryID,
                    let guildID = group.guildID
                 {
-                    Button {
+                    ChannelCategoryHeaderButton(name: name, isExpanded: isExpanded) {
                         let nextValue = !isExpanded
                         withAnimation(.snappy(duration: 0.18)) {
                             isExpanded = nextValue
@@ -739,20 +848,7 @@ private struct ChannelGroupRows: View {
                                 categoryID: categoryID
                             )
                         }
-                    } label: {
-                        HStack(spacing: InterfaceScale.metric(5)) {
-                            Text(name)
-                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                .font(.interface(.caption2).weight(.semibold))
-                                .frame(width: InterfaceScale.metric(8))
-                            Spacer(minLength: 0)
-                        }
-                        .foregroundStyle(Color.primary.opacity(0.5))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
-                    .overlay {
+                    } menu: {
                         ChannelContextMenuBridge(
                             subject: .category,
                             isSelected: false,
@@ -1428,6 +1524,7 @@ private struct ChannelRow: View {
     var isVoiceConnected = false
     var isHidden = false
     var isChecking = false
+    var isPinned = false
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {
@@ -1516,6 +1613,16 @@ private struct ChannelRow: View {
                             guildID: channel.guildID,
                             channelID: channel.id
                         )
+                    )
+                },
+                pinAction: isHidden ? .unavailable : .available(
+                    isPinned: isPinned,
+                    isServerChannel: true,
+                    toggle: { model.toggleChannelPin(channel) }
+                ),
+                favoriteItems: {
+                    FavoritesMenu.toggleItems(
+                        for: channel.id, channelType: channel.favoriteChannelType, model: model, isChecking: isChecking
                     )
                 }
             )

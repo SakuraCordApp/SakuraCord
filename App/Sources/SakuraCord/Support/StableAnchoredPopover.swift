@@ -376,7 +376,6 @@ struct StablePopoverHostedContent<Content: View>: View {
             presentationContext
         )
         .interfaceScaleRoot()
-        .tint(SakuraCordAccentColor.color)
     }
 }
 

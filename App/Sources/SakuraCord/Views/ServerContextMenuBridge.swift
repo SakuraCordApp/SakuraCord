@@ -300,6 +300,67 @@ private extension GuildNotificationToggle {
     }
 }
 
+/// A rail tile's native context menu, built when it opens.
+struct ServerRailContextMenuBridge: NSViewRepresentable {
+    let menu: () -> NSMenu
+
+    func makeNSView(context: Context) -> ServerContextMenuHitView {
+        let view = ServerContextMenuHitView()
+        view.menuProvider = menu
+        return view
+    }
+
+    func updateNSView(_ nsView: ServerContextMenuHitView, context: Context) {
+        nsView.menuProvider = menu
+    }
+}
+
+/// The native menu for secondary clicks on a SwiftUI List outside the rows
+/// that bring their own menu. SwiftUI's list table doesn't consult an
+/// AppKit menu itself, so this background watches the clicks within its
+/// bounds and defers to any view under the pointer that has a menu.
+struct ListBackgroundMenuBridge: NSViewRepresentable {
+    let menu: () -> NSMenu
+
+    func makeNSView(context: Context) -> ListBackgroundMenuView {
+        let view = ListBackgroundMenuView()
+        view.menuProvider = menu
+        return view
+    }
+
+    func updateNSView(_ nsView: ListBackgroundMenuView, context: Context) {
+        nsView.menuProvider = menu
+    }
+}
+
+final class ListBackgroundMenuView: NSView {
+    var menuProvider: (() -> NSMenu)?
+    private var monitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = window == nil ? nil : NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
+            self?.presentMenu(for: event) == true ? nil : event
+        }
+    }
+
+    private func presentMenu(for event: NSEvent) -> Bool {
+        guard event.type == .rightMouseDown || event.modifierFlags.contains(.control),
+              let window, event.window === window, let menuProvider,
+              WindowModalCoordinator.allowsInput(for: self),
+              bounds.contains(convert(event.locationInWindow, from: nil))
+        else { return false }
+        var view = window.contentView?.hitTest(event.locationInWindow)
+        while let current = view, current !== self {
+            if current.menu(for: event)?.items.isEmpty == false { return false }
+            view = current.superview
+        }
+        NSMenu.popUpContextMenu(menuProvider(), with: event, for: self)
+        return true
+    }
+}
+
 final class ServerContextMenuHitView: NSView {
     var menuProvider: (() -> NSMenu?)?
 

@@ -99,12 +99,16 @@ extension NativeMemberListCanvasView {
         return truncated
     }
 
-    nonisolated static let memberActivityColor = NSColor(
-        srgbRed: 122 / 255,
-        green: 123 / 255,
-        blue: 131 / 255,
-        alpha: 1
-    )
+    func activityTextFrame(at index: Int) -> CGRect {
+        let row = paintedRowRect(at: index)
+        let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+        return CGRect(
+            x: textX,
+            y: row.minY + InterfaceScale.metric(24),
+            width: max(0, row.maxX - textX - 4 - InterfaceScale.metric(presentation.trailingAccessoryWidth)),
+            height: NativeMemberListMetrics.activityEmojiSize
+        )
+    }
 
     static func fillRounded(
         _ rect: CGRect,

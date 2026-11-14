@@ -574,7 +574,7 @@ extension NativeMemberListCanvasView {
 
     private nonisolated static func nameFont(for member: Member) -> NSFont {
         ProfileNameFontCache.font(id: member.user.displayNameStyle?.fontID, fallback: .interfaceSystemFont(
-            ofSize: InterfaceTypographyMetrics.interfaceTextSize, weight: .semibold
+            ofSize: NSFont.authorNameSize, weight: .medium
         ))
     }
 
@@ -624,36 +624,28 @@ extension NativeMemberListCanvasView {
                 ? topRole?.colorHex.map(Self.color(hex:)) ?? labelColor
                 : labelColor
             let alpha = presentation.opacity(for: member)
-            let gradientColors: [NSColor]?
-            if let topRole,
-               let primary = topRole.colorHex,
-               let secondary = topRole.secondaryColorHex
-            {
-                let primaryColor = Self.color(hex: primary).withAlphaComponent(alpha)
-                let secondaryColor = Self.color(hex: secondary).withAlphaComponent(alpha)
-                if let tertiary = topRole.tertiaryColorHex {
-                    let tertiaryColor = Self.color(hex: tertiary).withAlphaComponent(alpha)
-                    gradientColors = [primaryColor, secondaryColor, tertiaryColor]
-                } else {
-                    gradientColors = [primaryColor, secondaryColor]
+            let gradientColors = topRole.flatMap { role -> [NSColor]? in
+                guard let primary = role.colorHex, let secondary = role.secondaryColorHex else { return nil }
+                return [primary, secondary, role.tertiaryColorHex].compactMap {
+                    $0.map { Self.color(hex: $0).withAlphaComponent(alpha) }
                 }
-            } else {
-                gradientColors = nil
             }
-            let activityColor = presentation.activityTextPrimaryOpacity.map {
-                labelColor.withAlphaComponent(alpha * $0)
-            } ?? Self.memberActivityColor.withAlphaComponent(alpha)
+            let activityColor = labelColor.withAlphaComponent(alpha * 0.5)
             let name = Self.line(
                 member.user.displayName,
                 font: nameFont,
                 color: nameColor.withAlphaComponent(alpha)
             )
-            let activity = member.memberListActivityText.flatMap { text -> CTLine? in
+            let activityContent = member.memberListActivityContent
+            let activity = activityContent.text.flatMap { text -> CTLine? in
                 guard !text.isEmpty else { return nil }
                 return NativeMemberActivityPresentation.line(
                     text,
                     font: activityFont,
-                    color: activityColor
+                    color: activityColor,
+                    showsMusicIcon: member.isListeningToMusic,
+                    showsActivitySeparator: activityContent.separatesMusicIcon,
+                    trailingEmoji: activityContent.trailingEmoji
                 )
             }
             let activityTruncationToken = activity.map { _ in
@@ -678,8 +670,7 @@ extension NativeMemberListCanvasView {
                 activityWidth: activity.map {
                     CGFloat(CTLineGetTypographicBounds($0, nil, nil, nil))
                 } ?? 0,
-                serverTag: member.user.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) },
-                activityIconType: member.memberListActivityIconType
+                serverTag: member.user.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) }
             )
         }
         return preparedText

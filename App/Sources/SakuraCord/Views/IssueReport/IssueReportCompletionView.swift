@@ -81,11 +81,11 @@ struct IssueReportCompletionView: View {
 
     private func message(_ outcome: IssueReportStore.Outcome) -> String {
         if outcome.followedExisting {
-            return "Your details were added to the existing report. You’ll be pinged in Discord when it changes."
+            return "Your details were added to the existing report. You’ll be pinged in Discord when it’s completed."
         }
         return model.isInSakuraCordServer
-            ? "It has a GitHub issue and a forum post. You’ll be pinged there when it’s confirmed, fixed, and shipped."
-            : "It has a GitHub issue and a post in the SakuraCord server. Join to follow the discussion and get pinged when it ships."
+            ? "It has a GitHub issue and a forum post. You’ll be pinged there when it’s completed."
+            : "It has a GitHub issue and a post in the SakuraCord server. Join to follow the discussion and get pinged when it’s completed."
     }
 }
 
@@ -119,7 +119,7 @@ private struct IssueReportCelebration: View {
             }
             Image(systemName: "checkmark")
                 .font(.interfaceSystem(size: 30, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                 .symbolEffect(.bounce, value: landed)
                 .frame(width: InterfaceScale.metric(72), height: InterfaceScale.metric(72))
                 .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Circle())

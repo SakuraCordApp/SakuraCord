@@ -58,7 +58,7 @@ extension AppModel {
 
     func openGuildNavigationDestination(_ destination: GuildNavigationMention, in guildID: GuildID) {
         guard hasGuildNavigationDestination(destination, in: guildID) else { return }
-        startConversationNavigation { model, account in
+        startConversationNavigation(presentsFavorites: false) { model, account in
             if model.selectedGuildID != guildID { await model.activateGuild(guildID, account: account) }
             guard !Task.isCancelled, model.isCurrentAccountSession(account), model.selectedGuildID == guildID,
                   model.hasGuildNavigationDestination(destination, in: guildID) else { return }
@@ -72,7 +72,9 @@ extension AppModel {
     }
 
     var onboardingEntryGuildID: GuildID? {
-        guard let guildID = selectedGuildID,
+        // An empty Favorites server keeps the last server selected but shows none of it.
+        guard !favorites.isPresented || selectedChannelID != nil,
+              let guildID = selectedGuildID,
               serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true else { return nil }
         let member = onboardingMember(in: guildID)
         return member?.requiresOnboarding == true ? guildID : nil

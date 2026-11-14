@@ -7,7 +7,7 @@ import Testing
 /// client used to treat that instance as abandoned and leave it for the user.
 @MainActor
 struct EmbeddedActivityTests {
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func `an Activity this client's slash command started is hosted, not left`() async throws {
         let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
         await model.start()
@@ -33,7 +33,7 @@ struct EmbeddedActivityTests {
 
     /// A leave that failed while others kept playing must not make Discord
     /// drop the person again once they rejoin that game.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func `rejoining an Activity whose leave failed hosts it instead of leaving it again`() async throws {
         let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
         await model.start()

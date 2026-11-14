@@ -130,6 +130,9 @@ extension AppModel {
 
     @discardableResult
     func sendGIF(_ gif: GIFSearchResult, in destination: MessageComposerDestination = .channel) async -> Bool {
+        if scheduledSendDate(in: destination) != nil {
+            return await schedulePickedMessage(content: gif.url.absoluteString, in: destination)
+        }
         guard allowOutgoingQueueSubmission() else { return false }
         if destination == .thread {
             guard let thread = openThread, openThreadAccess.canSend else { return false }

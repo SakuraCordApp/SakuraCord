@@ -294,7 +294,10 @@ private struct DirectMessageInboxRow: View {
                     : nil,
                 closeDirectMessage: model.offersCloseDirectMessage(channel)
                     ? { model.closeDirectMessage(channel) }
-                    : nil
+                    : nil,
+                favoriteItems: {
+                    FavoritesMenu.toggleItems(for: channel.id, channelType: channel.favoriteChannelType, model: model)
+                }
             )
         }
     }
@@ -388,7 +391,7 @@ struct DirectMessageAvatar: View {
         } else {
             Image(systemName: "person.2.fill")
                 .font(.system(size: size * 0.38, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                 .frame(width: size, height: size)
                 .background(SakuraCordAccentColor.color.gradient, in: Circle())
                 .accessibilityLabel("\(channel.name) group avatar")

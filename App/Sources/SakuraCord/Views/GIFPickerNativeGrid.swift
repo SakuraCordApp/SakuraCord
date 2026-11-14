@@ -899,8 +899,9 @@ private final class GIFPickerVideoFallbackRegistry {
     }
 }
 
+/// A GIF's looping video, shared with the Inbox's scheduled GIF previews.
 @MainActor
-private final class GIFPickerVideoCanvas: NSView {
+final class GIFPickerVideoCanvas: NSView {
     private let player = AVQueuePlayer()
     private let playerLayer = AVPlayerLayer()
     private var looper: AVPlayerLooper?

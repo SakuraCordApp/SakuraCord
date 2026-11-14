@@ -98,6 +98,7 @@ struct BootstrapRequestScenario {
         #expect(await connected.value)
         #expect(snapshot.currentUser.id == UserID(rawValue: 1))
         #expect(snapshot.guilds.count == 1)
+        #expect(snapshot.members.isEmpty)
         #expect(snapshot.channels.map(\.id) == [ChannelID(rawValue: 401)])
         #expect(snapshot.channels.first?.name == "Maya")
         #expect(snapshot.channels.first?.recipients.map(\.id) == [
@@ -321,6 +322,17 @@ struct BootstrapRequestScenario {
         #expect((mentionBody["flags"] as? NSNumber)?.intValue == 0)
         #expect(mentionBody["mobile_network_type"] as? String == "unknown")
         #expect(mentionBody["allowed_mentions"] == nil)
+
+        // A literal or dropped `@silent` would ping everyone the message mentions.
+        for (typed, content, flags) in [
+            ("@silent \n hello <@2>", "hello <@2>", 4096), ("@Silent hello", "@Silent hello", 0),
+            ("@silenthello", "@silenthello", 0),
+        ] {
+            _ = try await provider.send(SendMessageDraft(channelID: ChannelID(rawValue: 200), content: typed))
+            let body = try #require(RateLimitURLProtocol.sentMessageBody)
+            #expect(body["content"] as? String == content)
+            #expect((body["flags"] as? NSNumber)?.intValue == flags)
+        }
 
         let stickerDraft = SendMessageDraft(
             channelID: ChannelID(rawValue: 200),

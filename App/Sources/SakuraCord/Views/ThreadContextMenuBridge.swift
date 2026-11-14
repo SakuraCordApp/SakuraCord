@@ -7,6 +7,8 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
     let model: AppModel
     let row: SidebarThreadRow
     let isSelected: Bool
+    /// A favourite's actions inside the Favorites server.
+    var favoriteItems: (() -> [NSMenuItem])?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -34,12 +36,23 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
 
         func makeMenu() -> NSMenu {
             let row = bridge.row
-            return renderer.makeMenu(ThreadActionsMenu(
+            let actions = ThreadActionsMenu(
                 model: bridge.model,
                 thread: bridge.model.sidebarThread(row.id) ?? row.thread,
                 surface: .channelList,
                 isUnread: row.isUnread || row.mentionCount > 0
-            ))
+            )
+            guard let favoriteItems = bridge.favoriteItems?() else { return renderer.makeMenu(actions) }
+            // Inside Favorites the favourite's own actions replace Add/Remove.
+            let menu = renderer.makeMenu(ThreadActionsMenu(sections: actions.sections.filter {
+                !$0.contains { $0.id == ThreadActionsMenu.favoriteID }
+            }))
+            if let separator = menu.items.firstIndex(where: \.isSeparatorItem) {
+                for (offset, item) in (favoriteItems + [.separator()]).enumerated() {
+                    menu.insertItem(item, at: separator + 1 + offset)
+                }
+            }
+            return menu
         }
     }
 }
