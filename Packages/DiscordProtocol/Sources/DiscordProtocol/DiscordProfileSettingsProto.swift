@@ -7,15 +7,15 @@ extension DiscordRESTProvider {
     func applyProfileSettingsProto(_ encoded: String?, isPartial: Bool) -> Bool {
         guard let encoded, let data = Data(base64Encoded: encoded) else { return false }
         let version = DiscordSettingsProto.dataVersion(in: data)
-        if let version { settingsDataVersion = max(settingsDataVersion ?? version, version) }
+        if let version { DiscordSettingsProto.advance(&settingsDataVersion, to: version) }
         let status = DiscordSettingsProto.statusSettings(in: data) ?? (isPartial ? nil : Data())
-        let isStale = version.flatMap { incoming in profileStatusSettingsDataVersion.map { incoming < $0 } } ?? false
+        let isStale = DiscordSettingsProto.isStale(version, comparedWith: profileStatusSettingsDataVersion)
         if let status, !isStale {
             adoptStatusSettings(status)
             if let version { profileStatusSettingsDataVersion = version }
         }
         let developerMode = DiscordSettingsProto.profileDeveloperMode(from: data)
-        let developerIsStale = version.flatMap { incoming in profileDeveloperSettingsDataVersion.map { incoming < $0 } } ?? false
+        let developerIsStale = DiscordSettingsProto.isStale(version, comparedWith: profileDeveloperSettingsDataVersion)
         if !developerIsStale, developerMode != nil || !isPartial {
             profileDeveloperMode = developerMode ?? false
             if let version { profileDeveloperSettingsDataVersion = version }
@@ -48,7 +48,7 @@ extension DiscordRESTProvider {
             }
             let settings: UserSettingsProtoDTO = try decodedResponse(data, response, method: "PATCH", path: path)
             if let root = Data(base64Encoded: settings.settings), let version = DiscordSettingsProto.dataVersion(in: root) {
-                settingsDataVersion = max(settingsDataVersion ?? version, version)
+                DiscordSettingsProto.advance(&settingsDataVersion, to: version)
             }
             return settings
         }
