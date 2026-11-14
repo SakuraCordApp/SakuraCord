@@ -475,6 +475,17 @@ extension NativeTimelineRowPainter {
 
     static var attachmentCornerRadius: CGFloat { InterfaceScale.metric(8) }
 
+    /// Draws `body` at `opacity` composited as one layer, so images, symbols
+    /// and text fade together; at full opacity it draws directly.
+    static func drawing(opacity: CGFloat, in context: CGContext?, _ body: () -> Void) {
+        if opacity < 1 {
+            context?.setAlpha(opacity)
+            context?.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
+        body()
+        if opacity < 1 { context?.endTransparencyLayer() }
+    }
+
     private static func drawMessageVoiceMessage(_ input: NativeTimelineMessageDrawInput) {
         guard let region = input.layout.voiceMessageRegion else { return }
         let playback = input.model?.voiceMessagePlayback
@@ -482,12 +493,9 @@ extension NativeTimelineRowPainter {
         let context = NSGraphicsContext.current?.cgContext
         context?.saveGState()
         defer { context?.restoreGState() }
-        if opacity < 1 {
-            context?.setAlpha(opacity)
-            context?.beginTransparencyLayer(auxiliaryInfo: nil)
+        drawing(opacity: opacity, in: context) {
+            NativeTimelineVoiceMessagePainter.drawIdle(region, playback: playback)
         }
-        NativeTimelineVoiceMessagePainter.drawIdle(region, playback: playback)
-        if opacity < 1 { context?.endTransparencyLayer() }
     }
 
     private static func drawMessageAttachments(_ input: NativeTimelineMessageDrawInput) {
@@ -504,34 +512,31 @@ extension NativeTimelineRowPainter {
         // global alpha. Composite the complete attachment gallery as one layer
         // so bitmap images, symbols, text, and placeholders share the pending
         // message presentation instead of only dimming Quartz-drawn pieces.
-        if opacity < 1 {
-            attachmentContext?.setAlpha(opacity)
-            attachmentContext?.beginTransparencyLayer(auxiliaryInfo: nil)
-        }
-        let attachmentFillsFrame =
-            MediaGalleryImagePresentation.fillsFrame(
-                itemCount: layout.mediaGalleryItemCount
-            )
-        if let bubble = layout.bubbleRegion, let section = fileSectionFrame(layout) {
-            bubbleIntegratedSection(
-                section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true, drawsNeutralRail: false
-            )
-        }
-        for region in layout.attachmentRegions {
-            let isConcealed =
-                spoilerRevealStore.map {
-                    NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                        messageID: message.id,
-                        contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
-                        isSpoiler: region.attachment.isSpoiler,
-                        store: $0
-                    )
-                } ?? false
-            NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: layout.cornerRadius(of: region)) {
-                drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
+        drawing(opacity: opacity, in: attachmentContext) {
+            let attachmentFillsFrame =
+                MediaGalleryImagePresentation.fillsFrame(
+                    itemCount: layout.mediaGalleryItemCount
+                )
+            if let bubble = layout.bubbleRegion, let section = fileSectionFrame(layout) {
+                bubbleIntegratedSection(
+                    section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true, drawsNeutralRail: false
+                )
+            }
+            for region in layout.attachmentRegions {
+                let isConcealed =
+                    spoilerRevealStore.map {
+                        NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                            messageID: message.id,
+                            contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
+                            isSpoiler: region.attachment.isSpoiler,
+                            store: $0
+                        )
+                    } ?? false
+                NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: layout.cornerRadius(of: region)) {
+                    drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
+                }
             }
         }
-        if opacity < 1 { attachmentContext?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
 
@@ -780,36 +785,33 @@ extension NativeTimelineRowPainter {
         let opacity = CGFloat(
             MessageOutboxPresentation.mediaOpacity(for: message.outboxState)
         )
-        if opacity < 1 {
-            stickerContext?.setAlpha(opacity)
-            stickerContext?.beginTransparencyLayer(auxiliaryInfo: nil)
-        }
-        for (index, frame) in layout.stickerFrames.enumerated() {
-            let sticker = message.stickers.indices.contains(index)
-                ? message.stickers[index]
-                : nil
-            if let sticker,
-               input.animatedOverlayRoles.contains(.sticker(sticker.id)) {
-                continue
-            }
-            let image = sticker?.mediaURL.flatMap {
-                mediaImage(
-                    for: .media($0, maximumPixelDimension: 384)
-                )
-            }
-            if let image {
-                drawImage(image, in: frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: false)
-            } else {
-                card(frame, tint: .systemPink)
-                text(
-                    sticker?.name ?? "Sticker",
-                    in: frame.insetBy(dx: InterfaceScale.metric(12), dy: InterfaceScale.metric(10)),
-                    font: .interfaceSystemFont(ofSize: 13, weight: .medium),
-                    color: .secondaryLabelColor
-                )
+        drawing(opacity: opacity, in: stickerContext) {
+            for (index, frame) in layout.stickerFrames.enumerated() {
+                let sticker = message.stickers.indices.contains(index)
+                    ? message.stickers[index]
+                    : nil
+                if let sticker,
+                   input.animatedOverlayRoles.contains(.sticker(sticker.id)) {
+                    continue
+                }
+                let image = sticker?.mediaURL.flatMap {
+                    mediaImage(
+                        for: .media($0, maximumPixelDimension: 384)
+                    )
+                }
+                if let image {
+                    drawImage(image, in: frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: false)
+                } else {
+                    card(frame, tint: .systemPink)
+                    text(
+                        sticker?.name ?? "Sticker",
+                        in: frame.insetBy(dx: InterfaceScale.metric(12), dy: InterfaceScale.metric(10)),
+                        font: .interfaceSystemFont(ofSize: 13, weight: .medium),
+                        color: .secondaryLabelColor
+                    )
+                }
             }
         }
-        if opacity < 1 { stickerContext?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
 
