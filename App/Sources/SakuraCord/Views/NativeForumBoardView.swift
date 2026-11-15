@@ -788,7 +788,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let frames = cardRegions(for: id)?.skeletonFrames ?? []
         var color = NSColor.white
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            color = ForumCardPainter.skeletonFill
+            color = SkeletonShimmerStyle.baseColor()
         }
         card.updateShimmer(
             frames: frames,

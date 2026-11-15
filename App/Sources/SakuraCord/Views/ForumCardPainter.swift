@@ -64,9 +64,6 @@ enum ForumCardPainter {
 
     static var newBadgeSize: CGSize { fonts.newBadgeSize }
     private static var newBadgeSpacing: CGFloat { InterfaceScale.metric(8) }
-    /// Matches the shared skeleton style's resting fill; the shimmer above
-    /// the bars uses it too.
-    static let skeletonFill = NSColor.labelColor.withAlphaComponent(0.09)
     private static let bullet = " • "
     static let newBadgeFill = NSColor(srgbRed: 0xC9 / 255, green: 0xD2 / 255, blue: 1, alpha: 1)
     static let newBadgeText = NSColor(srgbRed: 0x58 / 255, green: 0x65 / 255, blue: 0xF2 / 255, alpha: 1)
@@ -329,9 +326,15 @@ enum ForumCardPainter {
 
     /// Skeleton bars, drawn beneath the shimmer layer that animates over them.
     static func drawSkeleton(_ frames: [CGRect], on canvas: ForumCardCanvas) {
+        let fill = SkeletonShimmerStyle.baseColor()
         for frame in frames {
-            canvas.fill(frame, cornerRadius: min(InterfaceScale.metric(7), frame.height / 2), color: skeletonFill)
+            canvas.fill(frame, cornerRadius: skeletonCornerRadius(for: frame), color: fill)
         }
+    }
+
+    /// Shared by the bars and the shimmer mask over them.
+    static func skeletonCornerRadius(for frame: CGRect) -> CGFloat {
+        min(InterfaceScale.metric(7), frame.height / 2)
     }
 
     private static func drawStatusRow(_ presentation: ForumCardPresentation, in frame: CGRect, on canvas: ForumCardCanvas) {

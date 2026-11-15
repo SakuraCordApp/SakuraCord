@@ -230,7 +230,7 @@ final class ForumBoardCard {
         }()
         let path = CGMutablePath()
         for frame in frames {
-            let radius = min(InterfaceScale.metric(7), frame.height / 2)
+            let radius = ForumCardPainter.skeletonCornerRadius(for: frame)
             path.addRoundedRect(in: frame, cornerWidth: radius, cornerHeight: radius)
         }
         let bounds = CGRect(origin: .zero, size: layer.bounds.size)
