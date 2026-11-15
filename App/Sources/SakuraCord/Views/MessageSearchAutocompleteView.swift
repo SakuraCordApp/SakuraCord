@@ -292,19 +292,23 @@ enum MessageSearchAutocompletePolicy {
             return Result(suggestions: [], selectsFirst: false)
         }
 
-        let value = String(fragment[fragment.index(after: separator)...])
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"@#"))
+        let rawValue = String(fragment[fragment.index(after: separator)...])
+        let value = rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "\"@#"))
         let rows: [MessageSearchAutocompleteSuggestion]
         switch searchOperator {
         case .from, .mentions:
-            rows = [.heading(searchOperator == .from ? "From User" : "Mentions User")]
-                + userResults(
-                    query: value,
-                    op: searchOperator,
-                    model: model,
-                    index: searchIndex(model: model),
-                    limit: 10
-                )
+            // Discord queries users with the raw value up to its first `#`,
+            // and shows no section when nothing matches.
+            let users = userResults(
+                query: String(rawValue.prefix { $0 != "#" }),
+                op: searchOperator,
+                model: model,
+                index: searchIndex(model: model),
+                limit: 10
+            )
+            rows = users.isEmpty
+                ? []
+                : [.heading(searchOperator == .from ? "From User" : "Mentions User")] + users
         case .in:
             rows = [.heading("In Channel")]
                 + channelResults(
@@ -436,7 +440,10 @@ enum MessageSearchAutocompletePolicy {
                     return message.author
                 }.prefix(limit).map { userSuggestion($0, op: op, model: model) }
             }
-            return index.messageSearchUnqueriedUserResults(limit: limit).map {
+            return userSearchIndex(
+                model: model,
+                index: index
+            ).messageSearchUnqueriedUserResults(limit: limit).map {
                 userSuggestion($0, op: op, model: model)
             }.filter {
                 guard case .user(_, let user) = $0 else { return true }
@@ -469,7 +476,7 @@ enum MessageSearchAutocompletePolicy {
             let normalizedQuery = query.trimmingCharacters(
                 in: CharacterSet(charactersIn: "@")
             ).lowercased()
-            if "me".hasPrefix(normalizedQuery), !normalizedQuery.isEmpty,
+            if "me".hasPrefix(normalizedQuery), !query.isEmpty,
                let currentUser = model.currentUser,
                joinedUserIDs.contains(currentUser.id)
             {
@@ -497,7 +504,7 @@ enum MessageSearchAutocompletePolicy {
         }
         let normalizedQuery = query.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
             .lowercased()
-        if "me".hasPrefix(normalizedQuery), !normalizedQuery.isEmpty,
+        if "me".hasPrefix(normalizedQuery), !query.isEmpty,
            let currentUser = model.currentUser
         {
             suggestions.removeAll {
@@ -659,8 +666,11 @@ enum MessageSearchAutocompletePolicy {
         model: AppModel,
         index: ConversationDestinationSearchPolicy.Index
     ) -> ConversationDestinationSearchPolicy.Index {
-        guard let selectedGuildID = model.selectedGuildID
-        else { return index }
+        guard let selectedGuildID = model.selectedGuildID else {
+            return directMessageScopeUsers(model: model).map {
+                searchIndex(model: model, users: $0)
+            } ?? index
+        }
         var aliases = model.userSearchAliasesByUserID
         let selected = [selectedGuildID]
         let guildIDs = selected + model.quickSwitcherGuildMemberAliases.keys.sorted().filter {
@@ -677,6 +687,25 @@ enum MessageSearchAutocompletePolicy {
             }
         }
         return index.quickSwitcherUserIndex(userSearchAliasesByUserID: aliases)
+    }
+
+    /// Discord's DM search suggests every UserStore user unless `in:` tokens
+    /// name private channels. Then it suggests only their recipients, in
+    /// token and recipient order, followed by the current user.
+    private static func directMessageScopeUsers(model: AppModel) -> [User]? {
+        let channels = model.messageSearchChannels
+        var seen = Set<UserID>()
+        var users = model.messageSearch.tokens.flatMap { token -> [User] in
+            guard case .channel(let channelID, _) = token.kind,
+                  let channel = channels.first(where: { $0.id == channelID })
+            else { return [] }
+            return channel.kind == .directMessage
+                ? Array(channel.recipients.prefix(1))
+                : channel.recipients
+        }.filter { seen.insert($0.id).inserted }
+        guard !users.isEmpty else { return nil }
+        if let currentUser = model.currentUser { users.append(currentUser) }
+        return users
     }
 
     private static func fuzzyContains(_ candidate: String, query: String) -> Bool {
