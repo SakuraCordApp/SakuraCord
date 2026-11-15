@@ -367,13 +367,7 @@ extension AppModel {
         _ link: URL,
         to destination: MessageComposerDestination
     ) {
-        let value = link.absoluteString
-        switch destination {
-        case .channel:
-            updateDraft(appending(value, to: draft))
-        case .thread:
-            threadDraft = appending(value, to: threadDraft)
-        }
+        updateDraft(appending(link.absoluteString, to: draft(in: destination)), in: destination)
     }
 
     private func appending(_ value: String, to draft: String) -> String {

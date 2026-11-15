@@ -168,7 +168,7 @@ extension AppModel {
     }
 
     func updateDraft(_ value: String) {
-        let draftByteDelta = Int64(value.utf8.count - draft.utf8.count)
+        let previous = draft
         draft = value
         reconcileDraftTranslationText(value, in: .channel)
         if value.hasPrefix("/") || commandComposer.activeCommand != nil {
@@ -177,8 +177,14 @@ extension AppModel {
             scheduleLocalTyping(for: value)
         }
         guard let channelID = selectedChannelID else { return }
+        persistDraft(value, replacing: previous, in: channelID)
+    }
+
+    /// Saves a composer's text as its conversation's draft, which returning
+    /// to the conversation restores.
+    private func persistDraft(_ value: String, replacing previous: String, in channelID: ChannelID) {
         LocalStorageBudgetCoordinator.shared.scheduleAdjustment(
-            draftByteDelta: draftByteDelta
+            draftByteDelta: Int64(value.utf8.count - previous.utf8.count)
         )
         quickSwitcherDraftChannelIDs.removeAll { $0 == channelID }
         if !value.isEmpty {
@@ -206,6 +212,7 @@ extension AppModel {
 
     func updateThreadDraft(_ value: String) {
         guard threadCreation?.isSubmitting != true else { return }
+        let previous = threadDraft
         threadDraft = value
         reconcileDraftTranslationText(value, in: .thread)
         guard let thread = openThread else {
@@ -213,6 +220,7 @@ extension AppModel {
             return
         }
         scheduleLocalTyping(for: value, channelID: thread.id)
+        persistDraft(value, replacing: previous, in: thread.id)
     }
 
     func scheduleLocalTyping(for value: String, channelID: ChannelID? = nil) {

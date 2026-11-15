@@ -135,6 +135,7 @@ extension AppModel {
         threadDraft = ""
         threadReplyingTo = nil
         restoreComposerConversation(.thread, conversationID: thread.id)
+        restoreThreadDraft(threadID: thread.id)
         translation.resetDraft(.thread)
 
         if openThreadNeedsAccessResolution(thread) {
@@ -194,6 +195,17 @@ extension AppModel {
         // Gateway may not deliver every message of a closed thread, so a
         // cached window is shown immediately and always revalidated.
         beginInitialThreadLoad(thread, preservingWindow: cachedBoundary != nil)
+    }
+
+    /// Restores the thread's saved text unless its composer changed
+    /// meanwhile, as opening another thread or closing it does.
+    private func restoreThreadDraft(threadID: ChannelID) {
+        let draftRevision = composer.threadDraftRevision
+        startAccountChildTask(account: accountSession()) { model, account in
+            let savedDraft = await model.storedDraft(in: threadID, account: account)
+            guard model.isCurrentAccountSession(account) else { return }
+            model.composer.restoreDraft(savedDraft, in: .thread, ifUnchangedSince: draftRevision)
+        }
     }
 
     /// Without Manage Threads a private thread is readable only to members, so

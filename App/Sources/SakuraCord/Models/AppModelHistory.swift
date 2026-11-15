@@ -234,7 +234,7 @@ extension AppModel {
             guard model.isCurrentAccountSession(account),
                   model.isCurrentLoad(channelID, generation: generation)
             else { return }
-            model.composer.restoreDraft(savedDraft, ifUnchangedSince: draftRevision)
+            model.composer.restoreDraft(savedDraft, in: .channel, ifUnchangedSince: draftRevision)
         }
     }
 
@@ -322,7 +322,7 @@ extension AppModel {
         guard isCurrentAccountSession(account),
               isCurrentLoad(channelID, generation: generation)
         else { return }
-        composer.restoreDraft(savedDraft, ifUnchangedSince: draftRevision)
+        composer.restoreDraft(savedDraft, in: .channel, ifUnchangedSince: draftRevision)
 
         do {
             let page = try await freshPageTask.value

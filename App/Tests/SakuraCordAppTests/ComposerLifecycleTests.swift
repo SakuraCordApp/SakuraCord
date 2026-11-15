@@ -93,6 +93,22 @@ func cachedChannelDraftIsolation(destinationDraft: String, editsDuringRestoratio
 }
 
 @MainActor
+@Test func `thread drafts survive leaving and reopening the thread`() async throws {
+    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    await model.start()
+    let parentID = try #require(model.selectedChannelID)
+    let first = MessageThreadSummary(id: ChannelID(rawValue: 9_100), parentID: parentID, name: "First")
+    let second = MessageThreadSummary(id: ChannelID(rawValue: 9_101), parentID: parentID, name: "Second")
+    model.openThreadConversation(first, starter: nil, startedAt: nil, initialMessages: [])
+    model.updateThreadDraft("thread draft")
+    model.openThreadConversation(second, starter: nil, startedAt: nil, initialMessages: [])
+    #expect(model.threadDraft.isEmpty)
+    model.closeThread()
+    model.openThreadConversation(first, starter: nil, startedAt: nil, initialMessages: [])
+    #expect(await eventually { model.threadDraft == "thread draft" })
+}
+
+@MainActor
 @Test func `composer reset drains ordered writes into their original account database`() async throws {
     let first = try SakuraCordDatabase(inMemory: true)
     let second = try SakuraCordDatabase(inMemory: true)
@@ -376,7 +392,7 @@ func `refresh identity replay preserves event order and later guild mentions`(re
     }
     let revision = model.composer.draftRevision
     let restored = await model.storedDraft(in: channelID, account: model.accountSession())
-    model.composer.restoreDraft(restored, ifUnchangedSince: revision)
+    model.composer.restoreDraft(restored, in: .channel, ifUnchangedSince: revision)
     #expect(model.draft == "accepted edit 99")
     await model.composer.reset()
     #expect(restored == "accepted edit 99")
@@ -401,7 +417,7 @@ func `clearing drafts invalidates unpublished restorations`(clearsAll: Bool, edi
     if clearsAll { try await model.clearAllLocalDrafts() }
     else { try await model.clearLocalDrafts() }
     if editsAfterClear { model.updateDraft("new draft") }
-    model.composer.restoreDraft(savedDraft, ifUnchangedSince: revision)
+    model.composer.restoreDraft(savedDraft, in: .channel, ifUnchangedSince: revision)
     await model.composer.flushDraftOperations()
     #expect(model.draft == (editsAfterClear ? "new draft" : ""))
     #expect(try await database.draft(channelID: channelID) == (editsAfterClear ? "new draft" : ""))
