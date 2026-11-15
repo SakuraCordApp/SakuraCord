@@ -9,227 +9,6 @@ private struct ForwardDestinationResolution: Sendable {
 }
 
 extension AppModel {
-    func consumeForwardSearchPeopleEvent(_ event: ClientEvent) -> Bool {
-        switch event {
-        case .privateMembersChanged(let value):
-            if selectedGuildID == nil { members = value }
-        case .knownUsersChanged(let users):
-            updateForwardSnapshot { $0.knownUsers = users }
-        case .quickSwitcherUserIDsChanged(let userIDs):
-            updateForwardSnapshot { $0.quickSwitcherUserIDs = userIDs }
-        case .messageSearchUsersChanged(let users):
-            // Only message search reads this cache, so the forwarding and quick
-            // switcher index revision stays put.
-            guard snapshotStorage != nil else { break }
-            snapshotStorage?.messageSearchUsers = users
-            refreshSearchSnapshotPresentation()
-        case .userSearchAliasesChanged(let aliases):
-            updateForwardSnapshot { $0.userSearchAliasesByUserID = aliases }
-        case .quickSwitcherGuildMemberUserIDsChanged(let userIDsByGuildID):
-            updateForwardSnapshot { $0.quickSwitcherGuildMemberUserIDs = userIDsByGuildID }
-        case .quickSwitcherJoinedMemberIDsChanged(let userIDsByGuildID):
-            updateForwardSnapshot { $0.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID }
-        case .quickSwitcherGuildMemberAliasesChanged(let aliasesByGuildID):
-            updateForwardSnapshot { $0.quickSwitcherGuildMemberAliases = aliasesByGuildID }
-        case .relationshipsChanged(let relationships):
-            applyRelationships(relationships)
-        case let .relationshipPresencesChanged(presences, isComplete):
-            applyRelationshipPresences(presences, isComplete: isComplete)
-        default:
-            return false
-        }
-        return true
-    }
-
-    // Search caches invalidate search consumers without rebuilding workspace chrome.
-    private func updateForwardSnapshot(
-        _ update: (inout BootstrapSnapshot) -> Void
-    ) {
-        guard var value = snapshotStorage else { return }
-        update(&value)
-        snapshotStorage = value
-        refreshSearchSnapshotPresentation()
-        forwardSearchSourceRevision &+= 1
-    }
-
-    nonisolated static func updatedForwardDestinationHistory(
-        _ history: [ChannelID],
-        visiting channelID: ChannelID
-    ) -> [ChannelID] {
-        var result = history.filter { $0 != channelID }
-        result.insert(channelID, at: 0)
-        return Array(result.prefix(8))
-    }
-
-    func configureForwardDestinationHistoryScope(_ scope: String) {
-        let safeScope = scope.replacingOccurrences(
-            of: #"[^A-Za-z0-9_.-]"#, with: "-", options: .regularExpression
-        )
-        let historyKey = "dev.sakuracord.forward-destination-history.\(safeScope)"
-        let deltasKey = "dev.sakuracord.forward-frecency-deltas.\(safeScope)"
-        if discordFrecencyUsageDeltasDefaultsKey != deltasKey {
-            appliedDiscordFrecencyDeltasKey = nil
-        }
-        forwardDestinationHistoryDefaultsKey = historyKey
-        discordFrecencyUsageDeltasDefaultsKey = deltasKey
-        guard launchMode == .normal else {
-            forwardDestinationHistory = []
-            persistedDiscordFrecencyUsageDeltas = [:]
-            appliedDiscordFrecencyDeltasKey = nil
-            return
-        }
-        forwardDestinationHistory = Array(
-            (UserDefaults.standard.stringArray(forKey: historyKey) ?? [])
-                .compactMap(ChannelID.init)
-                .prefix(8)
-        )
-        if let data = UserDefaults.standard.data(forKey: discordFrecencyUsageDeltasDefaultsKey),
-           let value = try? JSONDecoder().decode(
-               [String: DiscordFrecencyUsage].self,
-               from: data
-           )
-        {
-            persistedDiscordFrecencyUsageDeltas = value
-        } else {
-            persistedDiscordFrecencyUsageDeltas = [:]
-        }
-        if hasLoadedDiscordEmojiSettings,
-           appliedDiscordFrecencyDeltasKey
-            != discordFrecencyUsageDeltasDefaultsKey
-        {
-            applyPersistedDiscordFrecencyUsageDeltas()
-        }
-    }
-
-    func recordForwardDestinationVisit(_ channelID: ChannelID) {
-        forwardDestinationHistory = Self.updatedForwardDestinationHistory(
-            forwardDestinationHistory,
-            visiting: channelID
-        )
-        guard launchMode == .normal else { return }
-        UserDefaults.standard.set(
-            forwardDestinationHistory.map(\.description),
-            forKey: forwardDestinationHistoryDefaultsKey
-        )
-        let now = UInt64(Date().timeIntervalSince1970 * 1_000)
-        if lastDiscordFrecencyChannelID != channelID {
-            lastDiscordFrecencyChannelID = channelID
-            recordDiscordFrecencyUse(channelID.description, timestamp: now)
-        }
-        let guildID = snapshot?.channels.first(where: { $0.id == channelID })?.guildID
-        if lastDiscordFrecencyGuildID != guildID {
-            lastDiscordFrecencyGuildID = guildID
-            if let guildID {
-                recordDiscordFrecencyUse(guildID.description, timestamp: now)
-            }
-        }
-    }
-
-    func recordDiscordFrecencyUse(_ key: String, timestamp: UInt64) {
-        recordPersistedDiscordFrecencyUsageDelta(key, timestamp: timestamp)
-        guard hasLoadedDiscordEmojiSettings else {
-            pendingDiscordFrecencyUses.append((key, timestamp))
-            return
-        }
-        if discordGuildAndChannelUsage[key] == nil {
-            discordGuildAndChannelUsageOrder.append(key)
-        }
-        var usage = discordGuildAndChannelUsage[key]
-            ?? DiscordFrecencyUsage(totalUses: 0, recentUses: [])
-        usage.totalUses += 1
-        usage.recentUses.append(timestamp)
-        while usage.recentUses.count > 10 {
-            usage.recentUses.removeFirst()
-        }
-        discordGuildAndChannelUsage[key] = usage
-        discordGuildAndChannelUsageScores[key] = Self.discordFrecencyScore(
-            usage,
-            nowMilliseconds: timestamp
-        )
-    }
-
-    func applyPersistedDiscordFrecencyUsageDeltas() {
-        guard appliedDiscordFrecencyDeltasKey
-            != discordFrecencyUsageDeltasDefaultsKey
-        else { return }
-        let now = UInt64(Date().timeIntervalSince1970 * 1_000)
-        let orderedDeltas = persistedDiscordFrecencyUsageDeltas.sorted { lhs, rhs in
-            let left = lhs.value.recentUses.min() ?? .max
-            let right = rhs.value.recentUses.min() ?? .max
-            return left == right ? lhs.key < rhs.key : left < right
-        }
-        for (key, delta) in orderedDeltas {
-            if discordGuildAndChannelUsage[key] == nil {
-                discordGuildAndChannelUsageOrder.append(key)
-            }
-            let usage = Self.mergedDiscordFrecencyUsage(
-                base: discordGuildAndChannelUsage[key],
-                delta: delta
-            )
-            discordGuildAndChannelUsage[key] = usage
-            discordGuildAndChannelUsageScores[key] = Self.discordFrecencyScore(
-                usage,
-                nowMilliseconds: now
-            )
-        }
-        pendingDiscordFrecencyUses = []
-        appliedDiscordFrecencyDeltasKey =
-            discordFrecencyUsageDeltasDefaultsKey
-    }
-
-    nonisolated static func mergedDiscordFrecencyUsage(
-        base: DiscordFrecencyUsage?,
-        delta: DiscordFrecencyUsage
-    ) -> DiscordFrecencyUsage {
-        DiscordFrecencyUsage(
-            totalUses: (base?.totalUses ?? 0) + delta.totalUses,
-            recentUses: Array(
-                ((base?.recentUses ?? []) + delta.recentUses).sorted().suffix(10)
-            )
-        )
-    }
-
-    private func recordPersistedDiscordFrecencyUsageDelta(
-        _ key: String,
-        timestamp: UInt64
-    ) {
-        guard launchMode == .normal else { return }
-        var delta = persistedDiscordFrecencyUsageDeltas[key]
-            ?? DiscordFrecencyUsage(totalUses: 0, recentUses: [])
-        delta.totalUses += 1
-        delta.recentUses.append(timestamp)
-        delta.recentUses.sort()
-        delta.recentUses = Array(delta.recentUses.suffix(10))
-        persistedDiscordFrecencyUsageDeltas[key] = delta
-        if let data = try? JSONEncoder().encode(persistedDiscordFrecencyUsageDeltas) {
-            UserDefaults.standard.set(data, forKey: discordFrecencyUsageDeltasDefaultsKey)
-        }
-    }
-
-    nonisolated static func discordFrecencyScore(
-        _ usage: DiscordFrecencyUsage,
-        nowMilliseconds: UInt64
-    ) -> Int? {
-        let samples = usage.recentUses.prefix(10)
-        guard !samples.isEmpty else { return nil }
-        let day: UInt64 = 86_400_000
-        let score = samples.reduce(into: 0) { result, timestamp in
-            let age = timestamp >= nowMilliseconds
-                ? 0
-                : Int((nowMilliseconds - timestamp) / day)
-            let weight = switch age {
-            case 0: 100
-            case 1: 70
-            case 2 ... 3: 50
-            case 4 ... 6: 30
-            default: 10
-            }
-            result += weight
-        }
-        let value = ceil(Double(usage.totalUses * score) / Double(samples.count))
-        return value >= Double(Int.max) ? Int.max : Int(value)
-    }
-
     func presentForwarding(_ message: Message) {
         guard canForward(message) else { return }
         forwardingErrorMessage = nil
@@ -244,20 +23,7 @@ extension AppModel {
     @discardableResult
     func forward(
         _ message: Message,
-        to destinationChannelIDs: [ChannelID],
-        context: String
-    ) async -> Bool {
-        await forward(
-            message,
-            to: destinationChannelIDs.map(ForwardDestinationID.channel),
-            context: context
-        )
-    }
-
-    @discardableResult
-    func forward(
-        _ message: Message,
-        to destinationIDs: [ForwardDestinationID],
+        to destinationIDs: [ConversationDestinationID],
         context: String
     ) async -> Bool {
         let requestedDestinations = uniqueForwardDestinations(destinationIDs)
@@ -288,14 +54,14 @@ extension AppModel {
     }
 
     private func uniqueForwardDestinations(
-        _ destinationIDs: [ForwardDestinationID]
-    ) -> [ForwardDestinationID] {
-        var seen: Set<ForwardDestinationID> = []
+        _ destinationIDs: [ConversationDestinationID]
+    ) -> [ConversationDestinationID] {
+        var seen: Set<ConversationDestinationID> = []
         return Array(destinationIDs.filter { seen.insert($0).inserted }.prefix(5))
     }
 
     private func resolveForwardDestinations(
-        _ destinationIDs: [ForwardDestinationID],
+        _ destinationIDs: [ConversationDestinationID],
         session: AppModelAccountSession
     ) async -> [ForwardDestinationResolution] {
         let knownChannels = snapshot?.channels ?? []
@@ -322,7 +88,7 @@ extension AppModel {
     }
 
     nonisolated private static func resolveForwardDestination(
-        _ destination: ForwardDestinationID,
+        _ destination: ConversationDestinationID,
         index: Int,
         knownChannels: [Channel],
         knownThreadIDs: Set<ChannelID>,
@@ -331,7 +97,7 @@ extension AppModel {
         switch destination {
         case .channel(let channelID):
             let isKnown = knownChannels.contains {
-                $0.id == channelID && supportsForwardDestination($0.kind)
+                $0.id == channelID && ConversationDestinationPermissionPolicy.supportsDestination($0.kind)
             } || knownThreadIDs.contains(channelID)
             return ForwardDestinationResolution(
                 index: index,
@@ -408,7 +174,8 @@ extension AppModel {
                 group.addTask {
                     await self.sendForward(
                         message, to: destinationID,
-                        context: contextDestinationIDs.contains(destinationID) ? context : "",
+                        context: context,
+                        sendsContext: contextDestinationIDs.contains(destinationID),
                         session: session
                     )
                 }
@@ -423,7 +190,7 @@ extension AppModel {
 
     private func sendForward(
         _ message: Message, to destinationID: ChannelID,
-        context: String, session: AppModelAccountSession
+        context: String, sendsContext: Bool, session: AppModelAccountSession
     ) async -> String? {
         guard isCurrentAccountSession(session) else { return nil }
         guard allowSlowmodeSubmission(in: destinationID) else {
@@ -433,21 +200,26 @@ extension AppModel {
         defer {
             if isCurrentAccountSession(session) { composer.slowmode.end(in: destinationID) }
         }
+        // Discord reads `@silent` from the accompanying message and silences
+        // the forward with it, even where slowmode holds that message back.
+        // The message's own send reads the prefix again, as Discord's does,
+        // and sends nothing if no text is left.
+        let (isSilent, comment) = SilentMessagePrefix.split(context)
+        let accompanying = SendMessageDraft(channelID: destinationID, content: comment, suppressesNotifications: isSilent)
         do {
             let confirmed = try await session.provider.forward(ForwardMessageDraft(
                 sourceMessageID: message.id,
                 sourceChannelID: message.channelID,
                 sourceGuildID: message.guildID,
-                destinationChannelID: destinationID
+                destinationChannelID: destinationID,
+                suppressesNotifications: isSilent
             ))
             guard isCurrentAccountSession(session) else { return nil }
             confirmSlowmodeMessage(confirmed)
-            if !context.isEmpty, shouldSendForwardContext(to: destinationID) {
-                let confirmedContext = try await session.provider.send(SendMessageDraft(
-                    channelID: destinationID, content: context
-                ))
+            if sendsContext, !accompanying.isEmpty, shouldSendForwardContext(to: destinationID) {
+                let confirmedContext = try await session.provider.send(accompanying)
                 guard isCurrentAccountSession(session) else { return nil }
-                recordMessageEmojiUsage(context)
+                recordMessageEmojiUsage(accompanying.content)
                 confirmSlowmodeMessage(confirmedContext)
             }
             return nil
@@ -464,20 +236,6 @@ extension AppModel {
             : "Forwarding failed for \(failures.count) destinations."
         errorMessage = forwardingErrorMessage
     }
-
-    nonisolated static func supportsForwardDestination(_ kind: ChannelKindValue) -> Bool {
-        switch kind {
-        case .text, .announcement, .voice, .directMessage, .groupDirectMessage: true
-        case .forum, .unknown: false
-        }
-    }
-
-    nonisolated static func supportsForwardSearchCandidate(_ kind: ChannelKindValue) -> Bool {
-        switch kind {
-        case .text, .announcement, .forum, .voice, .groupDirectMessage: true
-        case .directMessage, .unknown: false
-        }
-    }
 }
 
 extension AppModel {
@@ -493,111 +251,10 @@ extension AppModel {
         else { return true }
         guard let guildID = channel.guildID else { return true }
         guard let guild = serverRailGuildsByID[guildID],
-              !guild.features.contains("FORWARDING_DISABLED"),
+              !guild.features.contains(GuildFeature.forwardingDisabled),
               let permissions = effectiveMessagePermissions(in: channel)
         else { return false }
         return permissions & DiscordPermissionBits.readMessageHistory != 0
-    }
-
-    /// Discord's global search admits guild text candidates with VIEW_CHANNEL
-    /// and vocal candidates with VIEW_CHANNEL plus CONNECT. The forwarding
-    /// filter runs only after that category has been truncated.
-    func canSearchForwardDestination(_ channel: Channel) -> Bool {
-        canSearchForwardDestination(
-            channel,
-            permissions: forwardDestinationPermissions(channel)
-        )
-    }
-
-    func canSearchForwardDestination(
-        _ channel: Channel,
-        permissions: UInt64?
-    ) -> Bool {
-        ForwardDestinationPermissionPolicy.canSearchChannel(
-            channel,
-            permissions: permissions
-        )
-    }
-
-    /// Discord applies the actual forwarding filter after the raw per-category
-    /// limit. Guild destinations require VIEW_CHANNEL and SEND_MESSAGES; vocal
-    /// destinations have already passed the search-stage CONNECT check.
-    func canUseForwardDestination(_ channel: Channel) -> Bool {
-        canUseForwardDestination(
-            channel,
-            permissions: forwardDestinationPermissions(channel)
-        )
-    }
-
-    func canUseForwardDestination(
-        _ channel: Channel,
-        permissions: UInt64?
-    ) -> Bool {
-        ForwardDestinationPermissionPolicy.canUseChannel(
-            channel,
-            permissions: permissions
-        )
-    }
-
-    /// Active joined threads remain valid targets even when their parent is a
-    /// forum, which is not itself a forward destination in Discord's picker.
-    func canSearchForwardThreadDestination(parent: Channel) -> Bool {
-        canSearchForwardThreadDestination(
-            parent: parent,
-            permissions: forwardDestinationPermissions(parent)
-        )
-    }
-
-    func canSearchForwardThreadDestination(
-        parent: Channel,
-        permissions: UInt64?
-    ) -> Bool {
-        ForwardDestinationPermissionPolicy.canSearchThread(
-            parent: parent,
-            permissions: permissions
-        )
-    }
-
-    func canUseForwardThreadDestination(parent: Channel) -> Bool {
-        canUseForwardThreadDestination(
-            parent: parent,
-            permissions: forwardDestinationPermissions(parent)
-        )
-    }
-
-    func canUseForwardThreadDestination(
-        parent: Channel,
-        permissions: UInt64?
-    ) -> Bool {
-        ForwardDestinationPermissionPolicy.canUseThread(
-            parent: parent,
-            permissions: permissions
-        )
-    }
-
-    private func forwardDestinationPermissions(_ channel: Channel) -> UInt64? {
-        guard let guildID = channel.guildID else {
-            return nil
-        }
-        return forwardDestinationPermissions(
-            channel,
-            permissionBasis: conversationPermissionBasis(for: guildID)
-        )
-    }
-
-    func forwardDestinationPermissions(
-        _ channel: Channel,
-        permissionBasis: ConversationPermissionBasis?
-    ) -> UInt64? {
-        guard let permissionBasis else { return nil }
-        return ConversationPermissionResolver.effectivePermissions(
-            guild: permissionBasis.guild,
-            channel: channel,
-            resolvedBasePermissions: permissionBasis.resolvedBasePermissions,
-            overwritePrincipals: permissionBasis.overwritePrincipals,
-            hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity,
-            communicationDisabledUntil: permissionBasis.currentUserCommunicationDisabledUntil
-        )
     }
 
     func forwardUnavailableReason(
@@ -605,21 +262,8 @@ extension AppModel {
         destination channel: Channel
     ) -> String? {
         guard let guildID = channel.guildID else { return nil }
-        guard let guild = serverRailGuildsByID[guildID],
-              let currentUserID = currentUser?.id
-        else { return "Destination permissions are unavailable." }
-        let member = onboardingMember(in: guildID)
-        let roles =
-            guildRolesByGuildID[guildID]
-            ?? (guildID == selectedGuildID ? guildRoles : [])
-        guard let permissions = ConversationPermissionResolver.effectivePermissions(
-            guild: guild,
-            channel: channel,
-            currentUserID: currentUserID,
-            currentMember: member,
-            roles: roles,
-            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
-        ) else {
+        guard let basis = conversationPermissionBasis(for: guildID) else { return "Destination permissions are unavailable." }
+        guard let permissions = basis.effectivePermissions(in: channel) else {
             return channel.permissionOverwrites?.isEmpty != false
                 ? nil
                 : "Destination permissions are unavailable."

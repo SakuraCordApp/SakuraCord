@@ -338,7 +338,7 @@ enum MessageSearchAutocompletePolicy {
     private static func allFilterResult(
         query: String,
         model: AppModel,
-        index: ForwardDestinationSearchPolicy.Index
+        index: ConversationDestinationSearchPolicy.Index
     ) -> Result {
         var resultRows: [MessageSearchAutocompleteSuggestion] = []
         let users = userResults(
@@ -409,7 +409,7 @@ enum MessageSearchAutocompletePolicy {
         query: String,
         op: MessageSearchAutocompleteOperator,
         model: AppModel,
-        index: ForwardDestinationSearchPolicy.Index,
+        index: ConversationDestinationSearchPolicy.Index,
         limit: Int
     ) -> [MessageSearchAutocompleteSuggestion] {
         if query.isEmpty {
@@ -533,7 +533,7 @@ enum MessageSearchAutocompletePolicy {
     private static func channelResults(
         query: String,
         model: AppModel,
-        index: ForwardDestinationSearchPolicy.Index,
+        index: ConversationDestinationSearchPolicy.Index,
         limit: Int
     ) -> [MessageSearchAutocompleteSuggestion] {
         if model.selectedGuildID == nil {
@@ -606,7 +606,7 @@ enum MessageSearchAutocompletePolicy {
     private static func searchIndex(
         model: AppModel,
         users: [User]? = nil
-    ) -> ForwardDestinationSearchPolicy.Index {
+    ) -> ConversationDestinationSearchPolicy.Index {
         let guilds = model.serverRailGuildsByID
         let channels = model.messageSearchChannels
         let channelIDs = Set(channels.map(\.id))
@@ -626,7 +626,7 @@ enum MessageSearchAutocompletePolicy {
         let searchableIDs = channelIDs.union(threads.map(\.id))
         let maximumUsageScore = model.discordSyncedGuildAndChannelUsageScores
             .values.max()
-        return ForwardDestinationSearchPolicy.makeIndex(
+        return ConversationDestinationSearchPolicy.makeIndex(
             channels: channels,
             threads: threads,
             includesUnjoinedThreads: true,
@@ -657,8 +657,8 @@ enum MessageSearchAutocompletePolicy {
 
     private static func userSearchIndex(
         model: AppModel,
-        index: ForwardDestinationSearchPolicy.Index
-    ) -> ForwardDestinationSearchPolicy.Index {
+        index: ConversationDestinationSearchPolicy.Index
+    ) -> ConversationDestinationSearchPolicy.Index {
         guard let selectedGuildID = model.selectedGuildID
         else { return index }
         var aliases = model.userSearchAliasesByUserID
@@ -727,7 +727,11 @@ struct MessageSearchAutocompleteView: View {
                     selectedID: selectedID,
                     keyboardNavigationActive: keyboardNavigationActive,
                     enableMouseFocus: { keyboardNavigationActive = false },
-                    focus: { selectedID = $0 },
+                    // A row the pointer leaves goes back to the keyboard's
+                    // selection, so Return searches rather than taking it.
+                    focus: { id in
+                        if let id { selectedID = id } else { synchronizeSelection(result) }
+                    },
                     activate: activate
                 )
                 .frame(width: width)
@@ -897,7 +901,8 @@ private struct MessageSearchAutocompleteList: NSViewRepresentable {
     let selectedID: String?
     let keyboardNavigationActive: Bool
     let enableMouseFocus: () -> Void
-    let focus: (String) -> Void
+    /// Focuses the row the pointer is over, or nil once it leaves.
+    let focus: (String?) -> Void
     let activate: (MessageSearchAutocompleteSuggestion) -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -950,7 +955,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
     private var selectedID: String?
     private var keyboardNavigationActive = true
     private var enableMouseFocus: () -> Void = {}
-    private var focus: (String) -> Void = { _ in }
+    private var focus: (String?) -> Void = { _ in }
     private var activate: (MessageSearchAutocompleteSuggestion) -> Void = { _ in }
     private var hoveredIndex: Int?
     private var pressedIndex: Int?
@@ -969,7 +974,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
         selectedID: String?,
         keyboardNavigationActive: Bool,
         enableMouseFocus: @escaping () -> Void,
-        focus: @escaping (String) -> Void,
+        focus: @escaping (String?) -> Void,
         activate: @escaping (MessageSearchAutocompleteSuggestion) -> Void
     ) {
         let previousSelection = self.selectedID
@@ -1029,7 +1034,10 @@ private final class MessageSearchAutocompleteCanvas: NSView {
         let index = selectableIndex(at: convert(event.locationInWindow, from: nil))
         guard index != hoveredIndex else { return }
         hoveredIndex = index
-        guard let index else { return }
+        guard let index else {
+            endHover()
+            return
+        }
         if keyboardNavigationActive {
             keyboardNavigationActive = false
             enableMouseFocus()
@@ -1037,7 +1045,14 @@ private final class MessageSearchAutocompleteCanvas: NSView {
         focus(rows[index].id)
     }
 
-    override func mouseExited(with event: NSEvent) { hoveredIndex = nil }
+    override func mouseExited(with event: NSEvent) {
+        hoveredIndex = nil
+        endHover()
+    }
+
+    private func endHover() {
+        if !keyboardNavigationActive { focus(nil) }
+    }
 
     override func mouseDown(with event: NSEvent) {
         pressedIndex = selectableIndex(at: convert(event.locationInWindow, from: nil))
@@ -1230,14 +1245,14 @@ private final class MessageSearchAutocompleteCanvas: NSView {
             pointSize: pointSize,
             weight: .medium
         ).applying(
-            NSImage.SymbolConfiguration(paletteColors: [.secondaryLabelColor])
+            NSImage.SymbolConfiguration(paletteColors: [.labelColor])
         )
         guard let image = NSImage(
             systemSymbolName: name,
             accessibilityDescription: nil
         )?.withSymbolConfiguration(configuration)
         else { return }
-        let destination = NativeTimelineSymbolGeometry.opticallyFitted(
+        let destination = SymbolGeometry.opticallyFitted(
             sourceSize: image.size,
             alignmentRect: image.alignmentRect,
             in: rect
@@ -1246,7 +1261,8 @@ private final class MessageSearchAutocompleteCanvas: NSView {
             in: destination,
             from: .zero,
             operation: .sourceOver,
-            fraction: 1,
+            // Symbol palettes ignore alpha, so the icons' 70% is applied here.
+            fraction: 0.7,
             respectFlipped: true,
             hints: [.interpolation: NSImageInterpolation.high]
         )
@@ -1273,7 +1289,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
                 String(name.prefix(1)).uppercased(),
                 rect: rect.offsetBy(dx: 0, dy: InterfaceScale.metric(5)),
                 font: .interfaceSystemFont(ofSize: 10, weight: .semibold),
-                color: .white,
+                color: .sakuraCordLabelOnAccentColor,
                 alignment: .center
             )
         }

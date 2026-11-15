@@ -43,16 +43,14 @@ extension ForumBoardView {
     }
 
     override func mouseExited(with _: NSEvent) {
-        setHovered(nil)
-        clearInnerHover()
+        clearHover()
     }
 
     func updateHoverFromCurrentPointer() {
         guard let window, window.isKeyWindow else { return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         guard visibleRect.contains(point) else {
-            setHovered(nil)
-            clearInnerHover()
+            clearHover()
             return
         }
         updateHover(at: point)
@@ -60,13 +58,11 @@ extension ForumBoardView {
 
     private func updateHover(at point: CGPoint) {
         guard WindowModalCoordinator.allowsInput(for: self) else {
-            setHovered(nil)
-            clearInnerHover()
+            clearHover()
             return
         }
         guard let hit = hit(at: point), isInteractive(hit.entry.item) else {
-            setHovered(nil)
-            clearInnerHover()
+            clearHover()
             return
         }
         setHovered(hit.entry.item.id)
@@ -105,7 +101,8 @@ extension ForumBoardView {
         return regions.excerptFrame?.origin
     }
 
-    private func clearInnerHover() {
+    private func clearHover() {
+        setHovered(nil)
         for (id, interaction) in interactions where interaction != ForumCardInteraction() {
             interactions[id] = ForumCardInteraction()
             cards[id]?.render(scale: backingScale, fading: false)
@@ -219,10 +216,7 @@ extension ForumBoardView {
     override func keyDown(with event: NSEvent) {
         guard let layoutState else { return super.keyDown(with: event) }
         // Posts and a failed page's retry notice take keyboard focus.
-        let posts = layoutState.entries.filter {
-            if case .paginationStatus = $0.item { return true }
-            return $0.item.postID != nil
-        }
+        let posts = layoutState.entries.filter { isInteractive($0.item) }
         guard !posts.isEmpty else { return super.keyDown(with: event) }
         let currentIndex = keyboardID.flatMap { id in posts.firstIndex { $0.item.id == id } }
         var next: Int?
@@ -266,5 +260,54 @@ extension ForumBoardView {
             if let card = cards[keyboardID] { applyChrome(card, id: keyboardID, animated: true) }
         }
         return super.resignFirstResponder()
+    }
+
+    // MARK: Tooltips
+
+    func rebuildToolTips() {
+        removeAllToolTips()
+        for (id, _) in cards {
+            guard case .post = id, let entry = layoutState?.entry(for: id),
+                  let frame = cardRegions(for: id)?.exactDateFrame
+            else { continue }
+            addToolTip(frame.offsetBy(dx: entry.frame.minX, dy: entry.frame.minY), owner: self, userData: nil)
+        }
+    }
+
+    func view(_: NSView, stringForToolTip _: NSView.ToolTipTag, point: NSPoint, userData _: UnsafeMutableRawPointer?) -> String {
+        guard let hit = hit(at: point), let postID = hit.entry.item.postID, let presentation = presentations[postID] else { return "" }
+        return isGallery
+            ? "Posted \(presentation.createdAt.formatted(date: .complete, time: .shortened))"
+            : "Last activity \(presentation.lastActivityAt.formatted(date: .complete, time: .shortened))"
+    }
+
+    // MARK: Context menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let model, let channel,
+              let hit = hit(at: convert(event.locationInWindow, from: nil)),
+              let postID = hit.entry.item.postID,
+              let post = postsByID[postID]
+        else { return nil }
+        return contextMenu(for: post, model: model, channel: channel)
+    }
+
+    func contextMenu(for post: ForumPost, model: AppModel, channel: Channel) -> NSMenu {
+        menuBuilder.makeMenu(
+            sections: ThreadActionsMenu(
+                model: model,
+                thread: post.thread,
+                surface: .forumCard,
+                isUnread: model.canMarkConversationRead(channelID: post.id),
+                offersTags: true
+            ).sections,
+            tags: channel.availableTags,
+            appliedTagIDs: post.thread.appliedTagIDs,
+            customEmojiURLsByID: model.customEmojiURLsByID,
+            canToggle: { [weak model] in model?.canToggleForumTag($0, on: post, in: channel) ?? false },
+            toggleTag: { [weak model] tagID in
+                model?.toggleForumTag(tagID, on: post, in: channel)
+            }
+        )
     }
 }

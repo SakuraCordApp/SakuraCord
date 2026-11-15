@@ -430,7 +430,7 @@ func `profile editor uses a preloaded editable baseline without another read`(sc
     #expect(editor.customStatusDraft == nil)
 }
 
-private actor ProfileEditorCacheProvider: ChatProvider {
+private actor ProfileEditorCacheProvider: ChatProviderStub {
     private let fixture = MockChatProvider()
     private(set) var profileWrites = 0
     private(set) var statusWrites: [ProfileCustomStatus?] = []
@@ -511,18 +511,10 @@ private actor ProfileEditorCacheProvider: ChatProvider {
         return value
     }
     func bootstrap() async throws -> BootstrapSnapshot { try await fixture.bootstrap() }
-    func channels(in guildID: GuildID?) async throws -> [Channel] { [] }
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile { try await fixture.profile(for: userID, in: guildID) }
     func currentStatus() async -> PresenceStatus { .offline }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage { MessagePage(messages: [], hasMoreBefore: false) }
     func send(_ draft: SendMessageDraft) async throws -> Message { throw ChatProviderError.invalidRequest("unused") }
     func edit(_ message: Message, content: String) async throws -> Message { throw ChatProviderError.invalidRequest("unused") }
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-    func disconnect() async {}
 }
 
 @MainActor
@@ -675,7 +667,7 @@ private actor ProfileEditorCacheProvider: ChatProvider {
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let groupID = ChannelID(rawValue: 401)
-    let store = model.groupDirectMessageLeave
+    let store = model.directMessageExit
     // A 1:1 DM never offers Leave Group.
     model.presentLeaveGroupDirectMessage(for: ChannelID(rawValue: 400))
     #expect(store.confirmation == nil)
@@ -704,7 +696,7 @@ private actor ProfileEditorCacheProvider: ChatProvider {
     #expect(selected != groupID)
     #expect(model.snapshot?.channels.contains { $0.id == selected && $0.guildID == nil } == true)
     #expect(model.errorMessage == nil)
-    #expect(store.leaving.isEmpty)
+    #expect(store.exitingChannelIDs.isEmpty)
 }
 
 @MainActor

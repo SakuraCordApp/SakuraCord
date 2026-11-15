@@ -29,17 +29,15 @@ public extension DiscordRESTProvider {
         let revision = privateChannelRevisions[channelID, default: 0]
         let path = "/channels/\(channelID)"
         let (data, response) = try await perform(
-            path, method: "PATCH", query: [], body: body,
+            path, method: "PATCH", body: body,
             headers: ["X-Context-Properties": DiscordClientMetadata.groupDirectMessageMenuContextHeader]
         )
-        if response.statusCode == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path) {
-            throw apiDiagnostics.coalescing(error, with: response)
-        }
+        if let error = profileValidationFailure(data: data, response: response, method: "PATCH", path: path) { throw error }
         let dto: ChannelDTO = try decodedResponse(data, response, method: "PATCH", path: path) { status, _ in
             status == 403 ? ChatProviderError.invalidRequest("You can no longer edit this group.") : nil
         }
         guard currentUser?.id == user.id else { throw CancellationError() }
-        guard dto.id == channelID.description, dto.type == 3 else {
+        guard dto.id == channelID.description, dto.type == DiscordChannelType.groupDirectMessage else {
             throw ChatProviderError.invalidRequest("Discord saved the group, but its response could not be loaded.")
         }
         let saved = try privateChannel(from: dto)

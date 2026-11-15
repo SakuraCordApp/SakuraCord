@@ -5,6 +5,7 @@ enum SakuraCordSystemSymbol {
     nonisolated static let emojiFaceGrinning = "emoji.face.grinning"
     nonisolated static let sticker = "sticker"
     nonisolated static let thread = "thread"
+    nonisolated static let silentBell = "bell.z.fill"
     nonisolated static let applicationCommands = "xmark.triangle.circle.square.fill"
 
     private static let privateSymbolsBundle = Bundle(
@@ -37,7 +38,7 @@ enum SakuraCordSystemSymbol {
         named name: String,
         accessibilityDescription: String? = nil
     ) -> NSImage? {
-        let source = name == thread ? Bundle.module.image(forResource: name) : NSImage(
+        let source = name == thread || name == silentBell ? Bundle.module.image(forResource: name) : NSImage(
             systemSymbolName: name,
             accessibilityDescription: accessibilityDescription
         ) ?? privateSymbolsBundle?.image(forResource: name)

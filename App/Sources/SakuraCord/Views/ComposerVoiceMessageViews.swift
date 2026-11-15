@@ -50,7 +50,7 @@ struct ComposerSendSlot: View {
             .font(.interfaceSystem(size: 19, weight: .medium))
             .foregroundStyle(foreground)
             .contentTransition(.symbolEffect(.replace.magic(fallback: .downUp.byLayer)))
-            .frame(width: ChatChromeMetrics.composerControlHeight, height: ChatChromeMetrics.composerControlHeight)
+            .frame(width: ChatChromeMetrics.composerButtonSize, height: ChatChromeMetrics.composerButtonSize)
             .scaleEffect(press != nil ? 0.86 : 1)
             .animation(.spring(duration: 0.25, bounce: 0.4), value: press != nil)
             .background {
@@ -195,7 +195,7 @@ struct ComposerVoiceMessageField: View {
 
     /// One view for both phases, so the live bars morph into the overview.
     private func waveform(size: CGSize, now: Date) -> some View {
-        let metrics = VoiceWaveformMetrics(height: size.height)
+        let metrics = VoiceWaveformMetrics()
         let count = metrics.barCount(fitting: size.width)
         let recording = state.phase.recording
         let levels = recording.map {
@@ -278,16 +278,7 @@ struct ComposerVoiceMessageField: View {
     }
 }
 
-nonisolated enum VoiceMessageDurationFormat {
-    /// `m:ss`, rounding up like Discord's player.
-    static func string(_ seconds: TimeInterval) -> String {
-        let total = max(0, Int(seconds.rounded(.up)))
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
-}
-
 nonisolated struct VoiceWaveformMetrics {
-    let height: CGFloat
     var barWidth: CGFloat { InterfaceScale.metric(3) }
     var spacing: CGFloat { InterfaceScale.metric(2) }
     var step: CGFloat { barWidth + spacing }

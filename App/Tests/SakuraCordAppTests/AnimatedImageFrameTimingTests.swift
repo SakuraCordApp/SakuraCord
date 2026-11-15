@@ -118,37 +118,32 @@ import Testing
 
 @Test func `timeline media declares every byte limited memory cache`() {
     #expect(
-        NativeTimelineMediaMemoryPolicy.decodedImageCacheBytes
+        MediaMemoryPolicy.decodedImageCacheBytes
             == 176 * 1_024 * 1_024
     )
-    #expect(
-        SharedMediaDataMemoryPolicy.retainedBytes
-            == 56 * 1_024 * 1_024
-    )
-    #expect(
-        NativeTimelineMediaMemoryPolicy.declaredMemoryCacheBytes
-            == 232 * 1_024 * 1_024
-    )
+    let sharedMediaBytes = SharedMediaDataMemoryPolicy.remoteBytes + SharedMediaDataMemoryPolicy.localBytes
+    #expect(sharedMediaBytes == 56 * 1_024 * 1_024)
+    #expect(MediaMemoryPolicy.decodedImageCacheBytes + sharedMediaBytes == 232 * 1_024 * 1_024)
 }
 
 @MainActor @Test
 func `timeline animated expansion stops when its final viewport owner leaves`() async throws {
-    let store = NativeTimelineMediaStore()
-    let key = NativeTimelineMediaKey.media(try #require(URL(
+    let store = MediaImageStore()
+    let key = MediaImageKey.media(try #require(URL(
         string: "https://cdn.example/obsolete-animation.gif"
     )))
     let firstOwner = UUID()
     let secondOwner = UUID()
-    let firstSubscriber = NativeTimelineMediaStore.AnimatedSubscriberID(
+    let firstSubscriber = MediaImageStore.SubscriberID(
         owner: firstOwner,
-        row: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 1)
         ))
     )
-    let secondSubscriber = NativeTimelineMediaStore.AnimatedSubscriberID(
+    let secondSubscriber = MediaImageStore.SubscriberID(
         owner: secondOwner,
-        row: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 2)
         ))
@@ -339,40 +334,6 @@ private actor ControlledLottieDataLoader {
         releaseWaiters.removeAll()
         waiters.forEach { $0.resume() }
     }
-}
-
-@Test func `remote image task restarts retain the decoded image for the same request`() throws {
-    let firstURL = try #require(URL(string: "https://cdn.example/avatar.webp"))
-    let secondURL = try #require(URL(string: "https://cdn.example/banner.webp"))
-    let displayed = AnimatedRemoteImageRequestIdentity(
-        url: firstURL,
-        maximumPixelDimension: 96
-    )
-
-    #expect(
-        !AnimatedRemoteImageReloadPolicy.shouldReplaceDisplayedImage(
-            displayed: displayed,
-            requested: displayed
-        )
-    )
-    #expect(
-        AnimatedRemoteImageReloadPolicy.shouldReplaceDisplayedImage(
-            displayed: displayed,
-            requested: AnimatedRemoteImageRequestIdentity(
-                url: firstURL,
-                maximumPixelDimension: 192
-            )
-        )
-    )
-    #expect(
-        AnimatedRemoteImageReloadPolicy.shouldReplaceDisplayedImage(
-            displayed: displayed,
-            requested: AnimatedRemoteImageRequestIdentity(
-                url: secondURL,
-                maximumPixelDimension: 96
-            )
-        )
-    )
 }
 
 @Test func `visible media is scheduled ahead of queued prefetch work`() throws {

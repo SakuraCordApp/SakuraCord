@@ -9,6 +9,16 @@ extension AppModel {
         channel.guildID == nil && channel.kind == .groupDirectMessage
     }
 
+    /// Discord offers Close DM on 1:1 DMs only; a group DM is left instead.
+    func offersCloseDirectMessage(_ channel: Channel) -> Bool {
+        channel.guildID == nil && channel.kind == .directMessage
+    }
+
+    /// Closes a 1:1 DM without confirmation, as Discord does.
+    func closeDirectMessage(_ channel: Channel) {
+        exitDirectMessage(channel, verb: "close") { try await $0.closeDirectMessage(channel.id) }
+    }
+
     private func groupDirectMessage(_ channelID: ChannelID) -> Channel? {
         snapshot?.channels.first { $0.id == channelID && offersGroupDirectMessageActions($0) }
     }
@@ -52,14 +62,12 @@ extension AppModel {
             do {
                 _ = try await session.provider.editGroupDirectMessage(presentation.channel.id, changes: changes)
                 guard model.isCurrentAccountSession(session), !model.accountTransitionIsActive, store.revision == revision else { return }
-                store.isSaving = false
                 store.presentation = nil
             } catch {
                 guard model.isCurrentAccountSession(session), !model.accountTransitionIsActive, store.revision == revision else { return }
                 if !(error is CancellationError) {
                     DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
                 }
-                store.isSaving = false
                 store.error = error is CancellationError
                     ? "The group change was interrupted. Check the group before trying again."
                     : error.localizedDescription
@@ -71,13 +79,13 @@ extension AppModel {
     /// option as the checkbox's initial state.
     func presentLeaveGroupDirectMessage(for channelID: ChannelID, silently: Bool = false) {
         guard let channel = groupDirectMessage(channelID) else { return }
-        let store = groupDirectMessageLeave
+        let store = directMessageExit
         store.leavesSilently = silently
-        store.confirmation = GroupDirectMessageLeaveStore.Confirmation(channel: channel)
+        store.confirmation = DirectMessageExitStore.Confirmation(channel: channel)
     }
 
     /// Leaves a confirmed group once.
-    func leaveGroupDirectMessage(_ confirmation: GroupDirectMessageLeaveStore.Confirmation, silently: Bool) {
+    func leaveGroupDirectMessage(_ confirmation: DirectMessageExitStore.Confirmation, silently: Bool) {
         exitDirectMessage(confirmation.channel, verb: "leave") {
             try await $0.leaveGroupDirectMessage(confirmation.channel.id, silently: silently)
         }
@@ -90,11 +98,11 @@ extension AppModel {
     func exitDirectMessage(
         _ channel: Channel, verb: String, request: @escaping @MainActor (any ChatProvider) async throws -> Void
     ) {
-        let store = groupDirectMessageLeave
-        guard !accountTransitionIsActive, store.leaving.insert(channel.id).inserted else { return }
+        let store = directMessageExit
+        guard !accountTransitionIsActive, store.exitingChannelIDs.insert(channel.id).inserted else { return }
         startAccountChildTask(account: accountSession(allowsTransition: true)) { model, session in
             defer {
-                if model.isCurrentAccountSession(session) { store.leaving.remove(channel.id) }
+                if model.isCurrentAccountSession(session) { store.exitingChannelIDs.remove(channel.id) }
             }
             guard !model.accountTransitionIsActive else { return }
             do {

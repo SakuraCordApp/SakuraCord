@@ -38,8 +38,8 @@ import Testing
     let after = try #require(calendar.date(
         from: DateComponents(year: 2026, month: 8, day: 11)
     ))
-    #expect(parsed.filters.maximumMessageID == .messageSearchBoundary(at: before))
-    #expect(parsed.filters.minimumMessageID == .messageSearchBoundary(at: after))
+    #expect(parsed.filters.maximumMessageID == MessageID(timestamp: before))
+    #expect(parsed.filters.minimumMessageID == MessageID(timestamp: after))
 }
 
 @Test func `unresolved and unknown message search operators stay searchable text`() {

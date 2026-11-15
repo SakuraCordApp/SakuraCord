@@ -57,6 +57,10 @@ public struct MessagePoll: Codable, Hashable, Sendable {
     public var totalVotes: Int { results?.answerCounts.reduce(0) { $0 + $1.count } ?? 0 }
     public var selectedAnswerIDs: Set<Int> { Set(results?.answerCounts.filter(\.meVoted).map(\.id) ?? []) }
     public func count(for answerID: Int) -> Int { results?.answerCounts.first { $0.id == answerID }?.count ?? 0 }
+    /// The answer's share of all votes, or zero before any.
+    public func fraction(for answerID: Int) -> Double {
+        totalVotes > 0 ? Double(count(for: answerID)) / Double(totalVotes) : 0
+    }
     public func isClosed(at date: Date = .now) -> Bool { results?.isFinalized == true || expiry.map { $0 <= date } == true }
 
     /// Gateway finalization is broadcast, so its `me_voted` values are not personalized.

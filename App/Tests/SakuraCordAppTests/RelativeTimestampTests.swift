@@ -81,7 +81,7 @@ private func timestampAttachment(in text: NSAttributedString) -> MentionTextAtta
     scrollView.frame = CGRect(x: 0, y: 0, width: 280, height: 200)
     scrollView.tile()
     coordinator.update(parent: timeline, scrollView: scrollView)
-    coordinator.reconcileViewportGeometryForTesting()
+    coordinator.reconcileViewportGeometryIfNeeded()
     let before = Date(timeIntervalSince1970: 999_995)
     let after = Date(timeIntervalSince1970: 1_000_120)
     let index = try #require(coordinator.items.firstIndex { $0.messageID == messages[0].id })
@@ -93,12 +93,12 @@ private func timestampAttachment(in text: NSAttributedString) -> MentionTextAtta
     })
     scrollView.frame.size.width = CGFloat(wrappingWidth)
     scrollView.tile()
-    coordinator.reconcileViewportGeometryForTesting()
+    coordinator.reconcileViewportGeometryIfNeeded()
     coordinator.refreshTimestampLayouts(at: before)
     let oldHeight = coordinator.rowHeights[index]
     coordinator.scroll(toDocumentY: coordinator.rowOrigins[2], scrollView: scrollView)
     let oldAnchor = try #require(coordinator.visibleAnchor())
-    let first = try #require(nativeTimestampLabel(in: coordinator.layouts[index].attributedContent))
+    let first = try #require(nativeTimestampLabel(in: coordinator.layouts[index].contentText?.value))
     // A stale recent-conversation layout must not win over the clock refresh.
     let key = NativeMessageTimelineCoordinator.CachedItemLayoutKey(
         identifier: coordinator.items[index].identifier,
@@ -106,7 +106,7 @@ private func timestampAttachment(in text: NSAttributedString) -> MentionTextAtta
     )
     coordinator.cachedItemLayouts[key] = .init(item: coordinator.items[index], layout: coordinator.layouts[index])
     coordinator.refreshTimestampLayouts(at: after)
-    let second = try #require(nativeTimestampLabel(in: coordinator.layouts[index].attributedContent))
+    let second = try #require(nativeTimestampLabel(in: coordinator.layouts[index].contentText?.value))
     #expect(first != second)
     #expect(second == DiscordTimestampToken(seconds: 1_000_000, style: .relative).formatted(relativeTo: after))
     #expect(coordinator.cachedItemLayouts[key] == nil)

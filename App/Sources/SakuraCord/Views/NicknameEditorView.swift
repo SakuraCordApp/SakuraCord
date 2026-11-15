@@ -6,58 +6,114 @@ import SwiftUI
 struct NicknameEditorView: View {
     let model: AppModel
     let presentation: NicknameEditorStore.Presentation
-    @Environment(\.windowModalContext) private var modal
-    @Environment(\.windowModalAvailableSize) private var availableSize
 
     var body: some View {
         let store = model.nicknameEditor
         let isFriend = presentation.target == .friend
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(NicknameEditorCopy.title(for: presentation))
-                    .font(.title2.weight(.bold))
-                    .accessibilityAddTraits(.isHeader)
-                if isFriend {
-                    Text("Find a friend faster with a personal nickname. It will only be visible to you in your direct messages.")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Label(
-                        "Nicknames are visible to everyone on this server. Do not change them unless you are enforcing a naming system or clearing a bad nickname.",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.callout)
-                    .foregroundStyle(.orange)
+        NameEditorPanel(
+            title: NicknameEditorCopy.title(for: presentation),
+            fieldTitle: isFriend ? "Friend Nickname" : "Nickname",
+            placeholder: presentation.fallbackName,
+            draft: Bindable(store).draft,
+            maximumLength: NicknameEditorStore.maximumLength,
+            error: store.error,
+            isSaving: store.isSaving,
+            save: save
+        ) {
+            if isFriend {
+                Text("Find a friend faster with a personal nickname. It will only be visible to you in your direct messages.")
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal, 12)
-            VStack(alignment: .leading, spacing: 8) {
-                NicknameEditorField(
-                    title: isFriend ? "Friend Nickname" : "Nickname",
-                    placeholder: presentation.fallbackName,
-                    draft: Bindable(store).draft,
-                    submit: save
+            } else {
+                Label(
+                    "Nicknames are visible to everyone on this server. Do not change them unless you are enforcing a naming system or clearing a bad nickname.",
+                    systemImage: "exclamationmark.triangle.fill"
                 )
-                if let error = store.error {
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        } accessory: {
+            // Discord offers a server reset only while a nickname is set.
+            if isFriend || presentation.currentNickname != nil {
+                Button(isFriend ? "Reset Friend Nickname" : "Reset Nickname") { store.draft = "" }
+                    .buttonStyle(.link)
+            }
+        }
+    }
+
+    private func save() {
+        guard !model.nicknameEditor.isSaving else { return }
+        model.saveNickname(presentation)
+    }
+}
+
+/// The app's single-name dialog: a title and notice, one field with an
+/// optional accessory below it, and Cancel beside the primary action.
+struct NameEditorPanel<Notice: View, Accessory: View>: View {
+    let title: String
+    let fieldTitle: String
+    let placeholder: String
+    @Binding var draft: String
+    /// Discord's limit in UTF-16 units, as its text input counts them.
+    var maximumLength: Int?
+    var error: String?
+    var isSaving = false
+    var actionTitle = "Save"
+    let save: () -> Void
+    @ViewBuilder let notice: Notice
+    @ViewBuilder let accessory: Accessory
+
+    var body: some View {
+        ModalDialogPanel(title: title, actionTitle: actionTitle, isWorking: isSaving, action: save) {
+            notice
+        } content: {
+            VStack(alignment: .leading, spacing: 8) {
+                NameEditorField(title: fieldTitle, placeholder: placeholder, draft: $draft, maximumLength: maximumLength, submit: save)
+                if let error {
                     Text(error).font(.caption).foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                // Discord offers a server reset only while a nickname is set.
-                if isFriend || presentation.currentNickname != nil {
-                    Button(isFriend ? "Reset Friend Nickname" : "Reset Nickname") { store.draft = "" }
-                        .buttonStyle(.link)
-                }
+                accessory
             }
-            .disabled(store.isSaving)
+        }
+    }
+}
+
+/// SakuraCord's compact dialog, as Change Nickname shows it: a title and
+/// notice, optional content, and Cancel beside the primary action.
+struct ModalDialogPanel<Notice: View, Content: View>: View {
+    let title: String
+    var actionTitle = "Save"
+    var actionSymbol = "checkmark"
+    /// Disables the dialog and shows the primary action's progress.
+    var isWorking = false
+    var isActionDisabled = false
+    let action: () -> Void
+    @ViewBuilder let notice: Notice
+    @ViewBuilder let content: Content
+    @Environment(\.windowModalContext) private var modal
+    @Environment(\.windowModalAvailableSize) private var availableSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.title2.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
+                notice
+            }
             .padding(.horizontal, 12)
+            content
+                .disabled(isWorking)
+                .padding(.horizontal, 12)
             // Keep the 12-point footer inset that makes the capsules concentric with the panel.
             HStack {
                 ModalGlassButton(symbol: "xmark", label: "Cancel") { modal?.dismiss() }
-                    .disabled(store.isSaving)
+                    .disabled(isWorking)
                 Spacer(minLength: 16)
-                ModalGlassButton(symbol: "checkmark", label: "Save", primary: true, isLoading: store.isSaving, action: save)
-                    .disabled(store.isSaving)
+                ModalGlassButton(symbol: actionSymbol, label: actionTitle, primary: true, isLoading: isWorking, action: action)
+                    .disabled(isWorking || isActionDisabled)
                     .keyboardShortcut(.defaultAction)
             }
             .padding(.top, 4)
@@ -65,14 +121,9 @@ struct NicknameEditorView: View {
         .padding(.top, 12)
         .padding(12)
         .frame(width: min(400, availableSize.width))
-        .windowModalDismissDisabled(store.isSaving)
+        .windowModalDismissDisabled(isWorking)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(NicknameEditorCopy.title(for: presentation))
-    }
-
-    private func save() {
-        guard !model.nicknameEditor.isSaving else { return }
-        model.saveNickname(presentation)
+        .accessibilityLabel(title)
     }
 }
 
@@ -85,10 +136,11 @@ nonisolated enum NicknameEditorCopy {
     }
 }
 
-private struct NicknameEditorField: View {
+private struct NameEditorField: View {
     let title: String
     let placeholder: String
     @Binding var draft: String
+    let maximumLength: Int?
     let submit: () -> Void
     @FocusState private var isFocused: Bool
 
@@ -102,10 +154,9 @@ private struct NicknameEditorField: View {
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .modifier(ModalInputSurface(isFocused: isFocused) { isFocused = true })
                 .onChange(of: draft) { _, value in
-                    // Discord's 32-character limit counts UTF-16 units, as its text input does.
-                    guard value.utf16.count > NicknameEditorStore.maximumLength else { return }
+                    guard let maximumLength, value.utf16.count > maximumLength else { return }
                     var trimmed = value
-                    while trimmed.utf16.count > NicknameEditorStore.maximumLength { trimmed.removeLast() }
+                    while trimmed.utf16.count > maximumLength { trimmed.removeLast() }
                     draft = trimmed
                 }
                 .accessibilityLabel(title)

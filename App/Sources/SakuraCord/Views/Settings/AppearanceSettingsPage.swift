@@ -57,7 +57,6 @@ struct AppearanceSettingsPage: View {
                             Text("Window Opacity", bundle: #bundle)
                         }
                         .labelsHidden()
-                        .tint(SakuraCordAccentColor.color)
                         .frame(minWidth: InterfaceScale.metric(220))
                         .disabled(reduceTransparency || !SakuraCordWindowBlur.isAvailable)
                         Text(value.windowOpacity, format: .percent.precision(.fractionLength(0)))

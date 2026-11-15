@@ -97,7 +97,7 @@ private struct ColorPickerHueHandle: View {
         guard step != lastHapticStep else { return }
         defer { lastHapticStep = step }
         guard lastHapticStep != nil else { return }
-        ColorPickerHaptics.performStep()
+        StepHaptics.performStep()
     }
 }
 

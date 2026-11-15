@@ -87,14 +87,12 @@ private struct ProfileStatusTextRepresentable: NSViewRepresentable {
         textView.textContainer?.heightTracksTextView = false
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
-        textView.applySakuraCordTextSelectionAppearance()
         return textView
     }
 
     func updateNSView(_ textView: ProfileStatusNSTextView, context: Context) {
         let selection = textView.selectedRange()
         textView.onHoverChange = onHoverChange
-        textView.applySakuraCordTextSelectionAppearance()
         textView.textContainer?.maximumNumberOfLines = isExpanded ? 0 : 1
         textView.textContainer?.lineBreakMode = isExpanded ? .byWordWrapping : .byTruncatingTail
         textView.textStorage?.setAttributedString(attributedText())
@@ -159,7 +157,6 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
             .foregroundColor: NSColor.systemBlue,
             .underlineStyle: 0
         ]
-        textView.applySakuraCordTextSelectionAppearance()
         return textView
     }
 
@@ -172,7 +169,6 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
         textView.isEditable = editing != nil
         textView.setAccessibilityLabel(editing == nil ? nil : String(localized: "Edit Bio", bundle: #bundle))
         let selection = textView.selectedRange()
-        textView.applySakuraCordTextSelectionAppearance()
         // Preserve the live text storage and native caret during keystrokes.
         if editing == nil || ComposerEmojiAttributedText.serialize(textView.attributedString()) != source
             || context.coordinator.images != emojiImages || context.coordinator.wasActive != editing?.isActive {
@@ -365,8 +361,7 @@ class ProfileSelectableTextView: NSTextView {
         let range = selectedRange()
         guard range.length > 0 else { return }
         let value = ComposerEmojiAttributedText.serialize(attributedString(), range: range)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
+        Pasteboard.copy(value)
     }
 
 }

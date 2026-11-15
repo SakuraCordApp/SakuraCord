@@ -11,11 +11,11 @@ dated observations establish why a wire shape was chosen.
 | Topic | Read for |
 | --- | --- |
 | [Session and authentication](protocol/SESSION.md) | Client metadata, login, Gateway lifecycle, event delivery, diagnostics. |
-| [Messages and uploads](protocol/MESSAGING.md) | Sends, history, reactions, polls, threads, commands, media preparation. |
+| [Messages and uploads](protocol/MESSAGING.md) | Sends, history, reactions, polls, scheduled messages, group-DM edits and leaving, closing a 1:1 DM, message requests, threads, commands, media preparation. |
 | [Read state and Inbox](protocol/READ_STATE.md) | Acknowledgements, Undo, mentions, events, notifications. |
 | [Guilds and membership](protocol/GUILDS.md) | Invites, join applications, onboarding, channel customization, Guide, member discovery. |
 | [Friends and relationships](protocol/RELATIONSHIPS.md) | Relationship records, friend presence, requests, blocking, CAPTCHA replay. |
-| [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, group-DM edits and leaving, closing a 1:1 DM, widgets, status, protobuf updates, folders and favourites. |
+| [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, widgets, status, protobuf updates, folders, the Favorites server and favourites. |
 | [Voice and streams](protocol/VOICE.md) | Calls, screen sharing, voice recovery, soundboard. |
 | [Activities](protocol/ACTIVITIES.md) | Activity shelf, launch and leave, instances, the Embedded App SDK host, Activity OAuth and invites. |
 
@@ -106,7 +106,7 @@ compatibility for each service remains unverified.
 
 ## Capability gates
 
-[DiscordRESTProvider.supports](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTNotificationsAndMessaging.swift)
+[DiscordRESTProvider.supports](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTMessaging.swift)
 is authoritative for the [provider capability interface](../Packages/DiscordProtocol/Sources/DiscordProtocol/ChatProvider.swift).
 It currently enables forums, slash commands, message components, returned-modal
 submission, remote component choices, GIFs, forwarding, soundboard, sticker

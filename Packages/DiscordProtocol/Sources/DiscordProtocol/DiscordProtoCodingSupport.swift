@@ -90,12 +90,37 @@ struct ProtoReader {
     }
 }
 
+extension ProtoReader {
+    /// A singular embedded message field: protobuf merges repeated
+    /// occurrences, which parsing their payloads concatenated in wire order
+    /// does. nil when the field is absent.
+    static func mergedMessage(_ field: Int, in data: Data) -> Data? {
+        let payloads = fields(data).filter { $0.field == field }.compactMap(\.payload)
+        return payloads.isEmpty ? nil : Data(payloads.joined())
+    }
+
+    static func fields(_ data: Data) -> [RawProtoField] {
+        var reader = ProtoReader(data: data)
+        var result: [RawProtoField] = []
+        while let field = reader.readRawField() { result.append(field) }
+        return result
+    }
+}
+
 struct RawProtoField {
     var field: Int
     var wireType: Int
     var payload: Data?
     var varint: UInt64?
     var raw: Data
+
+    /// The value of a fixed64 field, such as a snowflake map key.
+    var fixed64: UInt64? {
+        guard wireType == 1 else { return nil }
+        var reader = ProtoReader(data: raw)
+        _ = reader.readTag()
+        return reader.readFixed64()
+    }
 }
 
 struct LossyList<Element: Decodable>: Decodable {

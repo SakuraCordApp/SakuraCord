@@ -2,11 +2,6 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
-enum SelectedMessageHistoryDirection: String, Sendable {
-    case earlier
-    case later
-}
-
 private struct SelectedMessageHistoryRequest {
     let channelID: ChannelID
     let anchor: MessageHistoryAnchor
@@ -22,7 +17,7 @@ extension AppModel {
     }
 
     private func loadSelectedMessageHistory(
-        _ direction: SelectedMessageHistoryDirection,
+        _ direction: TimelineHistoryDirection,
         account: AppModelAccountSession? = nil
     ) async {
         let session = account ?? accountSession()
@@ -111,7 +106,7 @@ extension AppModel {
     }
 
     func selectedMessageHistoryEdge(
-        _ direction: SelectedMessageHistoryDirection
+        _ direction: TimelineHistoryDirection
     ) -> MessageHistoryAnchor? {
         // Unconfirmed sends sort last and carry local IDs, so the REST edges
         // are the outermost confirmed messages.
@@ -122,12 +117,12 @@ extension AppModel {
     }
 
     /// The window still ends at the edge a page was requested from.
-    func windowContinues(from edge: MessageHistoryAnchor?, _ direction: SelectedMessageHistoryDirection) -> Bool {
+    func windowContinues(from edge: MessageHistoryAnchor?, _ direction: TimelineHistoryDirection) -> Bool {
         edge.map { selectedMessageHistoryEdge(direction) == $0 } ?? true
     }
 
     private func selectedMessageHistoryRequest(
-        _ direction: SelectedMessageHistoryDirection
+        _ direction: TimelineHistoryDirection
     ) -> SelectedMessageHistoryRequest? {
         guard let channelID = selectedChannelID,
               let anchor = selectedMessageHistoryEdge(direction)
@@ -146,7 +141,7 @@ extension AppModel {
 
     private func setSelectedMessageHistoryLoading(
         _ isLoading: Bool,
-        direction: SelectedMessageHistoryDirection
+        direction: TimelineHistoryDirection
     ) {
         switch direction {
         case .earlier: isLoadingEarlier = isLoading
@@ -162,7 +157,7 @@ extension AppModel {
 
     private func commitSelectedMessageHistory(
         _ inserted: [Message],
-        direction: SelectedMessageHistoryDirection,
+        direction: TimelineHistoryDirection,
         request: SelectedMessageHistoryRequest
     ) async -> Bool {
         guard !inserted.isEmpty else { return true }
@@ -184,7 +179,7 @@ extension AppModel {
 
     private func applySelectedMessageHistoryBoundary(
         _ page: MessagePage,
-        direction: SelectedMessageHistoryDirection,
+        direction: TimelineHistoryDirection,
         channelID: ChannelID
     ) {
         switch direction {
@@ -197,7 +192,7 @@ extension AppModel {
     }
 
     private func logSelectedMessageHistoryPerformance(
-        direction: SelectedMessageHistoryDirection,
+        direction: TimelineHistoryDirection,
         reconcileStart: TimeInterval,
         filterEnd: TimeInterval,
         commitEnd: TimeInterval
@@ -208,7 +203,7 @@ extension AppModel {
         guard milliseconds >= 4 else { return }
         NSLog(
             "SakuraCord %@ history phases: filter %.2f ms; commit %.2f ms; state %.2f ms (%d rows)",
-            direction.rawValue,
+            String(describing: direction),
             (filterEnd - reconcileStart) * 1_000,
             (commitEnd - filterEnd) * 1_000,
             (stateEnd - commitEnd) * 1_000,

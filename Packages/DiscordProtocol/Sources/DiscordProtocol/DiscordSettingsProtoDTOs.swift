@@ -88,8 +88,8 @@ enum DiscordSettingsProto {
         return EmojiUserSettings(
             favoriteKeys: favorites,
             dataVersion: dataVersion(in: data),
-            messageHistory: frecencyHistory(from: data, field: 6) ?? .init(),
-            reactionHistory: frecencyHistory(from: data, field: 13) ?? .init(),
+            messageHistory: frecencyHistory(from: data, field: emojiFrecencyField) ?? .init(),
+            reactionHistory: frecencyHistory(from: data, field: reactionFrecencyField) ?? .init(),
             guildAndChannelUsageScores: guildAndChannelScores,
             guildAndChannelUsage: guildAndChannelUsage,
             guildAndChannelUsageOrder: guildAndChannelUsageOrder
@@ -335,13 +335,25 @@ enum DiscordSettingsProto {
         return data
     }
 
+    static func protoFixed64Field(_ field: Int, _ value: UInt64) -> Data {
+        var data = protoVarint(UInt64(field << 3 | 1))
+        data.append(protoFixed64(value))
+        return data
+    }
+
+    static func protoFixed64(_ value: UInt64) -> Data {
+        var data = Data()
+        for offset in 0 ..< 8 { data.append(UInt8(truncatingIfNeeded: value >> UInt64(offset * 8))) }
+        return data
+    }
+
     static func protoVarintField(_ field: Int, _ value: UInt64) -> Data {
         var data = protoVarint(UInt64(field << 3))
         data.append(protoVarint(value))
         return data
     }
 
-    private static func protoVarint(_ value: UInt64) -> Data {
+    static func protoVarint(_ value: UInt64) -> Data {
         var value = value
         var data = Data()
         repeat {

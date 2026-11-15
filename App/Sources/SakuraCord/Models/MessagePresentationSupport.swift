@@ -5,40 +5,6 @@ import Foundation
 import MessageRendering
 import SakuraCordModels
 
-nonisolated enum MemberStoreMerge {
-    static func merging(
-        existing: [UserID: Member],
-        updates: [Member]
-    ) -> [UserID: Member] {
-        var result = existing
-        for var member in updates {
-            if member.memberListIndex == nil {
-                member.memberListIndex = result[member.id]?.memberListIndex
-            }
-            result[member.id] = member
-        }
-        return result
-    }
-}
-
-actor OfflineCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        throw ChatProviderError.invalidRequest(
-            "Credential storage is unavailable in offline testing mode.")
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        throw ChatProviderError.invalidRequest(
-            "Credentials are unavailable in offline testing mode.")
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        []
-    }
-}
-
 nonisolated final class NativeTimelineAttributedTextBox: @unchecked Sendable {
     let value: NSAttributedString
     let framesetter: CTFramesetter
@@ -73,14 +39,13 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
         for message: Message,
         currentUserID: UserID? = nil,
         systemRecipient: User? = nil,
-        systemActorColor: NSColor? = nil,
-        systemLinkColor: NSColor? = nil
+        systemActorColor: NSColor? = nil
     ) -> Self {
         let baseFontSize: CGFloat =
             if message.type.hasGeneratedContent {
-                13
+                InterfaceTypographyMetrics.message(13)
             } else {
-                15
+                InterfaceTypographyMetrics.messageTextSize
             }
         let visibleContent =
             if message.type.hasGeneratedContent {
@@ -123,8 +88,7 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                     currentUserID: currentUserID,
                     recipient: systemRecipient,
                     baseFontSize: baseFontSize,
-                    actorColor: systemActorColor,
-                    linkColor: systemLinkColor
+                    actorColor: systemActorColor
                 )
             )
         } else if let prepared, prepared.tokens.isEmpty {
@@ -132,7 +96,7 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                 DiscordMarkdown.appKitAttributed(
                     prepared.markdownPlan,
                     baseFontSize: prepared.isEmojiOnly
-                        ? 48
+                        ? InterfaceTypographyMetrics.message(48)
                         : baseFontSize,
                     usesMessageLineHeight: !prepared.isEmojiOnly,
                     reservesCodeCopyButton: true
@@ -278,6 +242,21 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
             && lhs.searchContext == rhs.searchContext
             && lhs.pinnedAt == rhs.pinnedAt
             && lhs.isResource == rhs.isResource
+    }
+
+    /// Whether the two rows present the same message apart from its reactions.
+    nonisolated func differsOnlyInReactions(from other: MessageRowPresentation) -> Bool {
+        var message = other.message
+        message.reactions = self.message.reactions
+        return message == self.message
+            && startsGroup == other.startsGroup
+            && endsGroup == other.endsGroup
+            && startsDay == other.startsDay
+            && replyPreview == other.replyPreview
+            && isReplyAvailable == other.isReplyAvailable
+            && searchContext == other.searchContext
+            && pinnedAt == other.pinnedAt
+            && isResource == other.isResource
     }
 }
 
@@ -923,10 +902,20 @@ nonisolated enum MessageGrouping {
             && isGroupable(message)
             && !previous.isPostStarter
             && sharesAuthorIdentity(previous, message)
+            && !changesSilence(from: previous, to: message)
             && message.replyTo == nil
             && (interval >= 0 || message.isUnconfirmedLocalSend)
             && abs(interval) < continuationInterval
             && calendar.isDate(previous.timestamp, inSameDayAs: message.timestamp)
+    }
+
+    /// Discord heads a @silent message that follows an ordinary one, and a
+    /// mention that follows a @silent one, so the header shows which it is.
+    private static func changesSilence(from previous: Message, to message: Message) -> Bool {
+        let wasSilent = previous.flags.contains(.suppressNotifications)
+        guard message.flags.contains(.suppressNotifications) != wasSilent else { return false }
+        return !wasSilent
+            || !message.mentionedUsers.isEmpty || !message.mentionedRoleIDs.isEmpty || message.mentionsEveryone
     }
 
     /// One webhook ID posts under many names and avatars; Discord starts a
@@ -1221,5 +1210,10 @@ nonisolated extension Message {
     /// A forum or media post's original message, which shares its thread's ID.
     var isPostStarter: Bool {
         id.rawValue == channelID.rawValue
+    }
+
+    /// A voice message, or a forward of one, which plays like the original.
+    var isVoiceMessage: Bool {
+        (forwardedSnapshot?.flags ?? flags).contains(.voiceMessage)
     }
 }

@@ -83,7 +83,7 @@ public struct GuildOnboardingOption: Decodable, Identifiable, Equatable, Sendabl
         public var name: String?
         public var animated: Bool?
         public var url: URL? {
-            id.flatMap { URL(string: "https://cdn.discordapp.com/emojis/\($0).\(animated == true ? "gif" : "webp")?size=48") }
+            id.flatMap { DiscordCDN.emoji($0, fileExtension: animated == true ? "gif" : "webp", query: "size=48") }
         }
     }
 
@@ -96,7 +96,6 @@ public struct GuildOnboardingOption: Decodable, Identifiable, Equatable, Sendabl
 public enum GuildChannelSelection {
     public static let enabledFlag: UInt64 = 1 << 14
     public static let selectedFlag: UInt64 = 1 << 12
-    public static let favoriteFlag: UInt64 = 1 << 11
 
     public static func isSelected(_ channelID: ChannelID, settings: GuildNotificationSettings) -> Bool {
         settings.channelOverrides.first { $0.channelID == channelID }.map { $0.flags & selectedFlag != 0 } ?? false

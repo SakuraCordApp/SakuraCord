@@ -16,10 +16,7 @@ nonisolated enum ComposerPlaceholderPolicy {
         if startsThread {
             return "Enter a message to start the conversation!"
         }
-        if destination == .channel,
-           channelKind == .directMessage
-            || channelKind == .groupDirectMessage
-        {
+        if destination == .channel, channelKind?.isDirectMessage == true {
             return "Message @\(channelName)"
         }
         return "Message #\(channelName)"
@@ -40,14 +37,6 @@ nonisolated enum ComposerDraftEditing {
             text: value,
             selection: NSRange(location: resolved.location + insertedText.utf16.count, length: 0)
         )
-    }
-
-    static func insertCustomEmoji(
-        _ token: String,
-        into source: String,
-        replacing selection: NSRange?
-    ) -> ComposerDraftEdit {
-        insert(token, into: source, replacing: selection)
     }
 
     private static func resolvedRange(_ selection: NSRange?, in source: String) -> NSRange {

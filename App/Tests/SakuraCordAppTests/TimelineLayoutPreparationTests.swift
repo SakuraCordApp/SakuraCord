@@ -40,7 +40,7 @@ func `timeline layout preparation commits a complete update or discards supersed
     coordinator.canvas = canvas
     defer { withExtendedLifetime(canvas) { coordinator.stopObserving() } }
     coordinator.update(parent: timeline, scrollView: scrollView)
-    canvas.suppressesHoverPresentation = true
+    canvas.pointer.suppressesHoverPresentation = true
 
     if changesPresentation {
         model.invalidateTimelinePresentation()
@@ -63,7 +63,7 @@ func `timeline layout preparation commits a complete update or discards supersed
         #expect(coordinator.layoutPreparationTask == nil)
         #expect(coordinator.messageIDs == replacement.map(\.id))
     } else {
-        canvas.suppressesHoverPresentation = false
+        canvas.pointer.suppressesHoverPresentation = false
         await preparation.value
         #expect(coordinator.layoutPreparationTask == nil)
         #expect(coordinator.messageIDs == messages.map(\.id))
@@ -133,9 +133,9 @@ func `timeline server tags own their activation and reject stale identity layout
     canvas.storage.contentHeight = layout.height
     let tagFrame = try #require(layout.serverTagRegion?.frame)
     let authorFrame = try #require(layout.authorFrame)
-    #expect(canvas.pointerActivationTarget(at: CGPoint(x: authorFrame.midX, y: authorFrame.midY)) == .authorProfile(message.id))
+    #expect(canvas.pointerActivationTarget(at: CGPoint(x: authorFrame.midX, y: authorFrame.midY)) == .authorProfile(message.id, anchor: .init(authorFrame)))
     let tagActivation = canvas.pointerActivationTarget(at: CGPoint(x: tagFrame.midX, y: tagFrame.midY))
-    #expect(tagActivation == (missingGuildID ? nil : .serverTag(message.id, tagGuildID)))
+    #expect(tagActivation == (missingGuildID ? nil : .serverTag(message.id, tagGuildID, anchor: .init(tagFrame))))
 
     // A member update may leave the immutable message and presentation revision
     // unchanged while replacing the author's server identity.

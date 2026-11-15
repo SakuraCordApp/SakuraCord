@@ -24,12 +24,7 @@ struct GuildDTO: Decodable {
         guard let id = GuildID(id) else {
             throw ChatProviderError.invalidRequest("Discord returned an invalid guild identifier.")
         }
-        let iconURL = icon.flatMap { hash in
-            URL(
-                string:
-                "https://cdn.discordapp.com/icons/\(id)/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-            )
-        }
+        let iconURL = icon.flatMap { DiscordCDN.guildIcon(id, hash: $0) }
         return Guild(
             id: id,
             name: name,
@@ -38,7 +33,7 @@ struct GuildDTO: Decodable {
             currentUserPermissions: permissions.flatMap(UInt64.init),
             rulesChannelID: rulesChannelID.flatMap(ChannelID.init),
             features: features ?? [],
-            guideHeaderURL: homeHeader.flatMap { URL(string: "https://cdn.discordapp.com/home-headers/\(id)/\($0).png?size=2048") },
+            guideHeaderURL: homeHeader.flatMap { DiscordCDN.guildHomeHeader(id, hash: $0) },
             profileTag: profile?.domain(guildID: id),
             defaultMessageNotifications:
                 defaultMessageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
@@ -75,9 +70,12 @@ struct GuildActivityDTO: Decodable {
     }
 }
 
-extension [GuildActivityDTO] {
-    var memberListActivity: GuildActivityDTO? {
-        first(where: { $0.type == 2 }) ?? first(where: { $0.type != 4 })
+extension Member {
+    mutating func applyActivities(_ activities: [GuildActivityDTO]) {
+        let primaryActivity = activities.first(where: { $0.type == 2 }) ?? activities.first(where: { $0.type != 4 })
+        customStatus = activities.first(where: { $0.type == 4 })?.displayText
+        activityText = primaryActivity?.displayText ?? customStatus
+        isListeningToMusic = primaryActivity?.type == 2
     }
 }
 
@@ -187,10 +185,7 @@ struct GuildMemberDTO: Decodable {
                 .sorted { $0.position > $1.position }
                 .compactMap(\.domain)
         }
-        let activities = (overridePresence ?? presence)?.activities ?? []
-        let customStatus = activities.first(where: { $0.type == 4 })?.displayText
-        let primaryActivity = activities.memberListActivity
-        return Member(
+        var member = Member(
             user: domainUser,
             roleName: categoryRole?.name ?? "Member",
             status: status,
@@ -203,9 +198,6 @@ struct GuildMemberDTO: Decodable {
             globalDisplayName: globalDisplayName,
             guildNickname: nick,
             guildProfileCosmetics: cosmetics,
-            activityText: primaryActivity?.displayText ?? customStatus,
-            customStatus: customStatus,
-            isListeningToMusic: primaryActivity?.type == 2,
             isMobileOnly: (overridePresence ?? presence)?.clientStatus?.isMobileOnly ?? false,
             isPending: pending,
             flags: flags,
@@ -213,14 +205,13 @@ struct GuildMemberDTO: Decodable {
                 ? communicationDisabledUntil.flatMap(DiscordDate.parse) : previousCommunicationDisabledUntil,
             joinedAt: joinedAt.flatMap(DiscordDate.parse)
         )
+        member.applyActivities((overridePresence ?? presence)?.activities ?? [])
+        return member
     }
 
     private func guildAvatarURL(guildID: GuildID?, userID: UserID) -> URL? {
         guard let avatar, let guildID else { return nil }
-        return URL(
-            string:
-            "https://cdn.discordapp.com/guilds/\(guildID)/users/\(userID)/avatars/\(avatar).webp?size=128&animated=\(avatar.hasPrefix("a_") ? "true" : "false")"
-        )
+        return DiscordCDN.guildMemberAvatar(guildID, userID: userID, hash: avatar)
     }
 }
 

@@ -68,6 +68,39 @@ nonisolated enum SettingsPreferenceValue: Codable, Equatable, Sendable {
         }
     }
 
+    var boolValue: Bool {
+        guard case let .bool(value) = self else { preconditionFailure("\(self) is not a Bool.") }
+        return value
+    }
+
+    var integerValue: Int {
+        guard case let .integer(value) = self else { preconditionFailure("\(self) is not an Int.") }
+        return value
+    }
+
+    var doubleValue: Double {
+        guard case let .double(value) = self else { preconditionFailure("\(self) is not a Double.") }
+        return value
+    }
+
+    var stringValue: String {
+        guard case let .string(value) = self else { preconditionFailure("\(self) is not a String.") }
+        return value
+    }
+
+    var stringsValue: [String] {
+        guard case let .strings(value) = self else { preconditionFailure("\(self) is not a String list.") }
+        return value
+    }
+
+    /// A string as the value it names. The registration validates the raw value.
+    func rawValue<Value: RawRepresentable>() -> Value where Value.RawValue == String {
+        guard let value = Value(rawValue: stringValue) else {
+            preconditionFailure("\(self) does not validate \(Value.self).")
+        }
+        return value
+    }
+
     func accepts(_ value: Any) -> SettingsPreferenceValue? {
         switch self {
         case .bool:
@@ -90,33 +123,33 @@ nonisolated enum SettingsPreferenceValue: Codable, Equatable, Sendable {
     }
 }
 
-nonisolated enum SettingsPreferenceStorage: Hashable, Sendable {
-    case appWide(key: String)
-    case accountLocal(key: String)
-}
-
 nonisolated struct SettingsPreferenceRegistration: Identifiable, Sendable {
     let id: SettingsControlID
     let page: SettingsPageID
-    let storage: SettingsPreferenceStorage
+    /// The app-wide UserDefaults key.
+    let key: String
     let defaultValue: SettingsPreferenceValue
     let exports: Bool
     let resets: Bool
+    /// What a string setting accepts.
+    let validate: (@Sendable (String) -> Bool)?
 
     init(
         id: SettingsControlID,
         page: SettingsPageID,
-        storage: SettingsPreferenceStorage,
+        key: String,
         defaultValue: SettingsPreferenceValue,
         exports: Bool = true,
-        resets: Bool = true
+        resets: Bool = true,
+        validate: (@Sendable (String) -> Bool)? = nil
     ) {
         self.id = id
         self.page = page
-        self.storage = storage
+        self.key = key
         self.defaultValue = defaultValue
         self.exports = exports
         self.resets = resets
+        self.validate = validate
     }
 }
 
@@ -126,259 +159,284 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
     static let foundation = SettingsPreferenceRegistry(registrations: [
         SettingsPreferenceRegistration(
             id: .memberListVisibility, page: .interface,
-            storage: .appWide(key: "settings.memberListVisible"), defaultValue: .bool(true)
+            key: "settings.memberListVisible", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .directMessageProfileVisibility, page: .interface,
-            storage: .appWide(key: "settings.directMessageProfileVisible"), defaultValue: .bool(true)
+            key: "settings.directMessageProfileVisible", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .groupDirectMessageMembersVisibility, page: .interface,
-            storage: .appWide(key: "settings.groupDirectMessageMembersVisible"), defaultValue: .bool(true)
+            key: "settings.groupDirectMessageMembersVisible", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .launchDestination,
             page: .general,
-            storage: .appWide(key: "settings.launchDestination"),
-            defaultValue: .string(SettingsLaunchDestination.lastVisitedConversation.rawValue)
+            key: "settings.launchDestination",
+            defaultValue: .string(SettingsLaunchDestination.lastVisitedConversation.rawValue),
+            validate: { SettingsLaunchDestination(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .confirmQuitActiveWork,
             page: .general,
-            storage: .appWide(key: "settings.confirmQuitActiveWork"),
+            key: "settings.confirmQuitActiveWork",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .appColorScheme,
             page: .appearance,
-            storage: .appWide(key: "settings.appearance.colorScheme"),
-            defaultValue: .string(AppColorScheme.system.rawValue)
+            key: "settings.appearance.colorScheme",
+            defaultValue: .string(AppColorScheme.system.rawValue),
+            validate: { AppColorScheme(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .windowOpacity,
             page: .appearance,
-            storage: .appWide(key: "settings.appearance.windowOpacity"),
+            key: "settings.appearance.windowOpacity",
             defaultValue: .double(AppearanceSettingsSnapshot.defaultWindowOpacity)
         ),
         SettingsPreferenceRegistration(
             id: .legacyAccentColorMigration,
             page: .appearance,
-            storage: .appWide(key: "settings.appearance.accentColor"),
+            key: "settings.appearance.accentColor",
             defaultValue: .string(LegacyAccentColorChoice.blurple.rawValue),
             exports: false
         ),
         SettingsPreferenceRegistration(
             id: .themeDesigner,
             page: .appearance,
-            storage: .appWide(key: "settings.appearance.customGradientTheme"),
-            defaultValue: .string(SakuraCordGradientTheme.defaultTheme.storageValue)
+            key: "settings.appearance.customGradientTheme",
+            defaultValue: .string(SakuraCordGradientTheme.defaultTheme.storageValue),
+            validate: { SakuraCordGradientTheme(storageValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .composerBarAppearance,
             page: .interface,
-            storage: .appWide(key: "settings.appearance.composerBar"),
-            defaultValue: .string(ComposerBarAppearance.defaultStyle.rawValue)
+            key: "settings.appearance.composerBar",
+            defaultValue: .string(ComposerBarAppearance.defaultStyle.rawValue),
+            validate: { ComposerBarAppearance(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .messageAppearance,
             page: .interface,
-            storage: .appWide(key: "settings.appearance.serverMessages"),
-            defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
+            key: "settings.appearance.serverMessages",
+            defaultValue: .string(MessageAppearance.defaultStyle.rawValue),
+            validate: { MessageAppearance(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .directMessageAppearance, page: .interface,
-            storage: .appWide(key: "settings.appearance.directMessages"),
-            defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
+            key: "settings.appearance.directMessages",
+            defaultValue: .string(MessageAppearance.defaultStyle.rawValue),
+            validate: { MessageAppearance(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .groupMessageAppearance, page: .interface,
-            storage: .appWide(key: "settings.appearance.groupMessages"),
-            defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
+            key: "settings.appearance.groupMessages",
+            defaultValue: .string(MessageAppearance.defaultStyle.rawValue),
+            validate: { MessageAppearance(rawValue: $0) != nil }
+        ),
+        SettingsPreferenceRegistration(
+            id: .messageFontSize,
+            page: .interface,
+            key: "settings.appearance.messageFontSize",
+            defaultValue: .double(InterfaceTypographyMetrics.defaultMessageTextSize)
         ),
         SettingsPreferenceRegistration(
             id: .messageDensity,
             page: .interface,
-            storage: .appWide(key: "settings.appearance.messageDensity"),
-            defaultValue: .double(
-                AppearanceSettingsSnapshot.defaults.messageSpacing
-            )
+            key: "settings.appearance.messageDensity",
+            defaultValue: .double(AppearanceSettingsSnapshot.defaultMessageSpacing)
         ),
         SettingsPreferenceRegistration(
             id: .interfaceSize,
             page: .interface,
-            storage: .appWide(key: "settings.interface.size"),
+            key: "settings.interface.size",
             defaultValue: .double(InterfaceScale.defaultFactor)
         ),
         SettingsPreferenceRegistration(
             id: .timestampFormat,
             page: .interface,
-            storage: .appWide(key: "settings.interface.timestampFormat"),
-            defaultValue: .string(InterfaceTimestampFormat.system.rawValue)
+            key: "settings.interface.timestampFormat",
+            defaultValue: .string(InterfaceTimestampFormat.system.rawValue),
+            validate: { InterfaceTimestampFormat(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .alwaysShowTimestamps, page: .interface,
-            storage: .appWide(key: "settings.interface.alwaysShowTimestamps"),
+            key: "settings.interface.alwaysShowTimestamps",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .roleColorDisplay, page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.roleColorDisplay"),
-            defaultValue: .string(RoleColorDisplay.inNames.rawValue)
+            key: "settings.accessibility.roleColorDisplay",
+            defaultValue: .string(RoleColorDisplay.inNames.rawValue),
+            validate: { RoleColorDisplay(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .composerIcons, page: .interface,
-            storage: .appWide(key: "settings.appearance.composerIcons"),
-            defaultValue: .string(ComposerIconLayout.defaults.storageValue)
+            key: "settings.appearance.composerIcons",
+            defaultValue: .string(ComposerIconLayout.defaults.storageValue),
+            validate: { (try? JSONDecoder().decode(ComposerIconLayout.self, from: Data($0.utf8))) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .timestampSeconds,
             page: .interface,
-            storage: .appWide(key: "settings.interface.timestampSeconds"),
+            key: "settings.interface.timestampSeconds",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .underlineLinks,
             page: .accessibility,
-            storage: .appWide(key: "settings.interface.underlineLinks"),
+            key: "settings.interface.underlineLinks",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .sendWithReturn,
             page: .general,
-            storage: .appWide(key: "settings.chat.sendWithReturn"),
+            key: "settings.chat.sendWithReturn",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .replyMentionsAuthor, page: .general,
-            storage: .appWide(key: "settings.chat.replyMentionsAuthor"),
+            key: "settings.chat.replyMentionsAuthor",
             defaultValue: .bool(true), exports: false, resets: false
         ),
         SettingsPreferenceRegistration(
             id: .spellCheck,
             page: .general,
-            storage: .appWide(key: "settings.chat.spellCheck"),
+            key: "settings.chat.spellCheck",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .automaticCorrection,
             page: .general,
-            storage: .appWide(key: "settings.chat.automaticCorrection"),
+            key: "settings.chat.automaticCorrection",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .smartQuotes,
             page: .general,
-            storage: .appWide(key: "settings.chat.smartQuotes"),
+            key: "settings.chat.smartQuotes",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .smartDashes,
             page: .general,
-            storage: .appWide(key: "settings.chat.smartDashes"),
+            key: "settings.chat.smartDashes",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .removeMediaMetadata,
             page: .privacySafety,
-            storage: .appWide(key: "settings.privacy.removeMediaMetadata"),
+            key: "settings.privacy.removeMediaMetadata",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .anonymiseFileNames,
             page: .privacySafety,
-            storage: .appWide(key: PrivacySafetySettingsStore.anonymiseFileNamesKey),
+            key: PrivacySafetySettingsStore.anonymiseFileNamesKey,
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .privacyTypingIndicators,
             page: .privacySafety,
-            storage: .appWide(key: "settings.chat.typingIndicators"),
+            key: "settings.chat.typingIndicators",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .emojiSkinTone,
             page: .general,
-            storage: .appWide(key: "emojiSkinTone"),
-            defaultValue: .string(NativeEmojiSkinTone.standard.rawValue)
+            key: "emojiSkinTone",
+            defaultValue: .string(NativeEmojiSkinTone.standard.rawValue),
+            validate: { NativeEmojiSkinTone(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .translationEnabled, page: .features,
-            storage: .appWide(key: "settings.translation.enabled"), defaultValue: .bool(false)
+            key: "settings.translation.enabled", defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .translationMessageLanguage, page: .features,
-            storage: .appWide(key: "settings.translation.messageLanguage"), defaultValue: .string("")
+            key: "settings.translation.messageLanguage", defaultValue: .string(""),
+            validate: { TranslationLanguages.validPreference($0) }
         ),
         SettingsPreferenceRegistration(
             id: .translationDraftLanguage, page: .features,
-            storage: .appWide(key: "settings.translation.draftLanguage"), defaultValue: .string("en")
+            key: "settings.translation.draftLanguage", defaultValue: .string("en"),
+            validate: { TranslationLanguages.validPreference($0) }
         ),
         SettingsPreferenceRegistration(
             id: .readAllButton, page: .features,
-            storage: .appWide(key: "settings.features.readAllButton"), defaultValue: .bool(false)
+            key: "settings.features.readAllButton", defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .channelManagement, page: .features,
-            storage: .appWide(key: "settings.features.channelManagement"), defaultValue: .bool(true)
+            key: "settings.features.channelManagement", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .showHiddenChannels, page: .features,
-            storage: .appWide(key: "settings.features.showHiddenChannels"), defaultValue: .bool(true)
+            key: "settings.features.showHiddenChannels", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .fakeNitroEmojis, page: .features,
-            storage: .appWide(key: "settings.features.fakeNitroEmojis"), defaultValue: .bool(true)
+            key: "settings.features.fakeNitroEmojis", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .fakeNitroStickers, page: .features,
-            storage: .appWide(key: "settings.features.fakeNitroStickers"), defaultValue: .bool(true)
+            key: "settings.features.fakeNitroStickers", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .fakeNitroSoundboard, page: .features,
-            storage: .appWide(key: "settings.features.fakeNitroSoundboard"), defaultValue: .bool(true)
+            key: "settings.features.fakeNitroSoundboard", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .fakeNitroStreamQuality, page: .features,
-            storage: .appWide(key: "settings.features.fakeNitroStreamQuality"), defaultValue: .bool(true)
+            key: "settings.features.fakeNitroStreamQuality", defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .unlimitedFavorites, page: .features,
+            key: "settings.features.unlimitedFavorites", defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .voiceMessageRecording, page: .features,
-            storage: .appWide(key: "settings.features.voiceMessageRecording"), defaultValue: .bool(true)
+            key: "settings.features.voiceMessageRecording", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .messageHoverActions, page: .features,
-            storage: .appWide(key: "settings.features.messageHoverActions"), defaultValue: .bool(true)
+            key: "settings.features.messageHoverActions", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .scrollToBottomButton, page: .features,
-            storage: .appWide(key: "settings.features.scrollToBottomButton"), defaultValue: .bool(true)
+            key: "settings.features.scrollToBottomButton", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .attachmentCompactionPrompt, page: .features,
-            storage: .appWide(key: "settings.attachments.attachmentCompactionPrompt"), defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue)
+            key: "settings.attachments.attachmentCompactionPrompt", defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue),
+            validate: { AttachmentHandlingPolicy(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .attachmentExternalUploadPrompt, page: .features,
-            storage: .appWide(key: "settings.attachments.attachmentExternalUploadPrompt"), defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue)
+            key: "settings.attachments.attachmentExternalUploadPrompt", defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue),
+            validate: { AttachmentHandlingPolicy(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .attachmentExternalProvider, page: .features,
-            storage: .appWide(key: "settings.attachments.externalProvider"), defaultValue: .string(ExternalAttachmentHostingService.litterbox.rawValue)
+            key: "settings.attachments.externalProvider", defaultValue: .string(ExternalAttachmentHostingService.litterbox.rawValue),
+            validate: { ExternalAttachmentHostingService(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .attachmentCompactionQuality, page: .features,
-            storage: .appWide(key: "settings.attachments.attachmentCompactionQuality"), defaultValue: .string(AttachmentCompactionOptions.Quality.balanced.rawValue)
+            key: "settings.attachments.attachmentCompactionQuality", defaultValue: .string(AttachmentCompactionOptions.Quality.balanced.rawValue),
+            validate: { AttachmentCompactionOptions.Quality(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .localStorageLimit,
             page: .storageDownloads,
-            storage: .appWide(key: "mediaCacheLimit"),
+            key: "mediaCacheLimit",
             defaultValue: .integer(2_147_483_648)
         ),
         SettingsPreferenceRegistration(
             id: .mediaCacheLastCleared,
             page: .storageDownloads,
-            storage: .appWide(key: "settings.storage.mediaCacheLastCleared"),
+            key: "settings.storage.mediaCacheLastCleared",
             defaultValue: .double(0),
             exports: false,
             resets: false
@@ -386,366 +444,371 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         SettingsPreferenceRegistration(
             id: .downloadFolderBookmark,
             page: .storageDownloads,
-            storage: .appWide(key: "settings.storage.downloadFolderBookmark"),
+            key: "settings.storage.downloadFolderBookmark",
             defaultValue: .string(""),
             exports: false
         ),
         SettingsPreferenceRegistration(
             id: .downloadFolderName,
             page: .storageDownloads,
-            storage: .appWide(key: "settings.storage.downloadFolderName"),
+            key: "settings.storage.downloadFolderName",
             defaultValue: .string(""),
             exports: false
         ),
         SettingsPreferenceRegistration(
             id: .revealCompletedDownloads,
             page: .storageDownloads,
-            storage: .appWide(key: "settings.storage.revealCompletedDownloads"),
+            key: "settings.storage.revealCompletedDownloads",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .notificationEnabled,
             page: .notifications,
-            storage: .appWide(key: "notifications.enabled"),
+            key: NotificationPreferenceKeys.enabled,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationPreview,
             page: .notifications,
-            storage: .appWide(key: "notifications.preview"),
-            defaultValue: .string(NotificationPreviewStyle.full.rawValue)
+            key: NotificationPreferenceKeys.preview,
+            defaultValue: .string(NotificationPreviewStyle.full.rawValue),
+            validate: { NotificationPreviewStyle(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .notificationSound,
             page: .notifications,
-            storage: .appWide(key: "notifications.sound"),
+            key: NotificationPreferenceKeys.sound,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationMessageSound,
             page: .notifications,
-            storage: .appWide(key: NotificationSoundKeys.messageSoundID),
+            key: NotificationSoundKeys.messageSoundID,
             defaultValue: .string(NotificationSoundLibrary.bundledID)
         ),
         SettingsPreferenceRegistration(
             id: .notificationCallRingtone,
             page: .notifications,
-            storage: .appWide(key: NotificationSoundKeys.callRingtoneID),
+            key: NotificationSoundKeys.callRingtoneID,
             defaultValue: .string(NotificationSoundLibrary.bundledID)
         ),
         SettingsPreferenceRegistration(
             id: .notificationDockBadge,
             page: .notifications,
-            storage: .appWide(key: "notifications.dockBadge"),
-            defaultValue: .string(NotificationDockBadgeStyle.mentions.rawValue)
+            key: NotificationPreferenceKeys.dockBadge,
+            defaultValue: .string(NotificationDockBadgeStyle.mentions.rawValue),
+            validate: { NotificationDockBadgeStyle(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .notificationDirectMessages,
             page: .notifications,
-            storage: .appWide(key: "notifications.events.directMessages"),
+            key: NotificationPreferenceKeys.directMessages,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationGroupDirectMessages,
             page: .notifications,
-            storage: .appWide(key: "notifications.events.groupDirectMessages"),
+            key: NotificationPreferenceKeys.groupDirectMessages,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationMentions,
             page: .notifications,
-            storage: .appWide(key: "notifications.events.mentions"),
+            key: NotificationPreferenceKeys.mentions,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationReplies,
             page: .notifications,
-            storage: .appWide(key: "notifications.events.replies"),
+            key: NotificationPreferenceKeys.replies,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationIncomingCalls,
             page: .notifications,
-            storage: .appWide(key: "notifications.events.incomingCalls"),
+            key: NotificationPreferenceKeys.incomingCalls,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationServerActivity,
             page: .notifications,
-            storage: .appWide(key: "notifications.events.serverActivity"),
+            key: NotificationPreferenceKeys.serverActivity,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationSuppressCurrent,
             page: .notifications,
-            storage: .appWide(key: "notifications.suppressCurrentConversation"),
+            key: NotificationPreferenceKeys.suppressCurrentConversation,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationGroupBursts,
             page: .notifications,
-            storage: .appWide(key: "notifications.groupByConversation"),
+            key: NotificationPreferenceKeys.groupByConversation,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationClearWhenRead,
             page: .notifications,
-            storage: .appWide(key: "notifications.clearWhenRead"),
+            key: NotificationPreferenceKeys.clearWhenRead,
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .voiceInputDevice,
             page: .voiceVideo,
-            storage: .appWide(key: "voiceInputDeviceUID"),
+            key: "voiceInputDeviceUID",
             defaultValue: .string("")
         ),
         SettingsPreferenceRegistration(
             id: .voiceOutputDevice,
             page: .voiceVideo,
-            storage: .appWide(key: "voiceOutputDeviceUID"),
+            key: "voiceOutputDeviceUID",
             defaultValue: .string("")
         ),
         SettingsPreferenceRegistration(
             id: .voiceCamera,
             page: .voiceVideo,
-            storage: .appWide(key: "voiceCameraUID"),
+            key: "voiceCameraUID",
             defaultValue: .string("")
         ),
         SettingsPreferenceRegistration(
             id: .voiceInputVolume,
             page: .voiceVideo,
-            storage: .appWide(key: "voiceInputVolume"),
+            key: "voiceInputVolume",
             defaultValue: .double(1)
         ),
         SettingsPreferenceRegistration(
             id: .voiceOutputVolume,
             page: .voiceVideo,
-            storage: .appWide(key: "voiceOutputVolume"),
+            key: "voiceOutputVolume",
             defaultValue: .double(1)
         ),
         SettingsPreferenceRegistration(
             id: .voiceJoinMuted,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.joinMuted"),
+            key: "voice.joinMuted",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .voiceJoinDeafened,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.joinDeafened"),
+            key: "voice.joinDeafened",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .voiceFeedbackSounds,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.feedbackSounds"),
+            key: "voice.feedbackSounds",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .voiceRememberCamera,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.remembersCamera"),
+            key: "voice.remembersCamera",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .voiceMirrorPreview,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.mirrorsLocalPreview"),
+            key: "voice.mirrorsLocalPreview",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .voiceJoinCameraOff,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.joinsWithCameraOff"),
+            key: "voice.joinsWithCameraOff",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .voiceScreenShareQuality,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.screenShare.quality"),
-            defaultValue: .string(ScreenShareQuality.p720.rawValue)
+            key: "voice.screenShare.quality",
+            defaultValue: .string(ScreenShareQuality.p720.rawValue),
+            validate: { ScreenShareQuality(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .voiceScreenShareFrameRate,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.screenShare.frameRate"),
+            key: "voice.screenShare.frameRate",
             defaultValue: .integer(ScreenShareFrameRate.fps30.rawValue)
         ),
         SettingsPreferenceRegistration(
             id: .voiceScreenShareAudio,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.screenShare.includesAudio"),
+            key: "voice.screenShare.includesAudio",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .voiceScreenSharePointer,
             page: .voiceVideo,
-            storage: .appWide(key: "voice.screenShare.showsPointer"),
+            key: "voice.screenShare.showsPointer",
             defaultValue: .bool(true)
         ),
 
         SettingsPreferenceRegistration(
             id: .accessibilityDisableSendAnimations,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableMessageSendingAnimations"),
+            key: "settings.accessibility.disableMessageSendingAnimations",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableAllAnimations,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableAllAnimations"),
+            key: "settings.accessibility.disableAllAnimations",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableSidebarAnimations,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableSidebarAnimations"),
+            key: "settings.accessibility.disableSidebarAnimations",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableSideChatAnimations,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableSideChatAnimations"),
+            key: "settings.accessibility.disableSideChatAnimations",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableOverlayAnimations,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableOverlayAnimations"),
+            key: "settings.accessibility.disableOverlayAnimations",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableOwnCosmetics,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableOwnCosmetics"),
+            key: "settings.accessibility.disableOwnCosmetics",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableProfileEffects,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableProfileEffects"),
+            key: "settings.accessibility.disableProfileEffects",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableNameplates,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableNameplates"),
+            key: "settings.accessibility.disableNameplates",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableAvatarDecorations,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableAvatarDecorations"),
+            key: "settings.accessibility.disableAvatarDecorations",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableProfileFrames,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableProfileFrames"),
+            key: "settings.accessibility.disableProfileFrames",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableNameStyles,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableNameStyles"),
+            key: "settings.accessibility.disableNameStyles",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityDisableProfileGradients,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableProfileGradients"),
+            key: "settings.accessibility.disableProfileGradients",
             defaultValue: .bool(false)
         ),
 
         SettingsPreferenceRegistration(
             id: .accessibilityDisableServerTags,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.disableServerTags"),
+            key: "settings.accessibility.disableServerTags",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityAnnounceTimestamp,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.announceTimestamp"),
+            key: "settings.accessibility.announceTimestamp",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityAnnounceEdited,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.announceEdited"),
+            key: "settings.accessibility.announceEdited",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityAnnounceReactions,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.announceReactions"),
+            key: "settings.accessibility.announceReactions",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityAnnounceAttachmentTypes,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.announceAttachmentTypes"),
+            key: "settings.accessibility.announceAttachmentTypes",
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .accessibilityAnnounceNewMessages,
             page: .accessibility,
-            storage: .appWide(key: "settings.accessibility.announceNewMessages"),
+            key: "settings.accessibility.announceNewMessages",
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .externalLinkProtection,
             page: .privacySafety,
-            storage: .appWide(key: "settings.privacy.externalLinkConfirmationPolicy"),
-            defaultValue: .string(ExternalLinkConfirmationPolicy.untrustedDomains.rawValue)
+            key: "settings.privacy.externalLinkConfirmationPolicy",
+            defaultValue: .string(ExternalLinkConfirmationPolicy.untrustedDomains.rawValue),
+            validate: { ExternalLinkConfirmationPolicy(rawValue: $0) != nil }
         ),
         SettingsPreferenceRegistration(
             id: .trustedDomains,
             page: .privacySafety,
-            storage: .appWide(key: "settings.privacy.trustedDomains"),
+            key: "settings.privacy.trustedDomains",
             defaultValue: .strings(ExternalLinkTrustedDomain.defaults),
             exports: false
         ),
         SettingsPreferenceRegistration(
             id: .diagnosticConnectionMetrics,
             page: .diagnostics,
-            storage: .appWide(key: DiagnosticsPreferences.capturesConnectionMetricsKey),
+            key: DiagnosticsPreferences.capturesConnectionMetricsKey,
             defaultValue: .bool(false),
             resets: false
         ),
         SettingsPreferenceRegistration(
             id: .diagnosticDetailedPayloads,
             page: .diagnostics,
-            storage: .appWide(key: DiagnosticsPreferences.capturesDetailedPayloadsKey),
+            key: DiagnosticsPreferences.capturesDetailedPayloadsKey,
             defaultValue: .bool(false),
             resets: false
         ),
         SettingsPreferenceRegistration(
             id: .diagnosticPanicSave,
             page: .diagnostics,
-            storage: .appWide(key: DiagnosticsPreferences.enablesPanicSaveKey),
+            key: DiagnosticsPreferences.enablesPanicSaveKey,
             defaultValue: .bool(true),
             resets: false
         ),
         SettingsPreferenceRegistration(
             id: .diagnosticDiskCapture,
             page: .diagnostics,
-            storage: .appWide(key: DiagnosticsPreferences.savesDiagnosticsToDiskKey),
+            key: DiagnosticsPreferences.savesDiagnosticsToDiskKey,
             defaultValue: .bool(false),
             resets: false
         ),
         SettingsPreferenceRegistration(
             id: .updateReleaseTrack,
             page: .softwareUpdates,
-            storage: .appWide(key: AppUpdateReleaseTrack.preferenceKey),
+            key: AppUpdateReleaseTrack.preferenceKey,
             defaultValue: .string(AppUpdateReleaseTrack.regular.rawValue),
-            resets: false
+            resets: false,
+            validate: { AppUpdateReleaseTrack(rawValue: $0) != nil }
         ),
     ] + KeyboardShortcutAction.allCases.map { action in
         SettingsPreferenceRegistration(
             id: action.controlID,
             page: .keyboardShortcuts,
-            storage: .appWide(key: "settings.shortcuts.\(action.rawValue)"),
+            key: "settings.shortcuts.\(action.rawValue)",
             defaultValue: .string(action.defaultShortcut?.storageValue ?? "")
         )
     })
@@ -760,61 +823,21 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         registrations.first { $0.id == id }
     }
 
-    func registrations(
-        page: SettingsPageID? = nil,
-        storageScope: SettingsLocalPreferenceScope? = nil
-    ) -> [SettingsPreferenceRegistration] {
-        registrations.filter { registration in
-            let matchesPage = page == nil || registration.page == page
-            let matchesScope = switch (storageScope, registration.storage) {
-            case (nil, _): true
-            case (.appWide, .appWide): true
-            case (.accountLocal, .accountLocal): true
-            default: false
-            }
-            return matchesPage && matchesScope
+    /// Settings snapshots build their defaults from this, so registrations stay the only source.
+    func defaultValue(for id: SettingsControlID) -> SettingsPreferenceValue {
+        guard let registration = registration(id) else {
+            preconditionFailure("\(id.rawValue) has no registered preference.")
         }
-    }
-}
-
-nonisolated enum SettingsLocalPreferenceScope: String, Codable, Sendable {
-    case appWide = "app-wide"
-    case accountLocal = "account-local"
-}
-
-nonisolated struct SettingsPreferenceExport: Codable, Equatable, Sendable {
-    static let schema = "dev.sakuracord.settings-preferences"
-    static let currentVersion = 1
-
-    let schema: String
-    let version: Int
-    let scope: SettingsLocalPreferenceScope
-    let page: SettingsPageID?
-    let values: [String: SettingsPreferenceValue]
-
-    init(
-        scope: SettingsLocalPreferenceScope,
-        page: SettingsPageID?,
-        values: [String: SettingsPreferenceValue]
-    ) {
-        schema = Self.schema
-        version = Self.currentVersion
-        self.scope = scope
-        self.page = page
-        self.values = values
+        return registration.defaultValue
     }
 
-    func encodedData() throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(self)
+    func registrations(page: SettingsPageID? = nil) -> [SettingsPreferenceRegistration] {
+        registrations.filter { page == nil || $0.page == page }
     }
 }
 
 final class SettingsPreferenceStore {
     static let shared = SettingsPreferenceStore()
-
-    private static let accountValuesKey = "dev.sakuracord.account-local-preferences-v1"
 
     let registry: SettingsPreferenceRegistry
     private let defaults: any PreferenceStoring
@@ -848,11 +871,6 @@ final class SettingsPreferenceStore {
             "settings.accessibility.largerTargets",
         ] {
             defaults.removeObject(forKey: key)
-        }
-        let launchDestinationKey = "settings.launchDestination"
-        if let rawValue = defaults.object(forKey: launchDestinationKey) as? String,
-           SettingsLaunchDestination(rawValue: rawValue) == nil {
-            defaults.removeObject(forKey: launchDestinationKey)
         }
         let legacyRoleKey = "settings.interface.showRoleColors"
         let roleKey = "settings.accessibility.roleColorDisplay"
@@ -892,119 +910,63 @@ final class SettingsPreferenceStore {
         defaults.set(true, forKey: key)
     }
 
-    func value(
-        for id: SettingsControlID,
-        accountID: String? = nil
-    ) -> SettingsPreferenceValue? {
-        guard let registration = registry.registration(id) else { return nil }
-        switch registration.storage {
-        case let .appWide(key):
-            guard let stored = defaults.object(forKey: key) else {
-                return registration.defaultValue
-            }
-            return registration.defaultValue.accepts(stored) ?? registration.defaultValue
-        case let .accountLocal(key):
-            guard let accountID else { return registration.defaultValue }
-            return accountValues()[accountID]?[key] ?? registration.defaultValue
+    /// The stored value, or the default when nothing valid is stored.
+    func value(for id: SettingsControlID) -> SettingsPreferenceValue {
+        guard let registration = registry.registration(id) else {
+            preconditionFailure("\(id.rawValue) has no registered preference.")
         }
+        guard let stored = defaults.object(forKey: registration.key).flatMap(registration.defaultValue.accepts),
+              registration.accepts(stored)
+        else { return registration.defaultValue }
+        return stored
     }
 
-    func containsStoredValue(
-        for id: SettingsControlID,
-        accountID: String? = nil
-    ) -> Bool {
+    func bool(_ id: SettingsControlID) -> Bool {
+        value(for: id).boolValue
+    }
+
+    func double(_ id: SettingsControlID) -> Double {
+        value(for: id).doubleValue
+    }
+
+    func string(_ id: SettingsControlID) -> String {
+        value(for: id).stringValue
+    }
+
+    func rawValue<Value: RawRepresentable>(_ id: SettingsControlID) -> Value where Value.RawValue == String {
+        value(for: id).rawValue()
+    }
+
+    func containsStoredValue(for id: SettingsControlID) -> Bool {
         guard let registration = registry.registration(id) else { return false }
-        return switch registration.storage {
-        case let .appWide(key):
-            defaults.object(forKey: key) != nil
-        case let .accountLocal(key):
-            accountID.flatMap { accountValues()[$0]?[key] } != nil
-        }
+        return defaults.object(forKey: registration.key) != nil
     }
 
-    func set(
-        _ value: SettingsPreferenceValue,
-        for id: SettingsControlID,
-        accountID: String? = nil
-    ) {
+    func set(_ value: SettingsPreferenceValue, for id: SettingsControlID) {
         guard let registration = registry.registration(id),
               registration.defaultValue.accepts(value.defaultsValue) != nil
         else { return }
+        defaults.set(value.defaultsValue, forKey: registration.key)
+    }
 
-        switch registration.storage {
-        case let .appWide(key):
-            defaults.set(value.defaultsValue, forKey: key)
-        case let .accountLocal(key):
-            guard let accountID else { return }
-            var values = accountValues()
-            values[accountID, default: [:]][key] = value
-            persistAccountValues(values)
+    func reset(page: SettingsPageID? = nil) {
+        for registration in registry.registrations(page: page) where registration.resets {
+            defaults.removeObject(forKey: registration.key)
         }
     }
 
-    func reset(
-        scope: SettingsLocalPreferenceScope,
-        page: SettingsPageID? = nil,
-        accountID: String? = nil
-    ) {
-        let registrations = registry.registrations(page: page, storageScope: scope)
-            .filter(\.resets)
-        switch scope {
-        case .appWide:
-            for registration in registrations {
-                guard case let .appWide(key) = registration.storage else { continue }
-                defaults.removeObject(forKey: key)
-            }
-        case .accountLocal:
-            guard let accountID else { return }
-            var values = accountValues()
-            for registration in registrations {
-                guard case let .accountLocal(key) = registration.storage else { continue }
-                values[accountID]?[key] = nil
-            }
-            if values[accountID]?.isEmpty == true {
-                values[accountID] = nil
-            }
-            persistAccountValues(values)
-        }
-    }
-
-    func export(
-        scope: SettingsLocalPreferenceScope,
-        page: SettingsPageID? = nil,
-        accountID: String? = nil
-    ) -> SettingsPreferenceExport {
-        let registrations = registry.registrations(page: page, storageScope: scope)
+    /// The exportable values, by control ID.
+    func export(page: SettingsPageID? = nil) -> [String: SettingsPreferenceValue] {
+        let registrations = registry.registrations(page: page)
             .filter(\.exports)
         var values: [String: SettingsPreferenceValue] = [:]
         for registration in registrations {
-            guard let value = value(for: registration.id, accountID: accountID) else { continue }
+            let value = value(for: registration.id)
             // A custom sound is a machine-local file bookmark, like the download folder,
             // so only its ID would travel and Import would silently restore Default.
             if value == .string(NotificationSoundLibrary.customID) { continue }
             values[registration.id.rawValue] = value
         }
-        return SettingsPreferenceExport(scope: scope, page: page, values: values)
-    }
-
-    private func accountValues() -> [String: [String: SettingsPreferenceValue]] {
-        guard let data = defaults.data(forKey: Self.accountValuesKey),
-              let values = try? JSONDecoder().decode(
-                  [String: [String: SettingsPreferenceValue]].self,
-                  from: data
-              )
-        else { return [:] }
         return values
-    }
-
-    private func persistAccountValues(
-        _ values: [String: [String: SettingsPreferenceValue]]
-    ) {
-        guard !values.isEmpty else {
-            defaults.removeObject(forKey: Self.accountValuesKey)
-            return
-        }
-        guard let data = try? JSONEncoder().encode(values) else { return }
-        defaults.set(data, forKey: Self.accountValuesKey)
     }
 }

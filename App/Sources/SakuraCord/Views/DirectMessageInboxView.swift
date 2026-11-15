@@ -112,45 +112,6 @@ private struct DirectMessageHomeRow: View {
     }
 }
 
-nonisolated enum DirectMessageInboxPolicy {
-    static func conversations(
-        in channels: [Channel],
-        pinnedChannelIDs: Set<ChannelID> = []
-    ) -> [Channel] {
-        let conversations = channels.filter(\.isListedDirectMessage)
-        let pinned = conversations.filter { pinnedChannelIDs.contains($0.id) }
-            .sorted { $0.lastActivityDate > $1.lastActivityDate }
-        return pinned + conversations.filter { !pinnedChannelIDs.contains($0.id) }
-    }
-
-    static func recipientMember(
-        for channel: Channel,
-        membersByID: [UserID: Member]
-    ) -> Member? {
-        guard channel.kind == .directMessage,
-              let recipient = channel.recipients.first
-        else { return nil }
-        return membersByID[recipient.id]
-    }
-
-    static func secondaryText(for channel: Channel, member: Member? = nil) -> String? {
-        if channel.kind == .groupDirectMessage {
-            return "\(channel.recipients.count + 1) members"
-        }
-        guard channel.kind == .directMessage else { return nil }
-        guard let rawStatus = member?.customStatus else { return nil }
-        let status = rawStatus.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !status.isEmpty
-        else { return nil }
-        return status
-    }
-
-    static func callStatus(for call: PrivateCall?) -> String? {
-        guard call?.ongoingRings.isEmpty == false else { return nil }
-        return "Ringing"
-    }
-}
-
 private struct DirectMessageInboxRow: View {
     let model: AppModel
     let channel: Channel
@@ -189,7 +150,7 @@ private struct DirectMessageInboxRow: View {
                     Label(callStatus, systemImage: "bell.fill")
                     .font(.interface(.caption))
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .foregroundStyle(Color.presenceOnline)
                     .lineLimit(1)
                 } else if channel.kind == .groupDirectMessage {
                     Text("\(channel.recipients.count + 1) members")
@@ -244,41 +205,10 @@ private struct DirectMessageInboxRow: View {
         .onModalHover { isHovered = $0 }
         .overlay {
             ChannelContextMenuBridge(
+                channel: channel,
+                model: model,
                 isSelected: isSelected,
                 isUnread: channel.unreadCount > 0,
-                isMutationPending:
-                    model.isChannelNotificationMutationPending(channel.id),
-                directOverride: model.channelNotificationOverride(for: channel),
-                inheritedLevel:
-                    model.inheritedChannelNotificationLevel(for: channel),
-                inheritanceSource: .directMessages,
-                markRead: {
-                    model.markConversationRead(channelID: channel.id)
-                },
-                mute: { duration in
-                    model.setChannelMute(
-                        true,
-                        until: duration.endDate(),
-                        for: channel
-                    )
-                },
-                unmute: {
-                    model.setChannelMute(false, until: nil, for: channel)
-                },
-                setNotificationLevel: { level in
-                    model.setChannelNotificationLevel(level, for: channel)
-                },
-                copyChannelID: {
-                    ChannelContextMenuValue.copy(channel.id.description)
-                },
-                copyLink: {
-                    ChannelContextMenuValue.copy(
-                        ChannelContextMenuValue.link(
-                            guildID: nil,
-                            channelID: channel.id
-                        )
-                    )
-                },
                 pinAction: .available(isPinned: isPinned, toggle: {
                     model.toggleDirectMessagePin(channel.id)
                 }),
@@ -294,7 +224,10 @@ private struct DirectMessageInboxRow: View {
                     : nil,
                 closeDirectMessage: model.offersCloseDirectMessage(channel)
                     ? { model.closeDirectMessage(channel) }
-                    : nil
+                    : nil,
+                favoriteItems: {
+                    FavoritesMenu.toggleItems(for: channel.id, channelType: channel.favoriteChannelType, model: model)
+                }
             )
         }
     }
@@ -388,7 +321,7 @@ struct DirectMessageAvatar: View {
         } else {
             Image(systemName: "person.2.fill")
                 .font(.system(size: size * 0.38, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                 .frame(width: size, height: size)
                 .background(SakuraCordAccentColor.color.gradient, in: Circle())
                 .accessibilityLabel("\(channel.name) group avatar")

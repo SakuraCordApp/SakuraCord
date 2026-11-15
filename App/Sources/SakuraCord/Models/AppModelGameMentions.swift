@@ -23,8 +23,7 @@ struct GameMentionState {
 extension AppModel {
     func searchGameMentions(query: String) async throws -> [ProfileGame] {
         let session = accountSession()
-        let normalized = DiscordProfileWidgetGameSearch.normalizedQuery(query)
-        let games = try await session.provider.searchProfileWidgetGames(query: normalized)
+        let games = try await session.provider.searchProfileWidgetGames(query: query)
         try Task.checkCancellation()
         guard isCurrentAccountSession(session) else { throw CancellationError() }
         return games

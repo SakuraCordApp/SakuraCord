@@ -6,8 +6,8 @@ import Testing
 @Suite(.serialized)
 struct GIFProviderContractTests {
     @Test func `GIF picker uses exact current Discord landing search and trending routes`() async throws {
-        GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let capture = RequestRecorder(GIFURLProtocol.captured)
+        let provider = stubbedProvider(GIFURLProtocol.self, token: capture.id, accountID: "gif-contract")
 
         let landing = try await provider.gifPickerLanding()
         let searched = try await provider.searchGIFs(query: "hello")
@@ -26,30 +26,30 @@ struct GIFProviderContractTests {
         #expect(DiscordProfileImageAssets.editableGIFURL(URL(string: "https://media.giphy.com/media/id/name.gif"))?.absoluteString == "https://discord.com/giphy/media/id/name.gif")
         #expect(searched[1].previewURL?.host() == "static.klipy.com")
         #expect(trending.map(\.id) == ["one", "two"])
-        #expect(GIFURLProtocol.requests.map(\.path) == [
+        #expect(capture.requests.map(\.path) == [
             "/api/v9/gifs/trending",
             "/api/v9/gifs/search",
             "/api/v9/gifs/trending-gifs",
         ])
         let locale = Locale.preferredLanguages.first ?? "en-US"
-        #expect(GIFURLProtocol.requests[0].query == [
-            GIFQuery(name: "locale", value: locale),
-            GIFQuery(name: "media_format", value: "webm"),
+        #expect(capture.requests[0].queryItems == [
+            URLQueryItem(name: "locale", value: locale),
+            URLQueryItem(name: "media_format", value: "webm"),
         ])
-        #expect(GIFURLProtocol.requests[1].query == [
-            GIFQuery(name: "q", value: "hello"),
-            GIFQuery(name: "media_format", value: "webm"),
-            GIFQuery(name: "locale", value: locale),
+        #expect(capture.requests[1].queryItems == [
+            URLQueryItem(name: "q", value: "hello"),
+            URLQueryItem(name: "media_format", value: "webm"),
+            URLQueryItem(name: "locale", value: locale),
         ])
-        #expect(GIFURLProtocol.requests[2].query == [
-            GIFQuery(name: "media_format", value: "webm"),
-            GIFQuery(name: "locale", value: locale),
+        #expect(capture.requests[2].queryItems == [
+            URLQueryItem(name: "media_format", value: "webm"),
+            URLQueryItem(name: "locale", value: locale),
         ])
     }
 
     @Test func `GIF favourites share one settings read and use one changed-field proto patch per action`() async throws {
-        GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let capture = RequestRecorder(GIFURLProtocol.captured)
+        let provider = stubbedProvider(GIFURLProtocol.self, token: capture.id, accountID: "gif-contract")
         let gif = GIFSearchResult(
             id: "one",
             title: "Hello",
@@ -68,23 +68,23 @@ struct GIFProviderContractTests {
         #expect(initial.isEmpty)
         #expect(added.map(\.url) == [gif.url])
         #expect(removed.isEmpty)
-        #expect(GIFURLProtocol.requests.filter {
+        #expect(capture.requests.filter {
             $0.path == "/api/v9/users/@me/settings-proto/2" && $0.method == "GET"
         }.count == 1)
-        let patches = GIFURLProtocol.requests.filter { $0.method == "PATCH" }
+        let patches = capture.requests.filter { $0.method == "PATCH" }
         #expect(patches.count == 2)
         #expect(patches.allSatisfy {
             $0.path == "/api/v9/users/@me/settings-proto/2"
-                && $0.body?.keys.sorted() == ["settings"]
+                && $0.jsonBody?.keys.sorted() == ["settings"]
         })
-        let addedBase64 = try #require(patches.first?.body?["settings"] as? String)
+        let addedBase64 = try #require(patches.first?.jsonBody?["settings"] as? String)
         let addedProto = try #require(Data(base64Encoded: addedBase64))
         #expect(DiscordSettingsProto.gifFavorites(from: addedProto).map(\.url) == [gif.url])
     }
 
     @Test func `emoji favourites patch only field 5 and consume the stored response`() async throws {
-        GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let capture = RequestRecorder(GIFURLProtocol.captured)
+        let provider = stubbedProvider(GIFURLProtocol.self, token: capture.id, accountID: "gif-contract")
 
         let initial = try await provider.emojiUserSettings()
         let added = try await provider.setEmojiFavorite("wave", isFavorite: true)
@@ -93,31 +93,31 @@ struct GIFProviderContractTests {
         #expect(initial.favoriteKeys.isEmpty)
         #expect(added.favoriteKeys == ["wave"])
         #expect(removed.favoriteKeys.isEmpty)
-        #expect(GIFURLProtocol.requests.filter {
+        #expect(capture.requests.filter {
             $0.path == "/api/v9/users/@me/settings-proto/2" && $0.method == "GET"
         }.count == 1)
-        let patches = GIFURLProtocol.requests.filter { $0.method == "PATCH" }
+        let patches = capture.requests.filter { $0.method == "PATCH" }
         #expect(patches.count == 2)
         #expect(patches.allSatisfy {
             $0.path == "/api/v9/users/@me/settings-proto/2"
-                && $0.body?.keys.sorted() == ["settings"]
+                && $0.jsonBody?.keys.sorted() == ["settings"]
         })
-        let addedBase64 = try #require(patches.first?.body?["settings"] as? String)
+        let addedBase64 = try #require(patches.first?.jsonBody?["settings"] as? String)
         let addedProto = try #require(Data(base64Encoded: addedBase64))
         #expect(DiscordSettingsProto.emojiSettings(from: addedProto).favoriteKeys == ["wave"])
     }
 
     @Test func `emoji usage saves both histories with a favorite in one partial patch`() async throws {
-        GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let capture = RequestRecorder(GIFURLProtocol.captured)
+        let provider = stubbedProvider(GIFURLProtocol.self, token: capture.id, accountID: "gif-contract")
         let message = DiscordFrecencyHistory(entries: [.init(key: "turtle", totalUses: 3, recentUses: [1, 2, 3], frecency: 300, score: 300)])
         let reaction = DiscordFrecencyHistory(entries: [.init(key: "snake", totalUses: 1, recentUses: [4], frecency: 80, score: 100)])
         let stored = try await provider.saveEmojiFrecency(message, reactions: reaction, favoriteKey: "turtle", isFavorite: true)
         #expect(stored.messageHistory == message)
         #expect(stored.reactionHistory == reaction)
         #expect(stored.favoriteKeys == ["turtle"])
-        #expect(GIFURLProtocol.requests.map(\.method) == ["GET", "PATCH"])
-        let encoded = try #require(GIFURLProtocol.requests.last?.body?["settings"] as? String)
+        #expect(capture.requests.map(\.method) == ["GET", "PATCH"])
+        let encoded = try #require(capture.requests.last?.jsonBody?["settings"] as? String)
         var reader = ProtoReader(data: try #require(Data(base64Encoded: encoded)))
         var fields: [Int] = []
         while let field = reader.readRawField() { fields.append(field.field) }
@@ -125,8 +125,8 @@ struct GIFProviderContractTests {
     }
 
     @Test func `other type two saves include and acknowledge pending emoji usage in the same request`() async throws {
-        GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let capture = RequestRecorder(GIFURLProtocol.captured)
+        let provider = stubbedProvider(GIFURLProtocol.self, token: capture.id, accountID: "gif-contract")
         let history = DiscordFrecencyHistory(entries: [.init(key: "turtle", totalUses: 2, recentUses: [1, 2])])
         let acknowledgement = EmojiSaveAcknowledgement()
         let sessionProvider: any ChatProvider = provider
@@ -138,9 +138,9 @@ struct GIFProviderContractTests {
         let gif = GIFSearchResult(id: "one", title: "Hello", url: URL(string: "https://tenor.com/view/one")!)
         let favorites = try await provider.setGIFFavorite(gif, isFavorite: true)
         #expect(favorites.map(\.url) == [gif.url])
-        #expect(GIFURLProtocol.requests.map(\.method) == ["GET", "PATCH"])
+        #expect(capture.requests.map(\.method) == ["GET", "PATCH"])
         #expect(await acknowledgement.settings?.messageHistory == history)
-        let encoded = try #require(GIFURLProtocol.requests.last?.body?["settings"] as? String)
+        let encoded = try #require(capture.requests.last?.jsonBody?["settings"] as? String)
         var reader = ProtoReader(data: try #require(Data(base64Encoded: encoded)))
         var fields: [Int] = []
         while let field = reader.readRawField() { fields.append(field.field) }
@@ -148,8 +148,8 @@ struct GIFProviderContractTests {
     }
 
     @Test func `soundboard defaults native send and favorites use exact contracts`() async throws {
-        GIFURLProtocol.reset()
-        let provider = makeProvider()
+        let capture = RequestRecorder(GIFURLProtocol.captured)
+        let provider = stubbedProvider(GIFURLProtocol.self, token: capture.id, accountID: "gif-contract")
         let defaults = try await provider.defaultSoundboardSounds()
         let custom = SoundboardSound(
             id: "9002",
@@ -163,17 +163,17 @@ struct GIFProviderContractTests {
         let added = try await provider.setSoundboardFavorite("9002", isFavorite: true)
 
         #expect(defaults.map(\.name) == ["quack", "airhorn"])
-        let send = try #require(GIFURLProtocol.requests.first {
+        let send = try #require(capture.requests.first {
             $0.path == "/api/v9/channels/456/send-soundboard-sound"
         })
         #expect(send.method == "POST")
-        #expect(send.body?["sound_id"] as? String == "9002")
-        #expect(send.body?["emoji_id"] as? String == "7001")
-        #expect(send.body?["emoji_name"] is NSNull)
-        #expect(send.body?["source_guild_id"] as? String == "123")
+        #expect(send.jsonBody?["sound_id"] as? String == "9002")
+        #expect(send.jsonBody?["emoji_id"] as? String == "7001")
+        #expect(send.jsonBody?["emoji_name"] is NSNull)
+        #expect(send.jsonBody?["source_guild_id"] as? String == "123")
         #expect(added.favoriteSoundIDs == ["9002"])
-        let patch = try #require(GIFURLProtocol.requests.last { $0.method == "PATCH" })
-        let settings = try #require(patch.body?["settings"] as? String)
+        let patch = try #require(capture.requests.last { $0.method == "PATCH" })
+        let settings = try #require(patch.jsonBody?["settings"] as? String)
         let proto = try #require(Data(base64Encoded: settings))
         #expect(DiscordSettingsProto.soundboardSettings(from: proto).favoriteSoundIDs == ["9002"])
     }
@@ -224,63 +224,18 @@ struct GIFProviderContractTests {
         #expect(favorite.mediaURL == media)
         #expect(favorite.mediaKind == .video)
     }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [GIFURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: GIFCredentialStore(),
-            handle: CredentialHandle(accountID: "gif-contract"),
-            session: URLSession(configuration: configuration)
-        )
-    }
-}
-
-private actor GIFCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("gif-contract-session".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
-}
-
-private struct GIFQuery: Equatable, Sendable {
-    let name: String
-    let value: String?
-}
-
-private struct CapturedGIFRequest: @unchecked Sendable {
-    let method: String
-    let path: String
-    let query: [GIFQuery]
-    let body: [String: Any]?
 }
 
 private final class GIFURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var requests: [CapturedGIFRequest] = []
+    static let captured = Notification.Name("GIFContractCapturedRequest")
 
-    static func reset() { requests = [] }
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-            .queryItems?.map { GIFQuery(name: $0.name, value: $0.value) } ?? []
-        Self.requests.append(
-            CapturedGIFRequest(
-                method: request.httpMethod ?? "",
-                path: request.url?.path ?? "",
-                query: query,
-                body: Self.requestBody(request).flatMap {
-                    try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-                }
-            )
-        )
+        var captured = request
+        captured.httpBody = request.bodyData
+        NotificationCenter.default.post(name: Self.captured, object: captured)
 
         let body: String
         switch request.url?.path {
@@ -315,38 +270,15 @@ private final class GIFURLProtocol: URLProtocol, @unchecked Sendable {
             ]
             """#
         case "/api/v9/users/@me/settings-proto/2":
-            let settings = Self.requests.last?.body?["settings"] as? String ?? ""
+            let settings = captured.jsonBody?["settings"] as? String ?? ""
             body = "{\"settings\":\"\(settings)\"}"
         default:
             body = "{}"
         }
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: Data(body.utf8), headers: nil)
     }
 
     override func stopLoading() {}
-
-    private static func requestBody(_ request: URLRequest) -> Data? {
-        if let data = request.httpBody { return data }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            data.append(buffer, count: count)
-        }
-        return data
-    }
 }
 
 private actor EmojiSaveAcknowledgement {

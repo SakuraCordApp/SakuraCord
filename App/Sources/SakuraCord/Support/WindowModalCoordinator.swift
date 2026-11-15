@@ -65,6 +65,15 @@ final class WindowModalCoordinator {
 
     var topmost: WindowModalHostingView? { entries.reversed().compactMap(\.host).first }
 
+    /// Gives Escape to a modal open in the window, such as one inside a
+    /// popover, whose key events can arrive addressed to the main window.
+    static func handleEscape(in window: NSWindow?) -> Bool {
+        guard let topmost = window.flatMap({ coordinators.object(forKey: $0)?.topmost }), topmost.capturesEscape
+        else { return false }
+        topmost.animationState.handleEscape()
+        return true
+    }
+
     func allowsInput(to view: NSView) -> Bool {
         guard let topmost else { return true }
         return entries.last { $0.host === topmost }?.contains(view) == true

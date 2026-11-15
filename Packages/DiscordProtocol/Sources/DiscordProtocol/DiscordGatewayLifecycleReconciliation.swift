@@ -30,13 +30,13 @@ extension DiscordRESTProvider {
             cachedThreadMemberIDs[threadID] = nil
             continuation?.yield(.threadMembersChanged(guildID: guildID, threadID: threadID, members: nil))
         }
-        cachedMemberListItems[guildID] = nil
-        selectedMemberListID[guildID] = nil
-        memberListSubscriptions[guildID] = nil
-        memberListSubscriptionOrder[guildID] = nil
-        memberListViewportRequests[guildID] = nil
-        memberListsNeedingRefresh[guildID] = nil
-        cachedMemberListGroups[guildID] = nil
+        memberListState.cachedItems[guildID] = nil
+        memberListState.selectedIDs[guildID] = nil
+        memberListState.subscriptions[guildID] = nil
+        memberListState.subscriptionOrder[guildID] = nil
+        memberListState.viewportRequests[guildID] = nil
+        memberListState.listsNeedingRefresh[guildID] = nil
+        memberListState.cachedGroups[guildID] = nil
         requestedHistoryMemberIDs[guildID] = nil
         resolvingHistoryMemberIDs[guildID] = nil
         cachedEmojis[guildID] = nil
@@ -106,11 +106,11 @@ extension DiscordRESTProvider {
             // subscription. The opcode cooldown is shared; without guild
             // metadata any retained selected subscription may have been refused.
             let guildIDs = rateLimit.metadata?.guildID.flatMap(GuildID.init)
-                .map { [$0] } ?? Array(Set(memberListSubscriptions.keys)
-                    .union(memberListViewportRequests.keys).union(memberListInFlightRequests.keys))
+                .map { [$0] } ?? Array(Set(memberListState.subscriptions.keys)
+                    .union(memberListState.viewportRequests.keys).union(memberListInFlightRequests.keys))
             for guildID in guildIDs {
-                var memberListIDs = Set(memberListSubscriptions[guildID].map { Array($0.keys) } ?? [])
-                if let viewport = memberListViewportRequests[guildID] {
+                var memberListIDs = Set(memberListState.subscriptions[guildID].map { Array($0.keys) } ?? [])
+                if let viewport = memberListState.viewportRequests[guildID] {
                     memberListIDs.insert(viewport.memberListID)
                 }
                 if let inFlight = memberListInFlightRequests[guildID] {

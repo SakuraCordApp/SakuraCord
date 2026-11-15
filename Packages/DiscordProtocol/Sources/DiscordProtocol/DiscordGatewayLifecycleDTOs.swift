@@ -161,12 +161,7 @@ struct GatewayGuildPatchDTO: Decodable {
         }
         let resolvedIconURL: URL?
         if containsIcon {
-            resolvedIconURL = icon.flatMap { hash in
-                URL(
-                    string:
-                    "https://cdn.discordapp.com/icons/\(guildID)/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                )
-            }
+            resolvedIconURL = icon.flatMap { DiscordCDN.guildIcon(guildID, hash: $0) }
         } else {
             resolvedIconURL = existing?.iconURL
         }
@@ -187,7 +182,7 @@ struct GatewayGuildPatchDTO: Decodable {
                 ? rulesChannelID.flatMap(ChannelID.init)
                 : existing?.rulesChannelID,
             features: features ?? existing?.features ?? [],
-            guideHeaderURL: containsHomeHeader ? homeHeader.flatMap { URL(string: "https://cdn.discordapp.com/home-headers/\(guildID)/\($0).png?size=2048") } : existing?.guideHeaderURL,
+            guideHeaderURL: containsHomeHeader ? homeHeader.flatMap { DiscordCDN.guildHomeHeader(guildID, hash: $0) } : existing?.guideHeaderURL,
             profileTag: containsProfile ? profile?.domain(guildID: guildID) : existing?.profileTag,
             defaultMessageNotifications:
                 defaultMessageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
@@ -195,7 +190,7 @@ struct GatewayGuildPatchDTO: Decodable {
                 ?? .onlyMentions,
             isUnavailable: unavailable ?? existing?.isUnavailable ?? false,
             joinedAt: joinedAt.flatMap(DiscordDate.parse) ?? existing?.joinedAt,
-            isAgeRestricted: nsfwLevel.map { $0 == 1 || $0 == 3 } ?? existing?.isAgeRestricted ?? false
+            isAgeRestricted: nsfwLevel.map(Guild.isAgeRestricted(nsfwLevel:)) ?? existing?.isAgeRestricted ?? false
         )
     }
 }

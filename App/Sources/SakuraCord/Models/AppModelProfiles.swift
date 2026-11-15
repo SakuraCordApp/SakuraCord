@@ -46,11 +46,7 @@ extension AppModel {
         for destination in [ProfilePresentationDestination.inspector, .contextual, .expanded] {
             guard var presentation = profilePresentation(for: destination), presentation.member.id == userID,
                   presentation.guildID == scope.guildID else { continue }
-            switch destination {
-            case .inspector: inspectorProfileTask?.cancel()
-            case .contextual: contextualProfileTask?.cancel()
-            case .expanded: expandedProfileTask?.cancel()
-            }
+            profileTasks[destination]?.cancel()
             if let value {
                 presentation.profile = value
                 presentation.errorMessage = nil
@@ -114,7 +110,7 @@ extension AppModel {
            DiscordBuiltInCommands.isClydeMessage(sourceMessage)
             || (sourceMessage.webhookID != nil && user.isWebhookIdentity) {
             let isClyde = DiscordBuiltInCommands.isClydeMessage(sourceMessage)
-            contextualProfileTask?.cancel()
+            profileTasks[.contextual]?.cancel()
             let requestID = UUID()
             contextualProfilePresentation = ProfilePresentationState(
                 requestID: requestID, guildID: guildID,
@@ -128,6 +124,36 @@ extension AppModel {
         let member = profileMember(user.id, in: guildID)
             ?? Member(user: user, roleName: "Member", status: .offline)
         return presentProfile(for: member, in: guildID, destination: .contextual)
+    }
+
+    func systemMessageRecipient(for message: Message) -> User? {
+        guard message.type == .friendRequestAccepted,
+              let channel = messagePresentationChannelsByID[message.channelID],
+              channel.kind == .directMessage else { return nil }
+        return channel.recipients.first { $0.id != currentUser?.id }
+    }
+
+    func systemMessageUser(
+        userID: UserID,
+        sourceMessage: Message? = nil
+    ) -> User? {
+        let guildID = sourceMessage.map { messagePresentationGuildID(for: $0) } ?? selectedGuildID
+        if let member = profileMember(userID, in: guildID) {
+            return member.user
+        }
+        func authorOrMentioned(in message: Message) -> User? {
+            message.author.id == userID ? message.author : message.mentionedUsers.first { $0.id == userID }
+        }
+        let sourceUser = sourceMessage.flatMap { message -> User? in
+            authorOrMentioned(in: message)
+                ?? systemMessageRecipient(for: message).flatMap { $0.id == userID ? $0 : nil }
+        }
+        return sourceUser
+            ?? (messages + threadMessages).lazy.compactMap(authorOrMentioned(in:)).first
+            ?? pinnedMessages.items.lazy.compactMap { authorOrMentioned(in: $0.message) }.first
+            ?? messageSearch.page?.results.lazy.compactMap { result in
+                result.messages.lazy.compactMap(authorOrMentioned(in:)).first
+            }.first
     }
 
     func showSystemMessageProfile(
@@ -264,17 +290,8 @@ extension AppModel {
             isLoading: cachedProfile == nil,
             errorMessage: nil
         )
-        switch destination {
-        case .inspector:
-            inspectorProfileTask?.cancel()
-            inspectorProfilePresentation = presentation
-        case .contextual:
-            contextualProfileTask?.cancel()
-            contextualProfilePresentation = presentation
-        case .expanded:
-            expandedProfileTask?.cancel()
-            expandedProfilePresentation = presentation
-        }
+        profileTasks[destination]?.cancel()
+        setProfilePresentation(presentation, for: destination)
         guard cachedProfile == nil else { return requestID }
         let session = accountSession()
 
@@ -315,14 +332,7 @@ extension AppModel {
                 setProfilePresentation(value, for: destination)
             }
         }
-        switch destination {
-        case .inspector:
-            inspectorProfileTask = task
-        case .contextual:
-            contextualProfileTask = task
-        case .expanded:
-            expandedProfileTask = task
-        }
+        profileTasks[destination] = task
         return requestID
     }
 
@@ -334,14 +344,12 @@ extension AppModel {
     }
 
     func dismissExpandedProfile() {
-        expandedProfileTask?.cancel()
-        expandedProfileTask = nil
+        profileTasks.removeValue(forKey: .expanded)?.cancel()
         expandedProfilePresentation = nil
     }
 
     func dismissInspectorProfile() {
-        inspectorProfileTask?.cancel()
-        inspectorProfileTask = nil
+        profileTasks.removeValue(forKey: .inspector)?.cancel()
         inspectorProfilePresentation = nil
         isInspectorProfilePresented = false
     }
@@ -352,8 +360,7 @@ extension AppModel {
         {
             return
         }
-        contextualProfileTask?.cancel()
-        contextualProfileTask = nil
+        profileTasks.removeValue(forKey: .contextual)?.cancel()
         contextualProfilePresentation = nil
     }
 
@@ -416,6 +423,10 @@ extension AppModel {
     func profileMember(_ userID: UserID, in guildID: GuildID?) -> Member? {
         guildID.flatMap { membersByGuildID[$0]?[userID] }
             ?? (guildID == selectedGuildID ? membersByID[userID] : nil)
+    }
+
+    func knownUser(_ userID: UserID) -> User? {
+        currentUser?.id == userID ? currentUser : membersByID[userID]?.user
     }
 
     /// Resolves presence from the member store so presented profiles stay live.

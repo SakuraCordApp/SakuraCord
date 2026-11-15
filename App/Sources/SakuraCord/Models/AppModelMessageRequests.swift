@@ -40,3 +40,13 @@ extension AppModel {
         exitDirectMessage(channel, verb: "ignore the request from") { try await $0.ignoreMessageRequest(channel.id) }
     }
 }
+
+nonisolated extension Channel {
+    /// The private-channel rule read from this channel value: the system DM,
+    /// and a message request until it is accepted, take no replies,
+    /// reactions, pins or calls. `awaitsMessageRequestDecision` reads the
+    /// live set instead.
+    var acceptsPrivateInteraction: Bool {
+        !isOfficialSystemDirectMessage && messageRequest == nil
+    }
+}

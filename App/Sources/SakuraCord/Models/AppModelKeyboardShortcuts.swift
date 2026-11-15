@@ -82,7 +82,7 @@ extension AppModel {
             if let guildID = selectedGuildID { markGuildRead(guildID) }
         case .copyChannelLink:
             if let channelID = visibleThread?.id ?? selectedChannelID {
-                ChannelContextMenuValue.copy(ChannelContextMenuValue.link(
+                Pasteboard.copy(DiscordLink.channel(
                     guildID: visibleThread?.guildID ?? selectedChannel?.guildID,
                     channelID: channelID
                 ))

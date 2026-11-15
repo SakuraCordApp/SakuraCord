@@ -1,7 +1,4 @@
-import MessageRendering
-import SakuraCordModels
-import SwiftUI
-import UniformTypeIdentifiers
+import Foundation
 
 struct SlashCommandQuery {
     let query: String
@@ -15,6 +12,28 @@ struct SlashCommandQuery {
     }
 }
 
+/// The text before a collapsed caret, which every typed-token context below
+/// matches against; nil while text is selected.
+struct ComposerCaretPrefix {
+    let text: String
+    let cursor: Int
+
+    init?(text: String, selection: NSRange?) {
+        let cursor = selection?.location ?? text.utf16.count
+        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
+        self.text = (text as NSString).substring(to: cursor)
+        self.cursor = cursor
+    }
+
+    func firstMatch(_ expression: NSRegularExpression) -> NSTextCheckingResult? {
+        expression.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length))
+    }
+
+    func substring(with range: NSRange) -> String {
+        (text as NSString).substring(with: range)
+    }
+}
+
 struct ColonAutocompleteContext {
     private static let expression = RegularExpressionFactory.make(
         #"(?:^|\s)(:[A-Za-z0-9_+\-]*)$"#
@@ -24,18 +43,29 @@ struct ColonAutocompleteContext {
     let range: NSRange
 
     init?(text: String, selection: NSRange?) {
-        let cursor = selection?.location ?? text.utf16.count
-        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
-        let prefix = (text as NSString).substring(to: cursor)
-        guard
-            let match = Self.expression.firstMatch(
-                in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)
-            ),
-            match.range(at: 1).location != NSNotFound
+        guard let prefix = ComposerCaretPrefix(text: text, selection: selection),
+              let match = prefix.firstMatch(Self.expression)
         else { return nil }
         range = match.range(at: 1)
-        query = String((prefix as NSString).substring(with: range).dropFirst())
+        query = String(prefix.substring(with: range).dropFirst())
         guard query.count >= 2 else { return nil }
+    }
+}
+
+struct ClosedColonAutocompleteContext {
+    private static let expression = RegularExpressionFactory.make(
+        #"(?:^|\s)(:([A-Za-z0-9_+\-]{2,}):)$"#
+    )
+
+    let query: String
+    let range: NSRange
+
+    init?(text: String, selection: NSRange?) {
+        guard let prefix = ComposerCaretPrefix(text: text, selection: selection),
+              let match = prefix.firstMatch(Self.expression)
+        else { return nil }
+        range = match.range(at: 1)
+        query = prefix.substring(with: match.range(at: 2))
     }
 }
 
@@ -60,15 +90,17 @@ struct MentionAutocompleteContext {
     let query: String
     let range: NSRange
 
+    /// The suggestion list's heading for what is typed.
+    var heading: String {
+        kind == .member
+            ? MentionAutocompleteSuggestionFactory.memberHeading(query: query)
+            : MentionAutocompleteSuggestionFactory.channelHeading(query: query)
+    }
+
     init?(text: String, selection: NSRange?) {
-        let cursor = selection?.location ?? text.utf16.count
-        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
-        let prefix = (text as NSString).substring(to: cursor)
-        if let match = Self.quotedChannelExpression.firstMatch(
-            in: prefix,
-            range: NSRange(location: 0, length: (prefix as NSString).length)
-        ), match.range(at: 1).location != NSNotFound,
-        match.range(at: 2).location != NSNotFound {
+        guard let prefix = ComposerCaretPrefix(text: text, selection: selection) else { return nil }
+        let cursor = prefix.cursor
+        if let match = prefix.firstMatch(Self.quotedChannelExpression) {
             var tokenRange = match.range(at: 1)
             if match.range(at: 4).length == 0, cursor < text.utf16.count {
                 // A backslash just before the caret escapes the suffix's first
@@ -86,17 +118,13 @@ struct MentionAutocompleteContext {
             }
             range = tokenRange
             kind = .channel
-            query = (prefix as NSString).substring(with: match.range(at: 2))
+            query = prefix.substring(with: match.range(at: 2))
                 .replacingOccurrences(of: #"\\(.)"#, with: "$1", options: .regularExpression)
-        } else if let match = Self.expression.firstMatch(
-            in: prefix,
-            range: NSRange(location: 0, length: (prefix as NSString).length)
-        ), match.range(at: 1).location != NSNotFound,
-        match.range(at: 2).location != NSNotFound {
+        } else if let match = prefix.firstMatch(Self.expression) {
             range = match.range(at: 1)
-            let token = (prefix as NSString).substring(with: range)
+            let token = prefix.substring(with: range)
             kind = token.first == "@" ? .member : .channel
-            query = (prefix as NSString).substring(with: match.range(at: 2))
+            query = prefix.substring(with: match.range(at: 2))
         } else {
             return nil
         }
@@ -122,28 +150,11 @@ struct KeywordMentionContext {
     let range: NSRange
 
     init?(_ keyword: Keyword, text: String, selection: NSRange?) {
-        let cursor = selection?.location ?? text.utf16.count
-        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count, let expression = Self.expressions[keyword]
-        else { return nil }
-        let prefix = (text as NSString).substring(to: cursor)
-        guard let match = expression.firstMatch(
-            in: prefix,
-            range: NSRange(location: 0, length: (prefix as NSString).length)
-        ), match.range(at: 1).location != NSNotFound
+        guard let prefix = ComposerCaretPrefix(text: text, selection: selection),
+              let expression = Self.expressions[keyword],
+              let match = prefix.firstMatch(expression)
         else { return nil }
         range = match.range(at: 1)
-        query = (prefix as NSString).substring(with: match.range(at: 2))
+        query = prefix.substring(with: match.range(at: 2))
     }
-}
-
-struct MentionAutocompleteSuggestion: Identifiable {
-    let id: String
-    let title: String
-    let detail: String
-    let value: String
-    let target: MentionTarget
-    var avatarURL: URL?
-    var colorHex: UInt32?
-    var member: Member?
-    var systemImage: String?
 }

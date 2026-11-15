@@ -57,7 +57,15 @@ extension AccessibilitySettingsSnapshot {
 }
 
 extension EnvironmentValues {
+    /// Whether the reader turned on the master switch, for views that must
+    /// update when it changes.
+    @Entry var disablesAllAnimations = false
+
     /// Whether the reader turned off sidebar motion, or all motion, in the
     /// sidebar column: its views snap as they do under Reduce Motion.
     @Entry var reducesSidebarMotion = false
+
+    /// Whether sidebar views snap instead of animating: Reduce Motion, or
+    /// `reducesSidebarMotion`.
+    var snapsSidebarMotion: Bool { accessibilityReduceMotion || reducesSidebarMotion }
 }

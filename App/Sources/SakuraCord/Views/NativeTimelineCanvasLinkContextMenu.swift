@@ -11,11 +11,10 @@ extension NativeTimelineCanvasView {
         let isConcealed = layout.componentLayouts.contains { component in
             component.containers.contains { container in
                 container.frame.contains(localPoint)
-                    && NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    && spoilerRevealStore.isConcealed(
                         messageID: row.message.id,
                         contentID: container.componentID,
-                        isSpoiler: container.isSpoiler,
-                        store: spoilerRevealStore
+                        isSpoiler: container.isSpoiler
                     )
             }
         }
@@ -34,7 +33,7 @@ extension NativeTimelineCanvasView {
         }
         let open = textLinkOpenWithMenu(url: url, displayedText: text.hit.displayedText)
         let copy = actionItem("Copy Link", systemImage: "link") {
-            Self.copyText(url.absoluteString)
+            Pasteboard.copy(url.absoluteString)
         }
         menu.insertItem(.separator(), at: 0)
         menu.insertItem(copy, at: 0)

@@ -12,60 +12,57 @@ nonisolated extension SettingsCatalog {
             .aboutVersionInformation, section: .aboutVersion,
             label: "Version Information",
             help: "Show SakuraCord’s semantic version.",
-            keywords: ["app version", "version number"],
-            owner: .appModel
+            keywords: ["app version", "version number"]
         ),
         aboutControl(
             .aboutCheckForUpdates, section: .aboutVersion,
             label: "Check for Updates",
             help: "Invoke the existing Sparkle update action when this build supports it.",
-            keywords: ["update now", "software update", "new version"], owner: .sparkle
+            keywords: ["update now", "software update", "new version"]
         ),
         aboutControl(
             .aboutChangelog, section: .aboutVersion,
             label: "Open Changelog",
             help: "Show the release notes included with SakuraCord.",
-            keywords: ["release notes", "what’s new", "versions"], owner: .appModel
+            keywords: ["release notes", "what’s new", "versions"]
         ),
         aboutControl(
             .aboutWebsite, section: .aboutLinks,
             label: "Website", help: "Open SakuraCord’s canonical website.",
-            keywords: ["home", "sakuracord.app"], owner: .macOS
+            keywords: ["home", "sakuracord.app"]
         ),
         aboutControl(
             .aboutRoadmap, section: .aboutLinks,
             label: "Roadmap", help: "Open SakuraCord’s deployed canonical roadmap.",
-            keywords: ["planned", "progress", "roadmap service"], owner: .macOS
+            keywords: ["planned", "progress", "roadmap service"]
         ),
         aboutControl(
             .aboutSource, section: .aboutLinks,
             label: "Source", help: "Open SakuraCord’s public source repository.",
-            keywords: ["GitHub", "code", "GPL"], owner: .macOS
+            keywords: ["GitHub", "code", "GPL"]
         ),
         aboutControl(
             .aboutSupport, section: .aboutLinks,
             label: "Discord",
             help: "Open SakuraCord’s Discord support community invite.",
-            keywords: ["help", "community", "Discord server"], owner: .macOS
+            keywords: ["help", "community", "Discord server"]
         ),
         aboutControl(
             .aboutSponsor, section: .aboutLinks,
             label: "Sponsor", help: "Open SakuraCord’s GitHub Sponsors page.",
-            keywords: ["GitHub Sponsors", "donate", "funding"], owner: .macOS
+            keywords: ["GitHub Sponsors", "donate", "funding"]
         ),
         aboutControl(
             .aboutAcknowledgements, section: .aboutAcknowledgements,
             label: "Third-Party Acknowledgements",
             help: "Show the third-party notices included with SakuraCord.",
-            keywords: ["licenses", "notices", "attribution"], owner: .appModel,
-            persistence: .systemManaged
+            keywords: ["licenses", "notices", "attribution"]
         ),
         aboutControl(
             .aboutDisclaimer, section: .aboutLegal,
             label: "Independence Disclaimer",
             help: "Explain SakuraCord’s independence from Discord and unsupported client compatibility risk.",
-            keywords: ["not affiliated", "third party", "compatibility"],
-            owner: .appModel
+            keywords: ["not affiliated", "third party", "compatibility"]
         ),
     ]
 
@@ -74,9 +71,7 @@ nonisolated extension SettingsCatalog {
         section: SettingsSectionID,
         label: String.LocalizationValue,
         help: String.LocalizationValue,
-        keywords: [String.LocalizationValue],
-        owner: SettingsValueOwner,
-        persistence: SettingsPersistence = .notApplicable
+        keywords: [String.LocalizationValue]
     ) -> SettingsControlMetadata {
         control(
             id,
@@ -84,12 +79,7 @@ nonisolated extension SettingsCatalog {
             section: section,
             label: label,
             help: help,
-            keywords: keywords,
-            owner: owner,
-            scope: .appWideLocal,
-            persistence: persistence,
-            reset: .notApplicable,
-            availability: .available
+            keywords: keywords
         )
     }
 }

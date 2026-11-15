@@ -3,10 +3,20 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    func friendDisplayName(_ user: User) -> String {
+        friendNickname(for: user.id) ?? user.displayName
+    }
+
+    func isFriend(_ userID: UserID) -> Bool {
+        friendUserIDs.contains(userID)
+    }
+
     /// Friends is the Direct Messages home: chosen explicitly, or shown
     /// when no conversation is selected there.
     var isFriendsPresented: Bool {
-        selectedGuildID == nil && onboardingEntryGuildID == nil && (friends.isPresented || selectedChannelID == nil)
+        // An empty Favorites server rests on no conversation, not Friends.
+        selectedGuildID == nil && onboardingEntryGuildID == nil && !favorites.isPresented
+            && (friends.isPresented || selectedChannelID == nil)
     }
 
     var friendsSection: FriendsSection {
@@ -50,6 +60,7 @@ extension AppModel {
             selectGuild(nil)
             return
         }
+        setFavoritesPresented(false)
         suspendSelectedConversationPresentation()
         closeThread()
         friends.isPresented = true
@@ -119,7 +130,7 @@ extension AppModel {
             reconcilePrivateCallSounds()
             reconcileIgnoredVoiceParticipants()
         }
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         let ids = Set(relationships.map(\.id))
         friends.pendingUserIDs.formIntersection(ids)
     }
@@ -193,16 +204,19 @@ extension AppModel {
         }
     }
 
+    /// The type of the current account's relationship with a user, if any.
+    func relationshipType(with userID: UserID) -> RelationshipType? {
+        relationships.first { $0.id == userID }?.type
+    }
+
     func setUserIgnored(_ user: User, ignored: Bool, location: IgnoreActionLocation = .contextMenu) {
-        guard user.id != currentUser?.id, !user.isWebhookIdentity, !user.isSystem,
-              relationships.first(where: { $0.id == user.id })?.type != .blocked,
-              isUserIgnored(user.id) != ignored else { return }
+        guard !user.isWebhookIdentity, !user.isSystem else { return }
         setUserIgnored(user.id, ignored: ignored, location: location)
     }
 
     func setUserIgnored(_ userID: UserID, ignored: Bool, location: IgnoreActionLocation) {
         guard userID != currentUser?.id,
-              relationships.first(where: { $0.id == userID })?.type != .blocked,
+              relationshipType(with: userID) != .blocked,
               isUserIgnored(userID) != ignored else { return }
         performRelationshipAction(on: userID) { _, session in
             try await session.provider.setUserIgnored(userID, ignored: ignored, location: location)
@@ -224,47 +238,16 @@ extension AppModel {
         case .ignore(let user, let location):
             setUserIgnored(user, ignored: true, location: location)
         case .block(let user):
-            guard relationships.first(where: { $0.id == user.id })?.type != .blocked else { return }
+            guard relationshipType(with: user.id) != .blocked else { return }
             blockUser(user)
         case .acceptStranger(let user):
-            guard relationships.first(where: { $0.id == user.id })?.type == .incomingRequest else { return }
+            guard relationshipType(with: user.id) == .incomingRequest else { return }
             acceptFriendRequest(from: user, confirmingStranger: true)
         }
     }
 
     func showFriendProfile(_ row: FriendRow) {
-        var member = Member(user: row.user, roleName: "", status: row.presence.status)
-        member.customStatus = row.presence.customStatus
-        presentProfile(for: member, in: nil, destination: .expanded)
-    }
-
-    /// Opens the existing conversation, or creates it through the provider.
-    func openDirectMessage(with user: User) {
-        if let channel = snapshot?.channels.first(where: {
-            $0.kind == .directMessage && $0.recipients.first?.id == user.id
-        }) {
-            navigate(to: channel.id)
-            return
-        }
-        startConversationNavigation { model, session in
-            do {
-                let channel = try await session.provider.ensurePrivateChannel(for: user.id)
-                guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
-                if model.snapshot?.channels.contains(where: { $0.id == channel.id }) == false {
-                    model.snapshot?.channels.append(channel)
-                    model.forwardSearchSourceRevision &+= 1
-                }
-                if model.selectedGuildID != nil { await model.activateGuild(nil, account: session) }
-                guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
-                model.recordForwardDestinationVisit(channel.id)
-                model.closeThread()
-                model.selectedChannelID = channel.id
-            } catch {
-                guard !Task.isCancelled, model.isCurrentAccountSession(session), !(error is CancellationError) else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                model.errorMessage = error.localizedDescription
-            }
-        }
+        presentProfile(for: .friend(row.user, presence: row.presence), in: nil, destination: .expanded)
     }
 
     /// One user-initiated mutation per user at a time. Gateway events, which

@@ -7,37 +7,6 @@ nonisolated enum ChannelSidebarLayoutMetrics {
     static var iconWidth: CGFloat { InterfaceScale.metric(16) }
 }
 
-nonisolated enum SidebarAccountControlMetrics {
-    static var capsuleHeight: CGFloat { ChatChromeMetrics.controlHeight }
-    static var cornerRadius: CGFloat { capsuleHeight / 2 }
-    static var contentInset: CGFloat { InterfaceScale.metric(8) }
-    static var avatarSize: CGFloat { InterfaceScale.metric(32) }
-    static var settingsIconSize: CGFloat { InterfaceScale.metric(14) }
-    static var settingsDiameter: CGFloat { InterfaceScale.metric(30) }
-    static var settingsInset: CGFloat { (capsuleHeight - settingsDiameter) / 2 }
-    static var surfaceSpacing: CGFloat { InterfaceScale.metric(6) }
-
-    static func bottomInset(for appearance: ComposerBarAppearance) -> CGFloat {
-        let composerHeight = appearance == .defaultStyle
-            ? ChatChromeMetrics.composerControlHeight
-            : ChatChromeMetrics.controlHeight
-        return ChatChromeMetrics.composerWindowInset - (capsuleHeight - composerHeight) / 2
-    }
-
-    static func settingsCornerRadius(for appearance: ComposerBarAppearance) -> CGFloat {
-        appearance == .defaultStyle ? settingsDiameter / 2 : 9
-    }
-
-    static func shape(for appearance: ComposerBarAppearance) -> RoundedRectangle {
-        RoundedRectangle(
-            cornerRadius: appearance == .defaultStyle
-                ? cornerRadius
-                : ChatChromeMetrics.composerMinimumCornerRadius,
-            style: .continuous
-        )
-    }
-}
-
 @MainActor
 final class ChannelSidebarSelectionCommitter<Selection: Equatable> {
     private enum PendingSelection: Equatable {
@@ -53,13 +22,6 @@ final class ChannelSidebarSelectionCommitter<Selection: Equatable> {
             return nil
         }
         return selection
-    }
-
-    var hasPendingSelection: Bool {
-        if case .value = pendingSelectionState {
-            return true
-        }
-        return false
     }
 
     func presentedSelection(fallback: Selection?) -> Selection? {
@@ -141,65 +103,21 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if let guildID = voiceModel.presentedGuildJoinRequestID {
-                // A pending server has no channels; its sidebar describes it instead.
-                GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
-            } else if guild == nil {
-                DirectMessageInboxView(
-                    model: voiceModel,
-                    channels: channels,
-                    membersByID: voiceModel.membersByID,
-                    privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
-                        !$0.value.isUnavailable
-                    },
-                    animatesAvatars: true,
-                    selection: directMessageSelection,
-                    bottomContentInset: accountControlHeight
-                )
-            } else {
-                let preparedThreads = threadLayout(at: .now)
-                // Re-evaluate when a timed-relevant thread expires. An explicit
-                // schedule reports its next entry as `context.date`, so read the clock.
-                TimelineView(.explicit(preparedThreads.relevanceDeadlines)) { _ in
-                    let now = Date.now
-                    let threads = preparedThreads.relevanceDeadlines.first.map { $0 <= now } == true
-                        ? threadLayout(at: now)
-                        : preparedThreads
-                    GuildChannelList(
-                        input: GuildChannelListInput(
-                            modelIdentity: ObjectIdentifier(voiceModel),
-                            guildID: guild?.id,
-                            customizationTitle: voiceModel.customizationTitle(in: guild?.id),
-                            hasCustomization: guild.map { voiceModel.hasChannelsAndRoles(in: $0.id) } ?? false,
-                            hasGuide: guild.map { voiceModel.hasGuildGuide(in: $0.id) } ?? false,
-                            channelGroups: voiceModel.selectedChannelGroups(
-                                channelGroups,
-                                guildID: guild?.id,
-                                threadsByParentID: threads.threadsByParentID
-                            ),
-                            rulesChannelID: guild?.rulesChannelID,
-                            activeVoiceChannelID: activeVoiceChannelID,
-                            hiddenChannelIDs: hiddenChannelIDs,
-                            checkingChannelIDs: checkingChannelIDs,
-                            // Read here so another server's unread categories
-                            // do not invalidate the workspace around the sidebar.
-                            unreadCategoryIDs: guild.map { voiceModel.unreadCategoryIDsByGuild[$0.id] ?? [] } ?? [],
-                            sidebarSelection: guildSelection,
-                            threadsByParentID: threads.threadsByParentID,
-                            bottomContentInset: accountControlHeight
-                        ),
-                        model: voiceModel,
-                        selection: deferredGuildSelection
-                    )
-                    .equatable()
-                }
-                .onChange(of: guildSelection) { _, newSelection in
-                    selectionCommitter.selectedValueChanged(
-                        to: newSelection
-                    )
-                }
-                .onChange(of: guild?.id) { _, _ in selectionCommitter.cancel() }
-            }
+            // Both lists stay mounted and Favorites only shows or hides them. A
+            // list removed in the same update that changes its rows throws
+            // inside AppKit ("no common ancestor"), and the window then never
+            // draws again.
+            let showsFavorites = voiceModel.favorites.isPresented
+            conversationList
+                .opacity(showsFavorites ? 0 : 1)
+                .disabled(showsFavorites)
+                .accessibilityHidden(showsFavorites)
+                .zIndex(showsFavorites ? 0 : 1)
+            FavoritesSidebarView(model: voiceModel, bottomContentInset: accountControlHeight)
+                .opacity(showsFavorites ? 1 : 0)
+                .disabled(!showsFavorites)
+                .accessibilityHidden(!showsFavorites)
+                .zIndex(showsFavorites ? 1 : 0)
 
             AccountControlView(
                 voiceModel: voiceModel,
@@ -218,7 +136,7 @@ struct ChannelSidebarView: View {
                 guard height.isFinite, height >= 0 else { return }
                 accountControlHeight = height
             }
-            .zIndex(1)
+            .zIndex(2)
         }
         .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .environment(
@@ -238,6 +156,68 @@ struct ChannelSidebarView: View {
             .stroke(Color(nsColor: .separatorColor), lineWidth: separatorLineWidth)
             .ignoresSafeArea(.container, edges: isFullScreen ? .top : [])
             .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder private var conversationList: some View {
+        if let guildID = voiceModel.presentedGuildJoinRequestID {
+            // A pending server has no channels; its sidebar describes it instead.
+            GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
+        } else if guild == nil {
+            DirectMessageInboxView(
+                model: voiceModel,
+                channels: channels,
+                membersByID: voiceModel.membersByID,
+                privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
+                    !$0.value.isUnavailable
+                },
+                animatesAvatars: true,
+                selection: directMessageSelection,
+                bottomContentInset: accountControlHeight
+            )
+        } else {
+            let preparedThreads = threadLayout(at: .now)
+            // Re-evaluate when a timed-relevant thread expires. An explicit
+            // schedule reports its next entry as `context.date`, so read the clock.
+            TimelineView(.explicit(preparedThreads.relevanceDeadlines)) { _ in
+                let now = Date.now
+                let threads = preparedThreads.relevanceDeadlines.first.map { $0 <= now } == true
+                    ? threadLayout(at: now)
+                    : preparedThreads
+                GuildChannelList(
+                    input: GuildChannelListInput(
+                        modelIdentity: ObjectIdentifier(voiceModel),
+                        guildID: guild?.id,
+                        customizationTitle: voiceModel.customizationTitle(in: guild?.id),
+                        hasCustomization: guild.map { voiceModel.hasChannelsAndRoles(in: $0.id) } ?? false,
+                        hasGuide: guild.map { voiceModel.hasGuildGuide(in: $0.id) } ?? false,
+                        channelGroups: voiceModel.selectedChannelGroups(
+                            channelGroups,
+                            guildID: guild?.id,
+                            threadsByParentID: threads.threadsByParentID
+                        ),
+                        rulesChannelID: guild?.rulesChannelID,
+                        activeVoiceChannelID: activeVoiceChannelID,
+                        hiddenChannelIDs: hiddenChannelIDs,
+                        checkingChannelIDs: checkingChannelIDs,
+                        // Read here so another server's unread categories
+                        // do not invalidate the workspace around the sidebar.
+                        unreadCategoryIDs: guild.map { voiceModel.unreadCategoryIDsByGuild[$0.id] ?? [] } ?? [],
+                        sidebarSelection: guildSelection,
+                        threadsByParentID: threads.threadsByParentID,
+                        bottomContentInset: accountControlHeight
+                    ),
+                    model: voiceModel,
+                    selection: deferredGuildSelection
+                )
+                .equatable()
+            }
+            .onChange(of: guildSelection) { _, newSelection in
+                selectionCommitter.selectedValueChanged(
+                    to: newSelection
+                )
+            }
+            .onChange(of: guild?.id) { _, _ in selectionCommitter.cancel() }
         }
     }
 
@@ -282,7 +262,7 @@ struct ChannelSidebarView: View {
                         guard guild?.id == guildID else { return }
                         switch newSelection {
                         case .channel(let channelID):
-                            voiceModel.recordForwardDestinationVisit(channelID)
+                            voiceModel.recordConversationDestinationVisit(channelID)
                             if selection == channelID {
                                 // The parent row leaves its open thread, as in Discord.
                                 voiceModel.closeThread()
@@ -325,7 +305,7 @@ struct ChannelSidebarView: View {
                     voiceModel.openMessageRequests()
                 case .channel(let channelID):
                     guard selection != channelID || voiceModel.isFriendsPresented else { return }
-                    voiceModel.recordForwardDestinationVisit(channelID)
+                    voiceModel.recordConversationDestinationVisit(channelID)
                     selection = channelID
                 case nil:
                     break
@@ -418,14 +398,17 @@ private struct GuildChannelList: View, Equatable {
                         input.unreadCategoryIDs.contains
                     ) ?? false
                 )
+                // Discord divides its pinned section from the channels below.
+                if group.isPinnedSection, group.id != input.channelGroups.last?.id {
+                    Divider()
+                        .listRowInsets(EdgeInsets())
+                        .selectionDisabled()
+                        .accessibilityHidden(true)
+                }
             }
 
         }
-        .listStyle(.sidebar)
-        .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
-        .environment(\.defaultMinListRowHeight, ChannelSidebarLayoutMetrics.minimumRowHeight)
-        .scrollContentBackground(.hidden)
-        .scrollClipDisabled()
+        .modifier(ChannelSidebarListStyle())
         .overlayPreferenceValue(SidebarUnreadRowAnchors.self) { anchors in
             GeometryReader { geometry in
                 let width = InterfaceScale.metric(4)
@@ -474,6 +457,44 @@ private struct GuildChannelList: View, Equatable {
 
 }
 
+/// The server channel list's presentation, which Favorites shares.
+struct ChannelSidebarListStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .listStyle(.sidebar)
+            .font(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
+            .environment(\.defaultMinListRowHeight, ChannelSidebarLayoutMetrics.minimumRowHeight)
+            .scrollContentBackground(.hidden)
+            .scrollClipDisabled()
+    }
+}
+
+/// A collapsible category header in a sidebar channel list. `menu` is the
+/// row bridge that supplies the header's native hover and context menu.
+struct ChannelCategoryHeaderButton<Menu: View>: View {
+    let name: String
+    let isExpanded: Bool
+    let toggle: () -> Void
+    @ViewBuilder let menu: Menu
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: InterfaceScale.metric(5)) {
+                Text(name)
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.interface(.caption2).weight(.semibold))
+                    .frame(width: InterfaceScale.metric(8))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Color.primary.opacity(0.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
+        .overlay { menu }
+    }
+}
+
 struct SidebarBottomScrollSpacer: View {
     let height: CGFloat
 
@@ -485,62 +506,6 @@ struct SidebarBottomScrollSpacer: View {
             .listRowSeparator(.hidden)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-    }
-}
-
-nonisolated struct ChannelGroup: Identifiable, Equatable, Sendable {
-    let id: String
-    let categoryID: ChannelID?
-    let guildID: GuildID?
-    let name: String?
-    let position: Int
-    var channels: [Channel]
-
-    static func make(from channels: [Channel]) -> [ChannelGroup] {
-        var result: [ChannelGroup] = []
-        var indexByID: [String: Int] = [:]
-        result.reserveCapacity(min(channels.count, 32))
-        indexByID.reserveCapacity(min(channels.count, 32))
-        for channel in channels {
-            let groupID = channel.categoryID?.description ?? "uncategorized"
-            if let index = indexByID[groupID] {
-                result[index].channels.append(channel)
-            } else {
-                indexByID[groupID] = result.count
-                result.append(ChannelGroup(
-                    id: groupID,
-                    categoryID: channel.categoryID,
-                    guildID: channel.guildID,
-                    name: channel.category,
-                    position: channel.categoryPosition,
-                    channels: [channel]
-                ))
-            }
-        }
-        for index in result.indices {
-            result[index].channels.sort(by: channelOrder)
-        }
-        return result.sorted { lhs, rhs in
-            if lhs.name == nil, rhs.name != nil {
-                return true
-            }
-            if lhs.name != nil, rhs.name == nil {
-                return false
-            }
-            return lhs.position < rhs.position
-        }
-    }
-
-    private static func channelOrder(_ lhs: Channel, _ rhs: Channel) -> Bool {
-        let lhsIsVoice = lhs.kind == .voice
-        let rhsIsVoice = rhs.kind == .voice
-        if lhsIsVoice != rhsIsVoice {
-            return !lhsIsVoice
-        }
-        if lhs.position != rhs.position {
-            return lhs.position < rhs.position
-        }
-        return lhs.id < rhs.id
     }
 }
 
@@ -686,7 +651,8 @@ private struct ChannelGroupRows: View {
                         rulesChannelID: rulesChannelID,
                         isVoiceConnected: activeVoiceChannelID == channel.id,
                         isHidden: hiddenChannelIDs.contains(channel.id),
-                        isChecking: checkingChannelIDs.contains(channel.id)
+                        isChecking: checkingChannelIDs.contains(channel.id),
+                        isPinned: group.isPinnedSection
                     )
                     .tag(GuildSidebarSelection.channel(channel.id))
                     ForEach(
@@ -702,7 +668,8 @@ private struct ChannelGroupRows: View {
                         isSelected: sidebarSelection == .channel(channel.id),
                         rulesChannelID: rulesChannelID,
                         isHidden: hiddenChannelIDs.contains(channel.id),
-                        isChecking: checkingChannelIDs.contains(channel.id)
+                        isChecking: checkingChannelIDs.contains(channel.id),
+                        isPinned: group.isPinnedSection
                     )
                     .tag(GuildSidebarSelection.channel(channel.id))
                     let threads = threadsByParentID[channel.id] ?? []
@@ -725,11 +692,16 @@ private struct ChannelGroupRows: View {
 
     private var categoryHeader: some View {
             VStack(spacing: 0) {
-                if let name = group.name,
+                if group.isPinnedSection, let name = group.name {
+                    // Discord's Pinned Channels header neither collapses nor has a menu.
+                    Text(name)
+                        .foregroundStyle(Color.primary.opacity(0.5))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let name = group.name,
                    let categoryID = group.categoryID,
                    let guildID = group.guildID
                 {
-                    Button {
+                    ChannelCategoryHeaderButton(name: name, isExpanded: isExpanded) {
                         let nextValue = !isExpanded
                         withAnimation(.snappy(duration: 0.18)) {
                             isExpanded = nextValue
@@ -739,20 +711,7 @@ private struct ChannelGroupRows: View {
                                 categoryID: categoryID
                             )
                         }
-                    } label: {
-                        HStack(spacing: InterfaceScale.metric(5)) {
-                            Text(name)
-                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                .font(.interface(.caption2).weight(.semibold))
-                                .frame(width: InterfaceScale.metric(8))
-                            Spacer(minLength: 0)
-                        }
-                        .foregroundStyle(Color.primary.opacity(0.5))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
-                    .overlay {
+                    } menu: {
                         ChannelContextMenuBridge(
                             subject: .category,
                             isSelected: false,
@@ -800,7 +759,7 @@ private struct ChannelGroupRows: View {
                                 )
                             },
                             copyChannelID: {
-                                ChannelContextMenuValue.copy(
+                                Pasteboard.copy(
                                     categoryID.description
                                 )
                             },
@@ -851,7 +810,7 @@ private struct VoiceParticipantRow: View {
             Spacer(minLength: InterfaceScale.metric(4))
             if participant.isStreaming {
                 Image(systemName: "display")
-                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .foregroundStyle(Color.presenceOnline)
             }
             if participant.isVideoEnabled {
                 Image(systemName: "video.fill")
@@ -876,497 +835,6 @@ private struct VoiceParticipantRow: View {
                 : participant.isDeafened ? "Deafened"
                 : "Connected"
         )
-    }
-}
-
-private struct AccountControlView: View {
-    let voiceModel: AppModel
-    let user: User?
-    let connectionState: ConnectionState
-    let currentStatus: PresenceStatus
-    let isAuthenticated: Bool
-    let isOfflineTesting: Bool
-    let connectAccount: () -> Void
-    let updateStatus: (PresenceStatus) async -> Void
-
-    var body: some View {
-        GlassEffectContainer(spacing: SidebarAccountControlMetrics.surfaceSpacing) {
-            VStack(spacing: SidebarAccountControlMetrics.surfaceSpacing) {
-                if let session = voiceModel.embeddedActivities.dockedSession {
-                    EmbeddedActivitySidebarPanel(model: voiceModel, session: session)
-                }
-                if voiceModel.activeVoiceChannel != nil {
-                    VoiceSidebarControlPanel(model: voiceModel) {
-                        guard let channelID = voiceModel.activeVoiceChannel?.id else {
-                            return
-                        }
-                        voiceModel.navigate(to: channelID)
-                    }
-                }
-
-                CurrentUserCapsule(
-                    model: voiceModel,
-                    user: user.map(voiceModel.cosmeticPolicy.user),
-                    displayName: displayName,
-                    subtitle: accountSubtitle,
-                    currentStatus: currentStatus,
-                    isAuthenticated: isAuthenticated,
-                    isOfflineTesting: isOfflineTesting,
-                    connectAccount: connectAccount,
-                    updateStatus: updateStatus
-                )
-            }
-        }
-        .padding(.horizontal, InterfaceScale.metric(8))
-        .padding(
-            .bottom,
-            SidebarAccountControlMetrics.bottomInset(
-                for: voiceModel.appearanceSettings.composerBarAppearance
-            )
-        )
-    }
-
-    private var displayName: String {
-        user?.displayName ?? (isAuthenticated ? "Discord Account" : "Connect Account")
-    }
-
-    private var accountSubtitle: String {
-        if user != nil {
-            return currentStatus.label
-        }
-        return isOfflineTesting
-            ? "Mock data • networking disabled"
-            : (isAuthenticated ? connectionState.rawValue : "Sign in to Discord")
-    }
-}
-
-private struct CurrentUserCapsule: View {
-    let model: AppModel
-    let user: User?
-    let displayName: String
-    let subtitle: String
-    let currentStatus: PresenceStatus
-    let isAuthenticated: Bool
-    let isOfflineTesting: Bool
-    let connectAccount: () -> Void
-    let updateStatus: (PresenceStatus) async -> Void
-
-    @Environment(\.openSettings) private var openSettings
-    @State private var isMainHovering = false
-    @State private var isSettingsHovering = false
-    @State private var isYouPopoverPresented = false
-    @State private var profileRequestID: UUID?
-
-    var body: some View {
-        let appearance = model.appearanceSettings.composerBarAppearance
-        let height = SidebarAccountControlMetrics.capsuleHeight
-        let shape = SidebarAccountControlMetrics.shape(for: appearance)
-
-        ZStack {
-            if let nameplate = user?.nameplate {
-                NameplateBackground(
-                    nameplate: nameplate,
-                    isAnimated: isProfileHovering
-                )
-                .opacity(
-                    NameplatePresentationPolicy.opacity(
-                        isHovered: isProfileHovering
-                    )
-                )
-            }
-
-            Color.primary.opacity(isProfileHovering ? 0.09 : 0)
-                .allowsHitTesting(false)
-
-            Button(action: presentYouPopover) {
-                HStack(spacing: InterfaceScale.metric(8)) {
-                    accountAvatar
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(displayName)
-                            .font(.interfaceSystem(
-                                size: InterfaceTypographyMetrics.interfaceTextSize,
-                                weight: .semibold
-                            ))
-                            .lineLimit(1)
-                        Text(subtitle)
-                            .font(.interfaceSystem(
-                                size: max(
-                                    10,
-                                    InterfaceTypographyMetrics.interfaceTextSize - 2
-                                )
-                            ))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: InterfaceScale.metric(4))
-                }
-                .padding(.leading, SidebarAccountControlMetrics.contentInset)
-                .padding(
-                    .trailing,
-                    SidebarAccountControlMetrics.settingsDiameter
-                        + SidebarAccountControlMetrics.settingsInset
-                        + SidebarAccountControlMetrics.contentInset
-                )
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: height,
-                    alignment: .leading
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onModalHover { isMainHovering = $0 }
-            .stableMemberProfilePopover(isPresented: $isYouPopoverPresented) {
-                youPopover
-            }
-
-            ComposerActionButton(
-                icon: Image(systemName: "gearshape.fill"),
-                help: "Settings",
-                iconSize: SidebarAccountControlMetrics.settingsIconSize,
-                size: SidebarAccountControlMetrics.settingsDiameter,
-                appearance: appearance,
-                cornerRadius: SidebarAccountControlMetrics.settingsCornerRadius(for: appearance),
-                onHoverChanged: { isSettingsHovering = $0 },
-                action: { openSettings() }
-            )
-            .accessibilityLabel("Settings")
-            .padding(.trailing, SidebarAccountControlMetrics.settingsInset)
-            .frame(
-                maxWidth: .infinity,
-                maxHeight: .infinity,
-                alignment: .trailing
-            )
-        }
-        .frame(height: height)
-        .containerShape(shape)
-        .clipShape(shape)
-        .contentShape(shape)
-        .glassEffect(.regular, in: shape)
-        .animation(.snappy(duration: 0.16), value: isProfileHovering)
-        .onChange(of: isYouPopoverPresented) { _, isPresented in
-            guard !isPresented, let profileRequestID else { return }
-            model.dismissContextualProfile(requestID: profileRequestID)
-            self.profileRequestID = nil
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private var isProfileHovering: Bool {
-        isMainHovering && !isSettingsHovering
-    }
-
-    private var accountAvatar: some View {
-        AvatarPresenceView(
-            status: currentStatus,
-            avatarSize: SidebarAccountControlMetrics.avatarSize,
-            indicatorSize: InterfaceScale.metric(10)
-        ) {
-            DecoratedAvatarView(
-                name: displayName,
-                avatarURL: user?.avatarURL,
-                decorationURL: user?.avatarDecorationURL,
-                size: SidebarAccountControlMetrics.avatarSize,
-                playback: .hover(isProfileHovering)
-            )
-        }
-        .frame(
-            width: SidebarAccountControlMetrics.avatarSize,
-            height: SidebarAccountControlMetrics.avatarSize
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(displayName), \(currentStatus.label)")
-    }
-
-    @ViewBuilder
-    private var youPopover: some View {
-        if let profileRequestID,
-           let presentation = model.liveProfilePresentation(for: .contextual),
-           presentation.requestID == profileRequestID
-        {
-            ProfilePresentationContent(
-                presentation: presentation,
-                maximumPopoverHeight: InterfaceScale.metric(720),
-                showsRoles: false,
-                openProfile: model.expandProfile,
-                userMenu: { UserContextMenu.make(for: presentation.member.user, context: .init(guildID: presentation.guildID), model: model) },
-            footer: {
-                YouPopoverOptions(
-                    currentStatus: currentStatus,
-                    isStatusEnabled: isAuthenticated && !isOfflineTesting,
-                    isAccountSwitchingEnabled: !isOfflineTesting,
-                    savedAccounts: model.savedAccounts,
-                    activeAccountID: model.activeAccountID,
-                    updateStatus: updateStatus,
-                    switchAccount: { accountID in
-                        await model.switchAccount(to: accountID)
-                    },
-                    manageAccounts: {
-                        isYouPopoverPresented = false
-                        connectAccount()
-                    },
-                    accountActivated: {
-                        isYouPopoverPresented = false
-                    }
-                )
-            })
-            .environment(\.profileCosmeticPolicy, model.cosmeticPolicy)
-            .environment(\.serverTagCardModel, model)
-        } else {
-            ProgressView("Loading profile…")
-                .padding(InterfaceScale.metric(24))
-                .frame(width: MemberProfilePopover<EmptyView>.preferredWidth)
-        }
-    }
-
-    private func presentYouPopover() {
-        if isYouPopoverPresented {
-            isYouPopoverPresented = false
-            return
-        }
-        guard let user else {
-            connectAccount()
-            return
-        }
-        let member = model.membersByID[user.id]
-            ?? Member(user: user, roleName: "You", status: currentStatus)
-        profileRequestID = model.presentProfile(
-            for: member,
-            in: model.selectedGuildID,
-            destination: .contextual
-        )
-        isYouPopoverPresented = true
-    }
-}
-
-private struct YouPopoverOptions: View {
-    let currentStatus: PresenceStatus
-    let isStatusEnabled: Bool
-    let isAccountSwitchingEnabled: Bool
-    let savedAccounts: [SavedAccount]
-    let activeAccountID: String?
-    let updateStatus: (PresenceStatus) async -> Void
-    let switchAccount: (String) async -> Bool
-    let manageAccounts: () -> Void
-    let accountActivated: () -> Void
-
-    @State private var isStatusPopoverPresented = false
-    @State private var isAccountPopoverPresented = false
-
-    var body: some View {
-        VStack(spacing: InterfaceScale.metric(4)) {
-            Divider()
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .padding(.bottom, InterfaceScale.metric(4))
-
-            Button {
-                isStatusPopoverPresented.toggle()
-            } label: {
-                HStack(spacing: InterfaceScale.metric(10)) {
-                    PresenceIndicator(status: currentStatus, size: InterfaceScale.metric(13))
-                        .frame(width: InterfaceScale.metric(18))
-                    Text(currentStatus.label)
-                    Spacer(minLength: InterfaceScale.metric(24))
-                    Image(systemName: "chevron.right")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .frame(maxWidth: .infinity)
-                .frame(height: InterfaceScale.metric(38))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PopoverRowButtonStyle())
-            .disabled(!isStatusEnabled)
-            .opacity(isStatusEnabled ? 1 : 0.45)
-            .escapeDismissiblePopover(
-                isPresented: $isStatusPopoverPresented,
-                arrowEdge: .trailing
-            ) {
-                StatusSelectionPopover(
-                    currentStatus: currentStatus,
-                    updateStatus: updateStatus
-                )
-            }
-
-            Button {
-                isAccountPopoverPresented.toggle()
-            } label: {
-                HStack(spacing: InterfaceScale.metric(10)) {
-                    Image(systemName: "person.crop.circle")
-                        .frame(width: InterfaceScale.metric(18))
-                    Text("Switch Accounts")
-                    Spacer(minLength: InterfaceScale.metric(24))
-                    Image(systemName: "chevron.right")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .frame(maxWidth: .infinity)
-                .frame(height: InterfaceScale.metric(38))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PopoverRowButtonStyle())
-            .disabled(!isAccountSwitchingEnabled)
-            .opacity(isAccountSwitchingEnabled ? 1 : 0.45)
-            .escapeDismissiblePopover(
-                isPresented: $isAccountPopoverPresented,
-                arrowEdge: .trailing
-            ) {
-                AccountSelectionPopover(
-                    savedAccounts: savedAccounts,
-                    activeAccountID: activeAccountID,
-                    switchAccount: switchAccount,
-                    manageAccounts: manageAccounts,
-                    accountActivated: accountActivated
-                )
-            }
-        }
-        .font(.interface(.callout))
-        .padding(.horizontal, InterfaceScale.metric(10))
-        .padding(.top, InterfaceScale.metric(2))
-    }
-}
-
-private struct StatusSelectionPopover: View {
-    let currentStatus: PresenceStatus
-    let updateStatus: (PresenceStatus) async -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: InterfaceScale.metric(4)) {
-            ForEach(PresenceStatus.allCases.filter { $0 != .offline }, id: \.self) { status in
-                Button {
-                    Task {
-                        await updateStatus(status)
-                        dismiss()
-                    }
-                } label: {
-                    HStack(spacing: InterfaceScale.metric(10)) {
-                        PresenceIndicator(status: status, size: InterfaceScale.metric(13))
-                            .frame(width: InterfaceScale.metric(18))
-                        Text(status.label)
-                        Spacer()
-                        if status == currentStatus {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(SakuraCordAccentColor.color)
-                        }
-                    }
-                    .padding(.horizontal, InterfaceScale.metric(8))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: InterfaceScale.metric(34))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(PopoverRowButtonStyle())
-            }
-        }
-        .font(.interface(.callout))
-        .padding(InterfaceScale.metric(12))
-        .frame(width: InterfaceScale.metric(220))
-    }
-}
-
-private struct AccountSelectionPopover: View {
-    let savedAccounts: [SavedAccount]
-    let activeAccountID: String?
-    let switchAccount: (String) async -> Bool
-    let manageAccounts: () -> Void
-    let accountActivated: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var switchingAccountID: String?
-
-    var body: some View {
-        VStack(spacing: InterfaceScale.metric(4)) {
-            if savedAccounts.isEmpty {
-                Text("No saved accounts")
-                    .font(.interface(.callout))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(34), alignment: .leading)
-                    .padding(.horizontal, InterfaceScale.metric(8))
-            } else {
-                ForEach(savedAccounts) { account in
-                    accountButton(account)
-                }
-                Divider().padding(.horizontal, InterfaceScale.metric(8))
-            }
-
-            Button {
-                dismiss()
-                manageAccounts()
-            } label: {
-                Label("Manage Accounts…", systemImage: "person.crop.circle")
-                    .padding(.horizontal, InterfaceScale.metric(8))
-                    .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(34), alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(PopoverRowButtonStyle())
-        }
-        .font(.interface(.callout))
-        .padding(InterfaceScale.metric(12))
-        .frame(width: InterfaceScale.metric(250))
-    }
-
-    private func accountButton(_ account: SavedAccount) -> some View {
-        Button {
-            guard switchingAccountID == nil,
-                  account.accountID != activeAccountID
-            else { return }
-            guard !account.requiresSignIn else {
-                // Switching would end the current session and then fail.
-                dismiss()
-                manageAccounts()
-                return
-            }
-            switchingAccountID = account.accountID
-            Task {
-                let switched = await switchAccount(account.accountID)
-                switchingAccountID = nil
-                guard switched else { return }
-                dismiss()
-                accountActivated()
-            }
-        } label: {
-            HStack(spacing: InterfaceScale.metric(9)) {
-                AvatarView(
-                    name: account.resolvedDisplayName,
-                    url: account.avatarURL,
-                    size: InterfaceScale.metric(20),
-                    maximumPixelDimension: 40,
-                    animates: false
-                )
-                Text(account.username ?? account.resolvedDisplayName)
-                    .lineLimit(1)
-                Spacer()
-                if account.accountID == activeAccountID {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(SakuraCordAccentColor.color)
-                }
-            }
-            .padding(.horizontal, InterfaceScale.metric(8))
-            .frame(maxWidth: .infinity)
-            .frame(height: InterfaceScale.metric(36))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PopoverRowButtonStyle())
-        .disabled(switchingAccountID != nil)
-        .authenticationLoading(switchingAccountID == account.accountID, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(8)))
-        .accessibilityValue(switchingAccountID == account.accountID ? "Switching account" : "")
-    }
-}
-
-private extension PresenceStatus {
-    var label: String {
-        switch self {
-        case .online: "Online"
-        case .idle: "Idle"
-        case .dnd: "Do Not Disturb"
-        case .invisible: "Invisible"
-        case .offline: "Offline"
-        }
     }
 }
 
@@ -1398,17 +866,18 @@ private struct ChannelRow: View {
     var isVoiceConnected = false
     var isHidden = false
     var isChecking = false
+    var isPinned = false
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {
             Image(systemName: systemImage)
                 .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
                 .fontWeight(.medium)
-                .foregroundStyle(channelIconForegroundStyle)
+                .foregroundStyle(channelForegroundStyle)
                 .frame(width: ChannelSidebarLayoutMetrics.iconWidth)
             Text(channel.name)
                 .font(.interfaceSystem(size: 14, weight: showsUnread && !isMuted ? .medium : .regular))
-                .foregroundStyle(channelNameForegroundStyle)
+                .foregroundStyle(channelForegroundStyle)
                 .lineLimit(1)
             Spacer()
             if let activity = runningActivity.application {
@@ -1420,7 +889,7 @@ private struct ChannelRow: View {
             if hasActiveScreenShare {
                 Image(systemName: "display")
                     .font(.interface(.caption))
-                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .foregroundStyle(Color.presenceOnline)
                     .accessibilityLabel("Active screen share")
             }
             if isVoiceConnected {
@@ -1443,49 +912,27 @@ private struct ChannelRow: View {
         }
         .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .anchorPreference(key: SidebarUnreadRowAnchors.self, value: .bounds) {
-            showsUnread ? [SidebarUnreadRowAnchor(id: channel.id, anchor: $0, color: channelNameForegroundStyle.resolve(in: environment))] : []
+            showsUnread ? [SidebarUnreadRowAnchor(id: channel.id, anchor: $0, color: channelForegroundStyle.resolve(in: environment))] : []
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(accessibilityValue)
         .overlay {
             ChannelContextMenuBridge(
+                channel: channel,
+                model: model,
                 isSelected: isSelected,
                 isUnread: channel.kind == .forum
                     ? model.canMarkConversationRead(channelID: channel.id)
                     : channel.unreadCount > 0,
-                isMutationPending:
-                    model.isChannelNotificationMutationPending(channel.id),
                 allowsMutations: !isChecking,
-                directOverride: model.channelNotificationOverride(for: channel),
-                inheritedLevel:
-                    model.inheritedChannelNotificationLevel(for: channel),
-                inheritanceSource:
-                    channel.categoryID == nil ? .server : .category,
-                markRead: {
-                    model.markConversationRead(channelID: channel.id)
-                },
-                mute: { duration in
-                    model.setChannelMute(
-                        true,
-                        until: duration.endDate(),
-                        for: channel
-                    )
-                },
-                unmute: {
-                    model.setChannelMute(false, until: nil, for: channel)
-                },
-                setNotificationLevel: { level in
-                    model.setChannelNotificationLevel(level, for: channel)
-                },
-                copyChannelID: {
-                    ChannelContextMenuValue.copy(channel.id.description)
-                },
-                copyLink: {
-                    ChannelContextMenuValue.copy(
-                        ChannelContextMenuValue.link(
-                            guildID: channel.guildID,
-                            channelID: channel.id
-                        )
+                pinAction: isHidden ? .unavailable : .available(
+                    isPinned: isPinned,
+                    isServerChannel: true,
+                    toggle: { model.toggleChannelPin(channel) }
+                ),
+                favoriteItems: {
+                    FavoritesMenu.toggleItems(
+                        for: channel.id, channelType: channel.favoriteChannelType, model: model, isChecking: isChecking
                     )
                 }
             )
@@ -1534,13 +981,8 @@ private struct ChannelRow: View {
             && model.usesAllMessagesUnreadSetting(channel)
     }
 
-    private var channelIconForegroundStyle: Color {
-        if isSelected { return .primary }
-        if isMuted { return .primary.opacity(0.32) }
-        return showsUnread ? .primary : .primary.opacity(0.70)
-    }
-
-    private var channelNameForegroundStyle: Color {
+    /// The row's icon and name ink.
+    private var channelForegroundStyle: Color {
         if isSelected { return .primary }
         if isMuted { return .primary.opacity(0.32) }
         return showsUnread ? .primary : .primary.opacity(0.70)

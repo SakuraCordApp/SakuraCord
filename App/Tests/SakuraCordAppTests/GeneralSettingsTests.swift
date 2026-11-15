@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import DiscordProtocol
 import Foundation
+import SakuraCordModels
 import ServiceManagement
 import Testing
 
@@ -77,11 +78,19 @@ import Testing
 
 @MainActor
 @Test func `conversation restoration stays account scoped and consumes once`() {
-    let store = SettingsConversationRestorationStore(
-        defaults: InMemoryPreferences()
-    )
+    let defaults = InMemoryPreferences()
+    let store = SettingsConversationRestorationStore(defaults: defaults)
+    store.record(accountID: "100", guildID: "12", channelID: "13")
     store.record(accountID: "100", guildID: "10", channelID: "11")
     store.record(accountID: "200", guildID: nil, channelID: "22")
+
+    // Each server's last channel survives a relaunch, per account.
+    let relaunched = SettingsConversationRestorationStore(defaults: defaults)
+    #expect(relaunched.lastChannelIDsByGuild(accountID: "100") == [
+        GuildID(rawValue: 10): ChannelID(rawValue: 11),
+        GuildID(rawValue: 12): ChannelID(rawValue: 13),
+    ])
+    #expect(relaunched.lastChannelIDsByGuild(accountID: "200").isEmpty)
 
     #expect(
         store.preferredAccountID(for: .lastVisitedConversation) == "200"
@@ -116,6 +125,10 @@ import Testing
     )
     store.prepareAccountSwitch(to: "300")
     #expect(store.consumeLaunchRestoration(accountID: "300") == nil)
+
+    // A removed account leaves none of its conversations behind.
+    store.remove(accountID: "100")
+    #expect(store.lastChannelIDsByGuild(accountID: "100").isEmpty)
 }
 
 @MainActor
@@ -153,11 +166,11 @@ import Testing
     store.set(.bool(false), for: .confirmQuitActiveWork)
 
     #expect(
-        store.export(scope: .appWide, page: .general).values[
+        store.export(page: .general)[
             SettingsControlID.launchDestination.rawValue
         ] == .string(SettingsLaunchDestination.accountPicker.rawValue)
     )
-    store.reset(scope: .appWide, page: .general)
+    store.reset(page: .general)
     #expect(
         store.value(for: .launchDestination)
             == .string(SettingsLaunchDestination.lastVisitedConversation.rawValue)
@@ -188,7 +201,6 @@ import Testing
             && expected.contains($0.id)
     }
     #expect(Set(controls.map(\.id)) == expected)
-    #expect(controls.allSatisfy { $0.scope == .appWideLocal })
 
     let search = SettingsViewState()
     search.searchText = "autocorrect"
@@ -263,13 +275,13 @@ private enum GeneralSettingsTestError: LocalizedError {
     value.usesSmartQuotes = true
     store.save(value)
     #expect(store.load() == value)
-    let export = preferences.export(scope: .appWide, page: .general)
-    #expect(export.values[SettingsControlID.sendWithReturn.rawValue] == .bool(false))
-    #expect(export.values[SettingsControlID.spellCheck.rawValue] == .bool(true))
-    #expect(export.values[SettingsControlID.emojiSkinTone.rawValue] == .string("dark"))
-    #expect(export.values[SettingsControlID.privacyTypingIndicators.rawValue] == nil)
+    let export = preferences.export(page: .general)
+    #expect(export[SettingsControlID.sendWithReturn.rawValue] == .bool(false))
+    #expect(export[SettingsControlID.spellCheck.rawValue] == .bool(true))
+    #expect(export[SettingsControlID.emojiSkinTone.rawValue] == .string("dark"))
+    #expect(export[SettingsControlID.privacyTypingIndicators.rawValue] == nil)
 
-    preferences.reset(scope: .appWide, page: .general)
+    preferences.reset(page: .general)
     #expect(store.load() == .defaults)
     #expect(!privacyStore.load().sendsTypingIndicators)
 }

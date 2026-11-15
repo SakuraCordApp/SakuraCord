@@ -38,7 +38,7 @@ nonisolated enum LocalVideo {
                 group.addTask {
                     _ = await SharedDecodedImageLoader.shared.image(
                         for: url,
-                        maximumPixelDimension: NativeTimelineMediaKey.videoPosterPixelDimension,
+                        maximumPixelDimension: MediaImageKey.videoPosterPixelDimension,
                         priority: .prefetch,
                         preparesForTimeline: true
                     )

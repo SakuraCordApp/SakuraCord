@@ -5,12 +5,6 @@ import SakuraCordModels
 import SwiftUI
 import WebKit
 
-extension NSAttributedString.Key {
-    nonisolated static let discordEmojiToken = NSAttributedString.Key(
-        "dev.sakuracord.discord-emoji-token"
-    )
-}
-
 enum ComposerAutocompleteCommand {
     case previous
     case next
@@ -20,322 +14,19 @@ enum ComposerAutocompleteCommand {
     case nextField
     case advance
     case removeField
-}
 
-@MainActor
-@Observable
-final class ComposerDropInteractionState {
-    private(set) var destination: MessageComposerDestination?
-    private(set) var isInstant = false
-    /// Last time any file drop target saw the drag, read by the root view's
-    /// watchdog to spot sessions that ended without an exit callback.
-    @ObservationIgnored private(set) var lastDragActivity = ContinuousClock.now
-
-    var isTargeted: Bool { destination != nil }
-
-    func noteDragActivity() {
-        lastDragActivity = .now
-    }
-
-    func update(
-        isTargeted: Bool,
-        destination: MessageComposerDestination,
-        isInstant: Bool
-    ) {
-        if isTargeted { noteDragActivity() }
-        self.destination = isTargeted ? destination : nil
-        self.isInstant = isTargeted && isInstant
-    }
-
-    func reset() {
-        // `clear(destination:)` can't cover this: a drag that ends without exiting never names its destination.
-        destination = nil
-        isInstant = false
-    }
-
-    func clear(destination: MessageComposerDestination) {
-        guard self.destination == destination else { return }
-        self.destination = nil
-        isInstant = false
-    }
-}
-
-extension EnvironmentValues {
-    @Entry var composerDropInteraction: ComposerDropInteractionState?
-}
-
-nonisolated enum ComposerLatestMessageEditingPolicy {
-    static func shouldRequest(
-        keyCode: UInt16,
-        modifierFlags: NSEvent.ModifierFlags,
-        composerIsEmpty: Bool
-    ) -> Bool {
-        let disallowed: NSEvent.ModifierFlags = [
-            .shift, .command, .option, .control,
-        ]
-        return keyCode == 126
-            && modifierFlags.isDisjoint(with: disallowed)
-            && composerIsEmpty
-    }
-
-    static func messageID(
-        in messages: [Message],
-        currentUserID: UserID?
-    ) -> MessageID? {
-        guard let currentUserID else { return nil }
-        return messages.last(where: {
-            $0.author.id == currentUserID && !$0.hasPoll && !$0.flags.contains(.voiceMessage)
-        })?.id
-    }
-}
-
-extension ComposerView {
-    func editLatestMessage() -> Bool {
-        let messages = switch conversation {
-        case .channel: model.messages
-        case .thread: model.threadMessages
+    /// Moves through `count` rows, wrapping at either end, accepts the
+    /// highlighted row or dismisses the list. Field commands are not the
+    /// list's, so they return false.
+    func route(_ index: inout Int, count: Int, accept: (Int) -> Void, dismiss: () -> Void) -> Bool {
+        switch self {
+        case .previous: index = (index - 1 + count) % count
+        case .next: index = (index + 1) % count
+        case .accept, .advance: accept(min(index, count - 1))
+        case .dismiss: dismiss()
+        case .previousField, .nextField, .removeField: return false
         }
-        guard let messageID = ComposerLatestMessageEditingPolicy.messageID(
-            in: messages,
-            currentUserID: model.currentUser?.id
-        ) else { return false }
-        onEditMessage(messageID)
         return true
-    }
-}
-
-enum ComposerEmojiAttributedText {
-    static let expression = RegularExpressionFactory.make(
-        #"<a?:[A-Za-z0-9_]+:[0-9]+>|"# + RenderedMention.tokenPattern
-    )
-
-    static func make(
-        _ source: String,
-        style: ComposerTextStyle = .composer,
-        mentionPresentations: [String: MentionPresentation] = [:],
-        imageProvider: (String) -> NSImage? = { ComposerEmojiImageStore.shared.cachedImage(for: $0) }
-    ) -> NSAttributedString {
-        let font = style.font
-        let result = NSMutableAttributedString()
-        var cursor = 0
-        for match in attachmentMatches(in: source) {
-            if match.range.location > cursor {
-                result.append(
-                    NSAttributedString(
-                        string: (source as NSString).substring(
-                            with: NSRange(location: cursor, length: match.range.location - cursor)
-                        ),
-                        attributes: style.attributes
-                    )
-                )
-            }
-            let token = (source as NSString).substring(with: match.range)
-            if let mention = RenderedMention(rawToken: token) {
-                let presentation = mentionPresentations[token]
-                    ?? MentionPresentation.fallback(for: mention)
-                result.append(
-                    MentionAttachmentRenderer.attributedString(
-                        presentation: presentation,
-                        font: font
-                    )
-                )
-                cursor = NSMaxRange(match.range)
-                continue
-            }
-            let attachment = NSTextAttachment()
-            let name = token.split(separator: ":").dropFirst().first.map(String.init) ?? "emoji"
-            attachment.image = imageProvider(token)
-                ?? placeholderImage(name: name, size: font.pointSize * 1.15)
-            attachment.bounds = CGRect(
-                x: 0,
-                y: attachmentOriginY(font: font, size: font.pointSize * 1.15),
-                width: font.pointSize * 1.15,
-                height: font.pointSize * 1.15
-            )
-            let attributedAttachment = NSMutableAttributedString(attachment: attachment)
-            var attachmentAttributes = style.attributes
-            attachmentAttributes[.discordEmojiToken] = token
-            attributedAttachment.addAttributes(
-                attachmentAttributes,
-                range: NSRange(location: 0, length: attributedAttachment.length)
-            )
-            result.append(attributedAttachment)
-            cursor = NSMaxRange(match.range)
-        }
-        if cursor < (source as NSString).length {
-            result.append(
-                NSAttributedString(
-                    string: (source as NSString).substring(from: cursor), attributes: style.attributes
-                )
-            )
-        }
-        ComposerMarkdownPresentation.apply(to: result, style: style)
-        return result
-    }
-
-    private static func attachmentMatches(in source: String) -> [NSTextCheckingResult] {
-        let matches = expression.matches(in: source, range: NSRange(location: 0, length: source.utf16.count))
-        guard !matches.isEmpty else { return [] }
-        let mentionRanges = renderedMentionRanges(in: source)
-        return matches.filter { match in
-            let token = (source as NSString).substring(with: match.range)
-            // Discord's composer keeps a command mention as typed text.
-            guard !token.hasPrefix("</") else { return false }
-            let isNewMention = token.hasPrefix("<t:") || token.hasPrefix("<@$") || token == "@everyone" || token == "@here"
-            return !isNewMention || mentionRanges.contains(match.range)
-        }
-    }
-
-    private static func renderedMentionRanges(in source: String) -> Set<NSRange> {
-        var ranges: Set<NSRange> = []
-        var location = 0
-        for segment in MessageDocumentCache.shared.document(for: source).segments {
-            let text: String
-            switch segment {
-            case let .markdown(value): text = value
-            case let .customEmoji(emoji): text = emoji.rawToken
-            case let .mention(mention):
-                text = mention.rawToken
-                ranges.insert(NSRange(location: location, length: text.utf16.count))
-            }
-            location += text.utf16.count
-        }
-        return ranges
-    }
-
-    static func serialize(_ value: NSAttributedString, range: NSRange? = nil) -> String {
-        let target = range ?? NSRange(location: 0, length: value.length)
-        let source = value.string as NSString
-        var result = ""
-        // Font and underline runs do not affect the outgoing Markdown. Inspect
-        // token metadata only where an attachment can change the source text.
-        value.enumerateAttribute(.attachment, in: target) { attachment, range, _ in
-            guard attachment is NSTextAttachment else {
-                result += source.substring(with: range)
-                return
-            }
-            value.enumerateAttributes(in: range) { attributes, tokenRange, _ in
-                guard let token = (attributes[.discordEmojiToken] ?? attributes[.discordMentionToken]) as? String else {
-                    result += source.substring(with: tokenRange)
-                    return
-                }
-                var cursor = tokenRange.location
-                while cursor < NSMaxRange(tokenRange) {
-                    let composedRange = NSIntersectionRange(
-                        source.rangeOfComposedCharacterSequence(at: cursor), tokenRange
-                    )
-                    let substring = source.substring(with: composedRange)
-                    result += composedRange.length == 1 && substring == "\u{FFFC}"
-                        ? token
-                        : substring
-                    cursor = NSMaxRange(composedRange)
-                }
-            }
-        }
-        return result
-    }
-
-    static func usesCurrentMentionPresentations(
-        _ value: NSAttributedString,
-        mentionPresentations: [String: MentionPresentation]
-    ) -> Bool {
-        var isCurrent = true
-        value.enumerateAttribute(.discordMentionToken, in: NSRange(location: 0, length: value.length)) { tokenValue, range, stop in
-            guard let token = tokenValue as? String,
-                  let mention = RenderedMention(rawToken: token)
-            else { return }
-            let expected = mentionPresentations[token]
-                ?? MentionPresentation.fallback(for: mention)
-            value.enumerateAttribute(.attachment, in: range) { attachment, _, attachmentStop in
-                guard let attachment = attachment as? MentionTextAttachment,
-                      attachment.presentation == expected
-                else {
-                    isCurrent = false
-                    attachmentStop.pointee = true
-                    stop.pointee = true
-                    return
-                }
-            }
-        }
-        return isCurrent
-    }
-
-    static func displayRange(forRaw range: NSRange, source: String) -> NSRange {
-        let start = displayOffset(forRawOffset: range.location, source: source)
-        let end = displayOffset(forRawOffset: NSMaxRange(range), source: source)
-        return NSRange(location: start, length: max(0, end - start))
-    }
-
-    static func rawRange(forDisplay range: NSRange, attributed: NSAttributedString) -> NSRange {
-        let start = serialize(
-            attributed, range: NSRange(location: 0, length: min(range.location, attributed.length))
-        ).utf16.count
-        let endLocation = min(NSMaxRange(range), attributed.length)
-        let end = serialize(attributed, range: NSRange(location: 0, length: endLocation)).utf16.count
-        return NSRange(location: start, length: max(0, end - start))
-    }
-
-    private static func displayOffset(forRawOffset offset: Int, source: String) -> Int {
-        var reduction = 0
-        for match in attachmentMatches(in: source) {
-            if offset >= NSMaxRange(match.range) {
-                reduction += match.range.length - 1
-            } else if offset > match.range.location {
-                return match.range.location - reduction + 1
-            }
-        }
-        return max(0, offset - reduction)
-    }
-
-}
-
-/// How a draft's plain text looks: the composer's own style, or the style
-/// of the text an inline edit replaces, so the editor matches it.
-struct ComposerTextStyle {
-    let font: NSFont
-    let attributes: [NSAttributedString.Key: Any]
-    /// Sets Markdown blocks in Discord's message line heights, as the
-    /// timeline does, rather than in the text's natural lines.
-    var usesMessageLineHeight = false
-
-    static var composer: Self { composer(.interfaceSystemFont(ofSize: 15)) }
-
-    static func composer(_ font: NSFont) -> Self {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.minimumLineHeight = NSLayoutManager().defaultLineHeight(for: font)
-        return Self(font: font, attributes: [
-            .font: font,
-            .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: paragraphStyle
-        ])
-    }
-
-    /// The height of a line with no text.
-    var emptyLineHeight: CGFloat {
-        max(
-            NSLayoutManager().defaultLineHeight(for: font),
-            (attributes[.paragraphStyle] as? NSParagraphStyle)?.minimumLineHeight ?? 0
-        )
-    }
-}
-
-extension ComposerEmojiAttributedText {
-    nonisolated static func attachmentOriginY(
-        font: NSFont,
-        size: CGFloat
-    ) -> CGFloat {
-        (font.ascender + font.descender - size) / 2
-    }
-
-    static func placeholderImage(name: String, size: CGFloat) -> NSImage {
-        let image = SakuraCordSystemSymbol.image(
-            named: SakuraCordSystemSymbol.emojiFaceGrinning,
-            accessibilityDescription: name
-        )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: size, weight: .regular)
-        ) ?? NSImage(size: NSSize(width: size, height: size))
-        image.isTemplate = true
-        return image
     }
 }
 
@@ -436,7 +127,6 @@ struct ComposerTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.font = font
         textView.textColor = textStyle.attributes[.foregroundColor] as? NSColor ?? .labelColor
-        textView.applySakuraCordTextSelectionAppearance()
         if let insertionPointColor { textView.insertionPointColor = insertionPointColor }
         textView.plainTextStyle = textStyle
         textView.restorePlainTypingAttributes()
@@ -456,8 +146,18 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onNavigateReplySelection = { [weak coordinator = context.coordinator] direction in
             coordinator?.parent.onNavigateReplySelection(direction) ?? false
         }
-        textView.onDropTargetChanged = onDropTargetChanged
-        textView.onReceiveAttachments = onReceiveAttachments
+        // Each editor either always or never takes drops; the text view reads
+        // a missing handler as "no drops".
+        if onDropTargetChanged != nil {
+            textView.onDropTargetChanged = { [weak coordinator = context.coordinator] isTargeted, isInstant in
+                coordinator?.parent.onDropTargetChanged?(isTargeted, isInstant)
+            }
+        }
+        if onReceiveAttachments != nil {
+            textView.onReceiveAttachments = { [weak coordinator = context.coordinator] attachments, isInstant in
+                coordinator?.parent.onReceiveAttachments?(attachments, isInstant) ?? false
+            }
+        }
         textView.canReceiveAttachments = { [weak coordinator = context.coordinator] in
             coordinator?.parent.canReceiveAttachments() ?? false
         }
@@ -522,36 +222,14 @@ struct ComposerTextView: NSViewRepresentable {
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.acceptsComposerInput
         context.coordinator.updateCompositionState(from: textView, deferringNotification: true)
 
-        textView.onReturn = { [weak coordinator = context.coordinator] event in
-            coordinator?.handleReturn(event) ?? false
-        }
-        textView.onAutocompleteCommand = { [weak coordinator = context.coordinator] command in
-            coordinator?.parent.onAutocompleteCommand(command) ?? false
-        }
-        textView.onEscape = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onEscape()
-        }
-        textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onEditLatestMessage() ?? false
-        }
-        textView.onNavigateReplySelection = { [weak coordinator = context.coordinator] direction in
-            coordinator?.parent.onNavigateReplySelection(direction) ?? false
-        }
-        textView.onDropTargetChanged = onDropTargetChanged
-        textView.onReceiveAttachments = onReceiveAttachments
-        textView.canReceiveAttachments = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.canReceiveAttachments() ?? false
-        }
-
         // During IME composition, NSTextView owns the marked range. Applying
         // the SwiftUI snapshot, selection, or typing attributes here can
         // replace the uncommitted Japanese text and make it disappear.
         guard !textView.hasMarkedText() else {
-            context.coordinator.applyFocus(to: textView)
+            context.coordinator.applyFocus(to: textView, resigning: textView)
             return
         }
 
-        textView.applySakuraCordTextSelectionAppearance()
         if let insertionPointColor { textView.insertionPointColor = insertionPointColor }
         textView.textContainerInset = NSSize(width: 0, height: verticalContentInset)
         ComposerTextCheckingConfiguration.apply(generalInputSettings, to: textView)
@@ -602,7 +280,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.plainTextStyle = textStyle
         textView.restorePlainTypingAttributes()
 
-        context.coordinator.applyFocus(to: textView)
+        context.coordinator.applyFocus(to: textView, resigning: textView)
     }
 
     func sizeThatFits(
@@ -635,25 +313,16 @@ struct ComposerTextView: NSViewRepresentable {
 
     private var textAttributes: [NSAttributedString.Key: Any] { textStyle.attributes }
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, ComposerFocusSyncing {
         var parent: ComposerTextView
-        private var appliedFocus = false
+        var appliedFocus = false
+        var focusBinding: Binding<Bool> { parent.$isFocused }
         private var isNormalizing = false
         private var isMarkedTextActive = false
         private let attachmentImageLoader = InlineAttachmentImageLoader()
 
         init(parent: ComposerTextView) {
             self.parent = parent
-        }
-
-        func firstResponderDidChange(_ isFirstResponder: Bool) {
-            // Publish after AppKit finishes the responder change, never during
-            // a SwiftUI update that triggered it.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                appliedFocus = isFirstResponder
-                if parent.isFocused != isFirstResponder { parent.isFocused = isFirstResponder }
-            }
         }
 
         func textDidEndEditing(_ notification: Notification) {
@@ -741,20 +410,6 @@ struct ComposerTextView: NSViewRepresentable {
             }
         }
 
-        func applyFocus(to textView: NSTextView) {
-            guard parent.isFocused != appliedFocus else { return }
-            appliedFocus = parent.isFocused
-
-            if parent.isFocused {
-                Task { @MainActor [weak textView] in
-                    guard let textView, parent.isFocused else { return }
-                    textView.window?.makeFirstResponder(textView)
-                }
-            } else if textView.window?.firstResponder === textView {
-                textView.window?.makeFirstResponder(nil)
-            }
-        }
-
         func handleReturn(_ event: NSEvent) -> Bool {
             let action = ComposerReturnAction.decide(
                 sendWithReturn: parent.sendWithReturn,
@@ -801,109 +456,13 @@ struct ComposerTextView: NSViewRepresentable {
     }
 }
 
-@MainActor
-final class ComposerEmojiImageStore {
-    static let shared = ComposerEmojiImageStore()
-    private let images = NSCache<NSString, NSImage>()
-    private var registeredImages: [String: NSImage] = [:]
-    private var inFlight: [String: Task<NSImage?, Never>] = [:]
-
-    private init() {
-        images.countLimit = 256
-    }
-
-    func cachedImage(for token: String) -> NSImage? {
-        registeredImages[token] ?? images.object(forKey: token as NSString)
-    }
-
-    func register(_ emoji: DiscordEmoji) {
-        guard let url = emoji.assetURL,
-              url.isFileURL,
-              let image = NSImage(contentsOf: url)
-        else { return }
-        let displayImage = Self.preparedForInlineDisplay(image)
-        registeredImages[emoji.messageToken] = displayImage
-        images.setObject(displayImage, forKey: emoji.messageToken as NSString)
-    }
-
-    func image(for token: String) async -> NSImage? {
-        if let cached = cachedImage(for: token) {
-            return cached
-        }
-        if let task = inFlight[token] {
-            return await task.value
-        }
-        let task = Task<NSImage?, Never> {
-            let reference = EmojiReference(rawToken: token)
-            guard let url = reference.imageURL(size: 64),
-                  let data = try? await SharedMediaDataLoader.shared.data(for: url),
-                  let image = NSImage(data: data)
-            else { return nil }
-            return Self.preparedForInlineDisplay(image)
-        }
-        inFlight[token] = task
-        let image = await task.value
-        inFlight[token] = nil
-        if let image {
-            images.setObject(image, forKey: token as NSString)
-        }
-        return image
-    }
-
-    nonisolated static func aspectFitRect(
-        imageSize: NSSize,
-        in bounds: NSRect
-    ) -> NSRect {
-        guard imageSize.width > 0,
-              imageSize.height > 0,
-              bounds.width > 0,
-              bounds.height > 0
-        else { return bounds }
-
-        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
-        let size = NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
-        return NSRect(
-            x: bounds.midX - size.width / 2,
-            y: bounds.midY - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
-    }
-
-    static func preparedForInlineDisplay(_ source: NSImage) -> NSImage {
-        let sourceSize = source.size
-        guard sourceSize.width > 0,
-              sourceSize.height > 0,
-              abs(sourceSize.width - sourceSize.height) > 0.5
-        else { return source }
-
-        let side = max(sourceSize.width, sourceSize.height)
-        let canvasSize = NSSize(width: side, height: side)
-        let image = NSImage(size: canvasSize, flipped: false) { bounds in
-            source.draw(
-                in: aspectFitRect(imageSize: sourceSize, in: bounds),
-                from: .zero,
-                operation: .sourceOver,
-                fraction: 1,
-                respectFlipped: true,
-                hints: [.interpolation: NSImageInterpolation.high]
-            )
-            return true
-        }
-        image.accessibilityDescription = source.accessibilityDescription
-        return image
-    }
-}
-
-final class ComposerNSTextView: ComposerFocusReportingTextView, WindowModalEscapeConsumer {
+final class ComposerNSTextView: ComposerAttachmentPasteTextView, WindowModalEscapeConsumer {
     var onReturn: ((NSEvent) -> Bool)?
     var onEscape: (() -> Void)?
     var onEditLatestMessage: (() -> Bool)?
     var onNavigateReplySelection: ((MessageReplyNavigationDirection) -> Bool)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
     var onDropTargetChanged: ((_ isTargeted: Bool, _ isInstant: Bool) -> Void)?
-    var onReceiveAttachments: ((_ attachments: ComposerIncomingAttachments, _ isInstant: Bool) -> Bool)?
-    var canReceiveAttachments: (() -> Bool)?
     var plainTextStyle: ComposerTextStyle = .composer
     var plainTypingAttributes: [NSAttributedString.Key: Any] { plainTextStyle.attributes }
     var capturesUnfocusedTyping = false {
@@ -1144,35 +703,15 @@ final class ComposerNSTextView: ComposerFocusReportingTextView, WindowModalEscap
         let range = selectedRange()
         guard range.length > 0 else { return }
         let raw = ComposerEmojiAttributedText.serialize(attributedString(), range: range)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(raw, forType: .string)
+        Pasteboard.copy(raw)
     }
 
-    // AppKit validates Paste and Services against these types, then reads
-    // the first available one through `readSelection(from:type:)`.
-    // Destinations that cannot take files omit the attachment types, so the
-    // clipboard's text representation is pasted instead.
-    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
-        receivesAttachments
-            ? ComposerPasteboardAttachments.readableTypes + Self.textPasteboardTypes
-            : Self.textPasteboardTypes
-    }
+    override var textPasteboardTypes: [NSPasteboard.PasteboardType] { Self.pastedTextTypes }
 
-    private var receivesAttachments: Bool {
-        isEditable && onReceiveAttachments != nil && canReceiveAttachments?() != false
-    }
+    private static let pastedTextTypes: [NSPasteboard.PasteboardType] = [.string, .rtfd, .rtf, .html]
 
-    private static let textPasteboardTypes: [NSPasteboard.PasteboardType] = [.string, .rtfd, .rtf, .html]
-
-    override func readSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+    override func readTextSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
         guard isEditable else { return false }
-        if ComposerPasteboardAttachments.readableTypes.contains(type) {
-            // Declining lets AppKit read the next available type.
-            guard receivesAttachments, let onReceiveAttachments,
-                  let attachments = ComposerPasteboardAttachments.attachments(from: pasteboard, type: type)
-            else { return false }
-            return onReceiveAttachments(attachments, false)
-        }
         guard let text = Self.plainText(from: pasteboard, type: type) else { return false }
         if type == .string, receivesAttachments, let onReceiveAttachments,
            let batch = ComposerPasteboardAttachments.longTextAttachment(text)
@@ -1205,318 +744,6 @@ final class ComposerNSTextView: ComposerFocusReportingTextView, WindowModalEscap
               let type = pasteboard.availableType(from: ComposerPasteboardAttachments.readableTypes)
         else { return false }
         return readSelection(from: pasteboard, type: type)
-    }
-}
-
-@MainActor
-enum ComposerPasteboardAttachments {
-    /// Files outrank image previews that accompany them, and images outrank
-    /// the URL or HTML text that browsers add when copying an image.
-    static let readableTypes: [NSPasteboard.PasteboardType] = {
-        let imageTypes: [NSPasteboard.PasteboardType] = [.png, .tiff]
-        return [.fileURL] + imageTypes + NSImage.imageTypes
-            .map { NSPasteboard.PasteboardType($0) }
-            .filter { !imageTypes.contains($0) }
-    }()
-
-    static func attachments(
-        from pasteboard: NSPasteboard,
-        type: NSPasteboard.PasteboardType
-    ) -> ComposerIncomingAttachments? {
-        guard type != .fileURL else {
-            let urls = fileURLs(from: pasteboard)
-            return urls.isEmpty ? nil : .external(urls)
-        }
-        return pastedImage(from: pasteboard, type: type).map { .owned($0) }
-    }
-
-    static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
-        let objects = pasteboard.readObjects(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) ?? []
-        var seen: Set<URL> = []
-        return objects.compactMap { object -> URL? in
-            guard let url = (object as? NSURL)?.absoluteURL,
-                  url.isFileURL,
-                  seen.insert(url.standardizedFileURL).inserted
-            else { return nil }
-            return url
-        }
-    }
-
-    /// Writes clipboard image data as a PNG in app-owned storage, which the
-    /// model adopts and removes once no composer or upload retains it.
-    private static func pastedImage(
-        from pasteboard: NSPasteboard,
-        type: NSPasteboard.PasteboardType
-    ) -> ComposerPromisedFileBatch? {
-        guard let data = pasteboard.data(forType: type),
-              let png = type == .png ? data : NSImage(data: data)?.tiffRepresentation
-                  .flatMap(NSBitmapImageRep.init(data:))?
-                  .representation(using: .png, properties: [:])
-        else { return nil }
-        let filename = pastedImageFilename(html: pasteboard.string(forType: .html))
-        return ComposerPromisedFileStorage.makeBatch(writing: png, named: filename)
-    }
-
-    /// Names a pasted image as Discord does: after the first `<img>` source in
-    /// accompanying HTML, which browsers include when copying an image.
-    nonisolated static func pastedImageFilename(html: String?) -> String {
-        let pattern = /<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']/.ignoresCase()
-        guard let html,
-              let source = html.firstMatch(of: pattern).map({ String($0.1) }),
-              let url = URL(string: source),
-              url.scheme.map({ ["http", "https", "file"].contains($0.lowercased()) }) ?? true
-        else { return "image.png" }
-        // `lastPathComponent` percent-decodes, so the name can contain
-        // separators, control characters, or traversal components.
-        let stem = safeFilenameStem((url.lastPathComponent as NSString).deletingPathExtension)
-        return (stem ?? "image") + ".png"
-    }
-
-    /// Reduces untrusted text to one file name component of at most 200
-    /// UTF-8 bytes, or nil when nothing usable remains.
-    nonisolated static func safeFilenameStem(_ raw: String) -> String? {
-        var stem = ""
-        for character in raw {
-            let isUnsafe = character.unicodeScalars.contains {
-                $0 == "/" || $0 == ":" || $0.properties.generalCategory == .control
-            }
-            let safe = isUnsafe ? "_" : String(character)
-            guard stem.utf8.count + safe.utf8.count <= 200 else { break }
-            stem += safe
-        }
-        guard !stem.isEmpty, stem != ".", stem != "..", stem != "_" else { return nil }
-        return stem
-    }
-
-    /// Writes pasted text too long for a message as `message.txt`, as Discord does.
-    static func longTextAttachment(_ text: String) -> ComposerPromisedFileBatch? {
-        guard ChatCharacterLimitPolicy.pastedTextBecomesAttachment(text) else { return nil }
-        return ComposerPromisedFileStorage.makeBatch(writing: Data(text.utf8), named: "message.txt")
-    }
-}
-
-@MainActor
-final class ComposerUnfocusedTypingMonitor {
-    private weak var textView: NSTextView?
-    private var eventMonitor: Any?
-    private var onUnfocusedReturn: ((NSEvent) -> Bool)?
-    private var onEditLatestMessage: (() -> Bool)?
-    private var onNavigateReplySelection:
-        ((MessageReplyNavigationDirection) -> Bool)?
-    private var onEscape: (() -> Void)?
-    private var onPasteAttachments: (() -> Bool)?
-
-    isolated deinit {
-        if let eventMonitor {
-            NSEvent.removeMonitor(eventMonitor)
-        }
-    }
-
-    func synchronize(
-        with textView: NSTextView,
-        enabled: Bool,
-        onUnfocusedReturn: ((NSEvent) -> Bool)? = nil,
-        onEditLatestMessage: (() -> Bool)? = nil,
-        onNavigateReplySelection:
-            ((MessageReplyNavigationDirection) -> Bool)? = nil,
-        onEscape: (() -> Void)? = nil,
-        onPasteAttachments: (() -> Bool)? = nil
-    ) {
-        self.textView = textView
-        self.onUnfocusedReturn = onUnfocusedReturn
-        self.onEditLatestMessage = onEditLatestMessage
-        self.onNavigateReplySelection = onNavigateReplySelection
-        self.onEscape = onEscape
-        self.onPasteAttachments = onPasteAttachments
-        guard enabled, textView.window != nil
-        else {
-            removeMonitor()
-            return
-        }
-        guard eventMonitor == nil else { return }
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self,
-                  let textView = self.textView,
-                  WindowModalCoordinator.allowsInput(for: textView),
-                  let window = textView.window,
-                  event.window === window,
-                  window.isKeyWindow,
-                  window.firstResponder !== textView,
-                  !Self.handlesOwnTyping(window.firstResponder)
-            else { return event }
-
-            if let timeline = window.firstResponder as? NativeTimelineCanvasView,
-               timeline.messageInteractionContext == .inboxResult || timeline.messageInteractionContext == .inboxMention
-            {
-                return event
-            }
-
-            // Popovers can leave the main window key. Its composer monitor may
-            // receive Escape first, so honor popover dismissal before composer actions.
-            if KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags),
-               PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window)
-            {
-                return nil
-            }
-
-            if Self.handlePaste(
-                characters: event.characters,
-                modifierFlags: event.modifierFlags,
-                onPasteAttachments: self.onPasteAttachments
-            ) {
-                return nil
-            }
-            if Self.shouldOfferReturn(event.keyCode) {
-                return self.onUnfocusedReturn?(event) == true ? nil : event
-            }
-            if Self.handleEditLatestMessage(
-                keyCode: event.keyCode,
-                modifierFlags: event.modifierFlags,
-                composerIsEmpty: textView.string.isEmpty,
-                onEditLatestMessage: self.onEditLatestMessage
-            ) {
-                return nil
-            }
-            if let direction = ComposerNSTextView.replyNavigationDirection(for: event),
-               self.onNavigateReplySelection?(direction) == true
-            {
-                return nil
-            }
-            if Self.handleEscape(
-                keyCode: event.keyCode,
-                modifierFlags: event.modifierFlags,
-                onEscape: self.onEscape
-            ) {
-                return nil
-            }
-            guard Self.shouldRedirect(event) else { return event }
-            window.makeFirstResponder(textView)
-            return event
-        }
-    }
-
-    private func removeMonitor() {
-        guard let eventMonitor else { return }
-        NSEvent.removeMonitor(eventMonitor)
-        self.eventMonitor = nil
-    }
-
-    /// Text editors and web content, such as a running Activity, take their
-    /// own keys, Return and Escape included, as page content does in Discord.
-    private static func handlesOwnTyping(_ responder: NSResponder?) -> Bool {
-        if let textView = responder as? NSTextView {
-            return textView.isEditable || textView.isFieldEditor
-        }
-        guard let view = responder as? NSView else { return false }
-        return sequence(first: view, next: \.superview).contains { $0 is WKWebView }
-    }
-
-    nonisolated static func shouldRedirect(
-        characters: String?,
-        modifierFlags: NSEvent.ModifierFlags
-    ) -> Bool {
-        let disallowed: NSEvent.ModifierFlags = [.command, .control, .function]
-        guard modifierFlags.isDisjoint(with: disallowed),
-              let characters,
-              !characters.isEmpty
-        else { return false }
-        return characters.unicodeScalars.contains {
-            !CharacterSet.controlCharacters.contains($0)
-        }
-    }
-
-    static func handleEscape(
-        keyCode: UInt16,
-        modifierFlags: NSEvent.ModifierFlags,
-        onEscape: (() -> Void)?
-    ) -> Bool {
-        guard KeyboardShortcutPolicy.isPlainEscape(keyCode: keyCode, modifierFlags: modifierFlags) else { return false }
-        onEscape?()
-        return true
-    }
-
-    static func handleEditLatestMessage(
-        keyCode: UInt16,
-        modifierFlags: NSEvent.ModifierFlags,
-        composerIsEmpty: Bool,
-        onEditLatestMessage: (() -> Bool)?
-    ) -> Bool {
-        guard ComposerLatestMessageEditingPolicy.shouldRequest(
-            keyCode: keyCode,
-            modifierFlags: modifierFlags,
-            composerIsEmpty: composerIsEmpty
-        )
-        else { return false }
-        _ = onEditLatestMessage?()
-        return true
-    }
-
-    nonisolated static func shouldOfferReturn(_ keyCode: UInt16) -> Bool {
-        keyCode == 36 || keyCode == 76
-    }
-
-    /// Matches Command-V as the Edit menu's Paste item does, using the
-    /// characters the layout produces with Command held. Layouts such as
-    /// Russian or "Dvorak – QWERTY ⌘" map Command combinations to Latin keys,
-    /// so `charactersIgnoringModifiers` would report "м" or "k" instead.
-    nonisolated static func shouldOfferPaste(
-        characters: String?,
-        modifierFlags: NSEvent.ModifierFlags
-    ) -> Bool {
-        let relevant = modifierFlags.intersection([.command, .option, .control, .shift])
-        // Caps Lock can uppercase the characters without Shift.
-        return characters?.lowercased() == "v" && relevant == .command
-    }
-
-    nonisolated static func handlePaste(
-        characters: String?,
-        modifierFlags: NSEvent.ModifierFlags,
-        onPasteAttachments: (() -> Bool)?
-    ) -> Bool {
-        guard shouldOfferPaste(
-            characters: characters,
-            modifierFlags: modifierFlags
-        ) else {
-            return false
-        }
-        return onPasteAttachments?() == true
-    }
-
-    private static func shouldRedirect(_ event: NSEvent) -> Bool {
-        shouldRedirect(characters: event.characters, modifierFlags: event.modifierFlags)
-    }
-}
-
-struct ComposerFocusSurface: NSViewRepresentable {
-    let focus: () -> Void
-
-    func makeNSView(context: Context) -> ComposerFocusSurfaceView {
-        ComposerFocusSurfaceView(focus: focus)
-    }
-
-    func updateNSView(_ view: ComposerFocusSurfaceView, context: Context) {
-        view.focus = focus
-    }
-}
-
-final class ComposerFocusSurfaceView: NSView {
-    var focus: () -> Void
-
-    init(focus: @escaping () -> Void) {
-        self.focus = focus
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func mouseDown(with _: NSEvent) {
-        focus()
     }
 }
 

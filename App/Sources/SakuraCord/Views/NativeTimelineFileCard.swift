@@ -14,7 +14,7 @@ struct NativeTimelineFileCard {
     static var minimumWidth: CGFloat { InterfaceScale.metric(220) }
     static var maximumWidth: CGFloat { InterfaceScale.metric(400) }
     static var nameFont: NSFont {
-        .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize, weight: .medium)
+        .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.defaultMessageTextSize, weight: .medium)
     }
     static var detailFont: NSFont { .interfaceMonospacedDigitSystemFont(ofSize: 12, weight: .regular) }
     static var linkFont: NSFont { .interfaceSystemFont(ofSize: 12, weight: .semibold) }

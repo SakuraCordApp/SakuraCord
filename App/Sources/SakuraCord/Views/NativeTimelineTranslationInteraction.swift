@@ -16,7 +16,7 @@ extension NativeTimelineCanvasView {
         if model?.translatedMessageText(message) != nil {
             actions.append(NSAccessibilityCustomAction(name: "Copy Translation") { [weak self] in
                 guard let text = self?.model?.translatedMessageText(message) else { return false }
-                Self.copyText(text)
+                Pasteboard.copy(text)
                 return true
             })
         }
@@ -37,12 +37,10 @@ extension NativeTimelineCanvasView {
             frame: accessibilityChildFrame(region.captionFrame, rowIndex: rowIndex),
             parent: parent
         ))
-        if let value = region.attributedText,
-           let framesetter = region.framesetter,
-           let frame = region.textFrame {
+        if let text = region.text, let frame = region.textFrame {
             appendTextAccessibility(to: &children, input: NativeTimelineTextAccessibilityInput(
-                value: value,
-                framesetter: framesetter,
+                value: text.value,
+                framesetter: text.framesetter,
                 drawingFrame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame),
                 accessibilityFrame: frame,
                 sourceMessage: message,

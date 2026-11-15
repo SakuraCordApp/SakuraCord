@@ -18,28 +18,13 @@ nonisolated enum NativeTimelineHoverHitTesting {
     ) -> Bool {
         pointerFrame(for: highlightFrame)?.contains(point) == true
     }
-}
 
-nonisolated enum TimelineContextMenuHitTesting {
     static func contains(
         _ point: CGPoint,
         rowOrigin: CGFloat,
         highlightFrame: CGRect?
     ) -> Bool {
-        NativeTimelineHoverHitTesting.contains(
-            CGPoint(x: point.x, y: point.y - rowOrigin),
-            in: highlightFrame
-        )
-    }
-}
-
-nonisolated enum NativeTimelineCompactTimestampHitTesting {
-    static func contains(
-        _ point: CGPoint,
-        rowOrigin: CGFloat,
-        highlightFrame: CGRect?
-    ) -> Bool {
-        NativeTimelineHoverHitTesting.contains(
+        contains(
             CGPoint(x: point.x, y: point.y - rowOrigin),
             in: highlightFrame
         )

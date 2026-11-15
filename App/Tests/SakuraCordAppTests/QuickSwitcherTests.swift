@@ -49,8 +49,8 @@ private struct QuickSwitcherFixture {
         [chatChannel.id.description, musicChannel.id.description,
          swiftGuild.id.description, teenGuild.id.description]
     }
-    var index: ForwardDestinationSearchPolicy.Index {
-        ForwardDestinationSearchPolicy.makeIndex(
+    var index: ConversationDestinationSearchPolicy.Index {
+        ConversationDestinationSearchPolicy.makeIndex(
             channels: channels,
             users: users,
             friendUserIDs: [henry.id, lena.id],
@@ -217,7 +217,7 @@ private struct QuickSwitcherFixture {
         categoryID: ChannelID(rawValue: 200), position: 1, categoryPosition: 1
     )
     let channels = [later, earlierSecond, earlierFirst]
-    let index = ForwardDestinationSearchPolicy.makeIndex(
+    let index = ConversationDestinationSearchPolicy.makeIndex(
         channels: channels,
         channelStoreOrder: channels.map(\.id),
         guilds: [guild.id: guild],
@@ -262,7 +262,7 @@ private struct QuickSwitcherFixture {
     let currentAlias = User(
         id: UserID(rawValue: 11), username: "other-user", displayName: "Other User"
     )
-    let forwardingIndex = ForwardDestinationSearchPolicy.makeIndex(
+    let forwardingIndex = ConversationDestinationSearchPolicy.makeIndex(
         channels: [],
         users: [remoteAliasOnly, currentAlias],
         userSearchAliasesByUserID: [remoteAliasOnly.id: ["developer"]],

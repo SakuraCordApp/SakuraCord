@@ -46,7 +46,7 @@ struct ForumBoardMetrics: Equatable {
             weight: .semibold
         )
         let excerptFont = NSFont.interfacePreferredFont(forTextStyle: .body)
-        let titleLineHeight = ceil(lineHeight(of: titleFont))
+        let titleLineHeight = ceil(titleFont.lineHeight)
         let cardPadding = InterfaceScale.metric(14)
         let statusRowSpacing = InterfaceScale.metric(9)
         let footerSpacing = InterfaceScale.metric(10)
@@ -67,7 +67,7 @@ struct ForumBoardMetrics: Equatable {
             maximumTitleLines: 2,
             titleSpacing: InterfaceScale.metric(5),
             excerptFont: excerptFont,
-            excerptLineHeight: ceil(lineHeight(of: excerptFont)),
+            excerptLineHeight: ceil(excerptFont.lineHeight),
             excerptLines: 2,
             footerSpacing: footerSpacing,
             footerHeight: MessageReactionMetrics.pillHeight,
@@ -83,10 +83,6 @@ struct ForumBoardMetrics: Equatable {
             galleryTitleHeight: titleLineHeight * 2,
             gallerySpacing: InterfaceScale.metric(12)
         )
-    }
-
-    static func lineHeight(of font: NSFont) -> CGFloat {
-        font.ascender - font.descender + font.leading
     }
 
     /// The text width a list card's title wraps within. It always leaves room
@@ -123,6 +119,11 @@ nonisolated enum ForumBoardItem: Hashable, Sendable {
         case olderPostsHeader
         case placeholder(Int)
         case paginationStatus
+
+        var postID: ChannelID? {
+            if case let .post(id) = self { return id }
+            return nil
+        }
     }
 
     case post(ForumCardGeometryInput)

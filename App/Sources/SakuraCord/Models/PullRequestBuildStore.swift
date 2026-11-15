@@ -71,14 +71,14 @@ nonisolated enum PullRequestBuildFixtures {
         ]
         return entries.enumerated().map { index, entry in
             let runID = 9000 - index
-            let id = "pr-\(entry.0)-run-\(runID)-attempt-1"
+            let id = PullRequestBuild.id(pullRequest: entry.0, runID: runID, runAttempt: 1)
             return PullRequestBuild(
                 id: id, pullRequest: entry.0, title: entry.1, commitSubject: entry.4,
                 headSHA: entry.2 + String(repeating: "0", count: 33),
                 builtSHA: String(repeating: "a", count: 40), runID: runID, runAttempt: 1,
                 configuration: "debug", architecture: "arm64",
                 createdAt: .now.addingTimeInterval(-Double(entry.3 + 1) * 3600),
-                version: "0.3.0", buildVersion: String(4_000_000_000_000_000_000 + runID * 1000 + 1),
+                version: "0.3.0", buildVersion: PullRequestBuild.buildVersion(runID: runID, runAttempt: 1),
                 appcastURL: PullRequestBuild.assetURL(id: id, name: "appcast.xml")!,
                 archiveURL: PullRequestBuild.assetURL(id: id, name: "SakuraCord.app.zip")!,
                 symbolsURL: PullRequestBuild.assetURL(id: id, name: "SakuraCord.dSYM.zip")!,

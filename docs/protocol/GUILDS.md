@@ -275,6 +275,12 @@ updates. Unavailable guilds retain state; ordinary deletion removes guild-scoped
 state. Sparse updates preserve absent values. Permission changes must affect
 retained conversations and searches without requiring a channel-list reload.
 
+The guild channel list is an allowlist of known channel types, as in Discord's
+channel store; types Discord adds later stay out until supported. Categories,
+threads, directories (14) and Server Hub spaces (20, `GUILD_SPACE`, one
+`server-hub` record per participating server) never become channel rows: Discord
+opens the space as its own guild surface, which SakuraCord does not provide.
+
 Use bounded member subscriptions/searches through the Gateway owner. Cache
 identities separately from message bodies; member-list presentation should neither
 scan history nor create a REST fan-out. Full profile reads are explicit/coalesced

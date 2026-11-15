@@ -49,8 +49,7 @@ extension DiscordRESTProvider {
         profileWidgetConnectionRevision = UUID()
         profileWidgetConnectionStates = [:]
         profileWidgetAuthorizationTokenIDs = [:]
-        for task in profileWidgetConnectionTasks.values { task.cancel() }
-        profileWidgetConnectionTasks = [:]
+        profileWidgetConnectionTasks.cancelAll()
     }
 
     func handleProfileWidgetAuthorizationEvent(name: String, body: JSONValue) {
@@ -66,8 +65,7 @@ extension DiscordRESTProvider {
         }
         // A response started before this event cannot overwrite the newer grant.
         profileWidgetConnectionRevision = UUID()
-        for task in profileWidgetConnectionTasks.values { task.cancel() }
-        profileWidgetConnectionTasks = [:]
+        profileWidgetConnectionTasks.cancelAll()
         if let userID = currentUser?.id { continuation?.yield(.profileWidgetConnectionsChanged(userID: userID, connections: profileWidgetConnectionStates)) }
     }
 }

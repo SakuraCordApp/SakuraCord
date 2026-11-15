@@ -350,7 +350,7 @@ enum AppPerformanceSignposts {
     }
 
     static func beginResourceWindow(named name: String) {
-        guard configuredResourceWindowName == name else { return }
+        guard PerformanceBenchmarkHarness.resourceWindowName == name else { return }
         resourceWindowStartNanoseconds = monotonicNanoseconds()
     }
 
@@ -358,7 +358,7 @@ enum AppPerformanceSignposts {
         named name: String,
         nominalDuration: TimeInterval? = nil
     ) {
-        guard configuredResourceWindowName == name,
+        guard PerformanceBenchmarkHarness.resourceWindowName == name,
               let startedAt = resourceWindowStartNanoseconds,
               let observedEnd = monotonicNanoseconds(),
               observedEnd >= startedAt
@@ -372,21 +372,13 @@ enum AppPerformanceSignposts {
         } else {
             endedAt = observedEnd
         }
-        guard let path = ProcessInfo.processInfo.environment[
-            "SAKURACORD_PERFORMANCE_WINDOW_PATH"
-        ] else { return }
+        guard let path = PerformanceBenchmarkHarness.resourceWindowPath else { return }
         let contents = "\(startedAt)\t\(endedAt)\n"
         try? contents.write(
             to: URL(fileURLWithPath: path),
             atomically: true,
             encoding: .utf8
         )
-    }
-
-    private static var configuredResourceWindowName: String? {
-        ProcessInfo.processInfo.environment[
-            "SAKURACORD_PERFORMANCE_WINDOW_NAME"
-        ]
     }
 
     private static func monotonicNanoseconds() -> UInt64? {
@@ -404,6 +396,21 @@ enum AppPerformanceSignposts {
         conversationNavigationInterval?.channelID
     }
 #endif
+
+    /// Brackets one benchmark run with its signpost interval and the
+    /// matching exact resource window, then emits its completion event.
+    static func measuredBenchmark(
+        _ name: StaticString,
+        completedEvent: StaticString,
+        operation: () async -> Void
+    ) async {
+        let interval = signposter.beginInterval(name)
+        beginResourceWindow(named: name.description)
+        await operation()
+        signposter.endInterval(name, interval)
+        endResourceWindow(named: name.description)
+        signposter.emitEvent(completedEvent)
+    }
 
     static func measure<T>(
         _ name: StaticString,

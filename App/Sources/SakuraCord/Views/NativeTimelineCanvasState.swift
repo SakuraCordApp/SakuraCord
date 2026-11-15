@@ -40,24 +40,11 @@ nonisolated struct NativeTimelineTextSelectionGesture {
 
 @MainActor
 final class NativeTimelinePointerState {
-    struct ClearedTargets {
-        let row: Int?
-        let compactTimestampRow: Int?
-        let mention: NativeTimelineMentionHover?
-        let textLink: NativeTimelineTextLinkHover?
-        let textSpoiler: NativeTimelineTextSpoilerHover?
-        let componentButton: NativeTimelineComponentButtonTarget?
-        let forwardedSourceMessageID: MessageID?
-        let threadMessageID: MessageID?
-        let footerAction: NativeTimelineFooterActionTarget?
-        let serverTagMessageID: MessageID?
-        let commandPillMessageID: MessageID?
-    }
-
     var hoveredRow: Int?
     var hoveredCompactTimestampRow: Int?
     var hoveredAuthorMessageID: MessageID?
     var hoveredServerTagMessageID: MessageID?
+    var hoveredSilentBadgeMessageID: MessageID?
     var hoveredCommandPillMessageID: MessageID?
     var hoveredMention: NativeTimelineMentionHover?
     var hoveredTextLink: NativeTimelineTextLinkHover?
@@ -92,26 +79,14 @@ final class NativeTimelinePointerState {
     var rowTrackingAreas: [NSTrackingArea] = []
     var reactionMouseMonitor: Any?
 
-    @discardableResult
-    func clearHoverAndPressTargets() -> ClearedTargets {
-        let cleared = ClearedTargets(
-            row: hoveredRow,
-            compactTimestampRow: hoveredCompactTimestampRow,
-            mention: hoveredMention,
-            textLink: hoveredTextLink,
-            textSpoiler: hoveredTextSpoiler,
-            componentButton:
-                visualPressedComponentButton ?? hoveredComponentButton,
-            forwardedSourceMessageID: hoveredForwardedSourceMessageID,
-            threadMessageID: hoveredThreadMessageID,
-            footerAction: hoveredFooterAction,
-            serverTagMessageID: hoveredServerTagMessageID,
-            commandPillMessageID: hoveredCommandPillMessageID
-        )
+    /// Returns the button whose press or hover it dropped.
+    func clearHoverAndPressTargets() -> NativeTimelineComponentButtonTarget? {
+        let componentButton = visualPressedComponentButton ?? hoveredComponentButton
         hoveredRow = nil
         hoveredCompactTimestampRow = nil
         hoveredAuthorMessageID = nil
         hoveredServerTagMessageID = nil
+        hoveredSilentBadgeMessageID = nil
         hoveredCommandPillMessageID = nil
         hoveredMention = nil
         hoveredTextLink = nil
@@ -135,7 +110,7 @@ final class NativeTimelinePointerState {
         componentButtonHoverAnimationTask = nil
         pressedActivationTarget = nil
         hoveredReaction = nil
-        return cleared
+        return componentButton
     }
 
     func removeTrackingAreas(from view: NSView) {
@@ -153,30 +128,6 @@ final class NativeTimelinePointerState {
         guard let reactionMouseMonitor else { return }
         NSEvent.removeMonitor(reactionMouseMonitor)
         self.reactionMouseMonitor = nil
-    }
-
-    var hasHoverOrPressTargets: Bool {
-        hoveredRow != nil
-            || hoveredCompactTimestampRow != nil
-            || hoveredAuthorMessageID != nil
-            || hoveredServerTagMessageID != nil
-            || hoveredCommandPillMessageID != nil
-            || hoveredMention != nil
-            || hoveredTextLink != nil
-            || hoveredTextSpoiler != nil
-            || hoveredCodeBlock != nil
-            || pressedCodeBlockCopyButton != nil
-            || hoveredComponentButton != nil
-            || hoveredForwardedSourceMessageID != nil
-            || hoveredThreadMessageID != nil
-            || hoveredFooterAction != nil
-            || pressedComponentButton != nil
-            || visualPressedComponentButton != nil
-            || componentButtonPressProgress != 0
-            || componentButtonPressAnimationTask != nil
-            || componentButtonPressAnimationDestination != nil
-            || pressedActivationTarget != nil
-            || hoveredReaction != nil
     }
 }
 
@@ -277,10 +228,6 @@ final class NativeTimelineAccessibilityProxyStore<
         }
     }
 
-    func orderedRows() -> [NativeTimelineAccessibilityProxyView] {
-        order.compactMap { rows[$0] }
-    }
-
     func remove(_ identifier: Identifier) {
         rows.removeValue(forKey: identifier)?.removeFromSuperview()
         items.removeValue(forKey: identifier)
@@ -295,130 +242,9 @@ final class NativeTimelineAccessibilityProxyStore<
         items.removeAll()
         order.removeAll()
     }
-
-    var isConsistent: Bool {
-        Set(rows.keys) == Set(items.keys)
-            && Set(order).isSubset(of: Set(rows.keys))
-            && order.count == Set(order).count
-    }
 }
 
 extension NativeTimelineCanvasView {
-    var hoveredRow: Int? {
-        get { pointer.hoveredRow }
-        set { pointer.hoveredRow = newValue }
-    }
-
-    var hoveredCompactTimestampRow: Int? {
-        get { pointer.hoveredCompactTimestampRow }
-        set { pointer.hoveredCompactTimestampRow = newValue }
-    }
-
-    var hoveredServerTagMessageID: MessageID? {
-        get { pointer.hoveredServerTagMessageID }
-        set { pointer.hoveredServerTagMessageID = newValue }
-    }
-
-    var hoveredCommandPillMessageID: MessageID? {
-        get { pointer.hoveredCommandPillMessageID }
-        set { pointer.hoveredCommandPillMessageID = newValue }
-    }
-
-    var hoveredAuthorMessageID: MessageID? {
-        get { pointer.hoveredAuthorMessageID }
-        set { pointer.hoveredAuthorMessageID = newValue }
-    }
-
-    var hoveredMention: NativeTimelineMentionHover? {
-        get { pointer.hoveredMention }
-        set { pointer.hoveredMention = newValue }
-    }
-
-    var hoveredTextLink: NativeTimelineTextLinkHover? {
-        get { pointer.hoveredTextLink }
-        set { pointer.hoveredTextLink = newValue }
-    }
-
-    var hoveredTextSpoiler: NativeTimelineTextSpoilerHover? {
-        get { pointer.hoveredTextSpoiler }
-        set { pointer.hoveredTextSpoiler = newValue }
-    }
-
-    var hoveredCodeBlock: NativeTimelineCodeBlockPointerTarget? {
-        get { pointer.hoveredCodeBlock }
-        set { pointer.hoveredCodeBlock = newValue }
-    }
-
-    var pressedCodeBlockCopyButton: NativeTimelineCodeBlockPointerTarget? {
-        get { pointer.pressedCodeBlockCopyButton }
-        set { pointer.pressedCodeBlockCopyButton = newValue }
-    }
-
-    var hoveredComponentButton: NativeTimelineComponentButtonTarget? {
-        get { pointer.hoveredComponentButton }
-        set { pointer.hoveredComponentButton = newValue }
-    }
-
-    var hoveredForwardedSourceMessageID: MessageID? {
-        get { pointer.hoveredForwardedSourceMessageID }
-        set { pointer.hoveredForwardedSourceMessageID = newValue }
-    }
-
-    var hoveredThreadMessageID: MessageID? {
-        get { pointer.hoveredThreadMessageID }
-        set { pointer.hoveredThreadMessageID = newValue }
-    }
-
-    var hoveredFooterAction: NativeTimelineFooterActionTarget? {
-        get { pointer.hoveredFooterAction }
-        set { pointer.hoveredFooterAction = newValue }
-    }
-
-    var pressedComponentButton: NativeTimelineComponentButtonTarget? {
-        get { pointer.pressedComponentButton }
-        set { pointer.pressedComponentButton = newValue }
-    }
-
-    var visualPressedComponentButton: NativeTimelineComponentButtonTarget? {
-        get { pointer.visualPressedComponentButton }
-        set { pointer.visualPressedComponentButton = newValue }
-    }
-
-    var componentButtonPressProgress: CGFloat {
-        get { pointer.componentButtonPressProgress }
-        set { pointer.componentButtonPressProgress = newValue }
-    }
-
-    var componentButtonPressAnimationTask: Task<Void, Never>? {
-        get { pointer.componentButtonPressAnimationTask }
-        set { pointer.componentButtonPressAnimationTask = newValue }
-    }
-
-    var componentButtonPressAnimationDestination: CGFloat? {
-        get { pointer.componentButtonPressAnimationDestination }
-        set { pointer.componentButtonPressAnimationDestination = newValue }
-    }
-
-    var componentButtonHoverFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
-        get { pointer.componentButtonHoverFades }
-        set { pointer.componentButtonHoverFades = newValue }
-    }
-
-    var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] {
-        get { pointer.textSpoilerHoverFades }
-        set { pointer.textSpoilerHoverFades = newValue }
-    }
-
-    var componentButtonHoverAnimationTask: Task<Void, Never>? {
-        get { pointer.componentButtonHoverAnimationTask }
-        set { pointer.componentButtonHoverAnimationTask = newValue }
-    }
-
-    var fileCardFinishFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
-        get { pointer.fileCardFinishFades }
-        set { pointer.fileCardFinishFades = newValue }
-    }
-
     var pressedActivationTarget: NativeTimelinePointerActivationTarget? {
         get { pointer.pressedActivationTarget }
         set {
@@ -439,74 +265,5 @@ extension NativeTimelineCanvasView {
                 if let index = rowIndex(for: target) { refreshReactionChipHover(at: index) }
             }
         }
-    }
-
-    var suppressesHoverPresentation: Bool {
-        get { pointer.suppressesHoverPresentation }
-        set { pointer.suppressesHoverPresentation = newValue }
-    }
-
-    var overlayBlocksInteractions: Bool {
-        get { pointer.overlayBlocksInteractions }
-        set { pointer.overlayBlocksInteractions = newValue }
-    }
-
-    var textSelection: NativeTimelineTextSelection? {
-        get { pointer.textSelection }
-        set { pointer.textSelection = newValue }
-    }
-
-    var textSelectionGesture: NativeTimelineTextSelectionGesture? {
-        get { pointer.textSelectionGesture }
-        set { pointer.textSelectionGesture = newValue }
-    }
-
-    var didDragTextSelection: Bool {
-        get { pointer.didDragTextSelection }
-        set { pointer.didDragTextSelection = newValue }
-    }
-
-    var tracking: NSTrackingArea? {
-        get { pointer.trackingArea }
-        set { pointer.trackingArea = newValue }
-    }
-
-    var rowTrackingAreas: [NSTrackingArea] {
-        get { pointer.rowTrackingAreas }
-        set { pointer.rowTrackingAreas = newValue }
-    }
-
-    var editingRowHost: NativeTimelineEditingHost? {
-        get { editing.host }
-        set { editing.host = newValue }
-    }
-
-    var editingTextView: ComposerNSTextView? {
-        get { editing.textView }
-        set { editing.textView = newValue }
-    }
-
-    var editingMessageID: MessageID? {
-        get { editing.messageID }
-        set { editing.messageID = newValue }
-    }
-
-    var editingRowIndexCache: Int? {
-        get { editing.rowIndex }
-        set { editing.rowIndex = newValue }
-    }
-
-    var editingRowHeight: CGFloat? {
-        editing.layout?.height
-    }
-
-    var editingOverlayLocalFrame: CGRect? {
-        get { editing.overlayLocalFrame }
-        set { editing.overlayLocalFrame = newValue }
-    }
-
-    var editingRowScrollSnapshot: NSImage? {
-        get { editing.scrollSnapshot }
-        set { editing.scrollSnapshot = newValue }
     }
 }

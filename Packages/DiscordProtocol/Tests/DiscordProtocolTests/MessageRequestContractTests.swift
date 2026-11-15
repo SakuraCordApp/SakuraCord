@@ -62,7 +62,7 @@ struct MessageRequestContractTests {
         #expect(channel?.lastMessageID == MessageID(rawValue: 900))
         #expect(channel?.messageRequest == nil)
         let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" }
+        #expect(requests.map { "\($0.method) \($0.url?.absoluteString ?? "")" }
             == ["PUT https://discord.com/api/v9/channels/501/recipients/@me"])
         #expect(fixture.bodies.withLock { $0 } == [.object(["consent_status": .number(2)])])
         await provider.disconnect()
@@ -86,7 +86,7 @@ struct MessageRequestContractTests {
         #expect(await provider.privateChannel(id: requestID) == nil)
         #expect(await provider.privateChannel(id: friendID) != nil)
         let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" }
+        #expect(requests.map { "\($0.method) \($0.url?.absoluteString ?? "")" }
             == ["DELETE https://discord.com/api/v9/channels/501/recipients/@me"])
         #expect(requests.first?.httpBody == nil && requests.first?.httpBodyStream == nil)
         await provider.disconnect()
@@ -143,24 +143,12 @@ private final class MessageRequestURLProtocol: URLProtocol, @unchecked Sendable 
             return
         }
         fixture.requests.withLock { $0.append(request) }
-        var body = request.httpBody ?? Data()
-        if body.isEmpty, let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 1024)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(contentsOf: buffer.prefix(count))
-            }
-        }
+        let body = request.bodyData ?? Data()
         if let value = try? JSONDecoder().decode(JSONValue.self, from: body) {
             fixture.bodies.withLock { $0.append(value) }
         }
         // The provider reads no body from either decision.
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 204,
-                                                            httpVersion: "HTTP/1.1", headerFields: nil)!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 204, body: Data(), headers: nil)
     }
 
     override func stopLoading() {}

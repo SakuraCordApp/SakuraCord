@@ -355,7 +355,7 @@ private struct ThemeHueHandle: View {
         guard step != lastHapticStep else { return }
         defer { lastHapticStep = step }
         guard lastHapticStep != nil else { return }
-        ThemeSliderHaptics.performStep()
+        StepHaptics.performStep()
     }
 }
 
@@ -460,7 +460,7 @@ private struct ThemeIntensityControl: View {
         guard step != lastHapticStep else { return }
         defer { lastHapticStep = step }
         guard lastHapticStep != nil else { return }
-        ThemeSliderHaptics.performStep()
+        StepHaptics.performStep()
     }
 }
 
@@ -628,17 +628,7 @@ private struct CircularThemeControl: View {
         guard step != lastHapticStep else { return }
         defer { lastHapticStep = step }
         guard lastHapticStep != nil else { return }
-        ThemeSliderHaptics.performStep()
-    }
-}
-
-@MainActor
-private enum ThemeSliderHaptics {
-    static func performStep() {
-        NSHapticFeedbackManager.defaultPerformer.perform(
-            .alignment,
-            performanceTime: .now
-        )
+        StepHaptics.performStep()
     }
 }
 

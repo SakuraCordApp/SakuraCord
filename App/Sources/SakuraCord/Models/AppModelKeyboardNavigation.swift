@@ -32,9 +32,7 @@ extension AppModel {
         let destinations: [ServerRailNavigationDestination] = [.directMessages]
             + orderedNavigationGuildIDs.map { .guild($0) }
         let current = selectedGuildID.map { ServerRailNavigationDestination.guild($0) } ?? .directMessages
-        let start = destinations.firstIndex(of: current) ?? 0
-        let destination = destinations[(start + direction + destinations.count) % destinations.count]
-        return destination == current ? nil : destination
+        return wrappingDestination(in: destinations, from: current, direction: direction)
     }
 
     func keyboardShortcutDirectMessageDestination(direction: Int) -> DirectMessageSidebarSelection? {
@@ -46,12 +44,26 @@ extension AppModel {
         let current: DirectMessageSidebarSelection = isMessageRequestsPresented ? .messageRequests
             : isFriendsPresented ? .friends
             : selectedChannelID.map { .channel($0) } ?? .friends
+        return wrappingDestination(in: destinations, from: current, direction: direction)
+    }
+
+    /// The destination `direction` steps from `current`, wrapping around;
+    /// nil when that is `current` itself.
+    private func wrappingDestination<Destination: Equatable>(
+        in destinations: [Destination],
+        from current: Destination,
+        direction: Int
+    ) -> Destination? {
         let start = destinations.firstIndex(of: current) ?? 0
         let destination = destinations[(start + direction + destinations.count) % destinations.count]
         return destination == current ? nil : destination
     }
 
     func navigateShortcutConversation(direction: Int, unreadOnly: Bool, mentionsOnly: Bool = false) {
+        if favorites.isPresented, !unreadOnly {
+            if let favorite = shortcutFavoriteDestination(direction: direction) { selectFavorite(favorite) }
+            return
+        }
         if selectedGuildID == nil, !unreadOnly {
             switch keyboardShortcutDirectMessageDestination(direction: direction) {
             case .friends: openFriends()
@@ -64,6 +76,16 @@ extension AppModel {
         if let channelID = keyboardShortcutConversationDestination(direction: direction, unreadOnly: unreadOnly, mentionsOnly: mentionsOnly) {
             navigate(to: channelID)
         }
+    }
+
+    /// Inside Favorites the previous and next conversation follow the
+    /// Favorites list, as a server's follow its channel list.
+    private func shortcutFavoriteDestination(direction: Int) -> FavoriteConversation? {
+        let favorites = favoriteConversations()
+        guard !favorites.isEmpty else { return nil }
+        let start = favorites.firstIndex { $0.id == presentedFavoriteChannelID } ?? (direction > 0 ? -1 : 0)
+        let destination = favorites[(start + direction + favorites.count) % favorites.count]
+        return destination.id == presentedFavoriteChannelID ? nil : destination
     }
 
     func keyboardShortcutConversationDestination(direction: Int, unreadOnly: Bool, mentionsOnly: Bool = false) -> ChannelID? {
@@ -98,6 +120,11 @@ extension AppModel {
     /// history pagination, and can block the main thread between scroll frames.
     func hasKeyboardShortcutConversationDestination(unreadOnly: Bool, mentionsOnly: Bool = false) -> Bool {
         let selectedID = shortcutThreadIsFullWidth ? openThread?.id : selectedChannelID
+        if favorites.isPresented, !unreadOnly {
+            // Stops at the first other favourite instead of resolving them all.
+            return (displayedFavorites?.sections.flatMap(\.entries) ?? []).lazy
+                .compactMap(favoriteConversation).contains { $0.id != presentedFavoriteChannelID }
+        }
         if !unreadOnly {
             if selectedGuildID == nil {
                 // Message Requests is a destination beside Friends whenever a request waits.
@@ -185,13 +212,13 @@ extension AppModel {
         }
         let channelsByGuild = Dictionary(grouping: snapshot?.channels ?? [], by: \.guildID)
         let scopes: [GuildID?] = [nil] + orderedNavigationGuildIDs.map { $0 }
-        return scopes.flatMap { guildID in
-            if guildID == nil {
+        return scopes.flatMap { scope in
+            guard let guildID = scope else {
                 return DirectMessageInboxPolicy.conversations(in: channelsByGuild[nil] ?? [], pinnedChannelIDs: pinnedDirectMessageIDs)
             }
-            return shortcutChannelsWithThreads(
-                groups: ChannelGroup.make(from: channelsByGuild[guildID] ?? []), guildID: guildID
-            )
+            // Walk each server in its sidebar order, pinned channels first.
+            let groups = pinnedChannelGroups(ChannelGroup.make(from: channelsByGuild[guildID] ?? []), guildID: guildID)
+            return shortcutChannelsWithThreads(groups: groups, guildID: guildID)
         }
     }
 }

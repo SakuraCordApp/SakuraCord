@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 import Testing
 import SakuraCordModels
 @testable import DiscordProtocol
@@ -7,7 +6,7 @@ import SakuraCordModels
 struct OnboardingContractTests {
     @Test(arguments: ["complete", "unconfirmed", "failed", "edit"])
     func `answer writes are bounded and initial completion requires confirmed membership`(scenario: String) async throws {
-        let capture = OnboardingRequestCapture()
+        let capture = RequestRecorder(OnboardingURLProtocol.captured, header: "X-Onboarding-Test")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OnboardingURLProtocol.self]
         configuration.httpAdditionalHeaders = ["X-Onboarding-Test": capture.id, "X-Onboarding-Scenario": scenario]
@@ -37,7 +36,7 @@ struct OnboardingContractTests {
         let write = try #require(writes.first)
         #expect(write.httpMethod == (initial ? "POST" : "PUT"))
         #expect(write.url?.path == "/api/v9/guilds/100/onboarding-responses")
-        let body = try #require(JSONSerialization.jsonObject(with: write.httpBody!) as? [String: Any])
+        let body = try #require(write.jsonBody)
         #expect(body["onboarding_responses"] as? [String] == ["11"])
         let seen = try #require(body["onboarding_prompts_seen"] as? [String: Double])
         #expect(Set(seen.keys) == (initial ? ["10"] : ["10", "20"]))
@@ -76,7 +75,7 @@ struct OnboardingContractTests {
 
     @Test(arguments: ["guide", "empty-progress", "wrong-user", "unconfirmed", "empty-confirmation"])
     func `guide reads are nonmutating and task completion requires matching confirmed state`(scenario: String) async throws {
-        let capture = OnboardingRequestCapture()
+        let capture = RequestRecorder(OnboardingURLProtocol.captured, header: "X-Onboarding-Test")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OnboardingURLProtocol.self]
         configuration.httpAdditionalHeaders = ["X-Onboarding-Test": capture.id, "X-Onboarding-Scenario": scenario]
@@ -108,7 +107,7 @@ struct OnboardingContractTests {
     }
 
     @Test func `channel selection batches preserve unrelated bits and require a confirmed guild`() async throws {
-        let capture = OnboardingRequestCapture()
+        let capture = RequestRecorder(OnboardingURLProtocol.captured, header: "X-Onboarding-Test")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OnboardingURLProtocol.self]
         configuration.httpAdditionalHeaders = ["X-Onboarding-Test": capture.id, "X-Onboarding-Scenario": "channels"]
@@ -149,30 +148,13 @@ private extension DiscordRESTProvider {
         cachedGuildNotificationSettings[.init(rawValue: 100)] = GuildNotificationSettings(
             guildID: .init(rawValue: 100), flags: GuildChannelSelection.enabledFlag | 4,
             channelOverrides: [.init(channelID: .init(rawValue: 200), flags: 4),
-                               .init(channelID: .init(rawValue: 201), flags: GuildChannelSelection.selectedFlag | GuildChannelSelection.favoriteFlag)]
+                               .init(channelID: .init(rawValue: 201), flags: GuildChannelSelection.selectedFlag | ChannelNotificationOverride.pinnedFlag)]
         )
     }
     func seedOnboardingContract() {
         currentUser = User(id: .init(rawValue: 1), username: "one", displayName: "One")
         cachedGuilds[.init(rawValue: 100)] = Guild(id: .init(rawValue: 100), name: "Test")
     }
-}
-
-private final class OnboardingRequestCapture {
-    let id = UUID().uuidString
-    private final class Storage: Sendable { let requests = Mutex<[URLRequest]>([]) }
-    private let storage = Storage()
-    private var observer: NSObjectProtocol?
-    init() {
-        let id = id, storage = storage
-        observer = NotificationCenter.default.addObserver(forName: OnboardingURLProtocol.captured, object: nil, queue: nil) { note in
-            guard let request = note.object as? URLRequest,
-                  request.value(forHTTPHeaderField: "X-Onboarding-Test") == id else { return }
-            storage.requests.withLock { $0.append(request) }
-        }
-    }
-    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
-    var requests: [URLRequest] { storage.requests.withLock { $0 } }
 }
 
 private final class OnboardingURLProtocol: URLProtocol, @unchecked Sendable {
@@ -186,21 +168,12 @@ private final class OnboardingURLProtocol: URLProtocol, @unchecked Sendable {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         var request = request
-        if request.httpBody == nil, let stream = request.httpBodyStream {
-            stream.open(); defer { stream.close() }
-            var data = Data(), buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                guard count > 0 else { break }
-                data.append(buffer, count: count)
-            }
-            request.httpBody = data
-        }
+        request.httpBody = request.bodyData
         NotificationCenter.default.post(name: Self.captured, object: request)
         let write = request.httpMethod != "GET"
         let failed = write && request.value(forHTTPHeaderField: "X-Onboarding-Scenario") == "failed"
         let scenario = request.value(forHTTPHeaderField: "X-Onboarding-Scenario")
-        let route = request.url?.path ?? ""
+        let route = request.path
         let guideBody = #"""
         {"guild_id":"100","enabled":true,"welcome_message":{"author_ids":["1"],"message":"Welcome"},
         "new_member_actions":[{"channel_id":"200","action_type":0,"title":"Read"}],
@@ -232,10 +205,7 @@ private final class OnboardingURLProtocol: URLProtocol, @unchecked Sendable {
         } else {
             body = Self.configuration
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: empty ? 204 : failed ? 500 : 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: empty ? 204 : failed ? 500 : 200, body: Data(body.utf8))
     }
     override func stopLoading() {}
 }

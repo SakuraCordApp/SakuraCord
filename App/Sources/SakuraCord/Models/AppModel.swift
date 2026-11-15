@@ -1,46 +1,10 @@
-import CoreAudio
-import CoreText
 import DiscordProtocol
 import Foundation
-import ImageIO
 import MediaPipeline
-import MessageRendering
 import OSLog
 import Observation
 import SakuraCordModels
 import SakuraCordPersistence
-import UniformTypeIdentifiers
-import UserNotifications
-
-enum ServerRailNavigationDestination: Equatable {
-    case directMessages
-    case guild(GuildID)
-}
-
-enum ApplicationStreamPlaybackState: Equatable {
-    case available
-    case connecting
-    case watching
-    case broadcasting
-    case reconnecting
-    case failed(String)
-}
-
-struct ApplicationStreamDemandIntent: Equatable {
-    var isEnabled: Bool
-    var pixelCount: Int?
-}
-
-nonisolated struct ConversationPermissionBasis: Sendable {
-    let guild: Guild
-    let resolvedBasePermissions: UInt64?
-    let overwritePrincipals: PermissionOverwritePrincipals
-    let hasCurrentRoleIdentity: Bool
-    let currentUserIsPending: Bool
-    var currentUserCommunicationDisabledUntil: Date?
-    var currentUserRequiresOnboarding: Bool = false
-    var currentUserOnboardingIsKnown: Bool = true
-}
 
 struct CommandMemberQuery: Hashable {
     var guildID: GuildID
@@ -50,13 +14,6 @@ struct CommandMemberQuery: Hashable {
 struct MentionMemberSearchCacheEntry {
     var members: [Member]
     var storedAt: Date
-}
-
-struct ComponentInteractionPresentationState {
-    var pendingControls: Set<ComponentControlKey> = []
-    var pendingMessages: Set<MessageID> = []
-    var errors: [ComponentControlKey: String] = [:]
-    var selections: [ComponentControlKey: [ComponentSelectOption]] = [:]
 }
 
 @Observable
@@ -75,13 +32,9 @@ final class AppModel {
         var visibleRange: ClosedRange<Int>
     }
 
-    struct ReactionReactorLoadKey: Hashable {
-        var channelID: ChannelID
-        var messageID: MessageID
-        var reactionID: String
-    }
-
-    struct ReactionMutationKey: Hashable {
+    /// One reaction on one message, keying both its reactor loads and its
+    /// add/remove mutations.
+    struct ReactionKey: Hashable {
         var channelID: ChannelID
         var messageID: MessageID
         var reactionID: String
@@ -103,10 +56,6 @@ final class AppModel {
     static let memberListLogger = Logger(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "MemberList"
-    )
-    static let forumPerformanceSignposter = OSSignposter(
-        subsystem: "dev.sakuracord.SakuraCord",
-        category: "PointsOfInterest"
     )
     nonisolated static let maximumConcurrentReactionReactorLoads = 4
 
@@ -136,6 +85,13 @@ final class AppModel {
         var guildID: GuildID
         var confirmedCollapsed: Bool
         var desiredCollapsed: Bool
+    }
+
+    struct ChannelPinMutationState {
+        var guildID: GuildID
+        var confirmedPinned: Bool
+        var desiredPinned: Bool
+        var editedAt: ContinuousClock.Instant
     }
 
     @ObservationIgnored var snapshotStorage: BootstrapSnapshot?
@@ -169,6 +125,7 @@ final class AppModel {
     @ObservationIgnored let onboarding = GuildOnboardingStore()
     @ObservationIgnored let serverInvites = ServerInvitePresentationStore()
     @ObservationIgnored let guildJoinRequests = GuildJoinRequestStore()
+    @ObservationIgnored let favorites = FavoritesStore()
     @ObservationIgnored let embeddedActivities = EmbeddedActivityStore()
     @ObservationIgnored let captcha = HumanCaptchaStore()
     @ObservationIgnored let friends = FriendsState()
@@ -178,7 +135,7 @@ final class AppModel {
     @ObservationIgnored let issueReports = IssueReportStore()
     @ObservationIgnored let nicknameEditor = NicknameEditorStore()
     @ObservationIgnored let groupDirectMessageEditor = GroupDirectMessageEditorStore()
-    @ObservationIgnored let groupDirectMessageLeave = GroupDirectMessageLeaveStore()
+    @ObservationIgnored let directMessageExit = DirectMessageExitStore()
     @ObservationIgnored let threadActions = ThreadActionStore()
     @ObservationIgnored let voiceSidebarPresentation =
         VoiceSidebarPresentationStore()
@@ -218,7 +175,7 @@ final class AppModel {
     var pinnedDirectMessageIDs: Set<ChannelID> {
         guard let settings = readState.settingsByGuild[nil]
         else { return [] }
-        return Set(settings.channelOverrides.filter(\.isPinnedDirectMessage).map(\.channelID))
+        return Set(settings.channelOverrides.filter(\.isPinned).map(\.channelID))
     }
     var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>] = [:]
     var hiddenChannelIDs: Set<ChannelID> = [] {
@@ -232,6 +189,7 @@ final class AppModel {
     let pinnedMessages = PinnedMessagesState()
     let threadBrowser = ThreadBrowserState()
     let inbox = InboxState()
+    let scheduledMessages = ScheduledMessagesState()
     @ObservationIgnored var lastDirectMessageSelection: DirectMessageSidebarSelection?
     @ObservationIgnored var lastOpenedChannelIDsByGuild: [GuildID: ChannelID] = [:]
     @ObservationIgnored var threadTimelinePosition = TimelineReadingPosition()
@@ -258,7 +216,6 @@ final class AppModel {
         NativeTimelineSpoilerRevealStore()
     @ObservationIgnored let timelineSendTransitionStore =
         NativeTimelineSendTransitionStore()
-    @ObservationIgnored var latestMessageRowsRevision: UInt64 = 0
     @ObservationIgnored var messageRowsNonAppendRevision: UInt64 = 0
     @ObservationIgnored var selectedMessageIDs: Set<MessageID> = []
     @ObservationIgnored var selectedMessageStoredIndexByID: [MessageID: Int] = [:]
@@ -274,7 +231,7 @@ final class AppModel {
     @ObservationIgnored var replyRevealRequestID: UInt64 = 0
     var conversationNewestRequest: ConversationNewestRequest?
     var presentedProfileGame: ProfileGame?
-    var mediaViewerPresentation: NativeTimelineMediaViewerPresentation?
+    var mediaViewerPresentation: MediaViewerPresentation?
     /// The item the open media viewer shows as the user pages through it.
     var mediaViewerSelectedItemID: String?
     var unreadDividerMessageIDs: [ChannelID: MessageID] = [:]
@@ -426,9 +383,9 @@ final class AppModel {
     var forwardingMessage: Message?
     var forwardingErrorMessage: String?
     var isForwardingMessages = false
-    var forwardDestinationHistory: [ChannelID] = []
+    var conversationDestinationHistory: [ChannelID] = []
     var quickSwitcherDraftChannelIDs: [ChannelID] = []
-    var forwardSearchSourceRevision: UInt64 = 0
+    var destinationSearchSourceRevision: UInt64 = 0
     var forumCreateGeneration: UInt64 = 0
     var forumSearchText = ""
     var forumSelectedTagIDs: Set<ForumTagID> = []
@@ -455,27 +412,21 @@ final class AppModel {
     @ObservationIgnored var openThreadStarterMessageID: MessageID?
     var threadMessages: [Message] = [] {
         didSet {
-            let oldRows = threadMessageRows
-            let newRows = MessageGrouping.updating(
-                existing: threadMessageRows,
-                oldMessages: oldValue,
-                newMessages: threadMessages
+            let record = threadMessageRowsUpdateJournal.publish(
+                MessageGrouping.updating(
+                    existing: threadMessageRows,
+                    oldMessages: oldValue,
+                    newMessages: threadMessages
+                ),
+                into: &threadMessageRows,
+                revision: &threadMessageRowsRevision
             )
-            let nextRevision = threadMessageRowsRevision &+ 1
-            let record = MessageRowsUpdateRecordBuilder.make(
-                oldRows: oldRows,
-                newRows: newRows,
-                revision: nextRevision
-            )
-            threadMessageRows = newRows
             threadMessageRowsUpdateHint = record.change.map {
                 MessageRowsUpdateHint(
-                    revision: nextRevision,
+                    revision: record.revision,
                     change: $0
                 )
             }
-            threadMessageRowsUpdateJournal.append(record)
-            threadMessageRowsRevision = nextRevision
             NotificationCenter.default.post(
                 name: .sakuracordMessageRowsDidChange,
                 object: self
@@ -538,15 +489,6 @@ final class AppModel {
     var selectedMember: Member? {
         inspectorProfilePresentation?.member
     }
-    var selectedProfile: UserProfile? {
-        inspectorProfilePresentation?.profile
-    }
-    var isLoadingProfile: Bool {
-        inspectorProfilePresentation?.isLoading ?? false
-    }
-    var profileErrorMessage: String? {
-        inspectorProfilePresentation?.errorMessage
-    }
     var activeVoiceChannel: Channel? {
         didSet {
             guard oldValue != activeVoiceChannel else { return }
@@ -607,7 +549,7 @@ final class AppModel {
     var discordSyncedGuildAndChannelUsageScores: [String: Int] = [:]
     var discordGuildAndChannelUsage: [String: DiscordFrecencyUsage] = [:]
     var discordGuildAndChannelUsageOrder: [String] = []
-    @ObservationIgnored var forwardDestinationHistoryDefaultsKey = "dev.sakuracord.forward-destination-history.signed-out"
+    @ObservationIgnored var destinationHistoryDefaultsKey = "dev.sakuracord.forward-destination-history.signed-out"
     @ObservationIgnored var pendingDiscordFrecencyUses: [(key: String, timestamp: UInt64)] = []
     @ObservationIgnored var persistedDiscordFrecencyUsageDeltas: [String: DiscordFrecencyUsage] = [:]
     @ObservationIgnored var discordFrecencyUsageDeltasDefaultsKey = "dev.sakuracord.forward-frecency-deltas.signed-out"
@@ -706,30 +648,12 @@ final class AppModel {
         else {
             return nil
         }
-        let member = onboardingMember(in: guildID)
-        let roles =
-            guildRolesByGuildID[guildID]
-            ?? (guildID == selectedGuildID ? guildRoles : [])
-        let storedRoleIDs = currentUserRoleIDsByGuild[guildID]
-        let roleIDs = storedRoleIDs ?? Set(member?.roles.map(\.id) ?? [])
         return ConversationPermissionBasis(
             guild: guild,
-            resolvedBasePermissions: guild.currentUserPermissions
-                ?? ConversationPermissionResolver.basePermissions(
-                    guildID: guildID,
-                    roleIDs: roleIDs,
-                    roles: roles
-                ),
-            overwritePrincipals: PermissionOverwritePrincipals(
-                guildID: guildID,
-                currentUserID: currentUserID,
-                roleIDs: roleIDs
-            ),
-            hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
-            currentUserIsPending: onboardingMember(in: guildID)?.isPending == true,
-            currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
-            currentUserRequiresOnboarding: requiresOnboarding(in: guildID),
-            currentUserOnboardingIsKnown: !guild.features.contains("GUILD_ONBOARDING") || onboardingMember(in: guildID)?.flags != nil
+            currentUserID: currentUserID,
+            member: onboardingMember(in: guildID),
+            roles: guildRolesByGuildID[guildID] ?? (guildID == selectedGuildID ? guildRoles : []),
+            storedRoleIDs: currentUserRoleIDsByGuild[guildID]
         )
     }
 
@@ -737,14 +661,7 @@ final class AppModel {
         guard let guildID = channel.guildID,
               let basis = conversationPermissionBasis(for: guildID)
         else { return channel.guildID == nil ? .max : nil }
-        return ConversationPermissionResolver.effectivePermissions(
-            guild: basis.guild,
-            channel: channel,
-            resolvedBasePermissions: basis.resolvedBasePermissions,
-            overwritePrincipals: basis.overwritePrincipals,
-            hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
-            communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
-        )
+        return basis.effectivePermissions(in: channel)
     }
 
     func conversationAccess(
@@ -758,10 +675,7 @@ final class AppModel {
     }
 
     func canJoinVoice(_ channel: Channel) -> Bool {
-        guard channel.kind == .voice
-                || channel.kind == .directMessage
-                || channel.kind == .groupDirectMessage
-        else { return false }
+        guard channel.kind == .voice || channel.kind.isDirectMessage else { return false }
         // A message request takes no calls until it is accepted; call setup
         // can hold an older channel value, so read the current set.
         return !awaitsMessageRequestDecision(in: channel.id) && conversationAccess(for: channel).isReadable
@@ -818,33 +732,27 @@ final class AppModel {
                     refreshUnreadPresentation()
                 }
             }
-            selectedChannel =
-                snapshot?.channels.first { $0.id == selectedChannelID }
-                    ?? visibleChannels.first { $0.id == selectedChannelID }
+            selectedChannel = selectedChannelID.flatMap(knownRootChannel)
             if let selectedChannel,
                let guildID = selectedChannel.guildID
             {
                 lastOpenedChannelIDsByGuild[guildID] = selectedChannel.id
             }
-            if let selectedChannel, selectedChannel.kind == .directMessage || selectedChannel.kind == .groupDirectMessage {
+            if let selectedChannel, selectedChannel.kind.isDirectMessage {
                 lastDirectMessageSelection = .channel(selectedChannel.id)
             }
             builtInExpressionPickerRequest = nil
             cancelApplicationCommandAutocompleteTask()
             cancelApplicationCommandMemberSearch()
-            commandComposer.resetForChannelChange()
-            clearComposerAttachments(for: .channel)
+            leaveComposerConversation(.channel, conversationID: oldValue, in: oldValue)
+            restoreComposerConversation(.channel, conversationID: selectedChannelID)
             translation.resetDraft(.channel)
             synchronizeSideConversationsWithSelection(keepsGuildPage: keepsGuildPage)
             if let selectedChannelID {
-                _ = readState.updatePresentation(
+                readState.beginPresentation(
                     channelID: selectedChannelID,
                     isPresented: isConversationPresented(selectedChannelID),
-                    initialHistoryLoaded: false,
-                    initialPositionEstablished: false,
-                    windowIsActive: mainWindowIsActive,
-                    hasReachedReadBoundary: false,
-                    blocksAutomaticAcknowledgement: false
+                    windowIsActive: mainWindowIsActive
                 )
             }
             if selectedChannel?.kind == .forum {
@@ -855,14 +763,7 @@ final class AppModel {
             } else {
                 beginSelectedChannelLoad()
             }
-            if let channel = selectedChannel,
-               channel.kind == .directMessage || channel.kind == .groupDirectMessage
-            {
-                let account = accountSession()
-                startAccountChildTask(account: account) { model, account in
-                    await model.observePrivateCall(in: channel, account: account)
-                }
-            }
+            observeSelectedPrivateCall()
         }
     }
 
@@ -911,11 +812,7 @@ final class AppModel {
     @ObservationIgnored var lastTypingRequestAt: [ChannelID: Date] = [:]
     @ObservationIgnored var localTypingGeneration: UInt64 = 0
     @ObservationIgnored let localTypingTiming: LocalTypingTiming
-    @ObservationIgnored var inspectorProfileTask:
-        Task<Void, Never>?
-    @ObservationIgnored var contextualProfileTask:
-        Task<Void, Never>?
-    @ObservationIgnored var expandedProfileTask: Task<Void, Never>?
+    @ObservationIgnored var profileTasks: [ProfilePresentationDestination: Task<Void, Never>] = [:]
     @ObservationIgnored var preparedProfileEditingSnapshot: ProfileEditingSnapshot?
     @ObservationIgnored var currentUserProfilePrefetch: CurrentUserProfilePrefetch?
     @ObservationIgnored var profileCache: [ProfileCacheKey: UserProfile] = [:]
@@ -950,16 +847,14 @@ final class AppModel {
     @ObservationIgnored var mentionMemberSearchCache:
         [CommandMemberQuery: MentionMemberSearchCacheEntry] = [:]
     @ObservationIgnored var roleMemberTask: Task<Void, Never>?
-    @ObservationIgnored var stickerLoadTasks: [GuildID: Task<Void, Never>] = [:]
-    @ObservationIgnored var stickerLoadGeneration: UInt64 = 0
     @ObservationIgnored var interactionDeadlineTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var pendingInteractions: [String: PendingInteractionRecord] = [:]
     @ObservationIgnored var pendingInteractionOrder: [String] = []
-    @ObservationIgnored var reactionReactorLoadTasks: [ReactionReactorLoadKey: Task<Void, Never>] = [:]
-    @ObservationIgnored var reactionReactorLoadIDs: [ReactionReactorLoadKey: UUID] = [:]
+    @ObservationIgnored var reactionReactorLoadTasks: [ReactionKey: Task<Void, Never>] = [:]
+    @ObservationIgnored var reactionReactorLoadIDs: [ReactionKey: UUID] = [:]
     @ObservationIgnored var loadedReactionReactorPreviews:
-        [ReactionReactorLoadKey: (count: Int, reactors: [ReactionReactor])] = [:]
-    @ObservationIgnored var failedReactionReactorLoads: [ReactionReactorLoadKey: Date] = [:]
+        [ReactionKey: (count: Int, reactors: [ReactionReactor])] = [:]
+    @ObservationIgnored var failedReactionReactorLoads: [ReactionKey: Date] = [:]
     @ObservationIgnored var liveScrollingConversationIDs:
         Set<ChannelID> = []
     @ObservationIgnored var timelineScrollActivityRevision: UInt64 = 0
@@ -967,9 +862,9 @@ final class AppModel {
         maximumConcurrentLoads: maximumConcurrentReactionReactorLoads
     )
     @ObservationIgnored var reactionMutations:
-        [ReactionMutationKey: ReactionMutationState] = [:]
+        [ReactionKey: ReactionMutationState] = [:]
     @ObservationIgnored var reactionMutationTasks:
-        [ReactionMutationKey: Task<Void, Never>] = [:]
+        [ReactionKey: Task<Void, Never>] = [:]
     @ObservationIgnored let reactionMutationTiming: ReactionMutationTiming
     @ObservationIgnored var pollVoteMutations: [MessageID: PollVoteMutationState] = [:]
     @ObservationIgnored var pollResultRefreshJournals: [MessageID: ConversationRefreshJournal] = [:]
@@ -1048,17 +943,16 @@ final class AppModel {
     @ObservationIgnored var allServersReadTask: Task<Void, Never>?
     @ObservationIgnored var guildAcknowledgementTasks:
         [GuildID: Task<Void, Never>] = [:]
-    @ObservationIgnored var guildNotificationMutationTasks: [GuildID: Task<Void, Never>] = [:]
+    @ObservationIgnored var notificationMutationTasks: [NotificationMutationSlot: Task<Void, Never>] = [:]
     @ObservationIgnored var guildNotificationSettingsRevisions: [GuildID: UInt64] = [:]
-    @ObservationIgnored var channelNotificationMutationTasks: [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var categoryCollapseMutationTasks: [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var categoryCollapseMutationStates:
         [ChannelID: CategoryCollapseMutationState] = [:]
     var optimisticCategoryCollapsedByID: [ChannelID: Bool] = [:]
+    @ObservationIgnored var channelPinMutationTasks: [ChannelID: Task<Void, Never>] = [:]
+    @ObservationIgnored var channelPinMutationStates: [ChannelID: ChannelPinMutationState] = [:]
+    var optimisticChannelPinnedByID: [ChannelID: Bool] = [:]
     @ObservationIgnored var channelNotificationMutationGeneration = 0
-    @ObservationIgnored var forumNotificationMutationTasks:
-        [ChannelID: Task<Void, Never>] = [:]
-    @ObservationIgnored var forumNotificationMutationGeneration = 0
     @ObservationIgnored var mainWindowIsActive = false
     @ObservationIgnored var applicationIsActive = false
     /// The Dock bounce requested for a call ringing in the background.
@@ -1125,7 +1019,9 @@ final class AppModel {
         composer = MessageComposerState(
             preferences: composerPreferences ?? (launchMode == .normal ? .shared : nil)
         )
-        appearanceSettings = AppearanceSettingsStore.shared.load()
+        let appearanceSettings = AppearanceSettingsStore.shared.load()
+        InterfaceTypographyMetrics.updateMessageTextSize(appearanceSettings.messageTextSize)
+        self.appearanceSettings = appearanceSettings
         interfaceSettings = InterfaceSettingsStore.shared.load()
         generalInputSettings = GeneralInputSettingsStore.shared.load()
         featuresSettings = FeaturesSettingsStore.shared.load()
@@ -1164,9 +1060,7 @@ final class AppModel {
         self.privacySafetySettingsStore = resolvedPrivacyStore
         runsChatPerformanceBenchmark =
             runsChatPerformanceBenchmarkOverride
-                ?? AppLaunchConfiguration(
-                    arguments: ProcessInfo.processInfo.arguments
-                ).runsAnyReadOnlyPerformanceBenchmark
+                ?? AppLaunchConfiguration.current.runsAnyReadOnlyPerformanceBenchmark
         discordNetworkDisabled =
             discordNetworkDisabledOverride
                 ?? (launchMode == .offlineTesting
@@ -1219,6 +1113,10 @@ final class AppModel {
             }
         }
         configureAttachmentMedia()
+    }
+
+    func dismissError() {
+        errorMessage = nil
     }
 }
 
@@ -1286,7 +1184,7 @@ extension AppModel {
         activeJoinedThreads = snapshot?.activeJoinedThreads ?? []
         knownThreadIDs = Set(threads.map(\.id)).union(activeJoinedThreads.map(\.id))
         guildIDsWithResourceChannels = Set((snapshot?.channels ?? []).compactMap { channel in
-            channel.flags & (1 << 7) != 0 ? channel.guildID : nil
+            channel.isGuildResource ? channel.guildID : nil
         })
         refreshServerRailDirectMessages(replacing: previous)
         refreshSelectedGuildPresentation()
@@ -1305,6 +1203,49 @@ extension AppModel {
         quickSwitcherGuildMemberUserIDs = snapshotStorage?.quickSwitcherGuildMemberUserIDs ?? [:]
         quickSwitcherJoinedGuildMemberUserIDs = snapshotStorage?.quickSwitcherJoinedGuildMemberUserIDs ?? [:]
         quickSwitcherGuildMemberAliases = snapshotStorage?.quickSwitcherGuildMemberAliases ?? [:]
+    }
+
+    func consumeSearchPeopleEvent(_ event: ClientEvent) -> Bool {
+        switch event {
+        case .privateMembersChanged(let value):
+            if selectedGuildID == nil { members = value }
+        case .knownUsersChanged(let users):
+            updateSearchSnapshot { $0.knownUsers = users }
+        case .quickSwitcherUserIDsChanged(let userIDs):
+            updateSearchSnapshot { $0.quickSwitcherUserIDs = userIDs }
+        case .messageSearchUsersChanged(let users):
+            // Only message search reads this cache, so the destination search
+            // index revision stays put.
+            guard snapshotStorage != nil else { break }
+            snapshotStorage?.messageSearchUsers = users
+            refreshSearchSnapshotPresentation()
+        case .userSearchAliasesChanged(let aliases):
+            updateSearchSnapshot { $0.userSearchAliasesByUserID = aliases }
+        case .quickSwitcherGuildMemberUserIDsChanged(let userIDsByGuildID):
+            updateSearchSnapshot { $0.quickSwitcherGuildMemberUserIDs = userIDsByGuildID }
+        case .quickSwitcherJoinedMemberIDsChanged(let userIDsByGuildID):
+            updateSearchSnapshot { $0.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID }
+        case .quickSwitcherGuildMemberAliasesChanged(let aliasesByGuildID):
+            updateSearchSnapshot { $0.quickSwitcherGuildMemberAliases = aliasesByGuildID }
+        case .relationshipsChanged(let relationships):
+            applyRelationships(relationships)
+        case let .relationshipPresencesChanged(presences, isComplete):
+            applyRelationshipPresences(presences, isComplete: isComplete)
+        default:
+            return false
+        }
+        return true
+    }
+
+    // Search caches invalidate search consumers without rebuilding workspace chrome.
+    private func updateSearchSnapshot(
+        _ update: (inout BootstrapSnapshot) -> Void
+    ) {
+        guard var value = snapshotStorage else { return }
+        update(&value)
+        snapshotStorage = value
+        refreshSearchSnapshotPresentation()
+        destinationSearchSourceRevision &+= 1
     }
 
     private func refreshSelectedGuildPresentation() {

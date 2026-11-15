@@ -38,10 +38,7 @@ extension AppModel {
             let previousImageURLsByID = self.customEmojiURLsByID
             let observesAppScrollWorkGate = self.launchMode == .normal
             let worker = Task.detached(priority: .utility) {
-                let signposter = OSSignposter(
-                    subsystem: "dev.sakuracord.SakuraCord",
-                    category: "PointsOfInterest"
-                )
+                let signposter = AppPerformanceSignposts.signposter
                 let interval = signposter.beginInterval(
                     "CustomEmojiCatalogPreparation"
                 )

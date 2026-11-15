@@ -7,9 +7,9 @@ import UniformTypeIdentifiers
 /// 24-point corners stay concentric with it, as the 40-point footer capsules
 /// do with its 12-point inset.
 struct AttachmentEditor: View {
-    let attachment: ForumPostAttachment
+    let attachment: StagedAttachment
     let cancel: () -> Void
-    let save: (ForumPostAttachment) -> Void
+    let save: (StagedAttachment) -> Void
     @State private var filename: String
     @State private var description: String
     @State private var isSpoiler: Bool
@@ -21,7 +21,7 @@ struct AttachmentEditor: View {
     private enum Field { case filename, description }
     private static let descriptionLimit = 1_024
 
-    init(attachment: ForumPostAttachment, cancel: @escaping () -> Void, save: @escaping (ForumPostAttachment) -> Void) {
+    init(attachment: StagedAttachment, cancel: @escaping () -> Void, save: @escaping (StagedAttachment) -> Void) {
         self.attachment = attachment
         self.cancel = cancel
         self.save = save
@@ -87,6 +87,7 @@ struct AttachmentEditor: View {
         Button { isSpoiler.toggle() } label: {
             Label("Spoiler", systemImage: isSpoiler ? "eye.slash.fill" : "eye.slash")
                 .font(.interface(.callout).weight(.semibold))
+                .foregroundStyle(isSpoiler ? SakuraCordAccentColor.labelOnFill : .primary)
                 .padding(.horizontal, InterfaceScale.metric(12))
                 .frame(height: InterfaceScale.metric(32))
                 .contentShape(Capsule())
@@ -103,7 +104,6 @@ struct AttachmentEditor: View {
             rowIcon("doc")
             TextField("Filename", text: $filename)
                 .textFieldStyle(.plain)
-                .tint(SakuraCordAccentColor.color)
                 .focused($focus, equals: .filename)
                 .onSubmit(commit)
         }
@@ -116,7 +116,6 @@ struct AttachmentEditor: View {
             TextField("Description (alt text)", text: $description, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(3 ... 6)
-                .tint(SakuraCordAccentColor.color)
                 .focused($focus, equals: .description)
                 // Centres the first line on the 32-point icon.
                 .padding(.vertical, InterfaceScale.metric(7))

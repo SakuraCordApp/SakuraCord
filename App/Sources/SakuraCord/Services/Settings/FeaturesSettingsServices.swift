@@ -1,18 +1,35 @@
 import Foundation
 
 nonisolated struct FeaturesSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self()
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
-    var readAllButton = false
-    var showHiddenChannels = true
-    var channelManagement = true
-    var fakeNitroEmojis = true
-    var fakeNitroStickers = true
-    var fakeNitroSoundboard = true
-    var fakeNitroStreamQuality = true
-    var voiceMessageRecording = true
-    var messageHoverActions = true
-    var scrollToBottomButton = true
+    var readAllButton: Bool
+    var showHiddenChannels: Bool
+    var channelManagement: Bool
+    var fakeNitroEmojis: Bool
+    var fakeNitroStickers: Bool
+    var fakeNitroSoundboard: Bool
+    var fakeNitroStreamQuality: Bool
+    var unlimitedFavorites: Bool
+    var voiceMessageRecording: Bool
+    var messageHoverActions: Bool
+    var scrollToBottomButton: Bool
+}
+
+nonisolated extension FeaturesSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        readAllButton = value(.readAllButton).boolValue
+        channelManagement = value(.channelManagement).boolValue
+        showHiddenChannels = value(.showHiddenChannels).boolValue
+        fakeNitroEmojis = value(.fakeNitroEmojis).boolValue
+        fakeNitroStickers = value(.fakeNitroStickers).boolValue
+        fakeNitroSoundboard = value(.fakeNitroSoundboard).boolValue
+        fakeNitroStreamQuality = value(.fakeNitroStreamQuality).boolValue
+        unlimitedFavorites = value(.unlimitedFavorites).boolValue
+        voiceMessageRecording = value(.voiceMessageRecording).boolValue
+        messageHoverActions = value(.messageHoverActions).boolValue
+        scrollToBottomButton = value(.scrollToBottomButton).boolValue
+    }
 }
 
 @MainActor
@@ -25,18 +42,7 @@ final class FeaturesSettingsStore {
     }
 
     func load() -> FeaturesSettingsSnapshot {
-        var value = FeaturesSettingsSnapshot.defaults
-        if case let .bool(saved) = preferences.value(for: .readAllButton) { value.readAllButton = saved }
-        if case let .bool(saved) = preferences.value(for: .channelManagement) { value.channelManagement = saved }
-        if case let .bool(saved) = preferences.value(for: .showHiddenChannels) { value.showHiddenChannels = saved }
-        if case let .bool(saved) = preferences.value(for: .fakeNitroEmojis) { value.fakeNitroEmojis = saved }
-        if case let .bool(saved) = preferences.value(for: .fakeNitroStickers) { value.fakeNitroStickers = saved }
-        if case let .bool(saved) = preferences.value(for: .fakeNitroSoundboard) { value.fakeNitroSoundboard = saved }
-        if case let .bool(saved) = preferences.value(for: .fakeNitroStreamQuality) { value.fakeNitroStreamQuality = saved }
-        if case let .bool(saved) = preferences.value(for: .voiceMessageRecording) { value.voiceMessageRecording = saved }
-        if case let .bool(saved) = preferences.value(for: .messageHoverActions) { value.messageHoverActions = saved }
-        if case let .bool(saved) = preferences.value(for: .scrollToBottomButton) { value.scrollToBottomButton = saved }
-        return value
+        FeaturesSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: FeaturesSettingsSnapshot) {
@@ -47,6 +53,7 @@ final class FeaturesSettingsStore {
         preferences.set(.bool(value.fakeNitroStickers), for: .fakeNitroStickers)
         preferences.set(.bool(value.fakeNitroSoundboard), for: .fakeNitroSoundboard)
         preferences.set(.bool(value.fakeNitroStreamQuality), for: .fakeNitroStreamQuality)
+        preferences.set(.bool(value.unlimitedFavorites), for: .unlimitedFavorites)
         preferences.set(.bool(value.voiceMessageRecording), for: .voiceMessageRecording)
         preferences.set(.bool(value.messageHoverActions), for: .messageHoverActions)
         preferences.set(.bool(value.scrollToBottomButton), for: .scrollToBottomButton)
@@ -65,8 +72,14 @@ extension AppModel {
             channelVoiceMessageComposer.discard(playback: voiceMessagePlayback)
             threadVoiceMessageComposer.discard(playback: voiceMessagePlayback)
         }
-        featuresSettings = value
+        let showsLocalFavorites = value.unlimitedFavorites && !featuresSettings.unlimitedFavorites
+        // Hiding local favourites removes the open one like any removal.
+        changeFavorites { featuresSettings = value }
         FeaturesSettingsStore.shared.save(value)
+        if showsLocalFavorites {
+            dropSyncedLocalFavorites()
+            if favorites.isPresented { loadFavoriteThreads() }
+        }
         refreshVisibleChannelGroups()
         reconcileSelectedOnboardingChannel()
         if allowedScreenShareSettings(screenShareSettings) != screenShareSettings {

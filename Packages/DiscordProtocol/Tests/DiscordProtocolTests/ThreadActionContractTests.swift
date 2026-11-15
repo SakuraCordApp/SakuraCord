@@ -31,7 +31,7 @@ struct ThreadActionContractTests {
         #expect(renamed.thread.name == "New name" && !renamed.thread.isArchived)
         #expect(renamed.thread.notificationSettings == nil)
         #expect(await provider.cachedForumPostForTesting(threadID: archived.id)?.thread.notificationSettings == nil)
-        #expect(fixture.requests.withLock { $0.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" } }
+        #expect(fixture.requests.withLock { $0.map { "\($0.method) \($0.path)" } }
             == ["PATCH /api/v9/channels/42", "PATCH /api/v9/channels/42"])
         #expect(fixture.bodies.withLock { $0 } == [
             .object(["archived": .bool(false)]), .object(["name": .string("New name")]),
@@ -89,7 +89,7 @@ struct ThreadActionContractTests {
 
         #expect(await provider.activeJoinedThreadsForTesting().map(\.id) == [threadID])
         let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" } == [
+        #expect(requests.map { "\($0.method) \($0.url?.absoluteString ?? "")" } == [
             "POST https://discord.com/api/v9/channels/42/thread-members/@me?location=Sidebar%20Overflow",
             "DELETE https://discord.com/api/v9/channels/42/thread-members/@me?location=Toolbar%20Overflow",
             "POST https://discord.com/api/v9/channels/42/thread-members/@me?location=Context%20Menu",
@@ -330,17 +330,7 @@ private final class ThreadActionURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         fixture.requests.withLock { $0.append(request) }
-        var body = request.httpBody ?? Data()
-        if body.isEmpty, let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 1_024)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(contentsOf: buffer.prefix(count))
-            }
-        }
+        let body = request.bodyData ?? Data()
         if !body.isEmpty, let value = try? JSONDecoder().decode(JSONValue.self, from: body) {
             fixture.bodies.withLock { $0.append(value) }
         }
@@ -356,19 +346,6 @@ private final class ThreadActionURLProtocol: URLProtocol, @unchecked Sendable {
         } else {
             respond(status: status, body: next.body)
         }
-    }
-
-    private func respond(status: Int, body: String) {
-        client?.urlProtocol(
-            self,
-            didReceive: HTTPURLResponse(
-                url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!,
-            cacheStoragePolicy: .notAllowed
-        )
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}

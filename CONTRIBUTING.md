@@ -40,18 +40,11 @@ covers signing, credentials, authenticated sessions, and focused offline scenes.
 
 ## Make a focused change
 
-Find the model, provider, and presentation owner in the
-[architecture guide](docs/ARCHITECTURE.md#find-the-owner) before implementing a
-feature. Keep responsibilities with their existing owners, follow project
-conventions, and prefer the smallest maintainable solution. Avoid unrelated
-refactors, unnecessary dependencies, and compatibility paths for older macOS
-versions. Prefer suitable current Apple APIs over app-owned replacements.
-
-Read the [protocol baseline](docs/PROTOCOL_BASELINE.md) before changing Discord
-requests, Gateway handling, authentication, uploads, or other communication.
-Use offline fixtures where possible and follow its verification boundary for
-live sessions. If you use a coding agent, have it follow [AGENTS.md](AGENTS.md),
-including the limits on account-mutating verification.
+Follow [AGENTS.md](AGENTS.md) for ownership, platform posture, lean changes,
+and the limits on account-mutating verification; it applies to people and
+coding agents alike. Read the [protocol baseline](docs/PROTOCOL_BASELINE.md)
+before changing Discord requests, Gateway handling, authentication, uploads, or
+other communication.
 
 Never commit credentials, cookie exports, authorization headers, account
 databases, personal Discord data, or unsanitized traffic captures.
@@ -62,21 +55,10 @@ instead of duplicating their instructions.
 
 ## Verify your work
 
-Use the [testing guide](docs/TESTING.md) to choose relevant existing checks and
-the [development commands](docs/DEVELOPMENT.md#build-and-verification) to run
-them. Run `git diff --check` and the required
-`./script/code_quality.sh check` before considering a change ready to push.
-Broad changes also need the full `./script/ci.sh` validation.
-
-Most changes need no new test. When you add one, name the production failure
-it catches in the pull request, and follow
-[when to commit tests](docs/TESTING.md#when-to-commit-tests). Purely visual
-changes should be checked in the rendered app without adding committed UI
-tests. Remove temporary UI tests before committing.
-
-For documentation-only changes, check claims, local links and anchors, command
-syntax, and whitespace; an app rebuild is not needed solely for prose. Do not
-run build or test jobs concurrently in the same checkout.
+Follow the [testing guide](docs/TESTING.md) to choose checks and decide whether
+a change needs a committed test, and the
+[development commands](docs/DEVELOPMENT.md#build-and-verification) to run them.
+`./script/code_quality.sh check` must pass before a change is ready to push.
 
 ## Open a pull request
 
@@ -93,21 +75,28 @@ explain the problem and resulting behaviour. Include:
 Keep the diff focused and address review feedback on the same pull request.
 Draft pull requests are useful for work that still needs feedback or validation.
 
-### Required Greptile review before merging
+### Required automated review before merging
 
-Every pull request must meet both requirements before it can be merged:
+Every pull request needs an automated review of its latest revision from
+Greptile or CodeRabbit before it can be merged:
 
-- Greptile has reviewed the latest revision and given it a **5/5 confidence score**.
-- **No valid Greptile findings remain unresolved**, including findings from
-  earlier review rounds. A 5/5 score alone does not satisfy this requirement.
+- **Greptile:** it has reviewed the latest revision and given it a **5/5
+  confidence score**.
+- **CodeRabbit:** it has reviewed the latest revision. CodeRabbit pauses
+  automatic reviews after a few commits; comment `@coderabbitai review` to have
+  it review the latest one.
 
-Fix each valid finding, push the changes, and wait for Greptile's automatic
-review. If a finding is a false positive, explain why in its review thread with
-supporting evidence; a maintainer must agree before it can be treated as resolved.
-Dismissing a comment or resolving its thread without addressing the finding is
-insufficient.
+Either way, **no valid findings from either reviewer may remain unresolved**,
+including findings from earlier review rounds. A 5/5 score alone does not
+satisfy this requirement.
 
-A missing, pending, or outdated review does not satisfy the requirement. False
-positives may be excluded from the findings requirement, but do not waive the
-5/5 score. These requirements apply alongside the usual checks and maintainer
-review.
+Fix each valid finding, push the changes, and wait for or request a new review.
+If a finding is a false positive, explain why in its review thread with
+supporting evidence; a maintainer must agree before it can be treated as
+resolved. Dismissing a comment or resolving its thread without addressing the
+finding is insufficient.
+
+A missing, pending, paused, or outdated review does not satisfy the
+requirement. False positives may be excluded from the findings requirement, but
+do not waive Greptile's 5/5 score when Greptile is the reviewer. These
+requirements apply alongside the usual checks and maintainer review.

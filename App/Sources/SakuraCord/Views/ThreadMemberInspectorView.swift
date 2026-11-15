@@ -48,7 +48,6 @@ struct ThreadMemberInspectorView: View {
 
     private func load() async {
         errorMessage = nil
-        guard !thread.isArchived, model.openThreadAccess.isReadable else { return }
         do {
             try await model.loadThreadMembers(thread)
         } catch is CancellationError {

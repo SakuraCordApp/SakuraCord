@@ -2,42 +2,6 @@ import MessageRendering
 import SakuraCordModels
 import SwiftUI
 
-/// Resolves mention metadata for a message through the app model.
-struct MessageMentionResolver {
-    let model: AppModel
-    let message: Message?
-
-    init(model: AppModel, message: Message? = nil) {
-        self.model = model
-        self.message = message
-    }
-
-    func user(_ userID: UserID) -> User? {
-        model.mentionUser(userID, in: message)
-    }
-
-    func presentation(_ mention: RenderedMention) -> MentionPresentation {
-        model.mentionPresentation(mention, in: message)
-    }
-
-    func avatarURL(_ mention: RenderedMention) -> URL? {
-        model.mentionAvatarURL(mention, in: message)
-    }
-
-    func label(_ mention: RenderedMention) -> String {
-        presentation(mention).label
-    }
-
-    /// Every mention a draft holds, keyed by token, as an editor shows them.
-    func presentations(in text: String) -> [String: MentionPresentation] {
-        MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
-            if case let .mention(mention) = segment {
-                values[mention.rawToken] = presentation(mention)
-            }
-        }
-    }
-}
-
 struct CustomEmojiRichText: View {
     var model: AppModel?
     /// Resolves clicked user mentions the source message knows about.
@@ -119,11 +83,7 @@ struct CustomEmojiRichText: View {
     }
 
     private var mentionPresentations: [String: MentionPresentation] {
-        document.segments.reduce(into: [:]) { values, segment in
-            if case let .mention(mention) = segment {
-                values[mention.rawToken] = mentionPresentation(mention)
-            }
-        }
+        MessageMentionResolver.presentations(in: document, presenting: mentionPresentation)
     }
 
     private func handleMentionClick(
@@ -133,15 +93,10 @@ struct CustomEmojiRichText: View {
         onMentionClick(mention, anchor)
         guard let model else { return }
         switch mention.target {
-        case .unresolved:
-            return
-        case let .game(id):
-            model.presentedProfileGame = model.gameMentions.gamesByID[id]
-        case let .command(id, name):
-            guard let channelID = message?.channelID ?? model.selectedChannelID else { return }
-            model.startCommandMention(id: id, name: name, in: channelID)
+        case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message:
+            model.openMention(mention.target, fromMessageIn: message?.channelID)
         case let .user(id):
-            let user = model.mentionUser(id, in: message)
+            let user = MessageMentionResolver(model: model, message: message).user(id)
                 ?? model.membersByID[id]?.user
                 ?? model.knownMentionMembers[id]?.user
             guard let user else { return }
@@ -158,14 +113,6 @@ struct CustomEmojiRichText: View {
                 anchor: anchor,
                 profileRequestID: nil
             )
-        case let .guildNavigation(guildID, destination):
-            model.openGuildNavigationDestination(destination, in: guildID)
-        case let .channel(id):
-            model.navigate(to: id)
-        case let .linkedChannel(guildID, channelID):
-            model.navigate(to: guildID, linkedChannelID: channelID)
-        case let .message(guildID, channelID, messageID):
-            model.navigate(to: guildID, channelID: channelID, messageID: messageID)
         }
     }
 }
@@ -333,8 +280,7 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
     let url: URL
 
     var isEmoji: Bool {
-        url.host?.lowercased() == "cdn.discordapp.com"
-            && url.path.hasPrefix("/emojis/")
+        Self.isCanonicalEmojiURL(url)
     }
 
     var linkedEmoji: EmojiReference? {
@@ -347,10 +293,11 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
               })
         else { return nil }
 
-        let queryName = URLComponents(
+        let queryItems = URLComponents(
             url: url,
             resolvingAgainstBaseURL: false
-        )?.queryItems?.first(where: { $0.name == "name" })?.value
+        )?.queryItems ?? []
+        let queryName = queryItems.first(where: { $0.name == "name" })?.value
         let rawName = (queryName ?? label)
             .trimmingCharacters(
                 in: CharacterSet.whitespacesAndNewlines.union(
@@ -366,10 +313,6 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
               })
         else { return nil }
 
-        let queryItems = URLComponents(
-            url: url,
-            resolvingAgainstBaseURL: false
-        )?.queryItems ?? []
         let isAnimated =
             url.pathExtension.lowercased() == "gif"
             || queryItems.contains {
@@ -412,54 +355,6 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
     private static func isCanonicalEmojiURL(_ url: URL) -> Bool {
         url.host?.lowercased() == "cdn.discordapp.com"
             && url.path.hasPrefix("/emojis/")
-    }
-}
-
-struct EmojiWrappingLayout: Layout {
-    private struct LayoutResult {
-        let size: CGSize
-        let positions: [CGPoint]
-        let sizes: [CGSize]
-    }
-
-    let horizontalSpacing: CGFloat
-    let verticalSpacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        layout(proposal: proposal, subviews: subviews).size
-    }
-
-    func placeSubviews(
-        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
-    ) {
-        let result = layout(
-            proposal: ProposedViewSize(width: bounds.width, height: proposal.height), subviews: subviews
-        )
-        for (index, point) in result.positions.enumerated() where subviews.indices.contains(index) {
-            let size = result.sizes[index]
-            subviews[index].place(
-                at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y), anchor: .topLeading,
-                proposal: ProposedViewSize(width: size.width, height: size.height)
-            )
-        }
-    }
-
-    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> LayoutResult {
-        let maximumWidth = proposal.width ?? 640
-        let sizes = subviews.map {
-            $0.sizeThatFits(ProposedViewSize(width: maximumWidth, height: nil))
-        }
-        let plan = InlineWrappingLayoutPlan.frames(
-            sizes: sizes,
-            maximumWidth: maximumWidth,
-            horizontalSpacing: horizontalSpacing,
-            verticalSpacing: verticalSpacing
-        )
-        return LayoutResult(
-            size: CGSize(width: proposal.width ?? plan.size.width, height: plan.size.height),
-            positions: plan.frames.map(\.origin),
-            sizes: plan.frames.map(\.size)
-        )
     }
 }
 

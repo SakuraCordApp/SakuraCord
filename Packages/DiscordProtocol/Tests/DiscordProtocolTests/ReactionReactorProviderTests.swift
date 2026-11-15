@@ -7,12 +7,7 @@ import Testing
 struct ReactionReactorProviderTests {
     @Test func `reaction details page every distinct normal and super reactor without expanding previews`() async throws {
         ReactionReactorURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReactionReactorURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: ReactionReactorCredentialStore(), handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ReactionReactorURLProtocol.self, token: "reaction-test-session")
         let first = try await provider.reactionUsers(
             for: "<a:party_blob:123>", messageID: MessageID(rawValue: 301), channelID: ChannelID(rawValue: 200), after: nil, limit: 999
         )
@@ -39,13 +34,7 @@ struct ReactionReactorProviderTests {
 
     @Test func `reactor reads use the documented bounded contract and coalesce by reaction state`() async throws {
         ReactionReactorURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReactionReactorURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: ReactionReactorCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ReactionReactorURLProtocol.self, token: "reaction-test-session")
 
         async let first = provider.reactionReactors(
             for: "<:party_blob:123>",
@@ -92,13 +81,7 @@ struct ReactionReactorProviderTests {
 
     @Test func `nonpositive reaction counts never produce a request`() async throws {
         ReactionReactorURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReactionReactorURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: ReactionReactorCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ReactionReactorURLProtocol.self, token: "reaction-test-session")
 
         let reactors = try await provider.reactionReactors(
             for: "✅",
@@ -112,12 +95,7 @@ struct ReactionReactorProviderTests {
 
     @Test func `reaction changes invalidate pending and same-count cached previews`() async throws {
         ReactionReactorURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ReactionReactorURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: ReactionReactorCredentialStore(), handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ReactionReactorURLProtocol.self, token: "reaction-test-session")
         let received = AsyncStream<Void>.makeStream()
         let release = AsyncStream<Void>.makeStream()
         defer {
@@ -181,22 +159,6 @@ private extension DiscordRESTProvider {
     }
 }
 
-private actor ReactionReactorCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("reaction-test-session".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "1")]
-    }
-}
-
 private final class ReactionReactorURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestCount = 0
     nonisolated(unsafe) static var method: String?
@@ -225,7 +187,7 @@ private final class ReactionReactorURLProtocol: URLProtocol, @unchecked Sendable
     override func startLoading() {
         Self.requestCount += 1
         Self.method = request.httpMethod
-        Self.path = request.url?.path ?? ""
+        Self.path = request.path
         let queryItems = request.url.flatMap {
             URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems
         }
@@ -252,15 +214,7 @@ private final class ReactionReactorURLProtocol: URLProtocol, @unchecked Sendable
             }
             users = "[\(page.joined(separator: ","))]"
         }
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(users.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: Data(users.utf8), headers: nil)
     }
 
     override func stopLoading() {}

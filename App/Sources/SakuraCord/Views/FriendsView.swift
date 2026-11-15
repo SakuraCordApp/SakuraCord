@@ -27,12 +27,6 @@ struct FriendsView: View {
     }
 }
 
-extension AppModel {
-    func friendDisplayName(_ user: User) -> String {
-        friendNickname(for: user.id) ?? user.displayName
-    }
-}
-
 private struct FriendsListView: View {
     let model: AppModel
 
@@ -104,7 +98,6 @@ private struct FriendsListView: View {
             } actions: {
                 Button("Add Friend") { model.selectFriendsSection(.addFriend) }
                     .buttonStyle(.glassProminent)
-                    .tint(SakuraCordAccentColor.color)
             }
         }
     }
@@ -211,11 +204,11 @@ private struct AddFriendView: View {
 
             if let error = friends.addFriendError {
                 Text(error)
-                    .foregroundStyle(Color(hex: 0xF23F43))
+                    .foregroundStyle(MentionRed.color)
                     .accessibilityAddTraits(.isStaticText)
             } else if let username = friends.addFriendSuccess {
                 Text("Success! Your friend request to **\(username)** was sent.")
-                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .foregroundStyle(Color.presenceOnline)
             }
             Spacer(minLength: 0)
         }
@@ -223,7 +216,7 @@ private struct AddFriendView: View {
         .padding(InterfaceScale.metric(24))
         .frame(maxWidth: InterfaceScale.metric(720), alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background { ProfileEditorFocusDismissal() }
+        .background { ClickOutsideEndsEditing() }
         .onAppear { focusedField = .username }
         .onChange(of: friends.addFriendFocusRequest) { _, _ in focusedField = .username }
     }
@@ -245,7 +238,6 @@ private struct AddFriendView: View {
                         .accessibilityHidden(true)
                 }
                 .textFieldStyle(.plain)
-                .tint(SakuraCordAccentColor.color)
                 .focused($focusedField, equals: .username)
                 .onSubmit { if canSend { model.sendFriendRequest() } }
                 .onChange(of: friends.addFriendText) { _, value in
@@ -272,8 +264,8 @@ private struct AddFriendView: View {
             }
             .buttonStyle(.plain)
             // The accent fill stays while sending so the loading dots remain visible;
-            // white text on untinted glass would vanish in light mode.
-            .foregroundStyle(hasUsername ? Color.white : Color.secondary)
+            // a light label on untinted glass would vanish in light mode.
+            .foregroundStyle(hasUsername ? SakuraCordAccentColor.labelOnFill : Color.secondary)
             .glassEffect(
                 hasUsername ? .regular.tint(SakuraCordAccentColor.color).interactive() : .regular,
                 in: Capsule()
@@ -293,7 +285,6 @@ private struct AddFriendView: View {
             TextField("Personalize your request (Optional)", text: $friends.addFriendNote, axis: .vertical)
                 .lineLimit(2 ... 3)
                 .textFieldStyle(.plain)
-                .tint(SakuraCordAccentColor.color)
                 .focused($focusedField, equals: .note)
                 .disabled(friends.isSendingRequest)
             Text("\(remaining)")
@@ -307,7 +298,7 @@ private struct AddFriendView: View {
         .background { Color.clear.contentShape(Rectangle()).onTapGesture { focusFromPadding(.note) } }
     }
 
-    /// A click in a field's padding focuses that field. ProfileEditorFocusDismissal
+    /// A click in a field's padding focuses that field. ClickOutsideEndsEditing
     /// blurs the current field after any click outside it, so focus moves on the
     /// next turn of the run loop, after that blur. Gaining focus selects the whole
     /// field, so the caret then goes to the end, as a click beside the text would.
@@ -322,8 +313,8 @@ private struct AddFriendView: View {
     }
 
     private func borderColor(_ friends: FriendsState) -> Color {
-        if friends.addFriendError != nil { return Color(hex: 0xF23F43) }
-        if friends.addFriendSuccess != nil { return Color(hex: 0x23A55A) }
-        return focusedField == nil ? .clear : SakuraCordAccentColor.color.opacity(0.7)
+        if friends.addFriendError != nil { return MentionRed.color }
+        if friends.addFriendSuccess != nil { return Color.presenceOnline }
+        return focusedField == nil ? .clear : SakuraCordAccentColor.focusRing
     }
 }

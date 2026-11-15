@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 enum SelectionFieldLayoutMetrics {
-    static var font: NSFont { .interfaceSystemFont(ofSize: 13, weight: .medium) }
+    static var font: NSFont { .messageSystemFont(ofSize: 13, weight: .medium) }
     /// Discord's 16-pixel placeholder, at the message text's size.
     static var placeholderFont: NSFont {
         .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize, weight: .medium)
@@ -67,11 +67,6 @@ enum SelectionFieldRenderer {
         )
     }
 
-    /// SwiftUI centres a text line by its line box, not the font's glyph bounds.
-    static func lineHeight(of font: NSFont) -> CGFloat {
-        ceil(font.ascender - font.descender + font.leading)
-    }
-
     static func drawText(
         _ value: String,
         in frame: CGRect,
@@ -80,7 +75,8 @@ enum SelectionFieldRenderer {
     ) {
         guard !value.isEmpty else { return }
         let font = SelectionFieldLayoutMetrics.placeholderFont
-        let lineHeight = lineHeight(of: font)
+        // SwiftUI centres a text line by its line box, not the font's glyph bounds.
+        let lineHeight = ceil(font.lineHeight)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         (value as NSString).draw(
@@ -124,7 +120,7 @@ enum SelectionFieldRenderer {
         // Symbol palettes ignore alpha, which turns dark-mode secondary label
         // (translucent white) opaque. Draw the opaque colour at its alpha.
         let resolved = color.usingColorSpace(.deviceRGB) ?? color
-        guard let image = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+        guard let image = SystemSymbolImageCache.rasterizedConfiguredImage(
             named: name, pointSize: pointSize, weight: weight, color: resolved.withAlphaComponent(1),
             scale: device.map { max(abs($0.width), abs($0.height)) } ?? 2
         ) else { return }
@@ -183,7 +179,7 @@ enum SelectionFieldRenderer {
                 )
                 contentX = rect.maxX + 8
             }
-            let textHeight = lineHeight(of: labelFont)
+            let textHeight = ceil(labelFont.lineHeight)
             let textY = ((height - textHeight) / 2).rounded()
             let paragraph = NSMutableParagraphStyle()
             paragraph.lineBreakMode = .byTruncatingTail
@@ -289,7 +285,7 @@ enum SelectionFieldRenderer {
                     ),
                     withAttributes: [
                         .font: font,
-                        .foregroundColor: NSColor.white,
+                        .foregroundColor: NSColor.sakuraCordLabelOnAccentColor,
                     ]
                 )
             }

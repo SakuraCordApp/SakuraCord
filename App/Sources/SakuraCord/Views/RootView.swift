@@ -163,6 +163,7 @@ struct RootView: View {
         .environment(\.profileCosmeticPolicy, model.cosmeticPolicy)
         .environment(\.serverTagCardModel, model)
         .environment(\.roleColorDisplay, model.accessibilitySettings.roleColorDisplay)
+        .environment(\.disablesAllAnimations, model.accessibilitySettings.disablesAllAnimations)
         .modifier(SakuraCordWindowBackground(opacity: model.appearanceSettings.windowOpacity))
     }
 
@@ -284,6 +285,8 @@ private struct ChatRootView: View {
                 } else if let guildID = model.onboardingEntryGuildID {
                     GuildOnboardingView(model: model, guildID: guildID)
                         .id(guildID)
+                } else if model.favorites.isPresented, model.selectedChannelID == nil {
+                    FavoritesEmptyState(model: model)
                 } else {
                     ChatWorkspaceView(
                         model: model,
@@ -344,9 +347,6 @@ private struct ChatRootView: View {
         .environment(\.composerDropInteraction, composerDropInteraction)
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                SakuraCordTextInputAccentBridge()
-                .frame(width: 0, height: 0)
-
                 if columnVisibility != .detailOnly {
                     if model.isSwitchingAccounts {
                         SkeletonShimmerTimeline {
@@ -491,7 +491,7 @@ private struct ChatRootView: View {
                 supplementaryPaneFrame = .zero
             }
         }
-        .onChange(of: showsInboxToolbarItem) { _, isShown in
+        .onChange(of: model.isInboxAvailable) { _, isShown in
             if !isShown { model.dismissInbox() }
         }
         .onChange(of: model.openThread?.id) { _, threadID in
@@ -562,6 +562,20 @@ private struct ChatRootView: View {
             Button("Enter the chill zone") {}
         } message: {
             Text("You’re sending messages too quickly!")
+        }
+        .alert("Oops! Limit reached.", isPresented: Binding(
+            get: { model.scheduledMessages.isLimitAlertPresented },
+            set: { model.scheduledMessages.isLimitAlertPresented = $0 }
+        )) {
+            if model.isInboxAvailable {
+                Button("Manage Messages", action: model.presentScheduledMessages)
+            }
+            Button("Okay", role: .cancel) {}
+        } message: {
+            // The official client offers Nitro where it would raise the limit.
+            Text(model.scheduledMessageLimit == 1
+                ? "Nitro raises your scheduled message limit to \(ScheduledMessagePolicy.nitroLimit). You can also cancel a scheduled message to make room."
+                : "You've reached the limit of \(model.scheduledMessageLimit) scheduled messages.")
         }
         .alert("SakuraCord", isPresented: Binding(get: { model.errorMessage != nil }, set: {
             if !$0 {
@@ -664,9 +678,7 @@ private struct ChatRootView: View {
     /// A conversation and the side chats beside it own their toolbar items
     /// (`WorkspaceTitlebar`), which move with their columns.
     private var usesWorkspaceTitlebar: Bool {
-        guard !model.isSwitchingAccounts, model.onboardingEntryGuildID == nil,
-              model.guildWorkspacePage == nil, !model.isFriendsPresented
-        else { return false }
+        guard !model.isSwitchingAccounts, model.showsConversationWorkspace else { return false }
         return switch model.workspacePresentation.primary {
         case .channel, .fullWidthThread: true
         case .guildPage, .friends: false
@@ -769,49 +781,38 @@ private struct ChatRootView: View {
 
     @ViewBuilder
     private func privateCallButtons(_ channel: Channel) -> some View {
-        Button {
-            Task {
-                if model.joinablePrivateCall(in: channel.id) != nil {
-                    await model.joinPrivateCall(in: channel)
-                } else {
-                    await model.startPrivateCall(in: channel)
-                }
-            }
-        } label: {
-            Label(
-                model.joinablePrivateCall(in: channel.id) == nil
-                    ? "Start Voice Call" : "Join Voice Call",
-                systemImage: "phone.fill"
-            )
-        }
-        .disabled(
-            model.activeVoiceChannel?.id == channel.id
-                || model.isPrivateCallActionInFlight(in: channel.id)
+        let joinsCall = model.joinablePrivateCall(in: channel.id) != nil
+        privateCallButton(
+            channel, withVideo: false,
+            title: joinsCall ? "Join Voice Call" : "Start Voice Call",
+            help: joinsCall ? "Join Ongoing Call" : "Start Voice Call"
         )
-        .help(
-            model.joinablePrivateCall(in: channel.id) == nil
-                ? "Start Voice Call" : "Join Ongoing Call"
+        privateCallButton(
+            channel, withVideo: true,
+            title: "Start Video Call",
+            help: joinsCall ? "Join Ongoing Call with Video" : "Start Video Call"
         )
+    }
 
+    private func privateCallButton(
+        _ channel: Channel, withVideo: Bool, title: LocalizedStringKey, help: LocalizedStringKey
+    ) -> some View {
         Button {
             Task {
                 if model.joinablePrivateCall(in: channel.id) != nil {
-                    await model.joinPrivateCall(in: channel, withVideo: true)
+                    await model.joinPrivateCall(in: channel, withVideo: withVideo)
                 } else {
-                    await model.startPrivateCall(in: channel, withVideo: true)
+                    await model.startPrivateCall(in: channel, withVideo: withVideo)
                 }
             }
         } label: {
-            Label("Start Video Call", systemImage: "video.fill")
+            Label(title, systemImage: withVideo ? "video.fill" : "phone.fill")
         }
         .disabled(
             model.activeVoiceChannel?.id == channel.id
                 || model.isPrivateCallActionInFlight(in: channel.id)
         )
-        .help(
-            model.joinablePrivateCall(in: channel.id) == nil
-                ? "Start Video Call" : "Join Ongoing Call with Video"
-        )
+        .help(help)
     }
 
     private func openVoiceChatButton(_ channel: Channel) -> some View {
@@ -836,35 +837,6 @@ private struct ChatRootView: View {
         .titlebarButtons()
     }
 
-    private var showsThreadsToolbarItem: Bool {
-        model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil
-            && !model.isThreadFullWidth && model.canBrowseThreadsInSelectedChannel
-    }
-
-    @ToolbarContentBuilder
-    private var threadsToolbarItem: some ToolbarContent {
-        ToolbarItem(id: "threads") {
-            Button(action: model.toggleThreadBrowser) {
-                Label {
-                    Text("Threads")
-                } icon: {
-                    SakuraCordSystemSymbol.swiftUIImage(named: SakuraCordSystemSymbol.thread)
-                }
-            }
-            .help("Threads")
-            .background {
-                StableAnchoredPopoverPresenter(
-                    isPresented: model.threadBrowser.isPresented,
-                    configuration: .toolbarPanel,
-                    onDismiss: model.dismissThreadBrowser,
-                    onWillDismiss: model.dismissThreadBrowser
-                ) { ThreadBrowserPopoverView(model: model) }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .visibilityPriority(.high)
-    }
-
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
         if usesWorkspaceTitlebar {
@@ -882,8 +854,8 @@ private struct ChatRootView: View {
         ToolbarSpacer(.flexible)
 
         if showsCustomizationModePicker {
-            // In the toolbar's centre, as before side chats. It keeps its
-            // label, which the overflow menu shows.
+            // In the toolbar's centre. It keeps its label, which the overflow
+            // menu shows.
             ToolbarItem(id: "customization-mode", placement: .principal) {
                 Picker("Channels & Roles", selection: Binding(
                     get: { model.isBrowsingGuildChannels },
@@ -903,14 +875,6 @@ private struct ChatRootView: View {
         }
 
         if !model.isSwitchingAccounts {
-            if let channel = selectedPrivateChannel {
-                ToolbarItemGroup { privateCallButtons(channel) }
-                    .visibilityPriority(.high)
-            } else if model.guildWorkspacePage == nil, model.onboardingEntryGuildID == nil, let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
-                ToolbarItem { openVoiceChatButton(channel) }
-                    .visibilityPriority(.high)
-            }
-
             if model.isThreadFullWidth, let thread = model.openThread {
                 if ForumPostFollowToolbarButton.isOffered(model: model, thread: thread) {
                     ToolbarItem {
@@ -920,103 +884,32 @@ private struct ChatRootView: View {
                 }
             }
 
-            if showsInboxToolbarItem {
-                if hasToolbarActionBeforeInbox {
-                    ToolbarSpacer(.fixed)
-                }
-
-                ToolbarItem(id: "inbox") {
-                    Button {
-                        if model.inbox.isPresented { model.dismissInbox() } else { model.presentInbox() }
-                    } label: {
-                        Label("Inbox", systemImage: model.inbox.isPresented ? "tray.fill" : "tray")
-                            .symbolVariant(.none)
-                            .animation(.smooth(duration: 0.24), value: model.inbox.isPresented)
-                    }
-                    .help("Inbox")
-                    .background {
-                        StableAnchoredPopoverPresenter(
-                            isPresented: model.inbox.isPresented,
-                            configuration: .toolbarPanel,
-                            onDismiss: model.dismissInbox,
-                            onWillDismiss: model.dismissInbox
-                        ) { InboxPopoverView(model: model) }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-                .visibilityPriority(.high)
-            }
-
-            if let pinsChannelID = toolbarPinsChannelID {
-                ToolbarSpacer(.fixed)
-
-                ToolbarItem(id: "pinned-messages") {
-                    Button {
-                        if model.pinnedMessages.isPresented {
-                            model.dismissPinnedMessages()
-                        } else {
-                            model.presentPinnedMessages(channelID: pinsChannelID)
-                        }
-                    } label: {
-                        Label("Pinned Messages", systemImage: model.pinnedMessages.isPresented ? "pin.fill" : "pin")
-                            .symbolVariant(.none)
-                            .animation(.smooth(duration: 0.24), value: model.pinnedMessages.isPresented)
-                    }
-                    .help("Pinned Messages")
-                    .background {
-                        StableAnchoredPopoverPresenter(
-                            isPresented: model.pinnedMessages.isPresented,
-                            configuration: .toolbarPanel,
-                            onDismiss: model.dismissPinnedMessages,
-                            onWillDismiss: model.dismissPinnedMessages
-                        ) {
-                            PinnedMessagesPopoverView(model: model)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-                .visibilityPriority(.high)
-            }
-
-            if showsThreadsToolbarItem {
-                ToolbarSpacer(.fixed)
-                threadsToolbarItem
-            }
-
             if let conversation = model.workspacePresentation.paneSideConversation {
                 sideConversationToolbar(conversation)
             }
         }
 
-        if showsMemberInspectorToolbarItem {
-            if !model.isSwitchingAccounts {
-                ToolbarSpacer(.fixed)
-            }
-
-            // A stable identity lets the toolbar keep the item when a side
-            // chat closes instead of inserting a new one.
+        // Otherwise a conversation's Members button is in its titlebar.
+        if model.isSwitchingAccounts {
             ToolbarItem(id: "member-inspector") {
+                // The hidden button keeps the placeholder at the button's width.
                 ZStack {
                     Button {
                         model.toggleMemberInspector()
                     } label: {
                         inspectorToolbarLabel
                     }
-                    .disabled(model.isSwitchingAccounts)
-                    .opacity(model.isSwitchingAccounts ? 0 : 1)
+                    .disabled(true)
+                    .opacity(0)
 
-                    if model.isSwitchingAccounts {
-                        SkeletonShimmerTimeline {
-                            SkeletonShape(cornerRadius: 6)
-                                .frame(width: 20, height: 20)
-                        }
-                        .accessibilityHidden(true)
+                    SkeletonShimmerTimeline {
+                        SkeletonShape(cornerRadius: 6)
+                            .frame(width: 20, height: 20)
                     }
+                    .accessibilityHidden(true)
                 }
             }
             .visibilityPriority(.high)
-
-            fullWidthThreadActions
 
             ToolbarSpacer(.fixed)
                 .contentMarginsRemoved(true)
@@ -1033,6 +926,7 @@ private struct ChatRootView: View {
 
     private var sidebarDisplayName: String {
         if let guildID = model.presentedGuildJoinRequestID { return model.joinRequestGuildName(guildID) }
+        if model.favorites.isPresented { return "Favorites" }
         guard let guild = selectedGuild else { return "Messages" }
         return guild.name.isEmpty ? "Unnamed Server" : guild.name
     }
@@ -1128,7 +1022,7 @@ private struct ChatRootView: View {
 
     private var isDirectMessageSelected: Bool {
         guard let channel = model.selectedChannel else { return false }
-        return channel.kind == .directMessage || channel.kind == .groupDirectMessage
+        return channel.kind.isDirectMessage
     }
 
     private var inspectorToolbarLabel: some View {
@@ -1146,8 +1040,8 @@ private struct ChatRootView: View {
     /// offers no call until it is accepted.
     private var selectedPrivateChannel: Channel? {
         guard let channel = model.selectedChannel,
-              channel.isListedDirectMessage,
-              !channel.isOfficialSystemDirectMessage
+              channel.kind.isDirectMessage,
+              channel.acceptsPrivateInteraction
         else { return nil }
         return channel
     }
@@ -1198,12 +1092,6 @@ private struct ChatRootView: View {
         return model.selectedChannel
     }
 
-    private var showsMemberInspectorToolbarItem: Bool {
-        model.isSwitchingAccounts
-            || (model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil && !model.isFriendsPresented
-                && model.workspacePresentation.paneSideConversation == nil && selectedVoiceChannel == nil)
-    }
-
     /// A full-width thread's actions end the trailing button group, as a
     /// toolbar's overflow item does.
     @ToolbarContentBuilder
@@ -1217,18 +1105,6 @@ private struct ChatRootView: View {
         }
     }
 
-    private var hasToolbarActionBeforeInbox: Bool {
-        selectedPrivateChannel != nil
-            || (selectedVoiceChannel != nil && !model.isVoiceChatOpen)
-    }
-
-    private var toolbarPinsChannelID: ChannelID? {
-        guard model.guildWorkspacePage == nil, model.onboardingEntryGuildID == nil,
-              selectedVoiceChannel == nil, model.workspacePresentation.paneSideConversation == nil
-        else { return nil }
-        return model.activePinsChannelID
-    }
-
     private var conversationToolbarPresentation: ConversationToolbarPresentation? {
         if let guildID = model.presentedGuildJoinRequestID {
             return .init(title: model.joinRequestGuildName(guildID),
@@ -1236,7 +1112,7 @@ private struct ChatRootView: View {
         }
         if let conversation = model.presentedSideConversation, conversation.isFullWidth {
             // One line with the thread symbol for threads and forum posts
-            // alike, as before side chats were unified.
+            // alike.
             let label = model.sideConversationLabel(conversation)
             return .init(title: label.title, systemImage: SakuraCordSystemSymbol.thread)
         }
@@ -1265,17 +1141,10 @@ private struct ChatRootView: View {
     private func sideConversationToolbar(_ conversation: SideConversation) -> some ToolbarContent {
         let label = model.sideConversationLabel(conversation)
         let capabilities = conversation.capabilities
-        let showsAddToChannelList = capabilities.canAddToChannelList
-            && model.customizationPreviewChannel.map { !model.isChannelSelected($0) } == true
+        let showsAddToChannelList = SideConversationAddToChannelListButton.isOffered(model: model, capabilities: capabilities)
         let paneThread = conversation.isThread ? model.openThread : nil
         let showsFollow = paneThread.map { ForumPostFollowToolbarButton.isOffered(model: model, thread: $0) } ?? false
         let actionCount = 1 + (showsAddToChannelList ? 1 : 0) + (paneThread != nil ? 1 : 0) + (showsFollow ? 1 : 0)
-        if showsInboxToolbarItem {
-            // Keep the primary column's last action inset from the pane edge.
-            ToolbarSpacer(.fixed)
-            ToolbarSpacer(.fixed)
-        }
-
         ToolbarItem(id: "side-conversation-title") {
             SideConversationToolbarTitle(label: label, width: sideConversationTitleWidth(actionCount: actionCount))
                 .workspaceMotionProbe("toolbarTitle")
@@ -1300,11 +1169,7 @@ private struct ChatRootView: View {
 
         if showsAddToChannelList, let channel = model.customizationPreviewChannel, let guildID = channel.guildID {
             ToolbarItem(id: "side-conversation-add") {
-                Button("Add to Channel List", systemImage: "plus") {
-                    model.setChannelSelected(true, channelID: channel.id, guildID: guildID)
-                }
-                .labelStyle(.iconOnly)
-                .help("Add to Channel List")
+                SideConversationAddToChannelListButton(model: model, channel: channel, guildID: guildID)
             }
             .visibilityPriority(.high)
         }
@@ -1321,14 +1186,7 @@ private struct ChatRootView: View {
         }
 
         ToolbarItem(id: "side-conversation-close") {
-            Button {
-                model.closeSideConversation()
-            } label: {
-                Label("Close conversation", systemImage: "xmark")
-                    .labelStyle(.iconOnly)
-            }
-            .help(capabilities.closeHelp)
-            .keyboardShortcut(model.guildWorkspacePage == .guide ? .cancelAction : nil)
+            SideConversationCloseButton(model: model, capabilities: capabilities)
         }
         .visibilityPriority(.high)
     }
@@ -1381,83 +1239,8 @@ private struct ChatRootView: View {
         return supplementaryPaneFrame.minX - columnEdges.detailMinX >= required
     }
 
-    /// Inbox belongs beside a text conversation, not on a server's own
-    /// pages, Friends or a voice channel.
-    private var showsInboxToolbarItem: Bool {
-        !model.isSwitchingAccounts && model.onboardingEntryGuildID == nil
-            && model.guildWorkspacePage == nil && !model.isFriendsPresented && selectedVoiceChannel == nil
-    }
-
     private var selectedGuild: Guild? {
         model.selectedGuild
-    }
-}
-
-struct DisplayCompleteFrameReporter: NSViewRepresentable {
-    let presentationID: UInt64?
-    let report: @MainActor () -> Void
-
-    func makeNSView(context: Context) -> DisplayCompleteFrameReportingView {
-        DisplayCompleteFrameReportingView(
-            presentationID: presentationID,
-            report: report
-        )
-    }
-
-    func updateNSView(
-        _ nsView: DisplayCompleteFrameReportingView,
-        context: Context
-    ) {
-        nsView.update(
-            presentationID: presentationID,
-            report: report
-        )
-    }
-}
-
-final class DisplayCompleteFrameReportingView: NSView {
-    private var presentationID: UInt64?
-    private var report: @MainActor () -> Void
-    private var didReport = false
-
-    init(
-        presentationID: UInt64?,
-        report: @escaping @MainActor () -> Void
-    ) {
-        self.presentationID = presentationID
-        self.report = report
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        needsDisplay = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard window != nil, !didReport else { return }
-        didReport = true
-        Task { @MainActor [report] in
-            await Task.yield()
-            report()
-        }
-    }
-
-    func update(
-        presentationID: UInt64?,
-        report: @escaping @MainActor () -> Void
-    ) {
-        self.report = report
-        guard self.presentationID != presentationID else { return }
-        self.presentationID = presentationID
-        didReport = false
-        needsDisplay = true
     }
 }
 
@@ -1489,85 +1272,6 @@ private struct MessageSearchExperienceModifier: ViewModifier {
                 guard wasVisible, !isVisible else { return }
                 search.isFilterModalPresented = false
                 search.isInputFocused = false
-            }
-    }
-}
-
-private struct MessageSearchToolbarBridge: View {
-    let model: AppModel
-    let isVisible: Bool
-    @Binding var metrics: ToolbarSearchFieldMetrics
-
-    var body: some View {
-        @Bindable var model = model
-        @Bindable var search = model.messageSearch
-        @Bindable var onboarding = model.onboarding
-        @Bindable var friends = model.friends
-        let friendsSearch = model.isFriendsSearchActive
-        let local = friendsSearch || model.isBrowsingGuildChannels
-        ToolbarSearchFieldGeometryReader(
-            searchText: friendsSearch ? $model.friendsSearchText : local ? $onboarding.channelSearch : $model.messageSearchInputText,
-            searchTokens: local ? .constant([]) : $search.tokens,
-            isSearchFocused: friendsSearch ? $friends.isSearchFocused
-                : local ? $onboarding.isChannelSearchFocused : $search.isInputFocused,
-            isToolbarItemVisible: isVisible,
-            preferredFieldWidth: ChatChromeMetrics.toolbarSearchMaximumFieldWidth,
-            didUseBuiltInClear: {
-                if friendsSearch {
-                    model.friendsSearchText = ""
-                } else if local {
-                    onboarding.channelSearch = ""
-                } else {
-                    model.clearMessageSearchUsingBuiltInButton()
-                }
-            },
-            didEndEditing: {
-                if friendsSearch {
-                    friends.isSearchFocused = false
-                } else if local {
-                    onboarding.isChannelSearchFocused = false
-                } else {
-                    model.messageSearchEditingDidEnd()
-                }
-            },
-            pasteCanonicalSyntax: { value in
-                if local { return .init(tokens: [], text: value) }
-                return MessageSearchTokenParser.parse(
-                    value,
-                    users: model.messageSearchUsers,
-                    channels: model.messageSearchChannels
-                )
-            },
-            changed: { metrics = $0 }
-        )
-    }
-}
-
-private struct MessageSearchToolbarModifier: ViewModifier {
-    let model: AppModel
-    let search: MessageSearchState
-    let prompt: Text
-
-    func body(content: Content) -> some View {
-        @Bindable var model = model
-        @Bindable var search = search
-        @Bindable var onboarding = model.onboarding
-        @Bindable var friends = model.friends
-        let friendsSearch = model.isFriendsSearchActive
-        let local = friendsSearch || model.isBrowsingGuildChannels
-        content
-            .searchable(
-                text: friendsSearch ? $model.friendsSearchText : local ? $onboarding.channelSearch : $model.messageSearchInputText,
-                tokens: local ? .constant([]) : $search.tokens,
-                isPresented: friendsSearch ? $friends.isSearchFocused
-                    : local ? $onboarding.isChannelSearchFocused : $search.isInputFocused,
-                placement: .toolbar,
-                prompt: prompt
-            ) { token in
-                Text(token.title)
-            }
-            .onSubmit(of: .search) {
-                if !local { model.submitMessageSearchInput() }
             }
     }
 }

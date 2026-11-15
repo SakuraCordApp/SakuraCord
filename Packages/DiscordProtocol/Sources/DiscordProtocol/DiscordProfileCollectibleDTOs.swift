@@ -89,7 +89,7 @@ struct ProfileCollectibleItemDTO: Decodable {
         switch kind {
         case .avatarDecoration:
             let asset = try values.decode(String.self, forKey: .asset)
-            guard let url = URL(string: "https://cdn.discordapp.com/avatar-decoration-presets/\(asset).png?size=160") else {
+            guard let url = DiscordCDN.avatarDecorationPreset(asset) else {
                 throw DecodingError.dataCorruptedError(forKey: .asset, in: values, debugDescription: "Invalid decoration asset")
             }
             artwork = .avatarDecoration(url)
@@ -99,7 +99,7 @@ struct ProfileCollectibleItemDTO: Decodable {
             if label.isEmpty { label = configuration.accessibilityLabel ?? configuration.title ?? "" }
             artwork = .effect(configuration.domain)
         case .nameplate:
-            let base = "https://cdn.discordapp.com/media/v1/collectibles-shop/\(sku)"
+            let base = DiscordCDN.collectiblesShopBase(sku)
             artwork = .nameplate(Nameplate(
                 staticURL: URL(string: "\(base)/static"), animatedURL: URL(string: "\(base)/animated"),
                 label: label, palette: try values.decodeIfPresent(String.self, forKey: .palette) ?? "none"
@@ -146,7 +146,7 @@ private struct ProfileFrameDTO: Decodable {
                 id: skuID, label: label, innerWidth: innerWidth, overflowTop: overflowTop,
                 overflowBottom: overflowBottom, overflowHorizontal: overflowHorizontal,
                 layers: layers.map { layer in
-                    guard let url = URL(string: "https://cdn.discordapp.com/media/v1/collectibles-shop/\(skuID)/\(layer.id)/static") else {
+                    guard let url = URL(string: "\(DiscordCDN.collectiblesShopBase(skuID))/\(layer.id)/static") else {
                         throw ChatProviderError.invalidRequest("Discord returned an invalid profile frame asset.")
                     }
                     return ProfileFrameLayer(

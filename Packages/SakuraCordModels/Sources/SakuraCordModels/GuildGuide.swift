@@ -8,6 +8,10 @@ public struct GuildGuide: Decodable, Equatable, Sendable {
     public var newMemberActions: [GuildGuideChannel]
     public var resourceChannels: [GuildGuideChannel]
 
+    public func isResourceChannel(_ channelID: ChannelID) -> Bool {
+        resourceChannels.contains { $0.channelID == channelID }
+    }
+
     public struct WelcomeMessage: Decodable, Equatable, Sendable {
         public var authorIDs: [UserID]
         public var message: String
@@ -29,7 +33,7 @@ public struct GuildGuideChannel: Decodable, Identifiable, Equatable, Sendable {
     public var icon: String?
 
     public var iconURL: URL? {
-        icon.flatMap { URL(string: "https://cdn.discordapp.com/\(actionType == nil ? "resource-channels" : "new-member-actions")/\(channelID)/\($0).png?size=128") }
+        icon.flatMap { DiscordCDN.guildGuideIcon(channelID, hash: $0, isNewMemberAction: actionType != nil) }
     }
     enum CodingKeys: String, CodingKey {
         case channelID = "channel_id", actionType = "action_type", title, description, emoji, icon

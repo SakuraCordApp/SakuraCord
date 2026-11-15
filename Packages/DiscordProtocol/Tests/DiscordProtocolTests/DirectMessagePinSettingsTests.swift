@@ -23,7 +23,7 @@ struct DirectMessagePinSettingsTests {
         let decoder = JSONDecoder()
         let baseline = try decoder.decode(GatewayUserGuildSettingsDTO.self, from: pinned).domain
         let original = try #require(baseline.channelOverrides.first)
-        #expect(original.isPinnedDirectMessage)
+        #expect(original.isPinned)
 
         let update = try decoder.decode(GatewayUserGuildSettingsDTO.self, from: unpinned)
         let settings = update.domain(merging: baseline)

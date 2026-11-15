@@ -49,7 +49,6 @@ struct GuildCustomizationView: View {
             .scrollBounceBehavior(.always, axes: .vertical)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .tint(SakuraCordAccentColor.color)
         .onChange(of: entry.configuration != nil, initial: true) { _, loaded in
             if loaded, newPromptIDs == nil, let configuration = entry.configuration {
                 newPromptIDs = Set(configuration.prompts.filter { configuration.hasNewOptions($0) }.map(\.id))

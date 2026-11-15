@@ -2,6 +2,13 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
+struct ComponentInteractionPresentationState {
+    var pendingControls: Set<ComponentControlKey> = []
+    var pendingMessages: Set<MessageID> = []
+    var errors: [ComponentControlKey: String] = [:]
+    var selections: [ComponentControlKey: [ComponentSelectOption]] = [:]
+}
+
 extension AppModel {
     func submitComponent(
         on message: Message, customID: String, kind: ComponentInteractionKind, values: [String] = []
@@ -22,8 +29,7 @@ extension AppModel {
             return
         }
         let guildID = message.guildID
-            ?? visibleChannels.first { $0.id == message.channelID }?.guildID
-            ?? snapshot?.channels.first { $0.id == message.channelID }?.guildID
+            ?? knownRootChannel(message.channelID)?.guildID
         let submission = ComponentInteractionSubmission(
             messageID: message.id, messageFlags: message.flags, channelID: message.channelID,
             guildID: guildID, applicationID: applicationID, customID: customID, kind: kind,
@@ -249,7 +255,7 @@ extension AppModel {
         return source.filter { channel in
             (guildID == nil || channel.guildID == guildID)
                 && (channelTypes.isEmpty
-                    || channelTypes.contains(channel.discordCommandType))
+                    || channel.discordChannelType.map { channelTypes.contains($0) } == true)
         }.sorted {
             if $0.categoryPosition != $1.categoryPosition {
                 return $0.categoryPosition < $1.categoryPosition

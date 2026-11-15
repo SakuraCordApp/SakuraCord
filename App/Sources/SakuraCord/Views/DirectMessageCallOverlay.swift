@@ -266,13 +266,13 @@ private struct PrivateCallActionDock: View {
                     PrivateCallGlassButton(
                         title: "Decline",
                         systemImage: "phone.down.fill",
-                        tint: Color(hex: 0xDA373C),
+                        tint: Color.leaveCallRed,
                         action: decline
                     )
                     PrivateCallGlassButton(
                         title: "Answer",
                         systemImage: "phone.fill",
-                        tint: Color(hex: 0x23A55A),
+                        tint: Color.presenceOnline,
                         action: accept
                     )
                 } else {
@@ -300,7 +300,7 @@ private struct PrivateCallGlassButton: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.interface(.callout).weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(SakuraCordAccentColor.label(on: tint))
                 .padding(.horizontal, InterfaceScale.metric(16))
                 .frame(height: InterfaceScale.metric(40))
                 .contentShape(Capsule())
@@ -408,13 +408,13 @@ private struct IncomingPrivateCallCard: View {
                     IncomingCallActionButton(
                         title: "Decline",
                         systemImage: "xmark",
-                        tint: Color(hex: 0xDA373C),
+                        tint: Color.leaveCallRed,
                         action: decline
                     )
                     IncomingCallActionButton(
                         title: "Answer",
                         systemImage: "phone.fill",
-                        tint: Color(hex: 0x23A55A),
+                        tint: Color.presenceOnline,
                         action: accept
                     )
                 }

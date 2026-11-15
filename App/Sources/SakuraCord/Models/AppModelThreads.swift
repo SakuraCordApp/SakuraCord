@@ -20,6 +20,10 @@ extension AppModel {
             ?? visibleChannels.first { $0.id == parentID }
     }
 
+    var isOpenThreadForumPost: Bool {
+        openThreadParentChannel?.kind == .forum
+    }
+
     var openThreadAccess: ConversationAccess {
         guard let thread = openThread else { return .checking }
         switch openThreadResolution {
@@ -34,10 +38,8 @@ extension AppModel {
             return hasChannelList ? .hidden : .checking
         }
         guard let guildID = channel.guildID else { return .readable(canSend: true) }
-        if thread.isPrivate, thread.notificationSettings == nil {
-            guard let permissions = effectiveMessagePermissions(in: channel) else { return .checking }
-            guard permissions & DiscordPermissionBits.manageThreads != 0 else { return .hidden }
-        }
+        guard let hidesPrivateThread = hidesUnprovenPrivateThread(thread, parent: channel) else { return .checking }
+        guard !hidesPrivateThread else { return .hidden }
         let access = ConversationPermissionResolver.threadAccess(
             effectivePermissions: effectiveMessagePermissions(in: channel),
             isLocked: thread.isLocked
@@ -63,9 +65,7 @@ extension AppModel {
         // The thread's creator started it, who may not have written the
         // message it was started from. An unknown creator shows no credit.
         let creator: User? = if let ownerID = thread.ownerID {
-            starter?.author.id == ownerID ? starter?.author
-                : ownerID == currentUser?.id ? currentUser
-                : membersByID[ownerID]?.user
+            starter?.author.id == ownerID ? starter?.author : knownUser(ownerID)
         } else {
             starter?.author
         }
@@ -81,13 +81,27 @@ extension AppModel {
     func open(_ post: ForumPost) {
         guard openThread?.id != post.id else { return }
         cancelConversationNavigation()
+        openForumPostConversation(post)
+    }
+
+    /// Opens a forum post through `openThreadConversation`, previewing its
+    /// starter message unless `initialMessages` are given.
+    func openForumPostConversation(
+        _ post: ForumPost,
+        initialMessages: [Message] = [],
+        fullWidth: Bool = false,
+        historyTarget: MessageID? = nil
+    ) {
         readState.merge(forumPost: post)
         openThreadConversation(
             post.thread,
             starter: post.owner ?? post.firstMessage?.author,
             startedAt: post.firstMessage?.timestamp ?? post.createdAt,
             starterMessageID: post.firstMessage?.id,
-            initialMessages: post.firstMessage.map { [$0] } ?? []
+            initialMessages: initialMessages.isEmpty
+                ? post.firstMessage.map { [$0] } ?? [] : initialMessages,
+            fullWidth: fullWidth,
+            historyTarget: historyTarget
         )
     }
 
@@ -108,25 +122,19 @@ extension AppModel {
         threadLoadGeneration &+= 1
         AppPerformanceSignposts.beginConversationNavigation(to: thread.id)
         readState.merge(thread: thread)
-        if let selectedChannelID, !isConversationPresented(selectedChannelID) {
-            suspendSelectedConversationPresentation()
-        }
-        recordForwardDestinationVisit(thread.id)
-        _ = readState.updatePresentation(
+        suspendSelectedConversationPresentationIfHidden()
+        recordConversationDestinationVisit(thread.id)
+        readState.beginPresentation(
             channelID: thread.id,
             isPresented: isConversationPresented(thread.id),
-            initialHistoryLoaded: false,
-            initialPositionEstablished: false,
-            windowIsActive: mainWindowIsActive,
-            hasReachedReadBoundary: false,
-            blocksAutomaticAcknowledgement: false
+            windowIsActive: mainWindowIsActive
         )
         openThreadStarter = starter
         openThreadStartedAt = startedAt
         openThreadStarterMessageID = starterMessageID
         threadDraft = ""
         threadReplyingTo = nil
-        clearComposerAttachments(for: .thread)
+        restoreComposerConversation(.thread, conversationID: thread.id)
         translation.resetDraft(.thread)
 
         if openThreadNeedsAccessResolution(thread) {
@@ -193,10 +201,15 @@ extension AppModel {
     /// member-less Gateway update, must be resolved before it is shown. Public
     /// threads follow their parent's permissions and stay cache-first.
     private func openThreadNeedsAccessResolution(_ thread: MessageThreadSummary) -> Bool {
+        hidesUnprovenPrivateThread(thread, parent: openThreadParentChannel) ?? true
+    }
+
+    /// Whether a private thread without membership evidence stays hidden
+    /// because the user lacks Manage Threads in `parent`; nil while those
+    /// permissions are unknown.
+    private func hidesUnprovenPrivateThread(_ thread: MessageThreadSummary, parent: Channel?) -> Bool? {
         guard thread.isPrivate, thread.notificationSettings == nil else { return false }
-        guard let parent = openThreadParentChannel,
-              let permissions = effectiveMessagePermissions(in: parent)
-        else { return true }
+        guard let parent, let permissions = effectiveMessagePermissions(in: parent) else { return nil }
         return permissions & DiscordPermissionBits.manageThreads == 0
     }
 
@@ -284,11 +297,8 @@ extension AppModel {
     /// returns its unconfirmed sends, which are not history.
     @discardableResult
     func discardCachedHistory(for channelID: ChannelID) -> [Message] {
-        let pendingSends = messageCache[channelID]?.filter { $0.outboxState != .confirmed } ?? []
-        messageCache[channelID] = nil
-        messageCacheOrder.removeAll { $0 == channelID }
-        messageRowCache[channelID] = nil
-        messageRowCacheOrder.removeAll { $0 == channelID }
+        let pendingSends = takeCachedMessages(for: channelID).filter { $0.outboxState != .confirmed }
+        takeCachedMessageRows(for: channelID)
         hasMoreCache[channelID] = nil
         contiguousHistoryBoundaries[channelID] = nil
         threadWindow.cachedCursors[channelID] = nil
@@ -298,6 +308,7 @@ extension AppModel {
     func consumeThreadEvent(_ event: ClientEvent) -> Bool {
         switch event {
         case .threadDeleted(let channelID):
+            favorites.threads[channelID] = nil
             consumeThreadDeleted(channelID: channelID)
         case .forumPostsChanged(let channelID, let posts):
             consumeForumPostsChanged(channelID: channelID, posts: posts)
@@ -308,7 +319,7 @@ extension AppModel {
             if var value = snapshot {
                 value.activeJoinedThreads = threads
                 snapshot = value
-                forwardSearchSourceRevision &+= 1
+                destinationSearchSourceRevision &+= 1
             }
             refreshUnreadPresentation()
             reconcileInboxEligibility()
@@ -324,6 +335,7 @@ extension AppModel {
         threadBrowser.remove(threadID: channelID)
         // Closing saves the current conversation, so evict only after it closes.
         if openThread?.id == channelID { closeThread() }
+        discardKeptComposerDraft(for: channelID)
         cancelConversationRefresh(in: channelID)
         discardCachedHistory(for: channelID)
         threadPreviewMessages[channelID] = nil
@@ -343,7 +355,7 @@ extension AppModel {
         noteSideConversationChange()
         threadTimelinePosition = TimelineReadingPosition()
         threadVoiceMessageComposer.discard(playback: voiceMessagePlayback)
-        threadCommandComposer.resetForChannelChange()
+        leaveComposerConversation(.thread, conversationID: openThread?.id, in: openThread?.parentID)
         if let threadID = openThread?.id {
             cancelConversationRefresh(in: threadID)
             // Only a loaded newest-backed window is reusable history; a
@@ -376,15 +388,7 @@ extension AppModel {
         threadLoadTask?.cancel()
         threadLoadTask = nil
         threadLoadGeneration &+= 1
-        threadWindow.activeRevision = nil
-        threadWindow.revalidationPending = false
-        threadWindow.lowerCursor = nil
-        threadWindow.upperCursor = nil
-        threadWindow.isNewestUnverified = false
-        threadWindow.failedInitialTarget = nil
-        threadWindow.nearestJumpTarget = nil
-        threadWindow.initialLoadTarget = nil
-        threadWindow.newestReadRevision = nil
+        threadWindow.resetOpenWindow()
         openThreadResolutionTask?.cancel()
         openThreadResolutionTask = nil
         openThreadResolution = nil
@@ -395,7 +399,6 @@ extension AppModel {
         threadMessages = []
         threadDraft = ""
         threadReplyingTo = nil
-        clearComposerAttachments(for: .thread)
         translation.resetDraft(.thread)
         isLoadingThread = false
         hasCompletedInitialThreadLoad = false
@@ -405,23 +408,6 @@ extension AppModel {
         hasMoreLaterThreadMessages = false
         threadErrorMessage = nil
         threadErrorScope = nil
-    }
-
-    /// Selecting a voice channel opens its chat; this reopens a closed one.
-    func openVoiceChat(for channel: Channel) {
-        guard channel.kind == .voice else { return }
-        if selectedChannelID != channel.id {
-            selectedChannelID = channel.id
-        }
-        // Guild pages cannot show the chat.
-        guard selectedChannelID == channel.id, guildWorkspacePage == nil, !isVoiceChatOpen else { return }
-        openSideConversation(.voiceChat(channel.id))
-        beginSelectedChannelLoad()
-    }
-
-    func closeVoiceChat() {
-        guard isVoiceChatOpen else { return }
-        WorkspaceLayoutMotion.perform(in: self, closeSideConversations)
     }
 
     func retryThreadLoad() {
@@ -460,13 +446,7 @@ extension AppModel {
             guard model.openThread?.id == thread.id, model.threadWindow.revision == windowRevision,
                   let landingID = Self.landingID(for: target, in: model.threadMessages, nearest: nearest)
             else { return }
-            model.messageNavigationRequestID &+= 1
-            model.messageNavigationRequest = MessageNavigationRequest(
-                requestID: model.messageNavigationRequestID,
-                channelID: thread.id,
-                messageID: landingID,
-                glides: false
-            )
+            model.requestMessageNavigation(channelID: thread.id, messageID: landingID, glides: false)
         }
     }
 
@@ -478,20 +458,8 @@ extension AppModel {
         startAccountChildTask(account: accountSession(), operation: operation)
     }
 
-    @discardableResult
-    func sendThreadMessage(attachments: [URL] = []) async -> Bool {
-        await sendThreadComposerMessage(
-            attachments: attachments.map { ForumPostAttachment(url: $0) }
-        )
-    }
-
-    @discardableResult
-    func sendThreadComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
-        await submitThreadComposerMessage(attachments: attachments).serverConfirmation()
-    }
-
     func submitThreadComposerMessage(
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) async -> ComposerSubmissionResult {
         if let threadCreation {
             return await submitThreadCreation(threadCreation, attachments: attachments)
@@ -521,7 +489,7 @@ extension AppModel {
             clearsComposer = composer.threadDraftRevision == draftRevision && threadReplyingTo?.id == reply?.id
         }
         guard allowSlowmodeSubmission(in: destination.id) else { return .rejected }
-        guard validateAttachmentCount(attachments), allowOutgoingQueueSubmission() else { return .rejected }
+        guard attachmentBatchFits(attachments.count), allowOutgoingQueueSubmission() else { return .rejected }
         guard let delivery = enqueueThreadMessage(
             content: content,
             replyTo: reply?.id,
@@ -540,7 +508,7 @@ extension AppModel {
         replyTo: MessageID? = nil,
         mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview? = nil,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         thread: MessageThreadSummary,
         clearsComposer: Bool
     ) async -> Bool {
@@ -562,7 +530,7 @@ extension AppModel {
         replyTo: MessageID? = nil,
         mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview? = nil,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         thread: MessageThreadSummary,
         clearsComposer: Bool
     ) -> Task<Bool, Never>? {
@@ -575,18 +543,7 @@ extension AppModel {
             mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments
         )
-        let optimistic = optimisticMessage(
-            for: draft,
-            replyPreview: replyPreview
-        )
-        appendOutgoingMessage(optimistic)
-        composer.outbox.draftsByNonce[draft.nonce] = draft
-        if clearsComposer {
-            threadDraft = ""
-            threadReplyingTo = nil
-            translation.resetDraft(.thread)
-        }
-        return enqueueOutgoingSend(draft, isRetry: false, completesReading: true)
+        return enqueueMessage(draft, replyPreview: replyPreview, clearsComposer: clearsComposer, in: .thread)
     }
 
 }
@@ -610,11 +567,9 @@ extension AppModel {
         guard let channelID = selectedChannelID, permissions.canCreateAny else { return }
         // Like Discord, the channel's unsent text becomes the thread's first message.
         let channelDraft = draft
-        openSideConversation(.threadCreation(ThreadCreationDraft(
+        presentThreadCreation(ThreadCreationDraft(
             parentID: channelID, permissions: permissions, isFromThreadBrowser: fromThreadBrowser
-        )))
-        dismissPinnedMessages()
-        if !isConversationPresented(channelID) { suspendSelectedConversationPresentation() }
+        ))
         if !channelDraft.isEmpty {
             translation.resetDraft(.channel)
             updateDraft("")
@@ -653,9 +608,13 @@ extension AppModel {
         let defaultName = ThreadNamePolicy.defaultName(
             for: message, channelNames: names.channels, roleNames: names.roles
         )
-        openSideConversation(.threadCreation(ThreadCreationDraft(startingFrom: message, defaultName: defaultName)))
+        presentThreadCreation(ThreadCreationDraft(startingFrom: message, defaultName: defaultName))
+    }
+
+    private func presentThreadCreation(_ draft: ThreadCreationDraft) {
+        openSideConversation(.threadCreation(draft))
         dismissPinnedMessages()
-        if !isConversationPresented(message.channelID) { suspendSelectedConversationPresentation() }
+        suspendSelectedConversationPresentationIfHidden()
     }
 
     /// Shows required-field errors only for invalid submissions. A valid send
@@ -677,7 +636,7 @@ extension AppModel {
     /// another thread.
     func submitThreadCreation(
         _ creation: ThreadCreationDraft,
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) async -> ComposerSubmissionResult {
         guard threadCreation === creation, !creation.isSubmitting else { return .rejected }
         let originalDraft = threadDraft
@@ -690,20 +649,17 @@ extension AppModel {
                 : selectedChannelThreadCreationPermissions.canCreatePublic
         }
         guard isAllowed, let name = creation.nameToCreate, !content.isEmpty || !attachments.isEmpty,
-              validateAttachmentCount(attachments),
+              attachmentBatchFits(attachments.count),
               allowOnboardingSubmission(in: creation.parentID)
         else { return .rejected }
-        guard let reservation = composer.outbox.reserveSubmission() else {
-            composer.isSendQueueFullAlertPresented = true
-            return .rejected
-        }
+        guard let reservation = reserveOutgoingQueueSubmission() else { return .rejected }
         defer { composer.outbox.releaseSubmission(reservation) }
         let session = accountSession()
         let draft = CreateThreadDraft(
             channelID: creation.parentID,
             name: name,
             isPrivate: creation.isPrivate,
-            autoArchiveDuration: selectedChannel?.defaultAutoArchiveDuration ?? 4_320,
+            autoArchiveDuration: selectedChannel?.defaultAutoArchiveDuration ?? ThreadAutoArchive.defaultDuration,
             starterMessageID: creation.starterMessage?.id,
             isFromThreadBrowser: creation.isFromThreadBrowser
         )
@@ -759,18 +715,20 @@ extension AppModel {
         if !changed.isEmpty { publishMessageRowsUpdate(changedMessageIDs: changed) }
     }
 
+    func reconcileOpenThread(with posts: [ForumPost]) {
+        guard let updated = posts.first(where: { $0.id == openThread?.id }) else { return }
+        if openThreadResolution != nil, updated.thread.notificationSettings != nil {
+            // A Gateway record carrying the current user's member settles
+            // access before, or instead of, the pending lookup.
+            presentResolvedOpenThread(updated.thread)
+        } else {
+            openThread = updated.thread
+        }
+    }
+
     /// Keeps timeline thread cards current. A card's summary lives on its
     /// message; its latest-message preview mirrors the provider's catalogue.
     func refreshTimelineThreadCards(parentID: ChannelID, posts: [ForumPost], replacesAll: Bool = true) {
-        if let updated = posts.first(where: { $0.id == openThread?.id }) {
-            if openThreadResolution != nil, updated.thread.notificationSettings != nil {
-                // A Gateway record carrying the current user's member settles
-                // access before, or instead of, the pending lookup.
-                presentResolvedOpenThread(updated.thread)
-            } else {
-                openThread = updated.thread
-            }
-        }
         var changedPreviewThreadIDs = Set<ChannelID>()
         if replacesAll {
             let retained = Set(posts.map(\.id))
@@ -854,8 +812,7 @@ extension AppModel {
             let preview = transform(cached[index].replyPreview)
             guard preview != cached[index].replyPreview else { continue }
             messageCache[channelID]?[index].replyPreview = preview
-            messageRowCache[channelID] = nil
-            messageRowCacheOrder.removeAll { $0 == channelID }
+            takeCachedMessageRows(for: channelID)
         }
     }
 

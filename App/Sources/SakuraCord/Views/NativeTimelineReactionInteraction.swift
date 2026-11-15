@@ -1,48 +1,26 @@
 import AppKit
-import QuartzCore
 import SakuraCordModels
 
 extension NativeTimelineCanvasView {
     func reactionPointerHit(at point: CGPoint) -> ReactionPointerHit? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard case let (index, local)? = rowHit(at: point),
               case let .message(row, _, _) = items[index]
         else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
-        let rowOrigin = displayedRowOrigin(at: index)
-        let layout = layouts[index]
         let frames = displayedReactionFrames(at: index)
-        let target = NativeTimelineReactionClickHitTesting.target(
+        switch NativeTimelineReactionClickHitTesting.target(
             at: local,
             reactionFrames: frames.reactions,
             addReactionFrame: frames.add
-        )
-        switch target {
+        ) {
         case let .reaction(regionIndex):
-            let region = layout.reactionRegions[regionIndex]
-            return ReactionPointerHit(
-                target: .reaction(
-                    messageID: row.id,
-                    reactionID: region.reaction.id
-                ),
-                rowIndex: index,
-                message: row.message,
-                reaction: region.reaction,
-                frame: frames.reactions[regionIndex].offsetBy(dx: 0, dy: rowOrigin)
+            let reaction = layouts[index].reactionRegions[regionIndex].reaction
+            return reactionPointerHit(
+                .reaction(messageID: row.id, reactionID: reaction.id),
+                at: index, message: row.message, reaction: reaction, frame: frames.reactions[regionIndex]
             )
         case .add:
-            guard model?.canCreateReactions(on: row.message) == true,
-                  let frame = frames.add else { return nil }
-            return ReactionPointerHit(
-                target: .add(messageID: row.id),
-                rowIndex: index,
-                message: row.message,
-                reaction: nil,
-                frame: frame.offsetBy(dx: 0, dy: rowOrigin)
+            return reactionPointerHit(
+                .add(messageID: row.id), at: index, message: row.message, reaction: nil, frame: frames.add
             )
         case nil:
             return nil
@@ -57,43 +35,49 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               case let .message(row, _, _) = items[index]
         else { return nil }
-        let rowOrigin = displayedRowOrigin(at: index)
         let frames = displayedReactionFrames(at: index)
         switch target {
         case let .reaction(_, reactionID):
             guard let regionIndex = layouts[index].reactionRegions.firstIndex(where: {
                 $0.reaction.id == reactionID
             }) else { return nil }
-            return ReactionPointerHit(
-                target: target,
-                rowIndex: index,
-                message: row.message,
-                reaction: layouts[index].reactionRegions[regionIndex].reaction,
-                frame: frames.reactions[regionIndex].offsetBy(dx: 0, dy: rowOrigin)
+            return reactionPointerHit(
+                target, at: index, message: row.message,
+                reaction: layouts[index].reactionRegions[regionIndex].reaction, frame: frames.reactions[regionIndex]
             )
         case .add:
-            guard model?.canCreateReactions(on: row.message) == true,
-                  let frame = frames.add else {
-                return nil
-            }
-            return ReactionPointerHit(
-                target: target,
-                rowIndex: index,
-                message: row.message,
-                reaction: nil,
-                frame: frame.offsetBy(dx: 0, dy: rowOrigin)
-            )
+            return reactionPointerHit(target, at: index, message: row.message, reaction: nil, frame: frames.add)
         }
     }
 
+    /// The hit for a chip or the add button of the row at `index`, drawn at
+    /// `frame` in the row; none for an add button the user may not use.
+    private func reactionPointerHit(
+        _ target: NativeTimelineReactionPointerTarget,
+        at index: Int,
+        message: Message,
+        reaction: Reaction?,
+        frame: CGRect?
+    ) -> ReactionPointerHit? {
+        if case .add = target, model?.canCreateReactions(on: message) != true { return nil }
+        guard let frame else { return nil }
+        return ReactionPointerHit(
+            target: target,
+            rowIndex: index,
+            message: message,
+            reaction: reaction,
+            frame: frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
+        )
+    }
+
     func rowIndex(for target: NativeTimelineReactionPointerTarget) -> Int? {
-        if let hoveredRow,
+        if let hoveredRow = pointer.hoveredRow,
            items.indices.contains(hoveredRow),
            items[hoveredRow].messageID == target.messageID
         {
             return hoveredRow
         }
-        return items.firstIndex { $0.messageID == target.messageID }
+        return rowIndex(forMessageID: target.messageID)
     }
 
     func hoveredReactionID(inMessageAt index: Int) -> String? {
@@ -113,95 +97,181 @@ extension NativeTimelineCanvasView {
         return targetMessageID == messageID
     }
 
-    func reconcileAnimatedMedia(
-        allowsScrolling: Bool = false
+    func setHoveredReaction(
+        _ hit: ReactionPointerHit?,
+        mouseLocationInScreen: CGPoint = NSEvent.mouseLocation
     ) {
-        // Scrolling changes which compositor overlays are visible, but it
-        // must not tear down the active players or decoded frames on every
-        // momentum tick. A delayed reconciliation commonly lands after
-        // scrolling begins.
-        guard allowsScrolling || !suppressesHoverPresentation else { return }
-        guard !items.isEmpty,
-              var index = rowIndex(at: max(0, visibleRect.minY))
+        let oldTarget = hoveredReaction
+        let newTarget = hit?.target
+        hoveredReaction = newTarget
+        if oldTarget != newTarget {
+            if let oldTarget, let index = rowIndex(for: oldTarget) {
+                setNeedsDisplay(rowFrame(at: index))
+            }
+            if let hit {
+                setNeedsDisplay(rowFrame(at: hit.rowIndex))
+            }
+        }
+
+        guard let hit,
+              let reaction = hit.reaction,
+              case .reaction = hit.target
         else {
-            animatedMediaRows.removeAll()
-            inlineVideoRows.removeAll()
-            removeInlineVideoOverlays()
-            removeAnimatedMediaOverlays()
+            reactionHoverCoordinator.close()
             return
         }
-        // Keep the paused compositor layers and their clocks while occluded.
-        // Discarding them here would restart decorations when the window returns.
-        guard permitsAnimatedMediaPlayback else { return }
-        let reduceMotion =
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-
-        var rows:
-            [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
-        var videoRows:
-            [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
-        while items.indices.contains(index),
-              displayedRowOrigin(at: index) < visibleRect.maxY
-        {
-            guard case let .message(row, _, _) = items[index],
-                  layouts.indices.contains(index)
-            else {
-                index += 1
-                continue
+        presentReactionHover(
+            hit,
+            reaction: reaction,
+            mouseLocationInScreen: mouseLocationInScreen
+        )
+        if oldTarget != newTarget {
+            Task { [weak model] in
+                await model?.loadReactionReactors(reaction, on: hit.message)
             }
-            let identifier = items[index].identifier
-            // A message still flying in from the composer gets its media
-            // once it lands.
-            if hidesRowForSendTransition(identifier) {
-                index += 1
-                continue
-            }
-            let keys = animatedMediaKeys(
-                for: row,
-                layout: layouts[index]
-            )
-            if !reduceMotion, !keys.isEmpty {
-                rows[identifier] = keys
-                for key in keys {
-                    NativeTimelineMediaStore.shared.requestAnimated(
-                        key,
-                        owner: visibleMediaPinOwner,
-                        subscriber: identifier
-                    ) { [weak self] in
-                        guard let self,
-                              let currentIndex = self.items.firstIndex(
-                                  where: { $0.identifier == identifier }
-                              )
-                        else { return }
-                        self.invalidateBitmap(identifier)
-                        self.setNeedsDisplay(self.rowFrame(at: currentIndex))
-                        self.reconcileAnimatedMediaOverlays(
-                            reduceMotion: false
-                        )
-                    }
-                }
-            }
-            let videoURLs: Set<URL> = Set(
-                layouts[index].embedRegions.compactMap { region -> URL? in
-                    guard region.mediaIsVideo,
-                          region.mediaAutoplaysInline
-                    else { return nil }
-                    return region.mediaURL
-                }
-            )
-            if !videoURLs.isEmpty {
-                videoRows[identifier] = videoURLs
-            }
-            index += 1
-        }
-        animatedMediaRows = rows
-        inlineVideoRows = videoRows
-        reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
-        if !allowsScrolling {
-            reconcileInlineVideoOverlays(
-                plays: !reduceMotion
-            )
         }
     }
 
+    func reconcileReactionHover() {
+        guard let target = hoveredReaction,
+              let hit = reactionPointerHit(for: target)
+        else {
+            hoveredReaction = nil
+            reactionHoverCoordinator.close()
+            return
+        }
+        setHoveredReaction(hit)
+    }
+
+    func presentReactionHover(
+        _ hit: ReactionPointerHit,
+        reaction: Reaction,
+        mouseLocationInScreen: CGPoint
+    ) {
+        let target = hit.target
+        let anchor = StablePopoverAnchor(sourceView: self) { [weak self] in
+            self?.reactionPointerHit(for: target)?.frame
+        }
+        let mouseInWindow = window?.convertPoint(
+            fromScreen: mouseLocationInScreen
+        ) ?? .zero
+        let mouseInCanvas = convert(mouseInWindow, from: nil)
+        let snapshot = StablePopoverAnchorSnapshot(
+            mouseLocationInScreen: mouseLocationInScreen,
+            mouseLocationInSource: CGPoint(
+                x: mouseInCanvas.x - hit.frame.minX,
+                y: mouseInCanvas.y - hit.frame.minY
+            )
+        )
+        let emojiURL = reaction.emojiReference.imageURL(in: model?.customEmojiURLsByID)
+        reactionHoverCoordinator.update(
+            anchor: anchor,
+            anchorSnapshot: snapshot,
+            isPresented: true,
+            configuration: .hover,
+            onDismiss: {},
+            content: MessageReactionTooltip(
+                reaction: reaction,
+                emojiURL: emojiURL
+            )
+        )
+    }
+
+    /// Both native reaction popovers use the visible message row as their anchor.
+    /// The presenters freeze this rectangle while the popover remains open.
+    func messageReactionPopoverAnchor(for message: Message) -> CGRect? {
+        guard let index = rowIndex(forMessageID: message.id),
+              layouts.indices.contains(index) else { return nil }
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        let anchor = visiblePart(ofRowAt: index, in: viewport) ?? viewport
+        return anchor.isNull || anchor.isEmpty ? nil : anchor
+    }
+
+    /// The part of the row inside `viewport`, or nil when none of it is.
+    private func visiblePart(ofRowAt index: Int, in viewport: CGRect) -> CGRect? {
+        let part = rowFrame(at: index).intersection(viewport)
+        return part.isNull || part.isEmpty ? nil : part
+    }
+
+    func beginReactionPopoverLayout() {
+        // Layout may restore the viewport or rebase history coordinates. Keep
+        // open popovers steady through that correction, independently of scroll.
+        reactionPopoverLayoutAnchors = [reactionPickerSource.installedSnapshotAnchor, reactionDetailsPopoverAnchor]
+            .compactMap { anchor in
+                guard let anchor, anchor.window != nil, anchor.superview != nil else { return nil }
+                return (anchor, anchor.convert(anchor.bounds, to: nil))
+            }
+    }
+
+    func endReactionPopoverLayout() {
+        for (anchor, frameInWindow) in reactionPopoverLayoutAnchors {
+            guard let parent = anchor.superview, anchor.window === window else { continue }
+            anchor.frame = parent.convert(frameInWindow, from: nil)
+        }
+        reactionPopoverLayoutAnchors.removeAll(keepingCapacity: true)
+        dismissOffscreenReactionPopovers()
+    }
+
+    func dismissOffscreenReactionPopovers() {
+        guard reactionPickerCoordinator.isShown || reactionDetailsPopover?.isShown == true else { return }
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        func isVisible(_ messageID: MessageID?) -> Bool {
+            guard let messageID, let index = rowIndex(forMessageID: messageID) else { return false }
+            return visiblePart(ofRowAt: index, in: viewport) != nil
+        }
+        if reactionPickerCoordinator.isShown, !isVisible(reactionPickerMessageID) {
+            reactionPickerMessageID = nil
+            reactionPickerCoordinator.close(notifyBinding: true)
+        }
+        if reactionDetailsPopover?.isShown == true, !isVisible(reactionDetailsMessageID) {
+            reactionDetailsMessageID = nil
+            reactionDetailsPopover?.close()
+        }
+    }
+
+    func showReactionPicker(forMessageRow message: Message) {
+        guard let model, model.canCreateReactions(on: message),
+              let anchor = messageReactionPopoverAnchor(for: message) else { return }
+        reactionPickerMessageID = message.id
+        reactionPickerSource.frame = anchor
+        reactionPickerSource.followsScrolling = true
+        let content = EmojiPickerView(
+            model: model,
+            useCase: .reaction(
+                guildID: message.guildID ?? model.selectedGuildID
+            ),
+            allowsPersistentSelection: true,
+            dismiss: { [weak self] in
+                guard let self else { return }
+                self.reactionPickerCoordinator.close(notifyBinding: false)
+                self.reactionPickerSource.frame = .zero
+            },
+            select: { [weak self] activation in
+                guard let self else { return }
+                let value = switch activation.selection {
+                case let .native(value): value
+                case let .custom(emoji): emoji.messageToken
+                }
+                self.actions?.react(value, message)
+                if !activation.keepsPickerPresented {
+                    self.reactionPickerCoordinator.close(
+                        notifyBinding: false
+                    )
+                    self.reactionPickerSource.frame = .zero
+                }
+            }
+        )
+        reactionPickerCoordinator.update(
+            sourceView: reactionPickerSource,
+            isPresented: true,
+            preferredEdge: .maxX,
+            accessibilityIdentifier: ReactionActionMenuPresentation.inline.pickerAccessibilityIdentifier,
+            content: content,
+            setPresented: { [weak self] isPresented in
+                if !isPresented {
+                    self?.reactionPickerSource.frame = .zero
+                }
+            }
+        )
+    }
 }

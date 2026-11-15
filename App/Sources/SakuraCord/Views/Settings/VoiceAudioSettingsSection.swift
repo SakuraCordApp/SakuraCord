@@ -11,7 +11,7 @@ struct VoiceAudioSettingsSection: View {
     var body: some View {
         Section {
             Picker("Microphone", selection: inputSelection) {
-                Text(systemDefaultLabel(model.mediaDevices.audioInputs)).tag("")
+                Text(model.mediaDevices.audioInputs.systemDefaultLabel).tag("")
                 ForEach(model.mediaDevices.audioInputs) { device in
                     Text(device.name).tag(device.uid)
                 }
@@ -23,7 +23,7 @@ struct VoiceAudioSettingsSection: View {
                 .settingsControlAnchor(.voiceInputVolume, state: state)
 
             Picker("Speaker", selection: outputSelection) {
-                Text(systemDefaultLabel(model.mediaDevices.audioOutputs)).tag("")
+                Text(model.mediaDevices.audioOutputs.systemDefaultLabel).tag("")
                 ForEach(model.mediaDevices.audioOutputs) { device in
                     Text(device.name).tag(device.uid)
                 }
@@ -112,7 +112,6 @@ private struct VoiceVolumeSettingsRow: View {
                 Text(title, bundle: #bundle)
             }
             .labelsHidden()
-            .tint(SakuraCordAccentColor.color)
             Text(volume, format: .percent.precision(.fractionLength(0)))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -121,11 +120,6 @@ private struct VoiceVolumeSettingsRow: View {
             Text(title, bundle: #bundle)
         }
     }
-}
-
-private func systemDefaultLabel(_ devices: [AudioDeviceInfo]) -> String {
-    guard let device = devices.first(where: \.isDefault) else { return "System Default" }
-    return "System Default (\(device.name))"
 }
 
 private struct VoiceMicrophoneTestRow: View {

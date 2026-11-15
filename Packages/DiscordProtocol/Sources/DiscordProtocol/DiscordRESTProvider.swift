@@ -8,21 +8,6 @@ let discordPerformanceSignposter = OSSignposter(
     category: "PointsOfInterest"
 )
 
-nonisolated struct AttachmentUploadFile: Equatable, Sendable {
-    let url: URL
-    let name: String
-    let description: String?
-    /// The draft attachment this file came from, which lets the user stop it alone.
-    let id: UUID?
-
-    init(url: URL, name: String, description: String? = nil, id: UUID? = nil) {
-        self.url = url
-        self.name = name
-        self.description = description
-        self.id = id
-    }
-}
-
 public actor DiscordRESTProvider: PendingCredentialChatProvider {
     let prepareUploadFile: @Sendable (URL) async throws -> PreparedUploadFile
     let anonymisesUploadFilenames: @Sendable () async -> Bool
@@ -124,25 +109,15 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var attachmentUploadDelegates: [UUID: AttachmentUploadTaskDelegate] = [:]
     var cancelledAttachmentUploads: Set<UUID> = []
     var postingAttachmentUploads: Set<UUID> = []
+    /// Numbers voice-message files as Discord's recorder does: `0recording.ogg`, `1recording.ogg`, …
+    var voiceMessageCount = 0
     /// Staged files storing ahead of their message, by draft attachment ID; each yields its stored name.
     var attachmentPreuploads: [UUID: Task<String, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
     var cachedForumThreadOrder: [ChannelID] = []
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]
     var cachedJoinedThreadOrder: [ChannelID] = []
-    /// Advanced by each authoritative thread record or deletion; a REST
-    /// result is applied only when no newer record arrived meanwhile.
-    var threadRecordRevisions: [ChannelID: UInt64] = [:]
-    /// Advanced by authoritative membership changes and each local join or
-    /// leave; a REST result carries membership only when none arrived meanwhile.
-    var threadMembershipRevisions: [ChannelID: UInt64] = [:]
-    /// Advanced only by changes that supersede a pending mutation's result:
-    /// Gateway records and deletions, and accepted local mutations. Reads
-    /// advance the revisions above but never these, so an observation cannot
-    /// cancel a mutation's confirmation.
-    var threadRecordEpochs: [ChannelID: UInt64] = [:]
-    /// Gateway membership events and the start of each local join or leave.
-    var threadMembershipEpochs: [ChannelID: UInt64] = [:]
+    var threadRevisions = ThreadRevisionState()
     /// The latest pending edit per thread; the next edit waits for it.
     var threadMutationTails: [ChannelID: Task<Void, Never>] = [:]
     var cachedGuildNotificationSettings: [GuildID?: GuildNotificationSettings] = [:]
@@ -168,6 +143,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var profileDeveloperSettingsDataVersion: UInt32?
     var guildLayoutDataVersion: UInt32?
     var inboxSettingsFieldVersions: [Int: UInt32] = [:]
+    var favoritesSync = FavoritesSyncState()
+    var favoritesSaveTask: Task<Void, Never>?
+    var favoritesGeneration: UInt64 = 0
     var lastSentPresenceStatus: PresenceStatus?
     var presenceSendWindowEnds: [Date] = []
     var deferredPresenceTask: Task<Void, Never>?
@@ -209,26 +187,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     }
     var cachedMembersByID: [GuildID: [UserID: Member]] = [:]
     var cachedPrivateMembersByID: [UserID: Member] = [:]
-    var cachedMemberListItems:
-        [GuildID: [String: [GuildMemberListUpdateDTO.Item?]]] = [:]
-    var cachedMemberListGroups:
-        [GuildID: [String: [GuildMemberListGroup]]] = [:]
     var threadMemberSubscriptions: [GuildID: [ChannelID]] = [:]
     var threadMemberSubscriptionRequestIDs: [GuildID: [ChannelID: UUID]] = [:]
     var cachedThreadMemberIDs: [ChannelID: [UserID]] = [:]
-    var selectedMemberListID: [GuildID: String] = [:]
-    var memberListSubscriptions:
-        [GuildID: [String: DiscordMemberListSubscription]] = [:]
-    var memberListSubscriptionOrder: [GuildID: [String]] = [:]
-    /// The selected viewport can move while a cooldown prevents committing it.
-    var memberListViewportRequests:
-        [GuildID: (memberListID: String, subscription: DiscordMemberListSubscription)] = [:]
+    var memberListState = MemberListSubscriptionState()
     /// Selection can replace the desired viewport while an older send is suspended.
     var memberListInFlightRequests:
         [GuildID: DiscordMemberListInFlightRequest] = [:]
-    /// Retained member lists whose subscribed ranges were invalidated and
-    /// still need a subscription send to get a fresh SYNC.
-    var memberListsNeedingRefresh: [GuildID: [String: UUID]] = [:]
     var guildSubscriptionTasks: [GuildID: Task<Void, any Error>] = [:]
     #if DEBUG
         var guildSubscriptionQueueWaitersForTesting:
@@ -236,8 +201,6 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     #endif
     var guildSubscriptionGenerations: [GuildID: UUID] = [:]
     var guildSubscriptionTaskIDs: [GuildID: UUID] = [:]
-    var memberListRefreshRetryTasks: [GuildID: Task<Void, Never>] = [:]
-    var memberListViewportRestoreTasks: [GuildID: Task<Void, Never>] = [:]
     var memberListRefreshRetryAttempts: [GuildID: Set<String>] = [:]
     var cachedGatewayUsersByID: [String: UserDTO] = [:]
     var cachedGatewayUserOrder: [String] = []
@@ -453,31 +416,23 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         anonymisesUploadFilenames: @escaping @Sendable () async -> Bool = { false },
         prepareUploadFile: @escaping @Sendable (URL) async throws -> PreparedUploadFile = { PreparedUploadFile(url: $0) }
     ) {
-        let defaultRESTConfiguration = URLSessionConfiguration.default
-        let resolvedSession = session ?? URLSession(
-            configuration: defaultRESTConfiguration
+        self.init(
+            credentialSource: .stored(credentials, handle),
+            session: session ?? URLSession(configuration: .default),
+            gatewayTransport: URLSessionGatewayTransport(session: session ?? URLSession(configuration: .default)),
+            gatewayCodec: ETFGatewayCodec(),
+            gatewayEncoding: DiscordProductionBaseline.current.desktopGatewayEncoding,
+            gatewayCompression: .zstdStream,
+            usesDesktopHeartbeat: true,
+            installationID: installationID ?? DiscordClientMetadata.persistedInstallationID(),
+            apiDiagnostics: apiDiagnostics,
+            usesEmojiDiskCache: usesEmojiDiskCache,
+            usesForwardSearchPeopleDiskCache: usesForwardSearchPeopleDiskCache ?? (session == nil),
+            ownsRESTSession: session == nil,
+            persistsResolvedInstallationID: true,
+            anonymisesUploadFilenames: anonymisesUploadFilenames,
+            prepareUploadFile: prepareUploadFile
         )
-        let gatewaySession = session ?? URLSession(configuration: .default)
-        credentialSource = .stored(credentials, handle)
-        accountID = handle.accountID
-        restSession = resolvedSession
-        restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
-        gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
-        gatewayClock = ContinuousGatewayClock()
-        gatewayCodec = ETFGatewayCodec()
-        gatewayEncoding = DiscordProductionBaseline.current.desktopGatewayEncoding
-        gatewayCompression = .zstdStream
-        usesDesktopHeartbeat = true
-        clientMetadata = DiscordClientMetadata(
-            installationID: installationID ?? DiscordClientMetadata.persistedInstallationID()
-        )
-        self.apiDiagnostics = apiDiagnostics
-        self.anonymisesUploadFilenames = anonymisesUploadFilenames
-        self.prepareUploadFile = prepareUploadFile
-        self.usesEmojiDiskCache = usesEmojiDiskCache
-        self.usesForwardSearchPeopleDiskCache =
-            usesForwardSearchPeopleDiskCache ?? (session == nil)
-        persistsResolvedInstallationID = true
     }
 
     public init(
@@ -490,31 +445,23 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         anonymisesUploadFilenames: @escaping @Sendable () async -> Bool = { false },
         prepareUploadFile: @escaping @Sendable (URL) async throws -> PreparedUploadFile = { PreparedUploadFile(url: $0) }
     ) {
-        let defaultRESTConfiguration = URLSessionConfiguration.default
-        let resolvedSession = session ?? URLSession(
-            configuration: defaultRESTConfiguration
+        self.init(
+            credentialSource: .pending(pendingCredential),
+            session: session ?? URLSession(configuration: .default),
+            gatewayTransport: URLSessionGatewayTransport(session: session ?? URLSession(configuration: .default)),
+            gatewayCodec: ETFGatewayCodec(),
+            gatewayEncoding: DiscordProductionBaseline.current.desktopGatewayEncoding,
+            gatewayCompression: .zstdStream,
+            usesDesktopHeartbeat: true,
+            installationID: installationID ?? DiscordClientMetadata.persistedInstallationID(),
+            apiDiagnostics: apiDiagnostics,
+            usesEmojiDiskCache: usesEmojiDiskCache,
+            usesForwardSearchPeopleDiskCache: usesForwardSearchPeopleDiskCache ?? (session == nil),
+            ownsRESTSession: session == nil,
+            persistsResolvedInstallationID: true,
+            anonymisesUploadFilenames: anonymisesUploadFilenames,
+            prepareUploadFile: prepareUploadFile
         )
-        let gatewaySession = session ?? URLSession(configuration: .default)
-        credentialSource = .pending(pendingCredential)
-        accountID = nil
-        restSession = resolvedSession
-        restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
-        gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
-        gatewayClock = ContinuousGatewayClock()
-        gatewayCodec = ETFGatewayCodec()
-        gatewayEncoding = DiscordProductionBaseline.current.desktopGatewayEncoding
-        gatewayCompression = .zstdStream
-        usesDesktopHeartbeat = true
-        clientMetadata = DiscordClientMetadata(
-            installationID: installationID ?? DiscordClientMetadata.persistedInstallationID()
-        )
-        self.apiDiagnostics = apiDiagnostics
-        self.anonymisesUploadFilenames = anonymisesUploadFilenames
-        self.prepareUploadFile = prepareUploadFile
-        self.usesEmojiDiskCache = usesEmojiDiskCache
-        self.usesForwardSearchPeopleDiskCache =
-            usesForwardSearchPeopleDiskCache ?? (session == nil)
-        persistsResolvedInstallationID = true
     }
 
     init(
@@ -534,23 +481,22 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         anonymisesUploadFilenames: @escaping @Sendable () async -> Bool = { false },
         prepareUploadFile: @escaping @Sendable (URL) async throws -> PreparedUploadFile = { PreparedUploadFile(url: $0) }
     ) {
-        credentialSource = .stored(credentials, handle)
-        accountID = handle.accountID
-        restSession = session
-        restSessionConfiguration = ownsRESTSession ? session.configuration : nil
-        self.gatewayTransport = gatewayTransport
-        self.gatewayClock = gatewayClock
-        self.gatewayCodec = gatewayCodec
-        self.gatewayEncoding = gatewayEncoding
-        self.gatewayCompression = gatewayCompression
-        self.usesDesktopHeartbeat = usesDesktopHeartbeat
-        clientMetadata = DiscordClientMetadata(installationID: installationID)
-        self.apiDiagnostics = apiDiagnostics
-        self.anonymisesUploadFilenames = anonymisesUploadFilenames
-        self.prepareUploadFile = prepareUploadFile
-        self.usesEmojiDiskCache = usesEmojiDiskCache
-        usesForwardSearchPeopleDiskCache = false
-        persistsResolvedInstallationID = false
+        self.init(
+            credentialSource: .stored(credentials, handle),
+            session: session,
+            gatewayTransport: gatewayTransport,
+            gatewayClock: gatewayClock,
+            gatewayCodec: gatewayCodec,
+            gatewayEncoding: gatewayEncoding,
+            gatewayCompression: gatewayCompression,
+            usesDesktopHeartbeat: usesDesktopHeartbeat,
+            installationID: installationID,
+            apiDiagnostics: apiDiagnostics,
+            usesEmojiDiskCache: usesEmojiDiskCache,
+            ownsRESTSession: ownsRESTSession,
+            anonymisesUploadFilenames: anonymisesUploadFilenames,
+            prepareUploadFile: prepareUploadFile
+        )
     }
 
     init(
@@ -568,12 +514,51 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         anonymisesUploadFilenames: @escaping @Sendable () async -> Bool = { false },
         prepareUploadFile: @escaping @Sendable (URL) async throws -> PreparedUploadFile = { PreparedUploadFile(url: $0) }
     ) {
-        credentialSource = .pending(pendingCredential)
-        accountID = nil
+        self.init(
+            credentialSource: .pending(pendingCredential),
+            session: session,
+            gatewayTransport: gatewayTransport,
+            gatewayCodec: gatewayCodec,
+            gatewayEncoding: gatewayEncoding,
+            gatewayCompression: gatewayCompression,
+            usesDesktopHeartbeat: usesDesktopHeartbeat,
+            installationID: installationID,
+            apiDiagnostics: apiDiagnostics,
+            usesEmojiDiskCache: usesEmojiDiskCache,
+            ownsRESTSession: ownsRESTSession,
+            anonymisesUploadFilenames: anonymisesUploadFilenames,
+            prepareUploadFile: prepareUploadFile
+        )
+    }
+
+    private init(
+        credentialSource: DiscordCredentialSource,
+        session: URLSession,
+        gatewayTransport: any GatewayTransport,
+        gatewayClock: any GatewayClock = ContinuousGatewayClock(),
+        gatewayCodec: any GatewayCodec = JSONGatewayCodec(),
+        gatewayEncoding: String = "json",
+        gatewayCompression: GatewayCompression = .zlibStream,
+        usesDesktopHeartbeat: Bool = false,
+        installationID: String? = nil,
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
+        usesEmojiDiskCache: Bool = true,
+        usesForwardSearchPeopleDiskCache: Bool = false,
+        ownsRESTSession: Bool = false,
+        persistsResolvedInstallationID: Bool = false,
+        anonymisesUploadFilenames: @escaping @Sendable () async -> Bool = { false },
+        prepareUploadFile: @escaping @Sendable (URL) async throws -> PreparedUploadFile = { PreparedUploadFile(url: $0) }
+    ) {
+        self.credentialSource = credentialSource
+        if case let .stored(_, handle) = credentialSource {
+            accountID = handle.accountID
+        } else {
+            accountID = nil
+        }
         restSession = session
         restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
-        gatewayClock = ContinuousGatewayClock()
+        self.gatewayClock = gatewayClock
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
         self.gatewayCompression = gatewayCompression
@@ -583,8 +568,8 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         self.anonymisesUploadFilenames = anonymisesUploadFilenames
         self.prepareUploadFile = prepareUploadFile
         self.usesEmojiDiskCache = usesEmojiDiskCache
-        usesForwardSearchPeopleDiskCache = false
-        persistsResolvedInstallationID = false
+        self.usesForwardSearchPeopleDiskCache = usesForwardSearchPeopleDiskCache
+        self.persistsResolvedInstallationID = persistsResolvedInstallationID
     }
 }
 

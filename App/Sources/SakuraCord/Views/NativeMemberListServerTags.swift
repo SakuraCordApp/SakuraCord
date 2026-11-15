@@ -30,11 +30,11 @@ extension NativeMemberListCanvasView {
             return cached
         }
         let row = paintedRowRect(at: index)
-        let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+        let textX = textOriginX(at: index)
         let hasRoleIndicator = presentation.roleColorDisplay == .nextToNames
             && MessageAuthorPresentation.topRoleColor(in: member.roles) != nil
         let nameX = textX + (hasRoleIndicator ? InterfaceScale.metric(13) : 0)
-        let accessoryWidths: [CGFloat] = (member.user.isBot ? [NativeAppBadgePresentation.width] : [])
+        let accessoryWidths: [CGFloat] = (member.user.isBot ? [NativeAppBadgePresentation.width(isVerified: member.user.isVerifiedBot)] : [])
             + (prepared.serverTag.map { [$0.width] } ?? [])
         let layout = NativeMemberNameLayout.layout(
             measuredNameWidth: prepared.nameWidth,

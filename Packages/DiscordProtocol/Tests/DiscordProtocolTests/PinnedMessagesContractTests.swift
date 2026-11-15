@@ -6,8 +6,8 @@ import Testing
 @Suite(.serialized)
 struct PinnedMessagesContractTests {
     @Test func `pin page uses observed cursor contract and preserves pin metadata`() async throws {
-        PinURLProtocol.reset()
-        let provider = makeProvider()
+        let capture = RequestRecorder(PinURLProtocol.captured)
+        let provider = stubbedProvider(PinURLProtocol.self, token: capture.id, accountID: "pins-contract")
         let before = try #require(DiscordDate.parse("2026-08-30T01:02:03.456Z"))
 
         let page = try await provider.pinnedMessages(
@@ -20,19 +20,19 @@ struct PinnedMessagesContractTests {
         #expect(page.items.allSatisfy { $0.message.isPinned })
         #expect(page.hasMore)
         #expect(page.nextBefore == page.items.last?.pinnedAt)
-        let request = try #require(PinURLProtocol.requests.first)
+        let request = try #require(capture.requests.first)
         #expect(request.method == "GET")
         #expect(request.path == "/api/v9/channels/200/messages/pins")
-        #expect(request.query["limit"] == "50")
+        #expect(request.queryItems.first { $0.name == "limit" }?.value == "50")
         let encodedBefore = try #require(
-            request.query["before"].flatMap(DiscordDate.parse)
+            request.queryItems.first { $0.name == "before" }?.value.flatMap(DiscordDate.parse)
         )
         #expect(abs(encodedBefore.timeIntervalSince(before)) < 0.002)
     }
 
     @Test func `pin and unpin use current idempotent mutation routes`() async throws {
-        PinURLProtocol.reset()
-        let provider = makeProvider()
+        let capture = RequestRecorder(PinURLProtocol.captured)
+        let provider = stubbedProvider(PinURLProtocol.self, token: capture.id, accountID: "pins-contract")
 
         try await provider.setMessagePinned(
             true,
@@ -45,8 +45,8 @@ struct PinnedMessagesContractTests {
             channelID: ChannelID(rawValue: 200)
         )
 
-        #expect(PinURLProtocol.requests.map(\.method) == ["PUT", "DELETE"])
-        #expect(PinURLProtocol.requests.allSatisfy {
+        #expect(capture.requests.map(\.method) == ["PUT", "DELETE"])
+        #expect(capture.requests.allSatisfy {
             $0.path == "/api/v9/channels/200/messages/pins/300"
         })
     }
@@ -65,53 +65,15 @@ struct PinnedMessagesContractTests {
         try JSONDecoder().decode(MessageUpdateDTO.self, from: explicit).apply(to: &message)
         #expect(!message.isPinned)
     }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [PinURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: PinCredentialStore(),
-            handle: CredentialHandle(accountID: "pins-contract"),
-            session: URLSession(configuration: configuration)
-        )
-    }
-}
-
-private actor PinCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("pins-contract-session".utf8)
-    }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
-}
-
-private struct CapturedPinRequest: Sendable {
-    let method: String
-    let path: String
-    let query: [String: String]
 }
 
 private final class PinURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var requests: [CapturedPinRequest] = []
-
-    static func reset() { requests = [] }
+    static let captured = Notification.Name("PinContractCapturedRequest")
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-        Self.requests.append(CapturedPinRequest(
-            method: request.httpMethod ?? "",
-            path: request.url?.path ?? "",
-            query: Dictionary(
-                uniqueKeysWithValues: (components?.queryItems ?? []).compactMap { item in
-                    item.value.map { (item.name, $0) }
-                }
-            )
-        ))
+        NotificationCenter.default.post(name: Self.captured, object: request)
         let isRead = request.httpMethod == "GET"
         let readBody = #"""
         {
@@ -123,15 +85,7 @@ private final class PinURLProtocol: URLProtocol, @unchecked Sendable {
         }
         """#
         let body = isRead ? readBody : ""
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: isRead ? 200 : 204,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if !body.isEmpty { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: isRead ? 200 : 204, body: Data(body.utf8), headers: nil)
     }
 
     override func stopLoading() {}

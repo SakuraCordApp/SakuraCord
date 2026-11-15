@@ -23,6 +23,25 @@ nonisolated struct InboxUnreadGroup: Equatable, Identifiable, Sendable {
     var isCollapsed = false
     var errorMessage: String?
 
+    /// A server's unread scheduled events, under the server's own ID.
+    static func events(
+        guildID: GuildID,
+        subtitle: String?,
+        oldestRead: ScheduledEventID?,
+        newest: ScheduledEventID,
+        mentionCount: Int,
+        isCollapsed: Bool = false
+    ) -> Self {
+        InboxUnreadGroup(
+            channelID: ChannelID(rawValue: guildID.rawValue), guildID: guildID,
+            title: "Events", subtitle: subtitle,
+            oldestReadMessageID: oldestRead.map { MessageID(rawValue: $0.rawValue) },
+            newestUnreadMessageID: MessageID(rawValue: newest.rawValue), mentionCount: mentionCount,
+            isEvents: true,
+            isCollapsed: isCollapsed
+        )
+    }
+
     /// Whether retained content still describes the same unread range.
     func canReuseContent(of retained: Self) -> Bool {
         retained.isLoaded && retained.errorMessage == nil && !isAgeRestricted
@@ -39,6 +58,14 @@ nonisolated struct InboxCollapseIntent: Equatable, Sendable {
     let isEvents: Bool
 }
 
+/// The UserDefaults keys the inbox's mention filters and age agreements use.
+nonisolated enum InboxPreferenceKeys {
+    static let currentServer = "dev.sakuracord.inbox-current-server"
+    static let includesRoles = "dev.sakuracord.inbox-include-roles"
+    static let includesEveryone = "dev.sakuracord.inbox-include-everyone"
+    static let ageAgreements = "dev.sakuracord.inbox-age-agreements"
+}
+
 @MainActor
 @Observable
 final class InboxState {
@@ -51,7 +78,7 @@ final class InboxState {
     var scheduledEvents = InboxScheduledEvents()
     var selectedEvent: InboxScheduledEvent?
     var ageRestrictedGuildID: GuildID?
-    var acceptedAgeRestrictedGuildIDs = Set((UserDefaults.standard.stringArray(forKey: "dev.sakuracord.inbox-age-agreements") ?? []).compactMap(GuildID.init))
+    var acceptedAgeRestrictedGuildIDs = Set((UserDefaults.standard.stringArray(forKey: InboxPreferenceKeys.ageAgreements) ?? []).compactMap(GuildID.init))
     @ObservationIgnored var ageRestrictedAction: (@MainActor () -> Void)?
     @ObservationIgnored var eventMutationTasks: [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored var pendingEventAcknowledgements: [GuildID: ScheduledEventID] = [:]
@@ -171,10 +198,11 @@ final class InboxState {
     }
 
     func publish(channels: [Channel], guilds: [Guild], preparedRows: [MessageRowPresentation]? = nil, notifying model: AnyObject) {
-        let oldRows = rows
-        rows = preparedRows ?? InboxMessageRowInput.reusingRows(rows, inputs: rowInputs(channels: channels, guilds: guilds))
-        rowsRevision &+= 1
-        rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: rows, revision: rowsRevision))
+        rowsUpdateJournal.publish(
+            preparedRows ?? InboxMessageRowInput.reusingRows(rows, inputs: rowInputs(channels: channels, guilds: guilds)),
+            into: &rows,
+            revision: &rowsRevision
+        )
         NotificationCenter.default.post(name: .sakuracordMessageRowsDidChange, object: model)
     }
 
@@ -188,10 +216,8 @@ final class InboxState {
 
     func clear(notifying model: AnyObject) {
         cancelLoad()
-        metadataTasks.values.forEach { $0.cancel() }
-        metadataTasks = [:]
-        mutationTasks.values.forEach { $0.cancel() }
-        mutationTasks = [:]
+        metadataTasks.cancelAll()
+        mutationTasks.cancelAll()
         settingsTask?.cancel()
         settingsTask = nil
         settingsSyncTask?.cancel()
@@ -209,10 +235,8 @@ final class InboxState {
         selectedEvent = nil
         ageRestrictedGuildID = nil
         ageRestrictedAction = nil
-        eventMutationTasks.values.forEach { $0.cancel() }
-        eventMutationTasks = [:]
-        eventInterestTasks.values.forEach { $0.cancel() }
-        eventInterestTasks = [:]
+        eventMutationTasks.cancelAll()
+        eventInterestTasks.cancelAll()
         pendingEventAcknowledgements = [:]
         locallyUndoneEventGuilds = []
         mentions = []

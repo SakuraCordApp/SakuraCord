@@ -16,16 +16,16 @@ import UserNotifications
     value.notifiesMentions = false
     value.groupsByConversation = true
     let store = SettingsPreferenceStore(defaults: defaults)
-    let export = store.export(scope: .appWide, page: .notifications)
+    let export = store.export(page: .notifications)
     #expect(
-        export.values[SettingsControlID.notificationMentions.rawValue] == .bool(false)
+        export[SettingsControlID.notificationMentions.rawValue] == .bool(false)
     )
     #expect(
-        export.values[SettingsControlID.notificationGroupBursts.rawValue] == .bool(true)
+        export[SettingsControlID.notificationGroupBursts.rawValue] == .bool(true)
     )
-    #expect(export.values[SettingsControlID.launchDestination.rawValue] == nil)
+    #expect(export[SettingsControlID.launchDestination.rawValue] == nil)
 
-    store.reset(scope: .appWide, page: .notifications)
+    store.reset(page: .notifications)
     value.reload()
     #expect(value.dockBadgeStyle == .mentions)
     #expect(value.notifiesMentions)
@@ -36,16 +36,15 @@ import UserNotifications
 @Test func `Settings export keeps system sounds and leaves out custom file sounds`() {
     let defaults = InMemoryPreferences()
     let preferences = NotificationPreferences(defaults: defaults)
-    preferences.messageSoundID = NotificationSoundLibrary.systemID(for: "Glass")
-    preferences.callRingtoneBookmark = Data([1])
-    preferences.callRingtoneID = NotificationSoundLibrary.customID
+    preferences.setSoundID(NotificationSoundLibrary.systemID(for: "Glass"), for: .message)
+    preferences.setCustomSound(bookmark: Data([1]), name: "", for: .call)
 
-    let export = SettingsPreferenceStore(defaults: defaults).export(scope: .appWide, page: .notifications)
+    let export = SettingsPreferenceStore(defaults: defaults).export(page: .notifications)
     #expect(
-        export.values[SettingsControlID.notificationMessageSound.rawValue]
+        export[SettingsControlID.notificationMessageSound.rawValue]
             == .string("system:Glass")
     )
-    #expect(export.values[SettingsControlID.notificationCallRingtone.rawValue] == nil)
+    #expect(export[SettingsControlID.notificationCallRingtone.rawValue] == nil)
 }
 
 @MainActor
@@ -122,60 +121,58 @@ import UserNotifications
         content: "Earlier"
     )
 
-    #expect(NotificationEventContext.message(
+    #expect(NotificationEventType.message(
         directMessage,
         channel: directChannel,
         isMention: false,
         currentUserID: currentUser.id
-    ).type == .directMessage)
-    #expect(NotificationEventContext.message(
+    ) == .directMessage)
+    #expect(NotificationEventType.message(
         groupMessage,
         channel: groupChannel,
         isMention: false,
         currentUserID: currentUser.id
-    ).type == .groupDirectMessage)
-    #expect(NotificationEventContext.message(
+    ) == .groupDirectMessage)
+    #expect(NotificationEventType.message(
         reply,
         channel: serverChannel,
         isMention: true,
         currentUserID: currentUser.id
-    ).type == .reply)
-    #expect(NotificationEventContext.message(
+    ) == .reply)
+    #expect(NotificationEventType.message(
         directMessage,
         channel: serverChannel,
         isMention: true,
         currentUserID: currentUser.id
-    ).type == .mention)
-    #expect(NotificationEventContext.message(
+    ) == .mention)
+    #expect(NotificationEventType.message(
         directMessage,
         channel: serverChannel,
         isMention: false,
         currentUserID: currentUser.id
-    ).type == .serverActivity)
+    ) == .serverActivity)
 
     var directReply = reply
     directReply.channelID = directChannel.id
-    #expect(NotificationEventContext.message(
+    #expect(NotificationEventType.message(
         directReply,
         channel: directChannel,
         isMention: true,
         currentUserID: currentUser.id
-    ).type == .directMessage)
+    ) == .directMessage)
     directReply.channelID = groupChannel.id
-    #expect(NotificationEventContext.message(
+    #expect(NotificationEventType.message(
         directReply,
         channel: groupChannel,
         isMention: true,
         currentUserID: currentUser.id
-    ).type == .groupDirectMessage)
+    ) == .groupDirectMessage)
 }
 
 @MainActor
 @Test func `Notification policy narrows events without overriding Focus`() throws {
     let preferences = NotificationPreferences(defaults: InMemoryPreferences())
-    let server = NotificationEventContext(
-        type: .serverActivity
-    )
+    let server = NotificationEventType.serverActivity
     #expect(!preferences.allows(
         server,
         isCurrentConversation: true
@@ -197,9 +194,6 @@ import UserNotifications
         .incomingCall,
         isCurrentConversation: true
     ))
-    #expect(NotificationFocusPolicy.interruptionLevel == .active)
-    #expect(NotificationFocusPolicy.interruptionLevel != .timeSensitive)
-    #expect(NotificationFocusPolicy.interruptionLevel != .critical)
 }
 
 @Test func `Notification identities, grouping and deep links are deterministic`() {
@@ -445,7 +439,11 @@ func `DND invalidates native notifications awaiting image preparation`(entersDND
             for await _ in resume.stream { break }
             return nil
         },
-        submitRequest: { submittedIDs.append($0.identifier) }
+        submitRequest: {
+            submittedIDs.append($0.identifier)
+            // Focus decides how a message interrupts; SakuraCord never overrides it.
+            #expect($0.content.interruptionLevel == .active)
+        }
     )
     let preferences = NotificationPreferences(defaults: InMemoryPreferences())
     preferences.playsSound = false
@@ -458,8 +456,12 @@ func `DND invalidates native notifications awaiting image preparation`(entersDND
         )]
     )
     let delivery = Task {
-        await service.deliver(
-            message: message, channel: nil, guild: nil, accountID: "offline", preferences: preferences
+        await service.deliverMessage(
+            message: message, channel: nil, accountID: "offline",
+            presentation: NotificationContentPresentation.make(
+                message: message, channel: nil, guild: nil, style: preferences.previewStyle
+            ),
+            preferences: preferences
         )
     }
     defer { resume.continuation.finish(); delivery.cancel() }
@@ -544,11 +546,11 @@ private final class RecordingNotificationService: NativeNotificationService {
         return status == .authorized
     }
     func authorizationStatus() async -> UNAuthorizationStatus { status }
-    func deliver(
+    func deliverMessage(
         message _: Message,
         channel _: Channel?,
-        guild _: Guild?,
         accountID _: String,
+        presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
     ) async {
         messageSounds.append(preferences.playsSound)

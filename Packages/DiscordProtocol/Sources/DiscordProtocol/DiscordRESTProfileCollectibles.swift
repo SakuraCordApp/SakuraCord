@@ -110,8 +110,7 @@ public extension DiscordRESTProvider {
         profileGameAnnouncementCache = [:]
         profileWidgetGameSearches = [:]
         profileWidgetGameSearchFailures = [:]
-        for task in profileWidgetGameSearchTasks.values { task.cancel() }
-        profileWidgetGameSearchTasks = [:]
+        profileWidgetGameSearchTasks.cancelAll()
         profileDeveloperMode = false
         profileStatusSettings = nil
         profileStatusSettingsDataVersion = nil
@@ -127,8 +126,7 @@ public extension DiscordRESTProvider {
         profileInventoryTask?.cancel()
         profileInventoryTask = nil
         profileInventory = nil
-        for task in collectibleProductTasks.values { task.cancel() }
-        collectibleProductTasks = [:]
+        collectibleProductTasks.cancelAll()
         profileCollectibleProducts = [:]
         profileDetailedProductIDs = []
         profileEffects = nil

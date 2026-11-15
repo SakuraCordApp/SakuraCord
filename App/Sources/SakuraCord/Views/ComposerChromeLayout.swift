@@ -24,8 +24,10 @@ struct ComposerChromeLayout<Header: View, Leading: View, Input: View, Accessorie
 
     private var defaultLayout: some View {
         HStack(alignment: .bottom, spacing: ChatChromeMetrics.composerSegmentSpacing) {
+            // Centred on the bar's first line, which grows with the font size.
             leading
                 .glassEffect(.regular.interactive(), in: Circle())
+                .frame(height: ChatChromeMetrics.composerControlHeight)
 
             VStack(alignment: .leading, spacing: 0) {
                 header
@@ -33,7 +35,7 @@ struct ComposerChromeLayout<Header: View, Leading: View, Input: View, Accessorie
                     input
                     accessories
                 }
-                .padding(.leading, InterfaceScale.metric(11))
+                .padding(.leading, ChatChromeMetrics.composerTextLeadingInset)
                 .padding(.trailing, ChatChromeMetrics.composerAccessoryEdgeInset)
                 .frame(minHeight: ChatChromeMetrics.composerControlHeight)
             }
@@ -47,6 +49,7 @@ struct ComposerChromeLayout<Header: View, Leading: View, Input: View, Accessorie
 
             send
                 .glassEffect(.regular.interactive(), in: Circle())
+                .frame(height: ChatChromeMetrics.composerControlHeight)
         }
     }
 

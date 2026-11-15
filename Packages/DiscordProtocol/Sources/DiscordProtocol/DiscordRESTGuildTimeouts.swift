@@ -45,8 +45,8 @@ extension DiscordRESTProvider {
     func requireGuildCommunication(in channelID: ChannelID, guildID: GuildID? = nil, now: Date = .now) throws {
         let guildID = guildID
             ?? cachedJoinedThreads[channelID]?.guildID
-            ?? cachedChannels.values.lazy.flatMap(\.self).first(where: { $0.id == channelID })?.guildID
-            ?? cachedForumPosts.values.lazy.compactMap { $0[channelID]?.thread.guildID }.first
+            ?? cachedChannel(channelID)?.guildID
+            ?? cachedForumPost(threadID: channelID)?.thread.guildID
             ?? cachedMessages.values.lazy.compactMap { $0.channelID == channelID ? $0.guildID : nil }.first
         guard let guildID, let userID = currentUser?.id,
               let member = cachedMemberIndex(guildID: guildID)[userID],
@@ -58,7 +58,7 @@ extension DiscordRESTProvider {
             ?? (cachedGuildRoles[guildID] ?? []).filter {
                 $0.id == guildID.description || roleIDs.contains($0.id)
             }.reduce(UInt64(0)) { $0 | ($1.permissions.flatMap(UInt64.init) ?? 0) }
-        guard permissions & (1 << 3) == 0 else { return }
+        guard permissions & DiscordPermissionBits.administrator == 0 else { return }
         throw ChatProviderError.invalidRequest("You are timed out in this server.")
     }
 }

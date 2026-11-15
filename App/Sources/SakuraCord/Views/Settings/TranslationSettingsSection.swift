@@ -9,7 +9,6 @@ struct TranslationSettingsSection: View {
         let languages = model.translation.coordinator.languages
         Section {
             Toggle("Enable on-device translation", isOn: value.isEnabled)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.translationEnabled, state: state)
             languagePicker("Translate messages into", selection: value.messageLanguage, languages: languages.supported)
                 .settingsControlAnchor(.translationMessageLanguage, state: state)

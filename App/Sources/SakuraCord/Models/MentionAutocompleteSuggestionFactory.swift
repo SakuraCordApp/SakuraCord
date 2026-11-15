@@ -3,6 +3,18 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct MentionAutocompleteSuggestion: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let value: String
+    let target: MentionTarget
+    var avatarURL: URL?
+    var colorHex: UInt32?
+    var member: Member?
+    var systemImage: String?
+}
+
 enum MentionAutocompleteSuggestionFactory {
     private static let resultLimit = 10
 
@@ -205,10 +217,7 @@ enum MentionAutocompleteSuggestionFactory {
         channels: [Channel],
         threads: [MessageThreadSummary] = [],
         guilds: [GuildID: Guild],
-        guildAndChannelUsageScores: [String: Int] = [:],
-        currentUserID: UserID? = nil,
-        currentMember: Member? = nil,
-        roles: [GuildRole] = []
+        guildAndChannelUsageScores: [String: Int] = [:]
     ) -> [MentionAutocompleteSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedQuery = trimmedQuery.lowercased()
@@ -337,7 +346,7 @@ enum MentionAutocompleteSuggestionFactory {
         }
     }
 
-    private static func mergingMemberStore(_ members: [Member], updates: [Member]) -> [Member] {
+    static func mergingMemberStore(_ members: [Member], updates: [Member]) -> [Member] {
         guard !updates.isEmpty else { return members }
         var result = members
         var positions = Dictionary(uniqueKeysWithValues: members.enumerated().map { ($0.element.id, $0.offset) })
@@ -494,24 +503,6 @@ enum MentionAutocompleteSuggestionFactory {
         return remaining.isEmpty
     }
 
-    private static func canView(
-        _ channel: Channel,
-        guild: Guild?,
-        currentUserID: UserID?,
-        currentMember: Member?,
-        roles: [GuildRole]
-    ) -> Bool {
-        let viewChannel: UInt64 = 1 << 10
-        guard let permissions = resolvedPermissions(
-            in: channel,
-            guild: guild,
-            currentUserID: currentUserID,
-            currentMember: currentMember,
-            roles: roles
-        ) else { return true }
-        return permissions & viewChannel != 0
-    }
-
     static func canMentionNonMentionableRoles(
         in channel: Channel?,
         guild: Guild? = nil,
@@ -528,8 +519,7 @@ enum MentionAutocompleteSuggestionFactory {
                   roles: roles
               )
         else { return false }
-        let mentionEveryone: UInt64 = 1 << 17
-        return permissions & mentionEveryone != 0
+        return permissions & DiscordPermissionBits.mentionEveryone != 0
     }
 
     private static func resolvedPermissions(
@@ -567,8 +557,7 @@ enum MentionAutocompleteSuggestionFactory {
                 permissions |= role.permissions ?? 0
             }
         }
-        let administrator: UInt64 = 1 << 3
-        if permissions & administrator != 0 { return .max }
+        if permissions & DiscordPermissionBits.administrator != 0 { return .max }
 
         let overwrites = channel.permissionOverwrites ?? []
         if let overwrite = overwrites.first(where: {

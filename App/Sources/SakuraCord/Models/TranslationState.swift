@@ -36,8 +36,7 @@ final class TranslationState {
     }
 
     func resetAll() {
-        for task in messageTasks.values { task.cancel() }
-        messageTasks.removeAll()
+        messageTasks.cancelAll()
         for destination in Array(draftTasks.keys) { resetDraft(destination) }
         drafts.removeAll()
         draftEditIDs.removeAll()

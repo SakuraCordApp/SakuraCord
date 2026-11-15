@@ -1,14 +1,13 @@
 import Foundation
 import SakuraCordModels
 import Testing
-import Synchronization
 @testable import DiscordProtocol
 
 struct PollContractTests {
     @Test(arguments: [false, true])
     func `poll expiry fails once without stopping subsequent requests`(ending: Bool) async throws {
-        let capture = PollRequestCapture()
-        let provider = makeProvider(accountID: capture.id)
+        let capture = RequestRecorder(PollURLProtocol.capturedRequest)
+        let provider = stubbedProvider(PollURLProtocol.self, token: capture.id, accountID: capture.id)
         await #expect(throws: ChatProviderError.self) {
             if ending {
                 _ = try await provider.endPoll(messageID: .init(rawValue: 998), channelID: .init(rawValue: 200))
@@ -16,23 +15,23 @@ struct PollContractTests {
                 try await provider.setPollAnswers([1], messageID: .init(rawValue: 998), channelID: .init(rawValue: 200))
             }
         }
-        #expect(capture.requests.count == 1)
+        #expect(capture.pollRequests.count == 1)
         #expect(await !provider.requestSafetyCircuitIsOpen)
         try await provider.setPollAnswers([1], messageID: .init(rawValue: 300), channelID: .init(rawValue: 200))
-        #expect(capture.requests.count == 2)
+        #expect(capture.pollRequests.count == 2)
         await provider.disconnect()
     }
 
     @Test func `poll creation and voting match fresh official desktop captures`() async throws {
-        let capture = PollRequestCapture()
-        let provider = makeProvider(accountID: capture.id)
+        let capture = RequestRecorder(PollURLProtocol.capturedRequest)
+        let provider = stubbedProvider(PollURLProtocol.self, token: capture.id, accountID: capture.id)
         let draft = PollDraft(question: "A question 🌸", answers: [
             .init(id: 1, text: "Україна", emoji: .init(rawToken: "✅")),
             .init(id: 2, text: "日本語", emoji: .init(rawToken: "<:flower:55>")),
         ], durationHours: 1, allowsMultipleAnswers: true)
         let message = try await provider.send(SendMessageDraft(channelID: .init(rawValue: 200), content: "", poll: draft))
         #expect(message.poll?.question == "A question 🌸")
-        let request = try #require(capture.requests.first)
+        let request = try #require(capture.pollRequests.first)
         #expect(request.method == "POST")
         #expect(request.path == "/api/v9/channels/200/messages")
         #expect(request.context == Data(#"{"location":"poll_creation"}"#.utf8).base64EncodedString())
@@ -45,31 +44,31 @@ struct PollContractTests {
         #expect((answers[1]["poll_media"]?["emoji"] as? [String: String]) == ["id": "55", "name": ""])
         try await provider.setPollAnswers([1, 2], messageID: .init(rawValue: 300), channelID: .init(rawValue: 200))
         try await provider.setPollAnswers([], messageID: .init(rawValue: 300), channelID: .init(rawValue: 200))
-        #expect(capture.requests[1].method == "PUT")
-        #expect(capture.requests[1].path == "/api/v9/channels/200/polls/300/answers/@me")
-        #expect(capture.requests[1].body["answer_ids"] as? [String] == ["1", "2"])
-        #expect(capture.requests[2].body["answer_ids"] as? [String] == [])
+        #expect(capture.pollRequests[1].method == "PUT")
+        #expect(capture.pollRequests[1].path == "/api/v9/channels/200/polls/300/answers/@me")
+        #expect(capture.pollRequests[1].body["answer_ids"] as? [String] == ["1", "2"])
+        #expect(capture.pollRequests[2].body["answer_ids"] as? [String] == [])
         await provider.disconnect()
     }
 
     @Test func `voter pagination and ending use captured routes without mutation retries`() async throws {
-        let capture = PollRequestCapture()
-        let provider = makeProvider(accountID: capture.id)
+        let capture = RequestRecorder(PollURLProtocol.capturedRequest)
+        let provider = stubbedProvider(PollURLProtocol.self, token: capture.id, accountID: capture.id)
         let voters = try await provider.pollVoters(messageID: .init(rawValue: 300), channelID: .init(rawValue: 200),
                                                     answerID: 2, after: .init(rawValue: 9), limit: 100)
         #expect(voters.users.first?.username == "tester")
         #expect(!voters.hasMore)
-        #expect(capture.requests[0].path == "/api/v9/channels/200/polls/300/answers/2")
-        #expect(capture.requests[0].query == ["limit": "100", "type": "2", "after": "9"])
+        #expect(capture.pollRequests[0].path == "/api/v9/channels/200/polls/300/answers/2")
+        #expect(capture.pollRequests[0].query == ["limit": "100", "type": "2", "after": "9"])
         _ = try await provider.endPoll(messageID: .init(rawValue: 300), channelID: .init(rawValue: 200))
-        #expect(capture.requests[1].method == "POST")
-        #expect(capture.requests[1].path.hasSuffix("/polls/300/expire"))
-        #expect(capture.requests[1].body.isEmpty)
-        let previousCount = capture.requests.count
+        #expect(capture.pollRequests[1].method == "POST")
+        #expect(capture.pollRequests[1].path.hasSuffix("/polls/300/expire"))
+        #expect(capture.pollRequests[1].body.isEmpty)
+        let previousCount = capture.pollRequests.count
         await #expect(throws: ChatProviderError.self) {
             try await provider.setPollAnswers([1], messageID: .init(rawValue: 999), channelID: .init(rawValue: 200))
         }
-        #expect(capture.requests.count == previousCount + 1)
+        #expect(capture.pollRequests.count == previousCount + 1)
         await provider.disconnect()
     }
 
@@ -149,7 +148,8 @@ struct PollContractTests {
     }
 
     @Test func `gateway vote batches and individual changes reconcile the same cached poll`() async throws {
-        let provider = makeProvider()
+        let accountID = UUID().uuidString
+        let provider = stubbedProvider(PollURLProtocol.self, token: accountID, accountID: accountID)
         let message = try JSONDecoder().decode(MessageDTO.self, from: Data(PollURLProtocol.message.utf8)).domain()
         await provider.seedPrivateChannelsForTesting([], currentUser: message.author)
         await provider.seedMessageForTesting(message)
@@ -194,59 +194,24 @@ struct PollContractTests {
         draft.answers[0].text = " "
         #expect(draft.validationError != nil)
     }
-
-    private func makeProvider(accountID: String = UUID().uuidString) -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [PollURLProtocol.self]
-        return DiscordRESTProvider(credentials: PollCredentialStore(), handle: CredentialHandle(accountID: accountID), session: URLSession(configuration: configuration))
-    }
 }
 
-private actor PollCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle { .init(accountID: accountID) }
-    func credential(for handle: CredentialHandle) async throws -> Data { Data(handle.accountID.utf8) }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
+private struct PollRequest {
+    let method: String
+    let path: String
+    let context: String?
+    let body: [String: Any]
+    let query: [String: String]
 }
 
-/// Every test owns its recorder; the stateless URL protocol only publishes the
-/// materialized request. Unique synthetic credentials isolate concurrent tests.
-private final class PollRequestCapture {
-    let id = UUID().uuidString
-    private let storage: Storage
-    private let observer: any NSObjectProtocol
-
-    private final class Storage: Sendable {
-        let requests = Mutex<[URLRequest]>([])
-    }
-
-    struct Capture {
-        let method: String
-        let path: String
-        let context: String?
-        let body: [String: Any]
-        let query: [String: String]
-    }
-
-    init() {
-        let storage = Storage()
-        self.storage = storage
-        let id = id
-        observer = NotificationCenter.default.addObserver(forName: PollURLProtocol.capturedRequest, object: nil, queue: nil) { notification in
-            guard let request = notification.object as? URLRequest, request.value(forHTTPHeaderField: "Authorization") == id else { return }
-            storage.requests.withLock { $0.append(request) }
-        }
-    }
-
-    deinit { NotificationCenter.default.removeObserver(observer) }
-
-    var requests: [Capture] {
-        storage.requests.withLock { $0 }.map { request in
+private extension RequestRecorder {
+    var pollRequests: [PollRequest] {
+        requests.map { request in
             let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
-            return Capture(method: request.httpMethod ?? "", path: components.path,
-                           context: request.value(forHTTPHeaderField: "X-Context-Properties"),
-                           body: (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any] ?? [:],
-                           query: Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }))
+            return PollRequest(method: request.method, path: components.path,
+                               context: request.value(forHTTPHeaderField: "X-Context-Properties"),
+                               body: request.jsonBody ?? [:],
+                               query: Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }))
         }
     }
 }
@@ -257,17 +222,7 @@ private final class PollURLProtocol: URLProtocol, @unchecked Sendable {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
-        var data = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let data = request.bodyData ?? Data()
         var captured = request
         captured.httpBody = data
         NotificationCenter.default.post(name: Self.capturedRequest, object: captured)
@@ -278,11 +233,7 @@ private final class PollURLProtocol: URLProtocol, @unchecked Sendable {
         case 429: body = #"{"retry_after":0.01,"global":false}"#
         default: body = request.httpMethod == "GET" ? #"{"users":[{"id":"10","username":"tester"}]}"# : Self.message
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if status != 204 { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: status == 204 ? "" : body)
     }
     override func stopLoading() {}
     static let message = #"""

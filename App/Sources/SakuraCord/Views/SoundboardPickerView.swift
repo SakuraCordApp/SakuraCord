@@ -444,7 +444,7 @@ private struct SoundboardButton: View {
                 isFavorite: model.isFavoriteSound(sound),
                 toggleFavorite: { Task { await model.toggleFavoriteSound(sound) } },
                 saveActions: saveActions,
-                copyID: { MediaViewerActionService.copyText(sound.id) }
+                copyID: { Pasteboard.copy(sound.id) }
             )
         }
         .accessibilityElement(children: .contain)
@@ -463,7 +463,7 @@ private struct SoundboardButton: View {
 
     private var outlineColor: Color {
         if model.isSoundPlaying(sound), !isPressed {
-            return Color(hex: 0x23A55A)
+            return Color.presenceOnline
         }
         return PickerTileStyle.outline(colorScheme, isHovering: isHovering)
     }
@@ -496,10 +496,10 @@ private struct SoundboardContextMenuBridge: NSViewRepresentable {
     let saveActions: MediaSaveMenuActions
     let copyID: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(from: self) }
+    func makeCoordinator() -> Coordinator { Coordinator(bridge: self) }
 
-    func makeNSView(context: Context) -> MediaImageContextMenuHitView {
-        let view = MediaImageContextMenuHitView()
+    func makeNSView(context: Context) -> ContextClickMenuHitView {
+        let view = ContextClickMenuHitView()
         view.menuProvider = { [weak coordinator = context.coordinator] in
             coordinator?.makeMenu()
         }
@@ -507,75 +507,41 @@ private struct SoundboardContextMenuBridge: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ nsView: MediaImageContextMenuHitView,
+        _ nsView: ContextClickMenuHitView,
         context: Context
     ) {
-        context.coordinator.update(from: self)
+        context.coordinator.bridge = self
     }
 
     @MainActor
-    final class Coordinator: NSObject {
-        private var isFavorite: Bool
-        private var toggleFavorite: () -> Void
-        private var saveActions: MediaSaveMenuActions
-        private var copyID: () -> Void
+    final class Coordinator {
+        var bridge: SoundboardContextMenuBridge
 
-        init(from bridge: SoundboardContextMenuBridge) {
-            isFavorite = bridge.isFavorite
-            toggleFavorite = bridge.toggleFavorite
-            saveActions = bridge.saveActions
-            copyID = bridge.copyID
-        }
-
-        func update(from bridge: SoundboardContextMenuBridge) {
-            isFavorite = bridge.isFavorite
-            toggleFavorite = bridge.toggleFavorite
-            saveActions = bridge.saveActions
-            copyID = bridge.copyID
+        init(bridge: SoundboardContextMenuBridge) {
+            self.bridge = bridge
         }
 
         func makeMenu() -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            menu.addItem(menuItem(
-                isFavorite ? "Remove from Favorites" : "Favorite",
-                systemImage: isFavorite ? "star" : "star.fill",
-                action: #selector(toggleFavoriteFromMenu)
+            menu.addItem(ContextMenuItemSupport.item(
+                bridge.isFavorite ? "Remove from Favorites" : "Favorite",
+                systemImage: bridge.isFavorite ? "star" : "star.fill",
+                action: { [self] in bridge.toggleFavorite() }
             ))
             menu.addItem(
                 MediaSaveMenuBuilder.submenuItem(
                     "Download Sound",
                     systemImage: "arrow.down.circle",
-                    actions: saveActions
+                    actions: bridge.saveActions
                 )
             )
             menu.addItem(.separator())
-            menu.addItem(menuItem(
-                "Copy Sound ID",
-                systemImage: "number.square.fill",
-                action: #selector(copyIDFromMenu)
-            ))
+            menu.addItem(ContextMenuItemSupport.item("Copy Sound ID", systemImage: "number.square.fill") { [self] in
+                bridge.copyID()
+            })
             return menu
         }
-
-        private func menuItem(
-            _ title: String,
-            systemImage: String,
-            action: Selector
-        ) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            item.isEnabled = true
-            ContextMenuItemSupport.configure(
-                item,
-                title: title,
-                systemImage: systemImage
-            )
-            return item
-        }
-
-        @objc private func toggleFavoriteFromMenu() { toggleFavorite() }
-        @objc private func copyIDFromMenu() { copyID() }
     }
 }
 
@@ -617,7 +583,7 @@ private struct SoundboardButtonLabel: View {
 
     var body: some View {
         if let emojiID = sound.emojiID,
-           let url = URL(string: "https://cdn.discordapp.com/emojis/\(emojiID).webp?size=48&quality=lossless")
+           let url = DiscordCDN.emoji(emojiID, fileExtension: "webp", query: "size=48&quality=lossless")
         {
             AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
                 switch phase {

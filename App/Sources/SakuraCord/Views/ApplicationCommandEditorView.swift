@@ -71,7 +71,6 @@ struct ApplicationCommandEditorView: NSViewRepresentable {
         textView.writingToolsBehavior = .none
         textView.unregisterDraggedTypes()
         textView.registerForDraggedTypes([.fileURL])
-        textView.applySakuraCordTextSelectionAppearance()
         textView.setAccessibilityLabel("Command \(draft.command.displayName)")
 
         let scrollView = NSScrollView()
@@ -93,16 +92,15 @@ struct ApplicationCommandEditorView: NSViewRepresentable {
         coordinator.parent = self
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
         ComposerTextCheckingConfiguration.apply(generalInputSettings, to: textView)
-        textView.applySakuraCordTextSelectionAppearance()
         guard !textView.isComposing else {
-            coordinator.applyFocus(to: textView)
+            coordinator.applyFocus(to: textView, resigning: nil)
             return
         }
         let caret = coordinator.appliedCaretRevision != caretRequestRevision
             ? composer.caretRequest : nil
         coordinator.appliedCaretRevision = caretRequestRevision
         coordinator.render(in: textView, caret: caret)
-        coordinator.applyFocus(to: textView)
+        coordinator.applyFocus(to: textView, resigning: nil)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView scrollView: NSScrollView, context: Context) -> CGSize? {
@@ -121,8 +119,9 @@ struct ApplicationCommandEditorView: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate, ComposerFocusSyncing {
         var parent: ApplicationCommandEditorView
+        var focusBinding: Binding<Bool> { parent.$isFocused }
         var appliedCaretRevision = 0
         private(set) var document: ApplicationCommandEditorDocument?
         private var renderedSignature: Int?
@@ -132,7 +131,7 @@ struct ApplicationCommandEditorView: NSViewRepresentable {
         /// its selection after posting the change, so it cannot be read there.
         private var pendingNativeCaret = 0
         private var isApplying = false
-        private var appliedFocus = false
+        var appliedFocus = false
         private var isContinuingAsPlainText = false
         private var renderedDraft: ApplicationCommandDraft?
         private var undoSelection: NSRange?
@@ -261,27 +260,6 @@ struct ApplicationCommandEditorView: NSViewRepresentable {
             case let .gap(index, _): composer.setFocus(.gap(index))
             }
             render(in: textView, caret: caret)
-        }
-
-        func applyFocus(to textView: NSTextView) {
-            guard parent.isFocused != appliedFocus else { return }
-            appliedFocus = parent.isFocused
-            if parent.isFocused {
-                Task { @MainActor [weak textView] in
-                    guard let textView, self.parent.isFocused else { return }
-                    textView.window?.makeFirstResponder(textView)
-                }
-            }
-        }
-
-        func firstResponderDidChange(_ isFirstResponder: Bool) {
-            // Publish after AppKit finishes the responder change, never during
-            // a SwiftUI update that triggered it.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                appliedFocus = isFirstResponder
-                if parent.isFocused != isFirstResponder { parent.isFocused = isFirstResponder }
-            }
         }
 
         // MARK: Editing

@@ -110,7 +110,7 @@ final class ForumCardCanvas {
                     text: $0.text,
                     font: $0.font as CTFont,
                     textColor: $0.textColor.cgColor,
-                    textLineHeight: ForumBoardMetrics.lineHeight(of: $0.font)
+                    textLineHeight: $0.font.lineHeight
                 )
             }
         )))
@@ -123,7 +123,7 @@ final class ForumCardCanvas {
     func symbol(_ name: String, in frame: CGRect, color: NSColor, inset: CGFloat, weight: NSFont.Weight = .regular) {
         guard frame.width > 0, frame.height > 0 else { return }
         let pointSize = max(10, min(frame.width, frame.height) - max(0, inset) * 2)
-        guard let image = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+        guard let image = SystemSymbolImageCache.rasterizedConfiguredImage(
             named: name,
             pointSize: pointSize,
             weight: weight,
@@ -134,7 +134,7 @@ final class ForumCardCanvas {
             dx: min(max(0, inset), frame.width / 2 - 1),
             dy: min(max(0, inset), frame.height / 2 - 1)
         )
-        let fitted = NativeTimelineSymbolGeometry.opticallyFitted(
+        let fitted = SymbolGeometry.opticallyFitted(
             sourceSize: image.size,
             alignmentRect: image.alignmentRect,
             in: target
@@ -148,15 +148,7 @@ final class ForumCardCanvas {
         guard frame.width > 0, frame.height > 0, image.size.width > 0, image.size.height > 0,
               let cgImage = cache.cgImage(for: image)
         else { return }
-        let fit = fillsFrame
-            ? max(frame.width / image.size.width, frame.height / image.size.height)
-            : min(frame.width / image.size.width, frame.height / image.size.height)
-        let destination = CGRect(
-            x: frame.midX - image.size.width * fit / 2,
-            y: frame.midY - image.size.height * fit / 2,
-            width: image.size.width * fit,
-            height: image.size.height * fit
-        )
+        let destination = aspectRect(for: image.size, in: frame, fillsFrame: fillsFrame)
         let clip = NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).cgPath
         operations.append(.image(cgImage, destination: destination, clip: clip))
     }
@@ -195,7 +187,7 @@ final class ForumCardCanvas {
             operations.append(.bitmap(image, frame: frame))
             return
         }
-        guard let context = ForumCardRasterizer.makeContext(width: pixelWidth, height: pixelHeight, colorSpace: colorSpace) else { return }
+        guard let context = CGContext.premultipliedBitmap(width: pixelWidth, height: pixelHeight, colorSpace: colorSpace) else { return }
         context.translateBy(x: 0, y: CGFloat(pixelHeight))
         context.scaleBy(x: scale, y: -scale)
         context.translateBy(x: -frame.minX, y: -frame.minY)

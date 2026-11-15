@@ -35,11 +35,11 @@ struct AvatarView: View {
                     .scaledToFill()
             } else if showsFallback {
                 Circle().fill(SakuraCordAccentColor.color.gradient)
-                fallback
+                fallback.foregroundStyle(SakuraCordAccentColor.labelOnFill)
             }
             if let url {
                 if animates,
-                   NativeTimelineAvatarPresentation
+                   UserAvatarPresentation
                     .shouldDecodeAnimation(for: url)
                 {
                     AnimatedRemoteImage(
@@ -80,7 +80,7 @@ struct AvatarView: View {
     var cachedFrame: CGImage? {
         guard let url,
               animates,
-              NativeTimelineAvatarPresentation
+              UserAvatarPresentation
                 .shouldDecodeAnimation(for: url)
         else { return nil }
         return AnimatedRemoteImageDisplayCache.shared.image(

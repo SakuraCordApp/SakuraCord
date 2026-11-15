@@ -184,9 +184,11 @@ not start network work merely because a row redraws.
 | Account credentials | `KeychainCredentialStore`; new credentials are saved only after authoritative `READY.user` validation. Debug-only local credential mode is described in [Development](DEVELOPMENT.md#local-credential-mode). |
 | Saved-account labels, avatar and preferred account | Local picker metadata in user defaults; not an authenticated workspace snapshot. |
 | Message drafts and explicitly created invite links | Account-scoped GRDB. Expired links are pruned and checked before reuse; neither restores permissions or membership. |
+| Staged files and slash command of a conversation the user left | `MessageComposerState` session memory, keyed by channel or thread, like the official client. Dropped on account switch or sign-out; a deleted or hidden conversation or a left server also deletes its early uploads. Its app-owned files stay until the draft is dropped. |
 | Reply ping choice | App-wide user defaults through `SettingsPreferenceStore`, shared by both composers and retained across account resets. Self-replies suppress the effective ping without changing the saved choice. Offline fixtures keep this choice in memory. |
 | Workspace, message history, members, read state, onboarding choices | Session memory; restored from the live provider, not disk. |
 | Unsaved emoji/reaction usage | Account-scoped user defaults until acknowledged by Discord; replayed over remote history and removed with the account. |
+| Unlimited favorites past Discord's limit | Account-scoped user defaults; never sent to Discord and removed with the account. See [settings synchronization](protocol/SETTINGS.md#favorites-server). |
 | Unsaved account status pick | Account-scoped user defaults until saved, superseded or rejected; removed with the account. See [settings synchronization](protocol/SETTINGS.md#status-and-custom-status). |
 | Derived people search, channel ordering and emoji catalogues | Account-scoped disposable caches under `Caches/dev.sakuracord.SakuraCord`. Never bootstrap the workspace or store credentials/message bodies. |
 | Media cache | Disposable LRU; shares the configured storage budget with drafts, which reserve space first and are never automatically evicted. |
@@ -202,7 +204,7 @@ separate. Returning to Regular or Nightly reopens the original database. Invalid
 preview identity metadata still selects an isolated database. Keychain
 credentials, disposable media and derived caches remain shared.
 
-Before the first switch into a pull request build, `PRBuildRecovery` asks for a
+Before the first switch into a pull request build, `PullRequestBuildRecovery` asks for a
 folder and saves a signature-validated Regular or Nightly app there, outside the
 bundle Sparkle replaces. The retained app and Finder recovery instructions work
 without launching the experimental executable. Further switches from a preview
@@ -277,6 +279,14 @@ sizing. AppKit-drawn surfaces relayout through their
 presentation revisions. At 100% every helper returns its input. Message density
 stays in points and is independent. System chrome (window controls, toolbar
 items, menus, alerts) keeps the system size.
+
+Message font size scales message content on top of interface size. Text and
+emoji in messages, embeds, replies, components, the composer and markdown or
+text previews use `NSFont.messageSystemFont` or
+`InterfaceTypographyMetrics.message` with their default-size values, and
+`DiscordRichMessageMetrics.px` scales Discord lengths with them. Cards with
+fixed-height rows (file cards, polls, invites, thread cards, the voice player)
+keep interface-only sizes.
 
 `WindowModalCoordinator` owns input order and focus for each window;
 `WindowModalOverlay` supplies the shared custom modal host. Closing transitions

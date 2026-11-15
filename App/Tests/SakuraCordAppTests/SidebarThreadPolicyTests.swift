@@ -6,7 +6,7 @@ import Testing
 private let now = Date(timeIntervalSince1970: 1_791_295_000)
 
 private func snowflake(at date: Date) -> UInt64 {
-    UInt64(date.timeIntervalSince1970 * 1_000 - 1_420_070_400_000) << 22
+    MessageID(timestamp: date).rawValue
 }
 
 private func candidate(
@@ -53,7 +53,7 @@ private let day: TimeInterval = 86_400
         candidate("stale unread", lastActivity: now - 30 * day, joinedAt: now - 30 * day, hasUnread: true),
         candidate("stale muted unread", lastActivity: now - 30 * day, joinedAt: now - 30 * day, hasUnread: true, isMuted: true),
         candidate("stale muted mention", lastActivity: now - 30 * day, joinedAt: now - 31 * day, hasUnread: true, mentions: 1, isMuted: true),
-        candidate("stale pinned", lastActivity: now - 30 * day, joinedAt: now - 32 * day, flags: 1 << 1),
+        candidate("stale pinned", lastActivity: now - 30 * day, joinedAt: now - 32 * day, flags: MessageThreadSummary.pinnedFlag),
     ]
 
     let rows = SidebarThreadPolicy.rows(for: candidates, openThread: nil, unreadOnly: false, now: now)

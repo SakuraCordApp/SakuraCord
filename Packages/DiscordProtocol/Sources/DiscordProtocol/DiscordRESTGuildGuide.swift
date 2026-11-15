@@ -19,14 +19,8 @@ public extension DiscordRESTProvider {
 
     func guildGuideProgress(in guildID: GuildID) async throws -> GuildGuideProgress {
         guard let userID = currentUser?.id else { throw ChatProviderError.unauthenticated }
-        let (data, response) = try await perform("/guilds/\(guildID)/new-member-actions", method: "GET", query: [], body: nil)
-        guard (200 ..< 300).contains(response.statusCode) else {
-            if response.statusCode == 401 {
-                authorizationValue = nil
-                throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
-            }
-            throw unexplainedFailure(data, response)
-        }
+        let (data, response) = try await perform("/guilds/\(guildID)/new-member-actions", method: "GET")
+        try validateEmptyResponse(data, response)
         if response.statusCode == 204, data.isEmpty { return GuildGuideProgress(guildID: guildID, userID: userID) }
         let value = try JSONDecoder().decode(GuildGuideProgress.self, from: data)
         try validateGuideProgress(value, guildID: guildID)

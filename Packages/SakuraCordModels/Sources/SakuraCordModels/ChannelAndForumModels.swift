@@ -2,6 +2,11 @@ import Foundation
 
 public enum ChannelKindValue: String, Codable, Hashable, Sendable {
     case text, announcement, forum, voice, directMessage, groupDirectMessage, unknown
+
+    /// A 1:1 or group direct message.
+    public var isDirectMessage: Bool {
+        self == .directMessage || self == .groupDirectMessage
+    }
 }
 
 public struct ForumTag: Identifiable, Codable, Hashable, Sendable {
@@ -23,6 +28,12 @@ public struct ForumTag: Identifiable, Codable, Hashable, Sendable {
         self.isModerated = isModerated
         self.emojiID = emojiID
         self.emojiName = emojiName
+    }
+
+    /// The selected tags that are available, once each, in the channel's tag order.
+    public static func orderedUniqueIDs(_ selectedTagIDs: [ForumTagID], availableTags: [ForumTag]) -> [ForumTagID] {
+        let selected = Set(selectedTagIDs)
+        return availableTags.lazy.map(\.id).filter(selected.contains)
     }
 }
 
@@ -189,6 +200,11 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         flags & (1 << 4) != 0
     }
 
+    /// Discord's `IS_GUILD_RESOURCE_CHANNEL`: a server guide resource.
+    public var isGuildResource: Bool {
+        flags & (1 << 7) != 0
+    }
+
     /// Where Discord files the conversation: spam outranks a plain request.
     public var messageRequest: MessageRequestStatus? {
         if isSpam { return .spam }
@@ -198,7 +214,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     /// A DM or group in the conversation list; message requests wait on
     /// their own page until accepted.
     public var isListedDirectMessage: Bool {
-        (kind == .directMessage || kind == .groupDirectMessage) && messageRequest == nil
+        kind.isDirectMessage && messageRequest == nil
     }
 
     /// The latest message, or the channel's creation for one without messages.
@@ -345,6 +361,22 @@ public struct ForumPost: Identifiable, Codable, Hashable, Sendable {
             ?? thread.lastMessageID?.createdAt
             ?? thread.archiveTimestamp
             ?? createdAt
+    }
+
+    /// For a fetched record merged over `cached`: keeps the cached latest
+    /// message and counts when its last message is newer, so a reply that
+    /// arrived during the read is not rolled back.
+    public mutating func keepNewerLatestMessage(from cached: ForumPost) {
+        guard let cachedLatest = cached.thread.lastMessageID,
+              thread.lastMessageID.map({ cachedLatest > $0 }) ?? true
+        else {
+            mostRecentMessage = mostRecentMessage ?? cached.mostRecentMessage
+            return
+        }
+        thread.lastMessageID = cachedLatest
+        thread.messageCount = cached.thread.messageCount
+        thread.totalMessageSent = cached.thread.totalMessageSent
+        mostRecentMessage = cached.mostRecentMessage ?? mostRecentMessage
     }
 }
 
@@ -497,84 +529,11 @@ public enum ThreadMembershipLocation: String, Hashable, Sendable {
     case markUnread = "Mark Unread"
 }
 
-public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
-    public let id: UUID
-    public var url: URL
-    public var filename: String
-    public var description: String
-    /// Discord treats a `SPOILER_` file name as a spoiler, so a file named
-    /// that way stages as one, and unmarking it drops the prefix.
-    public var isSpoiler: Bool {
-        didSet {
-            guard !isSpoiler else { return }
-            filename = Self.droppingSpoilerPrefix(filename)
-            filenameBeforeAnonymising = filenameBeforeAnonymising.map(Self.droppingSpoilerPrefix)
-        }
-    }
-    private var filenameBeforeAnonymising: String?
-    private var hasChosenFilenamePrivacy = false
-
-    public var isFilenameAnonymised: Bool { filenameBeforeAnonymising != nil }
-
-    public mutating func setFilenameAnonymised(_ enabled: Bool) {
-        hasChosenFilenamePrivacy = true
-        if enabled {
-            guard filenameBeforeAnonymising == nil else { return }
-            filenameBeforeAnonymising = filename
-            filename = UploadFilename.anonymised(filename)
-        } else if let original = filenameBeforeAnonymising {
-            filename = original
-            filenameBeforeAnonymising = nil
-        }
-    }
-
-    public func applyingFilenamePrivacy(_ enabled: Bool) -> Self {
-        guard enabled, !hasChosenFilenamePrivacy else { return self }
-        var attachment = self
-        attachment.setFilenameAnonymised(true)
-        return attachment
-    }
-
-    public mutating func rename(_ name: String) {
-        setFilenameAnonymised(false)
-        filename = name
-    }
-
-    public init(
-        id: UUID = UUID(),
-        url: URL,
-        filename: String? = nil,
-        description: String = "",
-        isSpoiler: Bool = false
-    ) {
-        self.id = id
-        self.url = url
-        self.filename = filename ?? url.lastPathComponent
-        self.description = description
-        self.isSpoiler = isSpoiler || self.filename.hasPrefix(Self.spoilerPrefix)
-    }
-
-    private static let spoilerPrefix = "SPOILER_"
-
-    private static func droppingSpoilerPrefix(_ name: String) -> String {
-        name.hasPrefix(spoilerPrefix) ? String(name.dropFirst(spoilerPrefix.count)) : name
-    }
-
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.url == rhs.url
-            && lhs.filename == rhs.filename
-            && lhs.description == rhs.description
-            && lhs.isSpoiler == rhs.isSpoiler
-            && lhs.filenameBeforeAnonymising == rhs.filenameBeforeAnonymising
-            && lhs.hasChosenFilenamePrivacy == rhs.hasChosenFilenamePrivacy
-    }
-}
-
 public struct CreateForumPostDraft: Equatable, Sendable {
     public var channelID: ChannelID
     public var title: String
     public var content: String
-    public var attachments: [ForumPostAttachment]
+    public var attachments: [StagedAttachment]
     public var appliedTagIDs: [ForumTagID]
     public var autoArchiveDuration: Int
 
@@ -582,9 +541,9 @@ public struct CreateForumPostDraft: Equatable, Sendable {
         channelID: ChannelID,
         title: String,
         content: String,
-        attachments: [ForumPostAttachment] = [],
+        attachments: [StagedAttachment] = [],
         appliedTagIDs: [ForumTagID] = [],
-        autoArchiveDuration: Int = 4_320
+        autoArchiveDuration: Int = ThreadAutoArchive.defaultDuration
     ) {
         self.channelID = channelID
         self.title = title
@@ -614,7 +573,7 @@ public struct CreateThreadDraft: Equatable, Sendable {
         channelID: ChannelID,
         name: String,
         isPrivate: Bool = false,
-        autoArchiveDuration: Int = 4_320,
+        autoArchiveDuration: Int = ThreadAutoArchive.defaultDuration,
         starterMessageID: MessageID? = nil,
         isFromThreadBrowser: Bool = false
     ) {
@@ -637,7 +596,7 @@ public struct CreateThreadDraft: Equatable, Sendable {
         return Self(
             channelID: parent.id,
             name: trimmed.isEmpty ? ThreadNamePolicy.defaultName(for: message) : trimmed,
-            autoArchiveDuration: parent.defaultAutoArchiveDuration ?? 4_320,
+            autoArchiveDuration: parent.defaultAutoArchiveDuration ?? ThreadAutoArchive.defaultDuration,
             starterMessageID: message.id
         )
     }

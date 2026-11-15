@@ -1,8 +1,57 @@
 import Foundation
+import Observation
+import Synchronization
 
 nonisolated enum InterfaceTypographyMetrics {
-    static let messageTextSize: CGFloat = 15
+    static let defaultMessageTextSize: CGFloat = 15
+    static let messageTextSizeRange: ClosedRange<CGFloat> = 12 ... 24
     static let interfaceTextSize: CGFloat = 13
+
+    /// The Message Font Size preference, before Interface Size scaling.
+    static var messageTextSize: CGFloat { MessageTextSize.shared.value }
+
+    static func updateMessageTextSize(_ value: CGFloat) {
+        MessageTextSize.shared.update(normalizedMessageTextSize(value))
+    }
+
+    static func normalizedMessageTextSize(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return defaultMessageTextSize }
+        return min(max(value.rounded(), messageTextSizeRange.lowerBound), messageTextSizeRange.upperBound)
+    }
+
+    /// Scales a message-content size designed for the default message text.
+    /// Small text keeps 10 pt, unless it already started smaller.
+    static func message(_ size: CGFloat) -> CGFloat {
+        max(messageLength(size), min(size, 10))
+    }
+
+    /// Scales a length around message text, such as the composer's padding,
+    /// in proportion to it.
+    static func messageLength(_ value: CGFloat) -> CGFloat {
+        value * messageTextSize / defaultMessageTextSize
+    }
+}
+
+/// Reads are thread-safe for off-main timeline layout and are tracked by
+/// Observation, so SwiftUI chrome sized from message text, such as the
+/// composer, updates when the size changes.
+private nonisolated final class MessageTextSize: Observable, Sendable {
+    static let shared = MessageTextSize()
+
+    private let registrar = ObservationRegistrar()
+    private let storage = Mutex(InterfaceTypographyMetrics.defaultMessageTextSize)
+
+    var value: CGFloat {
+        registrar.access(self, keyPath: \.value)
+        return storage.withLock { $0 }
+    }
+
+    func update(_ value: CGFloat) {
+        guard storage.withLock({ $0 }) != value else { return }
+        registrar.withMutation(of: self, keyPath: \.value) {
+            storage.withLock { $0 = value }
+        }
+    }
 }
 
 nonisolated enum InterfaceTimestampFormat: String, CaseIterable, Identifiable, Sendable {
@@ -22,11 +71,19 @@ nonisolated enum InterfaceTimestampFormat: String, CaseIterable, Identifiable, S
 }
 
 nonisolated struct InterfaceSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self(timestampFormat: .system, includesTimestampSeconds: false)
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
     var timestampFormat: InterfaceTimestampFormat
     var includesTimestampSeconds: Bool
-    var alwaysShowsTimestamps = false
+    var alwaysShowsTimestamps: Bool
+}
+
+nonisolated extension InterfaceSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        timestampFormat = value(.timestampFormat).rawValue()
+        includesTimestampSeconds = value(.timestampSeconds).boolValue
+        alwaysShowsTimestamps = value(.alwaysShowTimestamps).boolValue
+    }
 }
 
 nonisolated enum InterfaceTimestampFormatter {
@@ -149,30 +206,13 @@ final class InterfaceSettingsStore {
     }
 
     func load() -> InterfaceSettingsSnapshot {
-        var value = InterfaceSettingsSnapshot.defaults
-        value.timestampFormat = enumValue(.timestampFormat) ?? value.timestampFormat
-        value.includesTimestampSeconds = boolValue(.timestampSeconds)
-            ?? value.includesTimestampSeconds
-        value.alwaysShowsTimestamps = boolValue(.alwaysShowTimestamps) ?? false
-        return value
+        InterfaceSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: InterfaceSettingsSnapshot) {
         preferences.set(.string(value.timestampFormat.rawValue), for: .timestampFormat)
         preferences.set(.bool(value.includesTimestampSeconds), for: .timestampSeconds)
         preferences.set(.bool(value.alwaysShowsTimestamps), for: .alwaysShowTimestamps)
-    }
-
-    private func boolValue(_ id: SettingsControlID) -> Bool? {
-        guard case let .bool(value) = preferences.value(for: id) else { return nil }
-        return value
-    }
-
-    private func enumValue<Value: RawRepresentable>(
-        _ id: SettingsControlID
-    ) -> Value? where Value.RawValue == String {
-        guard case let .string(value) = preferences.value(for: id) else { return nil }
-        return Value(rawValue: value)
     }
 }
 

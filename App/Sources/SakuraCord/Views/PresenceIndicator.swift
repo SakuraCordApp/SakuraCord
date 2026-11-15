@@ -1,6 +1,11 @@
 import SakuraCordModels
 import SwiftUI
 
+extension Color {
+    /// The green of an online presence, for anything that should read as it.
+    static let presenceOnline = Color(hex: PresenceIndicatorPresentation.colorHex(for: .online))
+}
+
 nonisolated enum PresenceIndicatorPresentation {
     static func colorHex(for status: PresenceStatus) -> UInt32 {
         switch status {

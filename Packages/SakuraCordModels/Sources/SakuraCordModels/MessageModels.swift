@@ -65,7 +65,7 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
         self.durationSeconds = durationSeconds
         self.waveform = waveform
         self.flags = flags
-        self.isSpoiler = isSpoiler ?? (filename.hasPrefix("SPOILER_") || flags.contains(.spoiler))
+        self.isSpoiler = isSpoiler ?? (filename.hasPrefix(UploadFilename.spoilerPrefix) || flags.contains(.spoiler))
         self.isAnimated =
             isAnimated ?? (mediaType?.lowercased() == "image/gif" || flags.contains(.animated))
     }
@@ -95,7 +95,7 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
         flags = try values.decodeIfPresent(AttachmentFlags.self, forKey: .flags) ?? []
         isSpoiler =
             try values.decodeIfPresent(Bool.self, forKey: .isSpoiler)
-                ?? (filename.hasPrefix("SPOILER_") || flags.contains(.spoiler))
+                ?? (filename.hasPrefix(UploadFilename.spoilerPrefix) || flags.contains(.spoiler))
         isAnimated =
             try values.decodeIfPresent(Bool.self, forKey: .isAnimated)
                 ?? (mediaType?.lowercased() == "image/gif" || flags.contains(.animated))
@@ -519,19 +519,115 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
             && !hasActivityInstance
             && flags.subtracting(.forwardingAllowed).isEmpty
     }
+
+    /// Discord edits neither a poll nor a voice message, whoever sent it.
+    public var hasEditableContent: Bool {
+        !hasPoll && !flags.contains(.voiceMessage)
+    }
+}
+
+/// Discord's `@silent` send prefix (web module 677413): a case-sensitive
+/// `@silent` that opens the message and is followed by whitespace or the
+/// end. Discord removes it, trims what remains, and sends
+/// `SUPPRESS_NOTIFICATIONS`. Composers trim their text first, so leading
+/// whitespace never hides the prefix.
+public enum SilentMessagePrefix {
+    public static let token = "@silent"
+
+    public static func isSilent(_ content: String) -> Bool {
+        content.hasPrefix(token) && (content.dropFirst(token.count).first?.isWhitespace ?? true)
+    }
+
+    public static func split(_ content: String) -> (isSilent: Bool, content: String) {
+        guard isSilent(content) else { return (false, content) }
+        return (true, content.dropFirst(token.count).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
+public struct StagedAttachment: Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public var url: URL
+    public var filename: String
+    public var description: String
+    /// Discord treats a `SPOILER_` file name as a spoiler, so a file named
+    /// that way stages as one, and unmarking it drops the prefix.
+    public var isSpoiler: Bool {
+        didSet {
+            guard !isSpoiler else { return }
+            filename = Self.droppingSpoilerPrefix(filename)
+            filenameBeforeAnonymising = filenameBeforeAnonymising.map(Self.droppingSpoilerPrefix)
+        }
+    }
+    private var filenameBeforeAnonymising: String?
+    private var hasChosenFilenamePrivacy = false
+
+    public var isFilenameAnonymised: Bool { filenameBeforeAnonymising != nil }
+
+    public mutating func setFilenameAnonymised(_ enabled: Bool) {
+        hasChosenFilenamePrivacy = true
+        if enabled {
+            guard filenameBeforeAnonymising == nil else { return }
+            filenameBeforeAnonymising = filename
+            filename = UploadFilename.anonymised(filename)
+        } else if let original = filenameBeforeAnonymising {
+            filename = original
+            filenameBeforeAnonymising = nil
+        }
+    }
+
+    public func applyingFilenamePrivacy(_ enabled: Bool) -> Self {
+        guard enabled, !hasChosenFilenamePrivacy else { return self }
+        var attachment = self
+        attachment.setFilenameAnonymised(true)
+        return attachment
+    }
+
+    public mutating func rename(_ name: String) {
+        setFilenameAnonymised(false)
+        filename = name
+    }
+
+    public init(
+        id: UUID = UUID(),
+        url: URL,
+        filename: String? = nil,
+        description: String = "",
+        isSpoiler: Bool = false
+    ) {
+        self.id = id
+        self.url = url
+        self.filename = filename ?? url.lastPathComponent
+        self.description = description
+        self.isSpoiler = isSpoiler || self.filename.hasPrefix(UploadFilename.spoilerPrefix)
+    }
+
+    private static func droppingSpoilerPrefix(_ name: String) -> String {
+        name.hasPrefix(UploadFilename.spoilerPrefix) ? String(name.dropFirst(UploadFilename.spoilerPrefix.count)) : name
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.url == rhs.url
+            && lhs.filename == rhs.filename
+            && lhs.description == rhs.description
+            && lhs.isSpoiler == rhs.isSpoiler
+            && lhs.filenameBeforeAnonymising == rhs.filenameBeforeAnonymising
+            && lhs.hasChosenFilenamePrivacy == rhs.hasChosenFilenamePrivacy
+    }
 }
 
 public struct SendMessageDraft: Equatable, Sendable {
     public static let maximumAttachmentCount = 10
 
     public var channelID: ChannelID
+    /// The text Discord receives, without a `@silent` prefix.
     public var content: String
+    public var suppressesNotifications: Bool
     public var replyTo: MessageID?
     public var mentionsRepliedUser: Bool
-    public var attachments: [ForumPostAttachment]
+    public var attachments: [StagedAttachment]
     public var attachmentURLs: [URL] {
         get { attachments.map(\.url) }
-        set { attachments = newValue.map { ForumPostAttachment(url: $0) } }
+        set { attachments = newValue.map { StagedAttachment(url: $0) } }
     }
     public var nonce: String
     public var stickerIDs: [String]
@@ -545,29 +641,46 @@ public struct SendMessageDraft: Equatable, Sendable {
         channelID: ChannelID, content: String, replyTo: MessageID? = nil,
         mentionsRepliedUser: Bool = true,
         attachmentURLs: [URL] = [],
-        attachments: [ForumPostAttachment]? = nil,
+        attachments: [StagedAttachment]? = nil,
         nonce: String = ClientNonce.make(), stickerIDs: [String] = [], poll: PollDraft? = nil,
         isTTS: Bool = false,
-        voiceMessage: VoiceMessageMetadata? = nil
+        voiceMessage: VoiceMessageMetadata? = nil,
+        suppressesNotifications: Bool = false
     ) {
+        // Like Discord's send action, every send reads the prefix once,
+        // adding to any flag the caller already chose.
+        let prefix = SilentMessagePrefix.split(content)
         self.channelID = channelID
-        self.content = content
+        self.content = prefix.content
+        self.suppressesNotifications = suppressesNotifications || prefix.isSilent
         self.replyTo = replyTo
         self.mentionsRepliedUser = mentionsRepliedUser
         self.attachments =
-            attachments ?? attachmentURLs.map { ForumPostAttachment(url: $0) }
+            attachments ?? attachmentURLs.map { StagedAttachment(url: $0) }
         self.nonce = nonce
         self.stickerIDs = stickerIDs
         self.poll = poll
         self.isTTS = isTTS
         self.voiceMessage = voiceMessage
     }
+
+    /// Like Discord's send action, a draft with nothing to post is not sent.
+    public var isEmpty: Bool {
+        content.isEmpty && attachments.isEmpty && stickerIDs.isEmpty && poll == nil
+    }
+
+    public var messageFlags: MessageFlags {
+        var flags: MessageFlags = []
+        if voiceMessage != nil { flags.insert(.voiceMessage) }
+        if suppressesNotifications { flags.insert(.suppressNotifications) }
+        return flags
+    }
 }
 
 /// The attachment metadata Discord requires on a voice message.
 public struct VoiceMessageMetadata: Equatable, Sendable {
+    /// The recording's local file name. The upload uses the desktop recorder's numbered name instead.
     public static let filename = "voice-message.ogg"
-    public static let contentType = "audio/ogg; codecs=opus"
 
     public var durationSeconds: Double
     /// Base64 of 0–255 waveform bins.

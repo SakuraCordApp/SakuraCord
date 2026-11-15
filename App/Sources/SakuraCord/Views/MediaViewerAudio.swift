@@ -91,7 +91,7 @@ struct MediaViewerAudio: View {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .contentTransition(.symbolEffect(.replace, options: .speed(2)))
                 .font(.interfaceSystem(size: 30, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                 .frame(width: InterfaceScale.metric(60), height: InterfaceScale.metric(60))
                 // The whole circle, not just the glyph, takes the pointer, so
                 // the glass responds anywhere on the button.
@@ -197,7 +197,7 @@ private struct MediaViewerAudioSeekBar: View {
                 if let pointer = scrubFraction.map({ $0 * width }) ?? hoverX, duration > 0 {
                     Text(Self.time(Double(pointer / max(width, 1)) * duration))
                         .font(.interface(.caption).monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                         .padding(.horizontal, InterfaceScale.metric(7))
                         .padding(.vertical, InterfaceScale.metric(3))
                         .background(SakuraCordAccentColor.color, in: Capsule())
@@ -262,7 +262,6 @@ private struct MediaViewerAudioVolume: View {
         .labelsHidden()
         .font(.interface(.body))
         .foregroundStyle(.secondary)
-        .tint(SakuraCordAccentColor.color)
         .frame(width: InterfaceScale.metric(260))
     }
 }

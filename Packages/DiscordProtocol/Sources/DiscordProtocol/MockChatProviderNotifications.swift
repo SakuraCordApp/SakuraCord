@@ -141,15 +141,11 @@ public extension MockChatProvider {
         )
     }
 
-    func updateDirectMessagePin(channelID: ChannelID, flags: UInt64) async throws {
-        var settings = snapshot.notificationSettings.first { $0.guildID == nil }
-            ?? GuildNotificationSettings(guildID: nil, messageNotifications: .inherit)
-        var override = settings.channelOverrides.first { $0.channelID == channelID }
-            ?? ChannelNotificationOverride(channelID: channelID)
-        override.flags = flags
-        settings.channelOverrides.removeAll { $0.channelID == channelID }
-        settings.channelOverrides.append(override)
-        snapshot.notificationSettings.removeAll { $0.guildID == nil }
+    func updateChannelPin(guildID: GuildID?, channelID: ChannelID, flags: UInt64) async throws {
+        var settings = snapshot.notificationSettings.first { $0.guildID == guildID }
+            ?? GuildNotificationSettings(guildID: guildID, messageNotifications: .inherit)
+        settings.updateChannelOverride(channelID) { $0.flags = flags }
+        snapshot.notificationSettings.removeAll { $0.guildID == guildID }
         snapshot.notificationSettings.append(settings)
         continuation?.yield(.notificationSettingsChanged(settings))
     }
@@ -196,24 +192,6 @@ public extension MockChatProvider {
                 isCollapsed: isCollapsed
             )
         )
-        if categoryCollapsedUpdatesAreSuspended {
-            await withCheckedContinuation { continuation in
-                categoryCollapsedUpdateWaiters.append(continuation)
-            }
-        }
-    }
-
-    func suspendCategoryCollapsedUpdates() {
-        categoryCollapsedUpdatesAreSuspended = true
-    }
-
-    func resumeCategoryCollapsedUpdates() {
-        categoryCollapsedUpdatesAreSuspended = false
-        let waiters = categoryCollapsedUpdateWaiters
-        categoryCollapsedUpdateWaiters.removeAll()
-        for waiter in waiters {
-            waiter.resume()
-        }
     }
 
     func inboxMentions(_ query: InboxMentionQuery, before: MessageID?) async throws -> InboxMentionPage {

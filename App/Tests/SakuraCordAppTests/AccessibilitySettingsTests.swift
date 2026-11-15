@@ -34,22 +34,22 @@ private final class VoiceOverAnnouncementTestState {
     store.save(value)
 
     #expect(store.load() == value)
-    let export = preferences.export(scope: .appWide, page: .accessibility)
+    let export = preferences.export(page: .accessibility)
     #expect(
-        export.values[SettingsControlID.accessibilityDisableProfileEffects.rawValue]
+        export[SettingsControlID.accessibilityDisableProfileEffects.rawValue]
             == .bool(true)
     )
     #expect(
-        export.values[SettingsControlID.accessibilityDisableServerTags.rawValue]
+        export[SettingsControlID.accessibilityDisableServerTags.rawValue]
             == .bool(true)
     )
     #expect(
-        export.values[SettingsControlID.accessibilityAnnounceNewMessages.rawValue]
+        export[SettingsControlID.accessibilityAnnounceNewMessages.rawValue]
             == .bool(true)
     )
-    #expect(export.values[SettingsControlID.smartQuotes.rawValue] == nil)
+    #expect(export[SettingsControlID.smartQuotes.rawValue] == nil)
 
-    preferences.reset(scope: .appWide, page: .accessibility)
+    preferences.reset(page: .accessibility)
     #expect(store.load() == .defaults)
 }
 

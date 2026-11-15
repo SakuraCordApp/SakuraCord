@@ -122,6 +122,7 @@ struct MarkdownBlockLayout {
                 in: tableIntent, row: row, column: column, outerBlocks: placement.textBlocks, indent: placement.indent
             ) else { return }
             alignment = cell.alignment
+            if content.string == MarkdownTableRows.marker { content.setAttributedString(NSAttributedString()) }
             placement.textBlocks.append(cell.block)
             placement.indent = 0
         case let .footnote(number):
@@ -303,14 +304,14 @@ struct MarkdownBlockLayout {
     private static func cellBlock(_ table: NSTextTable, row: Int, column: Int) -> NSTextTableBlock {
         let cell = NSTextTableBlock(table: table, startingRow: row, rowSpan: 1, startingColumn: column, columnSpan: 1)
         cell.setWidth(1, type: .absoluteValueType, for: .border)
-        cell.setBorderColor(NativeTimelineRowPainter.discordCodeBorderColor)
+        cell.setBorderColor(MarkdownBlockChrome.codeBorderColor)
         for edge in [NSRectEdge.minX, .maxX] {
             cell.setWidth(px(8), type: .absoluteValueType, for: .padding, edge: edge)
         }
         for edge in [NSRectEdge.minY, .maxY] {
             cell.setWidth(px(4), type: .absoluteValueType, for: .padding, edge: edge)
         }
-        if row == 0 { cell.backgroundColor = NativeTimelineRowPainter.discordCodeBackgroundColor }
+        if row == 0 { cell.backgroundColor = MarkdownBlockChrome.codeBackgroundColor }
         return cell
     }
 
@@ -362,15 +363,9 @@ struct MarkdownBlockLayout {
         let isHollow = depth > 1
         let attachment = NSTextAttachment()
         attachment.image = NSImage(size: size, flipped: false) { _ in
-            let disc = NSRect(x: 0, y: 0, width: diameter, height: diameter)
-            color.set()
-            if isHollow {
-                let ring = NSBezierPath(ovalIn: disc.insetBy(dx: 0.5, dy: 0.5))
-                ring.lineWidth = 1
-                ring.stroke()
-            } else {
-                NSBezierPath(ovalIn: disc).fill()
-            }
+            MarkdownBlockChrome.drawListMarker(
+                in: NSRect(x: 0, y: 0, width: diameter, height: diameter), color: color, isHollow: isHollow
+            )
             return true
         }
         attachment.bounds = CGRect(origin: CGPoint(x: 0, y: (MarkdownInlineStyle.font(for: .paragraph).xHeight - diameter) / 2), size: size)
@@ -388,7 +383,7 @@ struct MarkdownBlockLayout {
         // Sized to fit the list gutter before the 4 px gap to the text.
         return NSAttributedString(attachment: MarkdownInlineStyle.symbol(
             isDone ? "checkmark.square.fill" : "square", font: .systemFont(ofSize: px(10)),
-            colors: isDone ? [.white, .controlAccentColor] : [.secondaryLabelColor]
+            colors: isDone ? [.sakuraCordLabelOnAccentColor, .controlAccentColor] : [.secondaryLabelColor]
         ))
     }
 
@@ -412,7 +407,7 @@ nonisolated final class MarkdownCodeBox: NSTextTableBlock {
         withFrame frameRect: NSRect, in controlView: NSView?, characterRange charRange: NSRange, layoutManager: NSLayoutManager
     ) {
         // AppKit draws text on the main thread.
-        MainActor.assumeIsolated { NativeTimelineRowPainter.drawCodeChrome(in: frameRect) }
+        MainActor.assumeIsolated { MarkdownBlockChrome.drawCode(in: frameRect) }
     }
 }
 
@@ -422,7 +417,7 @@ nonisolated final class MarkdownQuoteBox: NSTextTableBlock {
         withFrame frameRect: NSRect, in controlView: NSView?, characterRange charRange: NSRange, layoutManager: NSLayoutManager
     ) {
         let bar = NSRect(x: frameRect.minX, y: frameRect.minY, width: DiscordRichMessageMetrics.px(4), height: frameRect.height)
-        MainActor.assumeIsolated { NativeTimelineRowPainter.drawQuoteBar(in: bar) }
+        MainActor.assumeIsolated { MarkdownBlockChrome.drawQuoteBar(in: bar) }
     }
 }
 
@@ -435,7 +430,7 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
         guard !rects.isEmpty else { return }
         // AppKit draws text on the main thread.
-        MainActor.assumeIsolated { rects.forEach(NativeTimelineRowPainter.drawCodeChrome(in:)) }
+        MainActor.assumeIsolated { rects.forEach(MarkdownBlockChrome.drawCode(in:)) }
     }
 
     /// Each line's run of text marked with `key`, as tall as its line, as the

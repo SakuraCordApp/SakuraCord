@@ -78,18 +78,16 @@ import Testing
     #expect(reloaded.externalLinkConfirmationPolicy == .allLinks)
     #expect(reloaded.trustedDomains == ["example.com", "sub.example.com"])
 
-    let export = preferences.export(scope: .appWide, page: .privacySafety)
-    #expect(export.values == [
+    let export = preferences.export(page: .privacySafety)
+    #expect(export == [
         SettingsControlID.removeMediaMetadata.rawValue: .bool(false),
         SettingsControlID.anonymiseFileNames.rawValue: .bool(true),
         SettingsControlID.privacyTypingIndicators.rawValue: .bool(true),
         SettingsControlID.externalLinkProtection.rawValue: .string("allLinks"),
     ])
-    let encoded = try export.encodedData()
-    let text = try #require(String(data: encoded, encoding: .utf8))
-    #expect(!text.contains("credential-secret"))
+    #expect(!String(describing: export).contains("credential-secret"))
 
-    preferences.reset(scope: .appWide, page: .privacySafety)
+    preferences.reset(page: .privacySafety)
     #expect(store.load() == .defaults)
     #expect(defaults.string(forKey: "unregistered.credential") == "credential-secret")
 }
@@ -233,7 +231,7 @@ import Testing
 
     model.messageSearch.queryText = "private query"
     model.messageSearch.isPresented = true
-    model.forwardDestinationHistory = [channelID]
+    model.conversationDestinationHistory = [channelID]
     model.recordMessageEmojiUsage("👋")
     let pending = model.emojiFrecency.pendingUsages
     model.discordFavoriteEmojiKeys = ["wave"]
@@ -242,7 +240,7 @@ import Testing
 
     #expect(model.messageSearch.queryText == "private query")
     #expect(model.messageSearch.isPresented)
-    #expect(model.forwardDestinationHistory.isEmpty)
+    #expect(model.conversationDestinationHistory.isEmpty)
     #expect(model.emojiFrecency.pendingUsages == pending)
     #expect(model.discordFavoriteEmojiKeys == ["wave"])
 }
@@ -295,7 +293,7 @@ import Testing
 @MainActor
 @Test func `Attachment confirmations preserve complete masked host warnings`() async throws {
     let url = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/example.com?ex=ffffffff"))
-    let masked = DiscordMarkdown.appKitAttributed("[https://dis**cord**.com](\(url.absoluteString))")
+    let masked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[https://dis**cord**.com](\(url.absoluteString))"))
     let label = MessageLinkActivator.safetyDisplayedText(in: masked, at: 12)
     #expect(label == "https://discord.com")
     let model = AppModel(launchMode: .offlineTesting)

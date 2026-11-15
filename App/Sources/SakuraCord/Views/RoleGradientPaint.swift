@@ -63,8 +63,7 @@ nonisolated enum RoleGradientPaint {
         isHovered: Bool, context: CGContext
     ) {
         // Discord dims gradient names to 85% on light backgrounds.
-        let isLight = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .aqua
-        let colors = isLight ? colors.map { $0.shadow(withLevel: 0.15) ?? $0 } : colors
+        let colors = NSAppearance.currentDrawing().isDark ? colors : colors.map { $0.shadow(withLevel: 0.15) ?? $0 }
         let bounds = CGRect(x: origin.x, y: origin.y, width: width, height: 0)
         if isHovered {
             context.saveGState()

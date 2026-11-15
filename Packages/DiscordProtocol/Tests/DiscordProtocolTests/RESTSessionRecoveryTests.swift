@@ -13,9 +13,7 @@ struct RESTSessionRecoveryTests {
 
         let (_, response) = try await provider.perform(
             "/transport-recovery",
-            method: "GET",
-            query: [],
-            body: nil
+            method: "GET"
         )
 
         #expect(response.statusCode == 200)
@@ -33,16 +31,12 @@ struct RESTSessionRecoveryTests {
         await #expect(throws: URLError.self) {
             try await provider.perform(
                 "/transport-recovery",
-                method: "POST",
-                query: [],
-                body: nil
+                method: "POST"
             )
         }
         let (_, response) = try await provider.perform(
             "/transport-recovery",
-            method: "GET",
-            query: [],
-            body: nil
+            method: "GET"
         )
 
         #expect(response.statusCode == 200)
@@ -58,7 +52,6 @@ struct RESTSessionRecoveryTests {
         let (_, response) = try await provider.perform(
             "/users/@me/messages/search/tabs",
             method: "POST",
-            query: [],
             body: ["tabs": .object([:])]
         )
 
@@ -139,15 +132,7 @@ private final class RESTSessionRecoveryURLProtocol: URLProtocol, @unchecked Send
             client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
             return
         }
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: 200,
-            httpVersion: "HTTP/2",
-            headerFields: [:]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("{}".utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: Data("{}".utf8), headers: [:])
     }
 
     override func stopLoading() {}

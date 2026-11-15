@@ -34,7 +34,7 @@ extension NativeTimelineCanvasView {
     /// from the side that has text. Nil for any other change, which moves
     /// as one piece.
     func editedTextBand(
-        from old: NativeTimelineReactionBaseline.Row,
+        from old: NativeTimelineRowMotionBaseline.Row,
         at index: Int,
         width: CGFloat,
         motionID: Int
@@ -76,7 +76,7 @@ extension NativeTimelineCanvasView {
         let startHeight = running.map { shownHeight(of: $0, at: index) + runningOffset } ?? oldHeight
         let size = NSSize(width: width, height: startHeight)
         let picture = slidingTextOrigin != nil ? nil : fadePictureScale(for: size).flatMap { scale in
-            NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
+            NativeTimelineSnapshotRenderer.render(size: size, scale: scale) {
                 guard let context = NSGraphicsContext.current?.cgContext else { return }
                 let progress = running.map { progress(of: $0, shown: startHeight - runningOffset) } ?? 1
                 if let picture = running?.picture {
@@ -96,7 +96,7 @@ extension NativeTimelineCanvasView {
                     NativeTimelineRowPainter.draw(
                         item: old.item, layout: old.layout,
                         in: CGRect(x: 0, y: -top, width: width, height: old.layout.height), model: model,
-                        isHovered: false, revealedTextSpoilerState: old.revealedTextSpoilerState,
+                        revealedTextSpoilerState: old.revealedTextSpoilerState,
                         spoilerRevealStore: spoilerRevealStore, pollPresentation: old.pollPresentation
                     )
                 }
@@ -110,30 +110,11 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    /// Whether views of the row's own sit over what it draws: a playing
-    /// video, an audio player, a spoiler cover, a control's loading dots,
-    /// an upload's ring or a hovered code block's copy button. They keep
-    /// their final places, so the row moves as one piece instead of parting
-    /// from them.
-    func hostsLiveViews(at index: Int) -> Bool {
-        let identifier = items[index].identifier
-        let messageID = items[index].messageID
-        return inlinePlayers.keys.contains { $0.row == identifier }
-            || inlineVideoOverlays.keys.contains { $0.row == identifier }
-            || spoilerOverlays.keys.contains { $0.messageID == messageID }
-            || activityIndicators.keys.contains { $0.row == identifier }
-            || uploadRings.keys.contains { $0.row == identifier }
-            || hoveredCodeBlock?.itemIdentifier == identifier
-            || [voiceMessageOverlay, voiceMessageHoverOverlay].contains { overlay in
-                overlay.map { overlay in layouts[index].audioPlayers.contains { $0.playbackID == overlay.region.playbackID } } ?? false
-            }
-    }
-
     /// How tall the band's text is drawn now: its target less the part of
     /// the row's text steps still to come, which an interrupted edit's
     /// step can carry past where this band started.
     private func shownHeight(of band: NativeTimelineEditedTextBand, at index: Int) -> CGFloat {
-        max(0, band.newHeight - (reactionMotionTextRemainingHeights[index] ?? 0))
+        max(0, band.newHeight - (rowMotion.textRemainingHeights[index] ?? 0))
     }
 
     /// How far the band's new text has faded in at `shown`.
@@ -173,7 +154,7 @@ extension NativeTimelineCanvasView {
             // of the row still gliding does not speed up.
             let frame = paintFrame.offsetBy(dx: 0, dy: shown - band.newHeight)
             // A band is dropped with its motion, so the motion is running.
-            guard let motion = reactionRowMotions.first(where: { $0.id == band.motionID }) else {
+            guard let motion = rowMotion.motions.first(where: { $0.id == band.motionID }) else {
                 preconditionFailure("A text band outlived its motion")
             }
             let handoff = motion.progress(at: rowMotionUptime)

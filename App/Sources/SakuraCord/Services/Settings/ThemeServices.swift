@@ -104,7 +104,7 @@ nonisolated enum SakuraCordThemeAppearance: Sendable {
     case dark
 }
 
-nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
+nonisolated struct SakuraCordThemeRGB: Hashable, Sendable {
     let red: Double
     let green: Double
     let blue: Double
@@ -155,14 +155,62 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
         self.blue = blue
     }
 
+    /// The colour's sRGB components, resolved in the current appearance.
+    init(_ color: NSColor) {
+        let color = color.usingColorSpace(.sRGB) ?? color
+        self.init(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent)
+    }
+
     func blended(toward target: Self, fraction: Double) -> Self {
         target.composited(over: self, opacity: fraction)
+    }
+
+    /// The same hue at the OKLab lightness nearest this colour's own that has
+    /// `ratio` contrast against every background, also where this colour
+    /// tints that background at `tintOpacity`. Lightness moves toward
+    /// whichever end reads better; chroma drops only as far as sRGB
+    /// requires, so the hue stays put instead of clipping toward another
+    /// one. When no lightness reaches `ratio`, that end is the best there is.
+    func withLightness(reaching ratio: Double, against backgrounds: [Self], tintOpacity: Double = 0) -> Self {
+        func contrast(_ color: Self) -> Double {
+            backgrounds.map { color.contrastRatio(with: color.composited(over: $0, opacity: tintOpacity)) }.min() ?? ratio
+        }
+        guard contrast(self) < ratio else { return self }
+        let lab = oklab
+        var readable = contrast(Self(lightness: 0, hueOf: lab)) >= contrast(Self(lightness: 1, hueOf: lab)) ? 0.0 : 1.0
+        var unreadable = lab.x
+        for _ in 0 ..< 16 {
+            let middle = (readable + unreadable) / 2
+            if contrast(Self(lightness: middle, hueOf: lab)) >= ratio {
+                readable = middle
+            } else {
+                unreadable = middle
+            }
+        }
+        return Self(lightness: readable, hueOf: lab)
     }
 
     /// Interpolates the way CSS `color-mix(in oklab, …)` does.
     func oklabBlended(toward target: Self, fraction: Double) -> Self {
         let source = oklab
         return Self(oklab: source + (target.oklab - source) * fraction)
+    }
+
+    /// The colour `lightness` CIELAB L* steps brighter, keeping its a* and b*.
+    func cielabBrightened(by lightness: Double) -> Self {
+        func labTransform(_ value: Double) -> Double { value > 0.008856 ? pow(value, 1 / 3.0) : 7.787 * value + 16 / 116.0 }
+        func inverse(_ value: Double) -> Double { pow(value, 3) > 0.008856 ? pow(value, 3) : (value - 16 / 116.0) / 7.787 }
+        let linearRed = Self.linear(red), linearGreen = Self.linear(green), linearBlue = Self.linear(blue)
+        let labX = labTransform((0.4124564 * linearRed + 0.3575761 * linearGreen + 0.1804375 * linearBlue) / 0.95047)
+        let labY = labTransform(0.2126729 * linearRed + 0.7151522 * linearGreen + 0.0721750 * linearBlue)
+        let labZ = labTransform((0.0193339 * linearRed + 0.1191920 * linearGreen + 0.9503041 * linearBlue) / 1.08883)
+        let newY = labY + lightness / 116
+        let xx = 0.95047 * inverse(labX + newY - labY), yy = inverse(newY), zz = 1.08883 * inverse(labZ + newY - labY)
+        return Self(
+            red: Self.encoded(3.2404542 * xx - 1.5371385 * yy - 0.4985314 * zz),
+            green: Self.encoded(-0.9692660 * xx + 1.8760108 * yy + 0.0415560 * zz),
+            blue: Self.encoded(0.0556434 * xx - 0.2040259 * yy + 1.0572252 * zz)
+        )
     }
 
     private var oklab: SIMD3<Double> {
@@ -180,16 +228,41 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
     }
 
     private init(oklab: SIMD3<Double>) {
+        let linear = Self.linearRGB(oklab: oklab)
+        self.init(red: Self.encoded(linear.x), green: Self.encoded(linear.y), blue: Self.encoded(linear.z))
+    }
+
+    /// OKLab `lightness` with the hue of `lab` and as much of its chroma as
+    /// sRGB can show at that lightness, as in CSS Color 4 gamut mapping.
+    private init(lightness: Double, hueOf lab: SIMD3<Double>) {
+        func scaled(_ chroma: Double) -> SIMD3<Double> { SIMD3(lightness, lab.y * chroma, lab.z * chroma) }
+        func fits(_ chroma: Double) -> Bool {
+            let linear = Self.linearRGB(oklab: scaled(chroma))
+            return linear.min() >= -0.0001 && linear.max() <= 1.0001
+        }
+        var inside = 1.0
+        if !fits(inside) {
+            inside = 0
+            var outside = 1.0
+            for _ in 0 ..< 12 {
+                let middle = (inside + outside) / 2
+                if fits(middle) { inside = middle } else { outside = middle }
+            }
+        }
+        self.init(oklab: scaled(inside))
+    }
+
+    private static func linearRGB(oklab: SIMD3<Double>) -> SIMD3<Double> {
         let roots = SIMD3(
             (SIMD3(1, 0.3963377774, 0.2158037573) * oklab).sum(),
             (SIMD3(1, -0.1055613458, -0.0638541728) * oklab).sum(),
             (SIMD3(1, -0.0894841775, -1.2914855480) * oklab).sum()
         )
         let cones = roots * roots * roots
-        self.init(
-            red: Self.encoded((SIMD3(4.0767416621, -3.3077115913, 0.2309699292) * cones).sum()),
-            green: Self.encoded((SIMD3(-1.2684380046, 2.6097574011, -0.3413193965) * cones).sum()),
-            blue: Self.encoded((SIMD3(-0.0041960863, -0.7034186147, 1.7076147010) * cones).sum())
+        return SIMD3(
+            (SIMD3(4.0767416621, -3.3077115913, 0.2309699292) * cones).sum(),
+            (SIMD3(-1.2684380046, 2.6097574011, -0.3413193965) * cones).sum(),
+            (SIMD3(-0.0041960863, -0.7034186147, 1.7076147010) * cones).sum()
         )
     }
 
@@ -487,6 +560,19 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Hashable, Sendab
         return start + delta * progress
     }
 
+    /// The colour installed as this theme's macOS accent, the same in light
+    /// and dark as a system accent is: the first gradient colour at full
+    /// brightness, or exactly macOS Pink for SakuraCord's own pink. macOS's
+    /// palest accent, Yellow, is 1.56:1 against white; a theme colour paler
+    /// than any macOS accent is darkened just into that range.
+    var accentRGB: SakuraCordThemeRGB {
+        let color = activeColors.first ?? Self.defaultTheme.colors[0]
+        let accent = color == .sakuraPink
+            ? SakuraCordThemeRGB(red: 0xF7 / 255, green: 0x4F / 255, blue: 0x9E / 255)
+            : SakuraCordThemeRGB(hue: color.hue, saturation: color.saturation, brightness: 1)
+        return accent.withLightness(reaching: 1.56, against: [.white])
+    }
+
     var intensityProgress: Double {
         pow(intensity, 1.75)
     }
@@ -651,12 +737,7 @@ final class SakuraCordThemeSettingsStore {
 
     func load() -> SakuraCordGradientTheme {
         if preferences.containsStoredValue(for: .themeDesigner) {
-            if case let .string(rawValue) = preferences.value(for: .themeDesigner),
-               let stored = SakuraCordGradientTheme(storageValue: rawValue)
-            {
-                return stored
-            }
-            return .defaultTheme
+            return SakuraCordGradientTheme(storageValue: preferences.string(.themeDesigner)) ?? .defaultTheme
         }
 
         guard preferences.containsStoredValue(for: .legacyAccentColorMigration) else {
@@ -816,7 +897,7 @@ final class SakuraCordThemeStore {
             let durationSeconds = Self.randomizationDuration.secondsValue
             let elapsedSeconds = elapsed.secondsValue
             let linearProgress = (elapsedSeconds / durationSeconds).clamped(to: 0 ... 1)
-            let easedProgress = 1 - pow(1 - linearProgress, 3)
+            let easedProgress = Double(MotionEasing.easeOut(CGFloat(linearProgress)))
             activeTheme = source.interpolated(to: target, progress: easedProgress)
             if linearProgress >= 1 { break }
             try? await clock.sleep(for: .milliseconds(8))
@@ -824,21 +905,6 @@ final class SakuraCordThemeStore {
         guard !Task.isCancelled, interactionGeneration == generation else { return }
         activeTheme = target
         commit()
-    }
-
-    func accentNSColor() -> NSColor {
-        let theme = committedTheme
-        let accentColor = theme.activeColors.first ?? SakuraCordGradientTheme.defaultTheme.colors[0]
-        return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
-            let source = SakuraCordThemeRGB(
-                hue: accentColor.hue,
-                saturation: accentColor.saturation,
-                brightness: 0.82
-            )
-            return NSColor(theme.readableForeground(source, for: themeAppearance))
-        }
     }
 
     func roleNSColor(for colorHex: UInt32) -> NSColor {
@@ -849,25 +915,9 @@ final class SakuraCordThemeStore {
         )
         let theme = committedTheme
         return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let isDark = appearance.isDark
             let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
             return NSColor(theme.readableForeground(source, for: themeAppearance))
-        }
-    }
-
-    func textSelectionNSColor() -> NSColor {
-        return NSColor(name: nil) { appearance in
-            var result = NSColor.selectedTextBackgroundColor
-            appearance.performAsCurrentDrawingAppearance {
-                let accent = self.accentNSColor().usingColorSpace(.sRGB)
-                    ?? self.accentNSColor()
-                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                result = accent.blended(
-                    withFraction: isDark ? 0.38 : 0.70,
-                    of: .windowBackgroundColor
-                ) ?? accent
-            }
-            return result
         }
     }
 
@@ -923,6 +973,10 @@ final class SakuraCordThemeStore {
 extension Notification.Name {
     static let sakuraCordThemeDidCommit = Notification.Name(
         "dev.sakuracord.theme-did-commit"
+    )
+    /// The label colour for accent fills flipped during a live theme edit.
+    static let sakuraCordAccentLabelDidChange = Notification.Name(
+        "dev.sakuracord.accent-label-did-change"
     )
 }
 

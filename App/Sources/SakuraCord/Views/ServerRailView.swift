@@ -29,6 +29,7 @@ struct ServerRailContainer: View {
             selectJoinRequest: model.selectGuildJoinRequest,
             home: model.serverRailPresentation.home,
             selectHome: { model.selectGuild(nil) },
+            favoritesModel: model.showsFavoritesRailItem ? model : nil,
             selectDirectMessage: { model.navigate(to: $0) },
             selectGuild: model.selectGuild,
             joinServer: { invites.showsJoinDialog = true },
@@ -132,6 +133,7 @@ struct ServerRailContainer: View {
         } message: {
             Text(invites.leaveError ?? "")
         }
+        .modifier(FavoritesDialogs(model: model))
     }
 }
 
@@ -139,27 +141,26 @@ struct ServerRailView: View {
     let sidebarWidth: CGFloat
     let items: [ServerRailPresentationItem]
     let directMessages: [ServerRailDirectMessageEntry]
-    var joinRequests: [ServerRailJoinRequestEntry] = []
-    var joinRequestsExpanded: Binding<Bool> = .constant(false)
-    var showsSubmittedTip: Binding<Bool> = .constant(false)
-    var selectJoinRequest: (GuildID?) -> Void = { _ in }
+    let joinRequests: [ServerRailJoinRequestEntry]
+    let joinRequestsExpanded: Binding<Bool>
+    let showsSubmittedTip: Binding<Bool>
+    let selectJoinRequest: (GuildID?) -> Void
     let home: ServerRailHomeEntry
     let selectHome: () -> Void
+    let favoritesModel: AppModel?
     let selectDirectMessage: (ChannelID) -> Void
     let selectGuild: (GuildID?) -> Void
-    var joinServer: () -> Void = {}
-    var showsReadAllButton = false
-    var isReadingAll = false
-    var hasUnreadServers: () -> Bool = { false }
-    var readAll: () -> Void = {}
-    var moveItems: ([GuildRailItem.RailIdentifier], GuildRailDestination) -> Void = { _, _ in }
-    var combineGuilds: (GuildID, GuildID) -> Void = { _, _ in }
-    var voicePreview: (GuildID) -> ServerRailVoicePreview? = { _ in nil }
-    var resolveVoiceParticipants: (GuildID, [UserID]) async -> Void = { _, _ in }
+    let joinServer: () -> Void
+    let showsReadAllButton: Bool
+    let isReadingAll: Bool
+    let hasUnreadServers: () -> Bool
+    let readAll: () -> Void
+    let moveItems: ([GuildRailItem.RailIdentifier], GuildRailDestination) -> Void
+    let combineGuilds: (GuildID, GuildID) -> Void
+    let voicePreview: (GuildID) -> ServerRailVoicePreview?
+    let resolveVoiceParticipants: (GuildID, [UserID]) async -> Void
     let contextMenuActions: ServerRailContextMenuActions
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
     @State private var folderLayoutRevision = 0
     @State private var drag = ServerRailDragController()
     @State private var scrollPosition = ScrollPosition(edge: .top)
@@ -175,6 +176,11 @@ struct ServerRailView: View {
                     home: home,
                     action: selectHome
                 )
+
+                if let favoritesModel {
+                    FavoritesRailButton(model: favoritesModel)
+                        .transition(ServerRailAnimations.membershipTransition)
+                }
 
                 ForEach(directMessages) { entry in
                     DirectMessageRailButton(entry: entry) {
@@ -205,6 +211,7 @@ struct ServerRailView: View {
             // move with it.
             .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: joinRequestsExpanded.wrappedValue)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: directMessages.map(\.id))
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: favoritesModel != nil)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: joinRequests.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)
@@ -408,12 +415,13 @@ private struct DirectMessageRailButton: View {
         let displayName = channel.name.isEmpty ? "Group Direct Message" : channel.name
 
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
+            ServerRailTileLabel {
                 ServerRailSelectionIndicator(
                     isSelected: entry.isSelected,
                     isHovering: isHovering,
                     hasNotification: true
                 )
+            } icon: {
                 ServerRailBadgedIcon(mentionCount: channel.mentionCount) {
                     DirectMessageAvatar(
                         channel: channel,
@@ -425,8 +433,6 @@ private struct DirectMessageRailButton: View {
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
                 }
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
         .accessibilityLabel(displayName)
@@ -461,9 +467,7 @@ private struct PendingApplicationsRailFolder: View {
     let select: (GuildID) -> Void
     @State private var isHovering = false
     @Environment(\.displayScale) private var displayScale
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing) : 0) {
@@ -472,16 +476,15 @@ private struct PendingApplicationsRailFolder: View {
                 // rail's implicit animation to the header.
                 withAnimation(reduceMotion ? nil : ServerRailAnimations.folderExpansion) { isExpanded.toggle() }
             } label: {
-                HStack(spacing: InterfaceScale.metric(4)) {
+                ServerRailTileLabel {
                     ServerRailSelectionIndicator(isSelected: !isExpanded && entries.contains(where: \.isSelected),
                                                  isHovering: isHovering && !isExpanded, hasNotification: false)
+                } icon: {
                     Image(systemName: "hourglass")
                         .font(.interfaceSystem(size: 19, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
                 }
-                .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-                .contentShape(Rectangle())
             }
             .buttonStyle(ServerRailButtonStyle())
             .accessibilityLabel("Pending Applications")
@@ -500,7 +503,6 @@ private struct PendingApplicationsRailFolder: View {
                     Button("Got it") { showsSubmittedTip = false }
                         .buttonStyle(.glassProminent)
                         .buttonBorderShape(.capsule)
-                        .tint(SakuraCordAccentColor.color)
                         .frame(maxWidth: .infinity)
                         .padding(.top, InterfaceScale.metric(6))
                 }
@@ -545,26 +547,23 @@ private struct JoinRequestRailButton: View {
     let entry: ServerRailJoinRequestEntry
     let action: () -> Void
     @State private var isHovering = false
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
 
     var body: some View {
         let label = "\(entry.name), \(entry.status.membershipDescription)"
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
+            ServerRailTileLabel {
                 ServerRailSelectionIndicator(isSelected: entry.isSelected, isHovering: isHovering, hasNotification: false)
+            } icon: {
                 GuildIconView(name: entry.name, iconURL: entry.iconURL, size: InterfaceScale.metric(44),
                               cornerRadius: InterfaceScale.metric(13), animates: isHovering, isSelected: entry.isSelected)
                     .saturation(0.4)
                     .modifier(ApplicationStatusBadge(symbol: entry.status == .rejected ? "xmark" : "hourglass",
-                                                     tint: entry.status == .rejected ? Color(hex: 0xF23F43) : .gray,
+                                                     tint: entry.status == .rejected ? MentionRed.color : .gray,
                                                      diameter: 18, offset: 4, isHidden: entry.status == .started))
                     .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: entry.status)
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
         .accessibilityLabel(label)
@@ -662,7 +661,7 @@ struct ServerRailMentionBadge: View {
                     .contentTransition(.numericText(value: Double(count)))
                     .padding(.horizontal, InterfaceScale.metric(5))
                     .frame(minWidth: InterfaceScale.metric(18), minHeight: InterfaceScale.metric(18))
-                    .background(Color(hex: MentionRed.hex), in: Capsule())
+                    .background(MentionRed.color, in: Capsule())
                 if isCutout {
                     badge
                         .padding(InterfaceScale.metric(2))
@@ -679,17 +678,17 @@ struct ServerRailMentionBadge: View {
 
 struct ServerRailContextMenuActions {
     let markRead: (GuildID) -> Void
-    var canInvite: (Guild) -> Bool = { _ in false }
-    var invite: (Guild) -> Void = { _ in }
+    let canInvite: (Guild) -> Bool
+    let invite: (Guild) -> Void
     let mute: (Guild, ChannelMuteDuration) -> Void
     let unmute: (Guild) -> Void
     let setNotificationLevel: (Guild, MessageNotificationLevel) -> Void
     let setNotificationToggle: (Guild, GuildNotificationToggle, Bool) -> Void
-    var leaveServer: (Guild) -> Void = { _ in }
-    var showsAllChannels: (Guild) -> Bool? = { _ in nil }
-    var setShowsAllChannels: (Guild, Bool) -> Void = { _, _ in }
-    var markFolderRead: ([GuildID]) -> Void = { _ in }
-    var openFolderSettings: (GuildFolder) -> Void = { _ in }
+    let leaveServer: (Guild) -> Void
+    let showsAllChannels: (Guild) -> Bool?
+    let setShowsAllChannels: (Guild, Bool) -> Void
+    let markFolderRead: ([GuildID]) -> Void
+    let openFolderSettings: (GuildFolder) -> Void
 }
 
 private struct ServerRailItemView: View {
@@ -755,9 +754,7 @@ struct GuildRailButton: View {
     var loadsImageWhenOffscreen = false
     var morphsInFolder = false
     let action: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
     @Environment(ServerRailDragController.self) private var drag
     @Environment(\.serverRailIsDragPreview) private var isDragPreview
     @Environment(\.serverRailFolderIndicatorsInOverlay) private var folderIndicatorsInOverlay
@@ -770,7 +767,7 @@ struct GuildRailButton: View {
         let hidesIndicator = isDragPreview || drag.draggedID == .guild(guild.id) || drag.flight?.id == .guild(guild.id)
 
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
+            ServerRailTileLabel {
                 ServerRailSelectionIndicator(
                     isSelected: isSelected,
                     isHovering: isHovering,
@@ -778,6 +775,7 @@ struct GuildRailButton: View {
                 )
                 .opacity(hidesIndicator || folderIndicatorsInOverlay ? 0 : 1)
                 .animation(.easeOut(duration: 0.12), value: hidesIndicator)
+            } icon: {
                 ServerRailBadgedIcon(mentionCount: guild.mentionCount) {
                     GuildIconView(
                         name: displayName,
@@ -799,39 +797,16 @@ struct GuildRailButton: View {
                 }
                 .contentShape(Rectangle())
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
         .overlay {
-            ServerContextMenuBridge(
-                isUnread: guild.unreadCount > 0,
-                isMutationPending:
-                    presentation.isNotificationMutationPending,
-                notificationSettings: presentation.notificationSettings,
-                markRead: { contextMenuActions.markRead(guild.id) },
-                canInvite: { contextMenuActions.canInvite(guild) },
-                invite: { contextMenuActions.invite(guild) },
-                mute: { contextMenuActions.mute(guild, $0) },
-                unmute: { contextMenuActions.unmute(guild) },
-                setNotificationLevel: {
-                    contextMenuActions.setNotificationLevel(guild, $0)
-                },
-                setNotificationToggle: { toggle, isEnabled in
-                    contextMenuActions.setNotificationToggle(
-                        guild,
-                        toggle,
-                        isEnabled
-                    )
-                },
-                copyServerID: {
-                    ChannelContextMenuValue.copy(guild.id.description)
-                },
-                leaveServer: guild.isOwnedByCurrentUser == false && !guild.isUnavailable
-                    ? { contextMenuActions.leaveServer(guild) } : nil,
-                showsAllChannels: { contextMenuActions.showsAllChannels(guild) },
-                setShowsAllChannels: { contextMenuActions.setShowsAllChannels(guild, $0) }
-            )
+            ServerRailContextMenuBridge {
+                contextMenuActions.serverMenu(
+                    for: guild,
+                    notificationSettings: presentation.notificationSettings,
+                    isMutationPending: presentation.isNotificationMutationPending
+                )
+            }
         }
         .accessibilityLabel(displayName)
         .accessibilityValue(
@@ -845,8 +820,7 @@ struct GuildRailButton: View {
                 ? ServerRailHoverItem(
                     name: displayName,
                     guildID: guild.id,
-                    isMuted: presentation.notificationSettings.isMuted
-                        && (presentation.notificationSettings.muteConfiguration?.isActive() ?? true),
+                    isMuted: presentation.notificationSettings.isActivelyMuted(),
                     bounds: bounds
                 )
                 : nil
@@ -1006,34 +980,75 @@ struct ServerRailHoverPreferenceKey: PreferenceKey {
 private struct HomeRailButton: View {
     let home: ServerRailHomeEntry
     let action: () -> Void
+
+    var body: some View {
+        ServerRailSymbolButton(title: "Direct Messages", systemImage: "message.fill", isSelected: home.isSelected, action: action)
+    }
+}
+
+/// A rail tile drawn from a symbol, such as Direct Messages and Favorites:
+/// filled with the accent while selected or hovered, with the hover pill and name.
+struct ServerRailSymbolButton: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    var hasNotification = false
+    var mentionCount = 0
+    let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
-                ServerRailSelectionIndicator(
-                    isSelected: home.isSelected,
-                    isHovering: isHovering,
-                    hasNotification: false
-                )
-                Image(systemName: "message.fill")
-                    .font(.interface(.title2))
-                    .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
-                    .background(
-                        home.isSelected
-                            ? SakuraCordAccentColor.color
-                            : Color.secondary.opacity(0.16),
-                        in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous)
-                    )
-                    .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+            ServerRailTileLabel(alignment: .leading) {
+                ServerRailSelectionIndicator(isSelected: isSelected, isHovering: isHovering, hasNotification: hasNotification)
+            } icon: {
+                ServerRailBadgedIcon(mentionCount: mentionCount) {
+                    Image(systemName: systemImage)
+                        .font(.interface(.title2))
+                        .foregroundStyle(isSelected || isHovering ? SakuraCordAccentColor.labelOnFill : .primary)
+                        .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
+                        .background(
+                            isSelected || isHovering ? SakuraCordAccentColor.color : Color.secondary.opacity(0.16),
+                            in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous)
+                        )
+                        .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+                }
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .leading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
-        .accessibilityLabel("Direct Messages")
+        .accessibilityLabel(title)
+        .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
+            isHovering ? ServerRailHoverItem(name: title, bounds: bounds) : nil
+        }
         .onServerRailHover { isHovering = $0 }
-        .help("Direct Messages")
+        .animation(.snappy(duration: 0.18), value: isHovering)
+    }
+}
+
+/// A rail tile's selection indicator beside its icon, filling the rail's
+/// width at the tile's height.
+struct ServerRailTileLabel<Indicator: View, Icon: View>: View {
+    let alignment: Alignment
+    let indicator: Indicator
+    let icon: Icon
+
+    init(
+        alignment: Alignment = .topLeading,
+        @ViewBuilder indicator: () -> Indicator,
+        @ViewBuilder icon: () -> Icon
+    ) {
+        self.alignment = alignment
+        self.indicator = indicator()
+        self.icon = icon()
+    }
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(4)) {
+            indicator
+            icon
+        }
+        .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: alignment)
+        .contentShape(Rectangle())
     }
 }
 
@@ -1044,9 +1059,7 @@ struct ServerRailSelectionIndicator: View {
     var isVisible = true
     var animatesStateChanges = true
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
 
     var body: some View {
         ServerRailIndicatorShape(

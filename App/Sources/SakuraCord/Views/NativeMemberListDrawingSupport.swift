@@ -61,12 +61,9 @@ extension NativeMemberListCanvasView {
     static func draw(line: CTLine, at point: CGPoint, context: CGContext) {
         var ascent: CGFloat = 0
         CTLineGetTypographicBounds(line, &ascent, nil, nil)
-        context.saveGState()
-        context.textMatrix = .identity
-        context.translateBy(x: point.x, y: point.y + ascent)
-        context.scaleBy(x: 1, y: -1)
-        CTLineDraw(line, context)
-        context.restoreGState()
+        context.drawCoreText(in: CGRect(x: point.x, y: point.y, width: 0, height: ascent)) { context in
+            CTLineDraw(line, context)
+        }
     }
 
     /// A role gradient name, scrolling and glowing while its row is hovered.
@@ -74,12 +71,9 @@ extension NativeMemberListCanvasView {
     static func draw(line: CTLine, at point: CGPoint, gradientColors: [NSColor], context: CGContext, isHovered: Bool) {
         var ascent: CGFloat = 0
         let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, nil, nil))
-        context.saveGState()
-        context.textMatrix = .identity
-        context.translateBy(x: point.x, y: point.y + ascent)
-        context.scaleBy(x: 1, y: -1)
-        RoleGradientPaint.draw(line, at: .zero, width: width, colors: gradientColors, isHovered: isHovered, context: context)
-        context.restoreGState()
+        context.drawCoreText(in: CGRect(x: point.x, y: point.y, width: 0, height: ascent)) { context in
+            RoleGradientPaint.draw(line, at: .zero, width: width, colors: gradientColors, isHovered: isHovered, context: context)
+        }
     }
 
     static func truncatedLine(
@@ -87,24 +81,25 @@ extension NativeMemberListCanvasView {
         token: CTLine,
         maximumWidth: CGFloat
     ) -> CTLine {
-        guard maximumWidth > 0,
-              CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) > maximumWidth,
-              let truncated = CTLineCreateTruncatedLine(
-                  line,
-                  Double(maximumWidth),
-                  .end,
-                  token
-              )
-        else { return line }
-        return truncated
+        guard maximumWidth > 0 else { return line }
+        return CoreTextLinePlacement.truncating(
+            line,
+            width: CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)),
+            to: maximumWidth,
+            truncation: .end
+        ) { token }
     }
 
-    nonisolated static let memberActivityColor = NSColor(
-        srgbRed: 122 / 255,
-        green: 123 / 255,
-        blue: 131 / 255,
-        alpha: 1
-    )
+    func activityTextFrame(at index: Int) -> CGRect {
+        let row = paintedRowRect(at: index)
+        let textX = textOriginX(at: index)
+        return CGRect(
+            x: textX,
+            y: row.minY + InterfaceScale.metric(24),
+            width: max(0, row.maxX - textX - 4 - InterfaceScale.metric(presentation.trailingAccessoryWidth)),
+            height: NativeMemberListMetrics.activityEmojiSize
+        )
+    }
 
     static func fillRounded(
         _ rect: CGRect,
@@ -123,20 +118,9 @@ extension NativeMemberListCanvasView {
     }
 
     static func draw(image: CGImage, in rect: CGRect, context: CGContext, fills: Bool) {
-        let imageRatio = CGFloat(image.width) / CGFloat(image.height)
-        let rectRatio = rect.width / rect.height
-        let destination: CGRect
-        if fills {
-            if imageRatio > rectRatio {
-                let width = rect.height * imageRatio
-                destination = CGRect(x: rect.midX - width / 2, y: rect.minY, width: width, height: rect.height)
-            } else {
-                let height = rect.width / imageRatio
-                destination = CGRect(x: rect.minX, y: rect.midY - height / 2, width: rect.width, height: height)
-            }
-        } else {
-            destination = rect
-        }
+        let destination = fills
+            ? aspectRect(for: CGSize(width: image.width, height: image.height), in: rect, fillsFrame: true)
+            : rect
         context.saveGState()
         context.translateBy(x: 0, y: destination.minY * 2 + destination.height)
         context.scaleBy(x: 1, y: -1)
@@ -147,27 +131,11 @@ extension NativeMemberListCanvasView {
     static func draw(image: CGImage, aspectFitIn rect: CGRect, context: CGContext) {
         let imageSize = CGSize(width: image.width, height: image.height)
         guard imageSize.width > 0, imageSize.height > 0 else { return }
-        let scale = min(rect.width / imageSize.width, rect.height / imageSize.height)
-        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
         draw(
             image: image,
-            in: CGRect(
-                x: rect.midX - size.width / 2,
-                y: rect.midY - size.height / 2,
-                width: size.width,
-                height: size.height
-            ),
+            in: aspectRect(for: imageSize, in: rect, fillsFrame: false),
             context: context,
             fills: false
-        )
-    }
-
-    nonisolated static func color(hex: UInt32) -> NSColor {
-        NSColor(
-            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
-            green: CGFloat((hex >> 8) & 0xFF) / 255,
-            blue: CGFloat(hex & 0xFF) / 255,
-            alpha: 1
         )
     }
 }

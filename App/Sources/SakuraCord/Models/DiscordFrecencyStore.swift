@@ -45,11 +45,14 @@ final class DiscordFrecencyStore {
 
     // MARK: Scope
 
+    /// An account scope usable in a defaults key.
+    nonisolated static func safeScope(_ scope: String) -> String {
+        scope.replacingOccurrences(of: #"[^A-Za-z0-9_.-]"#, with: "-", options: .regularExpression)
+    }
+
     /// Pending uses survive relaunches per account, as Discord persists them.
     func configure(scope: String, persists: Bool = true) {
-        let safeScope = scope.replacingOccurrences(
-            of: #"[^A-Za-z0-9_.-]"#, with: "-", options: .regularExpression
-        )
+        let safeScope = Self.safeScope(scope)
         defaultsKey = persists ? "dev.sakuracord.\(kind)-frecency-pending.\(safeScope)" : nil
         keys = []
         entries = [:]

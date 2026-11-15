@@ -56,7 +56,7 @@ extension DiscordRESTProvider {
             }
         }
         cachePrivateRecipientReferences([dto])
-        guard dto.type == 1 || dto.type == 3,
+        guard dto.isPrivate,
               var channel = try? privateChannel(from: dto)
         else { return }
         if name == "CHANNEL_UPDATE", let existing = privateChannel(id: channel.id) {
@@ -129,6 +129,7 @@ extension DiscordRESTProvider {
             ), let channelID = ChannelID(deleted.id)
         else { return }
         invalidateApplicationCommandCatalog(.channel(channelID))
+        await removeDeletedFavorite(channelID)
         let guildID = deleted.guildID.flatMap(GuildID.init)
             ?? cachedGuildChannelDTOs.first(where: { $0.value[deleted.id] != nil })?.key
         if let guildID {

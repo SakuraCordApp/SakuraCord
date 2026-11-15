@@ -153,7 +153,7 @@ func reportEntryPoints() throws {
     #expect(composer.commands.map(\.id) == [
         "other:bug", "other:suggest", "other:report", "community:roadmap", "sakuracord:bug", "sakuracord:suggest"
     ])
-    #expect(composer.rankedCommands(query: "bug").map(\.id).sorted() == ["other:bug", "sakuracord:bug"])
+    #expect(composer.sections(query: "bug").flatMap(\.commands).map(\.id).sorted() == ["other:bug", "sakuracord:bug"])
     #expect(foreignCommands.allSatisfy { SakuraCordBuiltInCommands.issueReportKind(for: $0) == nil })
     composer.resetForChannelChange()
     #expect(!composer.hasLoadedCatalogs)

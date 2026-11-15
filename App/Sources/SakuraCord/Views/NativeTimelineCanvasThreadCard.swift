@@ -5,27 +5,20 @@ import SakuraCordModels
 /// invalidates only the card, not its row.
 extension NativeTimelineCanvasView {
     func threadCardPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
-              let frame = layouts[index].threadFrame,
-              let messageID = items[index].messageID
-        else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        return frame.contains(local) ? messageID : nil
+        messageID(at: point) { layouts[$0].threadFrame }
     }
 
     func setHoveredThreadMessageID(_ value: MessageID?) {
-        guard hoveredThreadMessageID != value else { return }
-        let old = hoveredThreadMessageID
-        hoveredThreadMessageID = value
+        guard pointer.hoveredThreadMessageID != value else { return }
+        let old = pointer.hoveredThreadMessageID
+        pointer.hoveredThreadMessageID = value
         for messageID in [old, value].compactMap({ $0 }) {
             invalidateThreadCard(messageID: messageID)
         }
     }
 
     func invalidateThreadCard(messageID: MessageID) {
-        guard let index = items.firstIndex(where: { $0.messageID == messageID }),
+        guard let index = rowIndex(forMessageID: messageID),
               layouts.indices.contains(index),
               let frame = layouts[index].threadFrame
         else { return }
@@ -42,7 +35,7 @@ extension NativeTimelineCanvasView {
     }
 
     func threadCardInteraction(forMessageID messageID: MessageID?) -> NativeTimelineThreadCard.Interaction {
-        guard let messageID, hoveredThreadMessageID == messageID else { return .idle }
+        guard let messageID, pointer.hoveredThreadMessageID == messageID else { return .idle }
         if case let .thread(pressedID, _)? = pressedActivationTarget, pressedID == messageID { return .pressed }
         return .hovered
     }

@@ -43,9 +43,9 @@ extension DiscordRESTProvider {
     func removeMember(userID: UserID, guildID: GuildID) {
         memberPresentationRevisions[ProfileCacheKey(userID: userID, guildID: guildID), default: 0] &+= 1
         cachedMembers[guildID]?.removeAll { $0.id == userID }
-        let memberListIDs = cachedMemberListItems[guildID].map { Array($0.keys) } ?? []
+        let memberListIDs = memberListState.cachedItems[guildID].map { Array($0.keys) } ?? []
         for memberListID in memberListIDs {
-            cachedMemberListItems[guildID]?[memberListID]?.removeAll {
+            memberListState.cachedItems[guildID]?[memberListID]?.removeAll {
                 $0?.member?.user.id == userID.description
             }
         }

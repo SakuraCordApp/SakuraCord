@@ -116,10 +116,15 @@ struct ChatWorkspaceView: View, Equatable {
         WorkspaceColumnsHost(
             conversation: AnyView(primary()),
             columns: columns.map { column in
-                let isSideConversation = if case .sideConversation = column.content { true } else { false }
+                let conversation: SideConversation? = if case .sideConversation(let conversation) = column.content {
+                    conversation
+                } else {
+                    nil
+                }
                 return WorkspaceColumnsHost.Column(
                     id: column.id,
-                    isSideConversation: isSideConversation,
+                    isSideConversation: conversation != nil,
+                    isThread: conversation?.isThread == true,
                     isFullWidth: column.id == fullWidthThread?.id,
                     content: AnyView(columnContent(column))
                 )
@@ -162,7 +167,7 @@ private struct ChatWorkspacePrimaryContent: View {
         switch content {
         case .chat:
             if let channel = model.selectedChannel,
-               channel.kind == .directMessage || channel.kind == .groupDirectMessage,
+               channel.kind.isDirectMessage,
                model.joinablePrivateCall(in: channel.id) != nil
                     || model.activeVoiceChannel?.id == channel.id
             {
@@ -224,20 +229,19 @@ private struct ChatWorkspaceSupplementaryContent: View {
 
     var body: some View {
         switch pane {
-        case .sideConversation(let conversation):
-            SideConversationView(model: model, conversation: conversation)
+        case .sideConversation:
+            // Side chats are columns of their own, never an inspector's content.
+            EmptyView()
         case .memberInspector:
             HStack(spacing: 0) {
                 if model.selectedChannel?.kind != .directMessage {
-                    Divider()
-                        .ignoresSafeArea(.container, edges: .top)
+                    InspectorDivider()
                 }
                 memberInspector
             }
         case .messageSearch:
             HStack(spacing: 0) {
-                Divider()
-                    .ignoresSafeArea(.container, edges: .top)
+                InspectorDivider()
                 if toolbarSearchFieldMetrics.isValid {
                     MessageSearchPanelView(model: model)
                         .id(ObjectIdentifier(model.messageSearch))
@@ -326,5 +330,19 @@ private struct DirectMessageProfileInspector: View {
                 model.showInspectorProfile(for: recipient)
             }
         }
+    }
+}
+
+/// The line before a trailing column, one pixel wide as an inspector split
+/// item's divider is, where `Divider` is a full point. It reaches up beneath
+/// the toolbar, as the columns do.
+struct InspectorDivider: View {
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1 / displayScale)
+            .ignoresSafeArea(.container, edges: .top)
     }
 }

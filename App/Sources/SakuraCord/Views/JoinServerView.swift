@@ -84,7 +84,6 @@ private struct JoinServerInput: View {
                 TextField("Invite link or code", text: $text)
                     .textFieldStyle(.plain)
                     .font(.interface(.title3))
-                    .tint(SakuraCordAccentColor.color)
                     .focused($isFocused)
                     .accessibilityIdentifier("server-invite-input")
                     .onSubmit(submit)
@@ -203,8 +202,9 @@ private struct NativeInviteButtonSurface: NSViewRepresentable, Animatable {
         var isEnabled = true
         override var isFlipped: Bool { true }
         override func draw(_ dirtyRect: NSRect) {
-            NativeTimelineRowPainter.sakuraCordButton(title: title, frame: bounds, isHovered: isHovered,
-                pressProgress: pressProgress, colors: [.sakuraCordAccentColor], isEnabled: isEnabled)
+            NativeTimelineRowPainter.gradientButton(title: title, frame: bounds, isHovered: isHovered,
+                pressProgress: pressProgress, colors: [.sakuraCordAccentColor],
+                foreground: .sakuraCordLabelOnAccentColor, isEnabled: isEnabled)
         }
     }
 }

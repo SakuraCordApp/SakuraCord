@@ -3,6 +3,14 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    /// Forgets a settled send's draft, sticker upload source and voice
+    /// recording.
+    func forgetOutgoingDraft(nonce: String) {
+        if let outgoing = composer.outbox.draftsByNonce[nonce] { discardVoiceMessageFile(for: outgoing) }
+        composer.outbox.draftsByNonce[nonce] = nil
+        composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
+    }
+
     func discardFailedOutgoingMessage(_ message: Message) {
         guard message.outboxState == .failed,
               let nonce = message.nonce,
@@ -12,11 +20,9 @@ extension AppModel {
               ) == .failed
         else { return }
         if let outgoing = composer.outbox.draftsByNonce[nonce] {
-            discardVoiceMessageFile(for: outgoing)
             discardPreuploads(outgoing.attachments.map(\.id))
         }
-        composer.outbox.draftsByNonce[nonce] = nil
-        composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
+        forgetOutgoingDraft(nonce: nonce)
         attachmentUploads.finish(nonce: nonce)
         removeOutgoingMessage(
             nonce: nonce,
@@ -71,35 +77,17 @@ extension AppModel {
     func outgoingMediaPresentationPreserving(
         _ incoming: Message
     ) -> Message {
-        let existing: Message? = {
-            let matches: (Message) -> Bool = { message in
-                message.id == incoming.id
-                    || (incoming.nonce != nil && message.nonce == incoming.nonce)
-            }
-            if incoming.channelID == openThread?.id,
-               let message = threadMessages.first(where: matches)
-            {
-                return message
-            }
-            if incoming.channelID == selectedChannelID,
-               let message = messages.first(where: matches)
-            {
-                return message
-            }
-            return messageCache[incoming.channelID]?.first(where: matches)
-        }()
-        guard let existing else { return incoming }
+        guard let existing = outgoingMessage(in: incoming.channelID, where: { message in
+            message.id == incoming.id
+                || (incoming.nonce != nil && message.nonce == incoming.nonce)
+        })?.message else { return incoming }
 
         var resolved = incoming
         resolved.nonce = resolved.nonce ?? existing.nonce
         if !existing.attachments.isEmpty {
             for index in resolved.attachments.indices {
                 let attachment = resolved.attachments[index]
-                let previous = existing.attachments.first(where: {
-                    $0.id == attachment.id
-                }) ?? (existing.attachments.indices.contains(index)
-                    ? existing.attachments[index]
-                    : nil)
+                let previous = existing.attachments.counterpart(of: attachment, at: index)
                 if attachment.mediaKind == .video {
                     resolved.attachments[index].localPreviewURL = previous?.localPreviewURL
                     continue
@@ -121,30 +109,12 @@ extension AppModel {
         }
         if !existing.stickers.isEmpty {
             for index in resolved.stickers.indices {
-                let sticker = resolved.stickers[index]
-                let previous = existing.stickers.first(where: {
-                    $0.id == sticker.id
-                }) ?? (existing.stickers.indices.contains(index)
-                    ? existing.stickers[index]
-                    : nil)
-                if let mediaURL = previous?.mediaURL {
+                if let mediaURL = existing.stickers.counterpart(of: resolved.stickers[index], at: index)?.mediaURL {
                     resolved.stickers[index].assetURL = mediaURL
                 }
             }
         }
         return resolved
-    }
-
-    @discardableResult
-    func send(attachments: [URL] = []) async -> Bool {
-        await sendComposerMessage(
-            attachments: attachments.map { ForumPostAttachment(url: $0) }
-        )
-    }
-
-    @discardableResult
-    func sendComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
-        await submitComposerMessage(attachments: attachments).serverConfirmation()
     }
 
     /// Refuses a new submission while the outbox is full, before it consumes a draft.
@@ -154,8 +124,17 @@ extension AppModel {
         return false
     }
 
+    /// Holds a place in the outbox for a submission, or alerts that it is full.
+    func reserveOutgoingQueueSubmission(nonce: String? = nil) -> UUID? {
+        guard let reservation = composer.outbox.reserveSubmission(nonce: nonce) else {
+            composer.isSendQueueFullAlertPresented = true
+            return nil
+        }
+        return reservation
+    }
+
     func submitComposerMessage(
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) async -> ComposerSubmissionResult {
         guard let channelID = selectedChannelID, selectedConversationAccess.canSend else {
             return .rejected
@@ -163,7 +142,7 @@ extension AppModel {
         guard allowSlowmodeSubmission(in: channelID) else { return .rejected }
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return .rejected }
-        guard validateAttachmentCount(attachments) else { return .rejected }
+        guard attachmentBatchFits(attachments.count) else { return .rejected }
         guard allowOutgoingQueueSubmission() else { return .rejected }
         let session = accountSession()
         let replyTo = replyingTo?.id
@@ -203,7 +182,7 @@ extension AppModel {
         replyTo: MessageID?,
         mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview?,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         clearsComposer: Bool,
         poll: PollDraft? = nil,
         isTTS: Bool = false,
@@ -231,7 +210,7 @@ extension AppModel {
         replyTo: MessageID?,
         mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview?,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         clearsComposer: Bool,
         poll: PollDraft? = nil,
         isTTS: Bool = false,
@@ -252,21 +231,44 @@ extension AppModel {
             poll: poll,
             isTTS: isTTS
         )
-        if clearsComposer {
+        return enqueueMessage(outgoing, replyPreview: replyPreview, clearsComposer: clearsComposer, in: .channel)
+    }
+
+    /// The enqueue steps both composers share once their own guards pass.
+    func enqueueMessage(
+        _ outgoing: SendMessageDraft,
+        replyPreview: MessageReplyPreview?,
+        clearsComposer: Bool,
+        in destination: MessageComposerDestination
+    ) -> Task<Bool, Never>? {
+        func clearText() {
+            switch destination {
+            case .channel: updateDraft("")
+            case .thread: threadDraft = ""
+            }
+        }
+        guard !outgoing.isEmpty else {
+            // Discord sends nothing for a bare `@silent`, but clears the text.
+            if clearsComposer { clearText() }
+            return nil
+        }
+        if clearsComposer, destination == .channel {
             stopLocalTyping(clearThrottle: true)
         }
-        let optimistic = optimisticMessage(
-            for: outgoing,
-            replyPreview: replyPreview
-        )
-        appendOutgoingMessage(optimistic)
-        composer.outbox.draftsByNonce[outgoing.nonce] = outgoing
+        admitToOutbox(optimisticMessage(for: outgoing, replyPreview: replyPreview), draft: outgoing)
         if clearsComposer {
-            replyingTo = nil
-            updateDraft("")
-            translation.resetDraft(.channel)
+            setReplyingTo(nil, in: destination)
+            clearText()
+            translation.resetDraft(destination)
         }
         return enqueueOutgoingSend(outgoing, isRetry: false, completesReading: true)
+    }
+
+    /// Shows an outgoing message in its conversation and keeps its draft for
+    /// delivery and retry.
+    func admitToOutbox(_ optimistic: Message, draft: SendMessageDraft) {
+        appendOutgoingMessage(optimistic)
+        composer.outbox.draftsByNonce[draft.nonce] = draft
     }
 
     @discardableResult
@@ -362,85 +364,89 @@ extension AppModel {
             updateOutgoingState(.failed, nonce: outgoing.nonce, channelID: outgoing.channelID)
             return false
         }
-        let uploadsAttachments = !outgoing.attachmentURLs.isEmpty
-        if uploadsAttachments { activeAttachmentUploadCount += 1 }
-        defer { if uploadsAttachments { activeAttachmentUploadCount -= 1 } }
-        let attachmentURLs = outgoing.attachmentURLs
-        beginUsingOwnedPromisedFiles(attachmentURLs)
-        let securityScopedURLs = attachmentURLs.filter {
-            $0.startAccessingSecurityScopedResource()
-        }
-        defer {
-            for url in securityScopedURLs {
-                url.stopAccessingSecurityScopedResource()
-            }
-            endUsingOwnedPromisedFiles(attachmentURLs)
-        }
-        Self.messageSendLogger.info(
-            """
-            Message send started channel=\(outgoing.channelID.description, privacy: .public) \
-            nonce=\(outgoing.nonce, privacy: .public) attachments=\(outgoing.attachmentURLs.count) \
-            stickers=\(outgoing.stickerIDs.count) retry=\(isRetry)
-            """
-        )
-        do {
-            let confirmed = try await session.provider.send(outgoing) { [weak self] progress in
-                Task { @MainActor in self?.attachmentUploads.apply(progress, nonce: outgoing.nonce) }
-            }
-            guard isCurrentAccountSession(session) else { return false }
-            attachmentUploads.finish(nonce: outgoing.nonce)
-            recordMessageEmojiUsage(outgoing.content)
-            confirmSlowmodeMessage(confirmed)
-            let reconciled = reconcileVisibleOrCached(confirmed)
-            discardVoiceMessageFile(for: outgoing)
-            composer.outbox.noteConfirmation(nonce: outgoing.nonce, channelID: outgoing.channelID)
-            composer.outbox.draftsByNonce[outgoing.nonce] = nil
-            composer.outbox.stickerUploadSourceURLByNonce[outgoing.nonce] = nil
-            journalAuthoritativeMessageUpsert(reconciled)
-            guard isCurrentAccountSession(session) else { return false }
+        return await withAttachmentFileAccess(outgoing.attachmentURLs) {
             Self.messageSendLogger.info(
                 """
-                Message send succeeded channel=\(outgoing.channelID.description, privacy: .public) \
-                nonce=\(outgoing.nonce, privacy: .public) \
-                message=\(confirmed.id.description, privacy: .public) retry=\(isRetry)
+                Message send started channel=\(outgoing.channelID.description, privacy: .public) \
+                nonce=\(outgoing.nonce, privacy: .public) attachments=\(outgoing.attachmentURLs.count) \
+                stickers=\(outgoing.stickerIDs.count) retry=\(isRetry)
                 """
             )
-            return true
-        } catch {
-            guard isCurrentAccountSession(session) else { return false }
-            // A Gateway confirmation is authoritative even if the REST request
-            // subsequently times out or fails on the retired transport.
-            if outgoingState(nonce: outgoing.nonce, channelID: outgoing.channelID) == .confirmed {
+            do {
+                let confirmed = try await session.provider.send(outgoing) { [weak self] progress in
+                    Task { @MainActor in self?.attachmentUploads.apply(progress, nonce: outgoing.nonce) }
+                }
+                guard isCurrentAccountSession(session) else { return false }
                 attachmentUploads.finish(nonce: outgoing.nonce)
+                recordMessageEmojiUsage(outgoing.content)
+                confirmSlowmodeMessage(confirmed)
+                let reconciled = reconcileVisibleOrCached(confirmed)
+                discardVoiceMessageFile(for: outgoing)
+                composer.outbox.noteConfirmation(nonce: outgoing.nonce, channelID: outgoing.channelID)
+                composer.outbox.draftsByNonce[outgoing.nonce] = nil
+                composer.outbox.stickerUploadSourceURLByNonce[outgoing.nonce] = nil
+                journalAuthoritativeMessageUpsert(reconciled)
+                guard isCurrentAccountSession(session) else { return false }
+                Self.messageSendLogger.info(
+                    """
+                    Message send succeeded channel=\(outgoing.channelID.description, privacy: .public) \
+                    nonce=\(outgoing.nonce, privacy: .public) \
+                    message=\(confirmed.id.description, privacy: .public) retry=\(isRetry)
+                    """
+                )
                 return true
-            }
-            // The user stopped every file, which already removed the message.
-            if error is CancellationError, composer.outbox.draftsByNonce[outgoing.nonce] == nil {
+            } catch {
+                guard isCurrentAccountSession(session) else { return false }
+                // A Gateway confirmation is authoritative even if the REST request
+                // subsequently times out or fails on the retired transport.
+                if outgoingState(nonce: outgoing.nonce, channelID: outgoing.channelID) == .confirmed {
+                    attachmentUploads.finish(nonce: outgoing.nonce)
+                    return true
+                }
+                // The user stopped every file, which already removed the message.
+                if error is CancellationError, composer.outbox.draftsByNonce[outgoing.nonce] == nil {
+                    return false
+                }
+                attachmentUploads.fail(nonce: outgoing.nonce)
+                recoverSlowmode(from: error, in: outgoing.channelID)
+                // A timeout ends this attempt without proving whether it was delivered.
+                // Keep the draft and nonce for explicit retry or discard; a late
+                // Gateway confirmation can still reconcile the failed message.
+                let state = OutboxState.failed
+                let failure: MessageSendFailure? = if case let ChatProviderError.autoModerationBlocked(explanation) = error {
+                    .autoModeration(explanation: explanation)
+                } else {
+                    nil
+                }
+                updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID, failure: failure)
+                let nsError = error as NSError
+                Self.messageSendLogger.error(
+                    """
+                    Message send failed channel=\(outgoing.channelID.description, privacy: .public) \
+                    nonce=\(outgoing.nonce, privacy: .public) state=\(state.rawValue, privacy: .public) \
+                    retry=\(isRetry) errorDomain=\(nsError.domain, privacy: .public) errorCode=\(nsError.code) \
+                    details=\(error.localizedDescription, privacy: .private(mask: .hash))
+                    """
+                )
                 return false
             }
-            attachmentUploads.fail(nonce: outgoing.nonce)
-            recoverSlowmode(from: error, in: outgoing.channelID)
-            // A timeout ends this attempt without proving whether it was delivered.
-            // Keep the draft and nonce for explicit retry or discard; a late
-            // Gateway confirmation can still reconcile the failed message.
-            let state = OutboxState.failed
-            let failure: MessageSendFailure? = if case let ChatProviderError.autoModerationBlocked(explanation) = error {
-                .autoModeration(explanation: explanation)
-            } else {
-                nil
-            }
-            updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID, failure: failure)
-            let nsError = error as NSError
-            Self.messageSendLogger.error(
-                """
-                Message send failed channel=\(outgoing.channelID.description, privacy: .public) \
-                nonce=\(outgoing.nonce, privacy: .public) state=\(state.rawValue, privacy: .public) \
-                retry=\(isRetry) errorDomain=\(nsError.domain, privacy: .public) errorCode=\(nsError.code) \
-                details=\(error.localizedDescription, privacy: .private(mask: .hash))
-                """
-            )
-            return false
         }
+    }
+
+    /// Keeps a send's files readable while `operation` uploads them: owned
+    /// promised files stay in use, security-scoped URLs stay open, and the
+    /// upload counts as active.
+    func withAttachmentFileAccess<Result>(_ urls: [URL], operation: () async -> Result) async -> Result {
+        let uploadsAttachments = !urls.isEmpty
+        if uploadsAttachments { activeAttachmentUploadCount += 1 }
+        defer { if uploadsAttachments { activeAttachmentUploadCount -= 1 } }
+        beginUsingOwnedPromisedFiles(urls)
+        let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
+        defer {
+            scoped.forEach { $0.stopAccessingSecurityScopedResource() }
+            endUsingOwnedPromisedFiles(urls)
+        }
+        return await operation()
     }
 
     func optimisticMessage(
@@ -478,8 +484,8 @@ extension AppModel {
                 : [],
             poll: outgoing.poll?.preview()
         )
+        message.flags.formUnion(outgoing.messageFlags)
         if let voiceMessage = outgoing.voiceMessage, !message.attachments.isEmpty {
-            message.flags.insert(.voiceMessage)
             message.attachments[0].mediaType = "audio/ogg"
             message.attachments[0].durationSeconds = voiceMessage.durationSeconds
             message.attachments[0].waveform = voiceMessage.waveform
@@ -506,6 +512,77 @@ extension AppModel {
             cache(message)
         }
     }
+
+    func updateOutgoingState(_ state: OutboxState, nonce: String, channelID: ChannelID, failure: MessageSendFailure? = nil) {
+        composer.outbox.updateState(state, nonce: nonce, channelID: channelID)
+        mutateOutgoingMessage(nonce: nonce, channelID: channelID) {
+            $0.outboxState = state
+            $0.sendFailure = failure
+        }
+    }
+
+    enum OutgoingMessageSlot {
+        case thread(Int)
+        case selected(Int)
+        case cached(Int)
+    }
+
+    /// Finds a message in the open thread, then the selected channel's window,
+    /// then the channel's cache, whichever first holds it.
+    func outgoingMessage(
+        in channelID: ChannelID,
+        where matches: (Message) -> Bool
+    ) -> (slot: OutgoingMessageSlot, message: Message)? {
+        if openThread?.id == channelID, let index = threadMessages.firstIndex(where: matches) {
+            return (.thread(index), threadMessages[index])
+        }
+        if selectedChannelID == channelID, let index = messages.firstIndex(where: matches) {
+            return (.selected(index), messages[index])
+        }
+        guard let cached = messageCache[channelID], let index = cached.firstIndex(where: matches) else { return nil }
+        return (.cached(index), cached[index])
+    }
+
+    func mutateOutgoingMessage(nonce: String, channelID: ChannelID, _ body: (inout Message) -> Void) {
+        guard var found = outgoingMessage(in: channelID, where: { $0.nonce == nonce }) else { return }
+        body(&found.message)
+        switch found.slot {
+        case let .thread(index): threadMessages[index] = found.message
+        case let .selected(index): mutateSelectedMessages { $0[index] = found.message }
+        case let .cached(index): messageCache[channelID]?[index] = found.message
+        }
+    }
+
+    func removeOutgoingMessage(nonce: String, channelID: ChannelID) {
+        if openThread?.id == channelID {
+            threadMessages.removeAll { $0.nonce == nonce }
+            return
+        }
+        if selectedChannelID == channelID {
+            mutateSelectedMessages {
+                $0.removeAll { $0.nonce == nonce }
+            }
+            return
+        }
+        guard var cached = messageCache[channelID] else { return }
+        cached.removeAll { $0.nonce == nonce }
+        messageCache[channelID] = cached
+    }
+
+    func outgoingState(nonce: String, channelID: ChannelID) -> OutboxState? {
+        let visibleState: OutboxState?
+        if openThread?.id == channelID {
+            visibleState = threadMessages.first { $0.nonce == nonce }?.outboxState
+        } else if selectedChannelID == channelID {
+            visibleState = messages.first { $0.nonce == nonce }?.outboxState
+        } else {
+            visibleState = messageCache[channelID]?.first { $0.nonce == nonce }?.outboxState
+        }
+        // Fresh authoritative history can settle a failed send even when its
+        // Gateway event was missed. An old optimistic row cannot downgrade it.
+        if visibleState == .confirmed { return .confirmed }
+        return composer.outbox.state(nonce: nonce, channelID: channelID) ?? visibleState
+    }
 }
 
 extension Message {
@@ -517,5 +594,12 @@ extension Message {
         case .failed: nonce != nil
         case .confirmed: false
         }
+    }
+}
+
+private extension Array where Element: Identifiable {
+    /// The element with the same ID, else the one at the same position.
+    func counterpart(of element: Element, at index: Int) -> Element? {
+        first { $0.id == element.id } ?? (indices.contains(index) ? self[index] : nil)
     }
 }

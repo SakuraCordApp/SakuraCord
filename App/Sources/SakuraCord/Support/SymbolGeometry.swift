@@ -1,0 +1,41 @@
+import CoreGraphics
+
+/// Places an SF Symbol in a frame on its optical centre.
+nonisolated enum SymbolGeometry {
+    static func opticallyFitted(
+        sourceSize: CGSize,
+        alignmentRect: CGRect,
+        in target: CGRect
+    ) -> CGRect {
+        guard sourceSize.width > 0,
+              sourceSize.height > 0,
+              target.width > 0,
+              target.height > 0
+        else { return target }
+        let scale = min(
+            target.width / sourceSize.width,
+            target.height / sourceSize.height
+        )
+        let size = CGSize(
+            width: sourceSize.width * scale,
+            height: sourceSize.height * scale
+        )
+        let fitted = CGRect(
+            x: target.midX - size.width / 2,
+            y: target.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        guard alignmentRect.width > 0,
+              alignmentRect.height > 0
+        else { return fitted }
+        // SF Symbols carry an alignment rect describing the center AppKit
+        // uses when laying the symbol out beside native controls. NSImage's
+        // low-level draw API ignores it, leaving several symbols visibly a
+        // fraction of a point high or left. Apply that optical center here.
+        return fitted.offsetBy(
+            dx: (sourceSize.width / 2 - alignmentRect.midX) * scale,
+            dy: (sourceSize.height / 2 - alignmentRect.midY) * scale
+        )
+    }
+}

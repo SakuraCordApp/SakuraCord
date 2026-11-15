@@ -10,37 +10,17 @@ extension NativeTimelineCanvasView {
         let account: AppModelAccountSession
     }
 
-    /// Pointer changes only need the bounded visible rows, never a search of
-    /// the entire message history. Rows outside the viewport need no redraw.
-    func visibleMessageRowIndex(for messageID: MessageID) -> Int? {
-        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
-        guard viewport.height > 0, var index = rowIndex(at: max(0, viewport.minY)) else { return nil }
-        while items.indices.contains(index), layouts.indices.contains(index),
-              displayedRowOrigin(at: index) < viewport.maxY {
-            if items[index].messageID == messageID, rowFrame(at: index).intersects(viewport) { return index }
-            index += 1
-        }
-        return nil
-    }
-
-    func invalidateVisibleMessageRow(messageID: MessageID) {
-        guard let index = visibleMessageRowIndex(for: messageID) else { return }
-        setNeedsDisplay(rowFrame(at: index))
-    }
-
     func setHoveredServerTagMessageID(_ value: MessageID?) {
-        guard hoveredServerTagMessageID != value else { return }
-        let old = hoveredServerTagMessageID
-        hoveredServerTagMessageID = value
+        guard pointer.hoveredServerTagMessageID != value else { return }
+        let old = pointer.hoveredServerTagMessageID
+        pointer.hoveredServerTagMessageID = value
         for messageID in [old, value].compactMap({ $0 }) { invalidateVisibleMessageRow(messageID: messageID) }
     }
 
     func serverTagPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y), items.indices.contains(index), layouts.indices.contains(index),
-              let tag = layouts[index].serverTagRegion, tag.presentation.identity.guildID != nil
-        else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        return tag.frame.contains(local) ? items[index].messageID : nil
+        messageID(at: point) { index in
+            layouts[index].serverTagRegion.flatMap { $0.presentation.identity.guildID == nil ? nil : $0.frame }
+        }
     }
 
     func serverTagPopoverSourceRect(for presentation: ServerTagCardPresentation) -> CGRect? {
@@ -72,9 +52,7 @@ extension NativeTimelineCanvasView {
             closeServerTagPopover()
             return
         }
-        closeMessageProfilePopover()
-        closeMentionPopover()
-        closeServerTagPopover()
+        closeCanvasPopovers()
         let presentation = ServerTagCardPresentation(requestID: UUID(), messageID: messageID,
                                                    identity: tag.presentation.identity, account: account)
         guard serverTagPopoverSourceRect(for: presentation) != nil else { return }

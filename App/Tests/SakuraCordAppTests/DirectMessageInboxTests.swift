@@ -121,7 +121,7 @@ import Testing
     var settings = GuildNotificationSettings(guildID: nil, messageNotifications: .inherit)
     settings.channelOverrides = [ChannelNotificationOverride(
         channelID: channel.id,
-        flags: originalFlags | ChannelNotificationOverride.pinnedDirectMessageFlag
+        flags: originalFlags | ChannelNotificationOverride.pinnedFlag
     )]
     model.applyNotificationSettings(settings)
     #expect(model.pinnedDirectMessageIDs.contains(channel.id))

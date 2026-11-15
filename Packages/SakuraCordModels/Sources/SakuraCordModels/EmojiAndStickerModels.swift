@@ -50,19 +50,12 @@ public struct DiscordEmoji: Identifiable, Codable, Hashable, Sendable {
         "<\(isAnimated ? "a" : ""):\(name):\(id)>"
     }
 
-    public var reactionToken: String {
-        "\(name):\(id)"
-    }
-
     public var imageURL: URL? {
         assetURL ?? Self.imageURL(id: id, isAnimated: isAnimated)
     }
 
     public static func imageURL(id: String, isAnimated: Bool) -> URL? {
-        URL(
-            string:
-            "https://cdn.discordapp.com/emojis/\(id).webp?size=96&animated=\(isAnimated ? "true" : "false")"
-        )
+        DiscordCDN.emoji(id, fileExtension: "webp", query: "size=96&animated=\(isAnimated ? "true" : "false")")
     }
 
     public var linkedImageMarkdown: String {

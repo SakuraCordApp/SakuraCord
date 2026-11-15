@@ -14,13 +14,19 @@ nonisolated enum LocalStorageLimit: Int64, CaseIterable, Identifiable, Sendable 
 }
 
 nonisolated struct StorageDownloadsSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self(
-        localStorageLimit: .gigabytes2,
-        revealsCompletedDownloads: false
-    )
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
     var localStorageLimit: LocalStorageLimit
     var revealsCompletedDownloads: Bool
+}
+
+nonisolated extension StorageDownloadsSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        // The registration accepts any size, so an unlisted one keeps the registered default.
+        localStorageLimit = LocalStorageLimit(rawValue: Int64(value(.localStorageLimit).integerValue))
+            ?? Self.defaults.localStorageLimit
+        revealsCompletedDownloads = value(.revealCompletedDownloads).boolValue
+    }
 }
 
 @MainActor
@@ -34,16 +40,7 @@ final class StorageDownloadsSettingsStore {
     }
 
     func load() -> StorageDownloadsSettingsSnapshot {
-        var value = StorageDownloadsSettingsSnapshot.defaults
-        if case let .integer(rawLimit) = preferences.value(for: .localStorageLimit),
-           let limit = LocalStorageLimit(rawValue: Int64(rawLimit))
-        {
-            value.localStorageLimit = limit
-        }
-        if case let .bool(reveals) = preferences.value(for: .revealCompletedDownloads) {
-            value.revealsCompletedDownloads = reveals
-        }
-        return value
+        StorageDownloadsSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: StorageDownloadsSettingsSnapshot) {
@@ -68,10 +65,8 @@ final class StorageDownloadsSettingsStore {
     }
 
     func resolvedDefaultFolder() throws -> URL? {
-        guard case let .string(encoded) = preferences.value(for: .downloadFolderBookmark),
-              !encoded.isEmpty,
-              let data = Data(base64Encoded: encoded)
-        else { return nil }
+        let encoded = preferences.string(.downloadFolderBookmark)
+        guard !encoded.isEmpty, let data = Data(base64Encoded: encoded) else { return nil }
         var isStale = false
         let url = try URL(
             resolvingBookmarkData: data,
@@ -86,10 +81,8 @@ final class StorageDownloadsSettingsStore {
     }
 
     var defaultFolderName: String? {
-        guard case let .string(value) = preferences.value(for: .downloadFolderName),
-              !value.isEmpty
-        else { return nil }
-        return value
+        let value = preferences.string(.downloadFolderName)
+        return value.isEmpty ? nil : value
     }
 
     func recordMediaCacheClear(at date: Date) {
@@ -97,10 +90,8 @@ final class StorageDownloadsSettingsStore {
     }
 
     var lastMediaCacheClearDate: Date? {
-        guard case let .double(value) = preferences.value(for: .mediaCacheLastCleared),
-              value > 0
-        else { return nil }
-        return Date(timeIntervalSince1970: value)
+        let value = preferences.double(.mediaCacheLastCleared)
+        return value > 0 ? Date(timeIntervalSince1970: value) : nil
     }
 }
 

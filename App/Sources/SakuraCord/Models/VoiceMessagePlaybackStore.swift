@@ -252,8 +252,7 @@ final class VoiceMessagePlaybackStore {
         cachedPlayers.removeAll()
         resumePositions.removeAll()
         resumeOrder.removeAll()
-        measurements.values.forEach { $0.cancel() }
-        measurements.removeAll()
+        measurements.cancelAll()
         knownDurations.removeAll()
         knownDurationOrder.removeAll()
         failedMeasurements.removeAll()
@@ -263,16 +262,12 @@ final class VoiceMessagePlaybackStore {
 
     private func activate(_ id: VoiceMessagePlaybackID, source: Source, duration: TimeInterval?) {
         cancelActive(rememberingPosition: true)
+        pausedPosition = position(of: id)
         activeID = id
         activeSource = source
         activeDuration = duration
-        pausedPosition = position(ofInactive: id)
         phase = .paused
         notify()
-    }
-
-    private func position(ofInactive id: VoiceMessagePlaybackID) -> TimeInterval {
-        resumePositions[id] ?? 0
     }
 
     private func play() {
@@ -310,7 +305,7 @@ final class VoiceMessagePlaybackStore {
     }
 
     private func adopt(_ player: VoiceMessagePlayer, file: PlaybackFile, for id: VoiceMessagePlaybackID) {
-        player.onFinish = { [weak self] in self?.finish(id) }
+        player.onFinish = { [weak self] in self?.stop(id) }
         player.onInterruption = { [weak self] in self?.interrupted(id) }
         self.player = player
         playerFile = file
@@ -361,25 +356,11 @@ final class VoiceMessagePlaybackStore {
         notify()
     }
 
-    private func finish(_ id: VoiceMessagePlaybackID) {
-        guard activeID == id else { return }
-        forgetResumePosition(id)
-        if let player, let playerFile, let activeSource { cache(player, file: playerFile, for: activeSource) }
-        player = nil
-        playerFile = nil
-        activeID = nil
-        activeSource = nil
-        activeDuration = nil
-        pausedPosition = 0
-        phase = .paused
-        notify()
-    }
-
     private func cancelActive(rememberingPosition: Bool) {
         guard let id = activeID else { return }
         loadTask?.cancel()
         loadTask = nil
-        let position = player?.isPlaying == true ? player?.currentTime ?? pausedPosition : pausedPosition
+        let position = position(of: id)
         let duration = player?.duration ?? activeDuration ?? 0
         if let player, let playerFile, let activeSource { cache(player, file: playerFile, for: activeSource) }
         player = nil
@@ -514,5 +495,13 @@ private final class PlaybackFile {
 
     deinit {
         if removesOnRelease { try? FileManager.default.removeItem(at: url) }
+    }
+}
+
+nonisolated enum VoiceMessageDurationFormat {
+    /// `m:ss`, rounding up like Discord's player.
+    static func string(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded(.up)))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }

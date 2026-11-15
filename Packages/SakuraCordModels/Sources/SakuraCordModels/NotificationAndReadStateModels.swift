@@ -19,6 +19,36 @@ public struct DiscordMuteConfiguration: Codable, Hashable, Sendable {
     }
 }
 
+/// Settings Discord can mute, optionally until a set time.
+public protocol DiscordMutableSettings {
+    var isMuted: Bool { get set }
+    var muteConfiguration: DiscordMuteConfiguration? { get set }
+}
+
+public extension DiscordMutableSettings {
+    /// Muted, by a mute that has not ended at `date`.
+    func isActivelyMuted(at date: Date = .now) -> Bool {
+        isMuted && (muteConfiguration?.isActive(at: date) ?? true)
+    }
+
+    /// The mute in effect at `date`, untimed when it has no end; nil when not muted.
+    func activeMute(at date: Date) -> DiscordMuteConfiguration? {
+        guard isMuted else { return nil }
+        let mute = muteConfiguration ?? DiscordMuteConfiguration()
+        return mute.isActive(at: date) ? mute : nil
+    }
+
+    /// Mutes until `endTime`, or indefinitely without one, or unmutes.
+    mutating func setMuted(_ isMuted: Bool, until endTime: Date?) {
+        self.isMuted = isMuted
+        muteConfiguration = isMuted ? DiscordMuteConfiguration(endTime: endTime) : nil
+    }
+}
+
+extension ThreadNotificationSettings: DiscordMutableSettings {}
+extension ChannelNotificationOverride: DiscordMutableSettings {}
+extension GuildNotificationSettings: DiscordMutableSettings {}
+
 public struct ThreadNotificationSettings: Codable, Hashable, Sendable {
     public static let hasInteractedFlag: UInt64 = 1 << 0
     public static let allMessagesFlag: UInt64 = 1 << 1
@@ -65,8 +95,15 @@ public struct ThreadNotificationSettings: Codable, Hashable, Sendable {
 }
 
 public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
-    // Discord's FAVORITED bit on an @me channel override pins a DM in the inbox.
-    public static let pinnedDirectMessageFlag: UInt64 = 1 << 11
+    public static let unreadOnlyMentionsFlag: UInt64 = 1 << 9
+    public static let unreadAllMessagesFlag: UInt64 = 1 << 10
+    // Discord's FAVORITED bit pins a DM in the inbox (@me override) or a server
+    // channel to the top of its channel list (guild override).
+    public static let pinnedFlag: UInt64 = 1 << 11
+    /// Shows the channel in a server that has opted out of showing all channels.
+    public static let optInFlag: UInt64 = 1 << 12
+    public static let newForumThreadsOffFlag: UInt64 = 1 << 13
+    public static let newForumThreadsOnFlag: UInt64 = 1 << 14
 
     public var channelID: ChannelID
     public var messageNotifications: MessageNotificationLevel
@@ -91,18 +128,21 @@ public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
         self.isCollapsed = isCollapsed
     }
 
-    public var isPinnedDirectMessage: Bool {
-        flags & Self.pinnedDirectMessageFlag != 0
+    public var isPinned: Bool {
+        flags & Self.pinnedFlag != 0
     }
 
-    public func flags(settingPinnedDirectMessage isPinned: Bool) -> UInt64 {
+    public func flags(settingPinned isPinned: Bool) -> UInt64 {
         isPinned
-            ? flags | Self.pinnedDirectMessageFlag
-            : flags & ~Self.pinnedDirectMessageFlag
+            ? flags | Self.pinnedFlag
+            : flags & ~Self.pinnedFlag
     }
 }
 
 public struct ChannelReadState: Codable, Hashable, Sendable {
+    /// Discord's `IS_MENTION_LOW_IMPORTANCE` read-state flag.
+    public static let lowImportanceMentionFlag: UInt64 = 1 << 2
+
     public var channelID: ChannelID
     public var lastAcknowledgedMessageID: MessageID?
     public var mentionCount: Int

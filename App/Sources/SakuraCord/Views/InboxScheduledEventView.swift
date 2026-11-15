@@ -10,7 +10,7 @@ struct InboxScheduledEventView: View {
         HStack(alignment: .center, spacing: InterfaceScale.metric(12)) {
             Button { model.inbox.selectedEvent = event } label: {
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(5)) {
-                    Text(event.status == 2 ? "Happening Now" : event.startTime.formatted(date: .abbreviated, time: .shortened))
+                    Text(event.isActive ? "Happening Now" : event.startTime.formatted(date: .abbreviated, time: .shortened))
                         .font(.interface(.caption)).foregroundStyle(.secondary)
                     Text(event.name).font(.interface(.headline)).lineLimit(2)
                     if let location = event.location {

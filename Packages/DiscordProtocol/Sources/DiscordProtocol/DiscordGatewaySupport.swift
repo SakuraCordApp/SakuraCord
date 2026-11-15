@@ -252,22 +252,20 @@ struct DiscordMemberListSubscription: Equatable {
 }
 
 enum DiscordMemberListIdentity {
-    private static let viewChannel: UInt64 = 1 << 10
-
     static func id(for channel: Channel, guildID: GuildID, roles: [GuildRoleDTO]) -> String {
         if let memberListID = channel.memberListID, !memberListID.isEmpty {
             return memberListID
         }
         let everyonePermissions = roles.first(where: { $0.id == guildID.description })
             .flatMap(\.permissions).flatMap(UInt64.init) ?? 0
-        let everyoneCanView = everyonePermissions & viewChannel != 0
+        let everyoneCanView = everyonePermissions & DiscordPermissionBits.viewChannel != 0
         let overwrites = channel.permissionOverwrites ?? []
-        if everyoneCanView, !overwrites.contains(where: { $0.deny & viewChannel != 0 }) {
+        if everyoneCanView, !overwrites.contains(where: { $0.deny & DiscordPermissionBits.viewChannel != 0 }) {
             return "everyone"
         }
         let permissionShape = overwrites.compactMap { overwrite -> String? in
-            if overwrite.allow & viewChannel != 0 { return "allow:\(overwrite.id)" }
-            if overwrite.deny & viewChannel != 0 { return "deny:\(overwrite.id)" }
+            if overwrite.allow & DiscordPermissionBits.viewChannel != 0 { return "allow:\(overwrite.id)" }
+            if overwrite.deny & DiscordPermissionBits.viewChannel != 0 { return "deny:\(overwrite.id)" }
             return nil
         }.sorted().joined(separator: ",")
         return String(murmurHash3(permissionShape.utf8))
@@ -861,12 +859,7 @@ struct GatewayReadyGuildsDTO: Decodable {
 
         func domain(currentUserID: UserID?) -> Guild? {
             guard let id = GuildID(id), let name else { return nil }
-            let iconURL = icon.flatMap { hash in
-                URL(
-                    string:
-                        "https://cdn.discordapp.com/icons/\(id)/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                )
-            }
+            let iconURL = icon.flatMap { DiscordCDN.guildIcon(id, hash: $0) }
             let isOwnedByCurrentUser = owner
                 ?? ownerID.map { $0 == currentUserID?.description }
             return Guild(
@@ -878,14 +871,14 @@ struct GatewayReadyGuildsDTO: Decodable {
                 currentUserPermissions: permissions.flatMap(UInt64.init),
                 rulesChannelID: rulesChannelID.flatMap(ChannelID.init),
                 features: features,
-                guideHeaderURL: homeHeader.flatMap { URL(string: "https://cdn.discordapp.com/home-headers/\(id)/\($0).png?size=2048") },
+                guideHeaderURL: homeHeader.flatMap { DiscordCDN.guildHomeHeader(id, hash: $0) },
                 profileTag: profile?.domain(guildID: id),
                 defaultMessageNotifications:
                     defaultMessageNotifications.flatMap(
                         MessageNotificationLevel.init(rawValue:)
                     ) ?? .onlyMentions,
                 joinedAt: joinedAt.flatMap(DiscordDate.parse),
-                isAgeRestricted: nsfwLevel == 1 || nsfwLevel == 3
+                isAgeRestricted: nsfwLevel.map(Guild.isAgeRestricted(nsfwLevel:)) ?? false
             )
         }
     }
@@ -906,6 +899,8 @@ struct GatewayReadyGuildsDTO: Decodable {
     var userGuildSettings: [GatewayUserGuildSettingsDTO]
     var userGuildSettingsPartial: Bool
     var usesNewNotifications: Bool
+    /// READY `consents.personalization.consented`, which gates affinity reads.
+    var personalizationConsented: Bool?
 
     enum CodingKeys: String, CodingKey {
         case guilds
@@ -922,6 +917,12 @@ struct GatewayReadyGuildsDTO: Decodable {
         case readState = "read_state"
         case userGuildSettings = "user_guild_settings"
         case notificationSettings = "notification_settings"
+        case consents
+    }
+
+    private struct ConsentsDTO: Decodable {
+        struct Consent: Decodable { var consented: Bool }
+        var personalization: Consent?
     }
 
     init(from decoder: any Decoder) throws {
@@ -997,6 +998,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         )
         usesNewNotifications =
             accountNotificationSettings.map { $0.flags & (1 << 4) != 0 } ?? true
+        personalizationConsented = (try? container.decode(ConsentsDTO.self, forKey: .consents))?.personalization?.consented
     }
 
     var privatePresences: [PresenceUpdateDTO] {

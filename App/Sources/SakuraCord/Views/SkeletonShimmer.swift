@@ -38,6 +38,7 @@ private extension EnvironmentValues {
 /// the loading view hierarchy does not need a SwiftUI update every animation frame.
 struct SkeletonShimmerTimeline<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.disablesAllAnimations) private var disablesAllAnimations
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -45,7 +46,7 @@ struct SkeletonShimmerTimeline<Content: View>: View {
     }
 
     var body: some View {
-        content.environment(\.skeletonShimmerEnabled, !reduceMotion)
+        content.environment(\.skeletonShimmerEnabled, !reduceMotion && !disablesAllAnimations)
     }
 }
 
@@ -157,7 +158,7 @@ private final class SkeletonShimmerView: NSView {
                 frame: bounds, color: .labelColor,
                 animates: !isHiddenOrHasHiddenAncestor
                     && window?.occlusionState.contains(.visible) == true
-                    && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    && AppMotionPolicy.animatesUncategorized
             )
         }
     }

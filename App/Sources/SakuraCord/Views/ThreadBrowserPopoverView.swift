@@ -36,7 +36,6 @@ struct ThreadBrowserPopoverView: View {
                 TextField("Search Threads", text: $browser.searchText)
                     .textFieldStyle(.plain)
                     .font(.interfaceSystem(size: ChatChromeMetrics.pickerSearchHeaderFontSize))
-                    .tint(SakuraCordAccentColor.color)
                     .focused($isSearchFocused)
                     .onSubmit(model.submitThreadBrowserSearch)
                     .accessibilityIdentifier("thread-browser-search")

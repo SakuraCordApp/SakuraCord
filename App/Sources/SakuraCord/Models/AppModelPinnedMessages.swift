@@ -33,7 +33,6 @@ final class PinnedMessagesState {
         preparedRows: [MessageRowPresentation]? = nil,
         notifying notificationObject: AnyObject? = nil
     ) {
-        let oldRows = rows
         let newRows = preparedRows ?? PinnedMessagePresentation.reusingRows(
             oldItems: items,
             oldRows: rows,
@@ -41,14 +40,7 @@ final class PinnedMessagesState {
         )
         precondition(newRows.count == newItems.count)
         items = newItems
-        rows = newRows
-        let nextRevision = rowsRevision &+ 1
-        rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(
-            oldRows: oldRows,
-            newRows: rows,
-            revision: nextRevision
-        ))
-        rowsRevision = nextRevision
+        rowsUpdateJournal.publish(newRows, into: &rows, revision: &rowsRevision)
         NotificationCenter.default.post(
             name: .sakuracordMessageRowsDidChange,
             object: notificationObject
@@ -59,8 +51,7 @@ final class PinnedMessagesState {
         loadTask?.cancel()
         loadGeneration &+= 1
         loadTask = nil
-        for task in mutationTasks.values { task.cancel() }
-        mutationTasks = [:]
+        mutationTasks.cancelAll()
         mutationGenerations = [:]
         mutationIntents = [:]
         isPresented = false
@@ -92,11 +83,6 @@ extension AppModel {
         }
     }
 
-    var canManageSelectedChannelPins: Bool {
-        guard let selectedChannelID else { return false }
-        return canManagePins(in: selectedChannelID)
-    }
-
     var canManageActiveConversationPins: Bool {
         guard let channelID = pinnedMessages.channelID ?? activePinsChannelID else { return false }
         return canManagePins(in: channelID)
@@ -106,28 +92,12 @@ extension AppModel {
         !message.flags.contains(.ephemeral) && canManagePins(in: message.channelID)
     }
 
-    func canDeleteMessage(_ message: Message) -> Bool {
-        guard message.outboxState == .confirmed, !message.flags.contains(.ephemeral) else { return false }
-        if !message.type.hasGeneratedContent,
-           message.author.id == currentUser?.id
-        {
-            return true
-        }
-        guard let context = messagePermissionContext(for: message.channelID),
-              context.channel.guildID != nil,
-              let permissions = effectiveMessagePermissions(in: context.channel)
-        else { return false }
-        return permissions & DiscordPermissionBits.viewChannel != 0
-            && permissions & DiscordPermissionBits.readMessageHistory != 0
-            && permissions & DiscordPermissionBits.manageMessages != 0
-    }
-
     private func canManagePins(in channelID: ChannelID) -> Bool {
         guard let context = messagePermissionContext(for: channelID) else { return false }
         let channel = context.channel
         if channel.guildID == nil {
             // A message request stays read-only until it is accepted.
-            return !channel.isOfficialSystemDirectMessage && channel.messageRequest == nil
+            return channel.acceptsPrivateInteraction
         }
         guard context.isThread || selectedChannelSupportsPins(channel) else {
             return false
@@ -137,27 +107,6 @@ extension AppModel {
                 && permissions & DiscordPermissionBits.readMessageHistory != 0
                 && permissions & DiscordPermissionBits.pinMessages != 0
         } ?? false
-    }
-
-    func messagePermissionContext(
-        for channelID: ChannelID
-    ) -> (channel: Channel, isThread: Bool)? {
-        if let channel = rootMessageChannel(channelID) {
-            return (channel, false)
-        }
-        if openThread?.id == channelID, let parent = openThreadParentChannel {
-            return (parent, true)
-        }
-        let parentID = threads.first(where: { $0.id == channelID })?.parentID
-            ?? activeJoinedThreads.first(where: { $0.id == channelID })?.parentID
-            ?? messageSearch.page?.channels.first(where: { $0.id == channelID })?.categoryID
-        guard let parentID, let parent = rootMessageChannel(parentID) else { return nil }
-        return (parent, true)
-    }
-
-    private func rootMessageChannel(_ channelID: ChannelID) -> Channel? {
-        messagePresentationChannelsByID[channelID]
-            ?? visibleChannels.first(where: { $0.id == channelID })
     }
 
     private func selectedChannelSupportsPins(_ channel: Channel) -> Bool {
@@ -192,7 +141,7 @@ extension AppModel {
             presentPinnedMessages(channelID: channelID)
             return
         }
-        if rootMessageChannel(channelID) != nil {
+        if messagePresentationChannel(channelID) != nil {
             navigate(to: channelID)
         } else {
             // Thread resolution derives the guild from the thread's parent.
@@ -477,31 +426,9 @@ extension AppModel {
         // This owner commits the pinned list in a batch. Publish its truth to
         // other surfaces without reconciling every item back into that list.
         consumeMessageUpdated(message, preparedTextPlan: nil, updatesPinnedMessages: false)
-        for search in retainedMessageSearches {
-            guard var page = search.page else { continue }
-            var changed = false
-            for resultIndex in page.results.indices {
-                for messageIndex in page.results[resultIndex].messages.indices
-                where page.results[resultIndex].messages[messageIndex].id == message.id {
-                    page.results[resultIndex].messages[messageIndex].isPinned = isPinned
-                    changed = true
-                }
-            }
-            guard changed else { continue }
-            let oldRows = search.rows
-            search.page = page
-            let channels = messageSearchChannelsByID(additionalChannels: page.channels)
-            search.rows = MessageSearchPresentation.rows(
-                for: page,
-                channelsByID: channels
-            )
-            let nextRevision = search.rowsRevision &+ 1
-            search.rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(
-                oldRows: oldRows,
-                newRows: search.rows,
-                revision: nextRevision
-            ))
-            search.rowsRevision = nextRevision
+        updateRetainedSearchMessages(id: message.id) {
+            $0.isPinned = isPinned
+            return true
         }
     }
 

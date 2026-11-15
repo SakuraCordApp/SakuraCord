@@ -140,24 +140,25 @@ final class ForumBoardScrollView: NSScrollView {
 /// height as starter messages, thumbnails, reactions and fonts arrived. Here
 /// geometry comes only from `ForumBoardLayout`, late data repaints in place,
 /// and structural changes animate on the compositor. This file owns the state,
-/// updates, layout and card realization; the extensions beside it handle
-/// presentation and painting, pointer and keyboard input, accessibility,
-/// media and menus, and animation.
+/// updates, layout, card realization and pagination; the extensions beside it
+/// handle presentation, painting and media, pointer and keyboard input,
+/// tooltips and menus, accessibility, and animation.
 final class ForumBoardView: NSView, NSViewToolTipOwner {
     weak var model: AppModel?
+    private var animatesShimmer = true
     var channel: Channel?
     /// The channel's tags by ID, rebuilt when the channel changes, so
     /// presentations resolve tags without building a map per post.
     var tagsByID: [ForumTagID: ForumTag] = [:]
     var snapshot: ForumBoardSnapshot?
-    var items: [ForumBoardItem] = []
+    private var items: [ForumBoardItem] = []
     var postsByID: [ChannelID: ForumPost] = [:]
     var layoutState: ForumBoardLayout?
     var metrics = ForumBoardMetrics.current()
-    var titleCounter: ForumTitleLineCounter
+    private var titleCounter: ForumTitleLineCounter
     let cardsLayer = CALayer()
     var cards: [ForumBoardItem.Identifier: ForumBoardCard] = [:]
-    var reusableCards: [ForumBoardCard] = []
+    private var reusableCards: [ForumBoardCard] = []
     /// Cards fading out after a live removal, no longer in `cards`.
     var exitingCards: [ObjectIdentifier: ForumBoardCard] = [:]
     /// Hidden new cards, by card, waiting for their group's bitmaps.
@@ -200,15 +201,15 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     let menuBuilder = ForumPostMenuBuilder()
     var accessibilityProxies: [ForumBoardItem.Identifier: ForumBoardAccessibilityProxyView] = [:]
     /// A page request is in flight from this board; the model also guards.
-    var isRequestingPage = false
+    private var isRequestingPage = false
     /// Media whose last request failed, so painters can show a fallback.
-    var failedMediaKeys = Set<NativeTimelineMediaKey>()
+    var failedMediaKeys = Set<MediaImageKey>()
     /// The entry indices realized last time; nil forces the next refresh to
     /// reconcile every card and rebuild settled state.
     private var realizedRange: Range<Int>?
     private var settledWorkTask: Task<Void, Never>?
     private var needsObservationRefresh = false
-    var authorPrefixes: [AuthorPrefixKey: ForumPostPreviewTextView.Prefix] = [:]
+    var authorPrefixes: [AuthorPrefixKey: ForumPostPreviewTextRenderer.Prefix] = [:]
 
     override var isFlipped: Bool { true }
 
@@ -251,8 +252,8 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         glideFinishTask?.cancel()
         minuteTimer?.invalidate()
         minuteTimer = nil
-        NativeTimelineMediaStore.shared.releaseVisibleImages(owner: mediaOwner)
-        NativeTimelineMediaStore.shared.cancelStaticRequestsOutsideVisibleSet(owner: mediaOwner)
+        MediaImageStore.shared.releaseVisibleImages(owner: mediaOwner)
+        MediaImageStore.shared.cancelStaticRequestsOutsideVisibleSet(owner: mediaOwner)
         for renderer in excerptRenderers.values { renderer.stopObservingReveals() }
         excerptRenderers.removeAll()
     }
@@ -272,11 +273,6 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             RunLoop.main.add(timer, forMode: .common)
             minuteTimer = timer
         }
-        #if DEBUG
-        if let scrollView = enclosingScrollView {
-            ForumBoardBenchmark.register(scrollView: scrollView)
-        }
-        #endif
     }
 
     /// Card coordinates are top-down like the view's. AppKit may or may not
@@ -324,6 +320,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         }
         self.model = model
         self.channel = channel
+        // Read through the model so the board updates when the setting does.
+        if animatesShimmer != model.animates([]) {
+            animatesShimmer.toggle()
+            displayOptionsDidChange()
+        }
         guard previousSnapshot != snapshot || channelChanged else {
             // Observation covers model reads; the channel's tags and default
             // reaction arrive as a value, so only a change to it re-resolves.
@@ -376,7 +377,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         schedulePresentationRefresh()
     }
 
-    func scrollToTop() {
+    private func scrollToTop() {
         guard let scrollView = enclosingScrollView else { return }
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: -scrollView.contentInsets.top))
         scrollView.reflectScrolledClipView(scrollView.contentView)
@@ -447,7 +448,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         else { return }
         // Anchored on the first visible post, past any section header.
         let position = scrollAnchor(postsOnly: true).flatMap { anchor -> ForumViewMemory.ScrollPosition? in
-            guard case let .post(postID) = anchor.id else { return nil }
+            guard let postID = anchor.id.postID else { return nil }
             return ForumViewMemory.ScrollPosition(postID: postID, offset: anchor.offset)
         }
         model.forumViewMemory.rememberScrollPosition(position, for: channel.id)
@@ -470,15 +471,15 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         }
         let anchor = restoring ?? (transition == .none && !scrollsToTop ? scrollAnchor() : nil)
         let counter = titleCounter
-        let signpost = AppPerformanceSignposts.signposter.beginInterval("ForumBoardLayout")
-        let newLayout = ForumBoardLayout.make(
-            items: items,
-            mode: snapshot?.mode ?? .list,
-            width: width,
-            metrics: metrics,
-            titleLines: { counter.lines($0, width: $1) }
-        )
-        AppPerformanceSignposts.signposter.endInterval("ForumBoardLayout", signpost)
+        let newLayout = AppPerformanceSignposts.measureSync("ForumBoardLayout") {
+            ForumBoardLayout.make(
+                items: items,
+                mode: snapshot?.mode ?? .list,
+                width: width,
+                metrics: metrics,
+                titleLines: { counter.lines($0, width: $1) }
+            )
+        }
         let widthChanged = abs(width - lastLayoutWidth) > 0.5
         // A width change that alters the column count moves cards to new
         // slots; those realized now glide there from where they are.
@@ -596,7 +597,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         CATransaction.commit()
         begin(group)
         drawArrivals(of: group)
-        let livePostIDs = Set(liveIDs.compactMap { if case let .post(id) = $0 { id } else { nil } })
+        let livePostIDs = Set(liveIDs.compactMap(\.postID))
         for id in excerptRenderers.keys where !livePostIDs.contains(id) {
             excerptRenderers[id]?.stopObservingReveals()
             excerptRenderers[id] = nil
@@ -626,7 +627,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let isVisible = entry.frame.intersects(visible)
         let id = entry.item.id
         var resolved = false
-        if case let .post(postID) = id {
+        if let postID = id.postID {
             resolved = resolveContent(for: postID, isNewCard: cards[id] == nil)
         }
         if let card = cards[id] {
@@ -753,7 +754,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             if sizeChanged, card.hasContent, followsLiveResize {
                 // A width change in progress reflows off the main thread;
                 // a worker-drawn excerpt redraws once more when it settles.
-                if case let .post(postID) = id, excerptRenderers[postID]?.supportsWorkerText == true {
+                if let postID = id.postID, excerptRenderers[postID]?.supportsWorkerText == true {
                     liveResizedIDs.insert(id)
                 }
                 laysOutExcerptsOffMain = true
@@ -772,12 +773,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     }
 
     func applyChrome(_ card: ForumBoardCard, id: ForumBoardItem.Identifier, animated: Bool) {
-        let postID: ChannelID? = if case let .post(value) = id { value } else { nil }
         card.applyChrome(
             isHovered: hoveredID == id || keyboardID == id,
             isKeyboardFocused: keyboardID == id,
             isPressed: pressedID == id,
-            isSelected: postID != nil && postID == model?.openThread?.id,
+            isSelected: id.postID.flatMap { presentations[$0]?.isSelected } == true,
             appearance: effectiveAppearance,
             animated: animated
         )
@@ -787,22 +787,40 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let frames = cardRegions(for: id)?.skeletonFrames ?? []
         var color = NSColor.white
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            color = ForumCardPainter.skeletonFill
+            color = SkeletonShimmerStyle.baseColor()
         }
         card.updateShimmer(
             frames: frames,
             color: color,
-            animates: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            animates: AppMotionPolicy.animatesUncategorized
                 && window?.occlusionState.contains(.visible) != false
         )
     }
 
-    func repaintVisibleCards(fading: Bool, synchronously: Bool = false) {
+    private func repaintVisibleCards(fading: Bool, synchronously: Bool = false) {
         for (id, card) in cards {
             regions[id] = nil
             card.render(scale: backingScale, fading: fading, synchronously: synchronously)
         }
         rebuildToolTips()
+    }
+
+    // MARK: Pagination
+
+    private func requestNextPageIfNeeded() {
+        guard let snapshot, snapshot.hasMore, !snapshot.isLoadingMore, snapshot.paginationError == nil,
+              let model
+        else { return }
+        let visible = visibleRect
+        guard visible.maxY > frame.height - visible.height * 1.5 else { return }
+        // A page can add no visible posts (filtered or undecodable records)
+        // while more remain, so each completed request allows the next.
+        guard !isRequestingPage else { return }
+        isRequestingPage = true
+        Task { [weak self] in
+            await model.loadMoreForumPosts()
+            self?.isRequestingPage = false
+        }
     }
 
     // MARK: Stability probe
@@ -813,7 +831,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         #if DEBUG
         guard let width = layoutState?.width else { return }
         for (id, card) in cards {
-            guard case let .post(postID) = id else { continue }
+            guard let postID = id.postID else { continue }
             ForumLayoutStabilityProbe.shared.record(postID: postID, size: card.frame.size, containerWidth: width)
         }
         #endif

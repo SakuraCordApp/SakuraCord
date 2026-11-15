@@ -1,5 +1,4 @@
 import AppKit
-import CoreText
 import QuartzCore
 import SakuraCordModels
 
@@ -193,83 +192,11 @@ enum NativeTimelineSendTransitionTiming {
         CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
     }
 
-    static let verticalCurve = NativeTimelineGlideCurve(
+    static let verticalCurve = GlideCurve(
         x1: 0.2, y1: 0.01, x2: 0.28, y2: 0.91, duration: duration
     )
 
     static var vertical: CAMediaTimingFunction { verticalCurve.timingFunction }
-}
-
-/// A cubic Bézier curve the transcript can glide on, readable at any moment
-/// so a glide that is interrupted continues from where its rows are drawn.
-struct NativeTimelineGlideCurve {
-    let x1: Float
-    let y1: Float
-    let x2: Float
-    let y2: Float
-    let duration: CFTimeInterval
-
-    var timingFunction: CAMediaTimingFunction {
-        CAMediaTimingFunction(controlPoints: x1, y1, x2, y2)
-    }
-
-    /// The curve's progress after `fraction` of the duration.
-    func progress(at fraction: Double) -> Double {
-        guard fraction > 0 else { return 0 }
-        guard fraction < 1 else { return 1 }
-        func bezier(_ parameter: Double, _ first: Float, _ second: Float) -> Double {
-            let inverse = 1 - parameter
-            return 3 * inverse * inverse * parameter * Double(first)
-                + 3 * inverse * parameter * parameter * Double(second)
-                + parameter * parameter * parameter
-        }
-        var lower = 0.0
-        var upper = 1.0
-        for _ in 0 ..< 24 {
-            let middle = (lower + upper) / 2
-            if bezier(middle, x1, x2) < fraction {
-                lower = middle
-            } else {
-                upper = middle
-            }
-        }
-        return bezier((lower + upper) / 2, y1, y2)
-    }
-}
-
-/// Renders transition snapshots in the timeline's flipped coordinates.
-@MainActor
-enum NativeTimelineSendTransitionSnapshot {
-    static func render(size: CGSize, scale: CGFloat, draw: () -> Void) -> NSImage? {
-        let scale = max(1, scale)
-        guard size.width > 0, size.height > 0,
-              let representation = NSBitmapImageRep(
-                  bitmapDataPlanes: nil,
-                  pixelsWide: max(1, Int(ceil(size.width * scale))),
-                  pixelsHigh: max(1, Int(ceil(size.height * scale))),
-                  bitsPerSample: 8,
-                  samplesPerPixel: 4,
-                  hasAlpha: true,
-                  isPlanar: false,
-                  colorSpaceName: .deviceRGB,
-                  bytesPerRow: 0,
-                  bitsPerPixel: 0
-              ),
-              let graphics = NSGraphicsContext(bitmapImageRep: representation)
-        else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        let context = graphics.cgContext
-        context.scaleBy(x: scale, y: scale)
-        context.translateBy(x: 0, y: size.height)
-        context.scaleBy(x: 1, y: -1)
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-        draw()
-        NSGraphicsContext.restoreGraphicsState()
-        representation.size = size
-        let image = NSImage(size: size)
-        image.addRepresentation(representation)
-        return image
-    }
 }
 
 /// The flying bubble. It sits above the composer and timeline while the
@@ -823,14 +750,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
 
     private func fadeIn(_ layer: CALayer, duration: CFTimeInterval, delay: CFTimeInterval = 0) {
         layer.opacity = 1
-        let animation = CABasicAnimation(keyPath: "opacity")
-        animation.fromValue = 0
-        animation.toValue = 1
-        animation.duration = duration
-        animation.beginTime = delay > 0 ? layer.convertTime(CACurrentMediaTime(), from: nil) + delay : 0
-        animation.fillMode = .backwards
-        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        layer.add(animation, forKey: "opacity")
+        add(layer, "opacity", from: 0, to: 1, duration: duration, delay: delay)
     }
 
     private func add(
@@ -866,7 +786,7 @@ struct NativeTimelineTranscriptGlide {
     let beganAt: CFTimeInterval
     /// How long the rows stay put before gliding.
     let hold: CFTimeInterval
-    let curve: NativeTimelineGlideCurve
+    let curve: GlideCurve
 
     var endsAt: CFTimeInterval {
         beganAt + hold + curve.duration
@@ -922,7 +842,7 @@ extension NativeTimelineCanvasView {
             return
         }
         // The flight aims at the row's static place.
-        finishReactionTransitions()
+        finishRowMotions()
         guard let window,
               let (geometry, bubbleInWindow) = sendTransitionGeometry(
                   from: pending, rowIndex: index, in: window
@@ -946,10 +866,7 @@ extension NativeTimelineCanvasView {
         suppressPointerInteractions()
         // The canvas update already installed media at the destination.
         // Remove those overlays now that their row is held back for flight.
-        reconcileAnimatedMedia()
-        startVisibleInlineVideosImmediately()
-        reconcileSpoilerOverlays()
-        reconcileActivityIndicators()
+        reconcileSendTransitionHeldOverlays()
         setNeedsDisplay(rowFrame(at: index))
         glideTranscript(by: transcriptShift)
         displayIfNeeded()
@@ -971,8 +888,7 @@ extension NativeTimelineCanvasView {
     ) -> (NativeTimelineSendTransitionOverlay.Geometry, CGRect)? {
         let source = pending.source
         let overlay = pending.overlay
-        guard model?.animatesMessageSending == true,
-              source.window === window,
+        guard source.window === window,
               overlay.window === window,
               items.indices.contains(index),
               layouts.indices.contains(index),
@@ -1109,7 +1025,7 @@ extension NativeTimelineCanvasView {
     }
 
     private func reconcileSendTransition(_ transition: NativeTimelineSendTransition) {
-        guard let index = items.lastIndex(where: { $0.identifier == transition.identifier }),
+        guard let index = rowIndex(forIdentifier: transition.identifier),
               layouts.indices.contains(index),
               let target = layouts[index].sendTransitionFrame(rowWidth: rowFrame(at: index).width)
         else {
@@ -1143,7 +1059,7 @@ extension NativeTimelineCanvasView {
         for identifiers: Set<NativeMessageTimelineItem.Identifier>
     ) {
         for transition in sendTransitions where identifiers.contains(transition.identifier) {
-            guard let index = items.lastIndex(where: { $0.identifier == transition.identifier }),
+            guard let index = rowIndex(forIdentifier: transition.identifier),
                   layouts.indices.contains(index),
                   let content = sendTransitionContent(
                       item: items[index],
@@ -1185,7 +1101,7 @@ extension NativeTimelineCanvasView {
         transition.finishTask?.cancel()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        if let index = items.lastIndex(where: { $0.identifier == transition.identifier }) {
+        if let index = rowIndex(forIdentifier: transition.identifier) {
             setNeedsDisplay(rowFrame(at: index))
             displayIfNeeded()
         }
@@ -1206,11 +1122,17 @@ extension NativeTimelineCanvasView {
         guard reconcilesHeldMedia else { return }
         // The landed row's animated media, videos and spoiler covers were
         // held back while its copy was in flight.
+        reconcileSendTransitionHeldOverlays()
+        restorePointerInteractions()
+    }
+
+    /// The overlays a row holds back while its copy is in flight: animated
+    /// media, videos, spoiler covers and progress marks.
+    private func reconcileSendTransitionHeldOverlays() {
         reconcileAnimatedMedia()
         startVisibleInlineVideosImmediately()
         reconcileSpoilerOverlays()
         reconcileActivityIndicators()
-        restorePointerInteractions()
     }
 
     func cancelTranscriptGlide() {
@@ -1220,40 +1142,8 @@ extension NativeTimelineCanvasView {
         layer?.removeAnimation(forKey: Self.transcriptGlideKey)
     }
 
-    func restorePointerInteractions() {
-        guard !glideBlocksPointer else { return }
-        updateTrackingAreas()
-        window?.invalidateCursorRects(for: self)
-        synchronizeHoverWithCurrentPointer()
-    }
-
-    func suppressPointerInteractions() {
-        // A press begun before the rows moved must not activate on release.
-        clearPointerTargets()
-        pressedPollTarget = nil
-        hoveredPollTarget = nil
-        textSelectionGesture = nil
-        if let press = voiceMessagePress {
-            voiceMessagePress = nil
-            // A scrub paused playback, which its release would resume.
-            if case .waveform = press.control { model?.voiceMessagePlayback.endScrub(press.region.playbackID) }
-        }
-        updateCodeCopyControl()
-        closeHoverTooltips()
-        removeActionCapsule()
-        updateTrackingAreas()
-        window?.invalidateCursorRects(for: self)
-        setNeedsDisplay(visibleRect)
-    }
-
     var sendTransitionBlocksInteractions: Bool {
         !sendTransitions.isEmpty || isTranscriptGliding
-    }
-
-    /// An edit's lines easing, as a send's glide, leave the pointer nothing
-    /// to hit: the rows' regions sit where they land.
-    var glideBlocksPointer: Bool {
-        sendTransitionBlocksInteractions || !editedTextBands.isEmpty
     }
 
     var isTranscriptGliding: Bool {
@@ -1292,7 +1182,7 @@ extension NativeTimelineCanvasView {
     func glideTranscript(
         by shift: CGFloat,
         holdingFor hold: CFTimeInterval = 0,
-        on curve: NativeTimelineGlideCurve = NativeTimelineSendTransitionTiming.verticalCurve
+        on curve: GlideCurve = NativeTimelineSendTransitionTiming.verticalCurve
     ) {
         guard abs(shift) >= 0.5, let layer else { return }
         // A send can move the rows twice in quick succession, once as the
@@ -1398,10 +1288,10 @@ extension NativeTimelineCanvasView {
     }
 
     private func sendTransitionAwaitsMedia(_ transition: NativeTimelineSendTransition) -> Bool {
-        guard let index = items.lastIndex(where: { $0.identifier == transition.identifier })
+        guard let index = rowIndex(forIdentifier: transition.identifier)
         else { return false }
         return mediaKeys(for: items[index], at: index).contains {
-            NativeTimelineRowPainter.mediaImage(for: $0) == nil
+            MediaImageStore.shared.stillImage(for: $0) == nil
         }
     }
 
@@ -1447,7 +1337,7 @@ extension NativeTimelineCanvasView {
         var covers: [Int: NSImage] = [:]
         for attachmentIndex in attachmentIndexes {
             let region = layout.attachmentRegions[attachmentIndex]
-            guard isConcealedSpoiler(region.attachment, in: messageID),
+            guard spoilerRevealStore.isConcealed(region.attachment, in: messageID),
                   let image = sendTransitionImage(of: region.frame, item: item, layout: layout, rowFrame: rowFrame)
             else { continue }
             covers[attachmentIndex] = image
@@ -1462,7 +1352,7 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout,
         rowFrame: CGRect
     ) -> NSImage? {
-        NativeTimelineSendTransitionSnapshot.render(size: frame.size, scale: rowBitmapScale) {
+        NativeTimelineSnapshotRenderer.render(size: frame.size, scale: rowBitmapScale) {
             guard let context = NSGraphicsContext.current?.cgContext else { return }
             context.translateBy(x: -frame.minX, y: -frame.minY)
             context.clip(to: frame)
@@ -1472,7 +1362,6 @@ extension NativeTimelineCanvasView {
                     layout: layout,
                     in: CGRect(x: 0, y: 0, width: rowFrame.width, height: layout.height),
                     model: model,
-                    isHovered: false,
                     drawsBubbleBackground: false,
                     spoilerRevealStore: spoilerRevealStore
                 )
@@ -1499,7 +1388,7 @@ extension NativeTimelineCanvasView {
             return nil
         }
         let drawRect = bubblePath.bounds.insetBy(dx: -1, dy: -1).integral
-        guard let image = NativeTimelineSendTransitionSnapshot.render(
+        guard let image = NativeTimelineSnapshotRenderer.render(
             size: drawRect.size,
             scale: window?.backingScaleFactor ?? 2,
             draw: {
@@ -1512,7 +1401,6 @@ extension NativeTimelineCanvasView {
                         layout: layout,
                         in: CGRect(x: 0, y: 0, width: rowFrame.width, height: layout.height),
                         model: model,
-                        isHovered: false,
                         drawsBubbleBackground: false,
                         spoilerRevealStore: spoilerRevealStore
                     )
@@ -1550,20 +1438,13 @@ extension NativeTimelineCanvasView {
     /// coordinates, matching the painter's CoreText frame.
     private static func firstBaseline(of layout: NativeTimelineRowLayout) -> CGPoint? {
         guard let contentFrame = layout.contentFrame,
-              let attributedContent = layout.attributedContent,
-              attributedContent.length > 0,
-              let framesetter = layout.contentFramesetter
+              let contentText = layout.contentText,
+              contentText.value.length > 0
         else { return nil }
         let drawingFrame = NativeTimelineTextGeometry.messageContentDrawingFrame(contentFrame)
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: attributedContent.length),
-            CGPath(rect: CGRect(origin: .zero, size: drawingFrame.size), transform: nil),
-            nil
-        )
-        guard CFArrayGetCount(CTFrameGetLines(textFrame)) > 0 else { return nil }
-        var lineOrigin = CGPoint.zero
-        CTFrameGetLineOrigins(textFrame, CFRange(location: 0, length: 1), &lineOrigin)
+        guard let lineOrigin = CoreTextFrameLayout(
+            value: contentText.value, framesetter: contentText.framesetter, size: drawingFrame.size
+        ).origins.first else { return nil }
         return CGPoint(
             x: drawingFrame.minX + lineOrigin.x,
             y: drawingFrame.maxY - lineOrigin.y
@@ -1640,7 +1521,7 @@ extension NativeMessageTimelineCoordinator {
             // Starting the flight ends any running row motion, so rows it still
             // holds away from their places, such as above a preview unrolling,
             // glide there with the transcript instead of jumping.
-            let held = anchorIndex.map(canvas.reactionMotionOffset(at:)) ?? 0
+            let held = anchorIndex.map(canvas.rowMotionOffset(at:)) ?? 0
             canvas.beginSendTransition(from: pending, rowIndex: index, transcriptShift: shift() + held)
         } else if anchor.isSending, parent.model.animatesMessageSending {
             // The composer resizing as it clears moves the transcript too.
@@ -1735,8 +1616,8 @@ extension NativeTimelineRowLayout {
             + attachmentRegions.map(\.frame)
             + linkedImageRegions.map(\.frame)
             + stickerFrames
-            + embedFrames
-            + componentFrames
+            + embedRegions.map(\.frame)
+            + componentLayouts.map(\.frame)
         guard let first = bodyFrames.first else { return nil }
         let body = bodyFrames.dropFirst().reduce(first) { $0.union($1) }
         return CGRect(

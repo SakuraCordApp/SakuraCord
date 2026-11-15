@@ -184,8 +184,6 @@ public enum DiscordMarkdown {
         Delimiter(marker: "_", traits: .italic),
     ]
 
-    private static let appKitCache = AppKitMarkdownRenderCache()
-
     public static func attributed(_ source: String) -> AttributedString {
         let plan = appKitPlan(source)
         var output = AttributedString()
@@ -234,21 +232,6 @@ public enum DiscordMarkdown {
             output.append(value)
         }
         return output
-    }
-
-    public static func appKitAttributed(
-        _ source: String,
-        baseFontSize: CGFloat = 15
-    ) -> NSAttributedString {
-        if let cached = appKitCache.value(for: source, baseFontSize: baseFontSize) {
-            return cached
-        }
-        let result = appKitAttributed(
-            appKitPlan(source),
-            baseFontSize: baseFontSize
-        )
-        appKitCache.insert(result, for: source, baseFontSize: baseFontSize)
-        return result
     }
 
     /// A text file planned as one fenced block in `language`, so its lines are
@@ -794,6 +777,11 @@ public enum DiscordMarkdown {
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
         guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector) else { return nil }
+        // Discord shows such a link as the text it was typed as, its address included.
+        if MessageDocument.holdsDisallowedLinkLabelMention(source[target.label]) {
+            let text = String(source[cursor ..< target.end])
+            return ([AppKitPlan.InlineRun(text: text, traits: inheritedTraits, link: nil, color: nil)], target.end)
+        }
         sourceCollector?.collectLink?(target.label, target.end)
         var runs = inlineRuns(
             source[target.label],
@@ -813,6 +801,26 @@ public enum DiscordMarkdown {
     ) -> String.Index? {
         if let collector { return collector.next(character, from: start, before: source.endIndex) }
         return source[start...].firstIndex(of: character)
+    }
+
+    /// The labels of `[label](url)` links in `source`, outside code.
+    static func maskedLinkLabelRanges(_ source: String) -> [NSRange] {
+        guard source.contains("](") else { return [] }
+        let code = sourceCodeRanges(source)
+        let text = source[...]
+        var ranges: [NSRange] = []
+        var cursor = text.startIndex
+        while let open = text[cursor...].firstIndex(of: "[") {
+            let location = NSRange(open ..< text.index(after: open), in: source).location
+            if !code.contains(where: { NSLocationInRange(location, $0) }),
+               let target = markdownLinkTarget(in: text, at: open, collector: nil) {
+                ranges.append(NSRange(target.label, in: source))
+                cursor = target.end
+            } else {
+                cursor = text.index(after: open)
+            }
+        }
+        return ranges
     }
 
     private static func markdownLinkTarget(
@@ -1175,6 +1183,9 @@ public enum DiscordMarkdown {
         }
     }
 
+    /// Subtext and code blocks are this fraction of the body text size.
+    public static let smallTextScale: CGFloat = 0.875
+
     private static func appKitFont(
         block: AppKitPlan.Block,
         traits: AppKitPlan.InlineTraits,
@@ -1185,7 +1196,7 @@ public enum DiscordMarkdown {
         case .heading(1): (base * 1.5, .bold)
         case .heading(2): (base * 1.25, .bold)
         case .heading: (base, .bold)
-        case .subtext, .code: (base * 0.875, .regular)
+        case .subtext, .code: (base * smallTextScale, .regular)
         case .paragraph, .listItem: (base, traits.contains(.bold) ? .semibold : .regular)
         }
 
@@ -1665,63 +1676,6 @@ private extension DiscordMarkdown {
             guard lower < indices.count, indices[lower] < end else { return nil }
             return indices[lower]
         }
-    }
-}
-
-private final class AppKitMarkdownRenderCache: @unchecked Sendable {
-    private let values = NSCache<AppKitMarkdownCacheKey, NSAttributedString>()
-
-    init() {
-        values.countLimit = 2_000
-        values.totalCostLimit = 12 * 1024 * 1024
-    }
-
-    func value(for source: String, baseFontSize: CGFloat) -> NSAttributedString? {
-        values.object(
-            forKey: AppKitMarkdownCacheKey(
-                source: source,
-                baseFontSize: baseFontSize
-            )
-        )
-    }
-
-    func insert(
-        _ value: NSAttributedString,
-        for source: String,
-        baseFontSize: CGFloat
-    ) {
-        values.setObject(
-            value,
-            forKey: AppKitMarkdownCacheKey(
-                source: source,
-                baseFontSize: baseFontSize
-            ),
-            cost: max(source.utf8.count, value.length * 2)
-        )
-    }
-}
-
-private final class AppKitMarkdownCacheKey: NSObject {
-    let source: String
-    let baseFontSize: CGFloat
-
-    init(source: String, baseFontSize: CGFloat) {
-        self.source = source
-        self.baseFontSize = baseFontSize
-    }
-
-    override var hash: Int {
-        var hasher = Hasher()
-        hasher.combine(source)
-        hasher.combine(baseFontSize)
-        return hasher.finalize()
-    }
-
-    override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? AppKitMarkdownCacheKey else {
-            return false
-        }
-        return source == other.source && baseFontSize == other.baseFontSize
     }
 }
 

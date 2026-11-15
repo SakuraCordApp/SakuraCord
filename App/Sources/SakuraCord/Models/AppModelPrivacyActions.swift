@@ -2,11 +2,11 @@ import Foundation
 
 extension AppModel {
     func clearLocalDestinationHistory() {
-        forwardDestinationHistory = []
+        conversationDestinationHistory = []
         workspaceNavigationOverlay = nil
         guard launchMode == .normal else { return }
         UserDefaults.standard.removeObject(
-            forKey: forwardDestinationHistoryDefaultsKey
+            forKey: destinationHistoryDefaultsKey
         )
     }
 
@@ -24,7 +24,7 @@ extension AppModel {
         try await session.provider.clearLocalSearchCache()
         guard isCurrentAccountSession(session) else { throw LocalPrivacyActionError.accountChanged }
         snapshot?.forwardChannelStoreOrder = []
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         clearLocalDestinationHistory()
         clearLocallyLearnedEmojiRanking()
     }

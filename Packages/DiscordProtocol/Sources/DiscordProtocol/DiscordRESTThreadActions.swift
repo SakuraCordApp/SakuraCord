@@ -9,9 +9,7 @@ extension DiscordRESTProvider {
         -> ForumPostPage
     {
         guard
-            let channel = cachedChannels.values.lazy.flatMap(\.self).first(where: {
-                $0.id == parentID && [.text, .announcement, .forum].contains($0.kind)
-            })
+            let channel = cachedChannel(parentID), [.text, .announcement, .forum].contains(channel.kind)
         else { throw ChatProviderError.channelNotFound }
         var catalogueQuery = ForumPostQuery(
             sortOrder: .latestActivity,
@@ -40,13 +38,6 @@ extension DiscordRESTProvider {
                     ? $0.lastActivityAt > $1.lastActivityAt
                     : $0.id > $1.id
             }
-    }
-
-    /// The thread revisions when a REST read starts. Capturing the whole maps
-    /// also covers threads unknown at that moment: a later record or deletion
-    /// gives them a revision the baseline lacks.
-    func threadRevisionBaseline() -> ThreadRevisionBaseline {
-        ThreadRevisionBaseline(records: threadRecordRevisions, memberships: threadMembershipRevisions)
     }
 
     /// A confirmed join or leave updates known threads at once, through the
@@ -84,9 +75,9 @@ extension DiscordRESTProvider {
         guard let parentID = response.thread.parentID else { return response.thread }
         let id = response.id
         let cached = cachedForumPosts[parentID]?[id]
-        let membershipIsCurrent = threadMembershipRevisions[id] == baseline.memberships[id]
+        let membershipIsCurrent = threadRevisions.memberships[id] == baseline.memberships[id]
         var committed: ForumPost
-        if threadRecordRevisions[id] != baseline.records[id] {
+        if threadRevisions.records[id] != baseline.records[id] {
             // THREAD_CREATE usually precedes the response and holds its record.
             guard let cached else { throw ChatProviderError.channelNotFound }
             committed = cached
@@ -144,9 +135,26 @@ extension DiscordRESTProvider {
         else { return }
         update.thread = .some(thread)
     }
-}
 
-struct ThreadRevisionBaseline {
-    let records: [ChannelID: UInt64]
-    let memberships: [ChannelID: UInt64]
+    /// Join/Follow or Leave/Unfollow. Discord's THREAD_MEMBERS_UPDATE carries
+    /// the authoritative member; the confirmed response updates the catalogue first.
+    public func setThreadMembership(
+        threadID: ChannelID,
+        isJoined: Bool,
+        location: ThreadMembershipLocation
+    ) async throws {
+        advanceThreadMembershipRevision(threadID)
+        let epoch = threadRevisions.membershipEpochs[threadID]
+        let (data, response) = try await perform(
+            "/channels/\(threadID)/thread-members/@me",
+            method: isJoined ? "POST" : "DELETE",
+            query: [URLQueryItem(name: "location", value: location.rawValue)]
+        )
+        if Self.discordErrorCode(from: data) == 30033 { throw ChatProviderError.threadMemberLimitReached }
+        try validateEmptyResponse(data, response)
+        // A Gateway membership event or a newer join/leave supersedes this
+        // answer; an overlapping read does not.
+        guard threadRevisions.membershipEpochs[threadID] == epoch else { return }
+        reconcileConfirmedThreadMembership(threadID: threadID, isJoined: isJoined)
+    }
 }

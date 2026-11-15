@@ -3,17 +3,18 @@ import SwiftUI
 
 struct ProfileGameGallery: View {
     let game: ProfileGame
-    let present: (NativeTimelineMediaViewerPresentation) -> Void
+    let present: (MediaViewerPresentation) -> Void
     @State private var selectedIndex = 0
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
 
     private var items: [RichMediaItem] {
         let trailers = (game.metadata?.trailers ?? []).compactMap { trailer -> RichMediaItem? in
-            let base = "https://cdn.discordapp.com/app-assets/\(trailer.applicationID)/store/\(trailer.id)"
-            let size = Self.supportedSize(Double(trailer.width) * displayScale)
-            guard let url = URL(string: "\(base).mp4?size=\(size)"),
-                  let preview = URL(string: "\(base).webp?size=\(size)") else { return nil }
+            let assetID = "store/\(trailer.id)"
+            let size = DiscordCDN.supportedSize(atLeast: Double(trailer.width) * displayScale)
+            guard let url = DiscordCDN.applicationAsset(trailer.applicationID, assetID: assetID, fileExtension: "mp4", size: size),
+                  let preview = DiscordCDN.applicationAsset(trailer.applicationID, assetID: assetID, fileExtension: "webp", size: size)
+            else { return nil }
             return RichMediaItem(
                 id: trailer.id,
                 media: MessageEmbedMedia(url: url, proxyURL: preview, width: trailer.width, height: trailer.height, contentType: "video/mp4"),
@@ -68,27 +69,22 @@ struct ProfileGameGallery: View {
 
     private func thumbnail(_ item: RichMediaItem) -> URL {
         let url = item.kind == .video ? item.previewURL ?? item.url : item.url
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false), let host = components.host else { return url }
-        var query = components.queryItems ?? []
-        let size = String(Self.supportedSize(112 * displayScale))
-        if ["images-ext-1.discordapp.net", "images-ext-2.discordapp.net"].contains(host), components.path.hasPrefix("/external/") {
-            query.removeAll { ["format", "width", "height", "keep_aspect_ratio"].contains($0.name) }
-            query += [URLQueryItem(name: "width", value: size), URLQueryItem(name: "height", value: size),
-                      URLQueryItem(name: "keep_aspect_ratio", value: "true"), URLQueryItem(name: "format", value: "webp")]
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false), let host = components.host else { return url }
+        let size = String(DiscordCDN.supportedSize(atLeast: 112 * displayScale))
+        let resized: URL? = if ["images-ext-1.discordapp.net", "images-ext-2.discordapp.net"].contains(host), components.path.hasPrefix("/external/") {
+            DiscordCDN.editingQuery(
+                of: url, removing: ["format", "width", "height", "keep_aspect_ratio"],
+                adding: [URLQueryItem(name: "width", value: size), URLQueryItem(name: "height", value: size),
+                         URLQueryItem(name: "keep_aspect_ratio", value: "true"), URLQueryItem(name: "format", value: "webp")]
+            )
         } else if host == "cdn.discordapp.com" || host == "media.discordapp.net" {
-            query.removeAll { $0.name == "size" }
-            query.append(URLQueryItem(name: "size", value: size))
-        } else { return url }
-        components.queryItems = query
-        return components.url ?? url
-    }
-
-    static func supportedSize(_ size: Double) -> Int {
-        [16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128, 160, 240, 256, 300, 320, 480, 512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096].first { Double($0) >= size } ?? 4096
+            DiscordCDN.editingQuery(of: url, removing: ["size"], adding: [URLQueryItem(name: "size", value: size)])
+        } else { nil }
+        return resized ?? url
     }
 
     private func expand(_ index: Int) {
-        present(NativeTimelineMediaViewerPresentation(items: items, selection: index, authorName: game.name,
+        present(MediaViewerPresentation(items: items, selection: index, authorName: game.name,
                                                       authorAvatarURL: game.iconURL, timestamp: game.metadata?.releaseDate ?? .now))
     }
 }

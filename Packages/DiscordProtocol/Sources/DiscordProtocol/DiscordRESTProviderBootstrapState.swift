@@ -12,7 +12,6 @@ extension DiscordRESTProvider {
             guard channelGuildIDs.insert(guildID).inserted else { return nil }
             return cachedGuilds[guildID] ?? currentGuildsByID[guildID]
         } + currentGuilds.filter { channelGuildIDs.insert($0.id).inserted }
-        let members = [Member(user: user, roleName: "You", status: presenceStatus)]
         var channelsByID = Dictionary(
             (cachedChannels[nil] ?? []).map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
@@ -69,7 +68,9 @@ extension DiscordRESTProvider {
             forwardChannelStoreOrder: cachedForwardChannelStoreOrder,
             threads: startupThreads,
             activeJoinedThreads: startupActiveJoinedThreads,
-            members: members,
+            // READY carries no member list. A stand-in for the current user
+            // without roles would replace READY's roles in the first server.
+            members: [],
             currentMembersByGuildID: cachedMembers.compactMapValues { members in
                 members.first { $0.id == user.id }
             },
@@ -193,23 +194,6 @@ extension DiscordRESTProvider {
             "Applied guild folder settings; folders=\(emittedFolderIDs.count), guilds=\(orderedGuilds.count), omitted=\(omitted.count)"
         )
         return (orderedGuilds, railItems)
-    }
-
-    static func applyingGuildOrder(_ orderedIDs: [GuildID], to guilds: [Guild]) -> [Guild] {
-        let byID = Dictionary(uniqueKeysWithValues: guilds.map { ($0.id, $0) })
-        let ordered = orderedIDs.compactMap { byID[$0] }
-        let orderedSet = Set(orderedIDs)
-        let omitted =
-            guilds
-                .filter { !orderedSet.contains($0.id) }
-                .sorted { $0.id.rawValue > $1.id.rawValue }
-        gatewayLogger.info(
-            "Applied guild settings order; ordered=\(ordered.count), omitted=\(omitted.count)"
-        )
-        // Match Discord/Paicord's unlisted-guild fallback: guilds absent from the
-        // folder payload appear first, newest joined/created first. Guild IDs are
-        // time-sortable snowflakes and are the bootstrap-safe proxy for join date.
-        return omitted + ordered
     }
 }
 

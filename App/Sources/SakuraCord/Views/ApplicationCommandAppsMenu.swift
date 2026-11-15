@@ -147,14 +147,11 @@ final class ApplicationCommandAppsMenuPopulator: NSObject, NSMenuDelegate, NSSea
     private func commandItem(_ command: ApplicationCommand, showsAvatar: Bool) -> NSMenuItem {
         let targetID = targetID, channelID = channelID
         let account = account
-        let action = NativeTimelineMenuAction { [weak model] in
+        let item = ContextMenuItemSupport.item(command.displayName) { [weak model] in
             guard let model, model.isCurrentAccountSession(account),
                   model.composerSendChannelID(in: model.commandDestination(in: channelID)) == channelID else { return }
             model.runContextMenuCommand(command, targetID: targetID, in: channelID)
         }
-        let item = NSMenuItem(title: command.displayName, action: #selector(NativeTimelineMenuAction.performAction), keyEquivalent: "")
-        item.target = action
-        item.representedObject = action
         item.toolTip = command.application.name
         if showsAvatar { configureIcon(item, application: command.application) }
         return item

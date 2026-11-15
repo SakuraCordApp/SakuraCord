@@ -83,7 +83,6 @@ struct DiscordMFAForm: View {
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .tint(SakuraCordAccentColor.color)
             }
         }
         .disabled(isWorking)
@@ -174,7 +173,7 @@ struct DiscordMFAForm: View {
         .overlay {
             RoundedRectangle(cornerRadius: radius)
                 .stroke(
-                    isCurrent ? SakuraCordAccentColor.color.opacity(0.8) : .primary.opacity(0.12),
+                    isCurrent ? SakuraCordAccentColor.focusRing : .primary.opacity(0.12),
                     lineWidth: 1
                 )
         }

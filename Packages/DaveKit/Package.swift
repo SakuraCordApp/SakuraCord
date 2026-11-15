@@ -35,16 +35,6 @@ let package = Package(
                 .target(name: "tls_syntax"),
                 .product(name: "OpenSSL", package: "OpenSSL-Package")
             ],
-            exclude: [
-                "libdave/cpp/src/mls/detail/persisted_key_pair_apple.cpp",
-                "libdave/cpp/src/mls/detail/persisted_key_pair_generic.cpp",
-                "libdave/cpp/src/mls/detail/persisted_key_pair_null.cpp",
-                "libdave/cpp/src/mls/detail/persisted_key_pair_win.cpp",
-                "libdave/cpp/src/mls/persisted_key_pair.cpp",
-                "libdave/cpp/src/bindings_wasm.cpp",
-                "libdave/cpp/src/boringssl_cryptor.cpp",
-                "libdave/cpp/src/boringssl_cryptor.h"
-            ],
             sources: ["libdave/cpp/src"],
             cxxSettings: [
                 .headerSearchPath("libdave/cpp/includes"),

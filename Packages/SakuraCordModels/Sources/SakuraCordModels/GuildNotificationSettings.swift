@@ -14,6 +14,11 @@ public enum GuildNotificationToggle: Int, CaseIterable, Codable, Hashable, Senda
 }
 
 public struct GuildNotificationSettings: Codable, Hashable, Sendable {
+    public static let unreadAllMessagesFlag: UInt64 = 1 << 11
+    public static let unreadOnlyMentionsFlag: UInt64 = 1 << 12
+    /// Shows only the channels the member opted into.
+    public static let optInChannelsFlag: UInt64 = 1 << 14
+
     public var guildID: GuildID?
     public var messageNotifications: MessageNotificationLevel
     public var hideMutedChannels: Bool
@@ -80,6 +85,21 @@ public struct GuildNotificationSettings: Codable, Hashable, Sendable {
             mobilePush = isEnabled
         case .hideMutedChannels:
             hideMutedChannels = isEnabled
+        }
+    }
+
+    /// Edits a channel's override where it sits, or appends one. Discord keeps
+    /// override order, and pinned channels with equal positions follow it.
+    public mutating func updateChannelOverride(
+        _ channelID: ChannelID,
+        _ mutation: (inout ChannelNotificationOverride) -> Void
+    ) {
+        if let index = channelOverrides.firstIndex(where: { $0.channelID == channelID }) {
+            mutation(&channelOverrides[index])
+        } else {
+            var override = ChannelNotificationOverride(channelID: channelID)
+            mutation(&override)
+            channelOverrides.append(override)
         }
     }
 

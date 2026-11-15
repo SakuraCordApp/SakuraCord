@@ -187,7 +187,7 @@ final class NativeTimelineCodeCopyControl: NSView {
         copiedGlyph.layer?.opacity = 1
     }
 
-    /// Discord's success green, as the app's other confirmations use.
+    /// Discord's success green.
     private static let copiedColor = NSColor(srgbRed: 0x23 / 255, green: 0xA5 / 255, blue: 0x5A / 255, alpha: 1)
 
     /// Each glyph carries its colour, so neither tints when the other shows.

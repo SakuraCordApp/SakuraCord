@@ -175,7 +175,7 @@ nonisolated enum MessageSearchTokenParser {
         if name == "before" {
             return MessageSearchToken(kind: .before(
                 value: isoDate(date, calendar: calendar),
-                boundary: .messageSearchBoundary(at: start)
+                boundary: MessageID(timestamp: start)
             ))
         }
         guard let nextDay = calendar.date(byAdding: .day, value: 1, to: start) else {
@@ -183,7 +183,7 @@ nonisolated enum MessageSearchTokenParser {
         }
         return MessageSearchToken(kind: .after(
             value: isoDate(date, calendar: calendar),
-            boundary: .messageSearchBoundary(at: nextDay)
+            boundary: MessageID(timestamp: nextDay)
         ))
     }
 

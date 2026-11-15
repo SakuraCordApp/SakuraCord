@@ -1,10 +1,5 @@
 import AppKit
-import AVFoundation
-import Combine
 import CoreText
-import ImageIO
-import Lottie
-import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
@@ -15,6 +10,12 @@ extension NativeTimelineCanvasView {
             isWindowVisible: window?.occlusionState.contains(.visible) == true,
             reduceMotion: false
         )
+    }
+
+    /// Inline videos hold still under Reduce Motion and while the window
+    /// does not permit playback.
+    var playsInlineVideos: Bool {
+        !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && permitsAnimatedMediaPlayback
     }
 
     @objc
@@ -29,15 +30,10 @@ extension NativeTimelineCanvasView {
             reconcileSendTransitions()
         }
         if !permitsAnimatedMediaPlayback {
-            NativeTimelineMediaStore.shared.cancelAnimatedRequests(owner: visibleMediaPinOwner)
+            MediaImageStore.shared.cancelAnimatedRequests(owner: visibleMediaPinOwner)
         }
         reconcileAnimatedMedia(allowsScrolling: true)
-        let reduceMotion =
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            || !permitsAnimatedMediaPlayback
-        reconcileInlineVideoOverlays(
-            plays: !reduceMotion
-        )
+        reconcileInlineVideoOverlays(plays: playsInlineVideos)
     }
 
     func scheduleAnimatedMediaReconciliation() {
@@ -73,9 +69,6 @@ extension NativeTimelineCanvasView {
     }
 
     func startVisibleInlineVideosImmediately() {
-        let reduceMotion =
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            || !permitsAnimatedMediaPlayback
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {
@@ -97,12 +90,7 @@ extension NativeTimelineCanvasView {
                 index += 1
                 continue
             }
-            let urls = Set(layouts[index].embedRegions.compactMap { region -> URL? in
-                guard region.mediaIsVideo,
-                      region.mediaAutoplaysInline
-                else { return nil }
-                return region.mediaURL
-            })
+            let urls = Set(layouts[index].embedRegions.compactMap(\.inlineVideoURL))
             if !urls.isEmpty {
                 let remaining =
                     Self.maximumInlineVideoOverlayCount - videoCount
@@ -116,7 +104,7 @@ extension NativeTimelineCanvasView {
         reconcileInlineVideoOverlays(
             // Created while scrolling so the embed is not blank, but paused
             // until scrolling settles.
-            plays: !reduceMotion && !suppressesHoverPresentation
+            plays: playsInlineVideos && !pointer.suppressesHoverPresentation
         )
     }
 
@@ -131,19 +119,27 @@ extension NativeTimelineCanvasView {
         let image: DecodedAnimatedImage
     }
 
-    final class AnimatedMediaOverlayAccumulator {
+    /// Collects one walk of a row's animated media either as the keys the
+    /// row requests or as the overlays placed over them, so the two agree.
+    struct AnimatedMediaAccumulator {
         unowned let canvas: NativeTimelineCanvasView
+        /// Keys need no placement, decoding or overlay limit.
+        let collectsKeys: Bool
+        var keys: Set<MediaImageKey> = []
         var desired: [DesiredAnimatedMediaOverlay] = []
 
-        init(canvas: NativeTimelineCanvasView) {
+        init(canvas: NativeTimelineCanvasView, collectsKeys: Bool) {
             self.canvas = canvas
-            desired.reserveCapacity(NativeTimelineCanvasView.maximumAnimatedMediaOverlayCount)
+            self.collectsKeys = collectsKeys
+            if !collectsKeys {
+                desired.reserveCapacity(NativeTimelineCanvasView.maximumAnimatedMediaOverlayCount)
+            }
         }
 
-        func append(
+        mutating func append(
             row: NativeMessageTimelineItem.Identifier,
             role: AnimatedMediaOverlayRole,
-            media: NativeTimelineMediaKey,
+            media: MediaImageKey,
             frame: CGRect,
             selectionFrame: CGRect? = nil,
             cornerRadius: CGFloat,
@@ -152,9 +148,13 @@ extension NativeTimelineCanvasView {
             fillsFrame: Bool = false,
             allowsStaticImage: Bool = false
         ) {
+            if collectsKeys {
+                keys.insert(media)
+                return
+            }
             let image = allowsStaticImage
-                ? NativeTimelineMediaStore.shared.decodedImage(for: media)
-                : NativeTimelineMediaStore.shared.decodedAnimatedImage(for: media)
+                ? MediaImageStore.shared.decodedImage(for: media)
+                : MediaImageStore.shared.decodedAnimatedImage(for: media)
             guard desired.count < NativeTimelineCanvasView.maximumAnimatedMediaOverlayCount,
                   canvas.animatedMediaRows[row]?.contains(media) == true,
                   let image
@@ -171,32 +171,57 @@ extension NativeTimelineCanvasView {
             ))
         }
 
-        func appendInlineEmoji(
+        /// A reaction transition's chips draw their own emoji and avatars, but
+        /// their media stays requested for when the row's bitmap takes over.
+        func walksReactions(in row: NativeMessageTimelineItem.Identifier) -> Bool {
+            collectsKeys || canvas.reactionTransitions[row] == nil
+        }
+
+        func animatedEmojiMedia(_ reference: EmojiReference) -> MediaImageKey? {
+            reference.isAnimated ? .emoji(reference, in: canvas.model?.customEmojiURLsByID) : nil
+        }
+
+        /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
+        mutating func appendInlineEmoji(
             row: NativeMessageTimelineItem.Identifier,
-            role: (Int, Int) -> AnimatedMediaOverlayRole,
+            role: (Int) -> AnimatedMediaOverlayRole,
             value: NSAttributedString,
             framesetter: CTFramesetter,
             frame: CGRect,
             selectionRange: NSRange?,
             revealedSpoilerLocations: Set<Int>
         ) {
-            for (ordinal, region) in NativeTimelineInlineEmojiGeometry.regions(
+            // The emoji tokens name every key without a Core Text layout.
+            if collectsKeys {
+                let hiddenSpoilerRanges = NativeTimelineTextSpoilers.hiddenRanges(
+                    in: value,
+                    revealedLocations: revealedSpoilerLocations
+                )
+                value.enumerateAttribute(
+                    .discordEmojiToken,
+                    in: NSRange(location: 0, length: value.length)
+                ) { rawValue, tokenRange, _ in
+                    guard let rawToken = rawValue as? String,
+                          !hiddenSpoilerRanges.contains(where: { NSLocationInRange(tokenRange.location, $0) }),
+                          let media = animatedEmojiMedia(EmojiReference(rawToken: rawToken))
+                    else { return }
+                    keys.insert(media)
+                }
+                return
+            }
+            for region in NativeTimelineInlineEmojiGeometry.regions(
                 in: value,
                 framesetter: framesetter,
                 frame: frame,
                 selectionRange: selectionRange,
                 revealedSpoilerLocations: revealedSpoilerLocations
-            ).enumerated() {
-                let reference = EmojiReference(rawToken: region.rawToken)
-                guard reference.isAnimated,
-                      let url = reference.id.flatMap({
-                          canvas.model?.customEmojiURLsByID[$0]
-                      }) ?? reference.imageURL(size: 64)
+            ) {
+                guard let media = animatedEmojiMedia(EmojiReference(rawToken: region.rawToken))
                 else { continue }
                 append(
                     row: row,
-                    role: role(ordinal, region.characterRange.location),
-                    media: .media(url, maximumPixelDimension: 64),
+                    role: role(region.characterRange.location),
+                    media: media,
                     frame: region.mediaFrame,
                     selectionFrame: region.selectionFrame,
                     cornerRadius: 0,
@@ -224,7 +249,7 @@ extension NativeTimelineCanvasView {
             return []
         }
 
-        let accumulator = AnimatedMediaOverlayAccumulator(canvas: self)
+        var accumulator = AnimatedMediaAccumulator(canvas: self, collectsKeys: false)
 
         while items.indices.contains(index),
               displayedRowOrigin(at: index) < visibleRect.maxY,
@@ -237,59 +262,17 @@ extension NativeTimelineCanvasView {
                 continue
             }
             let identifier = items[index].identifier
-            let layout = layouts[index]
             // While an edit's lines glide, its row draws its media still:
             // live views would sit at their final places.
             guard animatedMediaRows[identifier] != nil, editedTextBands[identifier] == nil else {
                 index += 1
                 continue
             }
-            appendAnimatedAvatarOverlays(
+            appendAnimatedMedia(
                 row: row,
                 identifier: identifier,
-                layout: layout,
-                accumulator: accumulator
-            )
-
-            appendAnimatedMessageContentOverlays(
-                row: row,
-                identifier: identifier,
-                layout: layout,
-                accumulator: accumulator
-            )
-
-            appendAnimatedEmbedOverlays(
-                message: row.message,
-                identifier: identifier,
-                layout: layout,
-                accumulator: accumulator
-            )
-
-            for (componentIndex, component) in
-                layout.componentLayouts.enumerated()
-            {
-                appendAnimatedComponentMediaOverlays(
-                    component,
-                    messageID: row.message.id,
-                    componentIndex: componentIndex,
-                    identifier: identifier,
-                    accumulator: accumulator
-                )
-                appendAnimatedComponentContentOverlays(
-                    component,
-                    componentIndex: componentIndex,
-                    messageID: row.message.id,
-                    identifier: identifier,
-                    layout: layout,
-                    accumulator: accumulator
-                )
-            }
-
-            appendAnimatedStickerAndReactionOverlays(
-                row: row,
-                identifier: identifier,
-                layout: layout,
-                accumulator: accumulator
+                layout: layouts[index],
+                accumulator: &accumulator
             )
             index += 1
         }
@@ -297,16 +280,84 @@ extension NativeTimelineCanvasView {
         return accumulator.desired
     }
 
-    private func appendAnimatedAvatarOverlays(
+    private func appendAnimatedMedia(
         row: MessageRowPresentation,
         identifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
-        accumulator: AnimatedMediaOverlayAccumulator
+        accumulator: inout AnimatedMediaAccumulator
+    ) {
+        appendAnimatedAvatars(
+            row: row,
+            identifier: identifier,
+            layout: layout,
+            accumulator: &accumulator
+        )
+        appendAnimatedMessageContent(
+            row: row,
+            identifier: identifier,
+            layout: layout,
+            accumulator: &accumulator
+        )
+        appendAnimatedEmbeds(
+            message: row.message,
+            identifier: identifier,
+            layout: layout,
+            accumulator: &accumulator
+        )
+        appendAnimatedComponents(
+            messageID: row.message.id,
+            identifier: identifier,
+            layout: layout,
+            accumulator: &accumulator
+        )
+        appendAnimatedStickersAndReactions(
+            row: row,
+            identifier: identifier,
+            layout: layout,
+            accumulator: &accumulator
+        )
+    }
+
+    private func appendAnimatedComponents(
+        messageID: MessageID,
+        identifier: NativeMessageTimelineItem.Identifier,
+        layout: NativeTimelineRowLayout,
+        accumulator: inout AnimatedMediaAccumulator
+    ) {
+        for (componentIndex, component) in layout.componentLayouts.enumerated() {
+            let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: component, messageID: messageID, store: spoilerRevealStore
+            )
+            appendAnimatedComponentMedia(
+                component,
+                messageID: messageID,
+                componentIndex: componentIndex,
+                hiddenContainerFrames: hiddenContainerFrames,
+                identifier: identifier,
+                accumulator: &accumulator
+            )
+            appendAnimatedComponentContent(
+                component,
+                componentIndex: componentIndex,
+                hiddenContainerFrames: hiddenContainerFrames,
+                messageID: messageID,
+                identifier: identifier,
+                layout: layout,
+                accumulator: &accumulator
+            )
+        }
+    }
+
+    private func appendAnimatedAvatars(
+        row: MessageRowPresentation,
+        identifier: NativeMessageTimelineItem.Identifier,
+        layout: NativeTimelineRowLayout,
+        accumulator: inout AnimatedMediaAccumulator
     ) {
         let author = model?.authorPresentation(for: row.message).user ?? row.message.author
         if let frame = layout.avatarFrame {
             if let url = author.avatarURL ?? row.message.author.avatarURL,
-               NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url) {
+               UserAvatarPresentation.shouldDecodeAnimation(for: url) {
                 accumulator.append(
                     row: identifier, role: .authorAvatar, media: .avatar(url), frame: frame,
                     cornerRadius: frame.width / 2, isLooping: true, fillsFrame: true
@@ -317,7 +368,7 @@ extension NativeTimelineCanvasView {
                     row: identifier,
                     role: .authorAvatarDecoration,
                     media: .avatarDecoration(decorationURL),
-                    frame: NativeTimelineAvatarPresentation.decorationFrame(around: frame),
+                    frame: UserAvatarPresentation.decorationFrame(around: frame),
                     cornerRadius: 0,
                     isLooping: true,
                     allowsStaticImage: true
@@ -327,8 +378,8 @@ extension NativeTimelineCanvasView {
         if let preview = row.replyPreview,
            let url = preview.author.avatarURL,
            let replyContentFrame = layout.replyContentFrame,
-           NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url) {
-            let frame = NativeTimelineAvatarPresentation.replyAvatarFrame(in: replyContentFrame)
+           UserAvatarPresentation.shouldDecodeAnimation(for: url) {
+            let frame = NativeTimelineReplyMetrics.avatarFrame(in: replyContentFrame)
             accumulator.append(
                 row: identifier, role: .replyAvatar, media: .avatar(url), frame: frame,
                 cornerRadius: frame.width / 2, isLooping: true, fillsFrame: true
@@ -336,23 +387,23 @@ extension NativeTimelineCanvasView {
         }
         if let frame = layout.commandInvocationRegion?.avatarFrame,
            let url = row.message.interactionMetadata?.user?.avatarURL,
-           NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url) {
+           UserAvatarPresentation.shouldDecodeAnimation(for: url) {
             accumulator.append(
                 row: identifier, role: .invocationAvatar, media: .avatar(url), frame: frame,
                 cornerRadius: frame.width / 2, isLooping: true, fillsFrame: true
             )
         }
         for answer in row.message.poll?.answers ?? [] {
-            guard answer.emoji?.isAnimated == true, let url = answer.emoji?.imageURL(size: 64),
+            guard let emoji = answer.emoji, emoji.isAnimated, let media = MediaImageKey.emoji(emoji),
                   let frame = layout.pollLayout?.answers.first(where: { $0.id == answer.id })?.emojiFrame else { continue }
             accumulator.append(row: identifier, role: .pollAnswer(answer.id),
-                               media: .media(url, maximumPixelDimension: 64), frame: frame,
+                               media: media, frame: frame,
                                cornerRadius: 0, isLooping: true)
         }
-        for reaction in layout.reactionRegions where reactionTransitions[identifier] == nil {
+        for reaction in layout.reactionRegions where accumulator.walksReactions(in: identifier) {
             for (avatarIndex, avatar) in reaction.avatarRegions.enumerated() {
                 guard let url = avatar.reactor.avatarURL,
-                      NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url)
+                      UserAvatarPresentation.shouldDecodeAnimation(for: url)
                 else { continue }
                 accumulator.append(
                     row: identifier,
@@ -367,23 +418,20 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private func appendAnimatedMessageContentOverlays(
+    private func appendAnimatedMessageContent(
         row: MessageRowPresentation,
         identifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
-        accumulator: AnimatedMediaOverlayAccumulator
+        accumulator: inout AnimatedMediaAccumulator
     ) {
         for (linkedIndex, region) in layout.linkedImageRegions.enumerated()
         where Self.isPotentiallyAnimated(region.reference.displayURL) {
             accumulator.append(
                 row: identifier,
                 role: .linkedImage(linkedIndex),
-                media: .media(
-                    region.reference.displayURL,
-                    maximumPixelDimension: region.reference.isEmoji ? 96 : 720
-                ),
+                media: region.mediaKey,
                 frame: region.frame,
-                cornerRadius: region.reference.isEmoji ? 7 : 10,
+                cornerRadius: region.cornerRadius,
                 isLooping: true
             )
         }
@@ -393,14 +441,11 @@ extension NativeTimelineCanvasView {
         // A revealed attachment can share its animation with one still hidden.
         for region in layout.attachmentRegions
         where region.attachment.mediaKind == .animatedImage
-            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                messageID: row.message.id, contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
-                isSpoiler: region.attachment.isSpoiler, store: spoilerRevealStore
-            ) {
+            && !spoilerRevealStore.isConcealed(region.attachment, in: row.message.id) {
             accumulator.append(
                 row: identifier,
                 role: .attachment(region.attachment.id),
-                media: NativeTimelineMediaKey.attachment(region.attachment)
+                media: MediaImageKey.attachment(region.attachment)
                     ?? .media(region.attachment.url),
                 frame: region.frame,
                 cornerRadius: InterfaceScale.metric(8),
@@ -411,32 +456,29 @@ extension NativeTimelineCanvasView {
                 fillsFrame: fillsFrame
             )
         }
-        if let contentFrame = layout.contentFrame,
-           let attributedContent = layout.attributedContent,
-           let framesetter = layout.contentFramesetter {
+        if let contentFrame = layout.contentFrame, let contentText = layout.contentText {
             accumulator.appendInlineEmoji(
                 row: identifier,
-                role: { _, location in .messageEmoji(location) },
-                value: attributedContent,
-                framesetter: framesetter,
+                role: { .messageEmoji($0) },
+                value: contentText.value,
+                framesetter: contentText.framesetter,
                 frame: NativeTimelineTextGeometry.messageContentDrawingFrame(contentFrame),
-                selectionRange: textSelection?.itemIdentifier == identifier
-                    && textSelection?.region == .content ? textSelection?.range : nil,
+                selectionRange: pointer.textSelection.scoped(to: identifier, region: .content)?.range,
                 revealedSpoilerLocations: revealedTextSpoilerLocations(
                     messageID: row.message.id,
                     region: .content,
-                    value: attributedContent,
+                    value: contentText.value,
                     layout: layout
                 )
             )
         }
     }
 
-    private func appendAnimatedEmbedOverlays(
+    private func appendAnimatedEmbeds(
         message: Message,
         identifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
-        accumulator: AnimatedMediaOverlayAccumulator
+        accumulator: inout AnimatedMediaAccumulator
     ) {
         let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
             in: message, store: spoilerRevealStore
@@ -447,10 +489,7 @@ extension NativeTimelineCanvasView {
                 accumulator.append(
                     row: identifier,
                     role: .embedImage(embed.embedID, imageIndex),
-                    media: .media(
-                        imageRegion.url,
-                        maximumPixelDimension: imageRegion.maximumPixelDimension
-                    ),
+                    media: imageRegion.mediaKey,
                     frame: imageRegion.frame,
                     cornerRadius: imageRegion.cornerRadius,
                     isLooping: false
@@ -471,22 +510,20 @@ extension NativeTimelineCanvasView {
                 )
             }
             for (textIndex, textRegion) in embed.textRegions.enumerated() {
-                var drawingFrame = textRegion.frame
-                drawingFrame.size.height += textRegion.text.layoutHeightAdjustment
+                let drawingFrame = textRegion.text.drawingFrame(textRegion.frame)
                 let textRegionID = NativeTimelineTextRegion.embed(
                     embedID: embed.embedID,
                     textIndex: textIndex
                 )
                 accumulator.appendInlineEmoji(
                     row: identifier,
-                    role: { _, location in
+                    role: { location in
                         .embedEmoji(embed.embedID, textIndex, location)
                     },
                     value: textRegion.text.value,
                     framesetter: textRegion.text.framesetter,
                     frame: drawingFrame,
-                    selectionRange: textSelection?.itemIdentifier == identifier
-                        && textSelection?.region == textRegionID ? textSelection?.range : nil,
+                    selectionRange: pointer.textSelection.scoped(to: identifier, region: textRegionID)?.range,
                     revealedSpoilerLocations: revealedTextSpoilerLocations(
                         messageID: message.id,
                         region: textRegionID,
@@ -498,85 +535,80 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private func appendAnimatedComponentMediaOverlays(
+    private func appendAnimatedComponentMedia(
         _ component: NativeTimelineComponentLayout,
         messageID: MessageID,
         componentIndex: Int,
+        hiddenContainerFrames: [CGRect],
         identifier: NativeMessageTimelineItem.Identifier,
-        accumulator: AnimatedMediaOverlayAccumulator
+        accumulator: inout AnimatedMediaAccumulator
     ) {
         // A revealed item can share its animation with one still hidden.
-        let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
-            in: component, messageID: messageID, store: spoilerRevealStore
-        )
         let isHidden = { [spoilerRevealStore] (frame: CGRect, componentID: String, isSpoiler: Bool) in
             NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(frame, hiddenContainerFrames: hiddenContainerFrames)
-                || NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                    messageID: messageID, contentID: componentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+                || spoilerRevealStore.isConcealed(
+                    messageID: messageID, contentID: componentID, isSpoiler: isSpoiler
                 )
         }
-        for image in component.images
-        where Self.isPotentiallyAnimated(image.displayURL) && !isHidden(image.frame, image.componentID, image.isSpoiler) {
-            accumulator.append(
-                row: identifier,
-                role: .componentImage(componentIndex, image.componentID),
-                media: .media(
-                    image.displayURL,
-                    maximumPixelDimension: image.maximumPixelDimension
-                ),
-                frame: image.frame,
-                cornerRadius: image.cornerRadius,
-                isLooping: false,
-                fillsFrame: true
-            )
-        }
-        for media in component.media
-        where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL)
-            && !isHidden(media.frame, media.componentID, media.isSpoiler) {
-            accumulator.append(
-                row: identifier,
-                role: .componentMedia(componentIndex, media.componentID),
-                media: .media(media.displayURL),
-                frame: media.frame,
-                cornerRadius: DiscordRichMessageMetrics.px(8),
-                isLooping: true,
-                fillsFrame: true
-            )
+        for region in component.mediaRegions {
+            switch region.kind {
+            case let .image(image)
+            where Self.isPotentiallyAnimated(image.displayURL) && !isHidden(region.frame, region.componentID, region.isSpoiler):
+                accumulator.append(
+                    row: identifier,
+                    role: .componentImage(componentIndex, region.componentID),
+                    media: image.mediaKey,
+                    frame: region.frame,
+                    cornerRadius: image.cornerRadius,
+                    isLooping: false,
+                    fillsFrame: true
+                )
+            case let .media(media)
+            where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL)
+                && !isHidden(region.frame, region.componentID, region.isSpoiler):
+                accumulator.append(
+                    row: identifier,
+                    role: .componentMedia(componentIndex, region.componentID),
+                    media: .media(media.displayURL),
+                    frame: region.frame,
+                    cornerRadius: DiscordRichMessageMetrics.px(8),
+                    isLooping: true,
+                    fillsFrame: true
+                )
+            case .image, .media, .file:
+                break
+            }
         }
     }
 
-    private func appendAnimatedComponentContentOverlays(
+    private func appendAnimatedComponentContent(
         _ component: NativeTimelineComponentLayout,
         componentIndex: Int,
+        hiddenContainerFrames: [CGRect],
         messageID: MessageID,
         identifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
-        accumulator: AnimatedMediaOverlayAccumulator
+        accumulator: inout AnimatedMediaAccumulator
     ) {
         // A hidden container's cover blurs its emoji; none may animate over it.
-        let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
-            in: component, messageID: messageID, store: spoilerRevealStore
-        )
         for (textIndex, textRegion) in component.textRegions.enumerated()
         where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
             textRegion.frame, hiddenContainerFrames: hiddenContainerFrames
         ) {
-            var drawingFrame = textRegion.frame
-            drawingFrame.size.height += textRegion.text.layoutHeightAdjustment
+            let drawingFrame = textRegion.text.drawingFrame(textRegion.frame)
             let textRegionID = NativeTimelineTextRegion.component(
                 layoutIndex: componentIndex,
                 textIndex: textIndex
             )
             accumulator.appendInlineEmoji(
                 row: identifier,
-                role: { _, location in
+                role: { location in
                     .componentEmoji(componentIndex, textIndex, location)
                 },
                 value: textRegion.text.value,
                 framesetter: textRegion.text.framesetter,
                 frame: drawingFrame,
-                selectionRange: textSelection?.itemIdentifier == identifier
-                    && textSelection?.region == textRegionID ? textSelection?.range : nil,
+                selectionRange: pointer.textSelection.scoped(to: identifier, region: textRegionID)?.range,
                 revealedSpoilerLocations: revealedTextSpoilerLocations(
                     messageID: messageID,
                     region: textRegionID,
@@ -603,10 +635,10 @@ extension NativeTimelineCanvasView {
             let opticalInset = (size - DiscordComponentEmojiMetrics.opticalSize(for: size)) / 2
             var frame = box.insetBy(dx: opticalInset, dy: opticalInset)
             // The emoji dips with its pressed button, about the same centre.
-            if button.opacity >= 1, visualPressedComponentButton == NativeTimelineComponentButtonTarget(
+            if button.opacity >= 1, pointer.visualPressedComponentButton == NativeTimelineComponentButtonTarget(
                 messageID: messageID, componentID: button.componentID
             ) {
-                let scale = NativeTimelineComponentButtonVisualState.scale(pressProgress: componentButtonPressProgress)
+                let scale = NativeTimelineComponentButtonVisualState.scale(pressProgress: pointer.componentButtonPressProgress)
                 frame = CGRect(
                     x: button.frame.midX + (frame.minX - button.frame.midX) * scale,
                     y: button.frame.midY + (frame.minY - button.frame.midY) * scale,
@@ -626,11 +658,11 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private func appendAnimatedStickerAndReactionOverlays(
+    private func appendAnimatedStickersAndReactions(
         row: MessageRowPresentation,
         identifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
-        accumulator: AnimatedMediaOverlayAccumulator
+        accumulator: inout AnimatedMediaAccumulator
     ) {
         for (stickerIndex, sticker) in row.message.stickers.enumerated()
         where sticker.format?.isAnimated == true {
@@ -649,16 +681,13 @@ extension NativeTimelineCanvasView {
                 ))
             )
         }
-        for reaction in layout.reactionRegions where reactionTransitions[identifier] == nil {
-            let reference = reaction.reaction.emojiReference
-            guard reference.isAnimated,
-                  let url = reference.id.flatMap({ model?.customEmojiURLsByID[$0] })
-                    ?? reference.imageURL(size: 64)
+        for reaction in layout.reactionRegions where accumulator.walksReactions(in: identifier) {
+            guard let media = accumulator.animatedEmojiMedia(reaction.reaction.emojiReference)
             else { continue }
             accumulator.append(
                 row: identifier,
                 role: .reaction(reaction.reaction.id),
-                media: .media(url, maximumPixelDimension: 64),
+                media: media,
                 frame: reaction.emojiFrame,
                 cornerRadius: 0,
                 isLooping: true
@@ -680,6 +709,7 @@ extension NativeTimelineCanvasView {
 
         var didCreateOverlay = false
         let hoveredGroup = hoveredGroupIdentifiers()
+        let hoveredIdentifier = hoveredRowIdentifier
         for item in desired {
             let rowOrigin: CGFloat
             guard let rowIndex = items.firstIndex(where: {
@@ -721,12 +751,11 @@ extension NativeTimelineCanvasView {
                 didCreateOverlay = true
             }
             overlay.frame = hostFrame
-            let isHoverActive = switch item.key.role {
-            case .authorAvatar, .authorAvatarDecoration: hoveredGroup.contains(item.key.row)
-            default: hoveredRow == rowIndex
-            }
-            overlay.setHoverPlaybackEnabled(!item.key.role.playsOnHover || isHoverActive)
-            overlay.setPlaybackSuppressed(suppressesHoverPresentation)
+            overlay.setHoverPlaybackEnabled(
+                !item.key.role.playsOnHover
+                    || isHoverActive(item.key, hoveredGroup: hoveredGroup, hoveredIdentifier: hoveredIdentifier)
+            )
+            overlay.setPlaybackSuppressed(pointer.suppressesHoverPresentation)
             overlay.display(
                 item.image,
                 mediaFrame: localMediaFrame,
@@ -771,8 +800,8 @@ extension NativeTimelineCanvasView {
     /// The rows of the hovered message group. Its avatar sits on the first
     /// row, or the last in bubble layout, and plays while any row is hovered.
     func hoveredGroupIdentifiers() -> Set<NativeMessageTimelineItem.Identifier> {
-        guard let index = hoveredRow ?? hoveredAuthorMessageID.flatMap({ targetID in
-            items.firstIndex(where: { $0.messageID == targetID })
+        guard let index = pointer.hoveredRow ?? pointer.hoveredAuthorMessageID.flatMap({ targetID in
+            rowIndex(forMessageID: targetID)
         }), items.indices.contains(index) else { return [] }
         guard case let .message(row, _, _) = items[index] else { return [items[index].identifier] }
         var identifiers: Set<NativeMessageTimelineItem.Identifier> = [items[index].identifier]
@@ -795,15 +824,29 @@ extension NativeTimelineCanvasView {
 
     func updateAvatarPlayback() {
         let hoveredGroup = hoveredGroupIdentifiers()
-        let hoveredIdentifier = hoveredRow.flatMap {
-            items.indices.contains($0) ? items[$0].identifier : nil
-        }
+        let hoveredIdentifier = hoveredRowIdentifier
         for (key, overlay) in animatedMediaOverlays where key.role.playsOnHover {
-            let isHoverActive = switch key.role {
-            case .authorAvatar, .authorAvatarDecoration: hoveredGroup.contains(key.row)
-            default: hoveredIdentifier != nil && key.row == hoveredIdentifier
-            }
-            overlay.setHoverPlaybackEnabled(isHoverActive && !suppressesHoverPresentation)
+            overlay.setHoverPlaybackEnabled(
+                isHoverActive(key, hoveredGroup: hoveredGroup, hoveredIdentifier: hoveredIdentifier)
+                    && !pointer.suppressesHoverPresentation
+            )
+        }
+    }
+
+    private var hoveredRowIdentifier: NativeMessageTimelineItem.Identifier? {
+        pointer.hoveredRow.flatMap { items.indices.contains($0) ? items[$0].identifier : nil }
+    }
+
+    /// An author's avatar plays while any row of its group is hovered;
+    /// other hover-played media while its own row is.
+    private func isHoverActive(
+        _ key: AnimatedMediaOverlayKey,
+        hoveredGroup: Set<NativeMessageTimelineItem.Identifier>,
+        hoveredIdentifier: NativeMessageTimelineItem.Identifier?
+    ) -> Bool {
+        switch key.role {
+        case .authorAvatar, .authorAvatarDecoration: hoveredGroup.contains(key.row)
+        default: hoveredIdentifier != nil && key.row == hoveredIdentifier
         }
     }
 
@@ -814,7 +857,7 @@ extension NativeTimelineCanvasView {
         reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
     }
 
-    /// The row's live reactions, stickers and button emoji, whose still
+    /// The row's live reactions, stickers, button and poll emoji, whose still
     /// copies the row leaves out: their transparent frames would show the
     /// still through.
     func animatedOverlayRoles(for row: NativeMessageTimelineItem.Identifier) -> Set<AnimatedMediaOverlayRole> {
@@ -949,10 +992,8 @@ extension NativeTimelineCanvasView {
                     NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: $0.message, store: spoilerRevealStore)
                 } ?? [:]
                 for region in layouts[index].embedRegions {
-                    guard region.mediaIsVideo,
-                          concealedEmbeds[region.embedID] == nil,
-                          region.mediaAutoplaysInline,
-                          let url = region.mediaURL,
+                    guard concealedEmbeds[region.embedID] == nil,
+                          let url = region.inlineVideoURL,
                           urls.contains(url),
                           let frame = region.mediaFrame
                     else { continue }
@@ -1077,7 +1118,7 @@ extension NativeTimelineCanvasView {
         for (key, player) in inlinePlayers {
             guard let index = rowIndex(forIdentifier: key.row),
                   layouts.indices.contains(index),
-                  let messageID = items[index].messageID, messageID != editingMessageID,
+                  let messageID = items[index].messageID, messageID != editing.messageID,
                   let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index], messageID: messageID)
             else {
                 player.stop()
@@ -1097,27 +1138,25 @@ extension NativeTimelineCanvasView {
         _ mediaID: String, url: URL, in layout: NativeTimelineRowLayout, messageID: MessageID
     ) -> CGRect? {
         func isSameMedia(_ other: URL) -> Bool { other.host == url.host && other.path == url.path }
-        func isConcealed(_ contentID: String, isSpoiler: Bool) -> Bool {
-            NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                messageID: messageID, contentID: contentID, isSpoiler: isSpoiler, store: spoilerRevealStore
-            )
-        }
         if let region = layout.attachmentRegions.first(where: { $0.attachment.id == mediaID }) {
             let attachment = region.attachment
-            let contentID = NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id)
             return attachment.mediaKind == .video && isSameMedia(attachment.proxyURL ?? attachment.url)
-                && !isConcealed(contentID, isSpoiler: attachment.isSpoiler) ? region.frame : nil
+                && !spoilerRevealStore.isConcealed(attachment, in: messageID)
+                ? region.frame : nil
         }
         for component in layout.componentLayouts {
-            guard let media = component.media.first(where: {
-                $0.componentID == mediaID && $0.isVideo && isSameMedia($0.displayURL)
+            guard let media = component.mediaRegions.first(where: {
+                guard case let .media(content) = $0.kind else { return false }
+                return $0.componentID == mediaID && content.isVideo && isSameMedia(content.displayURL)
             }) else { continue }
             let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
                 in: component, messageID: messageID, store: spoilerRevealStore
             )
             let isHidden = NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                 media.frame, hiddenContainerFrames: hiddenContainerFrames
-            ) || isConcealed(media.componentID, isSpoiler: media.isSpoiler)
+            ) || spoilerRevealStore.isConcealed(
+                messageID: messageID, contentID: media.componentID, isSpoiler: media.isSpoiler
+            )
             return isHidden ? nil : media.frame
         }
         return nil
@@ -1131,282 +1170,110 @@ extension NativeTimelineCanvasView {
         inlinePlayers.removeAll()
     }
 
-    struct DesiredSpoilerOverlay {
-        let key: NativeTimelineComponentRevealKey
-        let frame: CGRect
-        let presentation: NativeTimelineSpoilerOverlayPresentation
-    }
-
-    func reconcileSpoilerOverlays() {
-        let desired = desiredSpoilerOverlays()
-        applySpoilerOverlays(desired)
-        // Revealing a file card uncovers its upload ring.
-        reconcileUploadRings()
-    }
-
-    private func desiredSpoilerOverlays() -> [DesiredSpoilerOverlay] {
-        var desired: [DesiredSpoilerOverlay] = []
-        desired.reserveCapacity(16)
+    func reconcileAnimatedMedia(
+        allowsScrolling: Bool = false
+    ) {
+        // Scrolling changes which compositor overlays are visible, but it
+        // must not tear down the active players or decoded frames on every
+        // momentum tick. A delayed reconciliation commonly lands after
+        // scrolling begins.
+        guard allowsScrolling || !pointer.suppressesHoverPresentation else { return }
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {
-            removeSpoilerOverlays()
-            return []
+            animatedMediaRows.removeAll()
+            inlineVideoRows.removeAll()
+            removeInlineVideoOverlays()
+            removeAnimatedMediaOverlays()
+            return
         }
+        // Keep the paused compositor layers and their clocks while occluded.
+        // Discarding them here would restart decorations when the window returns.
+        guard permitsAnimatedMediaPlayback else { return }
+        let reduceMotion =
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
+        var rows:
+            [NativeMessageTimelineItem.Identifier: Set<MediaImageKey>] = [:]
+        var videoRows:
+            [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
         while items.indices.contains(index),
               displayedRowOrigin(at: index) < visibleRect.maxY
         {
-            guard layouts.indices.contains(index),
-                  case let .message(row, _, _) = items[index],
-                  !hidesRowForSendTransition(items[index].identifier)
+            guard case let .message(row, _, _) = items[index],
+                  layouts.indices.contains(index)
             else {
                 index += 1
                 continue
             }
-            let message = row.message
-            let rowOrigin = displayedRowOrigin(at: index)
-            appendAttachmentSpoilerOverlays(
-                for: message,
-                layout: layouts[index],
-                rowOrigin: rowOrigin,
-                into: &desired
-            )
-            let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
-                in: message, store: spoilerRevealStore
-            )
-            var coveredKeys = Set<NativeTimelineComponentRevealKey>()
-            // A multi-image post's card region spans its grid, so its one
-            // overlay covers every image.
-            for region in layouts[index].embedRegions {
-                guard let key = concealedEmbeds[region.embedID], coveredKeys.insert(key).inserted else { continue }
-                appendDesiredSpoilerOverlay(
-                    key,
-                    frame: region.frame,
-                    cornerRadius: region.cornerRadius,
-                    rowOrigin: rowOrigin,
-                    into: &desired
-                )
+            let identifier = items[index].identifier
+            // A message still flying in from the composer gets its media
+            // once it lands.
+            if hidesRowForSendTransition(identifier) {
+                index += 1
+                continue
             }
-            for component in layouts[index].componentLayouts {
-                appendComponentSpoilerOverlays(
-                    for: component,
-                    messageID: message.id,
-                    rowOrigin: rowOrigin,
-                    into: &desired
-                )
+            let keys = animatedMediaKeys(
+                for: row,
+                layout: layouts[index]
+            )
+            if !reduceMotion, !keys.isEmpty {
+                rows[identifier] = keys
+                for key in keys {
+                    MediaImageStore.shared.requestAnimated(
+                        key,
+                        owner: visibleMediaPinOwner,
+                        subscriber: identifier
+                    ) { [weak self] in
+                        guard let self,
+                              let currentIndex = self.items.firstIndex(
+                                  where: { $0.identifier == identifier }
+                              )
+                        else { return }
+                        self.invalidateBitmap(identifier)
+                        self.setNeedsDisplay(self.rowFrame(at: currentIndex))
+                        self.reconcileAnimatedMediaOverlays(
+                            reduceMotion: false
+                        )
+                    }
+                }
+            }
+            let videoURLs = Set(layouts[index].embedRegions.compactMap(\.inlineVideoURL))
+            if !videoURLs.isEmpty {
+                videoRows[identifier] = videoURLs
             }
             index += 1
         }
-        return desired
-    }
-
-    private func appendAttachmentSpoilerOverlays(
-        for message: Message,
-        layout: NativeTimelineRowLayout,
-        rowOrigin: CGFloat,
-        into desired: inout [DesiredSpoilerOverlay]
-    ) {
-        for region in layout.attachmentRegions where region.attachment.isSpoiler {
-            appendDesiredSpoilerOverlay(
-                .attachment(messageID: message.id, attachmentID: region.attachment.id),
-                frame: region.frame,
-                cornerRadius: layout.cornerRadius(of: region),
-                rowOrigin: rowOrigin,
-                into: &desired
+        animatedMediaRows = rows
+        inlineVideoRows = videoRows
+        reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
+        if !allowsScrolling {
+            reconcileInlineVideoOverlays(
+                plays: !reduceMotion
             )
         }
     }
 
-    private func appendComponentSpoilerOverlays(
-        for component: NativeTimelineComponentLayout,
-        messageID: MessageID,
-        rowOrigin: CGFloat,
-        into desired: inout [DesiredSpoilerOverlay]
-    ) {
-        let hiddenContainerFrames =
-            NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
-                in: component,
-                messageID: messageID,
-                store: spoilerRevealStore
-            )
-        appendContainerSpoilerOverlays(
-            component,
-            messageID: messageID,
-            rowOrigin: rowOrigin,
-            hiddenContainerFrames: hiddenContainerFrames,
-            into: &desired
+    func animatedMediaKeys(
+        for row: MessageRowPresentation,
+        layout: NativeTimelineRowLayout
+    ) -> Set<MediaImageKey> {
+        var accumulator = AnimatedMediaAccumulator(canvas: self, collectsKeys: true)
+        appendAnimatedMedia(
+            row: row,
+            identifier: .message(row.identity),
+            layout: layout,
+            accumulator: &accumulator
         )
-        appendComponentMediaSpoilerOverlays(
-            component,
-            messageID: messageID,
-            rowOrigin: rowOrigin,
-            hiddenContainerFrames: hiddenContainerFrames,
-            into: &desired
-        )
+        return accumulator.keys
     }
 
-    private func appendContainerSpoilerOverlays(
-        _ component: NativeTimelineComponentLayout,
-        messageID: MessageID,
-        rowOrigin: CGFloat,
-        hiddenContainerFrames: [CGRect],
-        into desired: inout [DesiredSpoilerOverlay]
-    ) {
-        for container in component.containers
-        where hiddenContainerFrames.contains(container.frame) {
-            appendDesiredSpoilerOverlay(
-                NativeTimelineComponentRevealKey(
-                    messageID: messageID,
-                    componentID: container.componentID
-                ),
-                frame: container.frame,
-                cornerRadius: container.cornerRadius,
-                rowOrigin: rowOrigin,
-                into: &desired
-            )
+    static func isPotentiallyAnimated(_ url: URL) -> Bool {
+        switch url.pathExtension.lowercased() {
+        case "gif", "apng", "webp":
+            true
+        default:
+            false
         }
     }
-
-    private func appendComponentMediaSpoilerOverlays(
-        _ component: NativeTimelineComponentLayout,
-        messageID: MessageID,
-        rowOrigin: CGFloat,
-        hiddenContainerFrames: [CGRect],
-        into desired: inout [DesiredSpoilerOverlay]
-    ) {
-        for region in component.images where shouldOverlaySpoiler(
-            region.isSpoiler,
-            frame: region.frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        ) {
-            appendDesiredSpoilerOverlay(
-                NativeTimelineComponentRevealKey(
-                    messageID: messageID,
-                    componentID: region.componentID
-                ),
-                frame: region.frame,
-                cornerRadius: region.cornerRadius,
-                rowOrigin: rowOrigin,
-                into: &desired
-            )
-        }
-        for region in component.media where shouldOverlaySpoiler(
-            region.isSpoiler,
-            frame: region.frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        ) {
-            appendDesiredSpoilerOverlay(
-                NativeTimelineComponentRevealKey(
-                    messageID: messageID,
-                    componentID: region.componentID
-                ),
-                frame: region.frame,
-                cornerRadius: InterfaceScale.metric(8),
-                rowOrigin: rowOrigin,
-                into: &desired
-            )
-        }
-        for region in component.files where shouldOverlaySpoiler(
-            region.isSpoiler,
-            frame: region.frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        ) {
-            appendDesiredSpoilerOverlay(
-                NativeTimelineComponentRevealKey(
-                    messageID: messageID,
-                    componentID: region.componentID
-                ),
-                frame: region.frame,
-                cornerRadius: region.card.cornerRadius,
-                rowOrigin: rowOrigin,
-                into: &desired
-            )
-        }
-    }
-
-    private func shouldOverlaySpoiler(
-        _ isSpoiler: Bool,
-        frame: CGRect,
-        hiddenContainerFrames: [CGRect]
-    ) -> Bool {
-        isSpoiler && !isInsideSpoilerContainer(
-            frame,
-            hiddenContainerFrames: hiddenContainerFrames
-        )
-    }
-
-    private func isInsideSpoilerContainer(
-        _ frame: CGRect,
-        hiddenContainerFrames: [CGRect]
-    ) -> Bool {
-        hiddenContainerFrames.contains {
-            $0.contains(CGPoint(x: frame.midX, y: frame.midY))
-        }
-    }
-
-    private func appendDesiredSpoilerOverlay(
-        _ key: NativeTimelineComponentRevealKey,
-        frame: CGRect,
-        cornerRadius: CGFloat,
-        rowOrigin: CGFloat,
-        into desired: inout [DesiredSpoilerOverlay]
-    ) {
-        guard !spoilerRevealStore.isMediaRevealed(key) else { return }
-        desired.append(DesiredSpoilerOverlay(
-            key: key,
-            frame: frame.offsetBy(dx: 0, dy: rowOrigin),
-            presentation: NativeTimelineSpoilerOverlayPresentation(cornerRadius: cornerRadius)
-        ))
-    }
-
-    private func applySpoilerOverlays(_ desired: [DesiredSpoilerOverlay]) {
-        let desiredKeys = Set(desired.map(\.key))
-        for key in Array(spoilerOverlays.keys)
-        where !desiredKeys.contains(key) {
-            spoilerOverlays.removeValue(forKey: key)?.removeFromSuperview()
-            spoilerOverlayPresentations[key] = nil
-        }
-        for item in desired {
-            let overlay: NativeTimelineSpoilerOverlayHost
-            if let existing = spoilerOverlays[item.key],
-               spoilerOverlayPresentations[item.key] == item.presentation
-            {
-                overlay = existing
-            } else {
-                spoilerOverlays.removeValue(forKey: item.key)?
-                    .removeFromSuperview()
-                overlay = NativeTimelineSpoilerOverlayHost(
-                    frame: item.frame,
-                    cornerRadius: item.presentation.cornerRadius
-                ) { [weak self] in
-                    guard let self, !glideBlocksPointer else { return false }
-                    reveal(item.key)
-                    return true
-                }
-                addSubview(
-                    overlay,
-                    positioned: .below,
-                    relativeTo: mediaViewerHost
-                )
-                spoilerOverlays[item.key] = overlay
-                spoilerOverlayPresentations[item.key] = item.presentation
-            }
-            overlay.frame = item.frame
-        }
-    }
-
-    func positionSpoilerOverlays() {
-        guard !spoilerOverlays.isEmpty else { return }
-        reconcileSpoilerOverlays()
-    }
-
-    func removeSpoilerOverlays() {
-        for overlay in spoilerOverlays.values {
-            overlay.removeFromSuperview()
-        }
-        spoilerOverlays.removeAll()
-        spoilerOverlayPresentations.removeAll()
-    }
-
 }

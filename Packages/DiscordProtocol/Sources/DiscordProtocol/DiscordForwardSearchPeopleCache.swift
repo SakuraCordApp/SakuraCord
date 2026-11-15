@@ -172,14 +172,6 @@ extension DiscordRESTProvider {
         installQuickSwitcherChannelStoreCache(snapshot.channelStore)
     }
 
-    func loadForwardSearchPeopleCache() {
-        installForwardSearchPeopleCache(
-            forwardSearchPeopleCacheURL().flatMap(
-                DiscordForwardSearchPeopleCache.load(from:)
-            )
-        )
-    }
-
     private func installForwardSearchPeopleCache(
         _ cache: DiscordForwardSearchPeopleCache?
     ) {

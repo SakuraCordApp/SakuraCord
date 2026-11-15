@@ -17,16 +17,13 @@ extension AppModel {
         (snapshot?.guilds ?? []).compactMap { guild in
             let settings = snapshot?.notificationSettings.first { $0.guildID == guild.id }
             guard settings?.muteScheduledEvents != true,
-                  !(settings?.isMuted == true && (settings?.muteConfiguration?.isActive() ?? true)),
+                  settings?.isActivelyMuted() != true,
                   let state = inbox.scheduledEvents.readStates[guild.id], let newest = state.latestID else { return nil }
             let boundary = state.lastAcknowledgedID ?? guild.joinedAt.map(ScheduledEventID.init(timestamp:))
             guard let boundary, boundary < newest else { return nil }
-            let group = InboxUnreadGroup(
-                channelID: ChannelID(rawValue: guild.id.rawValue), guildID: guild.id,
-                title: "Events", subtitle: guild.name,
-                oldestReadMessageID: MessageID(rawValue: boundary.rawValue),
-                newestUnreadMessageID: MessageID(rawValue: newest.rawValue), mentionCount: state.mentionCount,
-                isEvents: true,
+            let group = InboxUnreadGroup.events(
+                guildID: guild.id, subtitle: guild.name, oldestRead: boundary, newest: newest,
+                mentionCount: state.mentionCount,
                 isCollapsed: inbox.settings.collapsedEventGuildIDs.contains(guild.id)
             )
             return InboxUnreadCandidate(group: group, rank: 5, guild: guildPositions[guild.id] ?? .max, position: .max)
@@ -36,7 +33,7 @@ extension AppModel {
     func loadInboxEvents(_ group: InboxUnreadGroup, session: AppModelAccountSession, generation: UInt64) async throws {
         guard let guildID = group.guildID else { return }
         let interests = try await session.provider.inboxEventInterests(in: guildID)
-        guard !Task.isCancelled, isCurrentAccountSession(session), inbox.generation == generation,
+        guard !Task.isCancelled, isCurrentInboxLoad(session, generation: generation),
               let index = inbox.groups.firstIndex(where: { $0.id == group.id }) else { return }
         for eventIndex in inbox.scheduledEvents.events.indices where inbox.scheduledEvents.events[eventIndex].guildID == guildID {
             inbox.scheduledEvents.events[eventIndex].isInterested = interests.contains(inbox.scheduledEvents.events[eventIndex].id)
@@ -48,7 +45,7 @@ extension AppModel {
 
     func visibleInboxEvents(for group: InboxUnreadGroup) -> [InboxScheduledEvent] {
         inbox.scheduledEvents.events.filter {
-            $0.guildID == group.guildID && ($0.status == 1 || $0.status == 2)
+            $0.guildID == group.guildID && $0.isScheduledOrActive
                 && $0.id.rawValue > (group.oldestReadMessageID?.rawValue ?? 0)
                 && $0.id.rawValue <= group.newestUnreadMessageID.rawValue
         }.sorted { $0.id < $1.id }

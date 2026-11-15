@@ -29,7 +29,7 @@ extension ForumBoardView {
         var hydratedPostIDs = Set<ChannelID>()
         withObservationTracking {
             for id in cards.keys {
-                guard case let .post(postID) = id, let post = postsByID[postID] else { continue }
+                guard let postID = id.postID, let post = postsByID[postID] else { continue }
                 let presentation = model.forumCardPresentation(for: post, in: channel, tagsByID: tagsByID)
                 let presentationChanged = presentations[postID] != presentation
                 if presentations[postID]?.isAwaitingContent(isGallery: isGallery) == true,
@@ -43,7 +43,6 @@ extension ForumBoardView {
                 let excerptChanged = configureExcerpt(for: postID)
                 if presentationChanged || excerptChanged { changed.append(postID) }
             }
-            _ = model.openThread?.id
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, observationGeneration == generation else { return }
@@ -100,7 +99,7 @@ extension ForumBoardView {
     /// Excerpt fonts, emoji sizes and the list/gallery source all feed the
     /// renderers, so a font load, mode change or scale change rebuilds them.
     func reconfigureRealizedExcerpts() {
-        for case let .post(postID) in cards.keys { configureExcerpt(for: postID) }
+        for postID in cards.keys.compactMap(\.postID) { configureExcerpt(for: postID) }
     }
 
     /// Configures a post's excerpt renderer for the current mode, metrics and
@@ -113,7 +112,7 @@ extension ForumBoardView {
         var placeholder = "Original message was deleted"
         var isEmphasized = presentation.isEmphasized
         let lines: Int
-        var prefix: ForumPostPreviewTextView.Prefix?
+        var prefix: ForumPostPreviewTextRenderer.Prefix?
         if isGallery {
             switch presentation.hero {
             case let .text(value): message = value
@@ -155,7 +154,7 @@ extension ForumBoardView {
         let previous = renderer.configuration
         renderer.configure(
             message.map {
-                ForumPostPreviewTextView.Configuration(
+                ForumPostPreviewTextRenderer.Configuration(
                     resolving: $0,
                     model: model,
                     fontSize: fontSize,
@@ -164,12 +163,12 @@ extension ForumBoardView {
                     underlinesLinks: presentation.underlinesLinks,
                     prefix: prefix
                 )
-            } ?? ForumPostPreviewTextView.Configuration(
+            } ?? ForumPostPreviewTextRenderer.Configuration(
                 messageID: MessageID(rawValue: postID.rawValue),
                 source: placeholder,
                 mentionPresentations: [:],
                 fontSize: fontSize,
-                emojiSize: (fontSize * 1.375).rounded(),
+                emojiSize: ForumPostPreviewTextRenderer.Configuration.emojiSize(forFontSize: fontSize),
                 maximumNumberOfLines: lines,
                 isEmphasized: isEmphasized,
                 underlinesLinks: presentation.underlinesLinks,
@@ -194,7 +193,7 @@ extension ForumBoardView {
     private func authorPrefix(
         _ author: ForumCardPresentation.Author,
         separated: Bool = true
-    ) -> ForumPostPreviewTextView.Prefix {
+    ) -> ForumPostPreviewTextRenderer.Prefix {
         let bodySize = metrics.excerptFont.pointSize
         let fallback = NSFont.interfaceSystemFont(ofSize: bodySize, weight: .semibold)
         ProfileNameFontLoader.shared.request(id: author.fontID)
@@ -212,7 +211,7 @@ extension ForumBoardView {
         font: NSFont,
         bodySize: CGFloat,
         separated: Bool
-    ) -> ForumPostPreviewTextView.Prefix {
+    ) -> ForumPostPreviewTextRenderer.Prefix {
         let value = NSMutableAttributedString()
         if let dotColor = author.roleDotColor,
            let dot = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)?
@@ -235,13 +234,13 @@ extension ForumBoardView {
             ]
         ))
         guard separated else {
-            return ForumPostPreviewTextView.Prefix(value: value, accessibilityText: author.name)
+            return ForumPostPreviewTextRenderer.Prefix(value: value, accessibilityText: author.name)
         }
         value.append(NSAttributedString(
             string: ": ",
             attributes: [.font: NSFont.interfaceSystemFont(ofSize: bodySize), .foregroundColor: NSColor.secondaryLabelColor]
         ))
-        return ForumPostPreviewTextView.Prefix(value: value, accessibilityText: "\(author.name): ")
+        return ForumPostPreviewTextRenderer.Prefix(value: value, accessibilityText: "\(author.name): ")
     }
 
     // MARK: Drawing
@@ -278,7 +277,7 @@ extension ForumBoardView {
 
     /// Records an item's drawing for the rasterizer.
     func scene(id: ForumBoardItem.Identifier, size: CGSize, scale: CGFloat) -> ForumCardScene {
-        let colorSpace = window?.colorSpace?.cgColorSpace ?? ForumCardRasterizer.defaultColorSpace
+        let colorSpace = window?.colorSpace?.cgColorSpace ?? CGColorSpace.bitmapDefault
         var scene = ForumCardScene.empty(size: size, scale: scale, colorSpace: colorSpace)
         guard let entry = layoutState?.entry(for: id) else { return scene }
         let bounds = CGRect(origin: .zero, size: size)
@@ -335,7 +334,7 @@ extension ForumBoardView {
     func refreshRelativeTimes() {
         var repainted = false
         for (id, card) in cards {
-            guard case let .post(postID) = id, let presentation = presentations[postID],
+            guard let postID = id.postID, let presentation = presentations[postID],
                   paintedRelativeTimes[id] != presentation.relativeTimeText(isGallery: isGallery)
             else { continue }
             regions[id] = nil
@@ -343,5 +342,42 @@ extension ForumBoardView {
             repainted = true
         }
         if repainted { rebuildToolTips() }
+    }
+
+    // MARK: Media
+
+    func refreshMedia() {
+        var keys = Set<MediaImageKey>()
+        var keysByPost: [ChannelID: Set<MediaImageKey>] = [:]
+        let customEmojiURLsByID = model?.customEmojiURLsByID ?? [:]
+        for id in cards.keys {
+            guard let postID = id.postID, let presentation = presentations[postID] else { continue }
+            var postKeys = Set<MediaImageKey>()
+            if let key = presentation.thumbnail?.mediaKey { postKeys.insert(key) }
+            for tag in presentation.tags {
+                if let key = tag.emoji?.mediaKey { postKeys.insert(key) }
+            }
+            if let reaction = presentation.reaction?.reaction {
+                if let key = MessageReactionPresentation.emojiMediaKey(for: reaction, customEmojiURLsByID: customEmojiURLsByID) {
+                    postKeys.insert(key)
+                }
+            }
+            keys.formUnion(postKeys)
+            keysByPost[postID] = postKeys
+        }
+        let store = MediaImageStore.shared
+        store.retainVisibleImages(for: keys, owner: mediaOwner)
+        // Media that leaves view may load next time, as the store retries it.
+        failedMediaKeys.formIntersection(keys)
+        for (postID, postKeys) in keysByPost {
+            for key in postKeys where store.image(for: key) == nil && !failedMediaKeys.contains(key) {
+                store.request(key, owner: mediaOwner, subscriber: postID) { [weak self] outcome in
+                    guard let self, outcome != .cancelled else { return }
+                    if outcome == .failed { failedMediaKeys.insert(key) }
+                    cards[.post(postID)]?.render(scale: backingScale, fading: outcome == .ready)
+                }
+            }
+        }
+        store.cancelStaticRequestsOutsideVisibleSet(owner: mediaOwner)
     }
 }

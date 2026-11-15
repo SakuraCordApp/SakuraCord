@@ -28,9 +28,7 @@ extension NativeMessageTimelineCoordinator {
     }
 
     func refreshTimestampPresentation(at date: Date) {
-        guard let scrollView, let window = scrollView.window,
-              window.occlusionState.contains(.visible), !scrollView.isHiddenOrHasHiddenAncestor
-        else { return }
+        guard let scrollView, RelativeTimestampClock.isShowing(scrollView) else { return }
         refreshTimestampLayouts(at: date)
     }
 
@@ -52,40 +50,13 @@ extension NativeMessageTimelineCoordinator {
             return identifier
         })
         guard !changedIdentifiers.isEmpty else { return }
-        cachedItemLayouts = cachedItemLayouts.filter { !changedIdentifiers.contains($0.key.identifier) }
-        let wasNearBottom = scrollState().isNearBottom
-        let anchor = visibleAnchor()
-        var changed = IndexSet()
-        var changesHeight = false
         isApplyingUpdate = true
         defer { isApplyingUpdate = false }
-        for index in items.indices where changedIdentifiers.contains(items[index].identifier) {
+        relayRows(
+            where: { changedIdentifiers.contains($0.identifier) },
+            on: canvas, in: scrollView,
             // Deliberately bypass layoutPreparation and recent-conversation caches.
-            let updated = NativeTimelineRowLayout.make(
-                item: items[index], width: layoutWidth, source: parent.model, relativeTo: date
-            )
-            changesHeight = changesHeight || abs(updated.height - rowHeights[index]) >= 0.5
-            layouts[index] = updated
-            rowHeights[index] = updated.height
-            canvas.invalidateBitmap(items[index].identifier)
-            canvas.mentionPointerRegionCache[items[index].identifier] = nil
-            canvas.codeBlockPointerRegionCache[items[index].identifier] = nil
-            canvas.accessibilityProxies.remove(items[index].identifier)
-            changed.insert(index)
-        }
-        guard !changed.isEmpty else { return }
-        if changesHeight { rebuildOrigins() }
-        applySnapshot(to: canvas, in: scrollView)
-        canvas.window?.invalidateCursorRects(for: canvas)
-        if changesHeight {
-            canvas.invalidateVisibleContent()
-            if wasNearBottom {
-                _ = scroll(to: .bottom, in: scrollView)
-            } else if let anchor {
-                restore(anchor)
-            }
-        } else {
-            canvas.invalidateRows(changed)
-        }
+            layout: { NativeTimelineRowLayout.make(item: $0, width: layoutWidth, source: parent.model, relativeTo: date) }
+        )
     }
 }

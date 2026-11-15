@@ -144,11 +144,22 @@ nonisolated extension Font {
 }
 
 nonisolated extension NSFont {
+    /// Message authors and member list names share this size.
+    static var authorNameSize: CGFloat { preferredFont(forTextStyle: .headline).pointSize + 1 }
+
     static func interfaceSystemFont(
         ofSize size: CGFloat,
         weight: NSFont.Weight = .regular
     ) -> NSFont {
         .systemFont(ofSize: InterfaceScale.fontSize(size), weight: weight)
+    }
+
+    /// A message-content font that follows Message Font Size and Interface Size.
+    static func messageSystemFont(
+        ofSize size: CGFloat,
+        weight: NSFont.Weight = .regular
+    ) -> NSFont {
+        interfaceSystemFont(ofSize: InterfaceTypographyMetrics.message(size), weight: weight)
     }
 
     static func interfaceMonospacedDigitSystemFont(
@@ -203,11 +214,6 @@ extension View {
         return transformEnvironment(\.font) { value in
             if !isDefault { value = font }
         }
-    }
-
-    /// A control size that shifts with the interface size.
-    func interfaceControlSize(_ size: ControlSize) -> some View {
-        controlSize(InterfaceScale.controlSize(size))
     }
 }
 

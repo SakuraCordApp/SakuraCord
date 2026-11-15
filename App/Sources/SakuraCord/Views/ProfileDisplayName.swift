@@ -198,7 +198,6 @@ private final class ProfileNameTextView: NSView {
     }
 
     @objc private func copyName() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(name, forType: .string)
+        Pasteboard.copy(name)
     }
 }

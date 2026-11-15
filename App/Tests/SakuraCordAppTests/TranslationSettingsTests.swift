@@ -15,7 +15,7 @@ import Testing
     let report = SettingsTransferService(preferences: target).importPreferences(decoded)
     #expect(!report.needsUpdate)
     #expect(TranslationSettingsStore(preferences: target).load() == selected)
-    target.reset(scope: .appWide, page: .features)
+    target.reset(page: .features)
     #expect(TranslationSettingsStore(preferences: target).load() == .defaults)
     let coordinator = AppleTranslationCoordinator()
     let state = TranslationState(settingsStore: store, coordinator: coordinator)

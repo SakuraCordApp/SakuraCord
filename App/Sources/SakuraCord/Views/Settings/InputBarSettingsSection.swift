@@ -15,7 +15,6 @@ struct InputBarSettingsSection: View {
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
                 .horizontalRadioGroupLayout()
-                .tint(SakuraCordAccentColor.color)
             }
             .settingsControlAnchor(.composerBarAppearance, state: state)
 
@@ -63,7 +62,7 @@ private struct ComposerIconEditor: View {
                     )
                     if previewText.isEmpty {
                         Text("Message")
-                            .font(.interfaceSystem(size: 15))
+                            .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                             .foregroundStyle(.tertiary)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)

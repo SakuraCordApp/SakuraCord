@@ -155,66 +155,6 @@ public enum SoundboardAudioDecoder {
     }
 }
 
-struct OggOpusParser {
-    var audioPackets: [Data]
-    var preSkip: Int
-    var finalGranulePosition: UInt64?
-
-    static func parse(_ data: Data) throws -> Self {
-        var offset = 0
-        var pendingPacket = Data()
-        var packets: [Data] = []
-        var finalGranulePosition: UInt64?
-        while offset < data.count {
-            guard offset + 27 <= data.count,
-                  data[offset ..< offset + 4] == Data("OggS".utf8),
-                  data[offset + 4] == 0
-            else { throw SoundboardAudioError.invalidOgg }
-            let granule = littleEndianUInt64(data, at: offset + 6)
-            let segmentCount = Int(data[offset + 26])
-            let segmentTableStart = offset + 27
-            guard segmentTableStart + segmentCount <= data.count else {
-                throw SoundboardAudioError.invalidOgg
-            }
-            let bodyStart = segmentTableStart + segmentCount
-            let bodyLength = data[segmentTableStart ..< bodyStart].reduce(0) { $0 + Int($1) }
-            guard bodyStart + bodyLength <= data.count else {
-                throw SoundboardAudioError.invalidOgg
-            }
-            var bodyOffset = bodyStart
-            for lengthByte in data[segmentTableStart ..< bodyStart] {
-                let length = Int(lengthByte)
-                pendingPacket.append(data[bodyOffset ..< bodyOffset + length])
-                bodyOffset += length
-                if length < 255 {
-                    packets.append(pendingPacket)
-                    pendingPacket.removeAll(keepingCapacity: true)
-                }
-            }
-            if granule != UInt64.max { finalGranulePosition = granule }
-            offset = bodyStart + bodyLength
-        }
-        guard pendingPacket.isEmpty,
-              packets.count >= 3,
-              packets[0].starts(with: Data("OpusHead".utf8)),
-              packets[1].starts(with: Data("OpusTags".utf8)),
-              packets[0].count >= 12
-        else { throw SoundboardAudioError.invalidOgg }
-        let preSkip = Int(packets[0][10]) | Int(packets[0][11]) << 8
-        return Self(
-            audioPackets: Array(packets.dropFirst(2)),
-            preSkip: preSkip,
-            finalGranulePosition: finalGranulePosition
-        )
-    }
-
-    private static func littleEndianUInt64(_ data: Data, at offset: Int) -> UInt64 {
-        (0 ..< 8).reduce(into: UInt64(0)) { result, index in
-            result |= UInt64(data[offset + index]) << UInt64(index * 8)
-        }
-    }
-}
-
 final class OutgoingSoundboardMixer: @unchecked Sendable {
     struct Metrics: Equatable, Sendable {
         var triggerCount = 0

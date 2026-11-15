@@ -20,6 +20,9 @@ struct WorkspaceColumnsHost: NSViewRepresentable {
     struct Column {
         let id: String
         let isSideConversation: Bool
+        /// A thread or a thread being created, which the titlebar lays out
+        /// around.
+        let isThread: Bool
         let isFullWidth: Bool
         /// Leaving: its width is no longer measured.
         var isDeparting = false
@@ -256,8 +259,8 @@ final class WorkspaceColumnsView: NSView {
 
     /// Takes a column out. The last side chat pane stays, out of the window,
     /// for the next one: a pane built from nothing costs most of a motion's
-    /// first frame. Out of the window, as a closed pane was before pooling,
-    /// it takes no events and plays no media; `apply` puts it back.
+    /// first frame. Out of the window it takes no events and plays no media;
+    /// `apply` puts it back.
     private func remove(_ island: Island) {
         if island.column.isSideConversation, !island.column.isFullWidth, pooledPane == nil {
             island.view.removeFromSuperview()
@@ -311,7 +314,7 @@ final class WorkspaceColumnsView: NSView {
     /// workspace's environment whole, in the colour scheme of this view.
     private func hosted(_ content: AnyView) -> AnyView {
         var environment = environment
-        environment.colorScheme = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+        environment.colorScheme = effectiveAppearance.isDark ? .dark : .light
         return AnyView(content.environment(\.self, environment))
     }
 
@@ -537,9 +540,19 @@ final class WorkspaceColumnsView: NSView {
     }
 
     private func width(of column: WorkspaceColumnsHost.Column) -> CGFloat {
-        column.isSideConversation
-            ? max(paneWidth, ChatChromeMetrics.sideConversationMinimumWidth)
-            : max(inspectorWidth, ChatChromeMetrics.memberListWidth)
+        column.isSideConversation ? sideConversationWidth : max(inspectorWidth, ChatChromeMetrics.memberListWidth)
+    }
+
+    /// A side chat pane's width, which never goes below the pane's minimum.
+    private var sideConversationWidth: CGFloat {
+        max(paneWidth, ChatChromeMetrics.sideConversationMinimumWidth)
+    }
+
+    /// Where a full-width side chat sits, `recede` of the way from the
+    /// pane's width to reaching `trailingEdge`'s full width.
+    private func fullWidthFrame(trailingEdge: CGFloat, recede: CGFloat) -> CGRect {
+        let width = sideConversationWidth + (trailingEdge - sideConversationWidth) * recede
+        return CGRect(x: trailingEdge - width, y: 0, width: width, height: bounds.height)
     }
 
     /// The width at `time` of the column that holds `view`, on the pixel
@@ -551,7 +564,6 @@ final class WorkspaceColumnsView: NSView {
         }
         guard let fullWidth = islands.last(where: \.column.isFullWidth), view.isDescendant(of: fullWidth.view)
         else { return nil }
-        let paneWidth = max(paneWidth, ChatChromeMetrics.sideConversationMinimumWidth)
         var inspectorCovered: CGFloat = 0
         for island in islands where !island.column.isFullWidth && !island.column.isSideConversation {
             let shown = width(of: island.column) * island.reveal.value(at: time, provisionalStart: time)
@@ -559,9 +571,8 @@ final class WorkspaceColumnsView: NSView {
         }
         let trailingEdge = bounds.maxX - inspectorCovered
         let recede = widening?.value(at: time, provisionalStart: time) ?? 1
-        let width = paneWidth + (trailingEdge - paneWidth) * recede
         return backingAlignedRect(
-            CGRect(x: trailingEdge - width, y: 0, width: width, height: bounds.height), options: .alignAllEdgesNearest
+            fullWidthFrame(trailingEdge: trailingEdge, recede: recede), options: .alignAllEdgesNearest
         ).width
     }
 
@@ -569,7 +580,7 @@ final class WorkspaceColumnsView: NSView {
     /// `layoutColumns` will place it.
     private func conversationWidth(at time: CFTimeInterval, provisionalStart: CFTimeInterval) -> CGFloat {
         let covered = islands.contains(where: \.column.isFullWidth)
-            ? max(paneWidth, ChatChromeMetrics.sideConversationMinimumWidth)
+            ? sideConversationWidth
             : trailingCoverage(at: time, provisionalStart: provisionalStart)
         let frame = CGRect(x: 0, y: 0, width: max(0, bounds.width - covered), height: bounds.height)
         return backingAlignedRect(frame, options: .alignAllEdgesNearest).width
@@ -654,14 +665,12 @@ final class WorkspaceColumnsView: NSView {
         // How far a widening side chat has covered the conversation.
         var recede: CGFloat = 0
         if let fullWidth = islands.last(where: \.column.isFullWidth) {
-            let paneWidth = max(paneWidth, ChatChromeMetrics.sideConversationMinimumWidth)
             let trailingEdge = bounds.maxX - inspectorCovered
             recede = widening?.value(at: time) ?? 1
-            let width = paneWidth + (trailingEdge - paneWidth) * recede
-            setFrame(of: fullWidth.view, CGRect(x: trailingEdge - width, y: 0, width: width, height: bounds.height))
+            setFrame(of: fullWidth.view, fullWidthFrame(trailingEdge: trailingEdge, recede: recede))
             // The conversation keeps the width it had beside the pane while
             // the side chat widens over it.
-            covered = paneWidth
+            covered = sideConversationWidth
         }
         conversationFrame = CGRect(x: 0, y: 0, width: max(0, bounds.width - covered), height: bounds.height)
         // Beneath a widening side chat, the conversation recedes: it drifts
@@ -738,6 +747,8 @@ final class WorkspaceColumnsView: NSView {
                 let frame = convert(island.view.frame, to: nil)
                 return WorkspaceColumnsGeometry.Column(
                     id: island.column.id,
+                    isSideConversation: island.column.isSideConversation,
+                    isThread: island.column.isThread,
                     minX: frame.minX,
                     maxX: frame.maxX,
                     isFullWidth: island.column.isFullWidth,
@@ -842,6 +853,22 @@ final class MovingHostContainerView: NSView {
     }
 }
 
+extension NSGlassEffectView {
+    /// The glass of an inspector split item, or nil once its private variant
+    /// is no longer settable: plain glass would not look like an inspector.
+    static func inspector() -> NSGlassEffectView? {
+        let glass = NSGlassEffectView()
+        guard glass.responds(to: NSSelectorFromString("set_variant:")),
+              glass.responds(to: NSSelectorFromString("set_adaptiveAppearance:"))
+        else { return nil }
+        glass.setValue(19, forKey: "_variant")
+        glass.setValue(1, forKey: "_adaptiveAppearance")
+        // An inspector item's glass is square; the view's default rounds it.
+        glass.cornerRadius = 0
+        return glass
+    }
+}
+
 extension NSView {
     private static let coverMaskName = "SakuraCordCoverMask"
 
@@ -891,6 +918,12 @@ extension NSView {
 /// A column's hosting view.
 private final class ColumnHostingView: NSHostingView<AnyView> {
     let container = MovingHostContainerView()
+    /// Every scroll pocket under the toolbar blurs one shared capture, taken
+    /// where the first of them draws: the conversation, before the column,
+    /// so the column's content would be missing from its toolbar band. Glass
+    /// opts its content out of that capture, as it does for a native
+    /// inspector item, so the column's pockets capture their own content.
+    private let glass = NSGlassEffectView.inspector()
 
     /// The widths the column's content takes, measured as it lays out.
     let extent = ColumnExtent()
@@ -916,7 +949,13 @@ private final class ColumnHostingView: NSHostingView<AnyView> {
         sizingOptions = []
         translatesAutoresizingMaskIntoConstraints = false
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(self)
+        if let glass {
+            // Its content view stays put, so the column moves in and out of
+            // the glass without leaving the window.
+            glass.contentView = MovingHostContainerView()
+            container.addSubview(glass)
+        }
+        (glass?.contentView ?? container).addSubview(self)
         setContent(content, isLeaving: false)
     }
 
@@ -926,6 +965,13 @@ private final class ColumnHostingView: NSHostingView<AnyView> {
     /// returns to the pane.
     func showsFullWidth(_ isFullWidth: Bool) {
         extent.isPaused = isFullWidth
+        // A full-width side chat takes the conversation's place, not an inspector's.
+        guard let glass, let pane = glass.contentView else { return }
+        let parent = isFullWidth ? container : pane
+        guard superview !== parent else { return }
+        frame = parent.bounds
+        parent.addSubview(self)
+        glass.isHidden = isFullWidth
     }
 
     /// Takes the column out of the window. The container holds this view

@@ -16,6 +16,9 @@ struct ComposerView: View {
     @State private var showPhotosPicker = false
     @State private var showComposerActions = false
     @State private var showPollCreator = false
+    /// The + menu shows the schedule shortcuts in place of its actions.
+    @State private var showsScheduleShortcuts = false
+    @State private var showsScheduleDialog = false
     @State private var showActivityShelf = false
     @State private var showGIFPicker = false
     @State private var showStickerPicker = false
@@ -58,7 +61,6 @@ struct ComposerView: View {
     var body: some View {
         @Bindable var model = model
         let appearance = model.appearanceSettings.composerBarAppearance
-        let accessoryButtonSize = appearance.accessoryButtonSize
         let chrome = ComposerChromeLayout(
             appearance: appearance,
             focus: { isFocused = true },
@@ -83,19 +85,19 @@ struct ComposerView: View {
                         Divider()
                             .transition(.opacity)
                     }
+                    if !hasActiveCommand, hasScheduleHeader {
+                        ComposerScheduleHeader(model: model, destination: conversation) { showsScheduleDialog = true }
+                            .transition(ComposerResizeMotion.headerTransition)
+                        Divider()
+                            .transition(.opacity)
+                    }
                     if !hasActiveCommand, !attachments.isEmpty {
                         ComposerAttachmentTray(
                             attachments: attachments,
                             checkingIDs: model.composer.checkingAttachmentIDs,
                             uploads: model.attachmentUploads,
                             sendTransitionAnchor: sendTransitionAnchor,
-                            mediaViewerSourceID: {
-                                model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
-                            },
-                            scrolled: {
-                                guard let link = model.mediaViewerPresentation?.transitionLink else { return }
-                                sendTransitionAnchor.followMediaViewerSources(in: link)
-                            },
+                            model: model,
                             open: openComposerAttachment,
                             toggleSpoiler: {
                                 model.toggleComposerAttachmentSpoiler($0, in: conversation)
@@ -124,6 +126,7 @@ struct ComposerView: View {
                     } else if !isCreatingThread {
                         composerLeadingButton(appearance: appearance)
                         .escapeDismissiblePopover(isPresented: $showComposerActions, arrowEdge: .top) { composerActionsMenu }
+                        .onChange(of: showComposerActions) { if !$1 { showsScheduleShortcuts = false } }
                         .background { activityShelfPresenter }
                     }
                 }
@@ -218,7 +221,7 @@ struct ComposerView: View {
                             if draft.isEmpty, !isComposing, !isVoiceMessageActive {
                                 Text(composerPlaceholder)
                                     .foregroundStyle(.tertiary)
-                                    .font(.interfaceSystem(size: 15))
+                                    .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                                     .allowsHitTesting(false)
@@ -253,53 +256,23 @@ struct ComposerView: View {
                             switch icon {
                             case .gif:
                                 if model.supportedCapabilities.contains(.gifs), !isCreatingThread {
-                                    ComposerIconView(icon: .gif, appearance: appearance) {
-                                        toggleGIFPicker()
-                                    }
-                                    .fixedSize()
-                                    .background {
-                                        StableReactionPickerPresenter(
-                                            isPresented: $showGIFPicker,
-                                            preferredEdge: .maxY,
-                                            accessibilityIdentifier: "composer-gif-picker"
-                                        ) {
-                                            composerGIFPicker
-                                        }
-                                        .frame(width: accessoryButtonSize, height: accessoryButtonSize)
-                                    }
+                                    pickerIcon(
+                                        .gif, appearance: appearance, isPresented: $showGIFPicker,
+                                        identifier: "composer-gif-picker", toggle: toggleGIFPicker
+                                    ) { composerGIFPicker }
                                 }
                             case .sticker:
                                 if model.supportedCapabilities.contains(.stickers), !isCreatingThread {
-                                    ComposerIconView(icon: .sticker, appearance: appearance) {
-                                        toggleStickerPicker()
-                                    }
-                                    .fixedSize()
-                                    .background {
-                                        StableReactionPickerPresenter(
-                                            isPresented: $showStickerPicker,
-                                            preferredEdge: .maxY,
-                                            accessibilityIdentifier: "composer-sticker-picker"
-                                        ) {
-                                            composerStickerPicker
-                                        }
-                                        .frame(width: accessoryButtonSize, height: accessoryButtonSize)
-                                    }
+                                    pickerIcon(
+                                        .sticker, appearance: appearance, isPresented: $showStickerPicker,
+                                        identifier: "composer-sticker-picker", toggle: toggleStickerPicker
+                                    ) { composerStickerPicker }
                                 }
                             case .emoji:
-                                ComposerIconView(icon: .emoji, appearance: appearance) {
-                                    toggleEmojiPicker()
-                                }
-                                .fixedSize()
-                                .background {
-                                    StableReactionPickerPresenter(
-                                        isPresented: $showEmojiPicker,
-                                        preferredEdge: .maxY,
-                                        accessibilityIdentifier: "composer-emoji-picker"
-                                    ) {
-                                        composerEmojiPicker
-                                    }
-                                    .frame(width: accessoryButtonSize, height: accessoryButtonSize)
-                                }
+                                pickerIcon(
+                                    .emoji, appearance: appearance, isPresented: $showEmojiPicker,
+                                    identifier: "composer-emoji-picker", toggle: toggleEmojiPicker
+                                ) { composerEmojiPicker }
                             }
                         }
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -325,24 +298,21 @@ struct ComposerView: View {
                 .transaction(value: activeConversationID) { $0.disablesAnimations = true }
                 .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
                 .padding(.bottom, ChatChromeMetrics.composerWindowInset)
-                .keyframeAnimator(
-                    initialValue: CGFloat.zero,
+                .modifier(RejectionShake(
                     trigger: activeConversationID.map {
                         model.composer.slowmode.rejectedAttempts[$0, default: 0]
                     } ?? 0
-                ) { content, offset in
-                    content.offset(x: offset)
-                } keyframes: { _ in
-                    LinearKeyframe(-5, duration: 0.04)
-                    LinearKeyframe(5, duration: 0.06)
-                    LinearKeyframe(-3, duration: 0.06)
-                    LinearKeyframe(3, duration: 0.06)
-                    LinearKeyframe(0, duration: 0.04)
-                }
+                ))
         }
         .windowModal(isPresented: $showPollCreator, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             if let channelID = activeConversationID {
                 PollCreationView(model: model, channelID: channelID)
+            }
+        }
+        .windowModal(isPresented: $showsScheduleDialog, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
+            ScheduleMessageDialog(initialDate: model.scheduledSendDate(in: conversation), timeFormat: model.interfaceSettings.timestampFormat) {
+                model.setScheduledSendDate($0, in: conversation)
+                isFocused = true
             }
         }
         .modifier(ComposerPhotosPicker(
@@ -535,7 +505,7 @@ struct ComposerView: View {
                 ApplicationCommandHelpStrip(draft: draft, issue: commandComposer.fieldIssue, cancel: cancelCommand)
                     .commandPanelSurface(cornerRadius: commandPanelCornerRadius)
             }
-        } else if let context = timeMentionContext, case let rows = timeRows(for: context), timeQueryNeedsPick || !rows.isEmpty {
+        } else if let context = timeMentionContext, case let rows = ComposerTimeFormatPicker.rows(for: context.query, now: timeQueryDate), timeQueryNeedsPick || !rows.isEmpty {
             timeMentionMenu(context, rows: rows)
         } else if let context = gameMentionContext {
             gameMentionMenu(context)
@@ -543,9 +513,7 @@ struct ComposerView: View {
             let suggestions = mentionAutocompleteSuggestions(for: context)
             if !suggestions.isEmpty {
                 MentionAutocompleteList(
-                    heading: context.kind == .member
-                        ? MentionAutocompleteSuggestionFactory.memberHeading(query: context.query)
-                        : MentionAutocompleteSuggestionFactory.channelHeading(query: context.query),
+                    heading: context.heading,
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
                     highlight: { autocompleteIndex = $0 },
@@ -561,7 +529,7 @@ struct ComposerView: View {
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
                     highlight: { autocompleteIndex = $0 },
-                    select: { acceptAutocomplete($0, context: context) },
+                    select: { acceptAutocomplete($0, replacing: context.range) },
                     cornerRadius: commandPanelCornerRadius,
                     keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
                 )
@@ -584,14 +552,7 @@ struct ComposerView: View {
                     restoredSelection = insertInDraft(value, replacing: replacementSelection)
                 case let .custom(emoji):
                     ComposerEmojiImageStore.shared.register(emoji)
-                    let value = model.composerText(for: emoji)
-                    restoredSelection = applyDraftEdit(
-                        ComposerDraftEditing.insertCustomEmoji(
-                            value,
-                            into: draft,
-                            replacing: replacementSelection
-                        )
-                    )
+                    restoredSelection = insertInDraft(model.composerText(for: emoji), replacing: replacementSelection)
                 }
                 if activation.keepsPickerPresented {
                     selectionBeforeEmojiPicker = restoredSelection
@@ -631,6 +592,8 @@ struct ComposerView: View {
         guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
         if model.consumeEscapeForReply(in: conversation) {
             return
+        } else if model.scheduledSendDate(in: conversation) != nil {
+            model.setScheduledSendDate(nil, in: conversation)
         } else if showGIFPicker {
             showGIFPicker = false
         } else if showStickerPicker {
@@ -717,9 +680,10 @@ struct ComposerView: View {
     private func send() {
         guard !isSubmitting, allowsSubmission() else { return }
         if isCreatingThread, !model.validateThreadCreation() { return }
-        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty,
-              !hasCheckingAttachments
+        guard !isDraftBlank, !hasCheckingAttachments
         else { return }
+        guard !model.isSchedulingMessage(in: conversation) else { return }
+        if !isCreatingThread, model.scheduledSendDate(in: conversation) != nil { return schedule() }
         isSubmitting = true
         draftSelection = nil
         selectionBeforeEmojiPicker = nil
@@ -774,6 +738,29 @@ struct ComposerView: View {
         }
     }
 
+    /// Hands the message to Discord to send later; the composer clears only
+    /// once Discord accepts it.
+    /// The pane may show another conversation before Discord answers, so this
+    /// holds no composer state; the model refuses a second create meanwhile.
+    private func schedule() {
+        let staged = attachments
+        model.beginUsingOwnedPromisedFiles(staged.map(\.url))
+        Task {
+            let scopedURLs = staged.map(\.url).filter { $0.startAccessingSecurityScopedResource() }
+            await model.scheduleComposerMessage(in: conversation, attachments: staged)
+            for url in scopedURLs { url.stopAccessingSecurityScopedResource() }
+            model.endUsingOwnedPromisedFiles(staged.map(\.url))
+        }
+    }
+
+    private var hasScheduleHeader: Bool {
+        let state = model.scheduledMessages
+        // Most conversations never schedule; skip resolving this one's channel on each keystroke.
+        guard !state.sendDates.isEmpty || !state.confirmations.isEmpty,
+              !isCreatingThread, let channelID = model.composerSendChannelID(in: conversation) else { return false }
+        return state.sendDates[channelID] != nil || state.confirmations[channelID] != nil
+    }
+
     private var autocompleteContext: ColonAutocompleteContext? {
         guard !isAutocompleteDismissed else { return nil }
         return ColonAutocompleteContext(text: draft, selection: draftSelection)
@@ -784,46 +771,13 @@ struct ComposerView: View {
         return MentionAutocompleteContext(text: draft, selection: draftSelection)
     }
 
-    private var mentionAutocompleteSuggestions: [MentionAutocompleteSuggestion] {
-        guard let context = mentionAutocompleteContext else { return [] }
-        return mentionAutocompleteSuggestions(for: context)
-    }
-
     private func mentionAutocompleteSuggestions(
         for context: MentionAutocompleteContext
     ) -> [MentionAutocompleteSuggestion] {
-        switch context.kind {
-        case .member:
-            return MentionAutocompleteSuggestionFactory.memberSuggestions(
-                query: context.query,
-                recentMessages: activeMessages.filter { !model.isMessageSuppressed($0) },
-                localMembers: model.mentionAutocompleteMembers.filter { !model.isUserIgnored($0.id) },
-                remoteMembers: model.mentionMemberResults.filter { !model.isUserIgnored($0.id) },
-                roles: model.guildRoles,
-                isGuildChannel: model.selectedChannel?.guildID != nil,
-                canMentionNonMentionableRoles:
-                MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
-                    in: model.selectedChannel,
-                    guild: model.selectedGuildID.flatMap { model.serverRailGuildsByID[$0] },
-                    currentUserID: model.currentUser?.id,
-                    currentMember: (model.currentUser?.id).flatMap {
-                        model.membersByID[$0]
-                    },
-                    roles: model.guildRoles
-                )
-            )
-        case .channel:
-            return MentionAutocompleteSuggestionFactory.channelSuggestions(
-                query: context.query,
-                channels: model.visibleChannels.filter { !model.hiddenChannelIDs.contains($0.id) },
-                threads: model.mentionAutocompleteThreads,
-                guilds: model.serverRailGuildsByID,
-                guildAndChannelUsageScores: model.discordGuildAndChannelUsageScores,
-                currentUserID: model.currentUser?.id,
-                currentMember: (model.currentUser?.id).flatMap { model.membersByID[$0] },
-                roles: model.guildRoles
-            )
-        }
+        model.mentionAutocompleteSuggestions(
+            for: context,
+            recentMessages: activeMessages.filter { !model.isMessageSuppressed($0) }
+        )
     }
 
     private func updateMentionMemberSearch() {
@@ -875,22 +829,21 @@ struct ComposerView: View {
         )
     }
 
+    /// No text beyond whitespace and no attachments.
+    private var isDraftBlank: Bool {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
+    }
+
     private var composerCanSubmit: Bool {
         if hasActiveCommand {
             return true
         }
         return !isSubmitting
             && !hasCheckingAttachments
-            && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || !attachments.isEmpty)
+            && !isDraftBlank
             && draft.count <= ChatCharacterLimitPolicy.limit(
                 premiumType: model.currentUser?.premiumType
             )
-    }
-
-    private var autocompleteSuggestions: [ColonAutocompleteSuggestion] {
-        guard let context = autocompleteContext else { return [] }
-        return emojiSuggestions(query: context.query)
     }
 
     private func emojiSuggestions(query: String) -> [ColonAutocompleteSuggestion] {
@@ -903,20 +856,7 @@ struct ComposerView: View {
                   $0.matchesCompletionName(context.query)
               })
         else { return false }
-
-        if let emoji = suggestion.customEmoji {
-            ComposerEmojiImageStore.shared.register(emoji)
-        }
-        let selection = applyDraftEdit(
-            ComposerDraftEditing.insert(
-                suggestion.value,
-                into: text,
-                replacing: context.range
-            )
-        )
-        draftSelection = selection
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
+        acceptAutocomplete(suggestion, replacing: context.range)
         return true
     }
 
@@ -939,11 +879,7 @@ struct ComposerView: View {
             activateCommand(command)
             return
         }
-        if !commandComposer.isPickerPresented {
-            commandComposer.presentPicker(query: context.query)
-        } else {
-            commandComposer.updatePickerQuery(context.query)
-        }
+        commandComposer.presentPicker(query: context.query)
         if shouldLoad {
             model.loadApplicationCommands(in: conversation)
         }
@@ -990,12 +926,9 @@ struct ComposerView: View {
         if !hasActiveCommand, model.canPresentIssueReport,
            let command = SakuraCordBuiltInCommands.commands.first(where: {
                draft.trimmingCharacters(in: .whitespacesAndNewlines) == "/\($0.name)"
-           }), let kind = SakuraCordBuiltInCommands.issueReportKind(for: command)
+           }), SakuraCordBuiltInCommands.issueReportKind(for: command) != nil
         {
-            commandComposer.dismissPicker()
-            updateDraft("")
-            draftSelection = nil
-            model.presentIssueReport(kind)
+            activateCommand(command)
             return
         }
         guard allowsSubmission() else { return }
@@ -1007,16 +940,10 @@ struct ComposerView: View {
     }
 
     private func acceptCommandSuggestion(_ suggestion: ApplicationCommandSuggestion) {
-        let composer = commandComposer
-        switch suggestion.action {
-        case let .value(value, display):
-            composer.resolveFocusedField(value, display: display)
-        case .chooseAttachment:
+        if case .chooseAttachment = suggestion.action {
             showFileImporter = true
-        case let .addOption(option):
-            composer.addOption(option)
         }
-        composer.resetSuggestions()
+        commandComposer.accept(suggestion)
         isFocused = true
     }
 
@@ -1033,11 +960,18 @@ struct ComposerView: View {
         if let context = gameMentionContext {
             return handleGameMention(command, context: context)
         }
-        if let context = mentionAutocompleteContext, !mentionAutocompleteSuggestions.isEmpty {
-            return handleMentionAutocomplete(command, context: context)
+        if let context = mentionAutocompleteContext,
+           case let suggestions = mentionAutocompleteSuggestions(for: context), !suggestions.isEmpty {
+            return routeSuggestionList(command, count: suggestions.count) {
+                acceptMentionAutocomplete(suggestions[$0], context: context)
+            }
         }
-        guard let context = autocompleteContext, !autocompleteSuggestions.isEmpty else { return false }
-        return handleColonAutocomplete(command, context: context)
+        guard let context = autocompleteContext,
+              case let suggestions = emojiSuggestions(query: context.query), !suggestions.isEmpty
+        else { return false }
+        return routeSuggestionList(command, count: suggestions.count) {
+            acceptAutocomplete(suggestions[$0], replacing: context.range)
+        }
     }
 
     /// Keys while a command is active: the panel takes navigation and
@@ -1095,72 +1029,29 @@ struct ComposerView: View {
         return true
     }
 
-    private func handleMentionAutocomplete(
+    /// Keys for the mention and emoji lists.
+    private func routeSuggestionList(
         _ command: ComposerAutocompleteCommand,
-        context: MentionAutocompleteContext
+        count: Int,
+        accept: (Int) -> Void
     ) -> Bool {
         if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            autocompleteIndex = (autocompleteIndex - 1 + mentionAutocompleteSuggestions.count)
-                % mentionAutocompleteSuggestions.count
-        case .next:
-            autocompleteIndex = (autocompleteIndex + 1) % mentionAutocompleteSuggestions.count
-        case .accept, .advance:
-            acceptMentionAutocomplete(
-                mentionAutocompleteSuggestions[min(autocompleteIndex, mentionAutocompleteSuggestions.count - 1)],
-                context: context
-            )
-        case .dismiss:
+        return command.route(&autocompleteIndex, count: count, accept: accept) {
             isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField:
-            return false
         }
-        return true
     }
 
-    private func handleColonAutocomplete(
-        _ command: ComposerAutocompleteCommand,
-        context: ColonAutocompleteContext
-    ) -> Bool {
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            autocompleteIndex =
-                (autocompleteIndex - 1 + autocompleteSuggestions.count) % autocompleteSuggestions.count
-        case .next: autocompleteIndex = (autocompleteIndex + 1) % autocompleteSuggestions.count
-        case .accept, .advance:
-            acceptAutocomplete(
-                autocompleteSuggestions[min(autocompleteIndex, autocompleteSuggestions.count - 1)],
-                context: context
-            )
-        case .dismiss: isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField: return false
-        }
-        return true
-    }
-
-    private func acceptAutocomplete(
-        _ suggestion: ColonAutocompleteSuggestion, context: ColonAutocompleteContext
-    ) {
+    private func acceptAutocomplete(_ suggestion: ColonAutocompleteSuggestion, replacing range: NSRange) {
         if let emoji = suggestion.customEmoji {
             ComposerEmojiImageStore.shared.register(emoji)
         }
-        let result = insertInDraft(suggestion.value, replacing: context.range)
-        draftSelection = result
+        draftSelection = insertInDraft(suggestion.value, replacing: range)
         autocompleteIndex = 0
         isAutocompleteDismissed = true
     }
 
-    @discardableResult
-    private func insertInDraft(
-        _ insertedText: String,
-        replacing selection: NSRange?
-    ) -> NSRange {
-        applyDraftEdit(ComposerDraftEditing.insert(insertedText, into: draft, replacing: selection))
-    }
-
-    private func applyDraftEdit(_ edit: ComposerDraftEdit) -> NSRange {
+    private func insertInDraft(_ insertedText: String, replacing selection: NSRange?) -> NSRange {
+        let edit = ComposerDraftEditing.insert(insertedText, into: draft, replacing: selection)
         updateDraft(edit.text)
         return edit.selection
     }
@@ -1198,8 +1089,13 @@ struct ComposerView: View {
     }
 
     private var hasComposerActions: Bool {
-        canAddAttachments || canCreatePoll || canCreateThread || activityChannel != nil
+        canAddAttachments || canCreatePoll || canCreateThread || canScheduleMessage || activityChannel != nil
             || model.translation.settings.isEnabled
+    }
+
+    /// Like the official composer: a DM, or a channel the account may send in.
+    private var canScheduleMessage: Bool {
+        !isCreatingThread && model.composerSendChannelID(in: conversation) != nil
     }
 
     /// The thread pane composes a thread's first message before Discord has
@@ -1224,17 +1120,11 @@ struct ComposerView: View {
     }
 
     private var activeConversationID: ChannelID? {
-        switch conversation {
-        case .channel: model.selectedChannelID
-        case .thread: model.openThread?.id
-        }
+        model.composerChannelID(in: conversation)
     }
 
     private var activeMessages: [Message] {
-        switch conversation {
-        case .channel: model.messages
-        case .thread: model.threadMessages
-        }
+        model.messages(in: conversation)
     }
 
     private func cancelReply() {
@@ -1249,7 +1139,7 @@ struct ComposerView: View {
     }
 }
 
-private extension ComposerView {
+extension ComposerView {
     @ViewBuilder
     private var composerOverlay: some View {
         if isInputActive {
@@ -1294,10 +1184,6 @@ private extension ComposerView {
         return KeywordMentionContext(.time, text: draft, selection: draftSelection)
     }
 
-    private func timeRows(for context: KeywordMentionContext) -> [ComposerTimeFormatPicker.Row] {
-        ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: context.query, now: timeQueryDate))
-    }
-
     private func timeMentionMenu(_ context: KeywordMentionContext, rows: [ComposerTimeFormatPicker.Row]) -> some View {
         ComposerTimeFormatPicker(
             query: context.query,
@@ -1314,27 +1200,23 @@ private extension ComposerView {
     /// Keys while times match what is typed after `@time `. Return with no
     /// match neither sends nor leaves the query, as in Discord.
     private func handleTimeMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
-        let rows = timeRows(for: context)
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            guard !rows.isEmpty else { return false }
-            autocompleteIndex = (autocompleteIndex - 1 + rows.count) % rows.count
-        case .next:
-            guard !rows.isEmpty else { return false }
-            autocompleteIndex = (autocompleteIndex + 1) % rows.count
-        case .accept, .advance:
-            guard !rows.isEmpty else {
+        let rows = ComposerTimeFormatPicker.rows(for: context.query, now: timeQueryDate)
+        if rows.isEmpty {
+            switch command {
+            case .previous, .next:
+                autocompleteKeyboardSelectionRevision &+= 1
+                return false
+            case .accept, .advance:
                 timeQueryNeedsPick = true
                 return true
+            case .dismiss, .previousField, .nextField, .removeField:
+                // These keys never read the row count.
+                break
             }
-            insertTimestamp(rows[min(autocompleteIndex, rows.count - 1)].token, context: context)
-        case .dismiss:
-            isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField:
-            return false
         }
-        return true
+        return routeSuggestionList(command, count: rows.count) {
+            insertTimestamp(rows[$0].token, context: context)
+        }
     }
 
     private func insertTimestamp(_ token: DiscordTimestampToken, context: KeywordMentionContext) {
@@ -1368,23 +1250,21 @@ private extension ComposerView {
     /// Keys while games match what is typed after `@game `.
     private func handleGameMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
         let games = gameMentionSearch.games
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            guard !games.isEmpty else { return true }
-            autocompleteIndex = (autocompleteIndex - 1 + games.count) % games.count
-        case .next:
-            guard !games.isEmpty else { return true }
-            autocompleteIndex = (autocompleteIndex + 1) % games.count
-        case .accept, .advance:
-            guard !games.isEmpty else { return true }
-            insertGameMention(games[min(autocompleteIndex, games.count - 1)], context: context)
-        case .dismiss:
-            isAutocompleteDismissed = true
-        case .previousField, .nextField, .removeField:
-            return false
+        if games.isEmpty {
+            switch command {
+            case .previous, .next:
+                autocompleteKeyboardSelectionRevision &+= 1
+                return true
+            case .accept, .advance:
+                return true
+            case .dismiss, .previousField, .nextField, .removeField:
+                // These keys never read the game count.
+                break
+            }
         }
-        return true
+        return routeSuggestionList(command, count: games.count) {
+            insertGameMention(games[$0], context: context)
+        }
     }
 
     private func insertGameMention(_ game: ProfileGame, context: KeywordMentionContext) {
@@ -1419,8 +1299,7 @@ private extension ComposerView {
             if draft.isEmpty { updateDraft("/\(mention.name)") }
             return
         }
-        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, attachments.isEmpty,
-           !hasActiveCommand, !isVoiceMessageActive {
+        if isDraftBlank, !hasActiveCommand, !isVoiceMessageActive {
             activateCommand(command)
         } else {
             commandAwaitingClear = command
@@ -1539,8 +1418,7 @@ extension ComposerView {
 
     /// With nothing to send, the send button records a voice message instead.
     private var showsVoiceMessageButton: Bool {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && attachments.isEmpty && !hasActiveCommand && !isCreatingThread
+        isDraftBlank && !hasActiveCommand && !isCreatingThread
             && model.canSendVoiceMessages(in: conversation)
     }
 
@@ -1626,36 +1504,22 @@ extension ComposerView {
 
 private extension ComposerView {
     var draft: String {
-        switch conversation {
-        case .channel: model.draft
-        case .thread: model.threadDraft
-        }
+        model.draft(in: conversation)
     }
 
     func updateDraft(_ value: String) {
-        switch conversation {
-        case .channel:
-            model.updateDraft(value)
-        case .thread:
-            model.updateThreadDraft(value)
-        }
+        model.updateDraft(value, in: conversation)
     }
 
     var activeReply: Message? {
-        switch conversation {
-        case .channel: model.replyingTo
-        case .thread: model.threadReplyingTo
-        }
+        model.replyingTo(in: conversation)
     }
 
     var activeReplyMentionsAuthor: Bool {
-        switch conversation {
-        case .channel: model.replyMentionsAuthor
-        case .thread: model.threadReplyMentionsAuthor
-        }
+        model.replyMentionsAuthor(in: conversation)
     }
 
-    var attachments: [ForumPostAttachment] {
+    var attachments: [StagedAttachment] {
         model.composerAttachments(for: conversation)
     }
 
@@ -1670,7 +1534,8 @@ private extension ComposerView {
             attachmentIDs: hasActiveCommand ? [] : attachments.map(\.id),
             replyID: hasActiveCommand ? nil : activeReply?.id,
             hasActiveCommand: hasActiveCommand,
-            hasTranslationHeader: model.draftTranslation(for: conversation) != nil
+            hasTranslationHeader: model.draftTranslation(for: conversation) != nil,
+            hasScheduleHeader: hasScheduleHeader
         )
     }
 
@@ -1688,7 +1553,7 @@ private extension ComposerView {
     /// as plain text; it consumes this when the optimistic row arrives.
     func registerSendTransition(
         channelID: ChannelID,
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) {
         // A send from older history first loads the newest messages, so
         // the field stays editable and nothing arrives to take it over yet.
@@ -1696,7 +1561,8 @@ private extension ComposerView {
               conversation == .thread ? !model.isThreadWindowAwayFromNewest : !model.hasMoreLaterMessages,
               let source = sendTransitionAnchor.source(
                   channelID: channelID,
-                  content: draft.trimmingCharacters(in: .whitespacesAndNewlines),
+                  // The optimistic row it lands on has no `@silent` prefix.
+                  content: SilentMessagePrefix.split(draft.trimmingCharacters(in: .whitespacesAndNewlines)).content,
                   attachments: attachments,
                   uploads: model.attachmentUploads
               )
@@ -1710,7 +1576,8 @@ private extension ComposerView {
     }
 }
 
-private struct ComposerActionLabelStyle: LabelStyle {
+/// An icon column then the title, as the + menu and the schedule shortcuts list them.
+struct ComposerActionLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: InterfaceScale.metric(8)) {
             configuration.icon.frame(width: InterfaceScale.metric(20), alignment: .center)
@@ -1720,6 +1587,28 @@ private struct ComposerActionLabelStyle: LabelStyle {
 }
 
 private extension ComposerView {
+    /// An accessory icon that toggles its picker, which opens above it.
+    func pickerIcon(
+        _ icon: ComposerIcon,
+        appearance: ComposerBarAppearance,
+        isPresented: Binding<Bool>,
+        identifier: String,
+        toggle: @escaping () -> Void,
+        @ViewBuilder picker: @escaping () -> some View
+    ) -> some View {
+        ComposerIconView(icon: icon, appearance: appearance, action: toggle)
+            .fixedSize()
+            .background {
+                StablePickerPopoverPresenter(
+                    isPresented: isPresented,
+                    preferredEdge: .maxY,
+                    accessibilityIdentifier: identifier,
+                    content: picker
+                )
+                .frame(width: appearance.accessoryButtonSize, height: appearance.accessoryButtonSize)
+            }
+    }
+
     /// A pane reused from the pool left the window still marked focused, so
     /// focusing it again would change nothing.
     func clearFocusOfReusedPane() async {
@@ -1731,8 +1620,23 @@ private extension ComposerView {
 }
 
 extension ComposerView {
-    /// The composer's + menu: files, a thread, a poll, an Activity and translation.
-    private var composerActionsMenu: some View {
+    /// The composer's + menu: files, a thread, a poll, a schedule, an Activity and translation.
+    @ViewBuilder private var composerActionsMenu: some View {
+        if showsScheduleShortcuts {
+            ScheduleMessageShortcuts(timeFormat: model.interfaceSettings.timestampFormat) { date in
+                showComposerActions = false
+                model.setScheduledSendDate(date, in: conversation)
+                isFocused = true
+            } custom: {
+                showComposerActions = false
+                showsScheduleDialog = true
+            }
+        } else {
+            composerActionsList
+        }
+    }
+
+    private var composerActionsList: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
             if canAddAttachments {
                 Button {
@@ -1772,6 +1676,16 @@ extension ComposerView {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
                 }
             }
+            if canScheduleMessage {
+                Button {
+                    showsScheduleShortcuts = true
+                } label: {
+                    Label("Schedule Message", systemImage: "calendar.badge.clock")
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
+                }
+                // The time is held until the pending schedule is answered.
+                .disabled(model.isSchedulingMessage(in: conversation))
+            }
             startActivityRow
             ComposerTranslateDraftRow(model: model, destination: conversation) {
                 showComposerActions = false
@@ -1804,7 +1718,7 @@ extension ComposerView {
 
     /// The emoji and sticker pickers' popover, so the shelf shares their material.
     private var activityShelfPresenter: some View {
-        StableReactionPickerPresenter(
+        StablePickerPopoverPresenter(
             isPresented: $showActivityShelf,
             preferredEdge: .maxY,
             accessibilityIdentifier: "composer-activity-shelf"

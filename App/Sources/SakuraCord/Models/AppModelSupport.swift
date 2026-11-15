@@ -94,7 +94,9 @@ extension AppModel {
         captcha.cancel()
         serverInvites.reset()
         guildJoinRequests.reset()
+        favorites.reset()
         serverRailPresentation.showsGuildJoinRequest = false
+        serverRailPresentation.showsFavorites = false
         embeddedActivities.reset()
         friends.reset()
         lastDirectMessageSelection = nil
@@ -104,7 +106,7 @@ extension AppModel {
         issueReports.reset()
         nicknameEditor.reset()
         groupDirectMessageEditor.reset()
-        groupDirectMessageLeave.reset()
+        directMessageExit.reset()
         threadActions.reset()
         onboarding.reset()
     }
@@ -164,25 +166,20 @@ extension AppModel {
         )
     }
 
-    func isCurrentVoiceOperation(
-        _ account: AppModelAccountSession,
-        identity: AppModelVoiceOperationIdentity
-    ) -> Bool {
-        guard isCurrentAccountSession(account),
-              voiceMigrationGeneration == identity.generation,
-              activeVoiceChannel?.id == identity.channelID
-        else { return false }
-        if let expectedSession = identity.session {
-            return voiceSession === expectedSession
+    /// Subscribes to call state for the selected DM or group DM.
+    func observeSelectedPrivateCall() {
+        guard let channel = selectedChannel, channel.kind.isDirectMessage else { return }
+        let account = accountSession()
+        startAccountChildTask(account: account) { model, account in
+            await model.observePrivateCall(in: channel, account: account)
         }
-        return voiceSession == nil
     }
 
     func observePrivateCall(
         in channel: Channel,
         account: AppModelAccountSession
     ) async {
-        guard channel.kind == .directMessage || channel.kind == .groupDirectMessage else {
+        guard channel.kind.isDirectMessage else {
             return
         }
         guard !Task.isCancelled, isCurrentAccountSession(account) else { return }
@@ -197,10 +194,7 @@ extension AppModel {
 
     func resetAppSounds() {
         resetPrivateCallActions()
-        for task in outgoingPrivateCallRingTimeoutTasks.values {
-            task.cancel()
-        }
-        outgoingPrivateCallRingTimeoutTasks = [:]
+        outgoingPrivateCallRingTimeoutTasks.cancelAll()
         locallyStartedOutgoingPrivateCallRings = []
         soundPlayer.stopAll()
     }
@@ -383,16 +377,6 @@ enum ProfilePresentationDestination {
     case inspector
     case contextual
     case expanded
-}
-
-nonisolated enum UnreadPresentationPublicationPolicy {
-    static func shouldPublish(
-        snapshot: BootstrapSnapshot,
-        channels: [Channel],
-        guilds: [Guild]
-    ) -> Bool {
-        snapshot.channels != channels || snapshot.guilds != guilds
-    }
 }
 
 nonisolated struct ForumPostPresentation: Sendable {
@@ -810,6 +794,25 @@ final class MessageRowsUpdateJournal {
         if storage.count > 4_608 {
             storage.removeFirst(512)
         }
+    }
+
+    /// Replaces `rows` with `newRows`, records the change as the revision
+    /// after `revision`, and advances `revision` to it.
+    @discardableResult
+    func publish(
+        _ newRows: [MessageRowPresentation],
+        into rows: inout [MessageRowPresentation],
+        revision: inout UInt64
+    ) -> MessageRowsUpdateRecord {
+        let record = MessageRowsUpdateRecordBuilder.make(
+            oldRows: rows,
+            newRows: newRows,
+            revision: revision &+ 1
+        )
+        rows = newRows
+        append(record)
+        revision = record.revision
+        return record
     }
 
     func records(

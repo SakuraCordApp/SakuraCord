@@ -36,7 +36,7 @@ struct ProfileApexAssignmentsDTO: Decodable, Sendable {
             return value.variantID
         }
         return ProfileWidgetEligibility(
-            hasFullNitro: user.premiumType == 2,
+            hasFullNitro: user.premiumType == DiscordPremiumType.nitro,
             hasPersonalWidgetAccess: variant == 1 || variant == 2,
             showsPersonalWidgetCreateEntrypoint: variant == 2
         )

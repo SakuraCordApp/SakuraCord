@@ -13,16 +13,10 @@ public enum DiscordProfileImageAssets {
         let index = if let discriminator, discriminator != "0", let legacy = UInt64(discriminator) {
             legacy % 5
         } else {
-            ((UInt64(userID) ?? 0) >> 22) % UInt64(assets.count)
+            (UserID(userID)?.discordEpochMilliseconds ?? 0) % UInt64(assets.count)
         }
         return URL(string: "https://discord.com/assets/\(assets[Int(index)])")
     }
-
-    /// Artwork used by the official image chooser, in reading order.
-    public static let gifPickerArtwork: [URL] = [
-        "1071e0c5ceaf6ef7.png", "6d14801ca95f25f1.png",
-        "4637e85fff87537c.png", "ca693e3ef16951f4.png"
-    ].compactMap { URL(string: "https://discord.com/assets/\($0)") }
 
     /// Profile cropping uses the first-party asset proxy. Picker thumbnails
     /// continue to use the response-provided media origin.

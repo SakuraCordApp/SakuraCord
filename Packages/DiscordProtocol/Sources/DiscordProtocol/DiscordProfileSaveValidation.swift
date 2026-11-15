@@ -11,7 +11,7 @@ extension DiscordRESTProvider {
         try checkLength(changes.identity.name, maximum: 32, field: "Display name")
         try checkLength(changes.metadata.bio, maximum: 300, field: "About Me")
         try checkLength(changes.metadata.pronouns, maximum: 40, field: "Pronouns")
-        let hasFullNitro = user.premiumType == 2
+        let hasFullNitro = user.premiumType == DiscordPremiumType.nitro
         try validateProfileNitroAccess(changes, in: scope, hasFullNitro: hasFullNitro)
         try validateProfileImages(changes, user: user, hasFullNitro: hasFullNitro)
         try validateProfileNameStyle(changes.identity.displayNameStyle)
@@ -41,12 +41,12 @@ extension DiscordRESTProvider {
     private func validateProfileImages(_ changes: ProfileEditChanges, user: User, hasFullNitro: Bool) throws {
         if case let .set(.upload(image)) = changes.identity.avatar {
             try validateProfileImage(image)
-            if image.isAnimated || image.mediaType == "image/gif", user.premiumType != 1, !hasFullNitro {
+            if image.isAnimated || image.mediaType == "image/gif", user.premiumType != DiscordPremiumType.nitroClassic, !hasFullNitro {
                 throw nitroProfileError()
             }
         }
         if case let .set(.history(entry)) = changes.identity.avatar,
-           entry.storageHash.hasPrefix("a_"), user.premiumType != 1, !hasFullNitro {
+           entry.storageHash.hasPrefix("a_"), user.premiumType != DiscordPremiumType.nitroClassic, !hasFullNitro {
             throw nitroProfileError()
         }
         if case let .set(image) = changes.metadata.banner { try validateProfileImage(image) }

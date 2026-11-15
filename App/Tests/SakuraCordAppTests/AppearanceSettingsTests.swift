@@ -19,39 +19,6 @@ import Testing
 }
 
 @MainActor
-@Test func `Theme accent resolves adaptively in the destination appearance`() throws {
-    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
-    let themeStore = SakuraCordThemeStore(
-        persistence: SakuraCordThemeSettingsStore(preferences: preferences)
-    )
-    themeStore.setHue(0.04, at: 0)
-    themeStore.setHue(0.96, at: 1)
-    themeStore.setIntensity(0.72)
-    themeStore.finishInteraction()
-    let effectiveAccent = themeStore.accentNSColor()
-    var resolvedComponents: [NSColor] = []
-    for appearanceName in [
-        NSAppearance.Name.aqua,
-        .darkAqua,
-        .accessibilityHighContrastAqua,
-        .accessibilityHighContrastDarkAqua,
-    ] {
-        let appearance = try #require(NSAppearance(named: appearanceName))
-        var actual: NSColor?
-        appearance.performAsCurrentDrawingAppearance {
-            actual = effectiveAccent.usingColorSpace(.sRGB)
-        }
-        let actualComponents = try #require(actual)
-        #expect(actualComponents.alphaComponent == 1)
-        #expect(actualComponents.redComponent.isFinite)
-        #expect(actualComponents.greenComponent.isFinite)
-        #expect(actualComponents.blueComponent.isFinite)
-        resolvedComponents.append(actualComponents)
-    }
-    #expect(resolvedComponents[0].brightnessComponent < resolvedComponents[1].brightnessComponent)
-}
-
-@MainActor
 @Test func `Zero intensity uses the native system surface`() {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let themeStore = SakuraCordThemeStore(
@@ -125,7 +92,7 @@ func `Public beta accents migrate into native-surface single-color themes`(
 
     #expect(actual == expected)
 
-    preferences.reset(scope: .appWide, page: .appearance)
+    preferences.reset(page: .appearance)
     let reset = SakuraCordThemeSettingsStore(preferences: preferences).load()
     #expect(reset == .defaultTheme)
 }
@@ -154,35 +121,33 @@ func `Public beta accents migrate into native-surface single-color themes`(
 
     #expect(store.load() == .defaults)
 
-    let selected = AppearanceSettingsSnapshot(
-        colorScheme: .light,
-        composerBarAppearance: .legacy,
-        directMessageAppearance: .bubbles,
-        groupMessageAppearance: .defaultStyle,
-        serverMessageAppearance: .bubbles,
-        messageSpacing: 12
-    )
+    var selected = AppearanceSettingsSnapshot.defaults
+    selected.colorScheme = .light
+    selected.composerBarAppearance = .legacy
+    selected.directMessageAppearance = .bubbles
+    selected.serverMessageAppearance = .bubbles
+    selected.messageSpacing = 12
     store.save(selected)
 
     #expect(AppearanceSettingsStore(preferences: SettingsPreferenceStore(defaults: defaults)).load() == selected)
-    let appearanceExport = preferences.export(scope: .appWide, page: .appearance)
+    let appearanceExport = preferences.export(page: .appearance)
     #expect(
-        appearanceExport.values[SettingsControlID.appColorScheme.rawValue]
+        appearanceExport[SettingsControlID.appColorScheme.rawValue]
             == .string(AppColorScheme.light.rawValue)
     )
-    let interfaceExport = preferences.export(scope: .appWide, page: .interface)
+    let interfaceExport = preferences.export(page: .interface)
     #expect(
-        interfaceExport.values[SettingsControlID.composerBarAppearance.rawValue]
+        interfaceExport[SettingsControlID.composerBarAppearance.rawValue]
             == .string(ComposerBarAppearance.legacy.rawValue)
     )
     #expect(
-        interfaceExport.values[SettingsControlID.messageAppearance.rawValue]
+        interfaceExport[SettingsControlID.messageAppearance.rawValue]
             == .string(MessageAppearance.bubbles.rawValue)
     )
-    #expect(interfaceExport.values[SettingsControlID.directMessageAppearance.rawValue] == .string("bubbles"))
-    #expect(interfaceExport.values[SettingsControlID.groupMessageAppearance.rawValue] == .string("default"))
+    #expect(interfaceExport[SettingsControlID.directMessageAppearance.rawValue] == .string("bubbles"))
+    #expect(interfaceExport[SettingsControlID.groupMessageAppearance.rawValue] == .string("default"))
     #expect(
-        interfaceExport.values[SettingsControlID.messageDensity.rawValue]
+        interfaceExport[SettingsControlID.messageDensity.rawValue]
             == .double(12)
     )
 
@@ -192,9 +157,9 @@ func `Public beta accents migrate into native-surface single-color themes`(
     #expect(report.unsupportedKeys.isEmpty)
     #expect(AppearanceSettingsStore(preferences: importedPreferences).load() == selected)
 
-    preferences.reset(scope: .appWide, page: .interface)
+    preferences.reset(page: .interface)
     #expect(store.load().colorScheme == .light)
-    preferences.reset(scope: .appWide, page: .appearance)
+    preferences.reset(page: .appearance)
     #expect(store.load() == .defaults)
 }
 
@@ -216,9 +181,9 @@ func `Public beta accents migrate into native-surface single-color themes`(
     let restored = SakuraCordThemeStore(persistence: persistence)
     #expect(restored.activeTheme == expected)
 
-    let export = preferences.export(scope: .appWide, page: .appearance)
+    let export = preferences.export(page: .appearance)
     #expect(
-        export.values[SettingsControlID.themeDesigner.rawValue]
+        export[SettingsControlID.themeDesigner.rawValue]
             == .string(expected.storageValue)
     )
 }
@@ -895,9 +860,9 @@ private final class ThemeIntermediateFrameProbe {
     let registration = try #require(
         SettingsPreferenceRegistry.foundation.registrations.first { $0.id == .interfaceSize }
     )
-    #expect(SettingsImportValidation.accepts(.double(0.8), registration: registration))
-    #expect(!SettingsImportValidation.accepts(.double(2), registration: registration))
-    #expect(!SettingsImportValidation.accepts(.double(.nan), registration: registration))
+    #expect(registration.accepts(.double(0.8)))
+    #expect(!registration.accepts(.double(2)))
+    #expect(!registration.accepts(.double(.nan)))
 }
 
 @MainActor
@@ -912,7 +877,7 @@ private final class ThemeIntermediateFrameProbe {
     #expect(migrated.serverMessageAppearance == .bubbles)
     #expect(defaults.object(forKey: "settings.appearance.messages") == nil)
 
-    preferences.reset(scope: .appWide, page: .interface)
+    preferences.reset(page: .interface)
     let restored = AppearanceSettingsStore(preferences: SettingsPreferenceStore(defaults: defaults))
     #expect(restored.load() == .defaults)
 }

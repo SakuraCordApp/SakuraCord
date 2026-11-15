@@ -56,7 +56,7 @@ extension NativeMemberListCanvasView {
         placeholderShimmerTask?.cancel()
         placeholderShimmerTask = nil
         guard hasLoadingPlaceholders,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+              AppMotionPolicy.animatesUncategorized
         else { return }
         placeholderShimmerTask = Task { @MainActor [weak self] in
             var interval = SkeletonShimmerStyle.minimumFrameInterval
@@ -104,83 +104,43 @@ extension NativeMemberListCanvasView {
     }
 
     func installAvatarOverlays(in range: Range<Int>) {
-        let visibleMembers: [AvatarOverlayPresentation] = range
-            .compactMap { index in
-                guard case .member(let member, _) = items[index],
-                      Self.requiresAvatarOverlay(for: member)
-                else {
-                    return nil
-                }
-                return AvatarOverlayPresentation(
-                    id: items[index].id,
+        let visibleMembers = range.compactMap { index -> OverlayHostPresentation<ItemID, AvatarOverlayConfiguration>? in
+            guard case .member(let member, _) = items[index],
+                  Self.requiresAvatarOverlay(for: member)
+            else {
+                return nil
+            }
+            return OverlayHostPresentation(
+                id: items[index].id,
+                configuration: AvatarOverlayConfiguration(
                     member: member,
-                    index: index
-                )
-            }
-        let visibleIDs = Set(visibleMembers.map(\.id))
-        var reusableHosts: [NSHostingView<AnyView>] = []
-        for id in Array(avatarOverlays.keys) where !visibleIDs.contains(id) {
-            guard let host = avatarOverlays.removeValue(forKey: id) else {
-                continue
-            }
-            avatarOverlayConfigurations[id] = nil
-            reusableHosts.append(host)
-        }
-
-        for presentation in visibleMembers {
-            let id = presentation.id
-            let member = presentation.member
-            let index = presentation.index
-            let host = avatarOverlays[id] ?? {
-                let value = reusableHosts.popLast()
-                    ?? NSHostingView(rootView: AnyView(EmptyView()))
-                value.sizingOptions = []
-                value.wantsLayer = true
-                if value.superview == nil {
-                    addSubview(value)
-                }
-                avatarOverlays[id] = value
-                return value
-            }()
-            let configuration = AvatarOverlayConfiguration(
-                member: member,
-                isHovered: hoveredIndex == index && !isScrolling && !interactionsBlocked
-                    && WindowModalCoordinator.allowsInput(for: self),
-                showsPresence: self.presentation.status(for: member) != nil,
-                opacity: self.presentation.opacity(for: member)
+                    isHovered: hoveredIndex == index && !isScrolling && !interactionsBlocked
+                        && WindowModalCoordinator.allowsInput(for: self),
+                    showsPresence: presentation.status(for: member) != nil,
+                    opacity: presentation.opacity(for: member)
+                ),
+                frame: avatarContainerRect(at: index, leadingInset: InterfaceScale.metric(4))
             )
-            if avatarOverlayConfigurations[id] != configuration {
-                host.rootView = AnyView(
-                    MemberAvatar(member: member, isHovered: configuration.isHovered, showsPresence: configuration.showsPresence)
-                        .opacity(configuration.opacity)
-                        .allowsHitTesting(false)
+        }
+        reconcileOverlayHosts(
+            visibleMembers,
+            hosts: &avatarOverlays,
+            configurations: &avatarOverlayConfigurations
+        ) { configuration in
+            AnyView(
+                MemberAvatar(
+                    member: configuration.member,
+                    isHovered: configuration.isHovered,
+                    showsPresence: configuration.showsPresence
                 )
-                avatarOverlayConfigurations[id] = configuration
-            }
-            host.frame = CGRect(
-                x: NativeMemberListMetrics.horizontalInset + InterfaceScale.metric(4),
-                y: origins[index] + 1
-                    + (NativeMemberListMetrics.paintedRowHeight
-                        - NativeMemberListMetrics.avatarContainerSize) / 2,
-                width: NativeMemberListMetrics.avatarContainerSize,
-                height: NativeMemberListMetrics.avatarContainerSize
+                .opacity(configuration.opacity)
+                .allowsHitTesting(false)
             )
-            host.layer?.zPosition = 11
-            host.setAccessibilityHidden(true)
         }
-        for host in reusableHosts {
-            host.removeFromSuperview()
-        }
-    }
-
-    func removeAvatarOverlays() {
-        for host in avatarOverlays.values { host.removeFromSuperview() }
-        avatarOverlays.removeAll(keepingCapacity: true)
-        avatarOverlayConfigurations.removeAll(keepingCapacity: true)
     }
 
     func installActivityEmojiOverlays(in range: Range<Int>) {
-        var visibleOverlays: [ActivityEmojiOverlayPresentation] = []
+        var visibleOverlays: [OverlayHostPresentation<ActivityEmojiOverlayID, ActivityEmojiOverlayConfiguration>] = []
         var overlayCount = 0
         for index in range {
             guard overlayCount < NativeMemberListMetrics.maximumVisibleAnimatedEmojiCount,
@@ -189,21 +149,20 @@ extension NativeMemberListCanvasView {
                   let activity = prepared.activity,
                   let truncationToken = prepared.activityTruncationToken
             else { continue }
-            let row = paintedRowRect(at: index)
-            let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+            let activityFrame = activityTextFrame(at: index)
             let visibleActivity = Self.truncatedLine(
                 activity,
                 token: truncationToken,
-                maximumWidth: max(0, row.maxX - textX - 4)
+                maximumWidth: activityFrame.width
             )
-            let origin = CGPoint(x: textX, y: row.minY + InterfaceScale.metric(24))
+            let origin = activityFrame.origin
             for (ordinal, region) in NativeMemberActivityPresentation.emojiRegions(
                 in: visibleActivity,
                 origin: origin
             ).enumerated() {
                 guard overlayCount < NativeMemberListMetrics.maximumVisibleAnimatedEmojiCount,
                       region.reference.isAnimated,
-                      let url = activityEmojiURL(for: region.reference)
+                      let url = region.reference.imageURL(in: customEmojiURLsByID)
                 else { continue }
                 overlayCount += 1
                 let id = ActivityEmojiOverlayID(
@@ -214,7 +173,7 @@ extension NativeMemberListCanvasView {
                     url: url,
                     opacity: presentation.opacity(for: member)
                 )
-                visibleOverlays.append(ActivityEmojiOverlayPresentation(
+                visibleOverlays.append(OverlayHostPresentation(
                     id: id,
                     configuration: configuration,
                     frame: region.frame
@@ -222,55 +181,61 @@ extension NativeMemberListCanvasView {
             }
         }
 
-        let visibleIDs = Set(visibleOverlays.map(\.id))
+        reconcileOverlayHosts(
+            visibleOverlays,
+            hosts: &activityEmojiOverlays,
+            configurations: &activityEmojiOverlayConfigurations
+        ) { configuration in
+            AnyView(
+                AnimatedRemoteImage(
+                    url: configuration.url,
+                    maximumPixelDimension: 64,
+                )
+                .opacity(configuration.opacity)
+                .allowsHitTesting(false)
+            )
+        }
+    }
+
+    /// Hands hosts that scrolled away to newly visible overlays, then removes the rest.
+    private func reconcileOverlayHosts<ID: Hashable, Configuration: Equatable>(
+        _ visible: [OverlayHostPresentation<ID, Configuration>],
+        hosts: inout [ID: NSHostingView<AnyView>],
+        configurations: inout [ID: Configuration],
+        content: (Configuration) -> AnyView
+    ) {
+        let visibleIDs = Set(visible.map(\.id))
         var reusableHosts: [NSHostingView<AnyView>] = []
-        for id in Array(activityEmojiOverlays.keys)
-            where !visibleIDs.contains(id)
-        {
-            guard let host = activityEmojiOverlays.removeValue(forKey: id)
-            else { continue }
-            activityEmojiOverlayConfigurations[id] = nil
+        for id in Array(hosts.keys) where !visibleIDs.contains(id) {
+            guard let host = hosts.removeValue(forKey: id) else { continue }
+            configurations[id] = nil
             reusableHosts.append(host)
         }
 
-        for presentation in visibleOverlays {
-            let id = presentation.id
-            let configuration = presentation.configuration
-            let host = activityEmojiOverlays[id] ?? {
-                let value = reusableHosts.popLast()
-                    ?? NSHostingView(rootView: AnyView(EmptyView()))
-                value.sizingOptions = []
-                value.wantsLayer = true
-                if value.superview == nil {
-                    addSubview(value)
+        for overlay in visible {
+            let host: NSHostingView<AnyView>
+            if let existing = hosts[overlay.id] {
+                host = existing
+            } else {
+                host = reusableHosts.popLast() ?? NSHostingView(rootView: AnyView(EmptyView()))
+                host.sizingOptions = []
+                host.wantsLayer = true
+                if host.superview == nil {
+                    addSubview(host)
                 }
-                activityEmojiOverlays[id] = value
-                return value
-            }()
-            if activityEmojiOverlayConfigurations[id] != configuration {
-                host.rootView = AnyView(
-                    AnimatedRemoteImage(
-                        url: configuration.url,
-                        maximumPixelDimension: 64,
-                    )
-                    .opacity(configuration.opacity)
-                    .allowsHitTesting(false)
-                )
-                activityEmojiOverlayConfigurations[id] = configuration
+                hosts[overlay.id] = host
             }
-            host.frame = presentation.frame
+            if configurations[overlay.id] != overlay.configuration {
+                host.rootView = content(overlay.configuration)
+                configurations[overlay.id] = overlay.configuration
+            }
+            host.frame = overlay.frame
             host.layer?.zPosition = 11
             host.setAccessibilityHidden(true)
         }
         for host in reusableHosts {
             host.removeFromSuperview()
         }
-    }
-
-    func removeActivityEmojiOverlays() {
-        for host in activityEmojiOverlays.values { host.removeFromSuperview() }
-        activityEmojiOverlays.removeAll(keepingCapacity: true)
-        activityEmojiOverlayConfigurations.removeAll(keepingCapacity: true)
     }
 
     func installAccessibilityRows(in range: Range<Int>) {
@@ -305,9 +270,6 @@ extension NativeMemberListCanvasView {
                 proxy.member = member
                 if presentation.presenceHiddenUserIDs.contains(member.id) {
                     proxy.setAccessibilityValue(member.activityText ?? "")
-                }
-                if rowMenu != nil {
-                    proxy.toolTip = [member.user.username, member.activityText].compactMap { $0 }.joined(separator: "\n")
                 }
             }
             // Resolve the current relationship and channel when VoiceOver asks,
@@ -538,8 +500,8 @@ extension NativeMemberListCanvasView {
                     requests.append((url, 32))
                 }
                 requests.append(contentsOf: NativeMemberActivityPresentation.references(
-                    in: member.memberListActivityText
-                ).compactMap(activityEmojiURL).map {
+                    in: member.memberListActivityContent.displayText
+                ).compactMap { $0.imageURL(in: customEmojiURLsByID) }.map {
                     (url: $0, maximumPixelDimension: 64)
                 })
             case .placeholder:
@@ -633,16 +595,10 @@ extension NativeMemberListCanvasView {
         }
     }
 
-    func activityEmojiURL(for reference: EmojiReference) -> URL? {
-        reference.id.flatMap { customEmojiURLsByID[$0] }
-            ?? reference.imageURL(size: 64)
-    }
-
     func tearDown() {
         placeholderShimmerTask?.cancel()
         placeholderShimmerTask = nil
-        for task in imageTasks.values { task.cancel() }
-        imageTasks.removeAll()
+        imageTasks.cancelAll()
         imageTaskPriorities.removeAll()
         imageTaskPixelDimensions.removeAll()
         imageRequestItemIDs.removeAll()

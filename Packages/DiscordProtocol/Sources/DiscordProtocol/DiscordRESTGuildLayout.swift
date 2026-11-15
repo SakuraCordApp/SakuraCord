@@ -6,20 +6,15 @@ extension DiscordRESTProvider {
         _ encoded: String?,
         replacesAllSettings: Bool = false
     ) {
-        guard
-            let encoded,
-            let data = Data(base64Encoded: encoded)
-        else { return }
-        let settings = DiscordSettingsProto.guildFoldersSettings(in: data)
-        guard settings != nil || replacesAllSettings else { return }
-        let version = DiscordSettingsProto.dataVersion(in: data)
-        if let version, let current = guildLayoutDataVersion, version < current { return }
-        if let version { guildLayoutDataVersion = version }
-        guildFoldersSettings = settings ?? Data()
+        guard let settings = DiscordSettingsProto.acceptedField(
+            in: encoded, replacesAllSettings: replacesAllSettings, dataVersion: &guildLayoutDataVersion,
+            field: DiscordSettingsProto.guildFoldersSettings(in:)
+        ) else { return }
+        guildFoldersSettings = settings
         // A rearrangement that is still waiting to be saved stays on the rail;
         // its save replaces these settings and the response reconciles them.
         guard pendingGuildFoldersSettings == nil else { return }
-        applyGuildLayout(DiscordSettingsProto.layout(fromGuildFolders: settings ?? Data()))
+        applyGuildLayout(DiscordSettingsProto.layout(fromGuildFolders: settings))
     }
 
     private func applyGuildLayout(

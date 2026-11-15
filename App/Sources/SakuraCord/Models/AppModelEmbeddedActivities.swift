@@ -26,6 +26,8 @@ final class EmbeddedActivityStore {
         let launchID = UUID()
 
         var location: EmbeddedActivityLocation { .of(channel) }
+        /// Launching or running; a failed launch is not.
+        var isActive: Bool { phase == .launching || phase == .running }
     }
 
     /// Where the shelf a launch came from was opened, as Discord's launch reports it.
@@ -185,10 +187,8 @@ final class EmbeddedActivityStore {
         instances = [:]
         shelves = [:]
         installedActivities = [:]
-        installedLoads.values.forEach { $0.cancel() }
-        installedLoads = [:]
-        shelfLoads.values.forEach { $0.cancel() }
-        shelfLoads = [:]
+        installedLoads.cancelAll()
+        shelfLoads.cancelAll()
         cardShelfRequests = []
         shelfErrors = [:]
         gatewaySessionID = nil
@@ -211,7 +211,7 @@ extension AppModel {
     func canStartActivity(in channel: Channel) -> Bool {
         guard channel.guildID != nil else { return true }
         guard let permissions = effectiveMessagePermissions(in: channel) else { return false }
-        return permissions & (DiscordPermissionBits.useEmbeddedActivities | DiscordPermissionBits.administrator) != 0
+        return permissions & DiscordPermissionBits.useEmbeddedActivities != 0
     }
 
     func retryActivity() async {
@@ -257,7 +257,6 @@ extension AppModel {
             // An older shelf can't vouch for what this read would have listed.
             embeddedActivities.shelves[guildID] = nil
             embeddedActivities.shelfErrors[guildID] = error.localizedDescription
-            return
         }
     }
 
@@ -280,8 +279,7 @@ extension AppModel {
         let store = embeddedActivities
         let account = accountSession()
         let location = EmbeddedActivityLocation.of(channel)
-        if let current = store.session, current.application.id == application.id, current.location == location,
-           current.phase == .launching || current.phase == .running {
+        if let current = store.session, current.application.id == application.id, current.location == location, current.isActive {
             return
         }
         guard await confirmLaunch(of: application), isCurrentAccountSession(account) else { return }
@@ -309,7 +307,7 @@ extension AppModel {
         store.session = session
         if channel.kind == .voice, activeVoiceChannel?.id != channel.id {
             await joinVoice(channel)
-            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            guard isCurrentLaunch(session, account: account) else { return }
             guard activeVoiceChannel?.id == channel.id else {
                 store.endSession()
                 return
@@ -317,7 +315,7 @@ extension AppModel {
         }
         // A rejoin must not race the leave Discord has not yet seen.
         for leave in store.pendingLeaves.values { await leave.value }
-        guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+        guard isCurrentLaunch(session, account: account) else { return }
         store.forgetFailedLeaves(of: application.id, in: channel.id)
         // Like Discord's client, an instance of the Activity already running
         // in the channel is joined rather than started again.
@@ -342,7 +340,7 @@ extension AppModel {
             try await launch.value
         } catch {
             // The instance update can arrive before a lost launch response.
-            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID,
+            guard isCurrentLaunch(session, account: account),
                   store.session?.instance == nil else { return }
             // The person declined to install the application.
             if error is CancellationError {
@@ -352,7 +350,7 @@ extension AppModel {
             store.session?.phase = .failed(error.localizedDescription)
             return
         }
-        guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+        guard isCurrentLaunch(session, account: account) else { return }
         if let instance = store.instances.values.first(where: { isOwnInstance($0, application: application.id, location: location) }) {
             consumeEmbeddedActivity(instance)
         }
@@ -363,6 +361,12 @@ extension AppModel {
             else { return }
             store?.session?.phase = .failed("\(application.name) did not start. Try again.")
         }
+    }
+
+    /// Whether `session` is still the launch in progress for the account
+    /// that started it.
+    private func isCurrentLaunch(_ session: EmbeddedActivityStore.Session, account: AppModelAccountSession) -> Bool {
+        isCurrentAccountSession(account) && embeddedActivities.session?.launchID == session.launchID
     }
 
     /// Discord opens a contextless Activity on its own rather than in the
@@ -380,7 +384,7 @@ extension AppModel {
         store.session = session
         do {
             let ticket = try await account.provider.embeddedActivityProxyTicket(application.id, channelID: nil)
-            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            guard isCurrentLaunch(session, account: account) else { return }
             // The channel only places the Activity and names where its grant is asked.
             let frame = EmbeddedActivityInstance(
                 applicationID: application.id, instanceID: "", compositeInstanceID: "example-cl-instance",
@@ -390,11 +394,11 @@ extension AppModel {
                 model: self, instance: frame, application: application, launchID: session.launchID, proxyTicket: ticket
             )
             store.session?.phase = .running
-            playActivitySound(.activityLaunch)
+            playCallFeedback(.activityLaunch)
             // Recents count each Activity opened; a failed save only loses that count.
             try? await account.provider.recordEmbeddedActivityLaunch(application.id)
         } catch {
-            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            guard isCurrentLaunch(session, account: account) else { return }
             store.session?.phase = .failed(error.localizedDescription)
         }
     }
@@ -407,7 +411,7 @@ extension AppModel {
             guard await store.ask(.confirmAge, applicationName: application.name) else { return false }
             store.ageConfirmedApplications.insert(application.id)
         }
-        guard let current = store.session, current.phase == .launching || current.phase == .running else { return true }
+        guard let current = store.session, current.isActive else { return true }
         return await store.ask(
             .replace(activity: current.application.name, channel: current.channel.name),
             applicationName: application.name
@@ -423,7 +427,7 @@ extension AppModel {
         guard let scopes = try await account.provider.embeddedActivityInstallScopes(application.id, in: channel) else { return }
         let request = EmbeddedActivityAuthorizationRequest(
             applicationID: application.id, scopes: scopes, state: UUID().uuidString,
-            location: .of(channel), channelType: channel.discordCommandType
+            location: .of(channel), channelType: channel.discordChannelType ?? -1
         )
         guard try await embeddedActivityConsent(to: request, launchID: launchID, account: account) else {
             // The launch ends now; Discord answers the refusal with access_denied.
@@ -465,13 +469,8 @@ extension AppModel {
 
     /// Ends the hosted Activity, with Discord's cue when one was open.
     private func endActivitySession() {
-        if embeddedActivities.host != nil { playActivitySound(.activityEnd) }
+        if embeddedActivities.host != nil { playCallFeedback(.activityEnd) }
         embeddedActivities.endSession()
-    }
-
-    /// Discord's Activity cues, which follow the call feedback sounds setting.
-    private func playActivitySound(_ effect: AppSoundEffect) {
-        if voiceVideoPreferences.playsFeedbackSounds { soundPlayer.play(effect) }
     }
 
     private func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) {
@@ -500,12 +499,12 @@ extension AppModel {
     }
 
     func activityPlayerAvatarURL(_ userID: UserID) -> URL? {
-        (currentUser?.id == userID ? currentUser : membersByID[userID]?.user)?.avatarURL
+        knownUser(userID)?.avatarURL
     }
 
     /// The launch message's button: join a running instance, show it joined,
     /// or play again once it ended, as Discord's does.
-    func activityInstanceAction(_ instanceID: String) -> (String, Bool) {
+    func activityInstanceAction(_ instanceID: String) -> (title: String, isDisabled: Bool) {
         if embeddedActivities.session?.instance?.compositeInstanceID == instanceID { return ("Joined", true) }
         guard let instance = embeddedActivities.instances[instanceID] else { return ("Play", false) }
         return ("Join", knownRootChannel(instance.location.channelID) == nil)
@@ -598,7 +597,7 @@ extension AppModel {
             if isNew, instance.location.channelID == activeVoiceChannel?.id,
                embeddedActivities.session?.instance?.compositeInstanceID != instance.compositeInstanceID,
                !instance.participants.contains(where: { $0.sessionID == embeddedActivities.gatewaySessionID }) {
-                playActivitySound(.activityLaunch)
+                playCallFeedback(.activityLaunch)
             }
         case .embeddedActivitiesReceived(let instances):
             embeddedActivities.replaceInstances(instances)
@@ -659,7 +658,7 @@ extension AppModel {
         }
         if store.host != nil, !replacesInstance, let previous = session.instance,
            instance.playerIDs.count != previous.playerIDs.count {
-            playActivitySound(instance.playerIDs.count > previous.playerIDs.count ? .activityUserJoin : .activityUserLeft)
+            playCallFeedback(instance.playerIDs.count > previous.playerIDs.count ? .activityUserJoin : .activityUserLeft)
         }
         store.session?.instance = instance
         store.host?.participantsChanged()
@@ -690,7 +689,7 @@ extension AppModel {
                 model.embeddedActivities.session?.phase = .running
                 // Discord cues joining people already playing in the call as a join.
                 let isJoiningCall = session.isInCall && instance.playerIDs.count > 1
-                model.playActivitySound(isJoiningCall ? .activityUserJoin : .activityLaunch)
+                model.playCallFeedback(isJoiningCall ? .activityUserJoin : .activityLaunch)
                 // Recents count each Activity opened; a failed save only loses that count.
                 try? await account.provider.recordEmbeddedActivityLaunch(instance.applicationID)
             } catch {

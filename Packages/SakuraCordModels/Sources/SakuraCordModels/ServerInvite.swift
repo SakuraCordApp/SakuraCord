@@ -106,7 +106,7 @@ public struct ServerInvite: Equatable, Sendable {
 
     /// Apply-to-join: Discord admits the account only after a moderator approves its application.
     public var requiresApplication: Bool {
-        features.contains("MEMBER_VERIFICATION_MANUAL_APPROVAL")
+        features.contains(GuildFeature.memberVerificationManualApproval)
     }
 
     public var unsupportedJoinReason: String? {

@@ -29,14 +29,6 @@ nonisolated struct DiscordQuickSwitcherChannelStoreCache: Codable, Sendable {
 }
 
 extension DiscordRESTProvider {
-    func loadQuickSwitcherChannelStoreCache() {
-        installQuickSwitcherChannelStoreCache(
-            quickSwitcherChannelStoreCacheURL().flatMap(
-                DiscordQuickSwitcherChannelStoreCache.load(from:)
-            )
-        )
-    }
-
     func installQuickSwitcherChannelStoreCache(
         _ cache: DiscordQuickSwitcherChannelStoreCache?
     ) {

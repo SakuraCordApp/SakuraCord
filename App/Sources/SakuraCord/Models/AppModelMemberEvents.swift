@@ -92,3 +92,19 @@ extension AppModel {
         }
     }
 }
+
+nonisolated enum MemberStoreMerge {
+    static func merging(
+        existing: [UserID: Member],
+        updates: [Member]
+    ) -> [UserID: Member] {
+        var result = existing
+        for var member in updates {
+            if member.memberListIndex == nil {
+                member.memberListIndex = result[member.id]?.memberListIndex
+            }
+            result[member.id] = member
+        }
+        return result
+    }
+}

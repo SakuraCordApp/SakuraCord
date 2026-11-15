@@ -28,7 +28,6 @@ struct ImportExportSettingsPage: View {
                     }
                 }
                 .toggleStyle(.checkbox)
-                .tint(SakuraCordAccentColor.color)
                 HStack {
                     Button("Select All") { selectedPages = Set(SettingsTransferService.pages) }
                         .disabled(selectedPages.count == SettingsTransferService.pages.count)

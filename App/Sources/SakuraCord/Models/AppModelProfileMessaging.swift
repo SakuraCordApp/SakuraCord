@@ -4,10 +4,13 @@ import SakuraCordModels
 
 extension AppModel {
     func sendProfileMessage(to userID: UserID, content: String, nonce: String = ClientNonce.make()) async -> Bool {
-        guard userID != currentUser?.id,
-              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !composer.outbox.hasPendingDelivery(nonce: nonce)
+        // Like Discord's composer, the text is trimmed and a bare `@silent`
+        // clears it without sending anything.
+        let content = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sentContent = SilentMessagePrefix.split(content).content
+        guard userID != currentUser?.id, !content.isEmpty, !composer.outbox.hasPendingDelivery(nonce: nonce)
         else { return false }
+        guard !sentContent.isEmpty else { return true }
         let existing = snapshot?.channels.first {
             $0.kind == .directMessage && $0.recipients.contains { $0.id == userID }
         }
@@ -15,10 +18,7 @@ extension AppModel {
             releaseProfileMessage(nonce: nonce)
             return true
         }
-        guard let reservation = composer.outbox.reserveSubmission(nonce: nonce) else {
-            composer.isSendQueueFullAlertPresented = true
-            return false
-        }
+        guard let reservation = reserveOutgoingQueueSubmission(nonce: nonce) else { return false }
         defer { composer.outbox.releaseSubmission(reservation) }
         composer.outbox.retainReceipt(nonce: nonce)
         let session = accountSession()
@@ -30,10 +30,7 @@ extension AppModel {
                 channel = try await session.provider.ensurePrivateChannel(for: userID)
             }
             guard !Task.isCancelled, isCurrentAccountSession(session) else { return false }
-            if snapshot?.channels.contains(where: { $0.id == channel.id }) == false {
-                snapshot?.channels.append(channel)
-                forwardSearchSourceRevision &+= 1
-            }
+            mergeOpenedPrivateChannel(channel)
             if outgoingState(nonce: nonce, channelID: channel.id) == .confirmed {
                 releaseProfileMessage(nonce: nonce)
                 return true
@@ -42,7 +39,7 @@ extension AppModel {
             // turn, preserving capacity while DM creation is suspended.
             composer.outbox.releaseSubmission(reservation)
             if let outgoing = composer.outbox.draftsByNonce[nonce] {
-                guard outgoing.channelID == channel.id, outgoing.content == content,
+                guard outgoing.channelID == channel.id, outgoing.content == sentContent,
                       outgoingState(nonce: nonce, channelID: channel.id) == .failed,
                       allowSlowmodeSubmission(in: channel.id)
                 else { return false }

@@ -2,70 +2,13 @@ import AppKit
 import SakuraCordModels
 
 extension NativeTimelineCanvasView {
-    func appendComponentMediaAccessibility(
-        to children: inout [Any],
-        input: ComponentMediaA11yInput
-    ) {
-        let label = input.label
-        let frame = input.frame
-        let componentID = input.componentID
-        let openURL = input.openURL
-        let isSpoiler = input.isSpoiler
-        let message = input.message
-        let rowIndex = input.rowIndex
-        let parent = input.parent
-        let file = input.file
-        let viewerPresentation = input.viewerPresentation
-        let key = NativeTimelineComponentRevealKey(
-            messageID: message.id,
-            componentID: componentID
-        )
-        let isHiddenSpoiler =
-            isSpoiler && !spoilerRevealStore.isMediaRevealed(key)
-        let element = accessibilityElement(
-            role: .button,
-            label: isHiddenSpoiler ? "Reveal spoiler" : label,
-            help: isHiddenSpoiler ? "Reveals the spoiler without opening it" : "Open \(label)",
-            frame: accessibilityChildFrame(frame, rowIndex: rowIndex),
-            parent: parent
-        ) { [weak self] in
-            guard let self else { return false }
-            if isHiddenSpoiler {
-                self.reveal(key, rowIndex: rowIndex)
-            } else if let viewerPresentation {
-                self.model?.mediaViewerPresentation =
-                    self.mediaViewerPresentation(
-                        viewerPresentation,
-                        componentID: componentID,
-                        rowIndex: rowIndex
-                    )
-            } else {
-                NSWorkspace.shared.open(openURL)
-            }
-            return true
-        }
-        // A file previews when pressed; its card's button downloads it.
-        if let file, !isHiddenSpoiler {
-            element.setAccessibilityCustomActions([
-                NSAccessibilityCustomAction(name: fileCardActionDescription(file, name: label)) { [weak self] in
-                    self?.activateFileCard(file)
-                    return self != nil
-                },
-            ])
-        }
-        children.append(element)
-    }
-
     func accessibilityMessageActions(
         _ row: MessageRowPresentation,
         rowIndex: Int
     ) -> [NSAccessibilityCustomAction] {
         let message = row.message
         guard MessageOutboxPresentation.interactionMode(for: message).allowsMessageContextMenu else { return [] }
-        let canEdit = !message.hasPoll && !message.flags.contains(.voiceMessage)
-            && message.author.id == model?.currentUser?.id
-            && model?.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
-            && MessageReplyPresentationPolicy.allowsReplyAction(for: message)
+        let canEdit = model?.canEditMessage(message) == true
         let canDelete = model?.canDeleteMessage(message) == true
         if messageInteractionContext != .conversation {
             return accessibilityInboxOrSearchActions(message, canDelete: canDelete)
@@ -81,7 +24,7 @@ extension NativeTimelineCanvasView {
             result.append(NSAccessibilityCustomAction(
                 name: "Copy Text"
             ) {
-                Self.copyText(message.content)
+                Pasteboard.copy(message.content)
                 return true
             })
             return result
@@ -111,7 +54,7 @@ extension NativeTimelineCanvasView {
             self?.actions?.markUnread(message)
             return self != nil
         })
-        if message.outboxState == .confirmed, message.author.id == model?.currentUser?.id, message.poll?.isClosed() == false {
+        if canEndPoll(message) {
             result.append(NSAccessibilityCustomAction(name: "End Poll Now") { [weak self] in
                 self?.requestEndPoll(message)
                 return self != nil
@@ -135,20 +78,20 @@ extension NativeTimelineCanvasView {
         result.append(NSAccessibilityCustomAction(
             name: "Copy Text"
         ) {
-            Self.copyText(message.content)
+            Pasteboard.copy(message.content)
             return true
         })
         result.append(NSAccessibilityCustomAction(
             name: "Copy Message Link"
         ) { [weak self] in
             guard let self else { return false }
-            Self.copyText(self.messageLink(for: message))
+            Pasteboard.copy(self.messageLink(for: message))
             return true
         })
         result.append(NSAccessibilityCustomAction(
             name: "Copy Message ID"
         ) {
-            Self.copyText(message.id.description)
+            Pasteboard.copy(message.id.description)
             return true
         })
         if canDelete {
@@ -186,12 +129,12 @@ extension NativeTimelineCanvasView {
                 return true
             },
             NSAccessibilityCustomAction(name: "Copy Text") {
-                Self.copyText(message.content)
+                Pasteboard.copy(message.content)
                 return true
             },
             NSAccessibilityCustomAction(name: "Copy Message Link") { [weak self] in
                 guard let self else { return false }
-                Self.copyText(self.messageLink(for: message))
+                Pasteboard.copy(self.messageLink(for: message))
                 return true
             },
         ]
@@ -206,11 +149,11 @@ extension NativeTimelineCanvasView {
         }
         result.append(contentsOf: [
             NSAccessibilityCustomAction(name: "Copy Message ID") {
-                Self.copyText(message.id.description)
+                Pasteboard.copy(message.id.description)
                 return true
             },
             NSAccessibilityCustomAction(name: "Copy Message Author ID") {
-                Self.copyText(message.author.id.description)
+                Pasteboard.copy(message.author.id.description)
                 return true
             },
         ])
@@ -322,119 +265,6 @@ extension NativeTimelineCanvasView {
         return element
     }
 
-    func activateAttachment(
-        _ attachment: Attachment,
-        in message: Message,
-        rowIndex: Int
-    ) -> Bool {
-        let revealKey = NativeTimelineComponentRevealKey.attachment(
-            messageID: message.id,
-            attachmentID: attachment.id
-        )
-        if attachment.isSpoiler,
-           !spoilerRevealStore.isMediaRevealed(revealKey)
-        {
-            reveal(revealKey, rowIndex: rowIndex)
-        } else if let presentation =
-            NativeTimelineMediaViewerPlan.attachments(
-                in: message,
-                selectedAttachmentID: attachment.id,
-                isRevealed: { [spoilerRevealStore] componentID in
-                    spoilerRevealStore.isMediaRevealed(
-                        NativeTimelineComponentRevealKey(
-                            messageID: message.id,
-                            componentID: componentID
-                        )
-                    )
-                }
-            )
-        {
-            let frame = layouts[rowIndex].attachmentRegions.first(where: {
-                $0.attachment.id == attachment.id
-            })?.frame
-            model?.mediaViewerPresentation = mediaViewerPresentation(
-                presentation,
-                sourceFrame: frame ?? .zero,
-                rowIndex: rowIndex,
-                mediaKey: NativeTimelineMediaKey.attachment(attachment),
-                cornerRadius: InterfaceScale.metric(8),
-                fillsFrame: MediaGalleryImagePresentation.fillsFrame(
-                    itemCount: layouts[rowIndex].mediaGalleryItemCount
-                )
-            )
-        } else {
-            NSWorkspace.shared.open(attachment.url)
-        }
-        return true
-    }
-
-    func activateEmbedMedia(
-        id: String,
-        in message: Message,
-        rowIndex: Int
-    ) -> Bool {
-        if let presentation = NativeTimelineMediaViewerPlan.embed(
-            in: message,
-            id: id
-        ) {
-            let region = layouts[rowIndex].embedRegions.first(where: {
-                $0.embedID == id
-            })
-            model?.mediaViewerPresentation = mediaViewerPresentation(
-                presentation,
-                sourceFrame: region?.mediaFrame ?? .zero,
-                rowIndex: rowIndex,
-                mediaKey: region?.mediaURL.map {
-                    NativeTimelineMediaKey.media($0)
-                },
-                cornerRadius: InterfaceScale.metric(8),
-                fillsFrame: region?.mediaFillsFrame ?? false
-            )
-            return true
-        }
-        guard let region = layouts.lazy
-            .flatMap(\.embedRegions)
-            .first(where: { $0.embedID == id }),
-              let url = region.mediaURL
-        else { return false }
-        NSWorkspace.shared.open(url)
-        return true
-    }
-
-    func activateComponentButton(
-        _ region: NativeTimelineComponentLayout.ButtonRegion,
-        message: Message
-    ) -> Bool {
-        guard !region.isDisabled else { return false }
-        if let url = region.url {
-            return MessageLinkActivator.activate(url, model: model)
-        }
-        guard let customID = region.customID else { return false }
-        if model?.presentIssueReport(forComponent: customID, on: message) == true { return true }
-        actions?.submitComponent(message, customID, .button, [])
-        return true
-    }
-
-    func setHoveredRow(_ value: Int?) {
-        guard hoveredRow != value else { return }
-        let old = hoveredRow
-        hoveredRow = value
-        updateAvatarPlayback()
-        if let old {
-            setNeedsDisplay(rowFrame(at: old))
-        }
-        if let value {
-            setNeedsDisplay(rowFrame(at: value))
-        }
-        if value == nil, actionCapsuleState?.isPresentationActive == true {
-            return
-        }
-        reconcileActionCapsule()
-    }
-
-}
-
-extension NativeTimelineCanvasView {
     private func accessibilityInboxOrSearchActions(_ message: Message, canDelete: Bool) -> [NSAccessibilityCustomAction] {
         var result = accessibilitySearchResultActions(
             for: message,

@@ -149,7 +149,23 @@ public protocol ChatProvider: Sendable {
     func setInboxEventInterested(_ interested: Bool, event: InboxScheduledEvent) async throws
     func updateInboxTab(_ tab: InboxTab) async throws
     func updateInboxCollapsed(_ collapsed: Bool, channelID: ChannelID, guildID: GuildID?) async throws
+    func scheduledMessages() async throws -> [ScheduledMessage]
+    func scheduleMessage(_ draft: SendMessageDraft, at date: Date) async throws -> ScheduledMessage
+    func rescheduleMessage(_ id: ScheduledMessageID, at date: Date) async throws -> ScheduledMessage
+    func editScheduledMessage(_ id: ScheduledMessageID, content: String, flags: MessageFlags) async throws -> ScheduledMessage
+    func sendScheduledMessageNow(_ id: ScheduledMessageID) async throws
+    func cancelScheduledMessage(_ id: ScheduledMessageID) async throws
     func updateGuildRailLayout(_ items: [GuildRailItem]) async throws
+    /// The Favorites server, nil until the account's settings load.
+    func favoritesSettings() async -> FavoritesSettings?
+    /// Applies the edits together and saves them as one change.
+    func updateFavorites(_ edits: [FavoritesSettings.Edit]) async throws
+    /// Dismisses or restores the Favorites server's Suggested Channels.
+    func setFavoritesSuggestionsDismissed(_ dismissed: Bool) async throws
+    /// The account's most-used channels and DM partners, empty without
+    /// personalization consent. `stored` is the persisted copy, refetched
+    /// only once its lifetime has passed.
+    func conversationAffinities(restoring stored: ConversationAffinities?) async -> ConversationAffinities
     func pinnedMessages(
         in channelID: ChannelID,
         before: Date?,
@@ -205,7 +221,7 @@ public protocol ChatProvider: Sendable {
     /// Stores a staged file before its message is sent; returns whether
     /// storage accepted it. Its message then posts it as it is.
     func preuploadAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async -> Bool
@@ -318,7 +334,7 @@ public protocol ChatProvider: Sendable {
         isMuted: Bool,
         until: Date?
     ) async throws
-    func updateDirectMessagePin(channelID: ChannelID, flags: UInt64) async throws
+    func updateChannelPin(guildID: GuildID?, channelID: ChannelID, flags: UInt64) async throws
     func updateCategoryNotificationLevel(
         guildID: GuildID,
         categoryID: ChannelID,
@@ -400,6 +416,12 @@ public extension ChatProvider {
     func updateGuildRailLayout(_ items: [GuildRailItem]) async throws {
         throw ChatProviderError.invalidRequest("Rearranging servers is unavailable for this session.")
     }
+    func favoritesSettings() async -> FavoritesSettings? { nil }
+    func updateFavorites(_ edits: [FavoritesSettings.Edit]) async throws {
+        throw ChatProviderError.invalidRequest("Favorites are unavailable for this session.")
+    }
+    func setFavoritesSuggestionsDismissed(_ dismissed: Bool) async throws {}
+    func conversationAffinities(restoring stored: ConversationAffinities?) async -> ConversationAffinities { ConversationAffinities() }
     func guildGuide(in guildID: GuildID) async throws -> GuildGuide { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func guildProfile(in guildID: GuildID) async throws -> GuildProfile { throw ChatProviderError.invalidRequest("Server profile is unavailable.") }
     func messageInteractionData(channelID: ChannelID, messageID: MessageID) async throws -> MessageInteractionData {
@@ -839,7 +861,7 @@ public extension ChatProvider {
     func cancelAttachmentUpload(_ attachmentID: UUID) async -> Bool { false }
 
     func preuploadAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async -> Bool { false }
@@ -1101,7 +1123,7 @@ public extension ChatProvider {
         until: Date?
     ) async throws {}
 
-    func updateDirectMessagePin(channelID: ChannelID, flags: UInt64) async throws {}
+    func updateChannelPin(guildID: GuildID?, channelID: ChannelID, flags: UInt64) async throws {}
 
     func updateCategoryNotificationLevel(
         guildID: GuildID,
@@ -1272,6 +1294,7 @@ public enum ChatProviderError: LocalizedError, Equatable, Sendable {
     case transport(status: Int, requestID: String?)
     case capabilityDisabled(ChatCapability)
     case threadMemberLimitReached
+    case scheduledMessageLimitReached
 
     public var errorDescription: String? {
         switch self {
@@ -1289,6 +1312,7 @@ public enum ChatProviderError: LocalizedError, Equatable, Sendable {
         case let .capabilityDisabled(capability):
             "\(capability.displayName) is not enabled for this account session."
         case .threadMemberLimitReached: "This thread has reached its member limit."
+        case .scheduledMessageLimitReached: "You have too many scheduled messages."
         }
     }
 }
@@ -1333,5 +1357,27 @@ public extension ChatProvider {
     }
     func refreshAttachmentURL(_ url: URL) async throws -> URL? {
         throw ChatProviderError.invalidRequest("Opening attachment links is unavailable.")
+    }
+
+    func scheduledMessages() async throws -> [ScheduledMessage] { [] }
+
+    func scheduleMessage(_ draft: SendMessageDraft, at date: Date) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func rescheduleMessage(_ id: ScheduledMessageID, at date: Date) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func editScheduledMessage(_ id: ScheduledMessageID, content: String, flags: MessageFlags) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func sendScheduledMessageNow(_ id: ScheduledMessageID) async throws {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func cancelScheduledMessage(_ id: ScheduledMessageID) async throws {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
     }
 }

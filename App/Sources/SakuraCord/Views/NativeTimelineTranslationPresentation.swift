@@ -37,7 +37,7 @@ struct NativeTimelineTranslationPresentation {
                 preparedText: visibleText.isEmpty ? nil : RichMessageAttributedText.prepare(source: visibleText),
                 linkedImages: [],
                 attributedText: nil,
-                baseFontSize: 15
+                baseFontSize: InterfaceTypographyMetrics.messageTextSize
             )
             let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, source: model)
             return Self(
@@ -58,7 +58,7 @@ struct NativeTimelineTranslationPresentation {
             captionWidth += 8 + NativeTimelineRowLayout.measuredTextWidth("•", font: font)
                 + NativeTimelineRowLayout.measuredTextWidth(actionTitle, font: font)
         }
-        guard let attributed = text?.attributedContent, attributed.length > 0 else {
+        guard let attributed = text?.content?.value, attributed.length > 0 else {
             return min(maximumWidth, captionWidth)
         }
         let line = CTLineCreateWithAttributedString(attributed)
@@ -81,8 +81,7 @@ extension NativeTimelineRowLayout {
         let actionTitle: String?
         let actionFrame: CGRect?
         let textFrame: CGRect?
-        let attributedText: NSAttributedString?
-        let framesetter: CTFramesetter?
+        let text: NativeTimelineAttributedTextBox?
     }
 
     static var translationCaptionFont: NSFont {
@@ -117,9 +116,9 @@ extension NativeTimelineRowLayout {
         }
         var textFrame: CGRect?
         var bottom = origin.y + InterfaceScale.metric(15)
-        if let attributed = presentation.text?.attributedContent, let framesetter = presentation.text?.framesetter {
-            let height = measuredTextHeight(framesetter, value: attributed, length: attributed.length, width: width)
-            bottom += 2 + NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributed)
+        if let text = presentation.text?.content {
+            let height = measuredTextHeight(text.framesetter, value: text.value, length: text.value.length, width: width)
+            bottom += 2 + NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: text.value)
             textFrame = CGRect(x: origin.x, y: bottom, width: width, height: height)
             bottom += height
         }
@@ -136,8 +135,7 @@ extension NativeTimelineRowLayout {
             actionTitle: presentation.actionTitle,
             actionFrame: actionFrame,
             textFrame: textFrame,
-            attributedText: presentation.text?.attributedContent,
-            framesetter: presentation.text?.framesetter
+            text: presentation.text?.content
         )
     }
 }
@@ -146,8 +144,8 @@ extension NativeTimelineRowPainter {
     static func drawMessageTranslation(_ input: NativeTimelineMessageDrawInput) {
         guard let region = input.layout.translationRegion else { return }
         let font = NativeTimelineRowLayout.translationCaptionFont
-        let secondary: NSColor = region.isOutgoingBubble ? .white.withAlphaComponent(0.8) : .secondaryLabelColor
-        let accent: NSColor = region.isOutgoingBubble ? .white : .sakuraCordAccentColor
+        let secondary: NSColor = region.isOutgoingBubble ? .sakuraCordLabelOnAccentColor.withAlphaComponent(0.8) : .secondaryLabelColor
+        let accent: NSColor = region.isOutgoingBubble ? .sakuraCordLabelOnAccentColor : .sakuraCordAccentColor
         let symbol = region.kind == .failed ? "exclamationmark.triangle" : "translate"
         systemSymbol(symbol, in: region.iconFrame, color: region.kind == .failed ? .systemRed : secondary, inset: 0)
         text(region.caption, in: region.captionFrame, font: font, color: secondary)
@@ -155,25 +153,15 @@ extension NativeTimelineRowPainter {
             text("•", in: bulletFrame, font: font, color: secondary)
         }
         if let actionTitle = region.actionTitle, let actionFrame = region.actionFrame {
-            text(actionTitle, in: actionFrame, font: font, color: accent, isInteractiveHovered: input.isTranslationActionHovered)
+            text(actionTitle, in: actionFrame, font: font, color: accent, isInteractiveHovered: input.interaction.isTranslationActionHovered)
         }
-        guard let textFrame = region.textFrame,
-              let attributed = region.attributedText,
-              let framesetter = region.framesetter
-        else { return }
+        guard let textFrame = region.textFrame, let text = region.text else { return }
         attributedText(
-            attributed,
-            framesetter: framesetter,
+            text,
             in: NativeTimelineTextGeometry.messageContentDrawingFrame(textFrame),
-            model: input.model,
-            selectionRange: input.textSelection?.itemIdentifier == .message(input.row.identity)
-                && input.textSelection?.region == region.regionID ? input.textSelection?.range : nil,
-            hoveredMentionCharacterIndex: input.hoveredMention?.itemIdentifier == .message(input.row.identity)
-                && input.hoveredMention?.region == region.regionID ? input.hoveredMention?.characterIndex : nil,
-            hoveredLinkCharacterIndex: input.hoveredTextLink?.itemIdentifier == .message(input.row.identity)
-                && input.hoveredTextLink?.region == region.regionID ? input.hoveredTextLink?.characterIndex : nil,
-            spoilerHoverProgress: input.textSpoilerHover.progress(in: .message(input.row.identity), region: region.regionID),
-            revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: region.regionID)
+            region: region.regionID,
+            bubble: input.layout.bubbleRegion,
+            input: input
         )
     }
 }

@@ -39,16 +39,16 @@ import SakuraCordModels
         }
 
         func runScheduledMemberListRefreshForTesting(guildID: GuildID) async -> Bool {
-            if let task = memberListViewportRestoreTasks.removeValue(forKey: guildID),
+            if let task = memberListState.viewportRestoreTasks.removeValue(forKey: guildID),
                let generation = guildSubscriptionGenerations[guildID] {
                 task.cancel()
                 gatewayOpcodeRateLimitDates[37] = nil
                 await restoreSelectedMemberListViewport(guildID: guildID, generation: generation)
                 return true
             }
-            guard let task = memberListRefreshRetryTasks.removeValue(forKey: guildID),
-                  let memberListID = selectedMemberListID[guildID],
-                  let refresh = memberListsNeedingRefresh[guildID]?[memberListID]
+            guard let task = memberListState.refreshRetryTasks.removeValue(forKey: guildID),
+                  let memberListID = memberListState.selectedIDs[guildID],
+                  let refresh = memberListState.listsNeedingRefresh[guildID]?[memberListID]
             else { return false }
             task.cancel()
             gatewayOpcodeRateLimitDates[37] = nil
@@ -131,16 +131,12 @@ import SakuraCordModels
             deferredPresenceTask != nil
         }
 
-        func cachedChannelForTesting(channelID: ChannelID) -> Channel? {
-            cachedChannels.values.lazy.flatMap { $0 }.first { $0.id == channelID }
-        }
-
         func cachedPrivateChannelsForTesting() -> [Channel] {
             cachedChannels[nil] ?? []
         }
 
         func cachedForumPostForTesting(threadID: ChannelID) -> ForumPost? {
-            cachedForumPosts.values.lazy.compactMap { $0[threadID] }.first
+            cachedForumPost(threadID: threadID)
         }
 
         func activeJoinedThreadsForTesting() -> [MessageThreadSummary] {
@@ -165,6 +161,20 @@ import SakuraCordModels
 
         func cachedMembersForTesting(guildID: GuildID) -> [Member] {
             cachedMembers[guildID] ?? []
+        }
+
+        func orderedMemberListIDsForTesting(
+            guildID: GuildID, memberListID: String
+        ) -> [UserID] {
+            orderedMemberListMembers(
+                guildID: guildID, memberListID: memberListID
+            )?.map(\.id) ?? []
+        }
+
+        func memberListGroupsForTesting(
+            guildID: GuildID, memberListID: String
+        ) -> [GuildMemberListGroup] {
+            memberListState.cachedGroups[guildID]?[memberListID] ?? []
         }
     }
 #endif

@@ -140,11 +140,7 @@ extension AppModel {
             guard isCurrentAccountSession(session), !Task.isCancelled else { return false }
             guard let guild = try await awaitJoinedGuild(guildID, account: session) else { return false }
             navigateToServerTagGuild(guildID)
-            if requiresVerification {
-                openGuildJoinApplication(guildID)
-            } else if guild.features.contains("GUILD_ONBOARDING") {
-                openChannelsAndRoles(in: guildID)
-            }
+            presentPostJoinFlow(guild: guild, screening: requiresVerification)
             return true
         } catch {
             guard isCurrentAccountSession(session), !(error is CancellationError) else { return false }
@@ -156,8 +152,6 @@ extension AppModel {
     private func navigateToServerTagGuild(_ guildID: GuildID) {
         dismissContextualProfile()
         dismissExpandedProfile()
-        startConversationNavigation { model, account in
-            await model.activateGuild(guildID, account: account)
-        }
+        selectGuild(guildID)
     }
 }

@@ -10,7 +10,7 @@ extension MockMessageFixtureBuilder {
     private func staticSelectionFieldFixture() -> Message {
         Message(
             id: MessageID(rawValue: 2012),
-            channelID: ChannelID(rawValue: 210),
+            channelID: MockChatProvider.generalChannelID,
             author: verifiedApp,
             content:
                 "**Selection field fixture — static options**\nChoose up to three areas to exercise searching, descriptions, emoji, defaults, and multi-select cards.",
@@ -127,7 +127,7 @@ extension MockMessageFixtureBuilder {
         let identifier = "fixture-\(kind.rawValue)-select"
         return Message(
             id: MessageID(rawValue: id),
-            channelID: ChannelID(rawValue: 210),
+            channelID: MockChatProvider.generalChannelID,
             author: verifiedApp,
             content: "",
             timestamp: base.addingTimeInterval(

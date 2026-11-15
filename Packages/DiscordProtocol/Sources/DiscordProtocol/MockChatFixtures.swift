@@ -1,6 +1,14 @@
 import Foundation
 import SakuraCordModels
 
+public extension MockChatProvider {
+    /// The offline fixture's #welcome, #general and #feedback forum channels
+    /// in its first demo server, which benchmarks open by ID.
+    static let welcomeChannelID = ChannelID(rawValue: 200)
+    static let generalChannelID = ChannelID(rawValue: 210)
+    static let feedbackForumID = ChannelID(rawValue: 220)
+}
+
 /// The servers an offline launch joins beyond the two demo servers.
 public enum MockServerList: Sendable {
     case standard
@@ -542,8 +550,12 @@ private struct MockFixtureAssembly {
         let auroraVoiceCategoryID = ChannelID(rawValue: 193)
         let labCategoryID = ChannelID(rawValue: 290)
         let labVoiceCategoryID = ChannelID(rawValue: 291)
-        let textPermissions: UInt64 = (1 << 0) | (1 << 10) | (1 << 11) | (1 << 15) | (1 << 16) | (1 << 20) | (1 << 46)
-            | (1 << 34) | (1 << 35) | (1 << 38) | (1 << 51)
+        let textPermissions: UInt64 = DiscordPermissionBits.createInstantInvite | DiscordPermissionBits.viewChannel
+            | DiscordPermissionBits.sendMessages | DiscordPermissionBits.attachFiles
+            | DiscordPermissionBits.readMessageHistory | DiscordPermissionBits.connect
+            | DiscordPermissionBits.sendVoiceMessages | DiscordPermissionBits.manageThreads
+            | DiscordPermissionBits.createPublicThreads | DiscordPermissionBits.sendMessagesInThreads
+            | DiscordPermissionBits.pinMessages
         let auroraIcon = demoAsset("guild-aurora")
         let nativeLabIcon = demoAsset("guild-native-lab")
         let animatedFixture = animatedDemoAsset()
@@ -691,7 +703,7 @@ private struct MockFixtureAssembly {
         ]
         var channels = [
             Channel(
-                id: ChannelID(rawValue: 200), guildID: auroraID, name: "welcome", kind: .announcement,
+                id: MockChatProvider.welcomeChannelID, guildID: auroraID, name: "welcome", kind: .announcement,
                 category: "START HERE", categoryID: startHereCategoryID,
                 position: 0, categoryPosition: 0
             ),
@@ -705,7 +717,7 @@ private struct MockFixtureAssembly {
                 categoryID: startHereCategoryID, position: 2, categoryPosition: 0
             ),
             Channel(
-                id: ChannelID(rawValue: 210), guildID: auroraID, name: "general",
+                id: MockChatProvider.generalChannelID, guildID: auroraID, name: "general",
                 topic: "Welcome to **SakuraCord**! A fast, native Discord client for *macOS*.\n\n"
                     + "Check out the [Roadmap](https://roadmap.sakuracord.app) and "
                     + "[Documentation](https://sakuracord.app). Have fun with `SwiftUI`!",
@@ -765,7 +777,7 @@ private struct MockFixtureAssembly {
                     ChannelPermissionOverwrite(
                         id: nova.id.description,
                         type: 1,
-                        deny: (1 << 10) | (1 << 16)
+                        deny: DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
                     )
                 ],
                 lastMessageID: MessageID(
@@ -774,7 +786,7 @@ private struct MockFixtureAssembly {
                 lastPinTimestamp: now.addingTimeInterval(-8 * 24 * 60 * 60 - 2_400)
             ),
             Channel(
-                id: ChannelID(rawValue: 220), guildID: auroraID, name: "feedback",
+                id: MockChatProvider.feedbackForumID, guildID: auroraID, name: "feedback",
                 topic: "Share one focused idea per post. Search for duplicates, choose the most relevant tags, and keep critique constructive.",
                 kind: .forum,
                 category: "PROJECTS", categoryID: projectsCategoryID,
@@ -785,7 +797,7 @@ private struct MockFixtureAssembly {
                 defaultSortOrder: .latestActivity,
                 defaultForumLayout: .list,
                 defaultTagMatch: .matchSome,
-                defaultAutoArchiveDuration: 4_320
+                defaultAutoArchiveDuration: ThreadAutoArchive.defaultDuration
             ),
             Channel(
                 id: ChannelID(rawValue: 221), guildID: auroraID, name: "bug-reports",
@@ -798,7 +810,7 @@ private struct MockFixtureAssembly {
                 defaultSortOrder: .latestActivity,
                 defaultForumLayout: .list,
                 defaultTagMatch: .matchSome,
-                defaultAutoArchiveDuration: 4_320
+                defaultAutoArchiveDuration: ThreadAutoArchive.defaultDuration
             ),
             Channel(
                 id: ChannelID(rawValue: 230), guildID: auroraID, name: "Studio Lounge",
@@ -1098,10 +1110,10 @@ private struct MockFixtureAssembly {
             thread: thread
         ).messages
         if let timelineMessageCount {
-            messages[ChannelID(rawValue: 210)] = makeTimelinePerformanceMessages(.init(
+            messages[MockChatProvider.generalChannelID] = makeTimelinePerformanceMessages(.init(
                 count: timelineMessageCount,
                 now: now,
-                channelID: ChannelID(rawValue: 210),
+                channelID: MockChatProvider.generalChannelID,
                 guildID: auroraID,
                 users: [nova, maya, theo, juniper, rowan],
                 mediaURL: layoutAttachment?.url,
@@ -1117,13 +1129,13 @@ private struct MockFixtureAssembly {
             let voiceMessages = [(maya, 2101 as UInt64, 30.0), (nova, 2102, 75.0)].compactMap { author, id, offset in
                 MockChatFixture.voiceMessageAttachment(id: "demo-voice-\(id)").map {
                     Message(
-                        id: MessageID(rawValue: id), channelID: ChannelID(rawValue: 210), author: author,
+                        id: MessageID(rawValue: id), channelID: MockChatProvider.generalChannelID, author: author,
                         content: "", timestamp: now.addingTimeInterval(-600 + offset),
                         attachments: [$0], flags: [.voiceMessage], guildID: auroraID
                     )
                 }
             }
-            messages[ChannelID(rawValue: 210), default: []].append(contentsOf: voiceMessages)
+            messages[MockChatProvider.generalChannelID, default: []].append(contentsOf: voiceMessages)
         }
         messages[ChannelID(rawValue: 402)] = [
             message(4021, 402, kai, "Sketched three icon ideas for the nickname dialog — sending them over.", base.addingTimeInterval(1240)),

@@ -92,6 +92,16 @@ public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable 
         }
     }
 
+    /// User-authored message types that can start a thread.
+    public var canStartThread: Bool {
+        switch rawValue {
+        case 0, 19, 20, 23, 26, 41, 45, 47, 68:
+            true
+        default:
+            false
+        }
+    }
+
     /// A command's response, which shows who ran which command above it.
     public var isCommandResponse: Bool {
         self == .chatInputCommand || self == .contextMenuCommand
@@ -184,14 +194,7 @@ public struct EmojiReference: Codable, Hashable, Sendable {
 
     public func imageURL(size: Int = 64) -> URL? {
         guard let id else { return nil }
-        var components = URLComponents(
-            string: "https://cdn.discordapp.com/emojis/\(id).\(isAnimated ? "gif" : "png")"
-        )
-        components?.queryItems = [
-            URLQueryItem(name: "size", value: String(size)),
-            URLQueryItem(name: "quality", value: "lossless")
-        ]
-        return components?.url
+        return DiscordCDN.emoji(id, fileExtension: isAnimated ? "gif" : "png", query: "size=\(size)&quality=lossless")
     }
 }
 
@@ -287,6 +290,9 @@ public struct MessageEmbed: Identifiable, Codable, Hashable, Sendable {
     public var fields: [MessageEmbedField]
     public var components: [MessageComponent]?
 
+    /// A looping, silent video that Discord plays like a GIF.
+    public var isGIFV: Bool { type?.lowercased() == "gifv" }
+
     public init(
         id: String = UUID().uuidString, title: String? = nil, type: String? = nil,
         description: String? = nil, url: URL? = nil, timestamp: Date? = nil, color: UInt32? = nil,
@@ -352,11 +358,11 @@ public struct MessageSticker: Identifiable, Codable, Hashable, Sendable {
             return assetURL
         }
         guard format != .lottie else {
-            return URL(string: "https://cdn.discordapp.com/stickers/\(id).json")
+            return DiscordCDN.sticker(id, fileExtension: "json")
         }
-        return URL(
-            string: "https://\(format == .gif ? "media.discordapp.net" : "cdn.discordapp.com")/stickers/\(id).\(format == .gif ? "gif" : "png")"
-        )
+        return format == .gif
+            ? DiscordCDN.sticker(id, fileExtension: "gif", host: "media.discordapp.net")
+            : DiscordCDN.sticker(id, fileExtension: "png")
     }
 }
 
@@ -437,7 +443,15 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
         self.notificationSettings = notificationSettings
     }
 
-    public var isPinned: Bool { flags & (1 << 1) != 0 }
+    /// Discord's thread PINNED flag, which pins a forum post.
+    public static let pinnedFlag: UInt64 = 1 << 1
+
+    public var isPinned: Bool { flags & Self.pinnedFlag != 0 }
+
+    /// `flags` with the PINNED flag set or cleared.
+    public func flags(settingPinned isPinned: Bool) -> UInt64 {
+        isPinned ? flags | Self.pinnedFlag : flags & ~Self.pinnedFlag
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id, guildID, parentID, name, messageCount, memberCount, lastMessageID
@@ -618,6 +632,21 @@ public indirect enum MessageComponent: Identifiable, Codable, Hashable, Sendable
              let .thumbnail(id, _), let .mediaGallery(id, _), let .file(id, _), let .separator(id, _, _),
              let .container(id, _, _, _), let .unsupported(id, _, _):
             id
+        }
+    }
+}
+
+public extension MessageComponent {
+    /// The text of this component's Text Displays, including nested ones.
+    var textDisplayContents: [String] {
+        switch self {
+        case .textDisplay(_, let content): [content]
+        case .actionRow(_, let children), .container(_, _, _, let children):
+            children.flatMap(\.textDisplayContents)
+        case .section(_, let children, let accessory):
+            children.flatMap(\.textDisplayContents) + (accessory?.textDisplayContents ?? [])
+        case .button, .select, .thumbnail, .mediaGallery, .file, .separator, .unsupported:
+            []
         }
     }
 }

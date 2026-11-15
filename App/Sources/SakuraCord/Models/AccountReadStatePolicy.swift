@@ -34,6 +34,9 @@ extension AccountReadStateModel {
 }
 
 extension AccountReadStateModel {
+    /// The server conversation kinds Mark as Read acknowledges.
+    private static let acknowledgeableKinds: [ChannelKindValue] = [.text, .announcement, .forum, .voice]
+
     /// Discord's account read-state snapshot is authoritative evidence that
     /// the account can see that conversation. Include the parent so joined
     /// thread read states keep their server unread marker while the parent
@@ -59,8 +62,7 @@ extension AccountReadStateModel {
             channelID: categoryID,
             guildID: guildID
         ) else { return false }
-        return override.isMuted
-            && (override.muteConfiguration?.isActive(at: date) ?? true)
+        return override.isActivelyMuted(at: date)
     }
 
     func isCategoryCollapsed(categoryID: ChannelID, guildID: GuildID) -> Bool {
@@ -68,16 +70,6 @@ extension AccountReadStateModel {
             channelID: categoryID,
             guildID: guildID
         )?.isCollapsed == true
-    }
-
-    func inheritedNotificationLevel(
-        forCategoryIn guildID: GuildID
-    ) -> MessageNotificationLevel {
-        let configured = settingsByGuild[guildID]?.messageNotifications ?? .inherit
-        if configured != .inherit {
-            return configured
-        }
-        return unreadPolicySource.defaultNotificationLevelByGuild[guildID] ?? .onlyMentions
     }
 
     /// Discord acknowledges a forum up to the current time, so its boundary
@@ -98,6 +90,17 @@ extension AccountReadStateModel {
         }.sorted { $0.channelID < $1.channelID }
     }
 
+    /// The Inbox's server Mark as Read: every accessible conversation in
+    /// `channelIDs` with a known message, read or not.
+    func inboxGuildAcknowledgements(in channelIDs: Set<ChannelID>) -> [BulkReadStateAcknowledgement] {
+        let now = Date.now
+        return entries.values.compactMap { entry -> BulkReadStateAcknowledgement? in
+            guard channelIDs.contains(entry.channelID), entry.isAccessible, entry.latestKnownMessageID != nil,
+                  let target = Self.acknowledgementTarget(for: entry, now: now) else { return nil }
+            return BulkReadStateAcknowledgement(channelID: entry.channelID, messageID: target)
+        }.sorted { $0.channelID < $1.channelID }
+    }
+
     func serverAcknowledgement(
         for entry: Entry,
         guildIDs: Set<GuildID>,
@@ -108,7 +111,7 @@ extension AccountReadStateModel {
               entry.isUnread || entry.kind == .forum,
               source.isAggregateConversation(entry),
               !isGuildResourceChannel(entry),
-              [.text, .announcement, .forum, .voice].contains(entry.kind),
+              Self.acknowledgeableKinds.contains(entry.kind),
               let messageID = Self.acknowledgementTarget(for: entry, now: .now)
         else { return nil }
         return BulkReadStateAcknowledgement(channelID: entry.channelID, messageID: messageID)
@@ -133,7 +136,7 @@ extension AccountReadStateModel {
                   entry.isAccessible,
                   source.isAggregateConversation(entry),
                   !isGuildResourceChannel(entry),
-                  [.text, .announcement, .forum, .voice].contains(entry.kind),
+                  Self.acknowledgeableKinds.contains(entry.kind),
                   let messageID = entry.latestKnownMessageID
             else { return nil }
             return BulkReadStateAcknowledgement(
@@ -156,8 +159,7 @@ extension AccountReadStateModel {
         for entry in entries.values {
             guard entry.guildID == guildID,
                   entry.isAccessible,
-                  entry.countsAsUnreadConversation && source.isAggregateConversation(entry)
-                    || source.newForumPostParentID(of: entry) != nil,
+                  source.marksUnreadCategory(entry),
                   !isGuildResourceChannel(entry),
                   let parentID = entry.parentID
             else { continue }

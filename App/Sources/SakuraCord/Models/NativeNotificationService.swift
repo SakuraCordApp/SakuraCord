@@ -1,44 +1,11 @@
 import AppKit
 import Foundation
 import MessageRendering
-import Observation
 import OSLog
 import SakuraCordModels
 import UserNotifications
 
-nonisolated enum NotificationPreviewStyle: String, CaseIterable, Identifiable {
-    case full
-    case senderOnly
-    case hidden
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .full: "Show sender and message"
-        case .senderOnly: "Show sender only"
-        case .hidden: "Hide notification details"
-        }
-    }
-}
-
-nonisolated enum NotificationDockBadgeStyle: String, CaseIterable, Identifiable {
-    case mentions
-    case unreadConversations
-    case off
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .mentions: "Unread mentions"
-        case .unreadConversations: "Unread conversations"
-        case .off: "Off"
-        }
-    }
-}
-
-nonisolated enum NotificationEventType: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum NotificationEventType: Sendable {
     case directMessage
     case groupDirectMessage
     case mention
@@ -46,34 +13,24 @@ nonisolated enum NotificationEventType: String, CaseIterable, Identifiable, Send
     case incomingCall
     case serverActivity
 
-    var id: String { rawValue }
-}
-
-nonisolated struct NotificationEventContext: Equatable, Sendable {
-    var type: NotificationEventType
-
     static func message(
         _ message: Message,
         channel: Channel?,
         isMention: Bool,
         currentUserID: UserID
     ) -> Self {
-        let type: NotificationEventType
         if channel?.kind == .directMessage {
-            type = .directMessage
+            .directMessage
         } else if channel?.kind == .groupDirectMessage {
-            type = .groupDirectMessage
+            .groupDirectMessage
         } else if message.replyPreview?.author.id == currentUserID {
-            type = .reply
+            .reply
         } else if isMention {
-            type = .mention
+            .mention
         } else {
-            type = .serverActivity
+            .serverActivity
         }
-        return Self(type: type)
     }
-
-    static let incomingCall = Self(type: .incomingCall)
 }
 
 nonisolated enum NativeNotificationIdentity {
@@ -82,16 +39,17 @@ nonisolated enum NativeNotificationIdentity {
         channelID: ChannelID,
         messageID: MessageID
     ) -> String {
-        "message:\(accountID):\(channelID):\(messageID)"
+        messagePrefix(accountID: accountID, channelID: channelID) + "\(messageID)"
+    }
+
+    /// The prefix shared by every message notification in a conversation.
+    static func messagePrefix(accountID: String, channelID: ChannelID) -> String {
+        "message:\(accountID):\(channelID):"
     }
 
     static func conversation(accountID: String, channelID: ChannelID) -> String {
         "conversation:\(accountID):\(channelID)"
     }
-}
-
-nonisolated enum NotificationFocusPolicy {
-    static var interruptionLevel: UNNotificationInterruptionLevel { .active }
 }
 
 nonisolated struct NotificationContentPresentation: Equatable, Sendable {
@@ -182,230 +140,6 @@ nonisolated struct NotificationContentPresentation: Equatable, Sendable {
     }
 }
 
-@MainActor
-@Observable
-final class NotificationPreferences {
-    private enum Key {
-        static let enabled = "notifications.enabled"
-        static let preview = "notifications.preview"
-        static let sound = "notifications.sound"
-        static let dockBadge = "notifications.dockBadge"
-        static let directMessages = "notifications.events.directMessages"
-        static let groupDirectMessages = "notifications.events.groupDirectMessages"
-        static let mentions = "notifications.events.mentions"
-        static let replies = "notifications.events.replies"
-        static let incomingCalls = "notifications.events.incomingCalls"
-        static let serverActivity = "notifications.events.serverActivity"
-        static let messageSound = NotificationSoundKeys.messageSoundID
-        static let messageSoundBookmark = NotificationSoundKeys.messageSoundBookmark
-        static let messageSoundName = NotificationSoundKeys.messageSoundName
-        static let callRingtone = NotificationSoundKeys.callRingtoneID
-        static let callRingtoneBookmark = NotificationSoundKeys.callRingtoneBookmark
-        static let callRingtoneName = NotificationSoundKeys.callRingtoneName
-        static let suppressCurrentConversation = "notifications.suppressCurrentConversation"
-        static let groupByConversation = "notifications.groupByConversation"
-        static let clearWhenRead = "notifications.clearWhenRead"
-    }
-
-    var isEnabled: Bool { didSet { defaults.set(isEnabled, forKey: Key.enabled) } }
-    var previewStyle: NotificationPreviewStyle {
-        didSet { defaults.set(previewStyle.rawValue, forKey: Key.preview) }
-    }
-    var playsSound: Bool { didSet { defaults.set(playsSound, forKey: Key.sound) } }
-    var dockBadgeStyle: NotificationDockBadgeStyle {
-        didSet { defaults.set(dockBadgeStyle.rawValue, forKey: Key.dockBadge) }
-    }
-    var notifiesDirectMessages: Bool {
-        didSet { defaults.set(notifiesDirectMessages, forKey: Key.directMessages) }
-    }
-    var notifiesGroupDirectMessages: Bool {
-        didSet { defaults.set(notifiesGroupDirectMessages, forKey: Key.groupDirectMessages) }
-    }
-    var notifiesMentions: Bool {
-        didSet { defaults.set(notifiesMentions, forKey: Key.mentions) }
-    }
-    var notifiesReplies: Bool {
-        didSet { defaults.set(notifiesReplies, forKey: Key.replies) }
-    }
-    var notifiesIncomingCalls: Bool {
-        didSet { defaults.set(notifiesIncomingCalls, forKey: Key.incomingCalls) }
-    }
-    var notifiesServerActivity: Bool {
-        didSet { defaults.set(notifiesServerActivity, forKey: Key.serverActivity) }
-    }
-    var messageSoundID: String {
-        didSet { defaults.set(messageSoundID, forKey: Key.messageSound) }
-    }
-    var messageSoundName: String {
-        didSet { defaults.set(messageSoundName, forKey: Key.messageSoundName) }
-    }
-    var messageSoundBookmark: Data? {
-        didSet {
-            if let messageSoundBookmark {
-                defaults.set(messageSoundBookmark, forKey: Key.messageSoundBookmark)
-            } else {
-                defaults.removeObject(forKey: Key.messageSoundBookmark)
-            }
-        }
-    }
-    var callRingtoneID: String {
-        didSet { defaults.set(callRingtoneID, forKey: Key.callRingtone) }
-    }
-    var callRingtoneName: String {
-        didSet { defaults.set(callRingtoneName, forKey: Key.callRingtoneName) }
-    }
-    var callRingtoneBookmark: Data? {
-        didSet {
-            if let callRingtoneBookmark {
-                defaults.set(callRingtoneBookmark, forKey: Key.callRingtoneBookmark)
-            } else {
-                defaults.removeObject(forKey: Key.callRingtoneBookmark)
-            }
-        }
-    }
-    func soundChoice(for kind: NotificationSoundKind) -> NotificationSoundLibrary.Choice {
-        switch kind {
-        case .message: .init(soundID: messageSoundID, bookmark: messageSoundBookmark)
-        case .call: .init(soundID: callRingtoneID, bookmark: callRingtoneBookmark)
-        }
-    }
-    func soundName(for kind: NotificationSoundKind) -> String {
-        switch kind {
-        case .message: messageSoundName
-        case .call: callRingtoneName
-        }
-    }
-    func setSoundID(_ soundID: String, for kind: NotificationSoundKind) {
-        switch kind {
-        case .message: messageSoundID = soundID
-        case .call: callRingtoneID = soundID
-        }
-    }
-    func setCustomSound(bookmark: Data, name: String, for kind: NotificationSoundKind) {
-        switch kind {
-        case .message:
-            messageSoundBookmark = bookmark
-            messageSoundName = name
-            messageSoundID = NotificationSoundLibrary.customID
-        case .call:
-            callRingtoneBookmark = bookmark
-            callRingtoneName = name
-            callRingtoneID = NotificationSoundLibrary.customID
-        }
-    }
-    var suppressesCurrentConversation: Bool {
-        didSet {
-            defaults.set(suppressesCurrentConversation, forKey: Key.suppressCurrentConversation)
-        }
-    }
-    var groupsByConversation: Bool {
-        didSet { defaults.set(groupsByConversation, forKey: Key.groupByConversation) }
-    }
-    var clearsWhenRead: Bool {
-        didSet { defaults.set(clearsWhenRead, forKey: Key.clearWhenRead) }
-    }
-    @ObservationIgnored private let defaults: any PreferenceStoring
-
-    init(defaults: any PreferenceStoring = UserDefaults.standard) {
-        self.defaults = defaults
-        isEnabled = true
-        previewStyle = .full
-        playsSound = true
-        dockBadgeStyle = .mentions
-        notifiesDirectMessages = true
-        notifiesGroupDirectMessages = true
-        notifiesMentions = true
-        notifiesReplies = true
-        notifiesIncomingCalls = true
-        notifiesServerActivity = true
-        messageSoundID = NotificationSoundLibrary.bundledID
-        messageSoundName = ""
-        messageSoundBookmark = nil
-        callRingtoneID = NotificationSoundLibrary.bundledID
-        callRingtoneName = ""
-        callRingtoneBookmark = nil
-        suppressesCurrentConversation = true
-        groupsByConversation = true
-        clearsWhenRead = true
-        reload()
-    }
-
-    func reload() {
-        isEnabled = bool(Key.enabled, default: true)
-        previewStyle = defaults.string(forKey: Key.preview)
-            .flatMap(NotificationPreviewStyle.init(rawValue:)) ?? .full
-        playsSound = bool(Key.sound, default: true)
-        if let rawValue = defaults.string(forKey: Key.dockBadge),
-           let style = NotificationDockBadgeStyle(rawValue: rawValue)
-        {
-            dockBadgeStyle = style
-        } else if let legacyValue = defaults.object(forKey: Key.dockBadge) as? Bool {
-            dockBadgeStyle = legacyValue ? .mentions : .off
-        } else {
-            dockBadgeStyle = .mentions
-        }
-        notifiesDirectMessages = bool(Key.directMessages, default: true)
-        notifiesGroupDirectMessages = bool(Key.groupDirectMessages, default: true)
-        notifiesMentions = bool(Key.mentions, default: true)
-        notifiesReplies = bool(Key.replies, default: true)
-        notifiesIncomingCalls = bool(Key.incomingCalls, default: true)
-        notifiesServerActivity = bool(Key.serverActivity, default: true)
-        messageSoundID = defaults.string(forKey: Key.messageSound) ?? NotificationSoundLibrary.bundledID
-        messageSoundName = defaults.string(forKey: Key.messageSoundName) ?? ""
-        messageSoundBookmark = defaults.data(forKey: Key.messageSoundBookmark)
-        callRingtoneID = defaults.string(forKey: Key.callRingtone) ?? NotificationSoundLibrary.bundledID
-        callRingtoneName = defaults.string(forKey: Key.callRingtoneName) ?? ""
-        callRingtoneBookmark = defaults.data(forKey: Key.callRingtoneBookmark)
-        // Reset and Import only touch the sound IDs, so drop a custom file
-        // the ID no longer points at, and treat "custom" without one as default.
-        if messageSoundID != NotificationSoundLibrary.customID {
-            if messageSoundBookmark != nil { messageSoundBookmark = nil }
-            if !messageSoundName.isEmpty { messageSoundName = "" }
-        } else if messageSoundBookmark == nil {
-            messageSoundID = NotificationSoundLibrary.bundledID
-            messageSoundName = ""
-        }
-        if callRingtoneID != NotificationSoundLibrary.customID {
-            if callRingtoneBookmark != nil { callRingtoneBookmark = nil }
-            if !callRingtoneName.isEmpty { callRingtoneName = "" }
-        } else if callRingtoneBookmark == nil {
-            callRingtoneID = NotificationSoundLibrary.bundledID
-            callRingtoneName = ""
-        }
-        suppressesCurrentConversation = bool(Key.suppressCurrentConversation, default: true)
-        groupsByConversation = bool(Key.groupByConversation, default: true)
-        clearsWhenRead = bool(Key.clearWhenRead, default: true)
-    }
-
-    func allows(
-        _ event: NotificationEventContext,
-        isCurrentConversation: Bool
-    ) -> Bool {
-        guard isEnabled || playsSound, isEnabled(event.type) else { return false }
-        if event.type == .incomingCall {
-            return true
-        }
-        if suppressesCurrentConversation, isCurrentConversation { return false }
-        return true
-    }
-
-    private func isEnabled(_ event: NotificationEventType) -> Bool {
-        switch event {
-        case .directMessage: notifiesDirectMessages
-        case .groupDirectMessage: notifiesGroupDirectMessages
-        case .mention: notifiesMentions
-        case .reply: notifiesReplies
-        case .incomingCall: notifiesIncomingCalls
-        case .serverActivity: notifiesServerActivity
-        }
-    }
-
-    private func bool(_ key: String, default defaultValue: Bool) -> Bool {
-        defaults.object(forKey: key) as? Bool ?? defaultValue
-    }
-
-}
-
 nonisolated struct NotificationDeepLink: Codable, Equatable, Sendable {
     var accountID: String
     var guildID: GuildID?
@@ -455,17 +189,9 @@ protocol NativeNotificationService: Sendable {
     func setSuppressed(_ suppressed: Bool)
     func requestAuthorization() async throws -> Bool
     func authorizationStatus() async -> UNAuthorizationStatus
-    func deliver(
-        message: Message,
-        channel: Channel?,
-        guild: Guild?,
-        accountID: String,
-        preferences: NotificationPreferences
-    ) async
     func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
         presentation: NotificationContentPresentation,
         preferences: NotificationPreferences
@@ -476,34 +202,17 @@ protocol NativeNotificationService: Sendable {
 
 extension NativeNotificationService {
     func setSuppressed(_: Bool) {}
-
-    func deliverMessage(
-        message: Message,
-        channel: Channel?,
-        guild: Guild?,
-        accountID: String,
-        presentation: NotificationContentPresentation,
-        preferences: NotificationPreferences
-    ) async {
-        await deliver(
-            message: message,
-            channel: channel,
-            guild: guild,
-            accountID: accountID,
-            preferences: preferences
-        )
-    }
 }
 
 @MainActor
 final class NoopNativeNotificationService: NativeNotificationService {
     func requestAuthorization() async throws -> Bool { false }
     func authorizationStatus() async -> UNAuthorizationStatus { .notDetermined }
-    func deliver(
+    func deliverMessage(
         message _: Message,
         channel _: Channel?,
-        guild _: Guild?,
         accountID _: String,
+        presentation _: NotificationContentPresentation,
         preferences _: NotificationPreferences
     ) async {}
     func cancel(accountID _: String, channelID _: ChannelID) async {}
@@ -569,29 +278,9 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         await center.notificationSettings().authorizationStatus
     }
 
-    func deliver(
-        message: Message,
-        channel: Channel?,
-        guild: Guild?,
-        accountID: String,
-        preferences: NotificationPreferences
-    ) async {
-        await deliverMessage(
-            message: message,
-            channel: channel,
-            guild: guild,
-            accountID: accountID,
-            presentation: NotificationContentPresentation.make(
-                message: message, channel: channel, guild: guild, style: preferences.previewStyle
-            ),
-            preferences: preferences
-        )
-    }
-
     func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
         presentation: NotificationContentPresentation,
         preferences: NotificationPreferences
@@ -608,7 +297,7 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         content.title = presentation.title
         content.subtitle = presentation.subtitle
         content.body = presentation.body
-        content.interruptionLevel = NotificationFocusPolicy.interruptionLevel
+        content.interruptionLevel = .active
         if preferences.groupsByConversation {
             content.threadIdentifier = NativeNotificationIdentity.conversation(
                 accountID: accountID,
@@ -646,12 +335,22 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         guard pendingRequests[identifier] == token, !Task.isCancelled,
               preferences.isEnabled, preferences.previewStyle == style
         else { return }
-        await add(content, identifier: identifier, sound: sound, kind: "Message", preferences: preferences)
+        content.sound = preferences.playsSound ? sound : nil
+        do {
+            try await submitRequest(
+                UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+            )
+        } catch {
+            let notificationError = error as NSError
+            Self.logger.error(
+                "Message notification delivery failed; domain=\(notificationError.domain, privacy: .public), code=\(notificationError.code)"
+            )
+        }
     }
 
     func cancel(accountID: String, channelID: ChannelID) async {
         guard deliversNotifications else { return }
-        let prefix = "message:\(accountID):\(channelID):"
+        let prefix = NativeNotificationIdentity.messagePrefix(accountID: accountID, channelID: channelID)
         pendingRequests = pendingRequests.filter { !$0.key.hasPrefix(prefix) }
         let delivered = await center.deliveredNotifications()
         let deliveredIDs = delivered.map(\.request.identifier).filter { $0.hasPrefix(prefix) }
@@ -665,29 +364,6 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         guard deliversNotifications else { return }
         NSApplication.shared.dockTile.badgeLabel =
             enabled && count > 0 ? String(count) : nil
-    }
-
-    private func add(
-        _ content: UNNotificationContent,
-        identifier: String,
-        sound: UNNotificationSound?,
-        kind: StaticString,
-        preferences: NotificationPreferences
-    ) async {
-        guard deliversNotifications, !isSuppressed, preferences.isEnabled,
-              let content = content.mutableCopy() as? UNMutableNotificationContent
-        else { return }
-        content.sound = preferences.playsSound ? sound : nil
-        do {
-            try await submitRequest(
-                UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-            )
-        } catch {
-            let notificationError = error as NSError
-            Self.logger.error(
-                "\(kind) notification delivery failed; domain=\(notificationError.domain, privacy: .public), code=\(notificationError.code)"
-            )
-        }
     }
 
 }

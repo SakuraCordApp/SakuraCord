@@ -50,7 +50,7 @@ struct NativeTimelineVoiceMessageRegion {
         maximumWidth: CGFloat,
         style: Style
     ) -> Self? {
-        guard (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage),
+        guard message.isVoiceMessage,
               message.attachments.count == 1,
               let attachment = message.attachments.first,
               attachment.mediaKind == .audio
@@ -275,20 +275,21 @@ enum NativeTimelineVoiceMessagePainter {
 
         init(style: NativeTimelineVoiceMessageRegion.Style) {
             let accent = NSColor.sakuraCordAccentColor
+            let label = NSColor.sakuraCordLabelOnAccentColor
             switch style {
             case .outgoingBubble:
-                buttonFill = .white
+                buttonFill = label
                 glyph = accent
-                played = .white
-                unplayed = NSColor.white.withAlphaComponent(0.42)
-                text = NSColor.white.withAlphaComponent(0.88)
-                chipFill = NSColor.white.withAlphaComponent(0.2)
-                chipHoverFill = NSColor.white.withAlphaComponent(0.32)
-                chipText = .white
-                symbol = .white
+                played = label
+                unplayed = label.withAlphaComponent(0.42)
+                text = label.withAlphaComponent(0.88)
+                chipFill = label.withAlphaComponent(0.2)
+                chipHoverFill = label.withAlphaComponent(0.32)
+                chipText = label
+                symbol = label
             case .plain, .incomingBubble, .audioFile:
                 buttonFill = accent
-                glyph = .white
+                glyph = label
                 played = accent
                 unplayed = NSColor.labelColor.withAlphaComponent(0.3)
                 text = .secondaryLabelColor
@@ -525,8 +526,8 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         func value(at time: TimeInterval) -> CGFloat {
             let elapsed = min(max((time - start) / duration, 0), 1)
             let eased = easesInOut
-                ? NativeTimelineComponentButtonVisualState.easeInOut(elapsed)
-                : NativeTimelineComponentButtonVisualState.easeOut(elapsed)
+                ? MotionEasing.easeInOut(elapsed)
+                : MotionEasing.easeOut(elapsed)
             return from + (to - from) * eased
         }
     }
@@ -572,7 +573,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     /// Supplies the live state for each animation frame.
     var refresh: (() -> NativeTimelineVoiceMessageDrawState?)?
-    private let ticker = NativeTimelineDisplayLinkTicker()
+    private let ticker = DisplayLinkTicker()
     private var clockOrigin = ProcessInfo.processInfo.systemUptime
 
     override var isFlipped: Bool { true }
@@ -784,7 +785,8 @@ extension NativeTimelineCanvasView {
     /// clicks land.
     func installAudioFileCursors(at index: Int, rowOrigin: CGFloat) {
         for region in layouts[index].audioPlayers
-        where region.style == .audioFile && !isConcealedSpoiler(region.attachment, in: region.messageID) {
+        where region.style == .audioFile
+            && !spoilerRevealStore.isConcealed(region.attachment, in: region.messageID) {
             for (_, frame) in Self.controlHitFrames(of: region) where !frame.isNull && !frame.isEmpty {
                 addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
             }
@@ -794,12 +796,13 @@ extension NativeTimelineCanvasView {
     /// The voice message or audio file control under `point`.
     func voiceMessagePointerHit(at point: CGPoint) -> VoiceMessagePointerHit? {
         guard WindowModalCoordinator.allowsInput(for: self),
-              let index = rowIndex(at: point.y),
-              layouts.indices.contains(index), items.indices.contains(index)
+              let index = hitRowIndex(at: point.y)
         else { return nil }
         let origin = displayedRowOrigin(at: index)
         let local = CGPoint(x: point.x, y: point.y - origin)
-        for region in layouts[index].audioPlayers where region.frame.contains(local) && !isConcealedSpoiler(region.attachment, in: region.messageID) {
+        for region in layouts[index].audioPlayers
+        where region.frame.contains(local)
+            && !spoilerRevealStore.isConcealed(region.attachment, in: region.messageID) {
             // Between an audio card's controls lies the player's own gap.
             let control: VoiceMessageControl
             if let hit = Self.controlHitFrames(of: region).first(where: { $0.1.contains(local) }) {
@@ -818,14 +821,14 @@ extension NativeTimelineCanvasView {
     /// rather than only over its controls.
     private func audioFilePlayer(onCardAt point: CGPoint) -> NativeTimelineVoiceMessageRegion? {
         guard WindowModalCoordinator.allowsInput(for: self),
-              let index = rowIndex(at: point.y), layouts.indices.contains(index)
+              case let (index, local)? = rowHit(at: point)
         else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         let layout = layouts[index]
         guard let card = layout.attachmentRegions.first(where: { $0.attachment.mediaKind == .audio && $0.frame.contains(local) })
         else { return nil }
         return layout.audioFilePlayers.first {
-            $0.attachment.id == card.attachment.id && !isConcealedSpoiler($0.attachment, in: $0.messageID)
+            $0.attachment.id == card.attachment.id
+                && !spoilerRevealStore.isConcealed($0.attachment, in: $0.messageID)
         }
     }
 
@@ -954,18 +957,13 @@ extension NativeTimelineCanvasView {
         reconcileVoiceMessageOverlay()
     }
 
-    func invalidateVoiceMessageRow(_ identifier: NativeMessageTimelineItem.Identifier) {
-        invalidateBitmap(identifier)
-        if let index = visibleRowIndex(of: identifier) { setNeedsDisplay(rowFrame(at: index)) }
-    }
-
     private func invalidateVoiceMessageBitmaps(playbackIDs: Set<VoiceMessagePlaybackID>? = nil) {
         // Bitmaps survive navigation, so the current layouts alone cannot
         // identify every row whose playback presentation has changed.
         let identifiers = bitmapCache.compactMap { identifier, cached in
             guard let message = cached.item.messageRow?.message else { return nil as NativeMessageTimelineItem.Identifier? }
             var players = message.attachments.filter { $0.mediaKind == .audio }.map { VoiceMessagePlaybackID.attachment(message.id, attachmentID: $0.id) }
-            if (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) { players.append(.message(message.id)) }
+            if message.isVoiceMessage { players.append(.message(message.id)) }
             guard !players.isEmpty, playbackIDs.map({ !$0.isDisjoint(with: players) }) ?? true else { return nil }
             return identifier
         }
@@ -973,17 +971,6 @@ extension NativeTimelineCanvasView {
             invalidateBitmap(identifier)
         }
         setNeedsDisplay(visibleRect)
-    }
-
-    /// Searches only the rows on screen, so scrolling stays independent of
-    /// conversation length.
-    private func visibleRowIndex(of identifier: NativeMessageTimelineItem.Identifier) -> Int? {
-        guard var index = rowIndex(at: max(0, visibleRect.minY)) else { return nil }
-        while items.indices.contains(index), displayedRowOrigin(at: index) < visibleRect.maxY {
-            if items[index].identifier == identifier { return index }
-            index += 1
-        }
-        return nil
     }
 
     /// Shows the live overlay while the active voice message or audio file

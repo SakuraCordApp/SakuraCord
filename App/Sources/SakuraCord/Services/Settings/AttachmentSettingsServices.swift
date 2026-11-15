@@ -15,10 +15,17 @@ nonisolated enum AttachmentHandlingPolicy: String, CaseIterable, Identifiable, S
 }
 
 nonisolated struct AttachmentSettingsSnapshot: Equatable, Sendable {
-    var compactionPolicy: AttachmentHandlingPolicy = .ask
-    var externalUploadPolicy: AttachmentHandlingPolicy = .ask
-    var externalProvider: ExternalAttachmentHostingService = .litterbox
-    var compaction = AttachmentCompactionOptions()
+    var compactionPolicy: AttachmentHandlingPolicy
+    var externalUploadPolicy: AttachmentHandlingPolicy
+    var externalProvider: ExternalAttachmentHostingService
+    var compaction: AttachmentCompactionOptions
+
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        compactionPolicy = value(.attachmentCompactionPrompt).rawValue()
+        externalUploadPolicy = value(.attachmentExternalUploadPrompt).rawValue()
+        externalProvider = value(.attachmentExternalProvider).rawValue()
+        compaction = AttachmentCompactionOptions(quality: value(.attachmentCompactionQuality).rawValue())
+    }
 }
 
 @MainActor
@@ -31,16 +38,7 @@ final class AttachmentSettingsStore {
     }
 
     func load() -> AttachmentSettingsSnapshot {
-        var value = AttachmentSettingsSnapshot()
-        if case let .string(raw) = preferences.value(for: .attachmentCompactionPrompt),
-           let saved = AttachmentHandlingPolicy(rawValue: raw) { value.compactionPolicy = saved }
-        if case let .string(raw) = preferences.value(for: .attachmentExternalUploadPrompt),
-           let saved = AttachmentHandlingPolicy(rawValue: raw) { value.externalUploadPolicy = saved }
-        if case let .string(raw) = preferences.value(for: .attachmentExternalProvider),
-           let saved = ExternalAttachmentHostingService(rawValue: raw) { value.externalProvider = saved }
-        if case let .string(raw) = preferences.value(for: .attachmentCompactionQuality),
-           let saved = AttachmentCompactionOptions.Quality(rawValue: raw) { value.compaction.quality = saved }
-        return value
+        AttachmentSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: AttachmentSettingsSnapshot) {

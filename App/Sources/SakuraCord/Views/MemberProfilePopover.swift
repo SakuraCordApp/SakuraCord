@@ -12,22 +12,22 @@ struct ProfilePresentationContent<Footer: View>: View {
     @Environment(\.serverTagCardModel) private var model
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     let presentation: ProfilePresentationState
-    var layout: ProfilePresentationLayout = .popover
-    var maximumPopoverHeight: CGFloat = InterfaceScale.metric(560)
-    var showsRoles = true
+    let layout: ProfilePresentationLayout
+    let maximumPopoverHeight: CGFloat
+    let showsRoles: Bool
     let footer: Footer
-    var openProfile: ((ProfilePresentationState) -> Void)?
-    var userMenu: (() -> NSMenu?)?
-    var sendMessage: ((UserID, String, String) async -> Bool)?
+    let openProfile: ((ProfilePresentationState) -> Void)?
+    let userMenu: (() -> NSMenu?)?
+    let sendMessage: ((UserID, String, String) async -> Bool)?
 
     init(
         presentation: ProfilePresentationState,
-        layout: ProfilePresentationLayout = .popover,
-        maximumPopoverHeight: CGFloat = InterfaceScale.metric(560),
-        showsRoles: Bool = true,
-        openProfile: ((ProfilePresentationState) -> Void)? = nil,
-        userMenu: (() -> NSMenu?)? = nil,
-        sendMessage: ((UserID, String, String) async -> Bool)? = nil,
+        layout: ProfilePresentationLayout,
+        maximumPopoverHeight: CGFloat,
+        showsRoles: Bool,
+        openProfile: ((ProfilePresentationState) -> Void)?,
+        userMenu: (() -> NSMenu?)?,
+        sendMessage: ((UserID, String, String) async -> Bool)?,
         @ViewBuilder footer: () -> Footer
     ) {
         self.presentation = presentation
@@ -189,18 +189,18 @@ struct MemberProfilePopover<Footer: View>: View {
             case .popover:
                 profileContent
                     .frame(
-                        width: width,
+                        width: Self.preferredWidth,
                         height: min(
                             contentHeight + surfaceInset * 2,
                             maximumPopoverHeight
                         )
                     )
-                    .background { popoverBackground }
+                    .background { themeBackground(fallback: .clear) }
             case .expanded:
                 if editor != nil {
-                    profileContent.frame(width: width, alignment: .top)
+                    profileContent.frame(width: Self.preferredWidth, alignment: .top)
                 } else {
-                    profileContent.frame(width: width, height: maximumPopoverHeight, alignment: .top)
+                    profileContent.frame(width: Self.preferredWidth, height: maximumPopoverHeight, alignment: .top)
                 }
             case .inspector:
                 profileContent
@@ -209,7 +209,7 @@ struct MemberProfilePopover<Footer: View>: View {
                         maxHeight: .infinity,
                         alignment: .top
                     )
-                    .background { inspectorBackground }
+                    .background { themeBackground(fallback: Color(nsColor: .controlBackgroundColor).opacity(0.62)) }
             }
         }
         .clipShape(profileShape)
@@ -247,7 +247,7 @@ struct MemberProfilePopover<Footer: View>: View {
 
             Group {
                 if editor != nil {
-                    profileScrollContent(width: width - surfaceInset * 2)
+                    profileScrollContent(width: Self.preferredWidth - surfaceInset * 2)
                 } else {
                     GeometryReader { geometry in profileScrollContent(width: geometry.size.width) }
                 }
@@ -285,7 +285,7 @@ struct MemberProfilePopover<Footer: View>: View {
                     animatesRemoteMedia: animatesRemoteMedia,
                     editor: editor,
                     openEditorPicker: openEditorPicker,
-                    openProfile: profileExpansionAction
+                    openProfile: openProfile == nil ? nil : { expandProfile() }
                 )
                 .overlay {
                     if let userMenu, editor == nil { UserContextMenuBridge(makeMenu: userMenu) }
@@ -414,7 +414,7 @@ struct MemberProfilePopover<Footer: View>: View {
     }
 
     @ViewBuilder
-    private var popoverBackground: some View {
+    private func themeBackground(fallback: Color) -> some View {
         if profileThemeHexes.count >= 2 {
             LinearGradient(
                 colors: profileThemeHexes.prefix(2).map(Color.init(hex:)),
@@ -422,30 +422,12 @@ struct MemberProfilePopover<Footer: View>: View {
                 endPoint: .bottomTrailing
             )
         } else {
-            Color.clear
-        }
-    }
-
-    @ViewBuilder
-    private var inspectorBackground: some View {
-        if profileThemeHexes.count >= 2 {
-            LinearGradient(
-                colors: profileThemeHexes.prefix(2).map(Color.init(hex:)),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        } else {
-            Color(nsColor: .controlBackgroundColor).opacity(0.62)
+            fallback
         }
     }
 
     private var profileThemeHexes: [UInt32] {
         cosmeticPolicy.disables(.gradient, for: member.id) ? [] : theme.colors(for: profile, scale: displayScale, allowsTheme: editor?.isNitro)
-    }
-
-    private var profileExpansionAction: (() -> Void)? {
-        guard openProfile != nil else { return nil }
-        return { expandProfile() }
     }
 
     private func expandProfile() {
@@ -479,10 +461,6 @@ struct MemberProfilePopover<Footer: View>: View {
             bottomLeadingCorner: .concentric(minimum: .fixed(innerCornerRadius)),
             bottomTrailingCorner: .fixed(0)
         )
-    }
-
-    private var width: CGFloat {
-        Self.preferredWidth
     }
 
     private var statusBubbleWidth: CGFloat {
@@ -607,7 +585,7 @@ private struct ProfileHeroSection: View {
                 primaryGuildIdentity: profile?.user.primaryGuild ?? member.user.primaryGuild,
                 showsServerTag: !cosmeticPolicy.disables(.serverTag, for: member.id),
                 isBot: profile?.user.isBot ?? member.user.isBot,
-                isVerifiedApp: isVerifiedApp,
+                isVerifiedApp: isVerifiedApp || (profile?.user ?? member.user).isVerifiedBot,
                 badges: profile.map(SakuraCordBadges.badges) ?? [],
                 premiumSince: profile?.premiumSince,
                 premiumGuildSince: profile?.premiumGuildSince,
@@ -684,7 +662,7 @@ struct ProfileStatusBubble: View {
 
     @ViewBuilder
     private func bubbleContent(isExpanded: Bool) -> some View {
-        if isEmojiOnly {
+        if NativeMemberActivityPresentation.isEmojiOnly(text) {
             let fontSize: CGFloat = isExpandedProfile ? 24 : 18
             ProfileStatusTextView(source: text, isExpanded: true, fontSize: fontSize)
                 .frame(width: contentWidth(fontSize: fontSize), height: ceil(InterfaceScale.fontSize(fontSize) * 1.3))
@@ -717,14 +695,6 @@ struct ProfileStatusBubble: View {
             stylesLinks: false
         )
         return ceil(attributedText.size().width) + 2
-    }
-
-    private var isEmojiOnly: Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if EmojiReference(rawToken: value).id != nil { return true }
-        return value.count == 1 && value.unicodeScalars.contains {
-            $0.properties.isEmojiPresentation || $0.value == 0xFE0F
-        }
     }
 
     private var displayText: String {
@@ -910,7 +880,6 @@ private struct ProfileIdentitySection: View {
         ProfileDisplayName(name: displayName, style: nameStyle, size: nameSize, background: background, wraps: true)
             .fixedSize(horizontal: false, vertical: true)
             .layoutPriority(1)
-            .tint(SakuraCordAccentColor.color)
     }
 }
 
@@ -925,8 +894,7 @@ private struct CopyableProfileUsername: View {
         let isActive = isHovering || didCopy
 
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(username, forType: .string)
+            Pasteboard.copy(username)
             didCopy = true
         } label: {
             HStack(spacing: InterfaceScale.metric(4)) {

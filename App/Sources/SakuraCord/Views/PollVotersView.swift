@@ -79,7 +79,7 @@ private struct PollVotersAnswerRow: View {
 
     var body: some View {
         let count = poll.count(for: answer.id)
-        let fraction = poll.totalVotes > 0 ? Double(count) / Double(poll.totalVotes) : 0
+        let fraction = poll.fraction(for: answer.id)
         let voted = poll.selectedAnswerIDs.contains(answer.id)
         HStack(spacing: InterfaceScale.metric(10)) {
             if let emoji = answer.emoji { PollAnswerEmoji(emoji: emoji, size: InterfaceScale.metric(20)) }

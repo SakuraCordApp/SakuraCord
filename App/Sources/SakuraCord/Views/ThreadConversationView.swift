@@ -1,17 +1,11 @@
 import SakuraCordModels
 import SwiftUI
 
-nonisolated enum ThreadInitialScrollTarget: Equatable {
-    case firstUnread
-    case newest
-}
-
 nonisolated enum ThreadTimelinePresentationPolicy {
-    static func initialScrollTarget(
-        isForumPost: Bool,
-        hasUnreadReplies: Bool
-    ) -> ThreadInitialScrollTarget {
-        isForumPost || !hasUnreadReplies ? .newest : .firstUnread
+    /// A thread opens at its newest reply unless it has unread replies; a
+    /// forum post always does, which reads it.
+    static func opensAtNewest(isForumPost: Bool, hasUnreadReplies: Bool) -> Bool {
+        isForumPost || !hasUnreadReplies
     }
 }
 
@@ -92,22 +86,21 @@ private struct ThreadCreationView: View {
                     .font(.interface(.headline))
                 ZStack(alignment: .leading) {
                     TextField("", text: $creation.name)
-                        .tint(SakuraCordAccentColor.color)
                         .textFieldStyle(.plain)
-                        .font(.interfaceSystem(size: 15))
+                        .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                         .focused($isNameFocused)
                         .accessibilityLabel("Thread Name")
                         .onSubmit { model.validateThreadCreation() }
                     if creation.name.isEmpty {
                         Text(creation.starterMessage == nil ? "New Thread" : creation.defaultName)
                             .lineLimit(1)
-                            .font(.interfaceSystem(size: 15))
+                            .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                             .foregroundStyle(.tertiary)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                     }
                 }
-                .padding(.horizontal, InterfaceScale.metric(11))
+                .padding(.horizontal, ChatChromeMetrics.composerTextLeadingInset)
                 .frame(
                     maxWidth: .infinity,
                     minHeight: usesDefaultStyle
@@ -130,7 +123,6 @@ private struct ThreadCreationView: View {
                         .font(.interface(.headline))
                     Toggle("Only people you invite and moderators can see", isOn: $creation.isPrivate)
                         .toggleStyle(.checkbox)
-                        .tint(SakuraCordAccentColor.color)
                         .disabled(!creation.permissions.canCreatePublic)
                 }
             }
@@ -236,7 +228,7 @@ private struct ThreadConversationFooter: View {
                 // Moderators who cannot send unlock from the thread's More menu.
                 if model.openThreadAccess.canSend {
                     ThreadStateBanner(
-                        title: isForumPost ? "Locked post" : "Locked thread",
+                        title: model.isOpenThreadForumPost ? "Locked post" : "Locked thread",
                         message: "Only moderators can send messages.",
                         systemImage: "lock.fill",
                         actionTitle: policy.canManage ? "Unlock" : nil,
@@ -246,7 +238,7 @@ private struct ThreadConversationFooter: View {
                 }
             } else if thread.isArchived {
                 ThreadStateBanner(
-                    title: isForumPost ? "Closed post" : "Archived thread",
+                    title: model.isOpenThreadForumPost ? "Closed post" : "Archived thread",
                     message: "Sending a reply will reopen it.",
                     systemImage: "archivebox.fill",
                     actionTitle: policy.canChangeArchive ? "Reopen" : nil,
@@ -265,10 +257,6 @@ private struct ThreadConversationFooter: View {
         } action: { height in
             footerHeightChanged(height)
         }
-    }
-
-    private var isForumPost: Bool {
-        model.openThreadParentChannel?.kind == .forum
     }
 
     private var policy: ThreadActionPolicy {
@@ -298,7 +286,7 @@ private struct ThreadConversationComposer: View {
                 appearance: model.appearanceSettings.composerBarAppearance,
                 checkingMessage: "Checking thread permissions…",
                 readOnlyMessage: thread.isLocked
-                    ? "This \(model.openThreadParentChannel?.kind == .forum ? "post" : "thread") is locked."
+                    ? "This \(AppModel.threadNoun(isForumPost: model.isOpenThreadForumPost).lowercased()) is locked."
                     : "You do not have permission to send messages in this channel."
             ) {
                 ComposerView(
@@ -459,18 +447,10 @@ private struct ThreadMessageTimelineView: View {
             onUserScrollEnded: handleUserScrollEnded,
             onUserScrollTowardNewest: handleUserScrollTowardNewest
         )
-        .scrollEdgeEffectStyle(.soft, for: .top)
-        .ignoresSafeArea(.container, edges: .top)
-        .opacity(showsLoadingSkeleton ? 0 : 1)
-        .allowsHitTesting(!showsLoadingSkeleton)
-        .accessibilityHidden(showsLoadingSkeleton)
-        .overlay {
-            if showsLoadingSkeleton {
-                MessageTimelineLoadingSkeleton(
-                    bottomContentInset: bottomContentInset
-                )
-            }
-        }
+        .modifier(MessageTimelineLoadingChrome(
+            showsLoadingSkeleton: showsLoadingSkeleton,
+            bottomContentInset: bottomContentInset
+        ))
         .overlay(alignment: .top) {
             if let summary = overlays.unreadSummary {
                 UnreadMessagesBanner(
@@ -578,7 +558,7 @@ private struct ThreadMessageTimelineView: View {
             title: thread.name,
             starterName: threadStarterName,
             startedAt: model.openThreadStartedAt,
-            isForumPost: model.openThreadParentChannel?.kind == .forum
+            isForumPost: model.isOpenThreadForumPost
         )
     }
 
@@ -626,7 +606,7 @@ private struct ThreadMessageTimelineView: View {
     }
 
     private var unreadPresentation: TimelineUnreadPresentation {
-        let isForumPost = model.openThreadParentChannel?.kind == .forum
+        let isForumPost = model.isOpenThreadForumPost
         return TimelineUnreadPresentation(
             model: model,
             conversationID: model.openThread?.id,
@@ -636,10 +616,7 @@ private struct ThreadMessageTimelineView: View {
             hasCompletedInitialLoad: model.hasCompletedInitialThreadLoad,
             showsSummary: !model.hasMoreLaterThreadMessages,
             prefersNewest: { hasUnread in
-                ThreadTimelinePresentationPolicy.initialScrollTarget(
-                    isForumPost: isForumPost,
-                    hasUnreadReplies: hasUnread
-                ) == .newest
+                ThreadTimelinePresentationPolicy.opensAtNewest(isForumPost: isForumPost, hasUnreadReplies: hasUnread)
             }
         )
     }

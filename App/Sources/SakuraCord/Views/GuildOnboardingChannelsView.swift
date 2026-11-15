@@ -66,7 +66,7 @@ private struct BrowseChannelRow: View {
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(5)) {
                     Label(channel.name, systemImage: ChannelIconPresentation.systemImage(
                         for: channel,
-                        isHidden: channel.permissionOverwrites?.contains { $0.id == channel.guildID?.description && $0.deny & (1 << 10) != 0 } == true,
+                        isHidden: channel.permissionOverwrites?.contains { $0.id == channel.guildID?.description && $0.deny & DiscordPermissionBits.viewChannel != 0 } == true,
                         rulesChannelID: nil
                     ))
                     .font(.interface(.body).weight(.medium))
@@ -103,21 +103,11 @@ private struct BrowseChannelRow: View {
         .help(followsCategory ? "Unfollow the category to choose individual channels." : "")
         .overlay {
             ChannelContextMenuBridge(
+                channel: channel,
+                model: model,
                 isSelected: false,
                 isUnread: model.canMarkConversationRead(channelID: channel.id),
-                isMutationPending: model.isChannelNotificationMutationPending(channel.id),
-                allowsMutations: !model.checkingChannelIDs.contains(channel.id),
-                directOverride: model.channelNotificationOverride(for: channel),
-                inheritedLevel: model.inheritedChannelNotificationLevel(for: channel),
-                inheritanceSource: channel.categoryID == nil ? .server : .category,
-                markRead: { model.markConversationRead(channelID: channel.id) },
-                mute: { model.setChannelMute(true, until: $0.endDate(), for: channel) },
-                unmute: { model.setChannelMute(false, until: nil, for: channel) },
-                setNotificationLevel: { model.setChannelNotificationLevel($0, for: channel) },
-                copyChannelID: { ChannelContextMenuValue.copy(channel.id.description) },
-                copyLink: {
-                    ChannelContextMenuValue.copy(ChannelContextMenuValue.link(guildID: channel.guildID, channelID: channel.id))
-                }
+                allowsMutations: !model.checkingChannelIDs.contains(channel.id)
             )
         }
     }

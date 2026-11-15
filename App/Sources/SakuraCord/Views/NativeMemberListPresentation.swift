@@ -13,15 +13,24 @@ extension Member {
         user.usesHTTPInteractions ? nil : status
     }
 
-    nonisolated var memberListActivityText: String? {
-        if isListeningToMusic, let customStatus, !customStatus.isEmpty {
-            return customStatus
+    nonisolated var memberListActivityContent: NativeMemberActivityPresentation.Content {
+        guard isListeningToMusic,
+              let customStatus, !customStatus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return .init(text: activityText) }
+        if NativeMemberActivityPresentation.isEmojiOnly(customStatus) {
+            if let activityText, !activityText.isEmpty, activityText != customStatus {
+                return .init(text: activityText, trailingEmoji: customStatus)
+            }
+            return .init(text: customStatus)
         }
-        return activityText
+        return .init(text: customStatus, separatesMusicIcon: true)
     }
 
-    nonisolated var memberListShowsMusicSeparator: Bool {
-        isListeningToMusic && customStatus?.isEmpty == false
+    /// Keeps the full activity, such as the track a custom status replaces
+    /// in the row, with custom emoji named rather than as raw tokens.
+    nonisolated var memberListTooltip: String {
+        [user.username, activityText.map(NativeMemberActivityPresentation.accessibilityText)]
+            .compactMap { $0 }.joined(separator: "\n")
     }
 }
 
@@ -51,8 +60,6 @@ nonisolated struct NativeMemberListPresentation: Equatable, Sendable {
     var presenceHiddenUserIDs: Set<UserID> = []
     /// Space reserved for hover controls on wider people lists.
     var trailingAccessoryWidth: CGFloat = 0
-    /// Overrides the usual activity gray for lists displaying secondary names.
-    var activityTextPrimaryOpacity: CGFloat?
 
     func opacity(for member: Member) -> CGFloat {
         dimsOfflineMembers && !member.isListedOnline ? 0.55 : 1

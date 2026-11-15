@@ -88,8 +88,7 @@ extension DiscordSettingsProto {
 
         var packed = Data()
         for favorite in favorites.compactMap(UInt64.init) {
-            var littleEndian = favorite.littleEndian
-            withUnsafeBytes(of: &littleEndian) { packed.append(contentsOf: $0) }
+            packed.append(protoFixed64(favorite))
         }
         var payload = Data()
         payload.append(protoLengthDelimitedField(1, packed))

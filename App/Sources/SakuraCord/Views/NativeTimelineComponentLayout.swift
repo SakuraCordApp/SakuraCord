@@ -100,44 +100,59 @@ struct NativeTimelineComponentLayout {
         var isLoading = false
     }
 
-    struct ImageRegion {
-        let frame: CGRect
-        let componentID: String
-        let displayURL: URL
-        let openURL: URL
-        let description: String
-        let isSpoiler: Bool
-        let cornerRadius: CGFloat
-        let maximumPixelDimension: Int
-        let placeholder: NativeTimelineMediaPlaceholder?
-    }
-
+    /// A thumbnail, gallery item or file. Each reveals, opens and takes a
+    /// spoiler cover alike.
     struct MediaRegion {
-        let frame: CGRect
-        let componentID: String
-        let displayURL: URL
-        /// The still image drawn in the tile: the media itself for images, or
-        /// the media proxy's poster frame for videos.
-        let previewURL: URL?
-        let openURL: URL
-        let description: String
-        let isSpoiler: Bool
-        let isVideo: Bool
-        let placeholder: NativeTimelineMediaPlaceholder?
-    }
+        enum Kind {
+            case image(ImageContent)
+            case media(MediaContent)
+            case file(FileContent)
+        }
 
-    struct FileRegion {
+        /// A section's thumbnail.
+        struct ImageContent {
+            let displayURL: URL
+            let description: String
+            let cornerRadius: CGFloat
+            let maximumPixelDimension: Int
+            let placeholder: NativeTimelineMediaPlaceholder?
+
+            var mediaKey: MediaImageKey { .media(displayURL, maximumPixelDimension: maximumPixelDimension) }
+        }
+
+        /// A media gallery item.
+        struct MediaContent {
+            let displayURL: URL
+            /// The still image drawn in the tile: the media itself for images, or
+            /// the media proxy's poster frame for videos.
+            let previewURL: URL?
+            let description: String
+            let isVideo: Bool
+            let placeholder: NativeTimelineMediaPlaceholder?
+        }
+
+        struct FileContent {
+            let title: String
+            let description: String?
+            /// The file the card names and downloads.
+            let attachment: Attachment
+            let isInBubble: Bool
+
+            func card(frame: CGRect) -> NativeTimelineFileCard {
+                .init(frame: frame, attachment: attachment, isInBubble: isInBubble)
+            }
+        }
+
         var frame: CGRect
         let componentID: String
         let openURL: URL
-        let title: String
-        let description: String?
         let isSpoiler: Bool
-        /// The file the card names and downloads.
-        let attachment: Attachment
-        let isInBubble: Bool
+        let kind: Kind
 
-        var card: NativeTimelineFileCard { .init(frame: frame, attachment: attachment, isInBubble: isInBubble) }
+        var fileCard: NativeTimelineFileCard? {
+            guard case let .file(file) = kind else { return nil }
+            return file.card(frame: frame)
+        }
     }
 
     struct SeparatorRegion {
@@ -155,9 +170,9 @@ struct NativeTimelineComponentLayout {
     let textRegions: [TextRegion]
     let buttons: [ButtonRegion]
     let selects: [SelectRegion]
-    let images: [ImageRegion]
-    let media: [MediaRegion]
-    let files: [FileRegion]
+    /// Thumbnails, then gallery items, then files: the order the media
+    /// viewer and VoiceOver present them in.
+    let mediaRegions: [MediaRegion]
     let separators: [SeparatorRegion]
     let unsupported: [UnsupportedRegion]
     let drawsTopSeparator: Bool
@@ -191,9 +206,9 @@ struct NativeTimelineComponentLayout {
             }
         }
         if embedComponents == nil, let error = source?.componentError(for: message.id) {
-            let errorBox = NodeBuilder.plainText(
+            let errorBox = NativeTimelineAttributedTextBox.plain(
                 "⚠ \(error)",
-                font: .interfaceSystemFont(ofSize: 13),
+                font: .messageSystemFont(ofSize: 13),
                 color: .systemRed
             )
             let height = NodeBuilder.measuredHeight(errorBox, width: maximumWidth)
@@ -265,9 +280,7 @@ struct NativeTimelineComponentLayout {
             textRegions: root.textRegions,
             buttons: root.buttons,
             selects: root.selects,
-            images: root.images,
-            media: root.media,
-            files: root.files,
+            mediaRegions: root.images + root.media + root.files,
             separators: root.separators,
             unsupported: root.unsupported,
             drawsTopSeparator:
@@ -282,9 +295,10 @@ private struct Node {
     var textRegions: [NativeTimelineComponentLayout.TextRegion] = []
     var buttons: [NativeTimelineComponentLayout.ButtonRegion] = []
     var selects: [NativeTimelineComponentLayout.SelectRegion] = []
-    var images: [NativeTimelineComponentLayout.ImageRegion] = []
+    // Kept apart until the layout lists them by kind.
+    var images: [NativeTimelineComponentLayout.MediaRegion] = []
     var media: [NativeTimelineComponentLayout.MediaRegion] = []
-    var files: [NativeTimelineComponentLayout.FileRegion] = []
+    var files: [NativeTimelineComponentLayout.MediaRegion] = []
     var separators: [NativeTimelineComponentLayout.SeparatorRegion] = []
     var unsupported: [NativeTimelineComponentLayout.UnsupportedRegion] = []
 
@@ -339,37 +353,16 @@ private struct Node {
                 isLoading: $0.isLoading
             )
         }
-        result.images = images.map {
-            .init(
-                frame: $0.frame.offsetBy(dx: dx, dy: dy),
-                componentID: $0.componentID,
-                displayURL: $0.displayURL,
-                openURL: $0.openURL,
-                description: $0.description,
-                isSpoiler: $0.isSpoiler,
-                cornerRadius: $0.cornerRadius,
-                maximumPixelDimension: $0.maximumPixelDimension,
-                placeholder: $0.placeholder
-            )
+        func offset(_ regions: [NativeTimelineComponentLayout.MediaRegion]) -> [NativeTimelineComponentLayout.MediaRegion] {
+            regions.map {
+                var region = $0
+                region.frame = region.frame.offsetBy(dx: dx, dy: dy)
+                return region
+            }
         }
-        result.media = media.map {
-            .init(
-                frame: $0.frame.offsetBy(dx: dx, dy: dy),
-                componentID: $0.componentID,
-                displayURL: $0.displayURL,
-                previewURL: $0.previewURL,
-                openURL: $0.openURL,
-                description: $0.description,
-                isSpoiler: $0.isSpoiler,
-                isVideo: $0.isVideo,
-                placeholder: $0.placeholder
-            )
-        }
-        result.files = files.map {
-            var file = $0
-            file.frame = file.frame.offsetBy(dx: dx, dy: dy)
-            return file
-        }
+        result.images = offset(images)
+        result.media = offset(media)
+        result.files = offset(files)
         result.separators = separators.map {
             .init(
                 frame: $0.frame.offsetBy(dx: dx, dy: dy),
@@ -492,14 +485,16 @@ private enum NodeBuilder {
                             height: size
                         ),
                         componentID: id,
-                        displayURL: item.displayURL,
                         openURL: item.openURL,
-                        description:
-                            item.description ?? item.title,
                         isSpoiler: item.isSpoiler,
-                        cornerRadius: DiscordRichMessageMetrics.px(8),
-                        maximumPixelDimension: 256,
-                        placeholder: item.placeholder
+                        kind: .image(.init(
+                            displayURL: item.displayURL,
+                            description:
+                                item.description ?? item.title,
+                            cornerRadius: DiscordRichMessageMetrics.px(8),
+                            maximumPixelDimension: 256,
+                            placeholder: item.placeholder
+                        ))
                     )
                 ]
             )
@@ -597,7 +592,7 @@ private enum NodeBuilder {
             componentID: id,
             message: message,
             source: source,
-            emojiSize: 18 * scale,
+            emojiSize: InterfaceTypographyMetrics.message(18) * scale,
             bodyScale: scale
         )
         let width = min(maximumWidth, max(1, NativeTimelineEmbedLayout.idealWidth(box)))
@@ -925,10 +920,10 @@ private enum NodeBuilder {
                 count: resolved.count,
                 width: galleryWidth,
                 aspectRatios: resolved.map {
-                    aspectRatio(width: $0.1.width, height: $0.1.height)
+                    RichMediaItem.aspectRatio(width: $0.1.width, height: $0.1.height)
                 },
                 intrinsicSizes: resolved.map {
-                    intrinsicSize(width: $0.1.width, height: $0.1.height)
+                    RichMediaItem.knownSize(width: $0.1.width, height: $0.1.height) ?? .zero
                 },
                 spacing: DiscordRichMessageMetrics.px(4)
             )
@@ -939,14 +934,16 @@ private enum NodeBuilder {
                     return .init(
                         frame: frame,
                         componentID: item.id,
-                        displayURL: media.displayURL,
-                        previewURL: media.previewURL,
                         openURL: media.openURL,
-                        description:
-                            media.description ?? media.title,
                         isSpoiler: media.isSpoiler,
-                        isVideo: media.isVideo,
-                        placeholder: media.placeholder
+                        kind: .media(.init(
+                            displayURL: media.displayURL,
+                            previewURL: media.previewURL,
+                            description:
+                                media.description ?? media.title,
+                            isVideo: media.isVideo,
+                            placeholder: media.placeholder
+                        ))
                     )
                 }
             )
@@ -983,11 +980,13 @@ private enum NodeBuilder {
                         frame: CGRect(origin: .zero, size: size),
                         componentID: id,
                         openURL: item.openURL,
-                        title: item.title,
-                        description: item.description,
                         isSpoiler: item.isSpoiler,
-                        attachment: attachment,
-                        isInBubble: inBubble
+                        kind: .file(.init(
+                            title: item.title,
+                            description: item.description,
+                            attachment: attachment,
+                            isInBubble: inBubble
+                        ))
                     )
                 ]
             )
@@ -1046,11 +1045,11 @@ private enum NodeBuilder {
                     spacing: componentSpacing
                 )
             }
-            let width = fixedWidth ?? DiscordComponentContainerLayoutPlan.width(
-                idealContent: content(width: max(1, maximumWidth - padding * 2)).size.width,
-                available: maximumWidth,
-                maximum: DiscordRichMessageMetrics.componentsMaximumWidth,
-                padding: padding
+            // The accent bar overlays the leading padding, so it adds no width.
+            let width = fixedWidth ?? min(
+                max(0, content(width: max(1, maximumWidth - padding * 2)).size.width + padding * 2),
+                max(0, maximumWidth),
+                DiscordRichMessageMetrics.componentsMaximumWidth
             )
             let content = content(width: max(1, width - padding * 2))
             let frame = CGRect(x: 0, y: 0, width: width, height: content.size.height + padding * 2)
@@ -1100,25 +1099,6 @@ private enum NodeBuilder {
         return result
     }
 
-    static func plainText(
-        _ value: String,
-        font: NSFont,
-        color: NSColor
-    ) -> NativeTimelineAttributedTextBox {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byWordWrapping
-        return NativeTimelineAttributedTextBox(
-            NSAttributedString(
-                string: value,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: color,
-                    .paragraphStyle: paragraph,
-                ]
-            )
-        )
-    }
-
     static func measuredHeight(
         _ box: NativeTimelineAttributedTextBox,
         width: CGFloat
@@ -1152,17 +1132,7 @@ private enum NodeBuilder {
         let prepared = RichMessageAttributedText.prepare(
             source: content.utf8.contains(13) ? content.replacing(/\r\n?/, with: "\n") : content
         )
-        let resolver = source.map {
-            MessageMentionResolver(model: $0, message: message)
-        }
-        let mentions = prepared.tokens.reduce(
-            into: [String: MentionPresentation]()
-        ) { result, token in
-            guard case let .mention(mention) = token else { return }
-            result[mention.rawToken] =
-                resolver?.presentation(mention)
-                ?? MentionPresentation.fallback(for: mention)
-        }
+        let mentions = MessageMentionResolver.presentations(for: prepared, model: source, message: message)
         let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
         let emojiSize = InterfaceScale.metric(emojiSize)
         let key = NativeTimelineResolvedTextCache.Key(
@@ -1171,10 +1141,7 @@ private enum NodeBuilder {
             prepared: prepared,
             emojiSize: emojiSize,
             baseFontSize: baseFontSize * bodyScale,
-
-            mentions: mentions.values.sorted {
-                $0.rawToken < $1.rawToken
-            }
+            presentations: mentions
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
             NativeTimelineAttributedTextBox(
@@ -1222,7 +1189,7 @@ private enum NodeBuilder {
         _ label: String,
         maximumWidth: CGFloat
     ) -> Node {
-        let font = NSFont.interfaceSystemFont(ofSize: 11)
+        let font = NSFont.messageSystemFont(ofSize: 11)
         let width = min(
             maximumWidth,
             ceil(
@@ -1295,25 +1262,5 @@ private enum NodeBuilder {
         media.attachmentName.flatMap { name in
             attachments.first { $0.filename == name || $0.id == name }
         }
-    }
-
-    private static func aspectRatio(
-        width: Int?,
-        height: Int?
-    ) -> CGFloat {
-        guard let width, let height, width > 0, height > 0 else {
-            return 16 / 9
-        }
-        return CGFloat(width) / CGFloat(height)
-    }
-
-    private static func intrinsicSize(
-        width: Int?,
-        height: Int?
-    ) -> CGSize {
-        guard let width, let height, width > 0, height > 0 else {
-            return .zero
-        }
-        return CGSize(width: width, height: height)
     }
 }

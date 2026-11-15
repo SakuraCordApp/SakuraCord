@@ -1,10 +1,18 @@
 import Foundation
 
 nonisolated struct TranslationSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self()
-    var isEnabled = false
-    var messageLanguage = ""
-    var draftLanguage = "en"
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
+    var isEnabled: Bool
+    var messageLanguage: String
+    var draftLanguage: String
+}
+
+nonisolated extension TranslationSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        isEnabled = value(.translationEnabled).boolValue
+        messageLanguage = value(.translationMessageLanguage).stringValue
+        draftLanguage = value(.translationDraftLanguage).stringValue
+    }
 }
 
 @MainActor
@@ -17,11 +25,7 @@ final class TranslationSettingsStore {
     }
 
     func load() -> TranslationSettingsSnapshot {
-        var value = TranslationSettingsSnapshot.defaults
-        if case let .bool(saved) = preferences.value(for: .translationEnabled) { value.isEnabled = saved }
-        if case let .string(saved) = preferences.value(for: .translationMessageLanguage) { value.messageLanguage = saved }
-        if case let .string(saved) = preferences.value(for: .translationDraftLanguage) { value.draftLanguage = saved }
-        return value
+        TranslationSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: TranslationSettingsSnapshot) {

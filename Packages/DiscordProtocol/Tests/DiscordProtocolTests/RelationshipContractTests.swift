@@ -73,7 +73,7 @@ struct RelationshipContractTests {
     }
 
     @Test func `READY, Gateway events and a racing full read reduce to one authoritative record set`() async throws {
-        let credentials = RelationshipInterleavingCredentials()
+        let credentials = NicknameInterleavingCredentials()
         let (provider, session) = await makeProvider(credentials: credentials)
         defer { session.invalidateAndCancel() }
         await provider.handleGatewayDispatch(name: "READY", body: .object([
@@ -152,7 +152,7 @@ struct RelationshipContractTests {
 
     @Test(arguments: ["relationship", "nickname", "identity"])
     func `older full reads preserve newer relationship metadata and user identities`(change: String) async throws {
-        let credentials = RelationshipInterleavingCredentials()
+        let credentials = NicknameInterleavingCredentials()
         let (provider, session) = await makeProvider(credentials: credentials)
         defer { session.invalidateAndCancel() }
         await provider.handleGatewayDispatch(name: "RELATIONSHIP_ADD", body: row("2", type: 1, extra: [
@@ -436,24 +436,6 @@ private extension DiscordRESTProvider {
     }
 }
 
-private actor RelationshipInterleavingCredentials: CredentialStore {
-    private let base = TestCredentialStore()
-    private var action: (@Sendable () async -> Void)?
-
-    func interleave(_ action: @escaping @Sendable () async -> Void) { self.action = action }
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        let pending = action
-        action = nil
-        await pending?()
-        return try await base.credential(for: handle)
-    }
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        try await base.store(credential, accountID: accountID)
-    }
-    func remove(_ handle: CredentialHandle) async throws { try await base.remove(handle) }
-    func handles() async throws -> [CredentialHandle] { try await base.handles() }
-}
-
 private final class RelationshipFixture: NSObject, URLSessionTaskDelegate {
     let requests = Mutex<[RelationshipURLProtocol.Captured]>([])
     let relationships = Mutex("[]")
@@ -522,25 +504,11 @@ private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
         case ("DELETE", _, "404"): (404, #"{"code":10013,"message":"Unknown User"}"#)
         default: (204, "")
         }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-                                                             headerFields: ["Content-Type": "application/json"])!,
-                            cacheStoragePolicy: .notAllowed)
-        if !response.isEmpty { client?.urlProtocol(self, didLoad: Data(response.utf8)) }
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: response)
     }
 
     private func decodedRequestBody() -> JSONValue? {
-        var data = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let data = request.bodyData ?? Data()
         return try? JSONDecoder().decode(JSONValue.self, from: data)
     }
 

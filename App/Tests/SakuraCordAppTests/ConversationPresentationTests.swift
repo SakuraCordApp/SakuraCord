@@ -402,22 +402,22 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
 
 @Test func `forum posts begin at newest so opening them clears unread replies`() {
     #expect(
-        ThreadTimelinePresentationPolicy.initialScrollTarget(
+        ThreadTimelinePresentationPolicy.opensAtNewest(
             isForumPost: true,
             hasUnreadReplies: true
-        ) == .newest
+        )
     )
     #expect(
-        ThreadTimelinePresentationPolicy.initialScrollTarget(
+        !ThreadTimelinePresentationPolicy.opensAtNewest(
             isForumPost: false,
             hasUnreadReplies: true
-        ) == .firstUnread
+        )
     )
     #expect(
-        ThreadTimelinePresentationPolicy.initialScrollTarget(
+        ThreadTimelinePresentationPolicy.opensAtNewest(
             isForumPost: false,
             hasUnreadReplies: false
-        ) == .newest
+        )
     )
 }
 
@@ -601,7 +601,7 @@ func `server verification blocks sends without exposing hidden channels`(state: 
     model.showProfile(for: user, sourceMessage: first)
     let initial = try #require(model.liveProfilePresentation(for: .contextual))
     #expect(initial.isWebhook && !initial.isLoading && initial.errorMessage == nil)
-    #expect(model.contextualProfileTask == nil)
+    #expect(model.profileTasks[.contextual] == nil)
     first.author.displayName = "Second persona"
     first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/second.png")
     model.showProfile(for: first.author, sourceMessage: first)

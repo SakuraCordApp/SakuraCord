@@ -42,7 +42,7 @@ private struct SupplementaryPaneFrameReporter: ViewModifier {
 }
 
 /// The shell shared by every side chat in the trailing column: its divider,
-/// width, scroll-edge treatment and frame report. Kinds supply only content.
+/// width and scroll-edge treatment. Kinds supply only content.
 /// A full-width thread keeps this shell, without the divider and width
 /// limits, so moving between the pane and full width keeps its timeline.
 struct SideConversationPane<Content: View>: View {

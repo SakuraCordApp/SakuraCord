@@ -1,9 +1,7 @@
 import Foundation
 
 nonisolated struct PullRequestBuildClient: Sendable {
-    static let catalogURL = URL(
-        string: "https://github.com/SakuraCordApp/Builds/releases/download/pr-builds/catalog.json"
-    )!
+    static let catalogURL = PullRequestBuild.assetURL(id: "pr-builds", name: "catalog.json")!
 
     func fetchBuilds() async throws -> [PullRequestBuild] {
         var request = URLRequest(url: Self.catalogURL)

@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Observation
 import SakuraCordModels
@@ -253,68 +252,6 @@ struct StaticEmojiImage: View {
     }
 }
 
-nonisolated enum NativeEmojiSkinTone: String, CaseIterable, Identifiable, Sendable {
-    case standard
-    case light
-    case mediumLight
-    case medium
-    case mediumDark
-    case dark
-
-    /// The picker's stored tone, shared by autocomplete and quick reactions.
-    static var preferred: NativeEmojiSkinTone {
-        NativeEmojiSkinTone(rawValue: UserDefaults.standard.string(forKey: "emojiSkinTone") ?? "") ?? .standard
-    }
-
-    var id: String {
-        rawValue
-    }
-
-    var title: String {
-        switch self {
-        case .standard: "Default"
-        case .light: "Light"
-        case .mediumLight: "Medium light"
-        case .medium: "Medium"
-        case .mediumDark: "Medium dark"
-        case .dark: "Dark"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .standard: "👋"
-        case .light: "👋🏻"
-        case .mediumLight: "👋🏼"
-        case .medium: "👋🏽"
-        case .mediumDark: "👋🏾"
-        case .dark: "👋🏿"
-        }
-    }
-
-    var modifierCodePoint: UInt32? {
-        switch self {
-        case .standard: nil
-        case .light: 0x1F3FB
-        case .mediumLight: 0x1F3FC
-        case .medium: 0x1F3FD
-        case .mediumDark: 0x1F3FE
-        case .dark: 0x1F3FF
-        }
-    }
-
-    init?(modifierCodePoint: UInt32) {
-        switch modifierCodePoint {
-        case 0x1F3FB: self = .light
-        case 0x1F3FC: self = .mediumLight
-        case 0x1F3FD: self = .medium
-        case 0x1F3FE: self = .mediumDark
-        case 0x1F3FF: self = .dark
-        default: return nil
-        }
-    }
-}
-
 struct EmojiPickerView: View {
     let model: AppModel
     let useCase: DiscordEmojiUseCase
@@ -459,7 +396,7 @@ struct EmojiPickerView: View {
             interaction.synchronize(with: document.selectableCells)
         }
         .onChange(of: Set(model.serverRailGuildsByID.values.filter {
-            $0.features.contains("ROLE_SUBSCRIPTIONS_ENABLED")
+            $0.features.contains(GuildFeature.roleSubscriptionsEnabled)
         }.map(\.id))) { _, _ in
             document.synchronize(with: model, useCase: useCase)
             interaction.synchronize(with: document.selectableCells)
@@ -704,156 +641,6 @@ private struct EmojiPickerDocumentView: View {
                 await Task.yield()
                 proxy.scrollTo(EmojiDocumentRow.headerID(for: .search), anchor: .top)
             }
-        }
-    }
-}
-
-struct EmojiPickerSearchField: View {
-    @Binding var text: String
-    @Binding var isFocused: Bool
-    let placeholder: String
-
-    var body: some View {
-        PickerSearchHeader(text: $text, focus: { isFocused = true }, input: {
-            PickerSearchTextField(
-                text: $text,
-                isFocused: $isFocused,
-                placeholder: placeholder
-            )
-        })
-        .task {
-            await Task.yield()
-            isFocused = true
-        }
-    }
-}
-
-private struct PickerSearchTextField: NSViewRepresentable {
-    @Binding var text: String
-    @Binding var isFocused: Bool
-    let placeholder: String
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, isFocused: $isFocused)
-    }
-
-    func makeNSView(context: Context) -> EmojiSearchNSTextField {
-        let textField = EmojiSearchNSTextField()
-        textField.delegate = context.coordinator
-        textField.placeholderString = placeholder
-        textField.isBordered = false
-        textField.isBezeled = false
-        textField.drawsBackground = false
-        textField.focusRingType = .none
-        textField.font = .interfaceSystemFont(ofSize: ChatChromeMetrics.pickerSearchHeaderFontSize)
-        textField.textColor = .labelColor
-        textField.lineBreakMode = .byTruncatingTail
-        textField.cell?.usesSingleLineMode = true
-        textField.isAutomaticTextCompletionEnabled = false
-        textField.contentType = NSTextContentType(rawValue: "dev.sakuracord.emoji-search")
-        textField.allowsWritingTools = false
-        textField.allowsWritingToolsAffordance = false
-        textField.setAccessibilityLabel(placeholder)
-        return textField
-    }
-
-    func updateNSView(_ textField: EmojiSearchNSTextField, context: Context) {
-        context.coordinator.text = $text
-        context.coordinator.isFocused = $isFocused
-        let font = NSFont.interfaceSystemFont(ofSize: ChatChromeMetrics.pickerSearchHeaderFontSize)
-        if textField.font != font { textField.font = font }
-        if textField.stringValue != text {
-            textField.stringValue = text
-        }
-
-        if isFocused {
-            textField.requestFirstResponderWhenReady()
-            Self.disableCompletionFeatures(in: textField.currentEditor() as? NSTextView)
-        } else if textField.window?.firstResponder === textField.currentEditor() {
-            textField.window?.makeFirstResponder(nil)
-        }
-    }
-
-    private static func disableCompletionFeatures(in editor: NSTextView?) {
-        guard let editor else { return }
-        editor.isAutomaticTextCompletionEnabled = false
-        editor.isAutomaticTextReplacementEnabled = false
-        editor.isAutomaticSpellingCorrectionEnabled = false
-        editor.isAutomaticDataDetectionEnabled = false
-        editor.isAutomaticLinkDetectionEnabled = false
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var text: Binding<String>
-        var isFocused: Binding<Bool>
-
-        init(text: Binding<String>, isFocused: Binding<Bool>) {
-            self.text = text
-            self.isFocused = isFocused
-        }
-
-        func controlTextDidBeginEditing(_ notification: Notification) {
-            isFocused.wrappedValue = true
-            Self.configureEditor(from: notification)
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let textField = notification.object as? NSTextField else { return }
-            text.wrappedValue = textField.stringValue
-        }
-
-        func controlTextDidEndEditing(_ notification: Notification) {
-            isFocused.wrappedValue = false
-        }
-
-        private static func configureEditor(from notification: Notification) {
-            guard let textField = notification.object as? NSTextField else { return }
-            let editor = textField.currentEditor() as? NSTextView
-            PickerSearchTextField.disableCompletionFeatures(in: editor)
-            editor?.applySakuraCordTextSelectionAppearance()
-        }
-    }
-}
-
-private final class EmojiSearchNSTextField: NSTextField {
-    private var focusRequestIsScheduled = false
-    private var didAutofocus = false
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window == nil {
-            didAutofocus = false
-            focusRequestIsScheduled = false
-            return
-        }
-        guard !didAutofocus else { return }
-        requestFirstResponderWhenReady()
-    }
-
-    func requestFirstResponderWhenReady() {
-        guard let window, !focusRequestIsScheduled else { return }
-        if window.firstResponder === currentEditor() {
-            didAutofocus = true
-            return
-        }
-        focusRequestIsScheduled = true
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            for delay in [0, 80, 140, 220] {
-                if delay > 0 {
-                    try? await Task.sleep(for: .milliseconds(delay))
-                }
-                guard let window = self.window else { break }
-                window.makeKey()
-                _ = window.makeFirstResponder(self)
-                await Task.yield()
-                if window.firstResponder === currentEditor() {
-                    didAutofocus = true
-                    break
-                }
-            }
-            focusRequestIsScheduled = false
         }
     }
 }

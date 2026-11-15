@@ -30,14 +30,15 @@ final class NativeMemberListCoordinator: NSObject {
     var lastViewportRange: ClosedRange<Int>?
     var pendingViewportRange: ClosedRange<Int>?
     var viewportIdentity: ChannelID?
+    private var animatesShimmer: Bool?
     var contentIdentity: String?
     var contentPreparations: [String: NativeMemberListCanvasView.PreparationSnapshot] = [:]
-    var performanceTicker: NativeTimelineDisplayLinkTicker?
+    var performanceTicker: DisplayLinkTicker?
     var performanceStartTask: Task<Void, Never>?
     var performanceStartGeneration: UInt64 = 0
     var performanceLayoutSections: [PerformanceLayoutSection]?
     var didStartPerformanceBenchmark = false
-    var performanceInterval: OSSignpostIntervalState?
+    var performanceMeasurement: NativeScrollBenchmarkMeasurement?
     var documentPreparationTask: Task<Void, Never>?
     var requestedSections: [MemberSection]?
     var requestedPresentation: NativeMemberListPresentation?
@@ -50,7 +51,7 @@ final class NativeMemberListCoordinator: NSObject {
         self.parent = parent
     }
 
-    func makeScrollView() -> NSScrollView {
+    func makeScrollView() -> NativeMemberListScrollView {
         let canvas = NativeMemberListCanvasView(frame: .zero)
         canvas.selectMember = { [weak self] member in
             guard let self else { return }
@@ -138,6 +139,13 @@ final class NativeMemberListCoordinator: NSObject {
         }
         self.parent = parent
         guard let canvas else { return }
+        // The loading shimmer starts or stops with the motion settings, not
+        // only when members change.
+        let animatesShimmer = !parent.reduceMotion && !parent.disablesAllAnimations
+        if self.animatesShimmer != animatesShimmer {
+            self.animatesShimmer = animatesShimmer
+            canvas.reconcilePlaceholderShimmer()
+        }
         canvas.selectMember = { [weak self] member in
             guard let self else { return }
             let original = self.parent.sections.lazy.flatMap(\.members).first { $0.id == member.id } ?? member
@@ -241,27 +249,7 @@ final class NativeMemberListCoordinator: NSObject {
         }
         observations.removeAll()
         canvas?.tearDown()
-        if let performanceInterval {
-            endPerformanceScrollIsolation()
-            AppPerformanceSignposts.signposter.emitEvent(
-                "MemberListAutoScrollBenchmarkCancelled"
-            )
-            AppPerformanceSignposts.signposter.endInterval(
-                "MemberListAutoScrollBenchmark",
-                performanceInterval
-            )
-            NativeTimelineBenchmarkArtifact.write(
-                outcome: .cancelled,
-                completedDistance: 0,
-                elapsed: 0
-            )
-            AppPerformanceSignposts.endResourceWindow(
-                named: "MemberListAutoScrollBenchmark"
-            )
-        }
-        performanceTicker?.stop()
-        performanceTicker = nil
-        performanceInterval = nil
+        cancelPerformanceBenchmark()
     }
 
     func requestDocumentUpdate(
@@ -397,171 +385,5 @@ final class NativeMemberListCoordinator: NSObject {
                     revision: revision
                 )
         }
-    }
-
-    func startPerformanceBenchmarkIfReady() {
-        guard parent.runsPerformanceAutoScroll,
-              !didStartPerformanceBenchmark,
-              performanceStartTask == nil,
-              documentPreparationTask == nil,
-              let scrollView,
-              let canvas,
-              canvas.contentHeight
-                >= NativeTimelineBenchmarkScrollPolicy.nominalDistance
-                    + scrollView.contentSize.height
-        else { return }
-        // Server selection, accessibility inspection by the benchmark driver,
-        // initial range delivery, and member-document preparation are separate
-        // loading paths. Require three seconds with no replacement document,
-        // rather than three seconds after the first tall document, so this idle
-        // scenario never silently turns into a loading-overlap measurement.
-        performanceStartGeneration &+= 1
-        let startGeneration = performanceStartGeneration
-        performanceStartTask = Task { [weak self, weak scrollView, weak canvas] in
-            defer {
-                if let self,
-                   self.performanceStartGeneration == startGeneration
-                {
-                    self.performanceStartTask = nil
-                }
-            }
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled,
-                  let self,
-                  self.performanceStartGeneration == startGeneration,
-                  self.documentPreparationTask == nil,
-                  let scrollView,
-                  let canvas,
-                  canvas.contentHeight
-                    >= NativeTimelineBenchmarkScrollPolicy.nominalDistance
-                        + scrollView.contentSize.height
-            else { return }
-            didStartPerformanceBenchmark = true
-            runPerformanceBenchmark(scrollView: scrollView, canvas: canvas)
-        }
-    }
-
-    func runPerformanceBenchmark(
-        scrollView: NSScrollView,
-        canvas: NativeMemberListCanvasView
-    ) {
-        scrollView.contentView.scroll(to: .zero)
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-        let interval = beginPerformanceScrollMeasurement()
-        let startedAt = ProcessInfo.processInfo.systemUptime
-        var previousTick = startedAt
-        var completedDistance: CGFloat = 0
-        var completedTicks = 0
-        var delayedTicks = 0
-        var tickIntervals: [TimeInterval] = []
-        tickIntervals.reserveCapacity(1_500)
-        var delayedTickSamples: [NativeTimelineBenchmarkArtifact.DelayedTick] = []
-        delayedTickSamples.reserveCapacity(64)
-        var maximumTickInterval = 0.0
-        var maximumScrollWork = 0.0
-        let ticker = NativeTimelineDisplayLinkTicker()
-        performanceTicker = ticker
-        ticker.start(on: canvas) { [weak self, weak ticker] in
-            guard let self else { return }
-            let now = ProcessInfo.processInfo.systemUptime
-            let elapsed = now - startedAt
-            let tickInterval = now - previousTick
-            completedTicks += 1
-            tickIntervals.append(tickInterval)
-            maximumTickInterval = max(maximumTickInterval, tickInterval)
-            if tickInterval > 0.033 {
-                delayedTicks += 1
-                delayedTickSamples.append(
-                    .init(offset: now - startedAt, interval: tickInterval)
-                )
-            }
-            let delta = NativeTimelineBenchmarkScrollPolicy.distance(
-                tickInterval: tickInterval
-            )
-            previousTick = now
-            let workStart = ProcessInfo.processInfo.systemUptime
-            let previousY = scrollView.contentView.bounds.minY
-            let maximumY = max(
-                0,
-                canvas.contentHeight - scrollView.contentSize.height
-            )
-            let nextY = min(maximumY, previousY + delta)
-            scrollView.contentView.scroll(to: CGPoint(x: 0, y: nextY))
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-            completedDistance += max(0, nextY - previousY)
-            maximumScrollWork = max(
-                maximumScrollWork,
-                ProcessInfo.processInfo.systemUptime - workStart
-            )
-            if elapsed >= NativeTimelineBenchmarkScrollPolicy.duration
-                || nextY >= maximumY - 0.5
-            {
-                endPerformanceScrollIsolation()
-                ticker?.stop()
-                performanceTicker = nil
-                let outcome: NativeTimelineBenchmarkFinishOutcome =
-                    elapsed >= NativeTimelineBenchmarkScrollPolicy.duration
-                        ? .completed : .insufficientHistory
-                switch outcome {
-                case .completed:
-                    AppPerformanceSignposts.signposter.emitEvent(
-                        "MemberListAutoScrollBenchmarkCompleted"
-                    )
-                case .insufficientHistory:
-                    AppPerformanceSignposts.signposter.emitEvent(
-                        "MemberListAutoScrollBenchmarkInsufficientHistory"
-                    )
-                case .cancelled, .paginationFailed:
-                    break
-                }
-                AppPerformanceSignposts.signposter.endInterval(
-                    "MemberListAutoScrollBenchmark",
-                    interval
-                )
-                performanceInterval = nil
-                NativeTimelineBenchmarkArtifact.write(
-                    outcome: outcome,
-                    completedDistance: completedDistance,
-                    elapsed: elapsed,
-                    completedTicks: completedTicks,
-                    delayedTicks: delayedTicks,
-                    tickIntervals: tickIntervals,
-                    delayedTickSamples: delayedTickSamples,
-                    maximumTickInterval: maximumTickInterval,
-                    maximumScrollWork: maximumScrollWork,
-                    historyStarvedTicks: 0,
-                    maximumConsecutiveHistoryStarvedTicks: 0
-                )
-                AppPerformanceSignposts.endResourceWindow(
-                    named: "MemberListAutoScrollBenchmark",
-                    nominalDuration:
-                        outcome == .completed
-                            ? NativeTimelineBenchmarkScrollPolicy.duration : nil
-                )
-            }
-        }
-    }
-
-    private func beginPerformanceScrollIsolation() {
-        AppScrollWorkGate.beginActivity()
-    }
-
-    private func beginPerformanceScrollMeasurement() -> OSSignpostIntervalState {
-        let interval = AppPerformanceSignposts.signposter.beginInterval(
-            "MemberListAutoScrollBenchmark"
-        )
-        performanceInterval = interval
-        // Programmatic benchmark motion bypasses AppKit's live-scroll
-        // notifications. Exercise the same loading-isolation gate as a real
-        // trackpad gesture so cross-surface regressions remain observable.
-        beginPerformanceScrollIsolation()
-        AppPerformanceSignposts.beginResourceWindow(
-            named: "MemberListAutoScrollBenchmark"
-        )
-        return interval
-    }
-
-    private func endPerformanceScrollIsolation() {
-        AppScrollWorkGate.endActivity()
     }
 }

@@ -10,7 +10,7 @@ nonisolated enum NativeTimelineGlideScrollPolicy {
     static let minimumDuration: TimeInterval = 0.32
     static let maximumDuration: TimeInterval = 0.62
 
-    static let curve = NativeTimelineGlideCurve(
+    static let curve = GlideCurve(
         x1: 0.22, y1: 1, x2: 0.36, y2: 1, duration: maximumDuration
     )
 
@@ -32,7 +32,7 @@ nonisolated enum NativeTimelineGlideScrollPolicy {
 
 @MainActor
 final class NativeTimelineGlideScroll {
-    let ticker = NativeTimelineDisplayLinkTicker()
+    let ticker = DisplayLinkTicker()
     let target: MessageTimelineScrollRequest.Target
     let startUptime = ProcessInfo.processInfo.systemUptime
     let duration: TimeInterval

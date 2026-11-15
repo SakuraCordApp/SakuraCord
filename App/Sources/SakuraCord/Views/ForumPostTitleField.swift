@@ -51,16 +51,18 @@ struct ForumPostTitleField: NSViewRepresentable {
     func updateNSView(_ field: TitleField, context: Context) {
         context.coordinator.parent = self
         field.editor.canReceiveAttachments = canReceiveAttachments
-        field.editor.receiveAttachments = receiveAttachments
+        field.editor.onReceiveAttachments = { attachments, _ in
+            receiveAttachments(attachments)
+            return true
+        }
         // Follows Interface Size and accent changes, as the body does.
         if field.font != Self.font {
             field.font = Self.font
             field.placeholderAttributedString = Self.placeholder
         }
-        field.editor.applySakuraCordTextSelectionAppearance()
         // The editor owns text still being composed with an input method.
         if !field.editor.hasMarkedText(), field.stringValue != text { field.stringValue = text }
-        context.coordinator.applyFocus(to: field)
+        context.coordinator.applyFocus(to: field, resigning: field.editor)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView field: TitleField, context: Context) -> CGSize? {
@@ -74,9 +76,10 @@ struct ForumPostTitleField: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTextFieldDelegate {
+    final class Coordinator: NSObject, NSTextFieldDelegate, ComposerFocusSyncing {
         var parent: ForumPostTitleField
-        private var appliedFocus = false
+        var appliedFocus = false
+        var focusBinding: Binding<Bool> { parent.$isFocused }
 
         init(parent: ForumPostTitleField) {
             self.parent = parent
@@ -100,33 +103,11 @@ struct ForumPostTitleField: NSViewRepresentable {
             }
         }
 
-        func firstResponderDidChange(_ isFirstResponder: Bool) {
-            // Publish after AppKit finishes the responder change, never during
-            // a SwiftUI update that triggered it.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                appliedFocus = isFirstResponder
-                if parent.isFocused != isFirstResponder { parent.isFocused = isFirstResponder }
-            }
-        }
-
-        func applyFocus(to field: TitleField) {
-            guard parent.isFocused != appliedFocus else { return }
-            appliedFocus = parent.isFocused
-            if parent.isFocused {
-                Task { @MainActor [weak field] in
-                    guard let field, parent.isFocused else { return }
-                    field.window?.makeFirstResponder(field)
-                }
-            } else if field.window?.firstResponder === field.editor {
-                field.window?.makeFirstResponder(nil)
-            }
-        }
     }
 
     final class TitleField: NSTextField {
-        let editor: TitleEditor = {
-            let editor = TitleEditor()
+        let editor: ComposerAttachmentPasteTextView = {
+            let editor = ComposerAttachmentPasteTextView()
             editor.isFieldEditor = true
             editor.isRichText = false
             editor.allowsUndo = true
@@ -143,33 +124,6 @@ struct ForumPostTitleField: NSViewRepresentable {
     final class TitleCell: NSTextFieldCell {
         override func fieldEditor(for controlView: NSView) -> NSTextView? {
             (controlView as? TitleField)?.editor
-        }
-    }
-
-    final class TitleEditor: ComposerFocusReportingTextView {
-        var canReceiveAttachments: (() -> Bool)?
-        var receiveAttachments: ((ComposerIncomingAttachments) -> Void)?
-
-        private var receivesAttachments: Bool {
-            isEditable && receiveAttachments != nil && canReceiveAttachments?() != false
-        }
-
-        override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
-            receivesAttachments
-                ? ComposerPasteboardAttachments.readableTypes + super.readablePasteboardTypes
-                : super.readablePasteboardTypes
-        }
-
-        override func readSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
-            guard ComposerPasteboardAttachments.readableTypes.contains(type) else {
-                return super.readSelection(from: pasteboard, type: type)
-            }
-            // Declining lets AppKit read the next available type.
-            guard receivesAttachments, let receiveAttachments,
-                  let attachments = ComposerPasteboardAttachments.attachments(from: pasteboard, type: type)
-            else { return false }
-            receiveAttachments(attachments)
-            return true
         }
     }
 }

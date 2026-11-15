@@ -126,7 +126,7 @@ struct ApplicationCommandComposerBadge: View {
                     .foregroundStyle(.secondary)
                     .opacity(isHovered ? 1 : 0)
             }
-            .frame(width: ChatChromeMetrics.composerControlHeight, height: ChatChromeMetrics.composerControlHeight)
+            .frame(width: ChatChromeMetrics.composerButtonSize, height: ChatChromeMetrics.composerButtonSize)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -214,19 +214,5 @@ struct CommandApplicationIcon: View {
         image.isTemplate = false
         images.setObject(image, forKey: key)
         return image
-    }
-}
-
-extension Channel {
-    var discordCommandType: Int {
-        switch kind {
-        case .text: 0
-        case .directMessage: 1
-        case .voice: 2
-        case .groupDirectMessage: 3
-        case .announcement: 5
-        case .forum: 15
-        case .unknown: -1
-        }
     }
 }

@@ -409,13 +409,7 @@ struct ProviderRequestContractTests {
 
     @Test func `concurrent sends with one nonce use one message mutation`() async throws {
         RateLimitURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let draft = SendMessageDraft(
             channelID: ChannelID(rawValue: 200),
             content: "one intentional send",
@@ -434,13 +428,7 @@ struct ProviderRequestContractTests {
 
     @Test func `message send rejects more than ten attachments without a request`() async {
         RateLimitURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let attachments = (0 ... SendMessageDraft.maximumAttachmentCount).map {
             URL(fileURLWithPath: "/tmp/sakuracord-over-limit-\($0)")
         }
@@ -459,13 +447,7 @@ struct ProviderRequestContractTests {
 
     @Test func `message send rejects an oversized base tier attachment before reservation`() async throws {
         RateLimitURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(
             "sakuracord-provider-oversized-\(UUID().uuidString).bin"
         )
@@ -551,13 +533,7 @@ struct ProviderRequestContractTests {
 
     @Test func `channel notification mutations use the current partial override route once`() async throws {
         RateLimitURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let guildID = GuildID(rawValue: 100)
         let channelID = ChannelID(rawValue: 200)
 
@@ -579,7 +555,8 @@ struct ProviderRequestContractTests {
         #expect((override?["message_notifications"] as? NSNumber)?.intValue == 1)
         #expect(override?["muted"] == nil)
 
-        try await provider.updateDirectMessagePin(
+        try await provider.updateChannelPin(
+            guildID: nil,
             channelID: channelID,
             flags: (1 << 11) | (1 << 5)
         )
@@ -594,6 +571,17 @@ struct ProviderRequestContractTests {
         override = overrides?["200"] as? [String: Any]
         #expect((override?["flags"] as? NSNumber)?.uint64Value == (1 << 11) | (1 << 5))
         #expect(override?["message_notifications"] == nil)
+
+        // A server channel pin uses the bulk route, as the first-party client does.
+        try await provider.updateChannelPin(
+            guildID: guildID,
+            channelID: channelID,
+            flags: (1 << 11) | (1 << 12)
+        )
+        #expect(RateLimitURLProtocol.guildNotificationRequestCount == 1)
+        #expect(RateLimitURLProtocol.guildNotificationMethod == "PATCH")
+        let pinBody = RateLimitURLProtocol.guildNotificationBody as NSDictionary?
+        #expect(pinBody == ["guilds": ["100": ["channel_overrides": ["200": ["flags": 6144]]]]] as NSDictionary)
 
         let endTime = Date(timeIntervalSince1970: 1_785_420_000)
         try await provider.updateChannelMute(
@@ -639,13 +627,7 @@ struct ProviderRequestContractTests {
 
     @Test func `direct message notification mutations use the private channel scope once`() async throws {
         RateLimitURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let channelID = ChannelID(rawValue: 400)
 
         try await provider.updateChannelMute(
@@ -672,13 +654,7 @@ struct ProviderRequestContractTests {
 
     @Test func `forum post notification mutations use thread member settings and bounded join`() async throws {
         RateLimitURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RateLimitURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(RateLimitURLProtocol.self)
         let joinedPostData = Data(
             """
             {
@@ -936,15 +912,10 @@ private final class ReactionRateLimitURLProtocol: URLProtocol, @unchecked Sendab
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        guard let url = request.url,
-              let response = HTTPURLResponse(
-                  url: url, statusCode: 429, httpVersion: "HTTP/1.1",
-                  headerFields: ["Content-Type": "application/json", "Retry-After": "1", "x-request-id": "fixture"]
-              )
-        else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(#"{"retry_after":0.3,"global":false}"#.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(
+            status: 429, body: Data(#"{"retry_after":0.3,"global":false}"#.utf8),
+            headers: ["Content-Type": "application/json", "Retry-After": "1", "x-request-id": "fixture"]
+        )
     }
 
     override func stopLoading() {}

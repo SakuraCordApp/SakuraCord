@@ -219,7 +219,7 @@ struct IssueReportKindBadge: View {
     var body: some View {
         Image(systemName: Self.symbol(kind))
             .font(.system(size: size * 0.42, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(SakuraCordAccentColor.labelOnFill)
             .contentTransition(.symbolEffect(.replace))
             .frame(width: size, height: size)
             .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Circle())

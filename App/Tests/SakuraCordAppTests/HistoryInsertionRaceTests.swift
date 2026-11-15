@@ -50,7 +50,7 @@ func `history insertion reconciles an overlapping timeline before publishing row
     // This is the update that trapped in Dictionary(uniqueKeysWithValues:)
     // in the reported crashes, after the duplicate row had already appeared.
     let reactor = ReactionReactor(user: author)
-    model.applyReactionReactors([reactor], for: AppModel.ReactionReactorLoadKey(
+    model.applyReactionReactors([reactor], for: AppModel.ReactionKey(
         channelID: channelID,
         messageID: current.id,
         reactionID: current.reactions[0].id

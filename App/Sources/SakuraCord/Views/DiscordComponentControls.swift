@@ -28,7 +28,6 @@ enum DiscordComponentButtonAppearance {
 
 nonisolated enum DiscordComponentEmojiMetrics {
     static var buttonSize: CGFloat { DiscordRichMessageMetrics.px(18) }
-    static var selectSize: CGFloat { DiscordRichMessageMetrics.px(16) }
 
     static func opticalSize(for boxSize: CGFloat) -> CGFloat {
         max(0, boxSize - 2)

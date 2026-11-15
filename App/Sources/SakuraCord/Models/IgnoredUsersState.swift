@@ -113,7 +113,7 @@ extension AppModel {
 
     func isIncomingCallSuppressed(_ call: PrivateCall) -> Bool {
         let rings = call.ongoingRings.filter { $0.recipientID == currentUser?.id }
-        return !rings.isEmpty && rings.allSatisfy { isUserIgnored($0.senderID) || ignoredUsers.blockedUserIDs.contains($0.senderID) }
+        return !rings.isEmpty && rings.allSatisfy { userSuppressionReason($0.senderID) != nil }
     }
 
     /// Reveals or conceals a run. An animated conceal keeps the rows in the

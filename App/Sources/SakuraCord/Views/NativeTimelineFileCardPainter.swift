@@ -150,13 +150,10 @@ extension NativeTimelineRowPainter {
     /// button's centre. The glyph keeps the size it is rasterized at, so it
     /// grows and shrinks with the circle rather than snapping between sizes.
     static func drawingRoundButton(_ frame: CGRect, scale: CGFloat, _ draw: () -> Void) {
-        guard scale != 1, let context = NSGraphicsContext.current?.cgContext else { return draw() }
-        context.saveGState()
-        context.translateBy(x: frame.midX, y: frame.midY)
-        context.scaleBy(x: scale, y: scale)
-        context.translateBy(x: -frame.midX, y: -frame.midY)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        concatScale(scale, aboutCenterOf: frame)
         draw()
-        context.restoreGState()
     }
 
     /// The button's next step. While a file uploads, its ring and cancel
@@ -216,15 +213,16 @@ extension NativeTimelineRowPainter {
         init(bubble: NativeTimelineBubbleRegion?, isFailed: Bool) {
             self.isFailed = isFailed
             let accent = NSColor.sakuraCordAccentColor
+            let label = NSColor.sakuraCordLabelOnAccentColor
             if bubble?.isOutgoing == true {
-                button = .white
+                button = label
                 glyph = isFailed ? .systemRed : accent
-                link = .white
-                failure = .white
-                highlight = .white
+                link = label
+                failure = label
+                highlight = label
             } else {
                 button = isFailed ? .systemRed : accent
-                glyph = .white
+                glyph = SakuraCordAccentColor.labelNSColor(on: button)
                 link = accent
                 failure = .systemRed
                 highlight = .labelColor

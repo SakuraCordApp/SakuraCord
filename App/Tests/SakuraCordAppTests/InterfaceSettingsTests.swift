@@ -107,14 +107,14 @@ import Testing
     loaded.includesTimestampSeconds = true
     store.save(loaded)
     #expect(store.load() == loaded)
-    let export = preferences.export(scope: .appWide, page: .interface)
+    let export = preferences.export(page: .interface)
     #expect(
-        export.values[SettingsControlID.timestampFormat.rawValue]
+        export[SettingsControlID.timestampFormat.rawValue]
             == .string(InterfaceTimestampFormat.twentyFourHour.rawValue)
     )
-    #expect(export.values[SettingsControlID.launchDestination.rawValue] == nil)
+    #expect(export[SettingsControlID.launchDestination.rawValue] == nil)
 
-    preferences.reset(scope: .appWide, page: .interface)
+    preferences.reset(page: .interface)
     #expect(store.load() == .defaults)
 }
 
@@ -151,8 +151,8 @@ import Testing
     let layout = NativeTimelineRowLayout.make(item: item, width: 620, source: model)
     #expect(layout.height == original.height)
     #expect(layout.contentFrame == original.contentFrame)
-    let content = try #require(layout.attributedContent)
-    #expect(content == original.attributedContent)
+    let content = try #require(layout.contentText?.value)
+    #expect(content == original.contentText?.value)
     let hovered = NSMutableAttributedString(attributedString: content)
     NativeTimelineLinkAppearance.applyHover(to: hovered, characterIndex: 0)
     let always = NSMutableAttributedString(attributedString: content)
@@ -168,6 +168,7 @@ import Testing
         .directMessageAppearance,
         .groupMessageAppearance,
         .messageDensity,
+        .messageFontSize,
         .composerBarAppearance,
         .resetMessageAppearance,
         .timestampFormat,
@@ -179,7 +180,6 @@ import Testing
         $0.destination.page == .interface
     }
     #expect(Set(controls.map(\.id)) == expected)
-    #expect(controls.allSatisfy { $0.scope == .appWideLocal })
 
     let state = SettingsViewState()
     let searchCases: [(String, SettingsControlID)] = [

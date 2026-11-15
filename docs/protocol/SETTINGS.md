@@ -9,11 +9,12 @@
 | Profile reads | [DiscordRESTProviderProfiles.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProviderProfiles.swift) | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderBootstrapContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderBootstrapContractTests.swift) |
 | Profile saves and widgets | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordProfileWidgetEligibility.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileWidgetEligibility.swift) | [ProfileEditingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProfileEditingContractTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Nicknames | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordRESTRelationships.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTRelationships.swift); [AppModelNicknames.swift](../../App/Sources/SakuraCord/Models/AppModelNicknames.swift) | [NicknameCommandTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/NicknameCommandTests.swift) |
-| Group DM name, icon, leaving and 1:1 DM closing | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Status | [DiscordProfileSettingsProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileSettingsProto.swift); [DiscordRESTProfileCustomStatus.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileCustomStatus.swift) | [StatusPickContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/StatusPickContractTests.swift) |
 | Server folders | [DiscordSettingsProtoMerging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoMerging.swift) | [GuildFolderSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GuildFolderSettingsContractTests.swift) |
+| Channel pins | [DiscordRESTNotificationSettings.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTNotificationSettings.swift); [AppModelChannelPins.swift](../../App/Sources/SakuraCord/Models/AppModelChannelPins.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [ChannelPinTests.swift](../../App/Tests/SakuraCordAppTests/ChannelPinTests.swift) |
+| Favorites server | [DiscordFavoritesProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordFavoritesProto.swift); [DiscordRESTFavorites.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTFavorites.swift); [FavoritesSettings.swift](../../Packages/SakuraCordModels/Sources/SakuraCordModels/FavoritesSettings.swift) | [FavoritesSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/FavoritesSettingsContractTests.swift) |
 | Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [QuickReactionPolicyTests.swift](../../App/Tests/SakuraCordAppTests/QuickReactionPolicyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
-| Favourites/frecency | [DiscordSettingsProtoStickers.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoStickers.swift); [DiscordSettingsProtoSoundboard.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoSoundboard.swift); [DiscordSettingsProtoCommandFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoCommandFrecency.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift); [ApplicationCommandFrecencyCodecTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ApplicationCommandFrecencyCodecTests.swift) |
+| Favourites/frecency | [DiscordSettingsProtoStickers.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoStickers.swift); [DiscordSettingsProtoSoundboard.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoSoundboard.swift); [DiscordSettingsProtoFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoFrecency.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift); [ApplicationCommandFrecencyCodecTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ApplicationCommandFrecencyCodecTests.swift) |
 
 ## Profile reads
 
@@ -138,138 +139,6 @@ independent official session and restored its DM title without a reload. Native
 timeline presentation must also be invalidated when relationship nicknames
 change, so cached message author labels follow the live value.
 
-## Group DM name and icon
-
-Every group-DM member gets **Edit Group** in the group's context menu, after Pin.
-The dialog drafts the group's own name, with the member-list title (friend
-nicknames first) as the placeholder, or "{your name}'s Group" once nobody else
-remains. The icon is chosen from a file of at most 8 MiB and cropped to a circle
-by the profile avatar cropper (at most 1024 × 1024 PNG; animated GIF and WebP
-keep their format). Save sends one `PATCH /channels/{channel}` containing only
-the changed `name` and `icon`, with
-`X-Context-Properties` `{"location":"group dm context menu"}`. A cleared name
-is `""`, a removed icon `null`, and an unchanged dialog sends nothing. Names are
-trimmed and limited to 100 UTF-16 units. `name`/`icon` validation errors stay in
-the dialog rather than opening the session safety circuit, and `403` remains
-operation-scoped. The response updates the cached group only if no Gateway
-event or session reset has changed it meanwhile. In `CHANNEL_UPDATE`, an
-explicit `null` name or icon clears it; only an absent field keeps the cached
-value. Omitted account-scoped warning dismissal and latest-pin metadata also
-retain their cached values when an edit response is published.
-
-The request comes from static analysis of first-party web build `633029`
-(`web.ae482d0492df0fb9.js`, Edit Group modal and channel action creators) on
-9 October 2026, which also sets the menu placement, labels and placeholder. The
-first-party menu hides Edit Group for application-managed groups; SakuraCord does
-not yet decode that flag. The public
-[Modify Channel](https://docs.discord.com/developers/resources/channel#modify-channel)
-route corroborates the group-DM fields. Pinned Paicord declares an unused
-group-DM PATCH that cannot send `""` or `null`; Swiftcord v1 has no equivalent.
-
-A live official Fresh desktop capture on 12 October 2026 (host 0.0.411,
-web build `634304`) confirmed separate name-only and icon-only PATCHes,
-menu context `{"location":"group dm context menu"}`, and clearing with
-`{"name":"","icon":null}`. The cleared response retained `name: ""` and
-`icon: null`; it did not normalize the empty name to null. The unchanged
-field remained present in each successful response. The name update's
-`CHANNEL_UPDATE` and system `MESSAGE_CREATE` arrived before the REST response.
-Header-origin editing used context `{"location":"header bar"}` instead.
-
-## Leaving a group DM
-
-Every group-DM member gets **Leave Group** in its own destructive section after
-the mute and notification items; 1:1 DMs never show it. The built-in `/leave`
-opens the same confirmation, with its `silent` option as the checkbox's initial
-state. The confirmation is titled "Leave '{group}'", explains that you can't
-rejoin unless re-invited, and offers "Leave without notifying other members".
-Leave Group sends one `DELETE /channels/{channel}` with query `silent=true` or
-`silent=false`, no body and no context header, and is never replayed. A failure
-keeps the group and appears in the workspace error alert; `403` stays
-operation-scoped. After a successful response the provider removes the group
-from the DM list unless a Gateway event or session reset changed it during the
-request, so a re-add is not undone. A selection on the group moves to the next
-conversation, as for any removed DM. The matching `CHANNEL_DELETE` finds the
-group already gone and publishes nothing further.
-
-The request and copy come from static analysis of first-party web build `634304`
-(`web.843cc7edc28c426c.js` `closePrivateChannel`, the `gdm-context` menu, its
-`leave-channel` item and confirmation modal, and the `/leave` built-in) on
-10 October 2026. The first-party client removes the group optimistically and
-goes to Friends; SakuraCord waits for the response and follows its shared private-channel
-selection reconciliation. The first-party menu offers different copy for
-application-managed groups, which SakuraCord does not yet decode. The public
-[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
-route corroborates the request but does not document `silent`. Pinned Paicord
-declares the route without `silent` or any UI; Swiftcord v1 has no equivalent.
-
-The same live desktop capture confirmed one bodyless DELETE with `silent=true`,
-a `200` channel response, and a `CHANNEL_DELETE` arriving before that response.
-The group disappeared from the sidebar. Its remaining member could re-add the
-leaving account through the ordinary Invite to Group DM UI.
-
-## Closing a 1:1 DM
-
-A 1:1 DM's context menu has an untinted **Close DM** at the top of its last
-section, above Remove Friend; group DMs offer Leave Group instead. There is no confirmation. Close DM sends one bodyless
-`DELETE /channels/{channel}` without `silent`, shares Leave Group's provider
-path, and is never replayed. It hides the DM without deleting messages. After a
-successful response the provider removes the DM from the list unless a Gateway
-event or session reset changed it during the request, and a selection on it
-moves to the next conversation. The matching `CHANNEL_DELETE` finds the DM gone.
-A failure keeps the DM and appears in the workspace error alert. A new message
-makes Discord send `CHANNEL_CREATE`, which the ordinary private-channel handling
-adds back to the list.
-
-The request follows the public
-[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
-route and the first-party `closePrivateChannel` call analysed for Leave Group.
-The omitted `silent` is inferred from that analysis; the request was not
-captured from the first-party client. A live SakuraCord check on 25 October 2026
-closed the DM between the two saved test accounts, kept its history visible from
-the other account, and showed the DM back in the closer's list after the other
-account sent a message.
-
-## Message requests
-
-Researched on 2026-11-01 from the official production web bundle (web stable
-**657850**) plus a live capture of both authorized accounts' READY. Neither
-account held a request, and a DM between two accounts that already share a 1:1
-channel never becomes one, so accept and ignore were not observed live. Pinned
-Paicord and pinned Swiftcord v1 (with its DiscordKit) have no equivalent.
-
-READY `private_channels` and channel events carry `is_message_request`,
-`is_message_request_timestamp` and `is_spam`. Discord's stores file a channel
-under Spam when `is_spam` is set, otherwise under Requests when
-`is_message_request` is set; both leave the DM list. There is no dedicated
-Gateway dispatch. A `CHANNEL_UPDATE` changes only the flags it carries; an
-explicit `false` clears that flag alone.
-
-The Direct Messages home shows **Message Requests** under Friends only while a
-request or spam conversation exists. Its badge counts requests, not spam. The
-page has Requests and Spam (count when non-zero) tabs, newest activity first,
-with Discord's empty-state copy. **Accept DM** sends one
-`PUT /channels/{channel}/recipients/@me` with `{"consent_status":2}` (ACCEPTED)
-and moves the conversation into the list. **Ignore** sends one bodyless
-`DELETE /channels/{channel}/recipients/@me` and removes it without notifying
-the sender. Spam offers Accept DM only. Both share Close DM's provider path:
-never replayed, nothing applied after an account or session change, and a
-failure keeps the request and appears in the workspace error alert. Ignore
-removes the DM only if no Gateway event changed it meanwhile; Accept keeps
-unrelated updates but yields to a re-created or re-flagged DM.
-
-Until accepted, a request is read-only. The delivery boundary that enforces
-guild timeouts also refuses its messages, forwards, typing, reactions, edits,
-poll votes, interactions and call rings, and the app offers no composer,
-reactions, votes, components, pins, calls or profile quick message there. Opening a request shows
-its messages with Accept DM and Ignore in place of the composer.
-
-Not implemented: Report Spam and the not-spam report (their report endpoint was
-not traced), click-to-preview through
-`GET /users/@me/message-requests/supplemental-data`, the staff-only batch
-reject, and the GB-only "Are you sure you know this person?" confirmation. Not
-verified live: the Gateway events that follow a decision, whether Ignore also
-changes the relationship, and whether opening a request acknowledges it.
-
 ## Protobuf preservation
 
 User-settings type 1 and Frecency type 2 are binary protocols. Preserve unknown
@@ -302,7 +171,7 @@ picks are not implemented; custom-status expiry is supported. Custom-status save
 preserve surrounding settings and start relative expiry at submission. A failed
 profile-stage status write keeps its draft without replaying prior profile stages.
 
-## Server folders and DM pins
+## Server folders and channel pins
 
 Rail edits PATCH type-1 settings field 14 (`GuildFolders`). Encode one top-level
 entry per server or folder, drop emptied folders, and preserve untouched/unknown
@@ -315,6 +184,140 @@ DM pins use flags in the account's `@me` channel notification overrides, preserv
 unrelated flags/settings. The app projects pinned ordering without mutating the
 provider's channel catalogue or persisting a workspace snapshot. See
 [pin contracts](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessagePinSettingsTests.swift).
+
+Server channels pin with the same FAVORITED bit (`1 << 11`) in that server's
+channel override. **Pin Channel to Top** / **Unpin Channel** is offered for any
+listed channel, never a thread or category, with no limit or permission check.
+Pinning also sets OPT_IN_ENABLED (`1 << 12`); unpinning clears only FAVORITED.
+The write is one `PATCH /users/@me/guilds/settings` with
+`{"guilds":{"<guild>":{"channel_overrides":{"<channel>":{"flags":N}}}}}`, where
+`N` is the current override's flags with that change, and
+`USER_GUILD_SETTINGS_UPDATE` reconciles it. Discord saves each toggle at once;
+SakuraCord applies the toggle immediately, saves the settled state one second
+after the last toggle (nothing when it ends unchanged), serializes saves per
+channel, and restores the confirmed state on failure.
+
+The non-collapsible **Pinned Channels** section leads the server's channel
+list, above uncategorized channels, and removes its channels from their
+categories; an emptied category is not shown. It lists pinned channels the
+user can view, regardless of mute, collapsed categories, Browse Channels or
+Server Guide filtering, with their threads. Channels are ordered by their own
+`position`, voice and stage channels after the rest (`position + 10000`), and
+equal positions keep the order of the server's `channel_overrides` array,
+which is not sorted by ID. A pinned channel that is deleted or no longer
+visible disappears without changing the stored flag. The default channel for
+a server without a remembered channel still follows server order.
+
+## Favorites server
+
+Discord's Favorites server lives in type-1 field 15 (`Favorites`): a
+`favorite_channels` map keyed by channel ID (field 1), and `guild_visible`
+(field 3, a BoolValue) for the off-by-default **Show Favourites server**
+toggle. Without `guild_visible` the server shows once anything is favourited.
+A `FavoriteChannel` records a nickname (1), type (2: 1 favourite, 2 category),
+position (3), parent category (4) and the Discord channel type (5, an
+Int32Value written empty for text channels). Every edit PATCHes the complete
+Favorites message alone, without `required_data_version`; preserve stored map
+order, append new entries, and carry over fields the app does not model
+(category collapse, thread automation, `muted`).
+
+The official client (web build 670026, 11 November 2026) saves favourite edits
+and the toggle with a 0-second delay and drops edits made while a save is in
+flight. SakuraCord also saves at once but sends one follow-up of the newest
+state after the response, so rapid toggling settles on the last choice. A new
+favourite takes position max + 1 over every entry; moving one renumbers every
+favourite in display order while categories keep their positions. The list
+shows uncategorised favourites first, then categories by position, with voice
+and stage favourites after the others in each section. Nickname overrides apply
+to server channels, not DMs. Accounts without full Nitro (`premium_type` 2) may
+keep 3 favourites, Nitro 200; categories don't count, and no entry may exceed
+200 in total. A blocked addition shows the notice and sends nothing.
+
+When a favourited channel is deleted, the official client removes it from
+Favorites itself after `CHANNEL_DELETE`; SakuraCord does the same. A channel the
+account can no longer see stays stored but hidden. Unlike the official client,
+SakuraCord does not prune such entries on its next write, because an
+incomplete channel catalogue cannot prove a channel is gone, except when
+keeping them would push an addition past the limit: that save drops them, so
+Discord never receives more favourites than the account allows. Category collapse
+stays local: the captured collapse save did not carry it.
+
+**Thread Settings** (the rail tile's menu) are Favorites fields 4–8:
+`auto_add_joined_threads` (4) and `auto_add_joined_threads_per_guild` (8)
+choose per-server categories, the Auto-Added Threads category, or never;
+`prune_inactive_threads` (5, a BoolValue that Discord treats as on when unset),
+`prune_inactive_threads_days` (6: 0, 7 or 14) and `prune_all_favorited_threads`
+(7) choose when read threads go and from where. While Favorites is hidden every
+choice reads as off. Saving writes both groups and, for the own-category choice,
+creates Auto-Added Threads in the same PATCH (official web build 672800,
+13 November 2026). The client performs the automation: a thread the account
+joins (a THREAD_MEMBERS_UPDATE adding it, or a THREAD_CREATE or
+THREAD_MEMBER_UPDATE whose `join_timestamp` is under a minute old) is added
+silently under a category named after its server, or Auto-Added Threads,
+created when missing; leaving a thread removes its favourite whatever the
+settings. Once a day per account, opening Favorites loads its favourited
+threads and removes read ones in scope (the categories named Auto-Added Threads
+or, per server, after one of the account's servers; or every favourited
+thread) that are archived or, with a day limit, inactive that long. Activity is
+the latest of the last message, the last non-message activity and the archive
+time; threads with unread messages or mentions and the open one stay.
+
+**Reset Favorites** asks nothing: it writes an empty Favorites message (every
+favourite, category, visibility and thread setting back to its default),
+clears Suggested Channels' dismissal in the same PATCH, and leaves for Friends.
+**Hide Favorites** also leaves for Friends. Discord offers Reset only in
+Developer Mode; SakuraCord has no Developer Mode and always offers it.
+
+**Suggested Channels** show while DismissibleContent 807
+(`FAVORITES_GUILD_SUGGESTIONS`) is not dismissed: bit 807 of
+`UserContentSettings.dismissed_contents` (type-1 field 4, field 1; bit `n` is
+byte `n / 8`, `1 << n % 8`). Dismissing sets the bit by PATCHing the complete
+UserContentSettings, re-encoded with fields in number order and
+`recurring_dismissible_content_states` by ascending key. Up to four are picked
+afresh whenever an input changes, alternating the most affine channel
+(`GET /users/@me/affinities/v2/channels`, by `score`) and DM partner
+(`GET /users/@me/affinities/v2/users`, by `dm_probability`, blocked and
+ignored users left out, an existing DM only), falling back on the other kind
+and then the picker's default order. A candidate must not be a favourite, and
+a server channel or thread must be viewable. Affinities are read only with
+READY's `consents.personalization`, and kept 12 hours (channels) and 8 hours
+(users) in stores that persist across launches (`ChannelAffinitiesStoreV2`,
+`UserAffinitiesStoreV2`), so a launch suggests from the stored copy without a
+request. An added suggestion is filed under a category named Channels,
+created when missing.
+
+**Add to Favorites** is Discord's destination search (the Forward picker's,
+from `ConversationDestinationSearchPolicy`) without the account's favourites:
+searchable conversations, people without a DM included (one is opened before
+favouriting), picks listed first as of the last query change, at most 20. The
+default order is the recent channels, then the frecency list; a client's
+frecency includes its own unsaved uses, so two clients can differ until those
+uses sync. The list itself is computed exactly as Discord computes it.
+
+**Unlimited favorites** (Features › FakeNitro, app-wide, off by default) keeps
+additions past the account's limit on this device only, per account, in user
+defaults. Discord's limit is enforced by its client alone (the official add
+path prunes, then counts; the bundle maps no server error to it), but
+SakuraCord still never writes more than the limit: other clients would show a
+different list and an oversized write risks rejection. Local favourites follow
+the synced ones in each section, keep the server shown when no explicit
+visibility is stored, may sit in a synced category, and can be
+renamed, moved and removed; those edits send nothing, though a local addition
+reveals a hidden Favorites server as a synced one does. Thread automation adds
+and prunes local threads as it does synced ones. The limit notice's Turn On
+Unlimited Favorites adds the blocked addition and the rest of its batch.
+Discord's list stays authoritative: remote edits apply to the synced part, a local favourite that
+Discord confirms carrying becomes synced and leaves the local list (never on an
+edit still awaiting Discord's answer, so a rejected save loses nothing), and a synced
+favourite removed elsewhere is not restored. Removing a synced favourite does
+not promote a local one, so every Discord write follows a user action. Edits
+always reach the entry shown, Discord's when it carries the favourite, and
+removing a shown favourite also removes a local copy it hides. Turning
+the option off hides local favourites without deleting or reconciling them
+(an open one is left like any removed favourite, opening the one above);
+turning it on, or loading the account, reconciles them with Discord's list.
+Signing out or switching accounts clears them from memory before the next
+account's settings arrive.
 
 ## Emoji, GIFs, stickers and sounds
 
@@ -382,10 +385,10 @@ removing it does not reverse that usage. Other sessions adopt the ranking
 through type-2 settings updates, not reaction Gateway events.
 The section is hidden with its divider unless reaction creation is allowed: private
 channels other than the system DM, or server channels with Add Reactions where
-the member is not pending, outside archived threads. Discord also offers them in
-archived threads it can reopen because its reaction path unarchives the thread
-first; SakuraCord's shared reaction path does not unarchive. A timeline too
-narrow for the wider toolbar omits the section.
+the member is not pending. In an archived thread they also require permission
+to reopen it, because the [reaction path](MESSAGING.md#reactions-pins-and-forwarding)
+unarchives the thread first. A timeline too narrow for the wider toolbar omits
+the section.
 Source: web build `634304` (`web.843cc7edc28c426c.js`, chunk
 `5c04c2e4ef438cd1.js`) on 10 October 2026. The official toolbar also hides quick
 reactions while Shift expands it; SakuraCord has no expanded toolbar. Animated

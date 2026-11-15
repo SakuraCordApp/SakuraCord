@@ -72,7 +72,9 @@ extension AppModel {
         }
         var preparations: [NativeTimelineTextPresentation.Preparation] = []
         var replyPreparations: [String] = []
-        var sliceStart = ProcessInfo.processInfo.systemUptime
+        // Resolving a cold page's mentions and replies leaves room for input
+        // and drawing.
+        var slice = MainActorTimeSlice()
         for row in rows {
             guard !Task.isCancelled, accountSessionGeneration == sessionGeneration else { return [] }
             if let preparation = NativeTimelineTextPresentation.preparation(
@@ -92,16 +94,7 @@ extension AppModel {
                ) {
                 replyPreparations.append(preparation)
             }
-            if ProcessInfo.processInfo.systemUptime - sliceStart >= 0.0015 {
-                // Yield the run loop as well as the actor, so input and drawing
-                // can run while resolving a cold page's mentions and replies.
-                do {
-                    try await Task.sleep(for: .milliseconds(1))
-                } catch {
-                    return []
-                }
-                sliceStart = ProcessInfo.processInfo.systemUptime
-            }
+            guard await slice.pauseIfNeeded() else { return [] }
         }
         guard !Task.isCancelled, accountSessionGeneration == sessionGeneration else { return [] }
         // The native timeline initially measures every row to establish scroll

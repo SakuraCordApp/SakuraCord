@@ -191,7 +191,7 @@ struct ProfileImagePicker: View {
 
     private func canSelect(animated: Bool) -> Bool {
         if purpose == .banner || editor.scope.guildID != nil { return editor.isNitro }
-        return !animated || editor.isNitro || editor.snapshot?.presentation.user.premiumType == 1
+        return !animated || editor.isNitro || editor.snapshot?.presentation.user.premiumType == DiscordPremiumType.nitroClassic
     }
 
     private func delete(_ entry: ProfileAvatarHistoryEntry) {

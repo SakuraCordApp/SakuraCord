@@ -69,10 +69,6 @@ public struct ProfileApplicationWidget: Identifiable, Codable, Hashable, Sendabl
         self.isPublished = isPublished; self.surfaces = surfaces
         self.connectionApplicationID = connectionApplicationID
     }
-
-    public var isAddable: Bool {
-        isPublished && surfaces["widget_top"] != nil && surfaces["widget_bottom"] != nil && surfaces["add_widget_preview"] != nil
-    }
 }
 
 public struct ProfileWidgetApplicationIdentity: Identifiable, Codable, Hashable, Sendable {

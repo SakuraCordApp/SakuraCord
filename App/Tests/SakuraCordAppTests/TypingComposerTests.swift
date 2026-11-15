@@ -29,13 +29,54 @@ import Testing
 }
 
 @MainActor
-@Test func `staged attachments are cleared on navigation so they cannot be sent to another channel`() async {
-    let model = AppModel(launchMode: .offlineTesting, provider: TypingTestProvider())
+@Test func `a left conversation keeps its staged files, uploads and command until it is deleted`() async throws {
+    let permissions = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
+        | DiscordPermissionBits.sendMessages | DiscordPermissionBits.attachFiles
+    let guild = Guild(id: GuildID(rawValue: 20), name: "Guild", currentUserPermissions: permissions)
+    let provider = TypingTestProvider(guild: guild, suspendsPreuploads: true)
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        privacySafetySettingsStore: PrivacySafetySettingsStore(
+            preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())
+        )
+    )
     await model.start()
-    #expect(await model.addComposerAttachments([URL(fileURLWithPath: "/tmp/sakuracord-composer-0")], to: .channel))
-    #expect(!model.channelComposerAttachments.isEmpty)
-    model.selectedChannelID = ChannelID(rawValue: 12)
+    await model.memberLoadTask?.value
+    defer { model.onboarding.reset() }
+    let channelID = try #require(model.selectedChannelID)
+    let otherChannelID = ChannelID(rawValue: 12)
+    let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
+    let file = directory.appendingPathComponent("kept.bin")
+    try Data("kept".utf8).write(to: file)
+    #expect(await model.addPromisedComposerAttachments(
+        ComposerPromisedFileBatch(directory: directory, urls: [file]), to: .channel
+    ))
+    let staged = try #require(model.channelComposerAttachments.first)
+    model.toggleComposerAttachmentSpoiler(staged.id, in: .channel)
+    let kept = model.channelComposerAttachments
+    #expect(model.attachmentUploads.preuploadFraction(staged.id) != nil)
+
+    // The files cannot be sent to another conversation, which keeps its own command.
+    model.selectedChannelID = otherChannelID
     #expect(model.channelComposerAttachments.isEmpty)
+    let command = try #require(SakuraCordBuiltInCommands.commands.first)
+    model.commandComposer.activate(command)
+    let commandDraft = model.commandComposer.draft
+
+    model.selectedChannelID = channelID
+    #expect(model.channelComposerAttachments == kept)
+    #expect(model.commandComposer.draft == nil)
+    #expect(model.attachmentUploads.preuploadFraction(staged.id) != nil)
+    #expect(FileManager.default.fileExists(atPath: file.path))
+    model.selectedChannelID = otherChannelID
+    #expect(model.commandComposer.draft == commandDraft)
+
+    // A deleted conversation releases its files and early uploads.
+    model.consumeChannelsChanged(guildID: guild.id, channels: [])
+    #expect(model.attachmentUploads.preuploadFraction(staged.id) == nil)
+    #expect(!FileManager.default.fileExists(atPath: directory.path))
+    await provider.finishPreuploads()
 }
 
 @MainActor
@@ -144,7 +185,7 @@ func `oversized files reach an external host only when the upload policy allows`
     #expect(model.channelComposerAttachments.first?.url == exact)
     let compacted = try #require(model.channelComposerAttachments.last?.url)
     #expect(compacted != oversized)
-    #expect(model.attachmentFileSize(at: oversized) == DiscordAttachmentUploadPolicy.baseLimit + 1)
+    #expect(try oversized.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) == DiscordAttachmentUploadPolicy.baseLimit + 1)
     model.clearComposerAttachments(for: .channel)
     #expect(!FileManager.default.fileExists(atPath: compacted.path))
 }
@@ -212,7 +253,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
     model.updateDraft("keep editing this")
     await model.addComposerAttachments([staged], to: .channel)
 
-    #expect(await model.sendAttachmentsImmediately([ForumPostAttachment(url: instant)], to: .channel))
+    #expect(await model.sendAttachmentsImmediately([StagedAttachment(url: instant)], to: .channel))
     #expect(model.draft == "keep editing this")
     #expect(model.channelComposerAttachments.map(\.url) == [staged])
     #expect(model.messages.last?.attachments.map(\.url) == [instant])
@@ -333,7 +374,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let channelID = try #require(model.selectedChannelID)
-    let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/synthetic-automod.txt"))
+    let attachment = StagedAttachment(url: URL(fileURLWithPath: "/tmp/synthetic-automod.txt"))
     await provider.failNextSend()
     await provider.suspendNextSend()
     let delivery = try #require(model.enqueueChannelMessage(
@@ -426,7 +467,7 @@ func `profile send retains a Gateway receipt across timeout and history eviction
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     await provider.timeOutNextSend()
-    let attachment = ForumPostAttachment(
+    let attachment = StagedAttachment(
         url: URL(fileURLWithPath: "/tmp/sakuracord-retry-image.png"),
         filename: "renamed-image.png",
         description: "exact attachment description",
@@ -434,7 +475,7 @@ func `profile send retains a Gateway receipt across timeout and history eviction
     )
 
     model.updateDraft("retry this exact message")
-    #expect(!(await model.sendComposerMessage(attachments: [attachment])))
+    #expect(!(await model.submitComposerMessage(attachments: [attachment]).serverConfirmation()))
     let failed = try #require(model.messages.first {
         $0.content == "retry this exact message"
     })
@@ -495,7 +536,7 @@ func `timeout during thread creation preserves its unsent message without replac
     creation.name = "Thread"
     model.sideConversations.thread = .threadCreation(creation)
     let originalDraft = "  Keep this first message\n"
-    let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/thread-timeout-draft.txt"))
+    let attachment = StagedAttachment(url: URL(fileURLWithPath: "/tmp/thread-timeout-draft.txt"))
     model.threadDraft = originalDraft
     model.threadComposerAttachments = [attachment]
 
@@ -507,7 +548,7 @@ func `timeout during thread creation preserves its unsent message without replac
     let otherThread = MessageThreadSummary(
         id: ChannelID(rawValue: 31), guildID: guild.id, parentID: channelID, name: "Other"
     )
-    let otherAttachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/other-thread-draft.txt"))
+    let otherAttachment = StagedAttachment(url: URL(fileURLWithPath: "/tmp/other-thread-draft.txt"))
     if navigatesAway {
         model.open(otherThread)
         model.threadDraft = "Other thread draft"
@@ -532,7 +573,7 @@ func `timeout during thread creation preserves its unsent message without replac
     await model.start()
     await provider.timeOutNextSend()
     model.updateDraft("ambiguous send")
-    #expect(!(await model.sendComposerMessage(attachments: [])))
+    #expect(!(await model.submitComposerMessage(attachments: []).serverConfirmation()))
     let failed = try #require(model.messages.first { $0.content == "ambiguous send" })
 
     await provider.suspendNextSend()
@@ -568,7 +609,7 @@ func `Gateway confirmation wins before or after a send timeout`(confirmsBeforeTi
     await provider.timeOutNextSend()
     await provider.suspendNextSend()
     model.updateDraft("confirmed through Gateway")
-    let send = Task { await model.send() }
+    let send = Task { await model.submitComposerMessage(attachments: []).serverConfirmation() }
     await provider.waitUntilSendStarts()
     let pending = try #require(model.messages.last { $0.content == "confirmed through Gateway" })
     let nonce = try #require(pending.nonce)
@@ -708,7 +749,7 @@ func `Diagnostics sharing stops before delivery when confirmation is cancelled o
     #expect(!model.diagnosticsShareInFlight)
 }
 
-private actor TypingTestProvider: ChatProvider {
+private actor TypingTestProvider: ChatProviderStub {
     private enum SendFailure {
         case definite
         case timedOut
@@ -736,9 +777,27 @@ private actor TypingTestProvider: ChatProvider {
     private var didStartSuspendedSend = false
     private var threadCreationStarted: CheckedContinuation<Void, Never>?
     private var threadCreationResponse: CheckedContinuation<MessageThreadSummary, Error>?
+    private let suspendsPreuploads: Bool
+    private var preuploadWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(guild: Guild? = nil) {
+    init(guild: Guild? = nil, suspendsPreuploads: Bool = false) {
         self.guild = guild
+        self.suspendsPreuploads = suspendsPreuploads
+    }
+
+    func preuploadAttachment(
+        _ attachment: StagedAttachment,
+        channelID: ChannelID,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async -> Bool {
+        guard suspendsPreuploads else { return false }
+        await withCheckedContinuation { preuploadWaiters.append($0) }
+        return true
+    }
+
+    func finishPreuploads() {
+        preuploadWaiters.forEach { $0.resume() }
+        preuploadWaiters = []
     }
 
     func bootstrap() async throws -> BootstrapSnapshot {
@@ -750,21 +809,8 @@ private actor TypingTestProvider: ChatProvider {
         channels
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
         throw ChatProviderError.invalidRequest("not used")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
     }
 
     func sendTyping(in channelID: ChannelID) async throws {}
@@ -870,8 +916,6 @@ private actor TypingTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("not used")
     }
 
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
     func eventStream() async -> AsyncStream<ClientEvent> {
         let stream = AsyncStream<ClientEvent>.makeStream(bufferingPolicy: .bufferingNewest(50))
         continuation = stream.continuation
@@ -929,7 +973,7 @@ func `a late translation cannot repopulate a draft that was already sent`(comple
     }
     #expect(await provider.sendCount == 0)
     #expect(await provider.editCount == 0)
-    #expect(await model.send())
+    #expect(await model.submitComposerMessage(attachments: []).serverConfirmation())
     if !completesBeforeSend {
         translator.complete(0, text: "Late translation")
         await translationTask.value

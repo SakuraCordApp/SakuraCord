@@ -24,7 +24,7 @@ struct FriendsListPolicyTests {
         // Online includes idle and DND; All intermixes offline alphabetically by nickname, then global name.
         #expect(FriendsListPolicy.groups(for: .online, rows: rows, query: "").first?.rows.map(\.name) == ["beta", "Cy"])
         #expect(FriendsListPolicy.groups(for: .all, rows: rows, query: "").first?.rows.map(\.name) == ["Alpha", "beta", "Cy"])
-        #expect(FriendsListPolicy.groups(for: .pending, rows: rows, query: "").map(\.title) == ["Received — 1", "Sent — 1"])
+        #expect(FriendsListPolicy.groups(for: .pending, rows: rows, query: "").map { "\($0.title) — \($0.rows.count)" } == ["Received — 1", "Sent — 1"])
         #expect(FriendsListPolicy.incomingRequestCount(relationships) == 1)
         #expect(FriendsListPolicy.visibleSections(relationships, presences: presences) == [.online, .all, .pending, .addFriend])
         #expect(FriendsListPolicy.initialSection(relationships) == .online)

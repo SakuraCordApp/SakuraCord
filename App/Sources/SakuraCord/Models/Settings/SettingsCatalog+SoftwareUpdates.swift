@@ -14,10 +14,7 @@ nonisolated extension SettingsCatalog {
             section: .softwareUpdates,
             label: "Browse Pull Request Builds",
             help: "Install a specific PR build, or return to a release.",
-            keywords: ["PR", "debug", "preview", "commit", "experimental", "build"],
-            scope: .appWideLocal,
-            persistence: .notApplicable,
-            reset: .notApplicable
+            keywords: ["PR", "debug", "preview", "commit", "experimental", "build"]
         ),
         control(
             .updateReleaseTrack,
@@ -25,9 +22,7 @@ nonisolated extension SettingsCatalog {
             section: .softwareUpdates,
             label: "Release track",
             help: "Choose the signed Regular or Nightly update feed.",
-            keywords: ["regular", "nightly", "channel"],
-            scope: .appWideLocal,
-            reset: .categoryAction
+            keywords: ["regular", "nightly", "channel"]
         ),
         control(
             .updateAutomaticChecks,
@@ -35,11 +30,7 @@ nonisolated extension SettingsCatalog {
             section: .softwareUpdates,
             label: "Automatically check for updates",
             help: "Let SakuraCord periodically check its configured signed feed.",
-            keywords: ["scheduled", "Sparkle"],
-            owner: .sparkle,
-            scope: .appWideLocal,
-            persistence: .systemManaged,
-            reset: .categoryAction
+            keywords: ["scheduled", "Sparkle"]
         ),
         control(
             .updateAutomaticDownloads,
@@ -47,11 +38,7 @@ nonisolated extension SettingsCatalog {
             section: .softwareUpdates,
             label: "Automatically download updates",
             help: "Download verified updates when Sparkle allows automatic updates.",
-            keywords: ["download", "Sparkle"],
-            owner: .sparkle,
-            scope: .appWideLocal,
-            persistence: .systemManaged,
-            reset: .categoryAction
+            keywords: ["download", "Sparkle"]
         ),
         control(
             .checkForUpdates,
@@ -59,11 +46,7 @@ nonisolated extension SettingsCatalog {
             section: .softwareUpdates,
             label: "Check for Updates",
             help: "Ask the existing updater to check now.",
-            keywords: ["update now", "new version"],
-            owner: .sparkle,
-            scope: .appWideLocal,
-            persistence: .notApplicable,
-            reset: .notApplicable
+            keywords: ["update now", "new version"]
         ),
         control(
             .updateChangelog,
@@ -71,10 +54,7 @@ nonisolated extension SettingsCatalog {
             section: .softwareUpdates,
             label: "Open Changelog",
             help: "Show the release notes included with SakuraCord.",
-            keywords: ["release notes", "version history"],
-            scope: .appWideLocal,
-            persistence: .notApplicable,
-            reset: .notApplicable
+            keywords: ["release notes", "version history"]
         ),
     ]
 }

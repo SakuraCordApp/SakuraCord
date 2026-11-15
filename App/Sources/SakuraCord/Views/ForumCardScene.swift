@@ -71,7 +71,7 @@ nonisolated struct ForumCardScene: @unchecked Sendable {
     static func empty(
         size: CGSize,
         scale: CGFloat,
-        colorSpace: CGColorSpace = ForumCardRasterizer.defaultColorSpace
+        colorSpace: CGColorSpace = CGColorSpace.bitmapDefault
     ) -> ForumCardScene {
         ForumCardScene(size: size, scale: scale, colorSpace: colorSpace, operations: [])
     }
@@ -89,7 +89,7 @@ nonisolated enum ForumCardRasterizer {
     static func image(for scene: ForumCardScene) -> CGImage? {
         let pixelWidth = Int((scene.size.width * scene.scale).rounded(.up))
         let pixelHeight = Int((scene.size.height * scene.scale).rounded(.up))
-        guard pixelWidth > 0, pixelHeight > 0, let context = makeContext(width: pixelWidth, height: pixelHeight, colorSpace: scene.colorSpace) else {
+        guard pixelWidth > 0, pixelHeight > 0, let context = CGContext.premultipliedBitmap(width: pixelWidth, height: pixelHeight, colorSpace: scene.colorSpace) else {
             return nil
         }
         context.translateBy(x: 0, y: CGFloat(pixelHeight))
@@ -99,20 +99,6 @@ nonisolated enum ForumCardRasterizer {
             draw(operation, in: context)
         }
         return context.makeImage()
-    }
-
-    static let defaultColorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-
-    static func makeContext(width: Int, height: Int, colorSpace: CGColorSpace) -> CGContext? {
-        CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        )
     }
 
     private static func draw(_ operation: ForumCardScene.Operation, in context: CGContext) {
@@ -228,35 +214,17 @@ nonisolated enum ForumCardRasterizer {
             let framesetter = CTFramesetterCreateWithAttributedString(value)
             let path = CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil)
             let textFrame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil)
-            context.saveGState()
-            context.translateBy(x: frame.minX, y: frame.maxY)
-            context.scaleBy(x: 1, y: -1)
-            context.textMatrix = .identity
-            CTFrameDraw(textFrame, context)
-            context.restoreGState()
+            context.drawCoreText(in: frame) { CTFrameDraw(textFrame, $0) }
             return
         }
-        var line = CTLineCreateWithAttributedString(value)
-        if CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) > frame.width, text.lineBreakMode == .byTruncatingTail {
-            line = CTLineCreateTruncatedLine(line, Double(frame.width), .end, ellipsis(font: text.font, color: text.color)) ?? line
-        }
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
-        let horizontalPosition: CGFloat = switch text.alignment {
-        case .center: max(0, (frame.width - lineWidth) / 2)
-        case .right: max(0, frame.width - lineWidth)
-        default: 0
-        }
-        let baseline = max(descent, (frame.height - ascent - descent - leading) / 2 + descent)
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        context.textPosition = CGPoint(x: horizontalPosition, y: baseline)
-        CTLineDraw(line, context)
-        context.restoreGState()
+        let sourceLine = CTLineCreateWithAttributedString(value)
+        let line = CoreTextLinePlacement.truncating(
+            sourceLine,
+            width: CGFloat(CTLineGetTypographicBounds(sourceLine, nil, nil, nil)),
+            to: frame.width,
+            truncation: text.lineBreakMode == .byTruncatingTail ? .end : nil
+        ) { ellipsis(font: text.font, color: text.color) }
+        CoreTextLinePlacement(line, in: frame, alignment: text.alignment).draw(in: frame, context: context)
     }
 
     /// Breaks text into at most `maximumLines` lines, truncating the last

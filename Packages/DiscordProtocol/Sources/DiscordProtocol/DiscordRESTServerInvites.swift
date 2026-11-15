@@ -7,7 +7,7 @@ public extension DiscordRESTProvider {
             "/invites/\(reference.code)", method: "GET",
             query: ["with_counts", "with_expiration", "with_permissions"].map {
                 URLQueryItem(name: $0, value: "true")
-            }, body: nil
+            }
         )
         try checkInviteResponse(data, response)
         return try Self.inviteDecoder().decode(ServerInviteDTO.self, from: data).domain(reference: reference)
@@ -35,8 +35,8 @@ public extension DiscordRESTProvider {
         var body: [String: JSONValue] = ["session_id": .string(sessionID)]
         if let messageID { body["invite_instance_id"] = .string("\(messageID):\(reference.code)") }
         let (data, response) = try await perform(
-            "/invites/\(reference.code)", method: "POST", query: [], body: body,
-            headers: ["X-Context-Properties": contextData.base64EncodedString()], maximumAttempts: 1
+            "/invites/\(reference.code)", method: "POST", body: body,
+            headers: ["X-Context-Properties": contextData.base64EncodedString()]
         )
         try checkInviteResponse(data, response)
         struct Acceptance: Decodable {
@@ -61,7 +61,7 @@ public extension DiscordRESTProvider {
         }
         let (data, response) = try await perform(
             "/guilds/\(guildID)/members/@me", method: "PUT", query: [URLQueryItem(name: "lurker", value: "false")],
-            body: [:], headers: ["X-Context-Properties": Data("{}".utf8).base64EncodedString()], maximumAttempts: 1
+            body: [:], headers: ["X-Context-Properties": Data("{}".utf8).base64EncodedString()]
         )
         try checkInviteResponse(data, response)
         struct Joined: Decodable {
@@ -76,7 +76,7 @@ public extension DiscordRESTProvider {
     }
 
     func createServerInvite(in channelID: ChannelID, guildID: GuildID, settings: ServerInviteSettings) async throws -> CreatedServerInvite {
-        guard settings.maxAge != .never || cachedGuilds[guildID]?.features.contains("COMMUNITY") == true else {
+        guard settings.maxAge != .never || cachedGuilds[guildID]?.features.contains(GuildFeature.community) == true else {
             throw ServerInviteError.failed("Non-expiring invites require a Community server.")
         }
         // Mirrors the official settings-page submission, and an Activity's
@@ -94,8 +94,8 @@ public extension DiscordRESTProvider {
         let location = settings.targetApplicationID == nil ? "Guild Context Menu" : "Stream Invite"
         let context = try JSONSerialization.data(withJSONObject: ["location": location])
         let (data, response) = try await perform(
-            "/channels/\(channelID)/invites", method: "POST", query: [], body: body,
-            headers: ["X-Context-Properties": context.base64EncodedString()], maximumAttempts: 1
+            "/channels/\(channelID)/invites", method: "POST", body: body,
+            headers: ["X-Context-Properties": context.base64EncodedString()]
         )
         if !(200 ..< 300).contains(response.statusCode) {
             switch Self.discordErrorCode(from: data) {
@@ -142,8 +142,8 @@ public extension DiscordRESTProvider {
             throw ServerInviteError.failed("The server owner must transfer ownership in Discord before leaving.")
         }
         let (data, response) = try await perform(
-            "/users/@me/guilds/\(guildID)", method: "DELETE", query: [],
-            body: ["lurking": .bool(false)], maximumAttempts: 1
+            "/users/@me/guilds/\(guildID)", method: "DELETE",
+            body: ["lurking": .bool(false)]
         )
         try checkInviteResponse(data, response)
         // Do not remove local membership optimistically. GUILD_DELETE and READY remain authoritative.
@@ -225,7 +225,6 @@ private struct ServerInviteDTO: Decodable {
             var label: String
             var emojiId: String?
             var emojiName: String?
-            var emojiAnimated: Bool?
             var position: Int?
         }
     }
@@ -240,13 +239,13 @@ private struct ServerInviteDTO: Decodable {
             reference: reference, guildID: guildID,
             channelID: channel.flatMap { ChannelID($0.id) }, channelType: channel?.type,
             name: profile?.name ?? guild.name,
-            iconURL: icon.flatMap { URL(string: "https://cdn.discordapp.com/icons/\(guildID)/\($0).webp?size=128") },
+            iconURL: icon.flatMap { DiscordCDN.guildIcon(guildID, hash: $0, marksAnimation: false) },
             inviter: inviter?.domain(),
             brandColor: profile?.brandColorPrimary.flatMap { UInt32($0.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) },
             description: profile?.description ?? guild.description,
             traits: (profile?.traits ?? []).sorted { ($0.position ?? 0) < ($1.position ?? 0) }.map {
                 .init(label: $0.label, emoji: $0.emojiName, emojiURL: $0.emojiId.flatMap {
-                    URL(string: "https://cdn.discordapp.com/emojis/\($0).webp?size=32")
+                    DiscordCDN.emoji($0, fileExtension: "webp", query: "size=32")
                 })
             }, memberCount: approximateMemberCount, onlineCount: approximatePresenceCount,
             expiresAt: expiresAt.flatMap(DiscordRESTProvider.inviteDate),
@@ -255,8 +254,8 @@ private struct ServerInviteDTO: Decodable {
                 ApplicationID(application.id).map { id in
                     ServerInvite.Activity(
                         applicationID: id, name: application.name,
-                        iconURL: application.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=128") },
-                        coverURL: application.coverImage.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=512") },
+                        iconURL: application.icon.flatMap { DiscordCDN.applicationImage(id, image: $0, size: 128) },
+                        coverURL: application.coverImage.flatMap { DiscordCDN.applicationImage(id, image: $0, size: 512) },
                         channelName: channel?.name
                     )
                 }

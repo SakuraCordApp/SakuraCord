@@ -20,7 +20,7 @@ public extension DiscordRESTProvider {
               let member = cachedMemberIndex(guildID: guildID)[userID] else {
             throw ChatProviderError.invalidRequest("Discord has not confirmed your server membership. Reconnect and try again.")
         }
-        if cachedGuilds[guildID]?.features.contains("GUILD_ONBOARDING") == true, member.flags == nil {
+        if cachedGuilds[guildID]?.isOnboardingStateKnown(for: member) == false {
             throw ChatProviderError.invalidRequest("Discord did not return your onboarding status. Reconnect to verify your membership.")
         }
         publishMemberChange(member, guildID: guildID)
@@ -108,7 +108,7 @@ public extension DiscordRESTProvider {
         if !channels.isEmpty {
             patch["channel_overrides"] = .object(Dictionary(uniqueKeysWithValues: channels.map { channelID, selected in
                 let flags = cached?.channelOverrides.first { $0.channelID == channelID }?.flags ?? 0
-                let updated = selected ? flags | GuildChannelSelection.selectedFlag : flags & ~(GuildChannelSelection.selectedFlag | GuildChannelSelection.favoriteFlag)
+                let updated = selected ? flags | GuildChannelSelection.selectedFlag : flags & ~(GuildChannelSelection.selectedFlag | ChannelNotificationOverride.pinnedFlag)
                 return (channelID.description, .object(["flags": .number(Double(updated))]))
             }))
         }

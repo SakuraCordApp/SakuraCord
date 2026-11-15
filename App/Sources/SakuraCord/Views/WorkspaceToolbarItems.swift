@@ -23,23 +23,7 @@ struct InboxToolbarButton: View {
                 .animation(model.animates(.overlays) ? .smooth(duration: 0.24) : nil, value: model.inbox.isPresented)
         }
         .help("Inbox")
-        .background { InboxPanelPresenter(model: model, isEnabled: presentsPanel) }
-    }
-}
-
-/// The Inbox panel, opening from the view it backs.
-private struct InboxPanelPresenter: View {
-    let model: AppModel
-    let isEnabled: Bool
-
-    var body: some View {
-        StableAnchoredPopoverPresenter(
-            isPresented: isEnabled && model.inbox.isPresented,
-            configuration: .toolbarPanel,
-            onDismiss: model.dismissInbox,
-            onWillDismiss: model.dismissInbox
-        ) { InboxPopoverView(model: model) }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { ToolbarPanelPresenter(model: model, panel: .inbox, isEnabled: presentsPanel) }
     }
 }
 
@@ -66,26 +50,7 @@ struct PinnedMessagesToolbarButton: View {
                 .animation(model.animates(.overlays) ? .smooth(duration: 0.24) : nil, value: isPresented)
         }
         .help("Pinned Messages")
-        .background { PinnedMessagesPanelPresenter(model: model, channelID: channelID, isEnabled: presentsPanel) }
-    }
-}
-
-/// The pinned messages panel for a channel, opening from the view it backs.
-private struct PinnedMessagesPanelPresenter: View {
-    let model: AppModel
-    let channelID: ChannelID
-    let isEnabled: Bool
-
-    var body: some View {
-        StableAnchoredPopoverPresenter(
-            isPresented: isEnabled && model.pinnedMessages.isPresented && model.pinnedMessages.channelID == channelID,
-            configuration: .toolbarPanel,
-            onDismiss: model.dismissPinnedMessages,
-            onWillDismiss: model.dismissPinnedMessages
-        ) {
-            PinnedMessagesPopoverView(model: model)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { ToolbarPanelPresenter(model: model, panel: .pinnedMessages(channelID), isEnabled: presentsPanel) }
     }
 }
 
@@ -102,23 +67,54 @@ struct ThreadsToolbarButton: View {
             }
         }
         .help("Threads")
-        .background { ThreadBrowserPanelPresenter(model: model, isEnabled: presentsPanel) }
+        .background { ToolbarPanelPresenter(model: model, panel: .threadBrowser, isEnabled: presentsPanel) }
     }
 }
 
-/// The thread browser panel, opening from the view it backs.
-private struct ThreadBrowserPanelPresenter: View {
+/// A toolbar panel, opening from the view it backs.
+private struct ToolbarPanelPresenter: View {
+    enum Panel: Equatable {
+        case inbox
+        case pinnedMessages(ChannelID)
+        case threadBrowser
+    }
+
     let model: AppModel
+    let panel: Panel
     let isEnabled: Bool
 
     var body: some View {
         StableAnchoredPopoverPresenter(
-            isPresented: isEnabled && model.threadBrowser.isPresented,
+            isPresented: isEnabled && isPresented,
             configuration: .toolbarPanel,
-            onDismiss: model.dismissThreadBrowser,
-            onWillDismiss: model.dismissThreadBrowser
-        ) { ThreadBrowserPopoverView(model: model) }
+            onDismiss: dismiss,
+            onWillDismiss: dismiss
+        ) { content }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var isPresented: Bool {
+        switch panel {
+        case .inbox: model.inbox.isPresented
+        case .pinnedMessages(let channelID): model.pinnedMessages.isPresented && model.pinnedMessages.channelID == channelID
+        case .threadBrowser: model.threadBrowser.isPresented
+        }
+    }
+
+    private func dismiss() {
+        switch panel {
+        case .inbox: model.dismissInbox()
+        case .pinnedMessages: model.dismissPinnedMessages()
+        case .threadBrowser: model.dismissThreadBrowser()
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch panel {
+        case .inbox: InboxPopoverView(model: model)
+        case .pinnedMessages: PinnedMessagesPopoverView(model: model)
+        case .threadBrowser: ThreadBrowserPopoverView(model: model)
+        }
     }
 }
 
@@ -130,7 +126,7 @@ struct ConversationOverflowToolbarMenu: View {
     let pinsChannelID: ChannelID?
     let offersThreads: Bool
     var presentsPanels = true
-    @State private var presenter = ThreadActionsMenuPresenter()
+    @State private var presenter = ActionMenuPresenter()
 
     var body: some View {
         Button {
@@ -140,34 +136,34 @@ struct ConversationOverflowToolbarMenu: View {
         }
         .help("More")
         .background {
-            ThreadActionsMenuAnchor(presenter: presenter)
-            InboxPanelPresenter(model: model, isEnabled: presentsPanels)
+            ActionMenuAnchor(presenter: presenter)
+            ToolbarPanelPresenter(model: model, panel: .inbox, isEnabled: presentsPanels)
             if let pinsChannelID {
-                PinnedMessagesPanelPresenter(model: model, channelID: pinsChannelID, isEnabled: presentsPanels)
+                ToolbarPanelPresenter(model: model, panel: .pinnedMessages(pinsChannelID), isEnabled: presentsPanels)
             }
             if offersThreads {
-                ThreadBrowserPanelPresenter(model: model, isEnabled: presentsPanels)
+                ToolbarPanelPresenter(model: model, panel: .threadBrowser, isEnabled: presentsPanels)
             }
         }
     }
 
-    private var menu: ThreadActionsMenu {
+    private var menu: [[ActionMenuEntry]] {
         var entries = [
-            ThreadMenuEntry(id: "inbox", title: "Inbox", systemImage: "tray", content: .action(model.presentInbox)),
+            ActionMenuEntry(id: "inbox", title: "Inbox", systemImage: "tray", content: .action(model.presentInbox)),
         ]
         if let pinsChannelID {
-            entries.append(ThreadMenuEntry(
+            entries.append(ActionMenuEntry(
                 id: "pins", title: "Pinned Messages", systemImage: "pin",
                 content: .action { [model] in model.presentPinnedMessages(channelID: pinsChannelID) }
             ))
         }
         if offersThreads {
-            entries.append(ThreadMenuEntry(
+            entries.append(ActionMenuEntry(
                 id: "threads", title: "Threads", systemImage: SakuraCordSystemSymbol.thread,
                 content: .action(model.toggleThreadBrowser)
             ))
         }
-        return ThreadActionsMenu(sections: [entries])
+        return [entries]
     }
 }
 
@@ -176,13 +172,12 @@ struct MemberInspectorToolbarButton: View {
 
     var body: some View {
         let isDirectMessage = model.selectedChannel?.kind == .directMessage
-        let isGroup = model.selectedChannel?.kind == .groupDirectMessage
         let isShown = model.workspacePresentation.supplementaryPane == .memberInspector
         Button {
             model.toggleMemberInspector()
         } label: {
             Label {
-                Text(isDirectMessage || isGroup ? "People" : "Members")
+                Text(model.selectedChannel?.kind.isDirectMessage == true ? "People" : "Members")
             } icon: {
                 ToggleSymbol(
                     off: isDirectMessage ? "person" : "person.2",
@@ -225,13 +220,10 @@ struct SideConversationToolbarActions: View {
         let capabilities = conversation.capabilities
         // One group, as the toolbar draws adjacent items: on one capsule.
         HStack(spacing: 0) {
-            if capabilities.canAddToChannelList, let channel = model.customizationPreviewChannel,
-               !model.isChannelSelected(channel), let guildID = channel.guildID
+            if SideConversationAddToChannelListButton.isOffered(model: model, capabilities: capabilities),
+               let channel = model.customizationPreviewChannel, let guildID = channel.guildID
             {
-                Button("Add to Channel List", systemImage: "plus") {
-                    model.setChannelSelected(true, channelID: channel.id, guildID: guildID)
-                }
-                .help("Add to Channel List")
+                SideConversationAddToChannelListButton(model: model, channel: channel, guildID: guildID)
             }
             if case .thread(let thread, _) = conversation {
                 if ForumPostFollowToolbarButton.isOffered(model: model, thread: thread) {
@@ -239,16 +231,48 @@ struct SideConversationToolbarActions: View {
                 }
                 ThreadActionsToolbarMenu(model: model, thread: thread, surface: .sidePane)
             }
-            Button {
-                model.closeSideConversation()
-            } label: {
-                Label("Close conversation", systemImage: "xmark")
-            }
-            .help(capabilities.closeHelp)
-            .keyboardShortcut(model.guildWorkspacePage == .guide ? .cancelAction : nil)
+            SideConversationCloseButton(model: model, capabilities: capabilities)
         }
         .titlebarButtons(grouped: true)
         .glassEffect(.regular.interactive(), in: Capsule())
+    }
+}
+
+/// Adds the channel a side chat previews to the server's channel list.
+struct SideConversationAddToChannelListButton: View {
+    let model: AppModel
+    let channel: Channel
+    let guildID: GuildID
+
+    /// Offered while the previewed channel isn't in the channel list yet.
+    static func isOffered(model: AppModel, capabilities: SideConversationCapabilities) -> Bool {
+        capabilities.canAddToChannelList
+            && model.customizationPreviewChannel.map { !model.isChannelSelected($0) } == true
+    }
+
+    var body: some View {
+        Button("Add to Channel List", systemImage: "plus") {
+            model.setChannelSelected(true, channelID: channel.id, guildID: guildID)
+        }
+        .labelStyle(.iconOnly)
+        .help("Add to Channel List")
+    }
+}
+
+/// Closes the side chat; Escape closes it over a server guide.
+struct SideConversationCloseButton: View {
+    let model: AppModel
+    let capabilities: SideConversationCapabilities
+
+    var body: some View {
+        Button {
+            model.closeSideConversation()
+        } label: {
+            Label("Close conversation", systemImage: "xmark")
+                .labelStyle(.iconOnly)
+        }
+        .help(capabilities.closeHelp)
+        .keyboardShortcut(model.guildWorkspacePage == .guide ? .cancelAction : nil)
     }
 }
 

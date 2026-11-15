@@ -237,7 +237,7 @@ struct InteractionModalFieldBackground: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
                         hasError ? Color.red.opacity(0.8)
-                            : (isFocused ? SakuraCordAccentColor.color.opacity(0.7) : .clear),
+                            : (isFocused ? SakuraCordAccentColor.focusRing : .clear),
                         lineWidth: 1.5
                     )
             }
@@ -272,7 +272,6 @@ private struct InteractionModalTextField: View {
                 }
             }
             .textFieldStyle(.plain)
-            .tint(SakuraCordAccentColor.color)
             .focused(focus, equals: control.customID)
             .disabled(control.isDisabled)
             .padding(.horizontal, InterfaceScale.metric(11))

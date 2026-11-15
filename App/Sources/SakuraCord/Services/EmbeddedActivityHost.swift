@@ -79,7 +79,7 @@ final class EmbeddedActivityHost: NSObject {
     /// The Activity iframe with the official client's sandbox, permissions and
     /// launch parameters, and the relay between it and this host.
     private func hostPage(proxyTicket: String) -> String {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let isDark = NSApp.effectiveAppearance.isDark
         var parameters = [
             "theme": isDark ? "dark" : "light",
             "frame_id": frameID,
@@ -357,7 +357,7 @@ final class EmbeddedActivityHost: NSObject {
 
     /// Discord's type for the hosting channel.
     private var channelType: Int {
-        model?.embeddedActivities.session?.channel.discordCommandType ?? 0
+        model?.embeddedActivities.session.map { $0.channel.discordChannelType ?? -1 } ?? 0
     }
 
     private func channelPayload(model: AppModel) -> [String: Any] {
@@ -422,8 +422,7 @@ final class EmbeddedActivityHost: NSObject {
 
     private func activityUser(_ userID: UserID) -> User? {
         guard let model else { return nil }
-        if model.currentUser?.id == userID { return model.currentUser }
-        return model.membersByID[userID]?.user
+        return model.knownUser(userID)
             ?? model.embeddedActivities.session?.channel.recipients.first { $0.id == userID }
     }
 

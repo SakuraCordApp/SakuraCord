@@ -255,7 +255,7 @@ import Testing
     )
     #expect(await decodeScheduler.acquirePermitForTesting(priority: .visible))
     #expect(await decodeScheduler.acquirePermitForTesting(priority: .visible))
-    let store = NativeTimelineMediaStore(
+    let store = MediaImageStore(
         decodedImageLoad: { url, dimension, priority in
             await decodedLoader.image(
                 for: url,
@@ -270,12 +270,12 @@ import Testing
             )
         }
     )
-    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
-    var outcomes: [NativeTimelineStaticMediaLoadOutcome] = []
+    let key = MediaImageKey.media(url, maximumPixelDimension: 32)
+    var outcomes: [MediaImageLoadOutcome] = []
     store.request(
         key,
         owner: UUID(),
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 1)
         )),
@@ -288,7 +288,7 @@ import Testing
     store.request(
         key,
         owner: UUID(),
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 2)
         )),
@@ -324,10 +324,10 @@ import Testing
         URL(string: "https://cdn.example/fallback-static.png")
     )
     let probe = ControlledDecodedImageLoad()
-    let store = NativeTimelineMediaStore { url, dimension, priority in
+    let store = MediaImageStore { url, dimension, priority in
         await probe.load(url: url, dimension: dimension, priority: priority)
     }
-    let key = NativeTimelineMediaKey.media(
+    let key = MediaImageKey.media(
         primaryURL,
         fallbackURL: fallbackURL,
         maximumPixelDimension: 32
@@ -335,7 +335,7 @@ import Testing
     store.request(
         key,
         owner: UUID(),
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 1)
         )),
@@ -346,7 +346,7 @@ import Testing
     store.request(
         key,
         owner: UUID(),
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 2)
         )),
@@ -367,17 +367,17 @@ import Testing
     let url = try #require(
         URL(string: "https://cdn.example/cancelled-visible-static.png")
     )
-    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
+    let key = MediaImageKey.media(url, maximumPixelDimension: 32)
     let probe = ControlledDecodedImageLoad()
-    let store = NativeTimelineMediaStore { url, dimension, priority in
+    let store = MediaImageStore { url, dimension, priority in
         await probe.load(url: url, dimension: dimension, priority: priority)
     }
     let owner = UUID()
-    var outcomes: [NativeTimelineStaticMediaLoadOutcome] = []
+    var outcomes: [MediaImageLoadOutcome] = []
     store.request(
         key,
         owner: owner,
-        subscriber: .message(.server(
+        subscriber: NativeMessageTimelineItem.Identifier.message(.server(
             channelID: ChannelID(rawValue: 1),
             messageID: MessageID(rawValue: 98_111)
         )),
@@ -398,9 +398,9 @@ import Testing
     let url = try #require(
         URL(string: "https://cdn.example/two-canvas-static.png")
     )
-    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
+    let key = MediaImageKey.media(url, maximumPixelDimension: 32)
     let probe = ControlledDecodedImageLoad()
-    let store = NativeTimelineMediaStore { url, dimension, priority in
+    let store = MediaImageStore { url, dimension, priority in
         await probe.load(url: url, dimension: dimension, priority: priority)
     }
     let firstOwner = UUID()
@@ -412,7 +412,7 @@ import Testing
         )
     )
     var callbackOutcomes:
-        [UUID: [NativeTimelineStaticMediaLoadOutcome]] = [:]
+        [UUID: [MediaImageLoadOutcome]] = [:]
     var invalidationOwners: [UUID] = []
 
     store.retainVisibleImages(for: [key], owner: firstOwner)
@@ -464,13 +464,13 @@ import Testing
 @MainActor
 @Test func `failed visible media waits for viewport exit before retrying`() async throws {
     let url = try #require(URL(string: "https://media.discordapp.net/attachments/1/2/clip.mp4?format=webp"))
-    let key = NativeTimelineMediaKey.media(url)
+    let key = MediaImageKey.media(url)
     let encoded = try #require(Data(base64Encoded:
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3vYjWQAAAABJRU5ErkJggg=="
     ))
     let image = try #require(NativeTimelineMediaDecoder.decode(encoded, maximumPixelDimension: 32))
     var loadCount = 0
-    let store = NativeTimelineMediaStore { _, _, _ in
+    let store = MediaImageStore { _, _, _ in
         loadCount += 1
         return loadCount == 1 ? nil : image
     }
@@ -479,7 +479,7 @@ import Testing
     let row = NativeMessageTimelineItem.Identifier.message(.server(
         channelID: ChannelID(rawValue: 1), messageID: MessageID(rawValue: 2)
     ))
-    func request(_ owner: UUID) async -> NativeTimelineStaticMediaLoadOutcome {
+    func request(_ owner: UUID) async -> MediaImageLoadOutcome {
         await withCheckedContinuation { continuation in
             store.request(key, owner: owner, subscriber: row) { continuation.resume(returning: $0) }
         }
