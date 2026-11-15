@@ -133,6 +133,29 @@ extension AppModel {
         return channel.recipients.first { $0.id != currentUser?.id }
     }
 
+    func systemMessageUser(
+        userID: UserID,
+        sourceMessage: Message? = nil
+    ) -> User? {
+        let guildID = sourceMessage.map { messagePresentationGuildID(for: $0) } ?? selectedGuildID
+        if let member = profileMember(userID, in: guildID) {
+            return member.user
+        }
+        func authorOrMentioned(in message: Message) -> User? {
+            message.author.id == userID ? message.author : message.mentionedUsers.first { $0.id == userID }
+        }
+        let sourceUser = sourceMessage.flatMap { message -> User? in
+            authorOrMentioned(in: message)
+                ?? systemMessageRecipient(for: message).flatMap { $0.id == userID ? $0 : nil }
+        }
+        return sourceUser
+            ?? (messages + threadMessages).lazy.compactMap(authorOrMentioned(in:)).first
+            ?? pinnedMessages.items.lazy.compactMap { authorOrMentioned(in: $0.message) }.first
+            ?? messageSearch.page?.results.lazy.compactMap { result in
+                result.messages.lazy.compactMap(authorOrMentioned(in:)).first
+            }.first
+    }
+
     func showSystemMessageProfile(
         userID: UserID,
         sourceMessage: Message? = nil

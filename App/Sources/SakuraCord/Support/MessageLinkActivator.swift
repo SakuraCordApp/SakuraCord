@@ -130,34 +130,4 @@ extension AppModel {
             errorMessage = error.localizedDescription
         }
     }
-
-    func systemMessageUser(
-        userID: UserID,
-        sourceMessage: Message? = nil
-    ) -> User? {
-        let guildID = sourceMessage.map { messagePresentationGuildID(for: $0) } ?? selectedGuildID
-        if let member = profileMember(userID, in: guildID) {
-            return member.user
-        }
-        let sourceUser = sourceMessage.flatMap { message -> User? in
-            if message.author.id == userID { return message.author }
-            return message.mentionedUsers.first { $0.id == userID }
-                ?? systemMessageRecipient(for: message).flatMap { $0.id == userID ? $0 : nil }
-        }
-        return sourceUser
-            ?? (messages + threadMessages).lazy.compactMap { message -> User? in
-                if message.author.id == userID { return message.author }
-                return message.mentionedUsers.first { $0.id == userID }
-            }.first
-            ?? pinnedMessages.items.lazy.compactMap { item -> User? in
-                if item.message.author.id == userID { return item.message.author }
-                return item.message.mentionedUsers.first { $0.id == userID }
-            }.first
-            ?? messageSearch.page?.results.lazy.compactMap { result -> User? in
-                result.messages.lazy.compactMap { message -> User? in
-                    if message.author.id == userID { return message.author }
-                    return message.mentionedUsers.first { $0.id == userID }
-                }.first
-            }.first
-    }
 }
