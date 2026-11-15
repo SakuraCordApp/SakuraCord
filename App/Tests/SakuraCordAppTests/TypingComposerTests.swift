@@ -749,7 +749,7 @@ func `Diagnostics sharing stops before delivery when confirmation is cancelled o
     #expect(!model.diagnosticsShareInFlight)
 }
 
-private actor TypingTestProvider: ChatProvider {
+private actor TypingTestProvider: ChatProviderStub {
     private enum SendFailure {
         case definite
         case timedOut
@@ -809,21 +809,8 @@ private actor TypingTestProvider: ChatProvider {
         channels
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
         throw ChatProviderError.invalidRequest("not used")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
     }
 
     func sendTyping(in channelID: ChannelID) async throws {}
@@ -929,8 +916,6 @@ private actor TypingTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("not used")
     }
 
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
     func eventStream() async -> AsyncStream<ClientEvent> {
         let stream = AsyncStream<ClientEvent>.makeStream(bufferingPolicy: .bufferingNewest(50))
         continuation = stream.continuation

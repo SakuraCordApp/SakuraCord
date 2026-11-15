@@ -6353,7 +6353,7 @@ private struct ReactionMutationRequest: Equatable, Sendable {
     var reacted: Bool
 }
 
-private actor ReactionMutationTestProvider: ChatProvider {
+private actor ReactionMutationTestProvider: ChatProviderStub {
     private let user = User(
         id: UserID(rawValue: 98_001),
         username: "reaction-tester",
@@ -6393,20 +6393,6 @@ private actor ReactionMutationTestProvider: ChatProvider {
         [channel]
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -6429,18 +6415,6 @@ private actor ReactionMutationTestProvider: ChatProvider {
             hasMoreBefore: false
         )
     }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
 
     func setReaction(
         _ emoji: String,
@@ -6508,7 +6482,7 @@ private struct ChannelLoadMessageRequest: Equatable, Sendable {
     let limit: Int
 }
 
-private actor SuspendedVoiceReplacementProvider: ChatProvider {
+private actor SuspendedVoiceReplacementProvider: ChatProviderStub {
     let currentUser = User(
         id: UserID(rawValue: 90_000),
         username: "voice-user",
@@ -6549,37 +6523,6 @@ private actor SuspendedVoiceReplacementProvider: ChatProvider {
     }
 
     func channels(in guildID: GuildID?) async throws -> [Channel] { testChannels }
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(
-        in channelID: ChannelID,
-        before: MessageID?,
-        limit: Int
-    ) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
 
     func joinVoice(
         channelID: ChannelID,
@@ -6625,15 +6568,9 @@ private actor SuspendedVoiceReplacementProvider: ChatProvider {
     func releaseLeave(call: Int) {
         leaveContinuations.removeValue(forKey: call)?.resume()
     }
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 }
 
-private actor InaccessibleChannelRequestCountingProvider: ChatProvider {
+private actor InaccessibleChannelRequestCountingProvider: ChatProviderStub {
     private let base = MockChatProvider()
     private var messageRequests: [ChannelID: Int] = [:]
     private var forumRequests: [ChannelID: Int] = [:]
@@ -6687,21 +6624,6 @@ private actor InaccessibleChannelRequestCountingProvider: ChatProvider {
         return try await base.forumPosts(in: channelID, query: query)
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
     func joinVoice(
         channelID: ChannelID,
         guildID: GuildID?,
@@ -6735,7 +6657,7 @@ private actor InaccessibleChannelRequestCountingProvider: ChatProvider {
     }
 }
 
-private actor ChannelLoadTestProvider: ChatProvider {
+private actor ChannelLoadTestProvider: ChatProviderStub {
     private let user = User(id: UserID(rawValue: 91000), username: "tester", displayName: "Tester")
     private let testChannels = [
         Channel(id: ChannelID(rawValue: 91001), guildID: nil, name: "general"),
@@ -6796,20 +6718,6 @@ private actor ChannelLoadTestProvider: ChatProvider {
     func channels(in guildID: GuildID?) async throws -> [Channel] {
         testChannels
     }
-
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
 
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
@@ -6976,10 +6884,6 @@ private actor ChannelLoadTestProvider: ChatProvider {
         blockedPaginatedRequest = nil
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
     func edit(_ message: Message, content: String) async throws -> Message {
         guard blocksNextEdit else {
             throw ChatProviderError.invalidRequest("Editing is not part of this test.")
@@ -7004,8 +6908,6 @@ private actor ChannelLoadTestProvider: ChatProvider {
         blockedEdit = nil
     }
 
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
     func reactionReactors(
         for emoji: String,
         messageID: MessageID,
@@ -7036,11 +6938,6 @@ private actor ChannelLoadTestProvider: ChatProvider {
             )
         }
     }
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 
     func requestCount(for channelID: ChannelID) -> Int {
         messageRequests[channelID, default: 0]
@@ -7089,7 +6986,7 @@ private actor ChannelLoadTestProvider: ChatProvider {
     }
 }
 
-private actor LocalHistoryMemberTestProvider: ChatProvider {
+private actor LocalHistoryMemberTestProvider: ChatProviderStub {
     private let guild = Guild(
         id: GuildID(rawValue: 76_000),
         name: "History Guild",
@@ -7126,8 +7023,6 @@ private actor LocalHistoryMemberTestProvider: ChatProvider {
         guildID == guild.id ? [channel] : []
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
         requests.append(userIDs)
         guard guildID == guild.id, userIDs.contains(author.id) else { return [] }
@@ -7149,13 +7044,6 @@ private actor LocalHistoryMemberTestProvider: ChatProvider {
         guildID == guild.id ? [role] : []
     }
 
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -7173,23 +7061,10 @@ private actor LocalHistoryMemberTestProvider: ChatProvider {
         )
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-    func disconnect() async {}
-
     func resolutionRequests() -> [[UserID]] { requests }
 }
 
-private actor MemberRoleRevocationTestProvider: ChatProvider {
+private actor MemberRoleRevocationTestProvider: ChatProviderStub {
     private let guildID = GuildID(rawValue: 76_700)
     private let user = User(
         id: UserID(rawValue: 76_701),
@@ -7274,45 +7149,6 @@ private actor MemberRoleRevocationTestProvider: ChatProvider {
         ])
         memberContinuation = nil
     }
-
-    func profile(
-        for userID: UserID,
-        in guildID: GuildID?
-    ) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(
-        in channelID: ChannelID,
-        before: MessageID?,
-        limit: Int
-    ) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 }
 
 @MainActor
@@ -7339,7 +7175,7 @@ func `delayed DM creation respects newer navigation`(subsequentChoice: Int) asyn
     }
 }
 
-private actor SuspendedAccountOperationTestProvider: ChatProvider {
+private actor SuspendedAccountOperationTestProvider: ChatProviderStub {
     nonisolated let channelID = ChannelID(rawValue: 96_001)
     nonisolated let threadID = ChannelID(rawValue: 96_002)
     nonisolated let thread: MessageThreadSummary
@@ -7432,18 +7268,6 @@ private actor SuspendedAccountOperationTestProvider: ChatProvider {
         return [Channel(id: channelID, guildID: nil, name: "shared")]
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
-    func profile(
-        for userID: UserID,
-        in guildID: GuildID?
-    ) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(
         in requestedChannelID: ChannelID,
         before: MessageID?,
@@ -7495,14 +7319,6 @@ private actor SuspendedAccountOperationTestProvider: ChatProvider {
         return edited
     }
 
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
     func applicationCommandCatalog(
         for target: ApplicationCommandIndexTarget
     ) async throws -> ApplicationCommandCatalog {
@@ -7523,12 +7339,6 @@ private actor SuspendedAccountOperationTestProvider: ChatProvider {
     ) async throws {
         voiceStateUpdateRequestCount += 1
     }
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 
     func waitUntilMutationRequestsStart() async -> Bool {
         guard await waitUntilSendRequestStarts() else { return false }
@@ -7579,7 +7389,7 @@ private actor SuspendedAccountOperationTestProvider: ChatProvider {
     }
 }
 
-private actor SuspendedAccountLoadTestProvider: ChatProvider {
+private actor SuspendedAccountLoadTestProvider: ChatProviderStub {
     nonisolated let guildID = GuildID(rawValue: 91_000)
     nonisolated let forumID = ChannelID(rawValue: 91_001)
     nonisolated let post: ForumPost
@@ -7695,48 +7505,9 @@ private actor SuspendedAccountLoadTestProvider: ChatProvider {
     func waitUntilLoadsReturn() async -> Bool {
         await eventually { memberLoadReturned && forumLoadReturned }
     }
-
-    func profile(
-        for userID: UserID,
-        in guildID: GuildID?
-    ) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(
-        in channelID: ChannelID,
-        before: MessageID?,
-        limit: Int
-    ) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 }
 
-private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
+private actor FirstGuildVisitPermissionTestProvider: ChatProviderStub {
     nonisolated let guildID = GuildID(rawValue: 77_200)
     nonisolated let channelID = ChannelID(rawValue: 77_202)
 
@@ -7800,13 +7571,6 @@ private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
         roleContinuation = nil
     }
 
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(
         in channelID: ChannelID,
         before: MessageID?,
@@ -7827,25 +7591,6 @@ private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
         )
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
     func disconnect() async {
         releaseRoles()
     }
@@ -7855,7 +7600,7 @@ private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
     }
 }
 
-private actor StartupUnreadTestProvider: ChatProvider {
+private actor StartupUnreadTestProvider: ChatProviderStub {
     private let guild = Guild(
         id: GuildID(rawValue: 77_000),
         name: "Startup Guild",
@@ -7898,32 +7643,10 @@ private actor StartupUnreadTestProvider: ChatProvider {
         guildID == guild.id ? [channel] : []
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
         MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
     func delete(messageID: MessageID, channelID: ChannelID) async throws {
@@ -7933,15 +7656,9 @@ private actor StartupUnreadTestProvider: ChatProvider {
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {
         throw ChatProviderError.invalidRequest("Reactions are not part of this test.")
     }
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 }
 
-private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
+private actor ForumVisitAcknowledgementTestProvider: ChatProviderStub {
     struct Acknowledgement: Sendable {
         var channelID: ChannelID
         var messageID: MessageID
@@ -8021,20 +7738,6 @@ private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
         guildID == guild.id ? [forum] : []
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -8059,34 +7762,12 @@ private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
         return ReadAcknowledgementResponse(token: token)
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
-
     func acknowledgements() -> [Acknowledgement] {
         recordedAcknowledgements
     }
 }
 
-private actor ForumPaginationTestProvider: ChatProvider {
+private actor ForumPaginationTestProvider: ChatProviderStub {
     private let guild = Guild(
         id: GuildID(rawValue: 95_000),
         name: "Forum Test",
@@ -8117,20 +7798,6 @@ private actor ForumPaginationTestProvider: ChatProvider {
     func channels(in guildID: GuildID?) async throws -> [Channel] {
         guildID == guild.id ? [channel] : []
     }
-
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
 
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
@@ -8183,28 +7850,6 @@ private actor ForumPaginationTestProvider: ChatProvider {
         )
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
-
     func paginationRequestCount() -> Int {
         paginationRequests
     }
@@ -8212,7 +7857,7 @@ private actor ForumPaginationTestProvider: ChatProvider {
 
 /// Holds a private thread's member-less record; access resolution fails once
 /// and then reports the current user's membership.
-private actor ThreadAccessRecoveryTestProvider: ChatProvider {
+private actor ThreadAccessRecoveryTestProvider: ChatProviderStub {
     private let guild = Guild(id: GuildID(rawValue: 95_000), name: "Threads")
     private let user = User(id: UserID(rawValue: 95_200), username: "member", displayName: "Member")
     private let channel = Channel(
@@ -8232,20 +7877,6 @@ private actor ThreadAccessRecoveryTestProvider: ChatProvider {
         guildID == guild.id ? [channel] : []
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
     func forumPost(threadID: ChannelID) async throws -> ForumPost {
         ForumPost(thread: memberlessThread)
     }
@@ -8259,25 +7890,9 @@ private actor ThreadAccessRecoveryTestProvider: ChatProvider {
     }
 
     func accessResolutionCount() -> Int { accessResolutions }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-
-    func disconnect() async {}
 }
 
-private actor LinkedChannelNavigationTestProvider: ChatProvider {
+private actor LinkedChannelNavigationTestProvider: ChatProviderStub {
     private let firstGuild = Guild(id: GuildID(rawValue: 94_000), name: "First")
     private let secondGuild = Guild(id: GuildID(rawValue: 94_100), name: "Second")
     private let user = User(
@@ -8314,20 +7929,6 @@ private actor LinkedChannelNavigationTestProvider: ChatProvider {
         }
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -8338,27 +7939,6 @@ private actor LinkedChannelNavigationTestProvider: ChatProvider {
         forumPostRequests += 1
         throw ChatProviderError.invalidRequest("Ordinary channels are not forum posts.")
     }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 
     func forumPostRequestCount() -> Int {
         forumPostRequests
@@ -8651,7 +8231,7 @@ private final class SuspendedAccountNotificationService: NativeNotificationServi
     }
 }
 
-private actor VoiceMigrationTestProvider: ChatProvider {
+private actor VoiceMigrationTestProvider: ChatProviderStub {
     private let guild = Guild(
         id: GuildID(rawValue: 92000),
         name: "Voice Test",
@@ -8674,35 +8254,12 @@ private actor VoiceMigrationTestProvider: ChatProvider {
         [channel]
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
         MessagePage(messages: [], hasMoreBefore: false)
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
     func joinVoice(
         channelID: ChannelID,
         guildID: GuildID?,
@@ -8753,7 +8310,7 @@ private struct PrivateCallActionRequestCounts: Equatable, Sendable {
     var declines = 0
 }
 
-private actor PrivateCallActionTestProvider: ChatProvider {
+private actor PrivateCallActionTestProvider: ChatProviderStub {
     private let currentUser = User(
         id: UserID(rawValue: 88_810),
         username: "call-tester",
@@ -8790,53 +8347,6 @@ private actor PrivateCallActionTestProvider: ChatProvider {
     func channels(in guildID: GuildID?) async throws -> [Channel] {
         [channel]
     }
-
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(
-        for userID: UserID,
-        in guildID: GuildID?
-    ) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest(
-            "Profiles are not part of this test."
-        )
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(
-        in channelID: ChannelID,
-        before: MessageID?,
-        limit: Int
-    ) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest(
-            "Sending is not part of this test."
-        )
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest(
-            "Editing is not part of this test."
-        )
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
 
     func subscribeToPrivateCall(channelID: ChannelID) async throws {
         requestCounts.subscriptions += 1
@@ -8907,8 +8417,6 @@ private actor PrivateCallActionTestProvider: ChatProvider {
         AsyncStream { _ in }
     }
 
-    func disconnect() async {}
-
     func counts() -> PrivateCallActionRequestCounts {
         requestCounts
     }
@@ -8932,7 +8440,7 @@ private actor PrivateCallActionTestProvider: ChatProvider {
     }
 }
 
-private actor DelayedMemberViewportTestProvider: ChatProvider {
+private actor DelayedMemberViewportTestProvider: ChatProviderStub {
     struct ViewportRequest: Equatable, Sendable {
         let guildID: GuildID
         let channelID: ChannelID
@@ -9004,22 +8512,6 @@ private actor DelayedMemberViewportTestProvider: ChatProvider {
     ) async throws -> MessagePage {
         try await base.messages(in: channelID, before: before, limit: limit)
     }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
 
     func eventStream() async -> AsyncStream<ClientEvent> {
         await base.eventStream()

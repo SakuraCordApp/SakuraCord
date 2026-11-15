@@ -313,7 +313,7 @@ private actor CustomizationGate {
     func release() { pending?.resume(); pending = nil }
 }
 
-private actor CustomizationProvider: ChatProvider {
+private actor CustomizationProvider: ChatProviderStub {
     enum Write: Equatable, Sendable {
         case answers(Set<String>)
         case channels(Bool?, [ChannelID: Bool])
@@ -382,12 +382,7 @@ private actor CustomizationProvider: ChatProvider {
     func members(in guildID: GuildID?) async throws -> [Member] { try await base.members(in: guildID) }
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile { try await base.profile(for: userID, in: guildID) }
     func currentStatus() async -> PresenceStatus { .offline }
-    func updateStatus(_ status: PresenceStatus) async throws {}
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage { try await base.messages(in: channelID, before: before, limit: limit) }
     func send(_ draft: SendMessageDraft) async throws -> Message { try await base.send(draft) }
     func edit(_ message: Message, content: String) async throws -> Message { try await base.edit(message, content: content) }
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-    func disconnect() async {}
 }

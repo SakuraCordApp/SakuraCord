@@ -100,7 +100,7 @@ struct HumanCaptchaTests {
     }
 }
 
-private actor SharedJoinProbeProvider: ChatProvider {
+private actor SharedJoinProbeProvider: ChatProviderStub {
     nonisolated let arrivals: AsyncStream<Void>
     private let events: AsyncStream<Void>.Continuation
     private let base = MockChatProvider()
@@ -125,16 +125,8 @@ private actor SharedJoinProbeProvider: ChatProvider {
         return false
     }
     func bootstrap() async throws -> BootstrapSnapshot { try await base.bootstrap() }
-    func channels(in guildID: GuildID?) async throws -> [Channel] { [] }
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile { try await base.profile(for: userID, in: guildID) }
     func currentStatus() async -> PresenceStatus { .offline }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage { .init(messages: [], hasMoreBefore: false) }
     func send(_ draft: SendMessageDraft) async throws -> Message { throw CancellationError() }
     func edit(_ message: Message, content: String) async throws -> Message { throw CancellationError() }
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-    func disconnect() async {}
 }

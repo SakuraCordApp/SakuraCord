@@ -1498,16 +1498,13 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(!message(type: .default, flags: .loading).isForwardable)
 }
 
-private actor ForwardSettingsFailureProvider: ChatProvider {
+private actor ForwardSettingsFailureProvider: ChatProviderStub {
     func bootstrap() async throws -> BootstrapSnapshot {
         BootstrapSnapshot(
             currentUser: User(id: UserID(rawValue: 1), username: "test", displayName: "Test"),
             guilds: [], channels: [], members: []
         )
     }
-
-    func channels(in guildID: GuildID?) async throws -> [Channel] { [] }
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
 
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
         throw ChatProviderError.invalidRequest("unused")
@@ -1518,7 +1515,6 @@ private actor ForwardSettingsFailureProvider: ChatProvider {
     }
 
     func currentStatus() async -> PresenceStatus { .offline }
-    func updateStatus(_ status: PresenceStatus) async throws {}
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -1532,8 +1528,4 @@ private actor ForwardSettingsFailureProvider: ChatProvider {
     {
         throw ChatProviderError.invalidRequest("unused")
     }
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-    func disconnect() async {}
 }
