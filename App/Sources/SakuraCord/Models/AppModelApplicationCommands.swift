@@ -236,11 +236,10 @@ extension AppModel {
         cancelApplicationCommandAutocompleteTask(in: destination)
         let submittedDraft = commandComposer.draft
         stopLocalTyping(clearThrottle: true)
-        commandComposer.recordUse(of: invocation.command, guildID: invocation.guildID)
-        for composer in commandComposers where composer !== commandComposer { composer.refreshFrecency() }
+        recordUse(of: invocation.command, guildID: invocation.guildID, in: commandComposer)
         commandComposer.cancelActiveCommand()
         updateDraft("", in: destination)
-        if DiscordBuiltInCommands.isBuiltIn(invocation.command) {
+        if isBuiltIn {
             runBuiltInCommand(invocation)
         } else {
             runApplicationCommand(invocation, restoringDraftOnFailure: submittedDraft, in: destination)
@@ -253,12 +252,21 @@ extension AppModel {
         let destination = commandDestination(in: channelID)
         let guildID = (openThread?.id == channelID ? openThread?.guildID ?? openThreadParentChannel?.guildID : nil)
             ?? knownRootChannel(channelID)?.guildID
-        let commandComposer = commandComposer(for: destination)
-        commandComposer.recordUse(of: command, guildID: guildID)
-        for composer in commandComposers where composer !== commandComposer { composer.refreshFrecency() }
+        recordUse(of: command, guildID: guildID, in: commandComposer(for: destination))
         runApplicationCommand(ApplicationCommandInvocation(
             command: command, channelID: channelID, guildID: guildID, values: [], targetID: targetID
         ), in: destination)
+    }
+
+    /// Records the use in `commandComposer`, then refreshes the other
+    /// composers so their pickers rank the command the same way.
+    private func recordUse(
+        of command: ApplicationCommand,
+        guildID: GuildID?,
+        in commandComposer: ApplicationCommandComposerModel
+    ) {
+        commandComposer.recordUse(of: command, guildID: guildID)
+        for composer in commandComposers where composer !== commandComposer { composer.refreshFrecency() }
     }
 
     private func runApplicationCommand(
