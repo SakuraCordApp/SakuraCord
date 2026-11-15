@@ -356,21 +356,13 @@ extension AppModel {
         guard let guildID, presentedGuildChannelSettings(in: guildID).hideMutedChannels else { return groups }
         let threads = threadsByParentID
             ?? sidebarThreadLayout(guildID: guildID, channelGroups: groups, now: .now).threadsByParentID
-        let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
-        return groups.compactMap { group -> ChannelGroup? in
-            // Discord lists pinned channels even when muted.
-            guard !group.isPinnedSection else { return group }
-            var group = group
-            group.channels.removeAll { channel in
-                let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
-                    || (isThreadFullWidth && openThread?.parentID == channel.id)
-                // Discord keeps focused channels, mentions and visible joined
-                // threads discoverable. A server/category mute is not a direct
-                // channel mute and must not hide all of its children here.
-                return readState.isChannelMuted(channel) && !isFocused && channel.mentionCount == 0
-                    && threads[channel.id, default: []].isEmpty
-            }
-            return group.channels.isEmpty ? nil : group
+        // Discord lists pinned channels even when muted.
+        return filteringSidebarChannels(groups) { _, channel, isFocused in
+            // Discord keeps focused channels, mentions and visible joined
+            // threads discoverable. A server/category mute is not a direct
+            // channel mute and must not hide all of its children here.
+            readState.isChannelMuted(channel) && !isFocused && channel.mentionCount == 0
+                && threads[channel.id, default: []].isEmpty
         }
     }
 
@@ -385,24 +377,36 @@ extension AppModel {
         let filtersSelection = !showsAllChannels(in: guildID)
         let hasGuide = filtersSelection && hasGuildGuide(in: guildID)
         let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
+        // Pinning opts a channel in, and Discord lists pinned channels
+        // without the Browse Channels or Server Guide filters.
+        return filteringSidebarChannels(groups) { group, channel, isFocused in
+            if filtersSelection {
+                if hasGuide, guide?.isResourceChannel(channel.id) == true || channel.isGuildResource,
+                   channel.id != activeChannelID { return true }
+                if !GuildChannelSelection.isSelected(channel.id, settings: settings),
+                   !(group.categoryID.map { GuildChannelSelection.isSelected($0, settings: settings) } ?? false),
+                   !isFocused, channel.mentionCount == 0 { return true }
+            }
+            return false
+        }
+    }
+
+    /// `groups` without the channels `hides` drops, and without groups left
+    /// empty. Pinned sections stay whole.
+    private func filteringSidebarChannels(
+        _ groups: [ChannelGroup],
+        hiding hides: (_ group: ChannelGroup, _ channel: Channel, _ isFocused: Bool) -> Bool
+    ) -> [ChannelGroup] {
+        let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
         return groups.compactMap { group -> ChannelGroup? in
-            // Pinning opts a channel in, and Discord lists pinned channels
-            // without the Browse Channels or Server Guide filters.
             guard !group.isPinnedSection else { return group }
-            var group = group
-            group.channels.removeAll { channel in
+            var filtered = group
+            filtered.channels.removeAll { channel in
                 let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
                     || (isThreadFullWidth && openThread?.parentID == channel.id)
-                if filtersSelection {
-                    if hasGuide, guide?.isResourceChannel(channel.id) == true || channel.isGuildResource,
-                       channel.id != activeChannelID { return true }
-                    if !GuildChannelSelection.isSelected(channel.id, settings: settings),
-                       !(group.categoryID.map { GuildChannelSelection.isSelected($0, settings: settings) } ?? false),
-                       !isFocused, channel.mentionCount == 0 { return true }
-                }
-                return false
+                return hides(group, channel, isFocused)
             }
-            return group.channels.isEmpty ? nil : group
+            return filtered.channels.isEmpty ? nil : filtered
         }
     }
 }
