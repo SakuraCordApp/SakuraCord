@@ -15,8 +15,8 @@ extension NativeTimelineCanvasView {
         // A file card's button and link act through their own pointer hit.
         case let .componentImage(_, _, payload), let .componentMedia(_, _, payload), let .componentFile(_, _, payload):
             let region = payload.value
-            guard case let .media(media) = region.kind, media.isVideo, !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
+            guard case let .media(media) = region.kind, media.isVideo, !spoilerRevealStore.isConcealed(
+                messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler
             ) else { return activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex) }
             playInline(media.displayURL, mediaID: region.componentID, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
                 _ = self?.activateComponentMedia(region, layout: layout, message: message, rowIndex: index)
@@ -30,7 +30,7 @@ extension NativeTimelineCanvasView {
         case let .attachment(_, _, region):
             let attachment = region.value.attachment
             guard attachment.mediaKind == .video,
-                  !NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore)
+                  !spoilerRevealStore.isConcealed(attachment, in: message.id)
             else { return activateAttachment(attachment, in: message, rowIndex: rowIndex) }
             playInline(
                 attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
@@ -57,9 +57,7 @@ extension NativeTimelineCanvasView {
         rowIndex: Int
     ) -> Bool {
         let id = region.componentID
-        if NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-            messageID: message.id, contentID: id, isSpoiler: region.isSpoiler, store: spoilerRevealStore
-        ) {
+        if spoilerRevealStore.isConcealed(messageID: message.id, contentID: id, isSpoiler: region.isSpoiler) {
             reveal(NativeTimelineComponentRevealKey(messageID: message.id, componentID: id), rowIndex: rowIndex)
         } else if let presentation = MediaViewerPlan.components(
             in: message,
@@ -515,7 +513,7 @@ extension NativeTimelineCanvasView {
         in message: Message,
         rowIndex: Int
     ) -> Bool {
-        if NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore) {
+        if spoilerRevealStore.isConcealed(attachment, in: message.id) {
             reveal(.attachment(messageID: message.id, attachmentID: attachment.id), rowIndex: rowIndex)
         } else if !openAttachmentInViewer(attachment, message: message, rowIndex: rowIndex) {
             NSWorkspace.shared.open(attachment.url)

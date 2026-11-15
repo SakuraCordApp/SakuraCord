@@ -8,7 +8,7 @@ extension NativeTimelineCanvasView {
         guard ring.mediaFrame == nil,
               let attachment = message.attachments.first(where: { $0.id == ring.attachmentID })
         else { return false }
-        return NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore)
+        return spoilerRevealStore.isConcealed(attachment, in: message.id)
     }
 
     /// The visible file cards in a message row, attachment cards first. A
@@ -18,7 +18,7 @@ extension NativeTimelineCanvasView {
         let layout = layouts[index]
         let isLocalSend = items[index].messageRow?.message.isUnconfirmedLocalSend == true
         let attachments = isLocalSend ? [] : layout.fileCards.filter {
-            !NativeTimelineSpoilerConcealmentPolicy.isConcealed($0.attachment, in: messageID, store: spoilerRevealStore)
+            !spoilerRevealStore.isConcealed($0.attachment, in: messageID)
         }
         let components = layout.componentLayouts.flatMap { component -> [NativeTimelineFileCard] in
             let files = component.mediaRegions.filter { $0.fileCard != nil }
@@ -29,9 +29,9 @@ extension NativeTimelineCanvasView {
             return files.filter { region in
                 !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                     region.frame, hiddenContainerFrames: hiddenContainers
-                ) && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                ) && !spoilerRevealStore.isConcealed(
                     messageID: messageID, contentID: region.componentID,
-                    isSpoiler: region.isSpoiler, store: spoilerRevealStore
+                    isSpoiler: region.isSpoiler
                 )
             }.compactMap(\.fileCard)
         }

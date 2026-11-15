@@ -11,11 +11,10 @@ extension NativeTimelineCanvasView {
         let isConcealed = layout.componentLayouts.contains { component in
             component.containers.contains { container in
                 container.frame.contains(localPoint)
-                    && NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    && spoilerRevealStore.isConcealed(
                         messageID: row.message.id,
                         contentID: container.componentID,
-                        isSpoiler: container.isSpoiler,
-                        store: spoilerRevealStore
+                        isSpoiler: container.isSpoiler
                     )
             }
         }

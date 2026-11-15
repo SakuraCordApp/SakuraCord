@@ -1144,17 +1144,13 @@ extension NativeTimelineCanvasView {
     ) -> NativeTimelinePointerActivationTarget? {
         for componentLayout in layout.componentLayouts {
             for container in componentLayout.containers
-            where container.isSpoiler && container.frame.contains(point) {
-                let key = NativeTimelineComponentRevealKey(
-                    messageID: message.id,
-                    componentID: container.componentID
+            where container.frame.contains(point) && spoilerRevealStore.isConcealed(
+                messageID: message.id, contentID: container.componentID, isSpoiler: container.isSpoiler
+            ) {
+                return .componentReveal(
+                    message.id,
+                    container.componentID
                 )
-                if !spoilerRevealStore.isMediaRevealed(key) {
-                    return .componentReveal(
-                        message.id,
-                        container.componentID
-                    )
-                }
             }
             if let region = componentLayout.mediaRegions.first(where: {
                 $0.frame.contains(point)
@@ -1381,14 +1377,8 @@ extension NativeTimelineCanvasView {
         }
         for layout in layouts[index].componentLayouts {
             if layout.containers.contains(where: { container in
-                guard container.isSpoiler,
-                      container.frame.contains(local)
-                else { return false }
-                return !spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(
-                        messageID: row.id,
-                        componentID: container.componentID
-                    )
+                container.frame.contains(local) && spoilerRevealStore.isConcealed(
+                    messageID: row.id, contentID: container.componentID, isSpoiler: container.isSpoiler
                 )
             }) {
                 return nil

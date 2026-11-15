@@ -132,6 +132,20 @@ final class NativeTimelineSpoilerRevealStore {
         reveal(.media(componentID: key.componentID), in: key.messageID)
     }
 
+    /// Whether a spoilered item still hides behind its cover.
+    func isConcealed(messageID: MessageID, contentID: String, isSpoiler: Bool) -> Bool {
+        isSpoiler && !isMediaRevealed(NativeTimelineComponentRevealKey(messageID: messageID, componentID: contentID))
+    }
+
+    /// Whether an attachment still hides behind its spoiler cover.
+    func isConcealed(_ attachment: Attachment, in messageID: MessageID) -> Bool {
+        isConcealed(
+            messageID: messageID,
+            contentID: NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id),
+            isSpoiler: attachment.isSpoiler
+        )
+    }
+
     func isTextRevealed(
         _ key: NativeTimelineTextSpoilerRevealKey
     ) -> Bool {
@@ -215,35 +229,6 @@ final class NativeTimelineSpoilerRevealStore {
 
 @MainActor
 enum NativeTimelineSpoilerConcealmentPolicy {
-    static func isConcealed(
-        messageID: MessageID,
-        contentID: String,
-        isSpoiler: Bool,
-        store: NativeTimelineSpoilerRevealStore
-    ) -> Bool {
-        isSpoiler
-            && !store.isMediaRevealed(
-                NativeTimelineComponentRevealKey(
-                    messageID: messageID,
-                    componentID: contentID
-                )
-            )
-    }
-
-    /// Whether an attachment still hides behind its spoiler cover.
-    static func isConcealed(
-        _ attachment: Attachment,
-        in messageID: MessageID,
-        store: NativeTimelineSpoilerRevealStore
-    ) -> Bool {
-        isConcealed(
-            messageID: messageID,
-            contentID: NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id),
-            isSpoiler: attachment.isSpoiler,
-            store: store
-        )
-    }
-
     /// The embeds still hidden because the message links them inside a
     /// spoiler, as Discord hides them, by embed ID with their reveal keys.
     static func concealedEmbeds(
@@ -321,11 +306,10 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         store: NativeTimelineSpoilerRevealStore
     ) -> [CGRect] {
         let frames = layout.containers.compactMap { container in
-            isConcealed(
+            store.isConcealed(
                 messageID: messageID,
                 contentID: container.componentID,
-                isSpoiler: container.isSpoiler,
-                store: store
+                isSpoiler: container.isSpoiler
             ) ? container.frame : nil
         }
         return frames.filter { candidate in

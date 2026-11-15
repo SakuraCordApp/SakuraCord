@@ -34,14 +34,11 @@ extension NativeTimelineRowPainter {
         isSpoiler: Bool,
         input: NativeTimelineComponentsDrawInput
     ) -> Bool {
-        input.message.spoilerRevealStore.map {
-            NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                messageID: input.messageID,
-                contentID: contentID,
-                isSpoiler: isSpoiler,
-                store: $0
-            )
-        } ?? false
+        input.message.spoilerRevealStore?.isConcealed(
+            messageID: input.messageID,
+            contentID: contentID,
+            isSpoiler: isSpoiler
+        ) ?? false
     }
 
     private static func drawComponentChrome(

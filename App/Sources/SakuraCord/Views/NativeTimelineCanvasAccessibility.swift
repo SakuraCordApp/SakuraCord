@@ -846,9 +846,7 @@ extension NativeTimelineCanvasView {
         parent: Any?
     ) -> NSAccessibilityElement {
         let attachment = region.attachment
-        let isHiddenSpoiler = NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-            attachment, in: message.id, store: spoilerRevealStore
-        )
+        let isHiddenSpoiler = spoilerRevealStore.isConcealed(attachment, in: message.id)
         let contentLabel =
             attachment.description
             ?? attachment.title
@@ -890,7 +888,7 @@ extension NativeTimelineCanvasView {
         parent: NSAccessibilityElement
     ) {
         for region in layout.audioPlayers
-        where !NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: message.id, store: spoilerRevealStore) {
+        where !spoilerRevealStore.isConcealed(region.attachment, in: message.id) {
             children.append(voiceMessageAccessibilityElement(region, rowIndex: rowIndex, parent: parent))
         }
     }
@@ -1537,8 +1535,8 @@ extension NativeTimelineCanvasView {
         case let .media(media): (media.description, nil)
         case let .file(file): (file.attachment.filename, file.attachment)
         }
-        let isHiddenSpoiler = NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-            messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
+        let isHiddenSpoiler = spoilerRevealStore.isConcealed(
+            messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler
         )
         let element = accessibilityElement(
             role: .button,

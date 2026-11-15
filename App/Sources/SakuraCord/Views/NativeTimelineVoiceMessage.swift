@@ -786,7 +786,7 @@ extension NativeTimelineCanvasView {
     func installAudioFileCursors(at index: Int, rowOrigin: CGFloat) {
         for region in layouts[index].audioPlayers
         where region.style == .audioFile
-            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: region.messageID, store: spoilerRevealStore) {
+            && !spoilerRevealStore.isConcealed(region.attachment, in: region.messageID) {
             for (_, frame) in Self.controlHitFrames(of: region) where !frame.isNull && !frame.isEmpty {
                 addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
             }
@@ -802,7 +802,7 @@ extension NativeTimelineCanvasView {
         let local = CGPoint(x: point.x, y: point.y - origin)
         for region in layouts[index].audioPlayers
         where region.frame.contains(local)
-            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: region.messageID, store: spoilerRevealStore) {
+            && !spoilerRevealStore.isConcealed(region.attachment, in: region.messageID) {
             // Between an audio card's controls lies the player's own gap.
             let control: VoiceMessageControl
             if let hit = Self.controlHitFrames(of: region).first(where: { $0.1.contains(local) }) {
@@ -828,7 +828,7 @@ extension NativeTimelineCanvasView {
         else { return nil }
         return layout.audioFilePlayers.first {
             $0.attachment.id == card.attachment.id
-                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed($0.attachment, in: $0.messageID, store: spoilerRevealStore)
+                && !spoilerRevealStore.isConcealed($0.attachment, in: $0.messageID)
         }
     }
 

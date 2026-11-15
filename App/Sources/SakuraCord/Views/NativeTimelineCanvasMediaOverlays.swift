@@ -441,7 +441,7 @@ extension NativeTimelineCanvasView {
         // A revealed attachment can share its animation with one still hidden.
         for region in layout.attachmentRegions
         where region.attachment.mediaKind == .animatedImage
-            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: row.message.id, store: spoilerRevealStore) {
+            && !spoilerRevealStore.isConcealed(region.attachment, in: row.message.id) {
             accumulator.append(
                 row: identifier,
                 role: .attachment(region.attachment.id),
@@ -546,8 +546,8 @@ extension NativeTimelineCanvasView {
         // A revealed item can share its animation with one still hidden.
         let isHidden = { [spoilerRevealStore] (frame: CGRect, componentID: String, isSpoiler: Bool) in
             NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(frame, hiddenContainerFrames: hiddenContainerFrames)
-                || NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                    messageID: messageID, contentID: componentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+                || spoilerRevealStore.isConcealed(
+                    messageID: messageID, contentID: componentID, isSpoiler: isSpoiler
                 )
         }
         for region in component.mediaRegions {
@@ -1141,7 +1141,7 @@ extension NativeTimelineCanvasView {
         if let region = layout.attachmentRegions.first(where: { $0.attachment.id == mediaID }) {
             let attachment = region.attachment
             return attachment.mediaKind == .video && isSameMedia(attachment.proxyURL ?? attachment.url)
-                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: messageID, store: spoilerRevealStore)
+                && !spoilerRevealStore.isConcealed(attachment, in: messageID)
                 ? region.frame : nil
         }
         for component in layout.componentLayouts {
@@ -1154,8 +1154,8 @@ extension NativeTimelineCanvasView {
             )
             let isHidden = NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                 media.frame, hiddenContainerFrames: hiddenContainerFrames
-            ) || NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                messageID: messageID, contentID: media.componentID, isSpoiler: media.isSpoiler, store: spoilerRevealStore
+            ) || spoilerRevealStore.isConcealed(
+                messageID: messageID, contentID: media.componentID, isSpoiler: media.isSpoiler
             )
             return isHidden ? nil : media.frame
         }

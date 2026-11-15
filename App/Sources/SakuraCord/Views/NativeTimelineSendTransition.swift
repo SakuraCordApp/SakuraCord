@@ -1337,7 +1337,7 @@ extension NativeTimelineCanvasView {
         var covers: [Int: NSImage] = [:]
         for attachmentIndex in attachmentIndexes {
             let region = layout.attachmentRegions[attachmentIndex]
-            guard NativeTimelineSpoilerConcealmentPolicy.isConcealed(region.attachment, in: messageID, store: spoilerRevealStore),
+            guard spoilerRevealStore.isConcealed(region.attachment, in: messageID),
                   let image = sendTransitionImage(of: region.frame, item: item, layout: layout, rowFrame: rowFrame)
             else { continue }
             covers[attachmentIndex] = image
