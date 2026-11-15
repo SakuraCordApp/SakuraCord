@@ -682,31 +682,15 @@ extension AppModel {
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
         messageLoadErrorIsLaterPage = false
-        let refreshRevision = beginScopedConversationRefresh(in: channelID)
-        defer { endScopedConversationRefresh(refreshRevision) }
-        do {
-            let page = try await session.provider.messages(
-                in: channelID,
-                anchoredAt: .newest,
-                limit: initialHistoryFetchLimit
-            )
-            guard !Task.isCancelled,
-                  isCurrentAccountSession(session),
-                  selectedChannelID == channelID
-            else { return false }
-            replaceSelectedMessageWindow(with: page, refreshRevision: refreshRevision, in: channelID)
-            requestNewestMessagePresentation(channelID: channelID)
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            guard isCurrentAccountSession(session),
-                  selectedChannelID == channelID
-            else { return false }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            messageLoadError = error.localizedDescription
-            return false
-        }
+        guard await fetchSelectedMessageWindow(
+            in: channelID,
+            anchoredAt: .newest,
+            limit: initialHistoryFetchLimit,
+            session: session,
+            errorTarget: \.messageLoadError
+        ) else { return false }
+        requestNewestMessagePresentation(channelID: channelID)
+        return true
     }
 
     /// Replaces the selected channel's window with one `around` a message.
@@ -716,16 +700,31 @@ extension AppModel {
         channelID: ChannelID,
         session: AppModelAccountSession
     ) async -> Bool {
+        await fetchSelectedMessageWindow(
+            in: channelID,
+            anchoredAt: .around(messageID),
+            limit: DiscordHistoryFetchLimit.aroundLimit,
+            session: session,
+            errorTarget: \.errorMessage
+        )
+    }
+
+    /// Replaces the selected channel's window with the page read at `anchor`.
+    /// Returns false when the selection changed or the read failed; a failure
+    /// is shown through `errorTarget`.
+    private func fetchSelectedMessageWindow(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int,
+        session: AppModelAccountSession,
+        errorTarget: ReferenceWritableKeyPath<AppModel, String?>
+    ) async -> Bool {
         // Gateway edits and deletions that land while the read is in flight
         // are replayed onto its older response.
         let refreshRevision = beginScopedConversationRefresh(in: channelID)
         defer { endScopedConversationRefresh(refreshRevision) }
         do {
-            let page = try await session.provider.messages(
-                in: channelID,
-                anchoredAt: .around(messageID),
-                limit: DiscordHistoryFetchLimit.aroundLimit
-            )
+            let page = try await session.provider.messages(in: channelID, anchoredAt: anchor, limit: limit)
             guard !Task.isCancelled,
                   isCurrentAccountSession(session),
                   selectedChannelID == channelID
@@ -739,7 +738,7 @@ extension AppModel {
                   selectedChannelID == channelID
             else { return false }
             DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            errorMessage = error.localizedDescription
+            self[keyPath: errorTarget] = error.localizedDescription
             return false
         }
     }
