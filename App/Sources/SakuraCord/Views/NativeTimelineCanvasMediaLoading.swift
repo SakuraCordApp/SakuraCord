@@ -413,6 +413,18 @@ extension NativeTimelineCanvasView {
         ) {
             keys.append(key)
         }
+        // The reply line and the thread card's latest message draw their
+        // custom emoji alike.
+        let threadPreview = message.thread.flatMap {
+            NativeTimelineThreadCard.shownPreview(for: $0, from: model?.threadPreviewMessages[$0.id])
+        }
+        let replyLines = [
+            row.replyPreview.map { ($0, message) },
+            threadPreview.map { (MessageReplyPreview.presenting($0), $0) },
+        ]
+        for case let (preview, context)? in replyLines {
+            keys.append(contentsOf: NativeTimelineReplyMediaPolicy.emojiKeys(for: preview, in: context, model: model))
+        }
         for region in layout.linkedImageRegions {
             keys.append(region.mediaKey)
         }

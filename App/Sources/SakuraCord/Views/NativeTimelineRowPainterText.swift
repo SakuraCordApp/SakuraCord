@@ -65,34 +65,60 @@ extension NativeTimelineRowPainter {
             attributed = concealed as CFAttributedString
         }
         let sourceLine = CTLineCreateWithAttributedString(attributed)
-        let sourceWidth = CGFloat(CTLineGetTypographicBounds(sourceLine, nil, nil, nil))
         let usesSingleLine = !value.contains("\n")
-            && (lineBreakMode != .byWordWrapping || sourceWidth <= frame.width)
+            && (lineBreakMode != .byWordWrapping
+                || CGFloat(CTLineGetTypographicBounds(sourceLine, nil, nil, nil)) <= frame.width)
         if usesSingleLine {
-            let line = CoreTextLinePlacement.truncating(
+            singleLineText(
                 sourceLine,
-                width: sourceWidth,
-                to: frame.width,
-                truncation: truncation(for: lineBreakMode)
-            ) {
-                CTLineCreateWithAttributedString(CFAttributedStringCreate(
-                    nil,
-                    "…" as CFString,
-                    [
-                        kCTFontAttributeName: font as CTFont,
-                        kCTForegroundColorAttributeName: color.cgColor,
-                    ] as CFDictionary
-                )!)
-            }
-            let placement = CoreTextLinePlacement(line, in: frame, alignment: coreTextAlignment(alignment))
-            drawConcealedSpoilers(concealedSpoilerRanges, in: sourceLine, placement: placement, frame: frame)
-            placement.draw(in: frame, context: context)
+                in: frame,
+                font: font,
+                color: color,
+                alignment: alignment,
+                lineBreakMode: lineBreakMode,
+                concealedSpoilerRanges: concealedSpoilerRanges,
+                context: context
+            )
         } else {
             drawMultilineText(attributed, in: frame, context: context)
         }
     }
 
-    private static func coreTextValue(
+    /// Draws `sourceLine` truncated to `frame`, its concealed spoilers
+    /// boxed, and returns where the line was placed.
+    @discardableResult
+    static func singleLineText(
+        _ sourceLine: CTLine,
+        in frame: CGRect,
+        font: NSFont,
+        color: NSColor,
+        alignment: NSTextAlignment = .left,
+        lineBreakMode: NSLineBreakMode = .byTruncatingTail,
+        concealedSpoilerRanges: [NSRange] = [],
+        context: CGContext
+    ) -> CoreTextLinePlacement {
+        let line = CoreTextLinePlacement.truncating(
+            sourceLine,
+            width: CGFloat(CTLineGetTypographicBounds(sourceLine, nil, nil, nil)),
+            to: frame.width,
+            truncation: truncation(for: lineBreakMode)
+        ) {
+            CTLineCreateWithAttributedString(CFAttributedStringCreate(
+                nil,
+                "…" as CFString,
+                [
+                    kCTFontAttributeName: font as CTFont,
+                    kCTForegroundColorAttributeName: color.cgColor,
+                ] as CFDictionary
+            )!)
+        }
+        let placement = CoreTextLinePlacement(line, in: frame, alignment: coreTextAlignment(alignment))
+        drawConcealedSpoilers(concealedSpoilerRanges, in: sourceLine, placement: placement, frame: frame)
+        placement.draw(in: frame, context: context)
+        return placement
+    }
+
+    static func coreTextValue(
         _ value: String,
         font: NSFont,
         color: NSColor,
@@ -650,6 +676,17 @@ extension NativeTimelineRowPainter {
         return .image(image, frame, selectionFrame: selectionFrame)
     }
 
+    /// Stands in for a custom emoji whose image has not loaded.
+    static func drawEmojiFallback(in frame: CGRect) {
+        text(
+            "🙂",
+            in: frame,
+            font: .systemFont(ofSize: max(11, frame.height * 0.8)),
+            color: .labelColor,
+            alignment: .center
+        )
+    }
+
     private static func inlineAttachmentSelectionFrame(
         range: CFRange,
         selectionRange: NSRange?,
@@ -684,13 +721,7 @@ extension NativeTimelineRowPainter {
                 bubble: bubble
             )
         case let .emojiFallback(frame, _):
-            text(
-                "🙂",
-                in: frame,
-                font: .systemFont(ofSize: max(11, frame.height * 0.8)),
-                color: .labelColor,
-                alignment: .center
-            )
+            drawEmojiFallback(in: frame)
         }
         if let selectionFrame = draw.selectionFrame {
             attachmentSelectionHighlightColor.setFill()

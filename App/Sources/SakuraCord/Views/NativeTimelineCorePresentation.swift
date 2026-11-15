@@ -61,6 +61,7 @@ enum NativeTimelineUnreadSeparatorMetrics {
 enum NativeTimelineReplyMetrics {
     nonisolated static var lineHeight: CGFloat { InterfaceScale.metric(24) }
     static var horizontalSpacing: CGFloat { InterfaceScale.metric(5) }
+    static var emojiSize: CGFloat { InterfaceScale.metric(16) }
 
     static var authorFont: NSFont {
         .messageSystemFont(
@@ -138,13 +139,13 @@ enum NativeTimelineReplyMetrics {
         let authorFont = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: authorFont)
         let showsIndicator = source?.roleColorDisplay == .nextToNames
             && presentation?.roleColorHex != nil
-        let summary = summary(for: preview, in: message, model: source).text
+        let summary = summary(for: preview, in: message, model: source)
         return avatarDiameter
             + horizontalSpacing
             + (showsIndicator ? InterfaceScale.metric(16) : 0)
             + textWidth(authorDisplayName(author, in: message), font: authorFont)
             + horizontalSpacing
-            + textWidth(summary, font: summaryFont)
+            + summaryWidth(summary, font: summaryFont)
             + (mediaSymbol(for: preview) == nil ? 0 : mediaSymbolReserve)
     }
 
@@ -160,5 +161,53 @@ enum NativeTimelineReplyMetrics {
         return ceil(
             CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         )
+    }
+
+    static func summaryWidth(
+        _ prepared: MessageReplySummary.Prepared,
+        font: NSFont = summaryFont
+    ) -> CGFloat {
+        if prepared.emojis.isEmpty {
+            return textWidth(prepared.text, font: font)
+        }
+        let attributed = coreTextSummary(prepared, font: font, color: .black)
+        let line = CTLineCreateWithAttributedString(attributed)
+        return ceil(
+            CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        )
+    }
+
+    static func coreTextSummary(
+        _ prepared: MessageReplySummary.Prepared,
+        font: NSFont,
+        color: NSColor
+    ) -> CFAttributedString {
+        let attributed = NSMutableAttributedString(
+            attributedString: NativeTimelineRowPainter.coreTextValue(
+                prepared.text,
+                font: font,
+                color: color,
+                alignment: .left,
+                lineBreakMode: .byTruncatingTail,
+                isInteractiveHovered: false
+            ) as NSAttributedString
+        )
+        let baselineOffset = ComposerEmojiAttributedText.attachmentOriginY(font: font, size: emojiSize)
+        for emoji in prepared.emojis {
+            guard emoji.range.location + emoji.range.length <= attributed.length else { continue }
+            attributed.addAttributes([
+                .discordEmojiToken: emoji.emoji.rawToken,
+                NSAttributedString.Key(kCTRunDelegateAttributeName as String): NativeTimelineRunDelegate.make(
+                    width: emojiSize,
+                    height: emojiSize,
+                    baselineOffset: baselineOffset
+                ),
+            ], range: emoji.range)
+        }
+        for range in prepared.spoilerRanges {
+            guard range.location + range.length <= attributed.length else { continue }
+            SpoilerAppearance.concealText(in: attributed, range: range)
+        }
+        return attributed as CFAttributedString
     }
 }

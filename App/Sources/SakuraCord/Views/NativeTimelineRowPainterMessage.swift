@@ -944,9 +944,9 @@ extension NativeTimelineRowPainter {
         foregroundColor: NSColor? = nil
     ) {
         let replySummary = NativeTimelineReplyMetrics.summary(for: preview, in: message, model: model)
-        let summary = replySummary.text
         let mediaSymbol = NativeTimelineReplyMetrics.mediaSymbol(for: preview)
         let mediaReserve = NativeTimelineReplyMetrics.mediaSymbolReserve
+        let summaryWidthMeasured = NativeTimelineReplyMetrics.summaryWidth(replySummary, font: NativeTimelineReplyMetrics.summaryFont)
         // A preview narrower than its natural width keeps part of the line
         // for the summary and media symbol instead of giving it all to a
         // long author name.
@@ -954,7 +954,7 @@ extension NativeTimelineRowPainter {
             ? min(
                 frame.width * 0.45,
                 NativeTimelineReplyMetrics.horizontalSpacing
-                    + NativeTimelineReplyMetrics.textWidth(summary, font: NativeTimelineReplyMetrics.summaryFont)
+                    + summaryWidthMeasured
                     + (mediaSymbol == nil ? 0 : mediaReserve)
             )
             : 0
@@ -976,13 +976,13 @@ extension NativeTimelineRowPainter {
         let summaryWidth = max(
             0,
             min(
-                NativeTimelineReplyMetrics.textWidth(summary, font: NativeTimelineReplyMetrics.summaryFont),
+                summaryWidthMeasured,
                 // A media symbol takes 26 points, from the trailing inset when there is one.
                 frame.maxX - summaryX - (mediaSymbol == nil ? trailingInset : max(mediaReserve, trailingInset - mediaReserve))
             )
         )
-        text(
-            summary,
+        drawReplySummary(
+            replySummary,
             in: CGRect(
                 x: summaryX,
                 y: frame.minY,
@@ -991,7 +991,7 @@ extension NativeTimelineRowPainter {
             ),
             font: NativeTimelineReplyMetrics.summaryFont,
             color: foregroundColor?.withAlphaComponent(0.72) ?? .secondaryLabelColor,
-            concealedSpoilerRanges: replySummary.spoilerRanges
+            model: model
         )
         let mediaSymbolFrame = CGRect(
             x: summaryX + summaryWidth + InterfaceScale.metric(4),
@@ -1025,6 +1025,83 @@ extension NativeTimelineRowPainter {
             font: NativeTimelineReplyMetrics.unavailableFont,
             color: .secondaryLabelColor
         )
+    }
+
+    static func drawReplySummary(
+        _ replySummary: MessageReplySummary.Prepared,
+        in frame: CGRect,
+        font: NSFont,
+        color: NSColor,
+        model: AppModel?
+    ) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let placement = singleLineText(
+            CTLineCreateWithAttributedString(NativeTimelineReplyMetrics.coreTextSummary(
+                replySummary,
+                font: font,
+                color: color
+            )),
+            in: frame,
+            font: font,
+            color: color,
+            concealedSpoilerRanges: replySummary.spoilerRanges,
+            context: context
+        )
+        drawReplySummaryEmojis(
+            line: placement.line,
+            spoilerRanges: replySummary.spoilerRanges,
+            frame: frame,
+            baseline: placement.baseline,
+            horizontalPosition: placement.horizontalPosition,
+            model: model
+        )
+    }
+
+    private static func drawReplySummaryEmojis(
+        line: CTLine,
+        spoilerRanges: [NSRange],
+        frame: CGRect,
+        baseline: CGFloat,
+        horizontalPosition: CGFloat = 0,
+        model: AppModel?
+    ) {
+        for case let run as CTRun in CTLineGetGlyphRuns(line) as NSArray {
+            let attributes = CTRunGetAttributes(run) as NSDictionary
+            guard let rawToken = attributes[NSAttributedString.Key.discordEmojiToken] as? String else {
+                continue
+            }
+            let stringRange = CTRunGetStringRange(run)
+            let isConcealed = spoilerRanges.contains { spoilerRange in
+                NSLocationInRange(stringRange.location, spoilerRange)
+            }
+            guard !isConcealed else { continue }
+
+            var runAscent: CGFloat = 0
+            var runDescent: CGFloat = 0
+            let runWidth = CGFloat(CTRunGetTypographicBounds(
+                run,
+                CFRange(location: 0, length: 0),
+                &runAscent,
+                &runDescent,
+                nil
+            ))
+            // The glyph's own origin: a caret offset is its trailing edge
+            // in right-to-left text.
+            var glyphOrigin = CGPoint.zero
+            CTRunGetPositions(run, CFRange(location: 0, length: 1), &glyphOrigin)
+            let emojiFrame = CGRect(
+                x: frame.minX + horizontalPosition + glyphOrigin.x,
+                y: frame.maxY - baseline - runAscent,
+                width: max(1, runWidth),
+                height: max(1, runAscent + runDescent)
+            )
+            if let image = inlineEmojiImage(token: rawToken, model: model) {
+                drawImage(image, in: emojiFrame, cornerRadius: 0, fillsFrame: false)
+            } else {
+                drawEmojiFallback(in: emojiFrame)
+            }
+        }
     }
 
     static func replyAuthor(
