@@ -370,16 +370,8 @@ extension AppModel {
         // Search keeps the results beside the destination conversation, so
         // establish the thread's primary-pane presentation before loading it.
         if !initialMessages.isEmpty || openThread?.id != post.id {
-            readState.merge(forumPost: post)
-            openThreadConversation(
-                post.thread,
-                starter: post.owner ?? post.firstMessage?.author,
-                startedAt: post.firstMessage?.timestamp ?? post.createdAt,
-                starterMessageID: post.firstMessage?.id,
-                initialMessages: initialMessages.isEmpty
-                    ? post.firstMessage.map { [$0] } ?? [] : initialMessages,
-                fullWidth: fullWidth,
-                historyTarget: messageID
+            openForumPostConversation(
+                post, initialMessages: initialMessages, fullWidth: fullWidth, historyTarget: messageID
             )
         } else if fullWidth {
             presentOpenThreadFullWidth()

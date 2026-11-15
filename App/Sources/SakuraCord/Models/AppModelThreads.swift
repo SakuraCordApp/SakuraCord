@@ -81,13 +81,27 @@ extension AppModel {
     func open(_ post: ForumPost) {
         guard openThread?.id != post.id else { return }
         cancelConversationNavigation()
+        openForumPostConversation(post)
+    }
+
+    /// Opens a forum post through `openThreadConversation`, previewing its
+    /// starter message unless `initialMessages` are given.
+    func openForumPostConversation(
+        _ post: ForumPost,
+        initialMessages: [Message] = [],
+        fullWidth: Bool = false,
+        historyTarget: MessageID? = nil
+    ) {
         readState.merge(forumPost: post)
         openThreadConversation(
             post.thread,
             starter: post.owner ?? post.firstMessage?.author,
             startedAt: post.firstMessage?.timestamp ?? post.createdAt,
             starterMessageID: post.firstMessage?.id,
-            initialMessages: post.firstMessage.map { [$0] } ?? []
+            initialMessages: initialMessages.isEmpty
+                ? post.firstMessage.map { [$0] } ?? [] : initialMessages,
+            fullWidth: fullWidth,
+            historyTarget: historyTarget
         )
     }
 
