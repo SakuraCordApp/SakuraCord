@@ -66,6 +66,22 @@ struct MessageSearchNavigationTests {
         #expect(dmSearch.queryText.isEmpty)
     }
 
+    @Test func `group DM scope suggests only its recipients and the current user`() async throws {
+        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        await model.start()
+        let group = try #require(model.snapshot?.channels.first { $0.id.rawValue == 401 })
+        let currentUser = try #require(model.currentUser)
+        model.navigate(to: group.id)
+        await model.guildActivationTask?.value
+        model.messageSearch.tokens = [.init(kind: .channel(channelID: group.id, name: group.name))]
+        model.messageSearch.queryText = "from:"
+
+        let suggested = MessageSearchAutocompletePolicy.result(model: model).suggestions.compactMap {
+            if case .user(_, let user) = $0 { user.id } else { nil }
+        }
+        #expect(Set(suggested) == Set(group.recipients.map(\.id) + [currentUser.id]))
+    }
+
     @Test(arguments: [UInt64(300), 400, 220])
     func `search stays within its scope and thread results use the primary pane`(destinationID: UInt64) async throws {
         let provider = MockChatProvider()
