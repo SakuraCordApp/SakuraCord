@@ -21,7 +21,7 @@ nonisolated enum ComposerLatestMessageEditingPolicy {
     ) -> MessageID? {
         guard let currentUserID else { return nil }
         return messages.last(where: {
-            $0.author.id == currentUserID && !$0.hasPoll && !$0.flags.contains(.voiceMessage)
+            $0.author.id == currentUserID && $0.hasEditableContent
         })?.id
     }
 }

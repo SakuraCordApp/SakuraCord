@@ -8,7 +8,7 @@ extension NativeTimelineCanvasView {
         at index: Int
     ) {
         guard !sendTransitionBlocksInteractions,
-              !row.message.hasPoll, !row.message.flags.contains(.voiceMessage), editing.messageID != row.id,
+              row.message.hasEditableContent, editing.messageID != row.id,
               items.indices.contains(index),
               items[index].messageID == row.id,
               let model,

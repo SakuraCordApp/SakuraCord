@@ -519,6 +519,11 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
             && !hasActivityInstance
             && flags.subtracting(.forwardingAllowed).isEmpty
     }
+
+    /// Discord edits neither a poll nor a voice message, whoever sent it.
+    public var hasEditableContent: Bool {
+        !hasPoll && !flags.contains(.voiceMessage)
+    }
 }
 
 /// Discord's `@silent` send prefix (web module 677413): a case-sensitive

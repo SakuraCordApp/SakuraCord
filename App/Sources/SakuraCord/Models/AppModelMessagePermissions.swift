@@ -6,8 +6,7 @@ extension AppModel {
     /// except a poll or voice message, which Discord does not edit.
     func canEditMessage(_ message: Message) -> Bool {
         message.author.id == currentUser?.id
-            && !message.hasPoll
-            && !message.flags.contains(.voiceMessage)
+            && message.hasEditableContent
             && guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
             && MessageReplyPresentationPolicy.allowsReplyAction(for: message)
     }

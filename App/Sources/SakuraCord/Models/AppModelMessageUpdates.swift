@@ -113,7 +113,7 @@ extension AppModel {
     /// The message as saved, or nil when the edit failed.
     @discardableResult
     func edit(_ message: Message, content: String) async -> Message? {
-        guard !message.hasPoll, !message.flags.contains(.voiceMessage),
+        guard message.hasEditableContent,
               guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
         else { return nil }
         let session = accountSession()
