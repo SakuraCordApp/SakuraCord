@@ -149,8 +149,9 @@ extension AppModel {
         hasCompletedInitialMessageLoad = false
         stopLocalTyping(clearThrottle: true)
         replyingTo = nil
-        // A cached conversation still needs its own draft restored.
-        draft = ""
+        // A draft this session wrote shows at once; a cached conversation
+        // without one still needs its stored draft restored.
+        draft = selectedChannelID.flatMap(composer.sessionDraft(in:)) ?? ""
 
         guard let channelID = selectedChannelID,
               selectedChannel?.kind != .voice || isVoiceChatOpen,

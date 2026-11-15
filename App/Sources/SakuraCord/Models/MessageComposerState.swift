@@ -27,6 +27,10 @@ final class MessageComposerState {
     var isSendQueueFullAlertPresented = false
     @ObservationIgnored var outbox = OutgoingMessageState()
     @ObservationIgnored private var draftWriteTask: Task<Void, Never>?
+    /// Each channel's latest draft written this session. Returning to a
+    /// channel shows it at once; its stored copy arrives too late to survive
+    /// text typed as soon as the channel opens.
+    @ObservationIgnored private var sessionDrafts: [ChannelID: String] = [:]
     /// Staged files whose privacy and size check is still running. They show
     /// in the composer at once but cannot be sent until it finishes.
     var checkingAttachmentIDs: Set<UUID> = []
@@ -65,6 +69,7 @@ final class MessageComposerState {
     }
 
     func persistDraft(_ value: String, channelID: ChannelID, database: SakuraCordDatabase?) {
+        sessionDrafts[channelID] = value
         guard let database else { return }
         let previousWrite = draftWriteTask
         draftWriteTask = Task {
@@ -72,6 +77,10 @@ final class MessageComposerState {
             await previousWrite?.value
             try? await database.saveDraft(value, channelID: channelID)
         }
+    }
+
+    func sessionDraft(in channelID: ChannelID) -> String? {
+        sessionDrafts[channelID]
     }
 
     func storedDraft(in channelID: ChannelID, database: SakuraCordDatabase) async throws -> String {
@@ -99,6 +108,7 @@ final class MessageComposerState {
         let previousThreadDraft = threadDraft
         draft = ""
         threadDraft = ""
+        sessionDrafts = [:]
         let clearedDraftRevision = draftRevision
         let clearedThreadRevision = threadDraftRevision
         let previousWrite = draftWriteTask
@@ -123,6 +133,7 @@ final class MessageComposerState {
         draftWriteTask = nil
         draft = ""
         threadDraft = ""
+        sessionDrafts = [:]
         replyingTo = nil
         threadReplyingTo = nil
         channelAttachments = []
