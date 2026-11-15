@@ -157,29 +157,22 @@ extension NativeMessageTimelineCoordinator {
         let state = NativeTimelineBenchmarkRunState(
             scrollsTowardLater: scrollsTowardLater,
             initialItemCount: items.count,
-            closeMeasurement: { measurement.endInterval() }
+            measurement: measurement
         )
         self.performanceDisplayLinkTicker = state.ticker
         let finish: (NativeTimelineBenchmarkFinishOutcome) -> Void = { [weak self, weak canvas, state] outcome in
-            guard let elapsed = state.finish(
-                endActivity: { measurement.endScrollWork() },
-                beforeMeasurementClose: {
-                    measurement.emitEvent(for: outcome)
-                },
-                performBookkeeping: { elapsed in
-                    Self.writePerformanceBenchmarkArtifact(
-                        outcome: outcome,
-                        elapsed: elapsed,
-                        state: state,
-                        canvas: canvas,
-                        timelineUpdates: (
-                            self?.performanceUpdateCount ?? 0,
-                            self?.performanceUpdateTotalDuration ?? 0
-                        )
+            guard let elapsed = state.finish(outcome: outcome, writeArtifact: { elapsed in
+                Self.writePerformanceBenchmarkArtifact(
+                    outcome: outcome,
+                    elapsed: elapsed,
+                    state: state,
+                    canvas: canvas,
+                    timelineUpdates: (
+                        self?.performanceUpdateCount ?? 0,
+                        self?.performanceUpdateTotalDuration ?? 0
                     )
-                    measurement.endResourceWindow(after: outcome)
-                }
-            ) else { return }
+                )
+            }) else { return }
             Self.logPerformanceBenchmarkSummary(
                 elapsed: elapsed,
                 state: state,
@@ -368,7 +361,7 @@ final class NativeTimelineBenchmarkRunState {
     let mainThreadCPUTimeAtStart = PerformanceBenchmarkHarness.currentThreadCPUTime()
     let ticker = DisplayLinkTicker()
     let scrollsTowardLater: Bool
-    let closeMeasurement: () -> Void
+    private let measurement: NativeScrollBenchmarkMeasurement
     var controller: NativeTimelineBenchmarkScrollController
     var ticks: NativeTimelineBenchmarkTickStats
     var maximumTickItemCount: Int
@@ -378,10 +371,10 @@ final class NativeTimelineBenchmarkRunState {
     init(
         scrollsTowardLater: Bool,
         initialItemCount: Int,
-        closeMeasurement: @escaping () -> Void
+        measurement: NativeScrollBenchmarkMeasurement
     ) {
         self.scrollsTowardLater = scrollsTowardLater
-        self.closeMeasurement = closeMeasurement
+        self.measurement = measurement
         controller = NativeTimelineBenchmarkScrollController(startedAt: startedAt)
         ticks = NativeTimelineBenchmarkTickStats(startedAt: startedAt)
         maximumTickItemCount = initialItemCount
@@ -399,19 +392,15 @@ final class NativeTimelineBenchmarkRunState {
 
     @discardableResult
     func finish(
+        outcome: NativeTimelineBenchmarkFinishOutcome,
         now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-        endActivity: () -> Void,
-        beforeMeasurementClose: () -> Void,
-        performBookkeeping: (_ elapsed: TimeInterval) -> Void
+        writeArtifact: (_ elapsed: TimeInterval) -> Void
     ) -> TimeInterval? {
         guard !didFinish else { return nil }
         didFinish = true
-        endActivity()
         ticker.stop()
-        beforeMeasurementClose()
         let elapsed = now() - startedAt
-        closeMeasurement()
-        performBookkeeping(elapsed)
+        measurement.finish(outcome: outcome) { writeArtifact(elapsed) }
         return elapsed
     }
 }

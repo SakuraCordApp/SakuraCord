@@ -83,7 +83,6 @@ extension NativeMemberListCoordinator {
             if elapsed >= NativeTimelineBenchmarkScrollPolicy.duration
                 || nextY >= maximumY - 0.5
             {
-                measurement.endScrollWork()
                 ticker?.stop()
                 performanceTicker = nil
                 performanceMeasurement = nil
@@ -104,7 +103,6 @@ extension NativeMemberListCoordinator {
 
     func cancelPerformanceBenchmark() {
         if let performanceMeasurement {
-            performanceMeasurement.endScrollWork()
             performanceMeasurement.finish(outcome: .cancelled) {
                 NativeTimelineBenchmarkArtifact.write(
                     outcome: .cancelled,

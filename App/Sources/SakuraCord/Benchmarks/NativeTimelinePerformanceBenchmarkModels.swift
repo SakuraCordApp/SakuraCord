@@ -272,21 +272,17 @@ struct NativeScrollBenchmarkMeasurement {
         if gatesScrollWork { AppScrollWorkGate.beginActivity() }
     }
 
-    func endScrollWork() {
-        if gatesScrollWork { AppScrollWorkGate.endActivity() }
-    }
-
-    func emitEvent(for outcome: NativeTimelineBenchmarkFinishOutcome) {
+    private func emitEvent(for outcome: NativeTimelineBenchmarkFinishOutcome) {
         if let event = surface.event(for: outcome) {
             AppPerformanceSignposts.signposter.emitEvent(event)
         }
     }
 
-    func endInterval() {
+    private func endInterval() {
         AppPerformanceSignposts.signposter.endInterval(surface.name, interval)
     }
 
-    func endResourceWindow(after outcome: NativeTimelineBenchmarkFinishOutcome) {
+    private func endResourceWindow(after outcome: NativeTimelineBenchmarkFinishOutcome) {
         AppPerformanceSignposts.endResourceWindow(
             named: surface.name.description,
             nominalDuration: outcome == .completed
@@ -295,11 +291,13 @@ struct NativeScrollBenchmarkMeasurement {
         )
     }
 
-    /// Reports the outcome and closes the measurement around the run's artifact.
+    /// Ends the scroll work, reports the outcome and closes the measurement
+    /// around the run's artifact.
     func finish(
         outcome: NativeTimelineBenchmarkFinishOutcome,
         writeArtifact: () -> Void
     ) {
+        if gatesScrollWork { AppScrollWorkGate.endActivity() }
         emitEvent(for: outcome)
         endInterval()
         writeArtifact()

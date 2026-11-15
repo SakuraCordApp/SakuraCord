@@ -1288,47 +1288,31 @@ func `cross surface scroll work gate stays active until every surface ends`() {
 @Test
 @MainActor
 func `benchmark run finalization does not require coordinator lifetime`() {
-    var activityEndCount = 0
-    var measurementCloseCount = 0
-    var outcomeCount = 0
-    var bookkeepingCount = 0
+    var writeCount = 0
     weak var releasedState: NativeTimelineBenchmarkRunState?
 
     do {
         let state = NativeTimelineBenchmarkRunState(
             scrollsTowardLater: false,
             initialItemCount: 100,
-            closeMeasurement: { measurementCloseCount += 1 }
+            measurement: NativeScrollBenchmarkMeasurement(.messageTimeline, gatesScrollWork: false)
         )
         releasedState = state
         state.ticker.tick = { _ = state.didFinish }
 
         let elapsed = state.finish(
+            outcome: .completed,
             now: { state.startedAt + 2 },
-            endActivity: { activityEndCount += 1 },
-            beforeMeasurementClose: { outcomeCount += 1 },
-            performBookkeeping: { _ in bookkeepingCount += 1 }
+            writeArtifact: { _ in writeCount += 1 }
         )
 
         // `(uptime + 2) - uptime` rounds when the sum crosses a power of two.
         #expect(elapsed.map { abs($0 - 2) < 1e-6 } == true)
         #expect(state.didFinish)
         #expect(state.ticker.tick == nil)
-        #expect(activityEndCount == 1)
-        #expect(measurementCloseCount == 1)
-        #expect(outcomeCount == 1)
-        #expect(bookkeepingCount == 1)
-        #expect(
-            state.finish(
-                endActivity: { activityEndCount += 1 },
-                beforeMeasurementClose: { outcomeCount += 1 },
-                performBookkeeping: { _ in bookkeepingCount += 1 }
-            ) == nil
-        )
-        #expect(activityEndCount == 1)
-        #expect(measurementCloseCount == 1)
-        #expect(outcomeCount == 1)
-        #expect(bookkeepingCount == 1)
+        #expect(writeCount == 1)
+        #expect(state.finish(outcome: .cancelled, writeArtifact: { _ in writeCount += 1 }) == nil)
+        #expect(writeCount == 1)
     }
 
     #expect(releasedState == nil)
