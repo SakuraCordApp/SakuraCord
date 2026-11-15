@@ -349,6 +349,11 @@ private struct ScheduledReplyContext: View {
             text.addAttribute(.backgroundColor, value: SpoilerAppearance.textBackgroundColor(hover: 0), range: range)
             SpoilerAppearance.concealText(in: text, range: range)
         }
+        // Custom emoji images are drawn only in the timeline; here each
+        // reads as its name, as it did before the summary held images.
+        for emoji in prepared.emojis.reversed() {
+            text.replaceCharacters(in: emoji.range, with: ":\(emoji.emoji.name):")
+        }
         return AttributedString(text)
     }
 }

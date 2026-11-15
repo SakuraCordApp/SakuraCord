@@ -1099,9 +1099,12 @@ extension NativeTimelineRowPainter {
                 &runDescent,
                 nil
             ))
-            let xOffset = CTLineGetOffsetForStringIndex(line, stringRange.location, nil)
+            // The glyph's own origin: a caret offset is its trailing edge
+            // in right-to-left text.
+            var glyphOrigin = CGPoint.zero
+            CTRunGetPositions(run, CFRange(location: 0, length: 1), &glyphOrigin)
             let emojiFrame = CGRect(
-                x: frame.minX + horizontalPosition + xOffset,
+                x: frame.minX + horizontalPosition + glyphOrigin.x,
                 y: frame.maxY - baseline - runAscent,
                 width: max(1, runWidth),
                 height: max(1, runAscent + runDescent)

@@ -419,6 +419,15 @@ extension NativeTimelineCanvasView {
                 model: model
             ))
         }
+        if let thread = message.thread,
+           let preview = NativeTimelineThreadCard.shownPreview(for: thread, from: model?.threadPreviewMessages[thread.id])
+        {
+            keys.append(contentsOf: NativeTimelineReplyMediaPolicy.emojiKeys(
+                for: .presenting(preview),
+                in: preview,
+                model: model
+            ))
+        }
         for region in layout.linkedImageRegions {
             keys.append(region.mediaKey)
         }
