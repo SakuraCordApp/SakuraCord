@@ -1205,6 +1205,49 @@ extension AppModel {
         quickSwitcherGuildMemberAliases = snapshotStorage?.quickSwitcherGuildMemberAliases ?? [:]
     }
 
+    func consumeSearchPeopleEvent(_ event: ClientEvent) -> Bool {
+        switch event {
+        case .privateMembersChanged(let value):
+            if selectedGuildID == nil { members = value }
+        case .knownUsersChanged(let users):
+            updateSearchSnapshot { $0.knownUsers = users }
+        case .quickSwitcherUserIDsChanged(let userIDs):
+            updateSearchSnapshot { $0.quickSwitcherUserIDs = userIDs }
+        case .messageSearchUsersChanged(let users):
+            // Only message search reads this cache, so the destination search
+            // index revision stays put.
+            guard snapshotStorage != nil else { break }
+            snapshotStorage?.messageSearchUsers = users
+            refreshSearchSnapshotPresentation()
+        case .userSearchAliasesChanged(let aliases):
+            updateSearchSnapshot { $0.userSearchAliasesByUserID = aliases }
+        case .quickSwitcherGuildMemberUserIDsChanged(let userIDsByGuildID):
+            updateSearchSnapshot { $0.quickSwitcherGuildMemberUserIDs = userIDsByGuildID }
+        case .quickSwitcherJoinedMemberIDsChanged(let userIDsByGuildID):
+            updateSearchSnapshot { $0.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID }
+        case .quickSwitcherGuildMemberAliasesChanged(let aliasesByGuildID):
+            updateSearchSnapshot { $0.quickSwitcherGuildMemberAliases = aliasesByGuildID }
+        case .relationshipsChanged(let relationships):
+            applyRelationships(relationships)
+        case let .relationshipPresencesChanged(presences, isComplete):
+            applyRelationshipPresences(presences, isComplete: isComplete)
+        default:
+            return false
+        }
+        return true
+    }
+
+    // Search caches invalidate search consumers without rebuilding workspace chrome.
+    private func updateSearchSnapshot(
+        _ update: (inout BootstrapSnapshot) -> Void
+    ) {
+        guard var value = snapshotStorage else { return }
+        update(&value)
+        snapshotStorage = value
+        refreshSearchSnapshotPresentation()
+        destinationSearchSourceRevision &+= 1
+    }
+
     private func refreshSelectedGuildPresentation() {
         selectedGuild = selectedGuildID.flatMap { guildID in
             snapshot?.guilds.first(where: { $0.id == guildID })
