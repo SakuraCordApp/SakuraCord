@@ -114,16 +114,11 @@ struct ProfileGameDTO: Decodable {
         if asset.type == "hash", UInt64(id) != nil, !asset.value.isEmpty, asset.value.allSatisfy(\.isHexDigit) {
             return URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\(asset.value).\(format ?? "png")?size=\(size ?? 128)&keep_aspect_ratio=\(keepAspectRatio)")
         }
-        guard asset.type == "url", let url = Self.webURL(asset.value), var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-        var query = components.queryItems ?? []
-        if url.host?.hasSuffix("discordapp.net") == true {
-            let replacing = Set(["keep_aspect_ratio", "format"])
-            query.removeAll { replacing.contains($0.name) }
-            query.append(URLQueryItem(name: "keep_aspect_ratio", value: String(keepAspectRatio)))
-            if let format { query.append(URLQueryItem(name: "format", value: format)) }
-        }
-        components.queryItems = query.isEmpty ? nil : query
-        return components.url
+        guard asset.type == "url", let url = Self.webURL(asset.value) else { return nil }
+        guard url.host?.hasSuffix("discordapp.net") == true else { return DiscordCDN.editingQuery(of: url, removing: [], adding: []) }
+        var query = [URLQueryItem(name: "keep_aspect_ratio", value: String(keepAspectRatio))]
+        if let format { query.append(URLQueryItem(name: "format", value: format)) }
+        return DiscordCDN.editingQuery(of: url, removing: ["keep_aspect_ratio", "format"], adding: query)
     }
 
     private static func webURL(_ value: String) -> URL? {

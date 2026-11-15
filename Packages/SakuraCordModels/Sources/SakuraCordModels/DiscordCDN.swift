@@ -76,6 +76,27 @@ public enum DiscordCDN {
         URL(string: "https://cdn.discordapp.com/home-headers/\(guildID)/\(hash).png?size=2048")
     }
 
+    /// The smallest image size the CDN serves that covers `size`, chosen as the
+    /// official client's module776231 does.
+    public static func supportedSize(atLeast size: Double) -> Int {
+        supportedSizes.first { Double($0) >= size } ?? 4096
+    }
+
+    private static let supportedSizes = [
+        16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128,
+        160, 240, 256, 300, 320, 480, 512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096,
+    ]
+
+    /// `url` with the query items named in `names` dropped and `items`
+    /// appended, as the CDN and media proxy take size and format requests.
+    /// An empty query is dropped.
+    public static func editingQuery(of url: URL, removing names: Set<String>, adding items: [URLQueryItem]) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let query = (components.queryItems ?? []).filter { !names.contains($0.name) } + items
+        components.queryItems = query.isEmpty ? nil : query
+        return components.url
+    }
+
     private static func isAnimated(_ hash: String) -> String {
         hash.hasPrefix("a_") ? "true" : "false"
     }

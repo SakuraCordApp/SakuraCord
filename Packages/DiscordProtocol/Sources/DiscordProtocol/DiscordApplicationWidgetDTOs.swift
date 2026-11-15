@@ -66,12 +66,9 @@ struct ProfileApplicationWidgetDTO: Decodable {
 
         func image(applicationID: String) -> ProfileWidgetValue? {
             guard UInt64(applicationID) != nil, UInt64(assetID) != nil, metadata.width > 0, metadata.height > 0 else { return nil }
-            // Official module776231 chooses the first supported size >= asset width.
-            let sizes = [16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128,
-                         160, 240, 256, 300, 320, 480, 512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096]
-            let size = sizes.first { Double($0) >= metadata.width } ?? 4096
             guard let url = DiscordCDN.applicationAsset(
-                applicationID, assetID: assetID, fileExtension: "webp", size: size, animated: metadata.isAnimated
+                applicationID, assetID: assetID, fileExtension: "webp",
+                size: DiscordCDN.supportedSize(atLeast: metadata.width), animated: metadata.isAnimated
             ) else { return nil }
             return .image(url: url, width: metadata.width, height: metadata.height)
         }
