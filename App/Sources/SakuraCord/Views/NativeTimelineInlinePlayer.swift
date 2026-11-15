@@ -4,7 +4,7 @@ import AVKit
 /// A video attachment playing in place over its tile, filling it like its
 /// thumbnail, with the system's inline controls: play and pause, scrubbing,
 /// volume and full screen.
-/// Open in Viewer is in its context menu.
+/// Open in Viewer is in its context menu, and a double click opens it too.
 @MainActor
 final class NativeTimelineInlinePlayer: NSView, AVPlayerViewDelegate {
     struct Key: Hashable {
@@ -22,8 +22,10 @@ final class NativeTimelineInlinePlayer: NSView, AVPlayerViewDelegate {
     private let scaler = NSView()
     private let openInViewer: () -> Void
     /// The timeline keeps scrolling under the pointer: AVKit's controls
-    /// would otherwise take the wheel to scrub or change the volume.
-    private var scrollMonitor: Any?
+    /// would otherwise take the wheel to scrub or change the volume. A
+    /// double click opens the viewer instead of reaching AVKit, which
+    /// would toggle playback.
+    private var eventMonitor: Any?
 
     init(url: URL, frame: CGRect, openInViewer: @escaping () -> Void) {
         self.url = url
@@ -80,19 +82,23 @@ final class NativeTimelineInlinePlayer: NSView, AVPlayerViewDelegate {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
-        scrollMonitor = nil
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+        eventMonitor = nil
         guard window != nil else { return }
-        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            // Only wheel input that would reach this player: a dialog, which
-            // sits beside the content view, or a viewer above it keeps its
-            // own scrolling.
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .leftMouseDown]) { [weak self] event in
+            // Only input that would reach this player: a dialog, which sits
+            // beside the content view, or a viewer above it keeps its own.
             guard let self, let window, event.window === window,
+                  event.type == .scrollWheel || event.clickCount == 2,
                   WindowModalCoordinator.allowsInput(for: self),
                   window.contentView?.hitTest(event.locationInWindow)?.isDescendant(of: self) == true,
                   let superview
             else { return event }
-            superview.scrollWheel(with: event)
+            if event.type == .scrollWheel {
+                superview.scrollWheel(with: event)
+            } else {
+                openViewer()
+            }
             return nil
         }
     }
