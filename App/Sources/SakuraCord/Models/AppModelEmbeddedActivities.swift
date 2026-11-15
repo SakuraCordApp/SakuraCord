@@ -257,7 +257,6 @@ extension AppModel {
             // An older shelf can't vouch for what this read would have listed.
             embeddedActivities.shelves[guildID] = nil
             embeddedActivities.shelfErrors[guildID] = error.localizedDescription
-            return
         }
     }
 
@@ -505,7 +504,7 @@ extension AppModel {
 
     /// The launch message's button: join a running instance, show it joined,
     /// or play again once it ended, as Discord's does.
-    func activityInstanceAction(_ instanceID: String) -> (String, Bool) {
+    func activityInstanceAction(_ instanceID: String) -> (title: String, isDisabled: Bool) {
         if embeddedActivities.session?.instance?.compositeInstanceID == instanceID { return ("Joined", true) }
         guard let instance = embeddedActivities.instances[instanceID] else { return ("Play", false) }
         return ("Join", knownRootChannel(instance.location.channelID) == nil)
