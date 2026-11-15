@@ -241,7 +241,6 @@ extension NativeTimelineCanvasView {
         }
         let originX = max(minX, rowActionsAnchorMaxX(at: index) - size.width)
         // Keep the capsule below the window toolbar when the row reaches it.
-        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
         let clampedOriginY = visibleRect.isEmpty ? originY : max(originY, unobscuredMinY + InterfaceScale.metric(4))
         return CGRect(x: originX, y: clampedOriginY, width: size.width, height: size.height)
     }

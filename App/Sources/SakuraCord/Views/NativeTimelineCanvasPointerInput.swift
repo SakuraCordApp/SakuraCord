@@ -410,7 +410,7 @@ extension NativeTimelineCanvasView {
             guard gesture.hasExceededDragThreshold(at: point) else { return }
             pointer.didDragTextSelection = true
         }
-        _ = autoscroll(with: event)
+        autoscrollTextSelection(to: point)
         guard let candidate = timelineTextCaret(
             at: point,
             itemIdentifier: gesture.itemIdentifier,
@@ -429,6 +429,19 @@ extension NativeTimelineCanvasView {
                 )
                 : nil
         )
+    }
+
+    /// Scrolls as far as a selection drag reaches past the part of the
+    /// viewport the toolbar and composer leave uncovered. AppKit's
+    /// `autoscroll(with:)` tests the clip view's own edges, and with the
+    /// timeline at a fractional window position it moved the timeline a
+    /// fraction of a point on every drag event, even ones inside the text.
+    private func autoscrollTextSelection(to point: CGPoint) {
+        let overshoot = point.y < unobscuredMinY ? point.y - unobscuredMinY : max(0, point.y - unobscuredMaxY)
+        guard overshoot != 0, let scrollView = enclosingScrollView else { return }
+        let clipView = scrollView.contentView
+        clipView.scroll(to: clipView.constrainBoundsRect(clipView.bounds.offsetBy(dx: 0, dy: overshoot)).origin)
+        scrollView.reflectScrolledClipView(clipView)
     }
 
     override func mouseUp(with event: NSEvent) {

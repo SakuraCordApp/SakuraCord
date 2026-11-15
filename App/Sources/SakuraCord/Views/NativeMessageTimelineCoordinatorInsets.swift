@@ -39,6 +39,7 @@ extension NativeMessageTimelineCoordinator {
             bottomSpacerHeight:
                 bottomInset + trailingHistoryReserve
         )
+        canvas.bottomObscuredHeight = parent.bottomContentInset
         let contentInsets = scrollView.contentInsets
         if contentInsets.top != 0
             || contentInsets.left != 0
