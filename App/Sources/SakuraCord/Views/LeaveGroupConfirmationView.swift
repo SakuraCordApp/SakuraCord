@@ -8,14 +8,14 @@ struct LeaveGroupPresentationModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.background {
-            LeaveGroupConfirmationHost(model: model, store: model.groupDirectMessageLeave)
+            LeaveGroupConfirmationHost(model: model, store: model.directMessageExit)
         }
     }
 }
 
 private struct LeaveGroupConfirmationHost: View {
     let model: AppModel
-    @Bindable var store: GroupDirectMessageLeaveStore
+    @Bindable var store: DirectMessageExitStore
 
     var body: some View {
         Color.clear

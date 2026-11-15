@@ -92,7 +92,7 @@ struct MessageRequestActions: View {
     let channel: Channel
 
     var body: some View {
-        let isDeciding = model.groupDirectMessageLeave.exitingChannelIDs.contains(channel.id)
+        let isDeciding = model.directMessageExit.exitingChannelIDs.contains(channel.id)
         HStack(spacing: InterfaceScale.metric(8)) {
             if isDeciding { ProgressView().controlSize(.small) }
             if channel.messageRequest == .pending {

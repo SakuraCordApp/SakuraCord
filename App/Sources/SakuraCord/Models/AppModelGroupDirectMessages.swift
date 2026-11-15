@@ -79,13 +79,13 @@ extension AppModel {
     /// option as the checkbox's initial state.
     func presentLeaveGroupDirectMessage(for channelID: ChannelID, silently: Bool = false) {
         guard let channel = groupDirectMessage(channelID) else { return }
-        let store = groupDirectMessageLeave
+        let store = directMessageExit
         store.leavesSilently = silently
-        store.confirmation = GroupDirectMessageLeaveStore.Confirmation(channel: channel)
+        store.confirmation = DirectMessageExitStore.Confirmation(channel: channel)
     }
 
     /// Leaves a confirmed group once.
-    func leaveGroupDirectMessage(_ confirmation: GroupDirectMessageLeaveStore.Confirmation, silently: Bool) {
+    func leaveGroupDirectMessage(_ confirmation: DirectMessageExitStore.Confirmation, silently: Bool) {
         exitDirectMessage(confirmation.channel, verb: "leave") {
             try await $0.leaveGroupDirectMessage(confirmation.channel.id, silently: silently)
         }
@@ -98,7 +98,7 @@ extension AppModel {
     func exitDirectMessage(
         _ channel: Channel, verb: String, request: @escaping @MainActor (any ChatProvider) async throws -> Void
     ) {
-        let store = groupDirectMessageLeave
+        let store = directMessageExit
         guard !accountTransitionIsActive, store.exitingChannelIDs.insert(channel.id).inserted else { return }
         startAccountChildTask(account: accountSession(allowsTransition: true)) { model, session in
             defer {

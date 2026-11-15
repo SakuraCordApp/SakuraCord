@@ -675,7 +675,7 @@ private actor ProfileEditorCacheProvider: ChatProvider {
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let groupID = ChannelID(rawValue: 401)
-    let store = model.groupDirectMessageLeave
+    let store = model.directMessageExit
     // A 1:1 DM never offers Leave Group.
     model.presentLeaveGroupDirectMessage(for: ChannelID(rawValue: 400))
     #expect(store.confirmation == nil)

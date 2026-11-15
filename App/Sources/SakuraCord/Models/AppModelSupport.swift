@@ -106,7 +106,7 @@ extension AppModel {
         issueReports.reset()
         nicknameEditor.reset()
         groupDirectMessageEditor.reset()
-        groupDirectMessageLeave.reset()
+        directMessageExit.reset()
         threadActions.reset()
         onboarding.reset()
     }

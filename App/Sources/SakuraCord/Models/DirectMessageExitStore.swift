@@ -2,9 +2,10 @@ import Foundation
 import Observation
 import SakuraCordModels
 
-/// Presentation state for Discord's Leave Group confirmation.
+/// Discord's Leave Group confirmation and the conversations being left,
+/// closed or decided.
 @Observable
-final class GroupDirectMessageLeaveStore {
+final class DirectMessageExitStore {
     struct Confirmation: Identifiable, Equatable {
         /// The group as it was when the confirmation opened.
         let channel: Channel
