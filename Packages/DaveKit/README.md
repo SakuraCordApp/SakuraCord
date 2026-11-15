@@ -23,6 +23,13 @@ files under `Sources/CLibdave` and `Sources/CMLS`.
 The SwiftPM integration keeps transient signing keys and the OpenSSL 3 / ML-KEM
 adaptations. Preserve those choices when importing upstream source updates.
 
+Each vendored tree keeps only the source and header directories `Package.swift`
+builds from, plus upstream's `LICENSE` and `README.md` files. When importing an
+update, drop everything else (build systems, CI, tests, fuzzing, tools,
+bindings, and unused libraries) and delete files in the kept directories that
+the integration does not build: libdave's BoringSSL cryptor, WASM bindings,
+and every persisted key-pair store except `src/mls/persisted_key_pair_null.cpp`.
+
 ### Local divergences from libdave
 
 Replay protection for repeated key ratchets adds these changes under
@@ -44,9 +51,9 @@ Replay protection for repeated key ratchets adds these changes under
 
 ### Local divergences from MLS++
 
-Compared with upstream `fc724c3100ce3b5d8565dbd6d93648a440991a8c`, the vendored
-tree under `Sources/CMLS/mlspp` omits upstream's `test`, `lib/*/test`, and
-`vcpkg` directories and changes only error text: each generic
+Apart from the trimming above, the vendored tree under `Sources/CMLS/mlspp`
+changes only error text compared with upstream
+`fc724c3100ce3b5d8565dbd6d93648a440991a8c`: each generic
 `Unsupported algorithm` names what was unsupported, and some include the
 rejected ID. These came with the initial import, which does not record why.
 
