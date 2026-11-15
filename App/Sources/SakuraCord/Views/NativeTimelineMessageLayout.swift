@@ -1028,14 +1028,7 @@ extension NativeTimelineRowLayout {
                         width: ReactionActionMenuPresentation.inline.width,
                         height: MessageReactionMetrics.pillHeight
                     )]
-                // Reactions sit below the bubble, so a short bubble must not
-                // narrow them. They wrap against the bubble column instead.
-                let rowWidth = usesBubbles
-                    ? max(contentWidth, min(
-                        NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width),
-                        isOutgoingBubble ? contentX + contentWidth - horizontalInset : ordinaryContentWidth
-                    ))
-                    : contentWidth
+                let rowWidth = belowBubbleWidth()
                 let rowX = isOutgoingBubble ? contentX + contentWidth - rowWidth : contentX
                 let wrapping = InlineWrappingLayoutPlan.frames(
                     sizes: sizes,
@@ -1064,6 +1057,18 @@ extension NativeTimelineRowLayout {
                 verticalOffset += wrapping.size.height
             }
 
+        }
+
+        /// Reactions and a failed send's notice sit below the bubble, so a
+        /// short bubble must not narrow them: they keep at least its content
+        /// width and otherwise wrap against the bubble column, up to `natural`.
+        private func belowBubbleWidth(natural: CGFloat = .infinity) -> CGFloat {
+            guard usesBubbles else { return contentWidth }
+            return max(contentWidth, min(
+                natural,
+                NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width),
+                isOutgoingBubble ? contentX + contentWidth - horizontalInset : ordinaryContentWidth
+            ))
         }
 
         private mutating func appendDeliveryState() {
@@ -1096,15 +1101,7 @@ extension NativeTimelineRowLayout {
                     : 0
                 // Retry follows the notice after the icon's column and a word gap.
                 let labelsWidth = noticeWidth + (message.canRetrySending ? InterfaceScale.metric(6) + retryWidth : 0)
-                // The notice is below the bubble, so short message content
-                // must not squeeze it into that bubble.
-                let failureWidth = usesBubbles
-                    ? max(contentWidth, min(
-                        labelsWidth,
-                        NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width),
-                        isOutgoingBubble ? contentX + contentWidth - horizontalInset : ordinaryContentWidth
-                    ))
-                    : contentWidth
+                let failureWidth = belowBubbleWidth(natural: labelsWidth)
                 let failureX = isOutgoingBubble ? contentX + contentWidth - failureWidth : contentX
                 let failureHeight = max(InterfaceScale.metric(14), ceil(failureText.boundingRect(
                     with: CGSize(width: max(1, failureWidth - InterfaceScale.metric(16)), height: .greatestFiniteMagnitude),
