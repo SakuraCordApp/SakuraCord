@@ -327,6 +327,11 @@ extension DiscordRESTProvider {
     func adoptReadyRelationships(_ records: [UserID: RelationshipRecord]) {
         relationshipGeneration &+= 1
         relationshipLoadGeneration = nil
+        storeRelationships(records)
+    }
+
+    /// Stores the records with the friend and nickname indexes derived from them.
+    private func storeRelationships(_ records: [UserID: RelationshipRecord]) {
         cachedRelationships = records
         cachedFriendUserIDs = Set(records.lazy.filter { $0.value.type == .friend }.map(\.key))
         cachedRelationshipNicknamesByUserID = records.compactMapValues(\.nickname)
@@ -349,11 +354,9 @@ extension DiscordRESTProvider {
         let blocked = Set(records.lazy.filter { $0.value.type == .blocked || $0.value.isUserIgnored }.map(\.key))
         let blockedChanged = blocked != cachedBlockedOrIgnoredUserIDs
         cachedBlockedOrIgnoredUserIDs = blocked
-        let nicknames = records.compactMapValues(\.nickname)
-        let nicknamesChanged = nicknames != cachedRelationshipNicknamesByUserID
-        cachedRelationships = records
-        cachedFriendUserIDs = Set(records.lazy.filter { $0.value.type == .friend }.map(\.key))
-        cachedRelationshipNicknamesByUserID = nicknames
+        let previousNicknames = cachedRelationshipNicknamesByUserID
+        storeRelationships(records)
+        let nicknamesChanged = cachedRelationshipNicknamesByUserID != previousNicknames
         continuation?.yield(.relationshipsChanged(publishedRelationships()))
         publishRelationshipPresences(complete: true)
         if blockedChanged { continuation?.yield(.knownUsersChanged(currentKnownUsers())) }
