@@ -34,6 +34,9 @@ extension AccountReadStateModel {
 }
 
 extension AccountReadStateModel {
+    /// The server conversation kinds Mark as Read acknowledges.
+    private static let acknowledgeableKinds: [ChannelKindValue] = [.text, .announcement, .forum, .voice]
+
     /// Discord's account read-state snapshot is authoritative evidence that
     /// the account can see that conversation. Include the parent so joined
     /// thread read states keep their server unread marker while the parent
@@ -108,7 +111,7 @@ extension AccountReadStateModel {
               entry.isUnread || entry.kind == .forum,
               source.isAggregateConversation(entry),
               !isGuildResourceChannel(entry),
-              [.text, .announcement, .forum, .voice].contains(entry.kind),
+              Self.acknowledgeableKinds.contains(entry.kind),
               let messageID = Self.acknowledgementTarget(for: entry, now: .now)
         else { return nil }
         return BulkReadStateAcknowledgement(channelID: entry.channelID, messageID: messageID)
@@ -133,7 +136,7 @@ extension AccountReadStateModel {
                   entry.isAccessible,
                   source.isAggregateConversation(entry),
                   !isGuildResourceChannel(entry),
-                  [.text, .announcement, .forum, .voice].contains(entry.kind),
+                  Self.acknowledgeableKinds.contains(entry.kind),
                   let messageID = entry.latestKnownMessageID
             else { return nil }
             return BulkReadStateAcknowledgement(
