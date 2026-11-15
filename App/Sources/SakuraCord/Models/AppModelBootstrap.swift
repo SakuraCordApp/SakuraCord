@@ -206,11 +206,7 @@ extension AppModel {
                 return false
             }
             let preferredPerformanceAccountID =
-                runsChatPerformanceBenchmark
-                    ? ProcessInfo.processInfo.environment[
-                        "SAKURACORD_PERFORMANCE_ACCOUNT_ID"
-                    ]
-                    : nil
+                runsChatPerformanceBenchmark ? PerformanceBenchmarkHarness.accountID : nil
             let launchDestination: SettingsLaunchDestination = SettingsPreferenceStore.shared.rawValue(.launchDestination)
             if SettingsLaunchAccountPolicy.presentsAccountPicker(
                 destination: launchDestination,

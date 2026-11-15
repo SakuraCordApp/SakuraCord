@@ -25,6 +25,12 @@ extension AppModel {
     }
 
     extension AppModel {
+        static func benchmarkGuild(in guilds: some Sequence<Guild>) -> Guild? {
+            guilds.first {
+                $0.name.localizedCaseInsensitiveCompare(benchmarkGuildName) == .orderedSame
+            }
+        }
+
         func prepareAuthenticatedMemberListScrollPerformanceBenchmark() async {
             guard runsChatPerformanceBenchmark,
                   sessionState == .workspace
@@ -32,10 +38,7 @@ extension AppModel {
             await channelLoadTask?.value
             guard !Task.isCancelled,
                   let snapshot,
-                  let targetGuild = snapshot.guilds.first(where: {
-                      $0.name.localizedCaseInsensitiveCompare(Self.benchmarkGuildName)
-                          == .orderedSame
-                  }),
+                  let targetGuild = Self.benchmarkGuild(in: snapshot.guilds),
                   let channel = benchmarkTargetChannel(in: targetGuild.id, of: snapshot)
             else {
                 AppPerformanceSignposts.signposter.emitEvent(
@@ -78,7 +81,7 @@ extension AppModel {
             }
         }
 
-        private func prepareSelectedTimelineScrollHistory() async -> Bool {
+        private func prepareSelectedTimelineScrollHistory() async {
             let channelID = selectedChannelID
             var pageCount = 0
             while !Task.isCancelled,
@@ -98,7 +101,6 @@ extension AppModel {
                 pageCount += 1
                 guard messages.count > previousCount else { break }
             }
-            return messages.count >= 100
         }
 
         /// Waits up to 12 seconds until `isLoading` has stayed false for
@@ -303,10 +305,7 @@ extension AppModel {
                 writeAuthenticatedLoadingScrollUnavailable("snapshot-missing")
                 return
             }
-            guard let targetGuild = serverRailGuildsByID.values.first(where: {
-                $0.name.localizedCaseInsensitiveCompare(Self.benchmarkGuildName)
-                    == .orderedSame
-            }) else {
+            guard let targetGuild = Self.benchmarkGuild(in: serverRailGuildsByID.values) else {
                 writeAuthenticatedLoadingScrollUnavailable("target-guild-missing")
                 return
             }
@@ -356,7 +355,7 @@ extension AppModel {
                 initialMessageCount = opened ? messages.count : 0
                 if opened {
                     await memberLoadTask?.value
-                    _ = await prepareSelectedTimelineScrollHistory()
+                    await prepareSelectedTimelineScrollHistory()
                 }
                 AppPerformanceSignposts.signposter.endInterval(
                     "AuthenticatedLoadingScrollWork",
@@ -381,7 +380,7 @@ extension AppModel {
 
         private func settleAuthenticatedLoadingScrollIdleControl() async {
             await waitForSelectedTimelineHistoryIdle()
-            _ = await prepareSelectedTimelineScrollHistory()
+            await prepareSelectedTimelineScrollHistory()
             await memberLoadTask?.value
             guard !Task.isCancelled else { return }
             // The model operations above await their state commits, while

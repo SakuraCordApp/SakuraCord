@@ -25,6 +25,7 @@ run_checks() {
   "$ROOT_DIR/script/test_release_metadata.sh"
   "$ROOT_DIR/script/test_sync_main_into_nightly.sh"
   "$ROOT_DIR/script/test_debug_credentials_config.sh"
+  "$ROOT_DIR/script/test_performance_benchmark.sh"
   python3 "$ROOT_DIR/script/test_run_test_diagnostics.py"
   node --test "$ROOT_DIR/script/release_automation.test.mjs"
   node --test "$ROOT_DIR/script/release_hotfix.test.mjs"

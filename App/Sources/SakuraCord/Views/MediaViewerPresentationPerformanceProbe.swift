@@ -23,16 +23,11 @@ final class MediaViewerPresentationPerformanceProbe {
         subsystem: "dev.sakuracord.SakuraCord",
         category: "MediaViewerPerformance"
     )
-    private static let isEnabled =
-        ProcessInfo.processInfo.environment[
-            "SAKURACORD_MEDIA_VIEWER_BENCHMARK"
-        ] == "1"
-
     private var pending: PendingPresentation?
     private var displayLinkTicker: DisplayLinkTicker?
 
     func begin(mediaWidth: Int?, mediaHeight: Int?) {
-        guard Self.isEnabled else { return }
+        guard PerformanceBenchmarkHarness.recordsMediaViewerPresentation else { return }
         finishPending(outcome: "superseded")
         pending = PendingPresentation(
             interval: AppPerformanceSignposts.signposter.beginInterval(

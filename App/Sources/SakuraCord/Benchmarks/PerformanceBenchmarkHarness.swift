@@ -182,6 +182,11 @@ enum PerformanceBenchmarkHarness {
     /// Whether a script asked for scroll input-to-frame telemetry.
     nonisolated static let recordsScrollInputTelemetry =
         ProcessInfo.processInfo.environment["SAKURACORD_SCROLL_INPUT_TELEMETRY"] == "1"
+    /// Whether a script asked for media-viewer presentation telemetry.
+    nonisolated static let recordsMediaViewerPresentation =
+        ProcessInfo.processInfo.environment["SAKURACORD_MEDIA_VIEWER_BENCHMARK"] == "1"
+    /// The account a script asked an authenticated benchmark to restore.
+    nonisolated static let accountID = ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_ACCOUNT_ID"]
 
     /// Writes the fields `makeFields` returns to `resultPath`, one
     /// tab-separated name and value per line, when a script asked for them.
