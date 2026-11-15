@@ -85,6 +85,7 @@ func cachedChannelDraftIsolation(destinationDraft: String, editsDuringRestoratio
     #expect(model.draft == expectedDestinationDraft)
 
     model.selectedChannelID = source.id
+    #expect(model.draft == "source draft", "Text typed before the stored draft loads must follow it, not replace it")
     await model.channelLoadTask?.value
     #expect(model.draft == "source draft")
     await model.composer.flushDraftOperations()
