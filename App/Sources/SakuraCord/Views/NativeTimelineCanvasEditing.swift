@@ -195,7 +195,6 @@ extension NativeTimelineCanvasView {
         let height = host.lastReportedFittingHeight > 0 ? host.lastReportedFittingHeight : content.height
         let suggestionsHeight = editing.editorHeight > 0 ? max(0, height - editing.editorHeight) : 0
         // Near the top of the timeline there is no room above; they open below.
-        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
         let opensBelow = suggestionsHeight > 0
             && displayedRowOrigin(at: index) + content.minY - suggestionsHeight < unobscuredMinY
         if let draft = editing.draft, suggestionsHeight > 0, draft.showsSuggestionsBelow != opensBelow {

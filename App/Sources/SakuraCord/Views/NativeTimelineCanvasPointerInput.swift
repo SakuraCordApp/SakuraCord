@@ -437,13 +437,9 @@ extension NativeTimelineCanvasView {
     /// timeline at a fractional window position it moved the timeline a
     /// fraction of a point on every drag event, even ones inside the text.
     private func autoscrollTextSelection(to point: CGPoint) {
-        guard let scrollView = enclosingScrollView else { return }
+        let overshoot = point.y < unobscuredMinY ? point.y - unobscuredMinY : max(0, point.y - unobscuredMaxY)
+        guard overshoot != 0, let scrollView = enclosingScrollView else { return }
         let clipView = scrollView.contentView
-        let pointerY = clipView.convert(point, from: self).y
-        let top = clipView.bounds.minY + scrollView.scrollerInsets.top
-        let bottom = clipView.bounds.maxY - bottomObscuredHeight
-        let overshoot = pointerY < top ? pointerY - top : max(0, pointerY - bottom)
-        guard overshoot != 0 else { return }
         clipView.scroll(to: clipView.constrainBoundsRect(clipView.bounds.offsetBy(dx: 0, dy: overshoot)).origin)
         scrollView.reflectScrolledClipView(clipView)
     }
