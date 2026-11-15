@@ -31,8 +31,8 @@ struct DiscordExperiments: Sendable {
         var populations: [Population]
         var overrides: [UInt64: Int]
         var overridesFormatted: [[Population]]
-        var holdoutName: String?
-        var holdoutBucket: Int?
+        /// The guild is out of this experiment when it is in this experiment's bucket.
+        var holdout: (name: String, bucket: Int)?
     }
 
     struct Population: Sendable {
@@ -90,8 +90,8 @@ struct DiscordExperiments: Sendable {
         guard let bucket = Self.bucket(in: experiment.populations, guild: guild, position: position, now: now) else {
             return nil
         }
-        if let holdoutName = experiment.holdoutName, let holdoutBucket = experiment.holdoutBucket,
-           holdoutName != name, guildBucket(holdoutName, guild: guild, now: now) == holdoutBucket {
+        if let holdout = experiment.holdout, holdout.name != name,
+           guildBucket(holdout.name, guild: guild, now: now) == holdout.bucket {
             return nil
         }
         return bucket
@@ -118,8 +118,7 @@ extension DiscordExperiments.Filter {
         case let .guildIDs(ids): return ids.contains(guild.id.rawValue)
         case let .guildIDRange(min, max): return within(guild.id.rawValue, min, max)
         case let .guildAgeRangeDays(min, max):
-            let created = Date(timeIntervalSince1970: Double((guild.id.rawValue >> 22) + 1_420_070_400_000) / 1000)
-            return within(Int(now.timeIntervalSince(created) / 86400), min, max)
+            return within(Int(now.timeIntervalSince(guild.id.createdAt) / 86400), min, max)
         case let .memberCountRange(min, max): return guild.memberCount.map { within($0, min, max) } ?? false
         case let .hasFeature(features): return !features.isDisjoint(with: guild.features)
         case let .hubTypes(types): return guild.hubType.map(types.contains) ?? false
@@ -170,8 +169,7 @@ extension DiscordExperiments {
                 populations: populations.compactMap(Population.init),
                 overrides: overrides,
                 overridesFormatted: (field(5)?.arrayValue ?? []).map { ($0.arrayValue ?? []).compactMap(Population.init) },
-                holdoutName: field(6)?.stringValue,
-                holdoutBucket: field(7)?.intValue
+                holdout: field(6)?.stringValue.flatMap { name in field(7)?.intValue.map { (name, $0) } }
             )
         }
     }

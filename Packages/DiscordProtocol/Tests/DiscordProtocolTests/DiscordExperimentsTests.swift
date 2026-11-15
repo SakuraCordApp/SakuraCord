@@ -21,6 +21,12 @@ private func guildExperiments(
     """), apex: nil, userID: nil)
 }
 
+private extension DiscordExperiments {
+    func bucket(in guild: GuildID = guildID) -> Int? {
+        guildBucket(experimentName, guild: .init(id: guild))
+    }
+}
+
 private func everyone(_ bucket: Int, filters: String = "[]") -> String {
     #"[[[\#(bucket),[{"s":0,"e":10000}]]],\#(filters)]"#
 }
@@ -81,35 +87,35 @@ func `murmurhash3 matches reference vectors`(input: String, expected: UInt32) {
 
 @Test func `guild buckets follow overrides then formatted overrides then the rollout`() throws {
     let all = try guildExperiments("[\(everyone(1))]")
-    #expect(all.guildBucket(experimentName, guild: .init(id: guildID)) == 1)
+    #expect(all.bucket() == 1)
 
     let elsewhere = try guildExperiments(#"[[[[1,[{"s":\#(position + 1),"e":\#(position + 2)}]]],[]]]"#)
-    #expect(elsewhere.guildBucket(experimentName, guild: .init(id: guildID)) == DiscordExperiments.control)
+    #expect(elsewhere.bucket() == DiscordExperiments.control)
 
     let edges = try guildExperiments(#"[[[[1,[{"s":0,"e":\#(position)}]],[2,[{"s":\#(position),"e":10000}]]],[]]]"#)
-    #expect(edges.guildBucket(experimentName, guild: .init(id: guildID)) == 2)
+    #expect(edges.bucket() == 2)
 
     let byID = try guildExperiments(
         "[\(everyone(1))]",
         overrides: #"[{"b":3,"k":["\#(guildID.rawValue)"]},{"b":-1,"k":["5"]}]"#
     )
-    #expect(byID.guildBucket(experimentName, guild: .init(id: guildID)) == 3)
-    #expect(byID.guildBucket(experimentName, guild: .init(id: GuildID(rawValue: 5))) == nil)
+    #expect(byID.bucket() == 3)
+    #expect(byID.bucket(in: GuildID(rawValue: 5)) == nil)
 
     // A group that places the guild wins; a not-eligible group falls through to the next.
     let formatted = try guildExperiments("[\(everyone(1))]", formatted: "[[\(everyone(-1))],[\(everyone(4))]]")
-    #expect(formatted.guildBucket(experimentName, guild: .init(id: guildID)) == 4)
+    #expect(formatted.bucket() == 4)
     let fallsThrough = try guildExperiments("[\(everyone(1))]", formatted: "[[\(everyone(-1))]]")
-    #expect(fallsThrough.guildBucket(experimentName, guild: .init(id: guildID)) == 1)
+    #expect(fallsThrough.bucket() == 1)
 
     // A population whose filters cannot be read never matches, rather than matching every guild.
     let badFilters = everyone(1, filters: #""garbage""#)
     let badGuildIDs = everyone(1, filters: #"[[\#(MurmurHash3.hash("guild_ids")),"x"]]"#)
     let unreadable = try guildExperiments("[\(badFilters),\(badGuildIDs),\(everyone(2))]")
-    #expect(unreadable.guildBucket(experimentName, guild: .init(id: guildID)) == 2)
+    #expect(unreadable.bucket() == 2)
 
     let notEligible = try guildExperiments("[\(everyone(-1))]")
-    #expect(notEligible.guildBucket(experimentName, guild: .init(id: guildID)) == nil)
+    #expect(notEligible.bucket() == nil)
 }
 
 @Test func `guild filters gate populations and unknown filters pass`() throws {
@@ -126,8 +132,7 @@ func `murmurhash3 matches reference vectors`(input: String, expected: UInt32) {
     #expect(rollout.guildBucket(experimentName, guild: guild) == nil)
 
     let now = Date(timeIntervalSince1970: 1_800_000_000)
-    let created = Date(timeIntervalSince1970: Double((guildID.rawValue >> 22) + 1_420_070_400_000) / 1000)
-    let ageDays = Int(now.timeIntervalSince(created) / 86400)
+    let ageDays = Int(now.timeIntervalSince(guildID.createdAt) / 86400)
     let passing: [(String, DiscordExperiments.GuildFacts)] = [
         (filter("guild_ids", [("guild_ids", #"["\#(guildID.rawValue)"]"#)]), .init(id: guildID)),
         (filter("guild_age_range_days", [("min_id", "\(ageDays)"), ("max_id", "\(ageDays)")]), .init(id: guildID)),
@@ -156,7 +161,7 @@ func `murmurhash3 matches reference vectors`(input: String, expected: UInt32) {
         let experiments = try guildExperiments(
             "[\(everyone(1, filters: "[\(filter("guild_in_range_by_hash", [("hash_key", #""key""#), ("target", "\(target)")]))]"))]"
         )
-        #expect((experiments.guildBucket(experimentName, guild: .init(id: guildID)) == 1) == passes)
+        #expect((experiments.bucket() == 1) == passes)
     }
 
     // The holdout removes a rollout placement, but not a formatted override's.
@@ -165,7 +170,7 @@ func `murmurhash3 matches reference vectors`(input: String, expected: UInt32) {
     func bucket(holdoutBucket: Int, formatted: String = "[]") throws -> Int? {
         try guildExperiments(
             "[\(everyone(1))]", formatted: formatted, holdout: #""\#(holdoutName)",\#(holdoutBucket)"#, extra: holdoutExperiment
-        ).guildBucket(experimentName, guild: .init(id: guildID))
+        ).bucket()
     }
     #expect(try bucket(holdoutBucket: 0) == nil)
     #expect(try bucket(holdoutBucket: 1) == 1)

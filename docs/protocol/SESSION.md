@@ -90,9 +90,7 @@ official client.
 | Anything else | Always (the official client skips filters it does not know). |
 
 These rules match the official client's experiment store, web build 673869,
-read on 15 November 2026 against a live READY. The built-in `/schedule` has no
-experiment gate there; it is offered in DMs and wherever the account has
-`SEND_MESSAGES`.
+read on 15 November 2026 against a live READY.
 
 ## Authentication
 

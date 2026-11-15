@@ -114,8 +114,7 @@ enum DiscordBuiltInCommands {
         }
         return switch command.name {
         case "leave": context.isGroupDirectMessage
-        // Discord offers /schedule wherever the account may send, without an
-        // experiment; SakuraCord schedules from the composer's + menu instead.
+        // Not run natively yet; scheduling uses the composer's + menu.
         case "schedule": false
         case "tts":
             !context.isPrivate && context.allowsTTSCommand
