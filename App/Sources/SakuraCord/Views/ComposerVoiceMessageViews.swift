@@ -195,7 +195,7 @@ struct ComposerVoiceMessageField: View {
 
     /// One view for both phases, so the live bars morph into the overview.
     private func waveform(size: CGSize, now: Date) -> some View {
-        let metrics = VoiceWaveformMetrics(height: size.height)
+        let metrics = VoiceWaveformMetrics()
         let count = metrics.barCount(fitting: size.width)
         let recording = state.phase.recording
         let levels = recording.map {
@@ -279,7 +279,6 @@ struct ComposerVoiceMessageField: View {
 }
 
 nonisolated struct VoiceWaveformMetrics {
-    let height: CGFloat
     var barWidth: CGFloat { InterfaceScale.metric(3) }
     var spacing: CGFloat { InterfaceScale.metric(2) }
     var step: CGFloat { barWidth + spacing }
