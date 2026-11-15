@@ -77,6 +77,15 @@ enum NativeTimelineReplyMetrics {
 
     nonisolated static var avatarDiameter: CGFloat { InterfaceScale.metric(15) }
 
+    nonisolated static func avatarFrame(in replyContentFrame: CGRect) -> CGRect {
+        CGRect(
+            x: replyContentFrame.minX,
+            y: replyContentFrame.minY + (lineHeight - avatarDiameter) / 2,
+            width: avatarDiameter,
+            height: avatarDiameter
+        )
+    }
+
     /// The media symbol's width and its gap from the summary.
     static var mediaSymbolReserve: CGFloat { InterfaceScale.metric(26) }
 

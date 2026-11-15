@@ -226,7 +226,7 @@ extension NativeTimelineRowPainter {
         replyPreviewLine(
             MessageReplyPreview.presenting(preview),
             frame: layout.previewFrame,
-            avatarFrame: UserAvatarPresentation.replyAvatarFrame(in: layout.previewFrame),
+            avatarFrame: NativeTimelineReplyMetrics.avatarFrame(in: layout.previewFrame),
             trailingInset: 0,
             showsReplyMention: false,
             message: preview,

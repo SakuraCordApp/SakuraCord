@@ -291,3 +291,37 @@ private struct InlineEditTextButton: View {
         .opacity(isEnabled ? 1 : 0.45)
     }
 }
+
+enum MessageEditLayoutMetrics {
+    /// The timeline's plain message text, so a draft is set in the font,
+    /// colour and line height the row drew the message in.
+    static func textStyle(isOnOutgoingBubble: Bool) -> ComposerTextStyle {
+        let style = messageTextStyle
+        guard isOnOutgoingBubble else { return style }
+        // The timeline sets an outgoing bubble's text in the label colour for the accent fill.
+        var attributes = style.attributes
+        attributes[.foregroundColor] = NSColor.sakuraCordLabelOnAccentColor
+        return ComposerTextStyle(font: style.font, attributes: attributes, usesMessageLineHeight: true)
+    }
+
+    /// The message text style at the current interface size, worked out once per size.
+    private static var messageTextStyle: ComposerTextStyle {
+        let fontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
+        if let cached = messageTextCache, cached.fontSize == fontSize { return cached.style }
+        let attributes = DiscordMarkdown.appKitAttributed(
+            DiscordMarkdown.appKitPlan("x"), baseFontSize: fontSize, usesMessageLineHeight: true
+        ).attributes(at: 0, effectiveRange: nil)
+        guard let font = attributes[.font] as? NSFont else {
+            preconditionFailure("The markdown renderer sets a font on message text.")
+        }
+        let style = ComposerTextStyle(font: font, attributes: attributes, usesMessageLineHeight: true)
+        messageTextCache = (fontSize, style)
+        return style
+    }
+
+    private static var messageTextCache: (fontSize: CGFloat, style: ComposerTextStyle)?
+
+    nonisolated static var actionHorizontalPadding: CGFloat { InterfaceScale.metric(5) }
+    nonisolated static var keycapHorizontalPadding: CGFloat { InterfaceScale.metric(5) }
+    nonisolated static var keycapVerticalPadding: CGFloat { InterfaceScale.metric(1) }
+}

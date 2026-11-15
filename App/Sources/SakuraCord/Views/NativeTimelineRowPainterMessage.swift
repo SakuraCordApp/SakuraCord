@@ -899,7 +899,7 @@ extension NativeTimelineRowPainter {
             frame: bubbleConnector == nil
                 ? CGRect(x: frame.minX, y: contentFrame.minY, width: frame.width, height: frame.height)
                 : contentFrame,
-            avatarFrame: UserAvatarPresentation.replyAvatarFrame(in: contentFrame),
+            avatarFrame: NativeTimelineReplyMetrics.avatarFrame(in: contentFrame),
             trailingInset: bubbleConnector == nil ? 48 : 0,
             reservesSummary: bubbleConnector != nil,
             message: message,

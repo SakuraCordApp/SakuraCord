@@ -16,15 +16,6 @@ nonisolated enum UserAvatarPresentation {
         )
     }
 
-    static func replyAvatarFrame(in replyContentFrame: CGRect) -> CGRect {
-        CGRect(
-            x: replyContentFrame.minX,
-            y: replyContentFrame.minY + (NativeTimelineReplyMetrics.lineHeight - NativeTimelineReplyMetrics.avatarDiameter) / 2,
-            width: NativeTimelineReplyMetrics.avatarDiameter,
-            height: NativeTimelineReplyMetrics.avatarDiameter
-        )
-    }
-
     static func shouldDecodeAnimation(for url: URL) -> Bool {
         switch url.pathExtension.lowercased() {
         case "gif", "apng":

@@ -379,7 +379,7 @@ extension NativeTimelineCanvasView {
            let url = preview.author.avatarURL,
            let replyContentFrame = layout.replyContentFrame,
            UserAvatarPresentation.shouldDecodeAnimation(for: url) {
-            let frame = UserAvatarPresentation.replyAvatarFrame(in: replyContentFrame)
+            let frame = NativeTimelineReplyMetrics.avatarFrame(in: replyContentFrame)
             accumulator.append(
                 row: identifier, role: .replyAvatar, media: .avatar(url), frame: frame,
                 cornerRadius: frame.width / 2, isLooping: true, fillsFrame: true
