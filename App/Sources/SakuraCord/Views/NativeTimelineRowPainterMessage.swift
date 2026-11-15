@@ -402,22 +402,32 @@ extension NativeTimelineRowPainter {
             // visible row geometry or adding spacing between grouped messages.
             let drawingFrame = NativeTimelineTextGeometry
                 .messageContentDrawingFrame(frame)
-            attributedText(
-                contentText,
-                in: drawingFrame,
-                model: input.model,
-                bubble: layout.bubbleRegion,
-                selectionRange: input.textSelection.scoped(to: .message(row.identity), region: .content)?.range,
-                hoveredMentionCharacterIndex:
-                    input.interaction.hoveredMention.scoped(to: .message(row.identity), region: .content)?.characterIndex,
-                hoveredLinkCharacterIndex:
-                    input.interaction.hoveredTextLink.scoped(to: .message(row.identity), region: .content)?.characterIndex,
-                spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: .message(row.identity), region: .content),
-                revealedSpoilerLocations:
-                    input.revealedTextSpoilerState.locations(in: .content)
-            )
+            attributedText(contentText, in: drawingFrame, region: .content, bubble: layout.bubbleRegion, input: input)
             NSGraphicsContext.restoreGraphicsState()
         }
+    }
+
+    /// Draws one of the message's text regions with the selection, hovers
+    /// and spoiler reveals the pointer has in that region.
+    static func attributedText(
+        _ box: NativeTimelineAttributedTextBox,
+        in frame: CGRect,
+        region: NativeTimelineTextRegion,
+        bubble: NativeTimelineBubbleRegion?,
+        input: NativeTimelineMessageDrawInput
+    ) {
+        let item = NativeMessageTimelineItem.Identifier.message(input.row.identity)
+        attributedText(
+            box,
+            in: frame,
+            model: input.model,
+            bubble: bubble,
+            selectionRange: input.textSelection.scoped(to: item, region: region)?.range,
+            hoveredMentionCharacterIndex: input.interaction.hoveredMention.scoped(to: item, region: region)?.characterIndex,
+            hoveredLinkCharacterIndex: input.interaction.hoveredTextLink.scoped(to: item, region: region)?.characterIndex,
+            spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: item, region: region),
+            revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: region)
+        )
     }
 
     private static func drawMessageLinkedImages(_ input: NativeTimelineMessageDrawInput) {
@@ -617,19 +627,12 @@ extension NativeTimelineRowPainter {
                 embedID: region.embedID,
                 textIndex: textIndex
             )
-            let itemIdentifier = NativeMessageTimelineItem.Identifier.message(input.row.identity)
             attributedText(
                 textRegion.text,
                 in: textRegion.frame,
-                model: input.model,
+                region: textRegionID,
                 bubble: region.kind == .bubbleIntegratedCard ? input.layout.bubbleRegion : nil,
-                selectionRange: input.textSelection.scoped(to: itemIdentifier, region: textRegionID)?.range,
-                hoveredMentionCharacterIndex:
-                    input.interaction.hoveredMention.scoped(to: itemIdentifier, region: textRegionID)?.characterIndex,
-                hoveredLinkCharacterIndex:
-                    input.interaction.hoveredTextLink.scoped(to: itemIdentifier, region: textRegionID)?.characterIndex,
-                spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: itemIdentifier, region: textRegionID),
-                revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: textRegionID)
+                input: input
             )
         }
     }

@@ -156,19 +156,12 @@ extension NativeTimelineRowPainter {
             text(actionTitle, in: actionFrame, font: font, color: accent, isInteractiveHovered: input.interaction.isTranslationActionHovered)
         }
         guard let textFrame = region.textFrame, let text = region.text else { return }
-        let itemIdentifier = NativeMessageTimelineItem.Identifier.message(input.row.identity)
         attributedText(
             text,
             in: NativeTimelineTextGeometry.messageContentDrawingFrame(textFrame),
-            model: input.model,
+            region: region.regionID,
             bubble: input.layout.bubbleRegion,
-            selectionRange: input.textSelection.scoped(to: itemIdentifier, region: region.regionID)?.range,
-            hoveredMentionCharacterIndex:
-                input.interaction.hoveredMention.scoped(to: itemIdentifier, region: region.regionID)?.characterIndex,
-            hoveredLinkCharacterIndex:
-                input.interaction.hoveredTextLink.scoped(to: itemIdentifier, region: region.regionID)?.characterIndex,
-            spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: itemIdentifier, region: region.regionID),
-            revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: region.regionID)
+            input: input
         )
     }
 }

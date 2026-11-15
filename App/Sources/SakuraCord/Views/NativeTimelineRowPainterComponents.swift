@@ -14,7 +14,6 @@ struct NativeTimelineComponentsDrawInput {
     var message: NativeTimelineMessageDrawInput
 
     var messageID: MessageID { message.row.message.id }
-    var itemIdentifier: NativeMessageTimelineItem.Identifier { .message(message.row.identity) }
     var bubbleRegion: NativeTimelineBubbleRegion? { message.layout.bubbleRegion }
 }
 
@@ -142,20 +141,7 @@ extension NativeTimelineRowPainter {
                 layoutIndex: input.layoutIndex,
                 textIndex: textIndex
             )
-            attributedText(
-                region.text,
-                in: region.frame,
-                model: input.message.model,
-                bubble: input.bubbleRegion,
-                selectionRange: input.message.textSelection.scoped(to: input.itemIdentifier, region: textRegion)?.range,
-                hoveredMentionCharacterIndex:
-                    input.message.interaction.hoveredMention.scoped(to: input.itemIdentifier, region: textRegion)?.characterIndex,
-                hoveredLinkCharacterIndex:
-                    input.message.interaction.hoveredTextLink.scoped(to: input.itemIdentifier, region: textRegion)?.characterIndex,
-                spoilerHoverProgress: input.message.interaction.textSpoilerHover.progress(in: input.itemIdentifier, region: textRegion),
-                revealedSpoilerLocations:
-                    input.message.revealedTextSpoilerState.locations(in: textRegion)
-            )
+            attributedText(region.text, in: region.frame, region: textRegion, bubble: input.bubbleRegion, input: input.message)
         }
     }
 
