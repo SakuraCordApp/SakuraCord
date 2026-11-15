@@ -121,14 +121,12 @@ func `Public beta accents migrate into native-surface single-color themes`(
 
     #expect(store.load() == .defaults)
 
-    let selected = AppearanceSettingsSnapshot(
-        colorScheme: .light,
-        composerBarAppearance: .legacy,
-        directMessageAppearance: .bubbles,
-        groupMessageAppearance: .defaultStyle,
-        serverMessageAppearance: .bubbles,
-        messageSpacing: 12
-    )
+    var selected = AppearanceSettingsSnapshot.defaults
+    selected.colorScheme = .light
+    selected.composerBarAppearance = .legacy
+    selected.directMessageAppearance = .bubbles
+    selected.serverMessageAppearance = .bubbles
+    selected.messageSpacing = 12
     store.save(selected)
 
     #expect(AppearanceSettingsStore(preferences: SettingsPreferenceStore(defaults: defaults)).load() == selected)

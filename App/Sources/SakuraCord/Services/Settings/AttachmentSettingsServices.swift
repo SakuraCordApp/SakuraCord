@@ -15,10 +15,17 @@ nonisolated enum AttachmentHandlingPolicy: String, CaseIterable, Identifiable, S
 }
 
 nonisolated struct AttachmentSettingsSnapshot: Equatable, Sendable {
-    var compactionPolicy: AttachmentHandlingPolicy = .ask
-    var externalUploadPolicy: AttachmentHandlingPolicy = .ask
-    var externalProvider: ExternalAttachmentHostingService = .litterbox
-    var compaction = AttachmentCompactionOptions()
+    var compactionPolicy: AttachmentHandlingPolicy
+    var externalUploadPolicy: AttachmentHandlingPolicy
+    var externalProvider: ExternalAttachmentHostingService
+    var compaction: AttachmentCompactionOptions
+
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        compactionPolicy = value(.attachmentCompactionPrompt).rawValue()
+        externalUploadPolicy = value(.attachmentExternalUploadPrompt).rawValue()
+        externalProvider = value(.attachmentExternalProvider).rawValue()
+        compaction = AttachmentCompactionOptions(quality: value(.attachmentCompactionQuality).rawValue())
+    }
 }
 
 @MainActor
@@ -31,12 +38,7 @@ final class AttachmentSettingsStore {
     }
 
     func load() -> AttachmentSettingsSnapshot {
-        var value = AttachmentSettingsSnapshot()
-        value.compactionPolicy = preferences.rawValue(.attachmentCompactionPrompt)
-        value.externalUploadPolicy = preferences.rawValue(.attachmentExternalUploadPrompt)
-        value.externalProvider = preferences.rawValue(.attachmentExternalProvider)
-        value.compaction.quality = preferences.rawValue(.attachmentCompactionQuality)
-        return value
+        AttachmentSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: AttachmentSettingsSnapshot) {

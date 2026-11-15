@@ -68,6 +68,39 @@ nonisolated enum SettingsPreferenceValue: Codable, Equatable, Sendable {
         }
     }
 
+    var boolValue: Bool {
+        guard case let .bool(value) = self else { preconditionFailure("\(self) is not a Bool.") }
+        return value
+    }
+
+    var integerValue: Int {
+        guard case let .integer(value) = self else { preconditionFailure("\(self) is not an Int.") }
+        return value
+    }
+
+    var doubleValue: Double {
+        guard case let .double(value) = self else { preconditionFailure("\(self) is not a Double.") }
+        return value
+    }
+
+    var stringValue: String {
+        guard case let .string(value) = self else { preconditionFailure("\(self) is not a String.") }
+        return value
+    }
+
+    var stringsValue: [String] {
+        guard case let .strings(value) = self else { preconditionFailure("\(self) is not a String list.") }
+        return value
+    }
+
+    /// A string as the value it names. The registration validates the raw value.
+    func rawValue<Value: RawRepresentable>() -> Value where Value.RawValue == String {
+        guard let value = Value(rawValue: stringValue) else {
+            preconditionFailure("\(self) does not validate \(Value.self).")
+        }
+        return value
+    }
+
     func accepts(_ value: Any) -> SettingsPreferenceValue? {
         switch self {
         case .bool:
@@ -212,9 +245,7 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .messageDensity,
             page: .interface,
             key: "settings.appearance.messageDensity",
-            defaultValue: .double(
-                AppearanceSettingsSnapshot.defaults.messageSpacing
-            )
+            defaultValue: .double(AppearanceSettingsSnapshot.defaultMessageSpacing)
         ),
         SettingsPreferenceRegistration(
             id: .interfaceSize,
@@ -792,6 +823,14 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         registrations.first { $0.id == id }
     }
 
+    /// Settings snapshots build their defaults from this, so registrations stay the only source.
+    func defaultValue(for id: SettingsControlID) -> SettingsPreferenceValue {
+        guard let registration = registration(id) else {
+            preconditionFailure("\(id.rawValue) has no registered preference.")
+        }
+        return registration.defaultValue
+    }
+
     func registrations(page: SettingsPageID? = nil) -> [SettingsPreferenceRegistration] {
         registrations.filter { page == nil || $0.page == page }
     }
@@ -883,31 +922,19 @@ final class SettingsPreferenceStore {
     }
 
     func bool(_ id: SettingsControlID) -> Bool {
-        guard case let .bool(stored) = value(for: id) else { preconditionFailure("\(id.rawValue) is not a Bool.") }
-        return stored
-    }
-
-    func integer(_ id: SettingsControlID) -> Int {
-        guard case let .integer(stored) = value(for: id) else { preconditionFailure("\(id.rawValue) is not an Int.") }
-        return stored
+        value(for: id).boolValue
     }
 
     func double(_ id: SettingsControlID) -> Double {
-        guard case let .double(stored) = value(for: id) else { preconditionFailure("\(id.rawValue) is not a Double.") }
-        return stored
+        value(for: id).doubleValue
     }
 
     func string(_ id: SettingsControlID) -> String {
-        guard case let .string(stored) = value(for: id) else { preconditionFailure("\(id.rawValue) is not a String.") }
-        return stored
+        value(for: id).stringValue
     }
 
-    /// A stored string as the value it names. The registration validates the raw value.
     func rawValue<Value: RawRepresentable>(_ id: SettingsControlID) -> Value where Value.RawValue == String {
-        guard let value = Value(rawValue: string(id)) else {
-            preconditionFailure("\(id.rawValue) does not validate \(Value.self).")
-        }
-        return value
+        value(for: id).rawValue()
     }
 
     func containsStoredValue(for id: SettingsControlID) -> Bool {

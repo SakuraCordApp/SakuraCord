@@ -56,17 +56,23 @@ nonisolated enum ExternalLinkConfirmationPolicy: String, CaseIterable, Identifia
 }
 
 nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self(
-        sendsTypingIndicators: true,
-        externalLinkConfirmationPolicy: .untrustedDomains,
-        trustedDomains: ExternalLinkTrustedDomain.defaults
-    )
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
-    var removesMediaMetadata = true
-    var anonymisesFileNames = false
+    var removesMediaMetadata: Bool
+    var anonymisesFileNames: Bool
     var sendsTypingIndicators: Bool
     var externalLinkConfirmationPolicy: ExternalLinkConfirmationPolicy
     var trustedDomains: [String]
+}
+
+nonisolated extension PrivacySafetySettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        removesMediaMetadata = value(.removeMediaMetadata).boolValue
+        anonymisesFileNames = value(.anonymiseFileNames).boolValue
+        sendsTypingIndicators = value(.privacyTypingIndicators).boolValue
+        externalLinkConfirmationPolicy = value(.externalLinkProtection).rawValue()
+        trustedDomains = ExternalLinkTrustedDomain.normalizedList(value(.trustedDomains).stringsValue)
+    }
 }
 
 @MainActor
@@ -81,15 +87,7 @@ final class PrivacySafetySettingsStore {
     }
 
     func load() -> PrivacySafetySettingsSnapshot {
-        var value = PrivacySafetySettingsSnapshot.defaults
-        value.removesMediaMetadata = preferences.bool(.removeMediaMetadata)
-        value.anonymisesFileNames = preferences.bool(.anonymiseFileNames)
-        value.sendsTypingIndicators = preferences.bool(.privacyTypingIndicators)
-        value.externalLinkConfirmationPolicy = preferences.rawValue(.externalLinkProtection)
-        if case let .strings(domains) = preferences.value(for: .trustedDomains) {
-            value.trustedDomains = ExternalLinkTrustedDomain.normalizedList(domains)
-        }
-        return value
+        PrivacySafetySettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: PrivacySafetySettingsSnapshot) {

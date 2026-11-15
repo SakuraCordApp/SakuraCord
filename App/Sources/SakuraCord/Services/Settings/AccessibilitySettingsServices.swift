@@ -18,23 +18,10 @@ nonisolated enum RoleColorDisplay: String, CaseIterable, Identifiable, Sendable 
 }
 
 nonisolated struct AccessibilitySettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self(
-        disablesProfileEffects: false,
-        disablesNameplates: false,
-        disablesAvatarDecorations: false,
-        disablesProfileFrames: false,
-        disablesNameStyles: false,
-        disablesProfileGradients: false,
-        disablesServerTags: false,
-        announcesTimestamps: true,
-        announcesEditedStatus: true,
-        announcesReactionCounts: true,
-        announcesAttachmentTypes: true,
-        announcesNewMessages: false
-    )
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
-    var underlinesLinks = false
-    var roleColorDisplay: RoleColorDisplay = .inNames
+    var underlinesLinks: Bool
+    var roleColorDisplay: RoleColorDisplay
 
     var disablesProfileEffects: Bool
     var disablesNameplates: Bool
@@ -49,13 +36,37 @@ nonisolated struct AccessibilitySettingsSnapshot: Equatable, Sendable {
     var announcesAttachmentTypes: Bool
     var announcesNewMessages: Bool
 
-    var disablesMessageSendingAnimations = false
-    var disablesAllAnimations = false
-    var disablesSidebarAnimations = false
-    var disablesSideChatAnimations = false
-    var disablesOverlayAnimations = false
-    var disablesOwnCosmetics = false
+    var disablesMessageSendingAnimations: Bool
+    var disablesAllAnimations: Bool
+    var disablesSidebarAnimations: Bool
+    var disablesSideChatAnimations: Bool
+    var disablesOverlayAnimations: Bool
+    var disablesOwnCosmetics: Bool
+}
 
+nonisolated extension AccessibilitySettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        underlinesLinks = value(.underlineLinks).boolValue
+        roleColorDisplay = value(.roleColorDisplay).rawValue()
+        disablesProfileEffects = value(.accessibilityDisableProfileEffects).boolValue
+        disablesNameplates = value(.accessibilityDisableNameplates).boolValue
+        disablesAvatarDecorations = value(.accessibilityDisableAvatarDecorations).boolValue
+        disablesProfileFrames = value(.accessibilityDisableProfileFrames).boolValue
+        disablesNameStyles = value(.accessibilityDisableNameStyles).boolValue
+        disablesProfileGradients = value(.accessibilityDisableProfileGradients).boolValue
+        disablesServerTags = value(.accessibilityDisableServerTags).boolValue
+        announcesTimestamps = value(.accessibilityAnnounceTimestamp).boolValue
+        announcesEditedStatus = value(.accessibilityAnnounceEdited).boolValue
+        announcesReactionCounts = value(.accessibilityAnnounceReactions).boolValue
+        announcesAttachmentTypes = value(.accessibilityAnnounceAttachmentTypes).boolValue
+        announcesNewMessages = value(.accessibilityAnnounceNewMessages).boolValue
+        disablesMessageSendingAnimations = value(.accessibilityDisableSendAnimations).boolValue
+        disablesAllAnimations = value(.accessibilityDisableAllAnimations).boolValue
+        disablesSidebarAnimations = value(.accessibilityDisableSidebarAnimations).boolValue
+        disablesSideChatAnimations = value(.accessibilityDisableSideChatAnimations).boolValue
+        disablesOverlayAnimations = value(.accessibilityDisableOverlayAnimations).boolValue
+        disablesOwnCosmetics = value(.accessibilityDisableOwnCosmetics).boolValue
+    }
 }
 
 @MainActor
@@ -69,28 +80,7 @@ final class AccessibilitySettingsStore {
     }
 
     func load() -> AccessibilitySettingsSnapshot {
-        var value = AccessibilitySettingsSnapshot.defaults
-        value.underlinesLinks = preferences.bool(.underlineLinks)
-        value.roleColorDisplay = preferences.rawValue(.roleColorDisplay)
-        value.disablesProfileEffects = preferences.bool(.accessibilityDisableProfileEffects)
-        value.disablesNameplates = preferences.bool(.accessibilityDisableNameplates)
-        value.disablesAvatarDecorations = preferences.bool(.accessibilityDisableAvatarDecorations)
-        value.disablesProfileFrames = preferences.bool(.accessibilityDisableProfileFrames)
-        value.disablesNameStyles = preferences.bool(.accessibilityDisableNameStyles)
-        value.disablesProfileGradients = preferences.bool(.accessibilityDisableProfileGradients)
-        value.disablesServerTags = preferences.bool(.accessibilityDisableServerTags)
-        value.announcesTimestamps = preferences.bool(.accessibilityAnnounceTimestamp)
-        value.announcesEditedStatus = preferences.bool(.accessibilityAnnounceEdited)
-        value.announcesReactionCounts = preferences.bool(.accessibilityAnnounceReactions)
-        value.announcesAttachmentTypes = preferences.bool(.accessibilityAnnounceAttachmentTypes)
-        value.announcesNewMessages = preferences.bool(.accessibilityAnnounceNewMessages)
-        value.disablesMessageSendingAnimations = preferences.bool(.accessibilityDisableSendAnimations)
-        value.disablesAllAnimations = preferences.bool(.accessibilityDisableAllAnimations)
-        value.disablesSidebarAnimations = preferences.bool(.accessibilityDisableSidebarAnimations)
-        value.disablesSideChatAnimations = preferences.bool(.accessibilityDisableSideChatAnimations)
-        value.disablesOverlayAnimations = preferences.bool(.accessibilityDisableOverlayAnimations)
-        value.disablesOwnCosmetics = preferences.bool(.accessibilityDisableOwnCosmetics)
-        return value
+        AccessibilitySettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: AccessibilitySettingsSnapshot) {

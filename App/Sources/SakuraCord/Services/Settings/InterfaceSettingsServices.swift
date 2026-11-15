@@ -71,11 +71,19 @@ nonisolated enum InterfaceTimestampFormat: String, CaseIterable, Identifiable, S
 }
 
 nonisolated struct InterfaceSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self(timestampFormat: .system, includesTimestampSeconds: false)
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
     var timestampFormat: InterfaceTimestampFormat
     var includesTimestampSeconds: Bool
-    var alwaysShowsTimestamps = false
+    var alwaysShowsTimestamps: Bool
+}
+
+nonisolated extension InterfaceSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        timestampFormat = value(.timestampFormat).rawValue()
+        includesTimestampSeconds = value(.timestampSeconds).boolValue
+        alwaysShowsTimestamps = value(.alwaysShowTimestamps).boolValue
+    }
 }
 
 nonisolated enum InterfaceTimestampFormatter {
@@ -198,11 +206,7 @@ final class InterfaceSettingsStore {
     }
 
     func load() -> InterfaceSettingsSnapshot {
-        var value = InterfaceSettingsSnapshot.defaults
-        value.timestampFormat = preferences.rawValue(.timestampFormat)
-        value.includesTimestampSeconds = preferences.bool(.timestampSeconds)
-        value.alwaysShowsTimestamps = preferences.bool(.alwaysShowTimestamps)
-        return value
+        InterfaceSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: InterfaceSettingsSnapshot) {

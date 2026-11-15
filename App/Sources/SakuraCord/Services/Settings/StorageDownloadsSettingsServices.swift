@@ -14,13 +14,19 @@ nonisolated enum LocalStorageLimit: Int64, CaseIterable, Identifiable, Sendable 
 }
 
 nonisolated struct StorageDownloadsSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self(
-        localStorageLimit: .gigabytes2,
-        revealsCompletedDownloads: false
-    )
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
     var localStorageLimit: LocalStorageLimit
     var revealsCompletedDownloads: Bool
+}
+
+nonisolated extension StorageDownloadsSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        // The registration accepts any size, so an unlisted one keeps the registered default.
+        localStorageLimit = LocalStorageLimit(rawValue: Int64(value(.localStorageLimit).integerValue))
+            ?? Self.defaults.localStorageLimit
+        revealsCompletedDownloads = value(.revealCompletedDownloads).boolValue
+    }
 }
 
 @MainActor
@@ -34,12 +40,7 @@ final class StorageDownloadsSettingsStore {
     }
 
     func load() -> StorageDownloadsSettingsSnapshot {
-        var value = StorageDownloadsSettingsSnapshot.defaults
-        if let limit = LocalStorageLimit(rawValue: Int64(preferences.integer(.localStorageLimit))) {
-            value.localStorageLimit = limit
-        }
-        value.revealsCompletedDownloads = preferences.bool(.revealCompletedDownloads)
-        return value
+        StorageDownloadsSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: StorageDownloadsSettingsSnapshot) {
