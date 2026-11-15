@@ -776,25 +776,17 @@ extension AppModel {
 
     func retryMessageLoad() {
         guard selectedChannelID != nil else { return }
-        if messageLoadErrorIsLaterPage {
-            messageLoadError = nil
-            messageLoadErrorIsLaterPage = false
-            let account = accountSession()
-            startAccountChildTask(account: account) { model, account in
-                await model.loadLater(account: account)
-            }
+        guard messageLoadErrorIsLaterPage || messageLoadErrorIsEarlierPage else {
+            beginSelectedChannelLoad()
             return
         }
-        if messageLoadErrorIsEarlierPage {
-            messageLoadError = nil
-            messageLoadErrorIsEarlierPage = false
-            let account = accountSession()
-            startAccountChildTask(account: account) { model, account in
-                await model.loadEarlier(account: account)
-            }
-            return
+        let retriesLaterPage = messageLoadErrorIsLaterPage
+        messageLoadError = nil
+        if retriesLaterPage { messageLoadErrorIsLaterPage = false } else { messageLoadErrorIsEarlierPage = false }
+        let account = accountSession()
+        startAccountChildTask(account: account) { model, account in
+            if retriesLaterPage { await model.loadLater(account: account) } else { await model.loadEarlier(account: account) }
         }
-        beginSelectedChannelLoad()
     }
 
     /// Records that messages retained for `channelID` after this point may
