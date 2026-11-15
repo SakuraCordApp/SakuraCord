@@ -331,10 +331,7 @@ extension AppModel {
         let session = accountSession()
         let channelID = selectedChannelID
         let thread = openThread
-        guard let reservation = composer.outbox.reserveSubmission() else {
-            composer.isSendQueueFullAlertPresented = true
-            return false
-        }
+        guard let reservation = reserveOutgoingQueueSubmission() else { return false }
         // The message shows at once, so its videos are read first.
         await LocalVideo.prepare(attachments.map(\.url))
         composer.outbox.releaseSubmission(reservation)

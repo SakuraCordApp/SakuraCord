@@ -18,10 +18,7 @@ extension AppModel {
             releaseProfileMessage(nonce: nonce)
             return true
         }
-        guard let reservation = composer.outbox.reserveSubmission(nonce: nonce) else {
-            composer.isSendQueueFullAlertPresented = true
-            return false
-        }
+        guard let reservation = reserveOutgoingQueueSubmission(nonce: nonce) else { return false }
         defer { composer.outbox.releaseSubmission(reservation) }
         composer.outbox.retainReceipt(nonce: nonce)
         let session = accountSession()

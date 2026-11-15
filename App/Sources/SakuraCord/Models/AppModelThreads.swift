@@ -652,10 +652,7 @@ extension AppModel {
               attachmentBatchFits(attachments.count),
               allowOnboardingSubmission(in: creation.parentID)
         else { return .rejected }
-        guard let reservation = composer.outbox.reserveSubmission() else {
-            composer.isSendQueueFullAlertPresented = true
-            return .rejected
-        }
+        guard let reservation = reserveOutgoingQueueSubmission() else { return .rejected }
         defer { composer.outbox.releaseSubmission(reservation) }
         let session = accountSession()
         let draft = CreateThreadDraft(

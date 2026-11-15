@@ -124,6 +124,15 @@ extension AppModel {
         return false
     }
 
+    /// Holds a place in the outbox for a submission, or alerts that it is full.
+    func reserveOutgoingQueueSubmission(nonce: String? = nil) -> UUID? {
+        guard let reservation = composer.outbox.reserveSubmission(nonce: nonce) else {
+            composer.isSendQueueFullAlertPresented = true
+            return nil
+        }
+        return reservation
+    }
+
     func submitComposerMessage(
         attachments: [StagedAttachment]
     ) async -> ComposerSubmissionResult {
