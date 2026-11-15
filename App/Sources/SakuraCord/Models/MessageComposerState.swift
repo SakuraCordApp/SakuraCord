@@ -27,10 +27,13 @@ final class MessageComposerState {
     var isSendQueueFullAlertPresented = false
     @ObservationIgnored var outbox = OutgoingMessageState()
     @ObservationIgnored private var draftWriteTask: Task<Void, Never>?
-    /// Each channel's latest draft written this session. Returning to a
+    /// Each channel's latest draft this session wrote or read. Returning to a
     /// channel shows it at once; its stored copy arrives too late to survive
     /// text typed as soon as the channel opens.
     @ObservationIgnored private var sessionDrafts: [ChannelID: String] = [:]
+    /// Advances when drafts are cleared, so a read that started earlier
+    /// cannot remember what was cleared.
+    @ObservationIgnored private var sessionDraftsEpoch: UInt64 = 0
     /// Staged files whose privacy and size check is still running. They show
     /// in the composer at once but cannot be sent until it finishes.
     var checkingAttachmentIDs: Set<UUID> = []
@@ -90,7 +93,17 @@ final class MessageComposerState {
             return try await database.draft(channelID: channelID)
         }
         draftWriteTask = Task { _ = try? await read.value }
-        return try await read.value
+        let epoch = sessionDraftsEpoch
+        let value = try await read.value
+        if epoch == sessionDraftsEpoch, sessionDrafts[channelID] == nil {
+            sessionDrafts[channelID] = value
+        }
+        return value
+    }
+
+    private func forgetSessionDrafts() {
+        sessionDrafts = [:]
+        sessionDraftsEpoch &+= 1
     }
 
     func flushDraftOperations() async {
@@ -108,7 +121,7 @@ final class MessageComposerState {
         let previousThreadDraft = threadDraft
         draft = ""
         threadDraft = ""
-        sessionDrafts = [:]
+        forgetSessionDrafts()
         let clearedDraftRevision = draftRevision
         let clearedThreadRevision = threadDraftRevision
         let previousWrite = draftWriteTask
@@ -133,7 +146,7 @@ final class MessageComposerState {
         draftWriteTask = nil
         draft = ""
         threadDraft = ""
-        sessionDrafts = [:]
+        forgetSessionDrafts()
         replyingTo = nil
         threadReplyingTo = nil
         channelAttachments = []
