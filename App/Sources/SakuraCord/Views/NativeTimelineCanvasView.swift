@@ -474,8 +474,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         let backing = (scale: window?.backingScaleFactor ?? 0, colorSpace: window?.colorSpace)
         guard backing != rowMotion.backing else { return }
         rowMotion.backing = backing
-        // Moving chips were drawn for the previous display's scale and colours.
+        // Moving chips and row pictures were drawn for the previous display's
+        // scale and colours.
         finishRowMotions()
+        invalidatePresentationCaches()
     }
 
     deinit {
