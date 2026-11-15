@@ -372,7 +372,7 @@ enum DiscordPrivateRecipientOrdering {
         channelID: String,
         channelType: Int
     ) -> [UserDTO] {
-        guard channelType == 1 || channelType == 3 else { return users }
+        guard channelType == DiscordChannelType.directMessage || channelType == DiscordChannelType.groupDirectMessage else { return users }
         return stableSort(users, channelID: channelID, id: \UserDTO.id)
     }
 
@@ -381,7 +381,7 @@ enum DiscordPrivateRecipientOrdering {
         channelID: String,
         channelType: Int
     ) -> [String] {
-        guard channelType == 1 || channelType == 3 else { return ids }
+        guard channelType == DiscordChannelType.directMessage || channelType == DiscordChannelType.groupDirectMessage else { return ids }
         return stableSort(ids, channelID: channelID, id: { $0 })
     }
 
@@ -390,7 +390,7 @@ enum DiscordPrivateRecipientOrdering {
         channelID: String,
         channelType: Int
     ) -> [User] {
-        guard channelType == 1 || channelType == 3 else { return users }
+        guard channelType == DiscordChannelType.directMessage || channelType == DiscordChannelType.groupDirectMessage else { return users }
         return stableSort(users, channelID: channelID, id: { $0.id.description })
     }
 
