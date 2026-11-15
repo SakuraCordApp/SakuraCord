@@ -10,24 +10,12 @@ import SwiftUI
 
 struct NativeTimelineComponentsDrawInput {
     let layout: NativeTimelineComponentLayout
-    let bubbleRegion: NativeTimelineBubbleRegion?
-    let model: AppModel?
-    let messageID: MessageID
-    let itemIdentifier: NativeMessageTimelineItem.Identifier
     let layoutIndex: Int
-    let textSelection: NativeTimelineTextSelection?
-    let hoveredMention: NativeTimelineMentionHover?
-    let hoveredTextLink: NativeTimelineTextLinkHover?
-    let textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat]
-    let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
-    var spoilerRevealStore: NativeTimelineSpoilerRevealStore?
-    let hoveredComponentButton: NativeTimelineComponentButtonTarget?
-    let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
-    let pressedComponentButton: NativeTimelineComponentButtonTarget?
-    let componentButtonPressProgress: CGFloat
-    let fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
-    let fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat]
-    let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
+    var message: NativeTimelineMessageDrawInput
+
+    var messageID: MessageID { message.row.message.id }
+    var itemIdentifier: NativeMessageTimelineItem.Identifier { .message(message.row.identity) }
+    var bubbleRegion: NativeTimelineBubbleRegion? { message.layout.bubbleRegion }
 }
 
 extension NativeTimelineRowPainter {
@@ -55,7 +43,7 @@ extension NativeTimelineRowPainter {
 
     static func drawComponents(_ input: NativeTimelineComponentsDrawInput) {
         let hiddenContainerFrames =
-            input.spoilerRevealStore.map {
+            input.message.spoilerRevealStore.map {
                 NativeTimelineSpoilerConcealmentPolicy
                     .hiddenContainerFrames(
                         in: input.layout,
@@ -76,7 +64,7 @@ extension NativeTimelineRowPainter {
         isSpoiler: Bool,
         input: NativeTimelineComponentsDrawInput
     ) -> Bool {
-        input.spoilerRevealStore.map {
+        input.message.spoilerRevealStore.map {
             NativeTimelineSpoilerConcealmentPolicy.isConcealed(
                 messageID: input.messageID,
                 contentID: contentID,
@@ -118,7 +106,7 @@ extension NativeTimelineRowPainter {
             if isHidden {
                 NativeTimelineSpoilerCover.draw(covering: true, in: container.frame, cornerRadius: container.cornerRadius) {
                     var revealed = input
-                    revealed.spoilerRevealStore = nil
+                    revealed.message.spoilerRevealStore = nil
                     drawComponents(revealed)
                 }
             }
@@ -157,16 +145,16 @@ extension NativeTimelineRowPainter {
             attributedText(
                 region.text,
                 in: region.frame,
-                model: input.model,
+                model: input.message.model,
                 bubble: input.bubbleRegion,
-                selectionRange: input.textSelection.scoped(to: input.itemIdentifier, region: textRegion)?.range,
+                selectionRange: input.message.textSelection.scoped(to: input.itemIdentifier, region: textRegion)?.range,
                 hoveredMentionCharacterIndex:
-                    input.hoveredMention.scoped(to: input.itemIdentifier, region: textRegion)?.characterIndex,
+                    input.message.interaction.hoveredMention.scoped(to: input.itemIdentifier, region: textRegion)?.characterIndex,
                 hoveredLinkCharacterIndex:
-                    input.hoveredTextLink.scoped(to: input.itemIdentifier, region: textRegion)?.characterIndex,
-                spoilerHoverProgress: input.textSpoilerHover.progress(in: input.itemIdentifier, region: textRegion),
+                    input.message.interaction.hoveredTextLink.scoped(to: input.itemIdentifier, region: textRegion)?.characterIndex,
+                spoilerHoverProgress: input.message.interaction.textSpoilerHover.progress(in: input.itemIdentifier, region: textRegion),
                 revealedSpoilerLocations:
-                    input.revealedTextSpoilerState.locations(in: textRegion)
+                    input.message.revealedTextSpoilerState.locations(in: textRegion)
             )
         }
     }
@@ -227,11 +215,13 @@ extension NativeTimelineRowPainter {
                 file.card(frame: region.frame),
                 messageID: input.messageID,
                 bubbleRegion: input.bubbleRegion,
-                state: input.model?.attachmentDownloads.states[file.attachment.id],
-                finishProgress: input.fileCardFinishProgress,
+                state: input.message.model?.attachmentDownloads.states[file.attachment.id],
+                finishProgress: input.message.interaction.fileCardFinishProgress,
                 pointer: .init(
-                    hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
-                    pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                    hovered: input.message.interaction.hoveredComponentButton,
+                    hoverProgress: input.message.interaction.fileCardHoverProgress,
+                    pressed: input.message.interaction.pressedComponentButton,
+                    pressProgress: input.message.interaction.componentButtonPressProgress
                 )
             )
         }
@@ -252,10 +242,10 @@ extension NativeTimelineRowPainter {
             )
             componentButton(
                 region,
-                isHovered: input.hoveredComponentButton == target,
-                pressProgress: input.pressedComponentButton == target
-                    ? input.componentButtonPressProgress : 0,
-                hasAnimatedEmojiOverlay: input.animatedOverlayRoles.contains(
+                isHovered: input.message.interaction.hoveredComponentButton == target,
+                pressProgress: input.message.interaction.pressedComponentButton == target
+                    ? input.message.interaction.componentButtonPressProgress : 0,
+                hasAnimatedEmojiOverlay: input.message.animatedOverlayRoles.contains(
                     .componentButton(input.layoutIndex, region.componentID)
                 ),
                 cornerRadius: bubbleConcentricCornerRadius(
@@ -274,7 +264,7 @@ extension NativeTimelineRowPainter {
                 messageID: input.messageID,
                 componentID: region.componentID
             )
-            guard target != input.activeComponentChoiceTarget else { continue }
+            guard target != input.message.interaction.activeComponentChoiceTarget else { continue }
             componentSelect(
                 region,
                 cornerRadius: bubbleConcentricCornerRadius(

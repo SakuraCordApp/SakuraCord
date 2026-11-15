@@ -48,7 +48,7 @@ struct NativeTimelineMessageDrawInput {
     let interaction: NativeTimelineRowInteraction
     let textSelection: NativeTimelineTextSelection?
     let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
-    let spoilerRevealStore: NativeTimelineSpoilerRevealStore?
+    var spoilerRevealStore: NativeTimelineSpoilerRevealStore?
     let pollPresentation: NativeTimelinePollPresentation
     let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
 }
@@ -389,18 +389,11 @@ extension NativeTimelineRowPainter {
     private static func drawMessageContent(_ input: NativeTimelineMessageDrawInput) {
         let row = input.row
         let layout = input.layout
-        let model = input.model
-        let message = row.message
-        let textSelection = input.textSelection
-        let hoveredMention = input.interaction.hoveredMention
-        let hoveredTextLink = input.interaction.hoveredTextLink
-        let textSpoilerHover = input.interaction.textSpoilerHover
-        let revealedTextSpoilerState = input.revealedTextSpoilerState
         if let frame = layout.contentFrame, let contentText = layout.contentText {
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current?.cgContext.setAlpha(
                 CGFloat(
-                    MessageOutboxPresentation.textOpacity(for: message)
+                    MessageOutboxPresentation.textOpacity(for: row.message)
                 )
             )
             // CoreText requires the full fractional typographic line box to
@@ -412,16 +405,16 @@ extension NativeTimelineRowPainter {
             attributedText(
                 contentText,
                 in: drawingFrame,
-                model: model,
+                model: input.model,
                 bubble: layout.bubbleRegion,
-                selectionRange: textSelection.scoped(to: .message(row.identity), region: .content)?.range,
+                selectionRange: input.textSelection.scoped(to: .message(row.identity), region: .content)?.range,
                 hoveredMentionCharacterIndex:
-                    hoveredMention.scoped(to: .message(row.identity), region: .content)?.characterIndex,
+                    input.interaction.hoveredMention.scoped(to: .message(row.identity), region: .content)?.characterIndex,
                 hoveredLinkCharacterIndex:
-                    hoveredTextLink.scoped(to: .message(row.identity), region: .content)?.characterIndex,
-                spoilerHoverProgress: textSpoilerHover.progress(in: .message(row.identity), region: .content),
+                    input.interaction.hoveredTextLink.scoped(to: .message(row.identity), region: .content)?.characterIndex,
+                spoilerHoverProgress: input.interaction.textSpoilerHover.progress(in: .message(row.identity), region: .content),
                 revealedSpoilerLocations:
-                    revealedTextSpoilerState.locations(in: .content)
+                    input.revealedTextSpoilerState.locations(in: .content)
             )
             NSGraphicsContext.restoreGraphicsState()
         }
@@ -679,24 +672,12 @@ extension NativeTimelineRowPainter {
     private static func drawMessageComponentsAndStickers(
         _ input: NativeTimelineMessageDrawInput
     ) {
-        let row = input.row
         let layout = input.layout
-        let model = input.model
-        let message = row.message
-        let textSelection = input.textSelection
-        let hoveredMention = input.interaction.hoveredMention
-        let hoveredTextLink = input.interaction.hoveredTextLink
-        let textSpoilerHover = input.interaction.textSpoilerHover
-        let revealedTextSpoilerState = input.revealedTextSpoilerState
-        let spoilerRevealStore = input.spoilerRevealStore
-        let hoveredComponentButton = input.interaction.hoveredComponentButton
-        let activeComponentChoiceTarget = input.interaction.activeComponentChoiceTarget
-        let pressedComponentButton = input.interaction.pressedComponentButton
-        let componentButtonPressProgress = input.interaction.componentButtonPressProgress
+        let message = input.row.message
         for card in layout.inviteRegions {
             let target = NativeTimelineComponentButtonTarget(messageID: message.id, componentID: card.componentID)
-            inviteCard(card, bubbleRegion: layout.bubbleRegion, isHovered: hoveredComponentButton == target,
-                       pressProgress: pressedComponentButton == target ? componentButtonPressProgress : 0)
+            inviteCard(card, bubbleRegion: layout.bubbleRegion, isHovered: input.interaction.hoveredComponentButton == target,
+                       pressProgress: input.interaction.pressedComponentButton == target ? input.interaction.componentButtonPressProgress : 0)
         }
         for region in layout.sakuraCordDeepLinkRegions {
             let target = NativeTimelineComponentButtonTarget(
@@ -706,39 +687,15 @@ extension NativeTimelineRowPainter {
             sakuraCordDeepLinkCard(
                 region,
                 bubbleRegion: layout.bubbleRegion,
-                isButtonHovered: hoveredComponentButton == target,
+                isButtonHovered: input.interaction.hoveredComponentButton == target,
                 buttonPressProgress:
-                    pressedComponentButton == target
-                        ? componentButtonPressProgress
+                    input.interaction.pressedComponentButton == target
+                        ? input.interaction.componentButtonPressProgress
                         : 0
             )
         }
-        for (layoutIndex, componentLayout) in
-            layout.componentLayouts.enumerated()
-        {
-            drawComponents(.init(
-                layout: componentLayout,
-                bubbleRegion: layout.bubbleRegion,
-                model: model,
-                messageID: message.id,
-                itemIdentifier: .message(row.identity),
-                layoutIndex: layoutIndex,
-                textSelection: textSelection,
-                hoveredMention: hoveredMention,
-                hoveredTextLink: hoveredTextLink,
-                textSpoilerHover: textSpoilerHover,
-                revealedTextSpoilerState:
-                    revealedTextSpoilerState,
-                spoilerRevealStore: spoilerRevealStore,
-                hoveredComponentButton: hoveredComponentButton,
-                activeComponentChoiceTarget: activeComponentChoiceTarget,
-                pressedComponentButton: pressedComponentButton,
-                componentButtonPressProgress:
-                    componentButtonPressProgress,
-                fileCardHoverProgress: input.interaction.fileCardHoverProgress,
-                fileCardFinishProgress: input.interaction.fileCardFinishProgress,
-                animatedOverlayRoles: input.animatedOverlayRoles
-            ))
+        for (layoutIndex, componentLayout) in layout.componentLayouts.enumerated() {
+            drawComponents(.init(layout: componentLayout, layoutIndex: layoutIndex, message: input))
         }
         guard !layout.stickerFrames.isEmpty else { return }
         NSGraphicsContext.saveGraphicsState()
