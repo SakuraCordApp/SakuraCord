@@ -233,11 +233,7 @@ private final class PollURLProtocol: URLProtocol, @unchecked Sendable {
         case 429: body = #"{"retry_after":0.01,"global":false}"#
         default: body = request.httpMethod == "GET" ? #"{"users":[{"id":"10","username":"tester"}]}"# : Self.message
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if status != 204 { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: status == 204 ? "" : body)
     }
     override func stopLoading() {}
     static let message = #"""

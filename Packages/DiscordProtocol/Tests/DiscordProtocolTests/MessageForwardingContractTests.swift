@@ -127,9 +127,7 @@ private final class ForwardingURLProtocol: URLProtocol, @unchecked Sendable {
         Self.method = request.httpMethod
         Self.path = request.path
         Self.context = request.value(forHTTPHeaderField: "X-Context-Properties")
-        Self.body = requestBody().flatMap {
-            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-        }
+        Self.body = request.jsonBody
         let successBody = Self.path.hasSuffix("/users/@me/channels")
             ? Self.privateChannelResponse
             : Self.successResponse
@@ -140,10 +138,6 @@ private final class ForwardingURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
-
-    private func requestBody() -> Data? {
-        request.bodyData
-    }
 
     private static let successResponse = #"""
     {

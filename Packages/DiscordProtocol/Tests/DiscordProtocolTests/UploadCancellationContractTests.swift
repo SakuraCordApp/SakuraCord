@@ -246,7 +246,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
         }
         var data = Data()
         if request.httpMethod == "POST" {
-            let body = Self.requestBody(request)
+            let body = request.jsonBody
             if url.path.hasSuffix("/messages") || url.path.hasSuffix("/scheduled-messages") {
                 let attachments = body?["attachments"] as? [[String: Any]]
                 report(.posted(attachments?.compactMap { $0["filename"] as? String } ?? []))
@@ -261,10 +261,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
             }
             data = (try? JSONSerialization.data(withJSONObject: ["attachments": slots])) ?? Data()
         }
-        guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: data, headers: nil)
     }
 
     override func stopLoading() {
@@ -281,10 +278,5 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
             name: Self.received,
             object: Exchange(fixtureID: request.value(forHTTPHeaderField: Self.fixtureHeader), event: event)
         )
-    }
-
-    private static func requestBody(_ request: URLRequest) -> [String: Any]? {
-        let body = request.bodyData ?? Data()
-        return try? JSONSerialization.jsonObject(with: body) as? [String: Any]
     }
 }

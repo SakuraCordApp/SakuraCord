@@ -82,11 +82,7 @@ private final class CaptchaReplayURLProtocol: URLProtocol, @unchecked Sendable {
             {"captcha_key":["captcha-required"],"captcha_service":"hcaptcha","captcha_sitekey":"site-key",
              "captcha_rqtoken":"request-token","captcha_session_id":"captcha-session"}
             """ : #"{"id":"41","type":1,"recipients":[{"id":"2","username":"known"}]}"#
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: challenged ? 400 : 200, httpVersion: "HTTP/1.1",
-                                                             headerFields: ["Content-Type": "application/json"])!,
-                            cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(response.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: challenged ? 400 : 200, body: response)
     }
 
     override func stopLoading() {}

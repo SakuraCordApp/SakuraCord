@@ -148,9 +148,7 @@ private final class MessageRequestURLProtocol: URLProtocol, @unchecked Sendable 
             fixture.bodies.withLock { $0.append(value) }
         }
         // The provider reads no body from either decision.
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 204,
-                                                            httpVersion: "HTTP/1.1", headerFields: nil)!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 204, body: Data(), headers: nil)
     }
 
     override func stopLoading() {}

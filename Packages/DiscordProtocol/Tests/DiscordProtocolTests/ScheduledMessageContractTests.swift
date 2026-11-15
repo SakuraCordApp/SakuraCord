@@ -111,13 +111,7 @@ private final class ScheduledURLProtocol: URLProtocol, @unchecked Sendable {
         case ("GET", _): (200, "[\(Self.scheduled)]")
         default: (200, Self.scheduled)
         }
-        let response = HTTPURLResponse(
-            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if !body.isEmpty { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: body)
     }
 
     override func stopLoading() {}

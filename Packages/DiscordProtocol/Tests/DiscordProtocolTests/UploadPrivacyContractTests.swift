@@ -66,10 +66,7 @@ private final class UploadPrivacyURLProtocol: URLProtocol, @unchecked Sendable {
         let data = request.httpMethod == "POST"
             ? Data(#"{"attachments":[{"id":0,"upload_url":"https://upload.example/test","upload_filename":"clean-upload"}]}"#.utf8)
             : Data()
-        guard let url = request.url, let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: data, headers: nil)
     }
     override func stopLoading() {}
 }

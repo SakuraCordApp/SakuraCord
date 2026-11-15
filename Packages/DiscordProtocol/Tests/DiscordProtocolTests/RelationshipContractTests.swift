@@ -504,11 +504,7 @@ private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
         case ("DELETE", _, "404"): (404, #"{"code":10013,"message":"Unknown User"}"#)
         default: (204, "")
         }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-                                                             headerFields: ["Content-Type": "application/json"])!,
-                            cacheStoragePolicy: .notAllowed)
-        if !response.isEmpty { client?.urlProtocol(self, didLoad: Data(response.utf8)) }
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: response)
     }
 
     private func decodedRequestBody() -> JSONValue? {

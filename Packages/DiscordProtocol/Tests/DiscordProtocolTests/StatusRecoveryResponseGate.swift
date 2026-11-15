@@ -42,18 +42,6 @@ struct SettingsProtocolReply: Sendable {
 
 extension DirectMessageURLProtocol {
     func completeResponse(status: Int, body: String) {
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: status,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        )!
-        client?.urlProtocol(
-            self,
-            didReceive: response,
-            cacheStoragePolicy: .notAllowed
-        )
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: Data(body.utf8), headers: nil)
     }
 }

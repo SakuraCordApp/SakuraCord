@@ -103,12 +103,7 @@ private final class GuildFolderURLProtocol: URLProtocol, @unchecked Sendable {
         captured.httpBody = request.bodyData
         NotificationCenter.default.post(name: Self.captured, object: captured)
         let body = captured.jsonBody
-        let response = HTTPURLResponse(
-            url: request.url!, statusCode: Self.settingsStatus, httpVersion: "HTTP/1.1", headerFields: nil
-        )!
         let payload = try? JSONSerialization.data(withJSONObject: ["settings": body?["settings"] as? String ?? ""])
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: payload ?? Data())
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: Self.settingsStatus, body: payload ?? Data(), headers: nil)
     }
 }

@@ -1047,17 +1047,7 @@ private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
              "thread_metadata": {"archived": false, "locked": false}\(member)}
             """
             : #"{"message": "Unknown Channel", "code": 10003}"#
-        guard let url = request.url,
-              let response = HTTPURLResponse(
-                  url: url, statusCode: answer.status, httpVersion: "HTTP/1.1", headerFields: nil
-              )
-        else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: answer.status, body: Data(body.utf8), headers: nil)
     }
 }
 
@@ -1352,18 +1342,7 @@ private final class ForumPostDeletionURLProtocol: URLProtocol, @unchecked Sendab
         Self.hadAuthorization = request.value(forHTTPHeaderField: "Authorization") != nil
         Self.hadBody = request.httpBody != nil || request.httpBodyStream != nil
 
-        guard let response = HTTPURLResponse(
-            url: request.url ?? URL(fileURLWithPath: "/"),
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        ) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("{}".utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: Data("{}".utf8), headers: nil)
     }
 
     override func stopLoading() {}
@@ -1399,15 +1378,6 @@ private final class ForumThreadResolutionURLProtocol: URLProtocol, @unchecked Se
         Self.hadAuthorization = request.value(forHTTPHeaderField: "Authorization") != nil
         Self.hadBody = request.httpBody != nil || request.httpBodyStream != nil
 
-        guard let response = HTTPURLResponse(
-            url: request.url ?? URL(fileURLWithPath: "/"),
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        ) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
         let body = Data(
             """
             {
@@ -1426,9 +1396,7 @@ private final class ForumThreadResolutionURLProtocol: URLProtocol, @unchecked Se
             }
             """.utf8
         )
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: body)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: body, headers: nil)
     }
 
     override func stopLoading() {}
@@ -1472,19 +1440,10 @@ private final class ForumPostCreationURLProtocol: URLProtocol, @unchecked Sendab
             } ?? []
         )
         Self.hadAuthorization = request.value(forHTTPHeaderField: "Authorization") != nil
-        if let data = Self.requestBody(request) {
+        if let data = request.bodyData {
             Self.body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         }
 
-        guard let response = HTTPURLResponse(
-            url: request.url ?? URL(fileURLWithPath: "/"),
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        ) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
         let responseBody = Data(
             """
             {
@@ -1514,16 +1473,10 @@ private final class ForumPostCreationURLProtocol: URLProtocol, @unchecked Sendab
             }
             """.utf8
         )
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: responseBody)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: responseBody, headers: nil)
     }
 
     override func stopLoading() {}
-
-    private static func requestBody(_ request: URLRequest) -> Data? {
-        request.bodyData
-    }
 }
 
 @Test func `thread-created messages attach the known thread and its latest message`() async throws {

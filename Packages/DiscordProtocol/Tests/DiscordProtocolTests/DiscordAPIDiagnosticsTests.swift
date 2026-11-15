@@ -584,26 +584,15 @@ private final class DiagnosticsURLProtocol: URLProtocol, @unchecked Sendable {
             ))
             return
         }
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: request.url?.lastPathComponent == "http-failure" ? 500 : 200,
-            httpVersion: nil,
-            headerFields: [
+        respond(
+            status: request.url?.lastPathComponent == "http-failure" ? 500 : 200,
+            body: Data(#"{"id":"444444444444444444"}"#.utf8),
+            headers: [
                 "Content-Type": "application/json",
                 "X-Request-ID": "222222222222222222",
                 "X-RateLimit-Bucket": "333333333333333333",
             ]
-        )!
-        client?.urlProtocol(
-            self,
-            didReceive: response,
-            cacheStoragePolicy: .notAllowed
         )
-        client?.urlProtocol(
-            self,
-            didLoad: Data(#"{"id":"444444444444444444"}"#.utf8)
-        )
-        client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}

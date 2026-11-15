@@ -406,10 +406,7 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
                "traits":[{"label":"Testing","emoji_name":"white_check_mark","position":0}]}}
             """
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if status != 204 { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: status == 204 ? "" : body)
     }
     private func joinApplication() {
         let submitted = request.httpMethod == "PUT"

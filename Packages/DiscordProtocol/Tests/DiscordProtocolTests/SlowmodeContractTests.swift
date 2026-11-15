@@ -39,15 +39,7 @@ private final class SlowmodeURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         Self.requestCount.withLock { $0 += 1 }
-        guard let url = request.url,
-              let response = HTTPURLResponse(
-                  url: url, statusCode: 429, httpVersion: nil,
-                  headerFields: ["Content-Type": "application/json"]
-              )
-        else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(#"{"code":20016,"retry_after":0.125}"#.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 429, body: #"{"code":20016,"retry_after":0.125}"#)
     }
 
     override func stopLoading() {}

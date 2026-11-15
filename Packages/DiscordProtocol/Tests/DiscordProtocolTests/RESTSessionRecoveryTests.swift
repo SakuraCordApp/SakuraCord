@@ -132,15 +132,7 @@ private final class RESTSessionRecoveryURLProtocol: URLProtocol, @unchecked Send
             client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
             return
         }
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: 200,
-            httpVersion: "HTTP/2",
-            headerFields: [:]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("{}".utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: Data("{}".utf8), headers: [:])
     }
 
     override func stopLoading() {}

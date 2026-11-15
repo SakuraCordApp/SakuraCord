@@ -137,7 +137,7 @@ private final class VoiceMessageSendURLProtocol: URLProtocol, @unchecked Sendabl
     override func startLoading() {
         guard let url = request.url else { return }
         let method = request.httpMethod ?? "GET"
-        let body = Self.requestBody(request) ?? Data()
+        let body = request.bodyData ?? Data()
         NotificationCenter.default.post(
             name: Self.received,
             object: Exchange(
@@ -166,18 +166,8 @@ private final class VoiceMessageSendURLProtocol: URLProtocol, @unchecked Sendabl
             "duration_secs":8.020000457763672,"waveform":"AAEC"}],"reactions":[]}
             """.utf8)
         }
-        guard let response = HTTPURLResponse(
-            url: url, statusCode: 200, httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
-        ) else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: data)
     }
 
     override func stopLoading() {}
-
-    private static func requestBody(_ request: URLRequest) -> Data? {
-        request.bodyData
-    }
 }

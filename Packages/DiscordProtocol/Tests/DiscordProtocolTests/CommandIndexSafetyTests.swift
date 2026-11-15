@@ -105,10 +105,7 @@ private final class CommandIndexSafetyURLProtocol: URLProtocol, @unchecked Senda
             status = 404
             body = #"{"code":10003,"message":"Unknown Channel"}"#
         }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status,
-                                                            httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: body)
     }
 
     override func stopLoading() {}

@@ -912,15 +912,10 @@ private final class ReactionRateLimitURLProtocol: URLProtocol, @unchecked Sendab
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        guard let url = request.url,
-              let response = HTTPURLResponse(
-                  url: url, statusCode: 429, httpVersion: "HTTP/1.1",
-                  headerFields: ["Content-Type": "application/json", "Retry-After": "1", "x-request-id": "fixture"]
-              )
-        else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(#"{"retry_after":0.3,"global":false}"#.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(
+            status: 429, body: Data(#"{"retry_after":0.3,"global":false}"#.utf8),
+            headers: ["Content-Type": "application/json", "Retry-After": "1", "x-request-id": "fixture"]
+        )
     }
 
     override func stopLoading() {}

@@ -169,10 +169,7 @@ private final class InboxContractURLProtocol: URLProtocol, @unchecked Sendable {
             body = Data()
             status = 204
         }
-        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: body)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: body)
     }
     private func requestJSON() -> Any? {
         let data = request.bodyData ?? Data()

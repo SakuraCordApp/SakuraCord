@@ -525,9 +525,7 @@ final class DirectMessageURLProtocol:
     }
 
     override func startLoading() {
-        let requestBody = Self.requestBody(request).flatMap {
-            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-        }
+        let requestBody = request.jsonBody
         let query = URLComponents(
             url: request.url!,
             resolvingAgainstBaseURL: false
@@ -686,8 +684,4 @@ final class DirectMessageURLProtocol:
     }
 
     override func stopLoading() {}
-
-    private static func requestBody(_ request: URLRequest) -> Data? {
-        request.bodyData
-    }
 }

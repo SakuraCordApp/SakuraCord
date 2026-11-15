@@ -380,16 +380,13 @@ private final class FavoritesURLProtocol: URLProtocol, @unchecked Sendable {
         captured.httpBody = request.bodyData
         NotificationCenter.default.post(name: Self.captured, object: captured)
         let body = captured.jsonBody ?? [:]
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
         let payload = try? JSONSerialization.data(withJSONObject: ["settings": body["settings"] as? String ?? ""])
         let finish: @Sendable (Bool) -> Void = { [self] fails in
             guard !fails else {
                 client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
                 return
             }
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: payload ?? Data())
-            client?.urlProtocolDidFinishLoading(self)
+            respond(status: 200, body: payload ?? Data(), headers: nil)
         }
         let isHeld = Self.state.withLock { state in
             if state.holdsResponses { state.heldResponses.append(finish) }

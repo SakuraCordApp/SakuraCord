@@ -85,15 +85,7 @@ private final class PinURLProtocol: URLProtocol, @unchecked Sendable {
         }
         """#
         let body = isRead ? readBody : ""
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: isRead ? 200 : 204,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if !body.isEmpty { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: isRead ? 200 : 204, body: Data(body.utf8), headers: nil)
     }
 
     override func stopLoading() {}
