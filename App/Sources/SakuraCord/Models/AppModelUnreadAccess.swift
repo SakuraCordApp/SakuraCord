@@ -82,13 +82,6 @@ nonisolated struct UnreadAccessProjectionSource: Sendable {
 
 @MainActor
 extension AppModel {
-    nonisolated static func changedCurrentUserRoleGuildIDs(
-        from previous: [GuildID: Set<RoleID>],
-        to current: [GuildID: Set<RoleID>]
-    ) -> Set<GuildID> {
-        changedKeys(from: previous, to: current, isEqual: ==)
-    }
-
     /// The keys present in either map whose values `isEqual` doesn't match.
     nonisolated static func changedKeys<Key: Hashable, Value>(
         from previous: [Key: Value],
@@ -202,15 +195,11 @@ extension AppModel {
         previousGuildsByID: [GuildID: Guild],
         currentGuilds: [Guild]
     ) {
-        let retainedGuildIDs = Set(currentGuilds.map(\.id))
-        let affectedGuildIDs = Set(
-            currentGuilds.lazy.filter {
-                !Self.hasEqualGuildAccessInputs(
-                    previousGuildsByID[$0.id],
-                    $0
-                )
-            }.map(\.id)
-        ).union(previousGuildsByID.keys.filter { !retainedGuildIDs.contains($0) })
+        let affectedGuildIDs = Self.changedKeys(
+            from: previousGuildsByID,
+            to: Dictionary(uniqueKeysWithValues: currentGuilds.map { ($0.id, $0) }),
+            isEqual: Self.hasEqualGuildAccessInputs
+        )
         AppPerformanceSignposts.measureSync("UnreadAccessTriggerGuildLayoutChanged") {
             if affectedGuildIDs.isEmpty {
                 refreshUnreadPresentation()

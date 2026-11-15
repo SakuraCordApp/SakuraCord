@@ -353,10 +353,7 @@ extension AppModel {
         let replacement = roleIDsByGuild.mapValues(Set.init)
         guard currentUserRoleIDsByGuild != replacement else { return }
         let previous = currentUserRoleIDsByGuild
-        let affectedGuildIDs = Self.changedCurrentUserRoleGuildIDs(
-            from: previous,
-            to: replacement
-        )
+        let affectedGuildIDs = Self.changedKeys(from: previous, to: replacement, isEqual: ==)
         currentUserRoleIDsByGuild = replacement
         for guildID in affectedGuildIDs {
             readState.updateCurrentUserRoles(
