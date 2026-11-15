@@ -5,39 +5,7 @@ import OSLog
 import SakuraCordModels
 import UserNotifications
 
-nonisolated enum NotificationPreviewStyle: String, CaseIterable, Identifiable {
-    case full
-    case senderOnly
-    case hidden
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .full: "Show sender and message"
-        case .senderOnly: "Show sender only"
-        case .hidden: "Hide notification details"
-        }
-    }
-}
-
-nonisolated enum NotificationDockBadgeStyle: String, CaseIterable, Identifiable {
-    case mentions
-    case unreadConversations
-    case off
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .mentions: "Unread mentions"
-        case .unreadConversations: "Unread conversations"
-        case .off: "Off"
-        }
-    }
-}
-
-nonisolated enum NotificationEventType: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum NotificationEventType: Sendable {
     case directMessage
     case groupDirectMessage
     case mention
@@ -45,34 +13,24 @@ nonisolated enum NotificationEventType: String, CaseIterable, Identifiable, Send
     case incomingCall
     case serverActivity
 
-    var id: String { rawValue }
-}
-
-nonisolated struct NotificationEventContext: Equatable, Sendable {
-    var type: NotificationEventType
-
     static func message(
         _ message: Message,
         channel: Channel?,
         isMention: Bool,
         currentUserID: UserID
     ) -> Self {
-        let type: NotificationEventType
         if channel?.kind == .directMessage {
-            type = .directMessage
+            .directMessage
         } else if channel?.kind == .groupDirectMessage {
-            type = .groupDirectMessage
+            .groupDirectMessage
         } else if message.replyPreview?.author.id == currentUserID {
-            type = .reply
+            .reply
         } else if isMention {
-            type = .mention
+            .mention
         } else {
-            type = .serverActivity
+            .serverActivity
         }
-        return Self(type: type)
     }
-
-    static let incomingCall = Self(type: .incomingCall)
 }
 
 nonisolated enum NativeNotificationIdentity {
@@ -92,10 +50,6 @@ nonisolated enum NativeNotificationIdentity {
     static func conversation(accountID: String, channelID: ChannelID) -> String {
         "conversation:\(accountID):\(channelID)"
     }
-}
-
-nonisolated enum NotificationFocusPolicy {
-    static var interruptionLevel: UNNotificationInterruptionLevel { .active }
 }
 
 nonisolated struct NotificationContentPresentation: Equatable, Sendable {
@@ -238,7 +192,6 @@ protocol NativeNotificationService: Sendable {
     func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
         presentation: NotificationContentPresentation,
         preferences: NotificationPreferences
@@ -258,7 +211,6 @@ final class NoopNativeNotificationService: NativeNotificationService {
     func deliverMessage(
         message _: Message,
         channel _: Channel?,
-        guild _: Guild?,
         accountID _: String,
         presentation _: NotificationContentPresentation,
         preferences _: NotificationPreferences
@@ -329,7 +281,6 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
     func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
         presentation: NotificationContentPresentation,
         preferences: NotificationPreferences
@@ -346,7 +297,7 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         content.title = presentation.title
         content.subtitle = presentation.subtitle
         content.body = presentation.body
-        content.interruptionLevel = NotificationFocusPolicy.interruptionLevel
+        content.interruptionLevel = .active
         if preferences.groupsByConversation {
             content.threadIdentifier = NativeNotificationIdentity.conversation(
                 accountID: accountID,

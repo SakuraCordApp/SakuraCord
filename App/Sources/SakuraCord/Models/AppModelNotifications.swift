@@ -86,7 +86,7 @@ extension AppModel {
         guard message.type != .call else { return }
         let channel = knownRootChannel(message.channelID)
         guard let currentUserID = snapshot?.currentUser.id else { return }
-        let event = NotificationEventContext.message(
+        let event = NotificationEventType.message(
             message,
             channel: channel,
             isMention: isMention,
@@ -120,7 +120,6 @@ extension AppModel {
             await model.notificationService.deliverMessage(
                 message: message,
                 channel: channel,
-                guild: guild,
                 accountID: accountID,
                 presentation: presentation,
                 preferences: model.notificationPreferences

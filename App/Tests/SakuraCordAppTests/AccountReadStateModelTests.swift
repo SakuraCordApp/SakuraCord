@@ -1742,7 +1742,6 @@ private final class RecordingNotificationService: NativeNotificationService {
     func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
         presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences

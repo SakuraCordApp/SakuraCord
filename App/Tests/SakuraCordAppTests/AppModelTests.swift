@@ -8596,7 +8596,6 @@ private final class PermissionRecordingNotificationService: NativeNotificationSe
     func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
         presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
@@ -8620,7 +8619,6 @@ private final class SuspendedAccountNotificationService: NativeNotificationServi
     func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
         presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences

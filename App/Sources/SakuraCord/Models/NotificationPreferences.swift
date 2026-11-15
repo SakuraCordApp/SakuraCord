@@ -27,6 +27,38 @@ nonisolated enum NotificationSoundKeys {
     static let callRingtoneName = "notifications.callRingtoneName"
 }
 
+nonisolated enum NotificationPreviewStyle: String, CaseIterable, Identifiable {
+    case full
+    case senderOnly
+    case hidden
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .full: "Show sender and message"
+        case .senderOnly: "Show sender only"
+        case .hidden: "Hide notification details"
+        }
+    }
+}
+
+nonisolated enum NotificationDockBadgeStyle: String, CaseIterable, Identifiable {
+    case mentions
+    case unreadConversations
+    case off
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .mentions: "Unread mentions"
+        case .unreadConversations: "Unread conversations"
+        case .off: "Off"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class NotificationPreferences {
@@ -178,11 +210,11 @@ final class NotificationPreferences {
     }
 
     func allows(
-        _ event: NotificationEventContext,
+        _ event: NotificationEventType,
         isCurrentConversation: Bool
     ) -> Bool {
-        guard isEnabled || playsSound, isEnabled(event.type) else { return false }
-        if event.type == .incomingCall {
+        guard isEnabled || playsSound, isEnabled(event) else { return false }
+        if event == .incomingCall {
             return true
         }
         if suppressesCurrentConversation, isCurrentConversation { return false }

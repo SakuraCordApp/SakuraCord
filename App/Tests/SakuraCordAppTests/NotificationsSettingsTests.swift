@@ -121,60 +121,58 @@ import UserNotifications
         content: "Earlier"
     )
 
-    #expect(NotificationEventContext.message(
+    #expect(NotificationEventType.message(
         directMessage,
         channel: directChannel,
         isMention: false,
         currentUserID: currentUser.id
-    ).type == .directMessage)
-    #expect(NotificationEventContext.message(
+    ) == .directMessage)
+    #expect(NotificationEventType.message(
         groupMessage,
         channel: groupChannel,
         isMention: false,
         currentUserID: currentUser.id
-    ).type == .groupDirectMessage)
-    #expect(NotificationEventContext.message(
+    ) == .groupDirectMessage)
+    #expect(NotificationEventType.message(
         reply,
         channel: serverChannel,
         isMention: true,
         currentUserID: currentUser.id
-    ).type == .reply)
-    #expect(NotificationEventContext.message(
+    ) == .reply)
+    #expect(NotificationEventType.message(
         directMessage,
         channel: serverChannel,
         isMention: true,
         currentUserID: currentUser.id
-    ).type == .mention)
-    #expect(NotificationEventContext.message(
+    ) == .mention)
+    #expect(NotificationEventType.message(
         directMessage,
         channel: serverChannel,
         isMention: false,
         currentUserID: currentUser.id
-    ).type == .serverActivity)
+    ) == .serverActivity)
 
     var directReply = reply
     directReply.channelID = directChannel.id
-    #expect(NotificationEventContext.message(
+    #expect(NotificationEventType.message(
         directReply,
         channel: directChannel,
         isMention: true,
         currentUserID: currentUser.id
-    ).type == .directMessage)
+    ) == .directMessage)
     directReply.channelID = groupChannel.id
-    #expect(NotificationEventContext.message(
+    #expect(NotificationEventType.message(
         directReply,
         channel: groupChannel,
         isMention: true,
         currentUserID: currentUser.id
-    ).type == .groupDirectMessage)
+    ) == .groupDirectMessage)
 }
 
 @MainActor
 @Test func `Notification policy narrows events without overriding Focus`() throws {
     let preferences = NotificationPreferences(defaults: InMemoryPreferences())
-    let server = NotificationEventContext(
-        type: .serverActivity
-    )
+    let server = NotificationEventType.serverActivity
     #expect(!preferences.allows(
         server,
         isCurrentConversation: true
@@ -196,9 +194,6 @@ import UserNotifications
         .incomingCall,
         isCurrentConversation: true
     ))
-    #expect(NotificationFocusPolicy.interruptionLevel == .active)
-    #expect(NotificationFocusPolicy.interruptionLevel != .timeSensitive)
-    #expect(NotificationFocusPolicy.interruptionLevel != .critical)
 }
 
 @Test func `Notification identities, grouping and deep links are deterministic`() {
@@ -444,7 +439,11 @@ func `DND invalidates native notifications awaiting image preparation`(entersDND
             for await _ in resume.stream { break }
             return nil
         },
-        submitRequest: { submittedIDs.append($0.identifier) }
+        submitRequest: {
+            submittedIDs.append($0.identifier)
+            // Focus decides how a message interrupts; SakuraCord never overrides it.
+            #expect($0.content.interruptionLevel == .active)
+        }
     )
     let preferences = NotificationPreferences(defaults: InMemoryPreferences())
     preferences.playsSound = false
@@ -458,7 +457,7 @@ func `DND invalidates native notifications awaiting image preparation`(entersDND
     )
     let delivery = Task {
         await service.deliverMessage(
-            message: message, channel: nil, guild: nil, accountID: "offline",
+            message: message, channel: nil, accountID: "offline",
             presentation: NotificationContentPresentation.make(
                 message: message, channel: nil, guild: nil, style: preferences.previewStyle
             ),
@@ -550,7 +549,6 @@ private final class RecordingNotificationService: NativeNotificationService {
     func deliverMessage(
         message _: Message,
         channel _: Channel?,
-        guild _: Guild?,
         accountID _: String,
         presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
