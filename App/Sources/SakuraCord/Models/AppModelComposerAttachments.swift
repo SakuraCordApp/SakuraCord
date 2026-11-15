@@ -105,11 +105,7 @@ extension AppModel {
         to destination: MessageComposerDestination
     ) async -> [URL] {
         let adoptedURLs = adoptPromisedFileBatch(batch)
-        guard isComposerDropEligible(destination) else {
-            pruneOwnedPromisedAttachmentFiles()
-            return []
-        }
-        guard attachmentBatchFits(adoptedURLs.count) else {
+        guard isComposerDropEligible(destination), attachmentBatchFits(adoptedURLs.count) else {
             pruneOwnedPromisedAttachmentFiles()
             return []
         }
