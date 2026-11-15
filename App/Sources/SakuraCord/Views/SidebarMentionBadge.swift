@@ -16,11 +16,10 @@ extension View {
 
 private struct MentionBadgeAnimation: ViewModifier {
     let count: Int
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        content.animation(systemReducesMotion || reducesSidebarMotion ? nil : MentionBadgeMotion.animation, value: count)
+        content.animation(reduceMotion ? nil : MentionBadgeMotion.animation, value: count)
     }
 }
 

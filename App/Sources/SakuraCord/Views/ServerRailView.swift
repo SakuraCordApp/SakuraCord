@@ -160,9 +160,7 @@ struct ServerRailView: View {
     let voicePreview: (GuildID) -> ServerRailVoicePreview?
     let resolveVoiceParticipants: (GuildID, [UserID]) async -> Void
     let contextMenuActions: ServerRailContextMenuActions
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
     @State private var folderLayoutRevision = 0
     @State private var drag = ServerRailDragController()
     @State private var scrollPosition = ScrollPosition(edge: .top)
@@ -469,9 +467,7 @@ private struct PendingApplicationsRailFolder: View {
     let select: (GuildID) -> Void
     @State private var isHovering = false
     @Environment(\.displayScale) private var displayScale
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing) : 0) {
@@ -551,9 +547,7 @@ private struct JoinRequestRailButton: View {
     let entry: ServerRailJoinRequestEntry
     let action: () -> Void
     @State private var isHovering = false
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
 
     var body: some View {
         let label = "\(entry.name), \(entry.status.membershipDescription)"
@@ -760,9 +754,7 @@ struct GuildRailButton: View {
     var loadsImageWhenOffscreen = false
     var morphsInFolder = false
     let action: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
     @Environment(ServerRailDragController.self) private var drag
     @Environment(\.serverRailIsDragPreview) private var isDragPreview
     @Environment(\.serverRailFolderIndicatorsInOverlay) private var folderIndicatorsInOverlay
@@ -1067,9 +1059,7 @@ struct ServerRailSelectionIndicator: View {
     var isVisible = true
     var animatesStateChanges = true
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
 
     var body: some View {
         ServerRailIndicatorShape(
