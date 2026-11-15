@@ -12,7 +12,7 @@ extension AppModel {
             updatedUsers: journal?.mutations.updatedUsers ?? [:]
         )
         return Self.applyingConversationRefreshMutations(mutations, to: messages).map {
-            pollVotePresentationPreserving(reactionPresentationPreserving($0))
+            localPresentationPreserving($0)
         }
     }
 

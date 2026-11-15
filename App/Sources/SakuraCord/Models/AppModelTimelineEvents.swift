@@ -744,9 +744,7 @@ extension AppModel {
     ///   window and join it to unrelated history.
     @discardableResult
     func reconcileVisibleOrCached(_ incoming: Message, updatesOnly: Bool = false) -> Message {
-        let message = pollVotePresentationPreserving(reactionPresentationPreserving(
-            outgoingMediaPresentationPreserving(incoming)
-        ))
+        let message = localPresentationPreserving(incoming, includingOutgoingMedia: true)
         reconcileInboxMessage(message)
         receiveGuideResourceEvent(.messageUpdated(message))
         if message.channelID == openThread?.id {

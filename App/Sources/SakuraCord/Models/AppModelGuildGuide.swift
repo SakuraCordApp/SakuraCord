@@ -301,7 +301,7 @@ extension AppModel {
                 let additions = refreshed.filter {
                     !retainedIDs.contains($0.id) && $0.id > anchor && (!hasMore || $0.id <= cursor)
                 }.sorted { $0.id < $1.id }.map { incoming in
-                    let message = model.pollVotePresentationPreserving(model.reactionPresentationPreserving(incoming))
+                    let message = model.localPresentationPreserving(incoming)
                     if let row = preparedByID[message.id], row.message == message { return row }
                     return MessageGrouping.resourceRow(for: message)
                 }

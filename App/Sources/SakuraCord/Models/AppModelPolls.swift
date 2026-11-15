@@ -184,6 +184,18 @@ extension AppModel {
         return message.selectingCurrentUserPollAnswers(mutation.confirmed)
     }
 
+    /// Keeps pending local poll votes and reactions, and optionally an
+    /// outgoing send's local media, on an incoming copy of a message.
+    func localPresentationPreserving(_ incoming: Message, includingOutgoingMedia: Bool = false) -> Message {
+        let message = includingOutgoingMedia ? outgoingMediaPresentationPreserving(incoming) : incoming
+        return pollVotePresentationPreserving(reactionPresentationPreserving(message))
+    }
+
+    /// A message with only Discord-confirmed poll votes and reactions.
+    func localConfirmedSnapshot(_ message: Message) -> Message {
+        pollVoteConfirmedSnapshot(reactionConfirmedSnapshot(message))
+    }
+
     func endPoll(_ message: Message) async {
         let session = accountSession()
         do {

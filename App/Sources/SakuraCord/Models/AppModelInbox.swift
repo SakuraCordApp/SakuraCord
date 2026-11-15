@@ -376,7 +376,7 @@ extension AppModel {
         var changed = inbox.replaceRetainedMessage(message.id, with: message)
         guard inbox.isPresented else { return }
         if inbox.refreshJournal != nil {
-            let confirmed = pollVoteConfirmedSnapshot(reactionConfirmedSnapshot(message))
+            let confirmed = localConfirmedSnapshot(message)
             inbox.refreshJournal?.record(.upsert(confirmed), messageID: message.id)
         }
         if isNew, !inbox.mentions.contains(where: { $0.id == message.id }), acceptsLiveInboxMention(message) {

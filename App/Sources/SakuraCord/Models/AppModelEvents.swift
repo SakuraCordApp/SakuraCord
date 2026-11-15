@@ -492,9 +492,7 @@ extension AppModel {
         preparedTextPlanSource: Message? = nil,
         updatesPinnedMessages: Bool = true
     ) {
-        let message = pollVotePresentationPreserving(reactionPresentationPreserving(
-            outgoingMediaPresentationPreserving(incoming)
-        ))
+        let message = localPresentationPreserving(incoming, includingOutgoingMedia: true)
         // Sparse updates are merged again after asynchronous preparation. A
         // history refresh or local reconciliation may have changed the source.
         let matchingTextPlan = recordsRefreshMutation || preparedTextPlanSource == message
