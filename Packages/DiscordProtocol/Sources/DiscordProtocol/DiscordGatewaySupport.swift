@@ -268,52 +268,7 @@ enum DiscordMemberListIdentity {
             if overwrite.deny & DiscordPermissionBits.viewChannel != 0 { return "deny:\(overwrite.id)" }
             return nil
         }.sorted().joined(separator: ",")
-        return String(murmurHash3(permissionShape.utf8))
-    }
-
-    private static func murmurHash3(_ bytes: String.UTF8View) -> UInt32 {
-        let data = Array(bytes)
-        var hash: UInt32 = 0
-        let count = data.count
-        let blockCount = count / 4
-        for block in 0 ..< blockCount {
-            let offset = block * 4
-            var key = UInt32(data[offset])
-                | (UInt32(data[offset + 1]) << 8)
-                | (UInt32(data[offset + 2]) << 16)
-                | (UInt32(data[offset + 3]) << 24)
-            key &*= 0xcc9e2d51
-            key = (key << 15) | (key >> 17)
-            key &*= 0x1b873593
-            hash ^= key
-            hash = (hash << 13) | (hash >> 19)
-            hash = hash &* 5 &+ 0xe6546b64
-        }
-        var tail: UInt32 = 0
-        let tailOffset = blockCount * 4
-        switch count & 3 {
-        case 3:
-            tail ^= UInt32(data[tailOffset + 2]) << 16
-            fallthrough
-        case 2:
-            tail ^= UInt32(data[tailOffset + 1]) << 8
-            fallthrough
-        case 1:
-            tail ^= UInt32(data[tailOffset])
-            tail &*= 0xcc9e2d51
-            tail = (tail << 15) | (tail >> 17)
-            tail &*= 0x1b873593
-            hash ^= tail
-        default:
-            break
-        }
-        hash ^= UInt32(count)
-        hash ^= hash >> 16
-        hash &*= 0x85ebca6b
-        hash ^= hash >> 13
-        hash &*= 0xc2b2ae35
-        hash ^= hash >> 16
-        return hash
+        return String(MurmurHash3.hash(permissionShape))
     }
 }
 
@@ -887,7 +842,7 @@ struct GatewayReadyGuildsDTO: Decodable {
     var privateChannels: [ChannelDTO]
     var lazyPrivateChannels: [ChannelDTO]
     var currentUser: UserDTO?
-    var apexExperiments: ProfileApexAssignmentsDTO?
+    var experiments: DiscordExperiments
     var users: [UserDTO]
     var relationships: [UserID: RelationshipRecord]
     var blockedOrIgnoredUserIDs: Set<UserID>
@@ -907,6 +862,8 @@ struct GatewayReadyGuildsDTO: Decodable {
         case privateChannels = "private_channels"
         case lazyPrivateChannels = "lazy_private_channels"
         case currentUser = "user"
+        case experiments
+        case guildExperiments = "guild_experiments"
         case apexExperiments = "apex_experiments"
         case users
         case relationships
@@ -940,7 +897,12 @@ struct GatewayReadyGuildsDTO: Decodable {
                 LossyList<ChannelDTO>.self, forKey: .lazyPrivateChannels
             ))?.elements ?? []
         currentUser = try? container.decode(UserDTO.self, forKey: .currentUser)
-        apexExperiments = try? container.decode(ProfileApexAssignmentsDTO.self, forKey: .apexExperiments)
+        experiments = DiscordExperiments(
+            user: try? container.decode(JSONValue.self, forKey: .experiments),
+            guild: try? container.decode(JSONValue.self, forKey: .guildExperiments),
+            apex: try? container.decode(JSONValue.self, forKey: .apexExperiments),
+            userID: currentUser?.id
+        )
         users =
             (try? container.decode(
                 LossyList<UserDTO>.self, forKey: .users

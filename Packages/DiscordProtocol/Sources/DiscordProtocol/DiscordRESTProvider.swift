@@ -75,7 +75,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var currentAccountDetails: AccountDetails?
     var currentAuthSessionIDHash: String?
     var accountInformationRevision = UUID()
-    var profileApexAssignments: ProfileApexAssignmentsDTO?
+    var experiments = DiscordExperiments()
     var profileEditingResponses: [ProfileEditingScope: ProfileEditingResponseDTO] = [:]
     var profileWidgetCatalogues: [Bool: [ProfileApplicationWidget]] = [:]
     var profileWidgetConfigurations: [String: [ProfileApplicationWidget]] = [:]

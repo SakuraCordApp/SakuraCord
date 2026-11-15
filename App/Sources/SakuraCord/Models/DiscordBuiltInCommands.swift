@@ -114,7 +114,7 @@ enum DiscordBuiltInCommands {
         }
         return switch command.name {
         case "leave": context.isGroupDirectMessage
-        // Discord gates /schedule behind an experiment this account is not in.
+        // Not run natively yet; scheduling uses the composer's + menu.
         case "schedule": false
         case "tts":
             !context.isPrivate && context.allowsTTSCommand

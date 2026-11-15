@@ -335,7 +335,10 @@ time is set is scheduled the same way (the GIF's URL as content; a sticker as
 `sticker_ids`, or as its image file when it would be sent as one), leaving the
 typed draft in place. There is no nonce and no
 `X-Context-Properties` header, and nothing enters the timeline. The composer
-clears only when Discord accepts it, so a refusal loses nothing.
+clears only when Discord accepts it, so a refusal loses nothing. The official
+client's `/schedule` built-in has the same availability and no experiment gate
+(web build 673869); SakuraCord does not run it yet and leaves it out of the
+command list.
 
 Discord's server, for both create and Edit Schedule Time, refuses a time in
 the past (`400` code `640001`), more than eight days away (`640002`) or less

@@ -164,7 +164,7 @@ extension DiscordRESTProvider {
             guard let originals = saved.profile.widgets else {
                 throw ChatProviderError.invalidRequest("Reload your profile before editing its widgets.")
             }
-            if profileApexAssignments?.widgetEligibility(for: user).canEditPersonalWidget != true {
+            if !experiments.widgetEligibility(for: user).canEditPersonalWidget {
                 let originalWidgets = try originals.map { try $0.domain(userID: user.id) }
                 for widget in widgets where !widget.isDiscardable {
                     if case .personal = widget.content,
