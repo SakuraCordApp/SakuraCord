@@ -624,32 +624,6 @@ extension AppModel {
         }
     }
 
-    @discardableResult
-    func selectCamera(_ camera: CameraDeviceInfo?) async -> Bool {
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        do {
-            try await session?.selectCamera(uniqueID: camera?.uniqueID)
-            selectedCameraUID = camera?.uniqueID
-            if voiceVideoPreferences.remembersCamera {
-                voiceVideoPreferences.cameraUID = camera?.uniqueID ?? ""
-            }
-            voiceDeviceStatusMessage = camera.map {
-                "Using “\($0.name)” as the camera."
-            } ?? "Using the system-default camera."
-            return true
-        } catch {
-            guard isCurrentVoiceOperation(
-                account,
-                generation: generation,
-                voiceSession: session
-            ) else { return false }
-            reportVoiceFailure(error, status: "The camera could not be changed.")
-            return false
-        }
-    }
-
     func updateInputVolume(_ value: Float) async {
         inputVolume = min(max(value, 0), 2)
         await voiceSession?.setInputVolume(inputVolume)

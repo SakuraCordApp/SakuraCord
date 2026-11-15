@@ -21,37 +21,55 @@ extension AppModel {
     }
 
     func selectInputDevice(_ device: AudioDeviceInfo?) async -> Bool {
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        do {
+        await switchVoiceDevice(failureStatus: "The microphone could not be changed.") { session in
             try await session?.selectInputDevice(device?.id)
+        } commit: {
             voiceVideoPreferences.inputDeviceUID = device?.uid ?? ""
             voiceDeviceStatusMessage = device.map {
                 "Using “\($0.name)” as the microphone."
             } ?? "Using the system-default microphone."
-            return true
-        } catch {
-            guard isCurrentVoiceOperation(
-                account,
-                generation: generation,
-                voiceSession: session
-            ) else { return false }
-            reportVoiceFailure(error, status: "The microphone could not be changed.")
-            return false
         }
     }
 
     func selectOutputDevice(_ device: AudioDeviceInfo?) async -> Bool {
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        do {
+        await switchVoiceDevice(failureStatus: "The speaker could not be changed.") { session in
             try await session?.selectOutputDevice(device?.id)
+        } commit: {
             voiceVideoPreferences.outputDeviceUID = device?.uid ?? ""
             voiceDeviceStatusMessage = device.map {
                 "Using “\($0.name)” as the speaker."
             } ?? "Using the system-default speaker."
+        }
+    }
+
+    @discardableResult
+    func selectCamera(_ camera: CameraDeviceInfo?) async -> Bool {
+        await switchVoiceDevice(failureStatus: "The camera could not be changed.") { session in
+            try await session?.selectCamera(uniqueID: camera?.uniqueID)
+        } commit: {
+            selectedCameraUID = camera?.uniqueID
+            if voiceVideoPreferences.remembersCamera {
+                voiceVideoPreferences.cameraUID = camera?.uniqueID ?? ""
+            }
+            voiceDeviceStatusMessage = camera.map {
+                "Using “\($0.name)” as the camera."
+            } ?? "Using the system-default camera."
+        }
+    }
+
+    /// Applies `change` to the current voice session, then `commit`s it. A
+    /// failure is reported only while that session is still current.
+    private func switchVoiceDevice(
+        failureStatus: String,
+        change: (DiscordVoiceSession?) async throws -> Void,
+        commit: () -> Void
+    ) async -> Bool {
+        let account = accountSession()
+        let generation = voiceMigrationGeneration
+        let session = voiceSession
+        do {
+            try await change(session)
+            commit()
             return true
         } catch {
             guard isCurrentVoiceOperation(
@@ -59,7 +77,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return false }
-            reportVoiceFailure(error, status: "The speaker could not be changed.")
+            reportVoiceFailure(error, status: failureStatus)
             return false
         }
     }
