@@ -147,43 +147,24 @@ nonisolated enum NativeTimelineTextSelectionGeometry {
     ) -> [CGRect] {
         guard range.length > 0 else { return [] }
         let layout = CoreTextFrameLayout(textFrame: textFrame)
-        let lines = layout.lines
-        guard lines.count > 0 else { return [] }
-        let origins = layout.origins
-        let selectionStart = range.location
-        let selectionEnd = NSMaxRange(range)
         var result: [CGRect] = []
-        result.reserveCapacity(lines.count)
+        result.reserveCapacity(layout.lines.count)
 
-        for index in 0 ..< lines.count {
-            let line = coreTextLine(lines[index])
-            let lineRange = CTLineGetStringRange(line)
-            let lineStart = lineRange.location
-            let lineEnd = lineRange.location + lineRange.length
-            let start = max(selectionStart, lineStart)
-            let end = min(selectionEnd, lineEnd)
-            guard start < end else { continue }
-
-            let origin = origins[index]
+        for fragment in layout.lineFragments(in: range) {
+            let line = fragment.line
             var ascent: CGFloat = 0
             var descent: CGFloat = 0
-            var leading: CGFloat = 0
-            _ = CTLineGetTypographicBounds(
-                line,
-                &ascent,
-                &descent,
-                &leading
-            )
+            _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
             let horizontal: ClosedRange<CGFloat>
             if fitsGlyphs {
-                guard let bounds = glyphBounds(in: line, range: NSRange(location: start, length: end - start))
-                else { continue }
+                guard let bounds = glyphBounds(in: line, range: fragment.range) else { continue }
                 horizontal = bounds
             } else {
-                let startOffset = CTLineGetOffsetForStringIndex(line, start, nil)
-                let endOffset = CTLineGetOffsetForStringIndex(line, end, nil)
+                let startOffset = CTLineGetOffsetForStringIndex(line, fragment.range.location, nil)
+                let endOffset = CTLineGetOffsetForStringIndex(line, NSMaxRange(fragment.range), nil)
                 horizontal = min(startOffset, endOffset) ... max(startOffset, endOffset)
             }
+            let origin = fragment.origin
             let minX = outerFrame.minX + origin.x + horizontal.lowerBound
             let width = max(1, horizontal.upperBound - horizontal.lowerBound)
             result.append(CGRect(
@@ -563,28 +544,15 @@ enum NativeTimelineTextHitTester {
               frame.height > 0
         else { return nil }
         let layout = CoreTextFrameLayout(value: value, framesetter: framesetter, size: frame.size)
-        let lines = layout.lines
-        guard lines.count > 0 else { return nil }
-        let origins = layout.origins
         var result: CGRect?
-        for lineIndex in 0 ..< lines.count {
-            let line = coreTextLine(lines[lineIndex])
-            let lineRange = NSRange(
-                location: CTLineGetStringRange(line).location,
-                length: CTLineGetStringRange(line).length
-            )
-            let intersection = NSIntersectionRange(lineRange, range)
-            guard intersection.length > 0 else { continue }
+        for fragment in layout.lineFragments(in: range) {
+            let line = fragment.line
+            let intersection = fragment.range
             var ascent: CGFloat = 0
             var descent: CGFloat = 0
             var leading: CGFloat = 0
-            _ = CTLineGetTypographicBounds(
-                line,
-                &ascent,
-                &descent,
-                &leading
-            )
-            let lineOrigin = origins[lineIndex]
+            _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+            let lineOrigin = fragment.origin
             let startX = lineOrigin.x + CTLineGetOffsetForStringIndex(
                 line,
                 intersection.location,
@@ -1104,6 +1072,28 @@ nonisolated struct CoreTextFrameLayout {
                 width: max(1, width),
                 height: height
             )
+        }
+    }
+
+    /// A line's share of a string range.
+    struct LineFragment {
+        let index: Int
+        let line: CTLine
+        let origin: CGPoint
+        /// The part of the range on this line; never empty.
+        let range: NSRange
+    }
+
+    /// The fragments of `range` in line order, skipping lines it misses.
+    func lineFragments(in range: NSRange) -> some Sequence<LineFragment> {
+        zip(lines, origins).enumerated().lazy.compactMap { pair -> LineFragment? in
+            let (index, (value, origin)) = pair
+            let line = coreTextLine(value)
+            let lineRange = CTLineGetStringRange(line)
+            let start = max(range.location, lineRange.location)
+            let end = min(NSMaxRange(range), lineRange.location + lineRange.length)
+            guard start < end else { return nil }
+            return LineFragment(index: index, line: line, origin: origin, range: NSRange(location: start, length: end - start))
         }
     }
 

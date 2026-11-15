@@ -35,14 +35,11 @@ nonisolated enum NativeTimelineTextSpoilerGeometry {
                 width: outerFrame.width, height: ascent + descent
             )).offsetBy(dx: outerFrame.minX, dy: outerFrame.minY)
         }
-        return (0 ..< lines.count).compactMap { index in
-            let line = coreTextLine(lines[index])
-            let lineRange = CTLineGetStringRange(line)
-            let start = max(range.location, lineRange.location)
-            let end = min(NSMaxRange(range), lineRange.location + lineRange.length)
-            guard start < end else { return nil }
-            let fragmentRange = NSRange(location: start, length: end - start)
-            guard let horizontal = NativeTimelineTextSelectionGeometry.glyphBounds(in: line, range: fragmentRange)
+        return layout.lineFragments(in: range).compactMap { lineFragment in
+            let index = lineFragment.index
+            guard let horizontal = NativeTimelineTextSelectionGeometry.glyphBounds(
+                in: lineFragment.line, range: lineFragment.range
+            )
             else { return nil }
             var fragment = lineBounds[index]
             fragment.origin.x += origins[index].x + horizontal.lowerBound
