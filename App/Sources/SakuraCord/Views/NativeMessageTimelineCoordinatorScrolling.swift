@@ -79,20 +79,8 @@ extension NativeMessageTimelineCoordinator {
             return
         }
         guard items[index] != item else { return }
-        let previousHeight = layouts[index].height
-        let updatedLayout = layout(for: item, width: width)
         items[index] = item
-        layouts[index] = updatedLayout
-        rowHeights[index] = updatedLayout.height
-        didMutateItems = true
-        dirtyItemIndexes.insert(index)
-        if abs(previousHeight - updatedLayout.height) >= 0.5 {
-            requiresFullOriginRebuild = true
-            if itemAffectsVisibleCoordinates(at: index) {
-                requiresVisibleRedraw = true
-                requiresAnchorRestore = true
-            }
-        }
+        storeLayout(for: item, at: index, width: width)
     }
 
     /// Member-store presentation changes can alter an author's name,
@@ -112,11 +100,15 @@ extension NativeMessageTimelineCoordinator {
             replaceItem(at: index, with: item, width: width)
             return
         }
+        storeLayout(for: item, at: index, width: width)
+        canvas?.invalidateRowLayout(item.identifier)
+    }
+
+    private func storeLayout(for item: NativeMessageTimelineItem, at index: Int, width: CGFloat) {
         let previousHeight = layouts[index].height
         let updatedLayout = layout(for: item, width: width)
         layouts[index] = updatedLayout
         rowHeights[index] = updatedLayout.height
-        canvas?.invalidateRowLayout(item.identifier)
         didMutateItems = true
         dirtyItemIndexes.insert(index)
         if abs(previousHeight - updatedLayout.height) >= 0.5 {
@@ -126,6 +118,11 @@ extension NativeMessageTimelineCoordinator {
                 requiresAnchorRestore = true
             }
         }
+    }
+
+    /// The row showing this message, including as part of a group.
+    func rowIndex(containingMessage messageID: MessageID) -> Int? {
+        items.firstIndex { $0.containsMessage(messageID) }
     }
 
     func itemAffectsVisibleCoordinates(at index: Int) -> Bool {
@@ -1009,9 +1006,7 @@ extension NativeMessageTimelineCoordinator {
     }
 
     func restore(_ anchor: VisibleAnchor) {
-        guard let index = items.firstIndex(where: {
-            $0.containsMessage(anchor.messageID)
-        }) else { return }
+        guard let index = rowIndex(containingMessage: anchor.messageID) else { return }
         restoreRow(at: index, offsetFromViewportTop: anchor.offsetFromViewportTop)
     }
 
@@ -1070,9 +1065,7 @@ extension NativeMessageTimelineCoordinator {
     ) -> MessageTimelineScrollRequest.Target {
         guard case let .message(messageID, _) = target,
               parent.unreadMessageID == messageID,
-              let unreadIndex = items.firstIndex(where: {
-                  $0.containsMessage(messageID)
-              }),
+              let unreadIndex = rowIndex(containingMessage: messageID),
               let newestIndex = items.lastIndex(where: {
                   $0.messageID != nil
               }),
@@ -1141,9 +1134,8 @@ extension NativeMessageTimelineCoordinator {
         case .bottom:
             proposedY = .greatestFiniteMagnitude
         case let .message(messageID, anchor):
-            guard let index = items.firstIndex(where: {
-                $0.containsMessage(messageID)
-            }), rowOrigins.indices.contains(index), layouts.indices.contains(index)
+            guard let index = rowIndex(containingMessage: messageID),
+                  rowOrigins.indices.contains(index), layouts.indices.contains(index)
             else { return nil }
             let rowY = documentY(ofRow: index, viewportHeight: viewportHeight)
             let rowHeight = layouts[index].height
@@ -1153,9 +1145,8 @@ extension NativeMessageTimelineCoordinator {
             proposedY = rowY - obscuredHeight
                 - (viewportHeight - obscuredHeight - rowHeight) * anchor.y
         case let .readingPosition(messageID, offsetFromViewportTop):
-            guard let index = items.firstIndex(where: {
-                $0.containsMessage(messageID)
-            }), rowOrigins.indices.contains(index)
+            guard let index = rowIndex(containingMessage: messageID),
+                  rowOrigins.indices.contains(index)
             else { return nil }
             proposedY = documentY(ofRow: index, viewportHeight: viewportHeight) - offsetFromViewportTop
         }
