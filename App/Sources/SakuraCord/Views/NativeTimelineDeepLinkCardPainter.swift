@@ -31,7 +31,7 @@ extension NativeTimelineRowPainter {
             shape.fill()
             NSGraphicsContext.restoreGraphicsState()
 
-            sakuraCordGradient(colors)?.draw(in: shape, angle: 0)
+            gradient(colors)?.draw(in: shape, angle: 0)
             NativeTimelineSemanticColor.opacity(.controlBackgroundColor, 0.94).setFill()
             NSBezierPath(concentricRoundedRect: region.cardFrame.insetBy(dx: 1, dy: 1), cornerRadius: cardCornerRadius - 1).fill()
         }
@@ -67,59 +67,10 @@ extension NativeTimelineRowPainter {
             outline.stroke()
         }
 
-        sakuraCordButton(title: region.action.buttonTitle, frame: region.buttonFrame,
+        gradientButton(title: region.action.buttonTitle, frame: region.buttonFrame,
             isHovered: isButtonHovered, pressProgress: buttonPressProgress,
             colors: outgoing ? [.sakuraCordLabelOnAccentColor] : colors, foreground: outgoing ? .sakuraCordAccentColor
                 : SakuraCordAccentColor.labelNSColor(on: colors.first ?? .sakuraCordAccentColor))
-    }
-
-    static func sakuraCordButton(
-        title: String, frame: CGRect, isHovered: Bool, pressProgress: CGFloat = 0,
-        colors: [NSColor], foreground: NSColor = .white, isEnabled: Bool = true
-    ) {
-        let pressProgress = min(max(pressProgress, 0), 1)
-        let scale = NativeTimelineComponentButtonVisualState.scale(
-            pressProgress: pressProgress
-        )
-        let brightness = NativeTimelineComponentButtonVisualState.brightness(
-            isHovered: isHovered,
-            pressProgress: pressProgress
-        )
-        let buttonColors = colors.map {
-            adjustedBrightness($0, amount: brightness)
-        }
-        NSGraphicsContext.saveGraphicsState()
-        if !isEnabled { NSGraphicsContext.current?.cgContext.setAlpha(0.4) }
-        concatScale(scale, aboutCenterOf: frame)
-        let buttonPath = NSBezierPath(
-            concentricRoundedRect: frame,
-            cornerRadius: frame.height / 2
-        )
-        sakuraCordGradient(buttonColors)?.draw(in: buttonPath, angle: 0)
-        NSColor.black.withAlphaComponent(0.12).setFill()
-        buttonPath.fill()
-        adjustedBrightness(
-            foreground,
-            amount: brightness
-        ).withAlphaComponent(
-            NativeTimelineComponentButtonVisualState.borderAlpha(
-                isHovered: isHovered,
-                isEnabled: isEnabled
-            )
-        ).setStroke()
-        NSBezierPath.strokeHairline(frame, cornerRadius: frame.height / 2)
-        text(
-            title,
-            in: frame,
-            font: NativeTimelineComponentButtonMetrics.font,
-            color: adjustedBrightness(
-                foreground,
-                amount: brightness
-            ),
-            alignment: .center,
-            lineBreakMode: .byTruncatingTail
-        )
-        NSGraphicsContext.restoreGraphicsState()
     }
 
     static func sakuraCordDeepLinkColors(
@@ -132,10 +83,5 @@ extension NativeTimelineRowPainter {
         return preview.theme.activeColors.map {
             NSColor(preview.theme.renderedRGB($0, for: appearance))
         }
-    }
-
-    static func sakuraCordGradient(_ colors: [NSColor]) -> NSGradient? {
-        guard let first = colors.first else { return nil }
-        return NSGradient(colors: colors.count == 1 ? [first, first] : colors)
     }
 }

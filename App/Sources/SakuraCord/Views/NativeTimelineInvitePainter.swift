@@ -72,7 +72,7 @@ extension NativeTimelineRowPainter {
             text("Hide Details", in: details, font: .interfaceSystemFont(ofSize: 13, weight: .semibold), color: secondary, alignment: .center)
         }
         if card.buttonFrame.height > 0, !isModalPreview {
-            sakuraCordButton(
+            gradientButton(
                 title: card.buttonTitle, frame: card.buttonFrame,
                 isHovered: isHovered && !card.isDisabled,
                 pressProgress: card.isDisabled ? 0 : pressProgress,

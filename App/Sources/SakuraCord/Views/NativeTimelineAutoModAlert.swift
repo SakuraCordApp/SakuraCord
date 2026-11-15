@@ -239,7 +239,7 @@ extension NativeTimelineRowPainter {
         pollSurface(in: alert.cardFrame, cornerRadius: NativeTimelineAutoModAlertLayout.cornerRadius)
         for button in alert.buttons {
             let target = NativeTimelineComponentButtonTarget(messageID: input.row.message.id, componentID: button.action.rawValue)
-            sakuraCordButton(
+            gradientButton(
                 title: button.action.title, frame: button.frame,
                 isHovered: input.interaction.hoveredComponentButton == target,
                 pressProgress: input.interaction.pressedComponentButton == target ? input.interaction.componentButtonPressProgress : 0,

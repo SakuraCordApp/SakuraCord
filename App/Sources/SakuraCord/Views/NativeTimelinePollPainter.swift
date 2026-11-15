@@ -13,7 +13,7 @@ extension NativeTimelineRowPainter {
                            state: NativeTimelinePollPresentation, isEnabled: Bool = true, isProminent: Bool = false,
                            bubbleRegion: NativeTimelineBubbleRegion? = nil) {
         let outgoing = bubbleRegion?.isOutgoing == true
-        sakuraCordButton(title: title, frame: frame, isHovered: isEnabled && state.hoveredControl == control,
+        gradientButton(title: title, frame: frame, isHovered: isEnabled && state.hoveredControl == control,
                         pressProgress: state.pressedControl == control ? 1 : 0,
                         colors: [outgoing ? .sakuraCordLabelOnAccentColor.withAlphaComponent(isProminent ? 1 : 0.16) : isProminent ? .sakuraCordAccentColor : .controlColor],
                         foreground: outgoing ? (isProminent ? .sakuraCordAccentColor : .sakuraCordLabelOnAccentColor) : isProminent ? .sakuraCordLabelOnAccentColor : .labelColor, isEnabled: isEnabled)

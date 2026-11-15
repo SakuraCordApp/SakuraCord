@@ -196,7 +196,7 @@ extension NativeTimelineRowPainter {
         }
         if card.buttonFrame.height > 0 {
             // Discord's white button with a dark label reads on any cover tint and bubble colour.
-            sakuraCordButton(
+            gradientButton(
                 title: card.buttonTitle, frame: card.buttonFrame, isHovered: isHovered && !card.isDisabled,
                 pressProgress: card.isDisabled ? 0 : pressProgress, colors: [.white], foreground: .black,
                 isEnabled: !card.isDisabled
