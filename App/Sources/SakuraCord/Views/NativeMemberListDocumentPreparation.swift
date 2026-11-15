@@ -602,13 +602,13 @@ extension NativeMemberListCanvasView {
             let nameFont = nameFont(for: member)
             let topRole = MessageAuthorPresentation.topRoleWithColor(in: member.roles)
             let nameColor = presentation.roleColorDisplay == .inNames
-                ? topRole?.colorHex.map(Self.color(hex:)) ?? labelColor
+                ? topRole?.colorHex.map { NSColor(hex: $0) } ?? labelColor
                 : labelColor
             let alpha = presentation.opacity(for: member)
             let gradientColors = topRole.flatMap { role -> [NSColor]? in
                 guard let primary = role.colorHex, let secondary = role.secondaryColorHex else { return nil }
                 return [primary, secondary, role.tertiaryColorHex].compactMap {
-                    $0.map { Self.color(hex: $0).withAlphaComponent(alpha) }
+                    $0.map { NSColor(hex: $0).withAlphaComponent(alpha) }
                 }
             }
             let activityColor = labelColor.withAlphaComponent(alpha * 0.5)

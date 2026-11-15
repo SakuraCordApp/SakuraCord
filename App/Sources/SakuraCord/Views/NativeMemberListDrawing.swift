@@ -241,7 +241,7 @@ extension NativeMemberListCanvasView {
             context.clip()
             if let colors = NameplatePresentationPolicy.colors(for: nameplate.palette) {
                 let isDark = effectiveAppearance.isDark
-                let color = Self.color(hex: isDark ? colors.dark : colors.light)
+                let color = NSColor(hex: isDark ? colors.dark : colors.light)
                 let gradient = CGGradient(
                     colorsSpace: CGColorSpaceCreateDeviceRGB(),
                     colors: [
@@ -295,7 +295,7 @@ extension NativeMemberListCanvasView {
         let botBadgeWidth = NativeAppBadgePresentation.width(isVerified: member.user.isVerifiedBot)
         let tagPresentation = prepared.serverTag
         let roleColor = presentation.roleColorDisplay == .nextToNames
-            ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Self.color(hex:)) : nil
+            ? MessageAuthorPresentation.topRoleColor(in: member.roles).map { NSColor(hex: $0) } : nil
         let geometry = memberNameGeometry(member, prepared: prepared, at: index)
         let nameX = geometry.nameX
         let nameLayout = geometry.layout

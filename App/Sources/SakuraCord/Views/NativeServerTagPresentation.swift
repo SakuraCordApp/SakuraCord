@@ -169,10 +169,7 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         guard frame.width > 0, frame.height > 0 else { return }
         context.saveGState()
         context.clip(to: frame)
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        body(frame.height / 2 - glyphBounds.midY)
+        context.drawCoreText(in: frame) { _ in body(frame.height / 2 - glyphBounds.midY) }
         context.restoreGState()
     }
 }
