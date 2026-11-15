@@ -480,7 +480,10 @@ private struct ScreenShareControlsPopover: View {
                 isPresented: $showFrameRateControls,
                 arrowEdge: .trailing
             ) {
-                ScreenShareFrameRatePopover(model: model)
+                ScreenShareOptionPopover(
+                    model: model, title: "Frame Rate", options: \.availableScreenShareFrameRates,
+                    setting: \.frameRate, optionTitle: \.title
+                )
             }
 
             Button { showQualityControls.toggle() } label: {
@@ -493,7 +496,10 @@ private struct ScreenShareControlsPopover: View {
                 isPresented: $showQualityControls,
                 arrowEdge: .trailing
             ) {
-                ScreenShareQualityPopover(model: model)
+                ScreenShareOptionPopover(
+                    model: model, title: "Stream Quality", options: \.availableScreenShareQualities,
+                    setting: \.quality, optionTitle: \.title
+                )
             }
 
             Button {
@@ -541,27 +547,32 @@ private struct ScreenShareControlsPopover: View {
     }
 }
 
-struct ScreenShareQualityPopover: View {
+/// One screen-share setting's choices, checking the current one.
+struct ScreenShareOptionPopover<Option: Hashable>: View {
     let model: AppModel
+    let title: LocalizedStringKey
+    let options: KeyPath<AppModel, [Option]>
+    let setting: WritableKeyPath<ScreenShareSettings, Option>
+    let optionTitle: KeyPath<Option, String>
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
-            Text("Stream Quality")
+            Text(title)
                 .font(.interface(.headline))
                 .padding(.horizontal, InterfaceScale.metric(4))
                 .padding(.bottom, InterfaceScale.metric(4))
-            ForEach(model.availableScreenShareQualities, id: \.self) { quality in
+            ForEach(model[keyPath: options], id: \.self) { option in
                 Button {
                     Task {
                         var settings = model.screenShareSettings
-                        settings.quality = quality
+                        settings[keyPath: setting] = option
                         await model.updateScreenShareSettings(settings)
                     }
                 } label: {
                     HStack {
-                        Text(quality.title)
+                        Text(option[keyPath: optionTitle])
                         Spacer()
-                        if model.screenShareSettings.quality == quality {
+                        if model.screenShareSettings[keyPath: setting] == option {
                             Image(systemName: "checkmark")
                                 .foregroundStyle(SakuraCordAccentColor.color)
                         }
