@@ -182,59 +182,31 @@ enum NativeTimelineReplyMetrics {
         font: NSFont,
         color: NSColor
     ) -> CFAttributedString {
-        var textAlignment: CTTextAlignment = .left
-        var breakMode: CTLineBreakMode = .byTruncatingTail
-        let paragraph = withUnsafePointer(to: &textAlignment) { alignmentPointer in
-            withUnsafePointer(to: &breakMode) { breakPointer in
-                let settings = [
-                    CTParagraphStyleSetting(
-                        spec: .alignment,
-                        valueSize: MemoryLayout<CTTextAlignment>.size,
-                        value: alignmentPointer
-                    ),
-                    CTParagraphStyleSetting(
-                        spec: .lineBreakMode,
-                        valueSize: MemoryLayout<CTLineBreakMode>.size,
-                        value: breakPointer
-                    ),
-                ]
-                return CTParagraphStyleCreate(settings, settings.count)
-            }
-        }
-        let coreFont = font as CTFont
-        let baseAttributes: [NSAttributedString.Key: Any] = [
-            NSAttributedString.Key(kCTFontAttributeName as String): coreFont,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color.cgColor,
-            NSAttributedString.Key(kCTParagraphStyleAttributeName as String): paragraph,
-        ]
         let attributed = NSMutableAttributedString(
-            string: prepared.text,
-            attributes: baseAttributes
-        )
-        if !prepared.emojis.isEmpty {
-            let emojiSize = self.emojiSize
-            let baselineOffset = ComposerEmojiAttributedText.attachmentOriginY(
+            attributedString: NativeTimelineRowPainter.coreTextValue(
+                prepared.text,
                 font: font,
-                size: emojiSize
-            )
-            for emoji in prepared.emojis {
-                guard emoji.range.location + emoji.range.length <= attributed.length else { continue }
-                var attrs = baseAttributes
-                attrs[.discordEmojiToken] = emoji.emoji.rawToken
-                attrs[NSAttributedString.Key(kCTRunDelegateAttributeName as String)] =
-                    NativeTimelineRunDelegate.make(
-                        width: emojiSize,
-                        height: emojiSize,
-                        baselineOffset: baselineOffset
-                    )
-                attributed.setAttributes(attrs, range: emoji.range)
-            }
+                color: color,
+                alignment: .left,
+                lineBreakMode: .byTruncatingTail,
+                isInteractiveHovered: false
+            ) as NSAttributedString
+        )
+        let baselineOffset = ComposerEmojiAttributedText.attachmentOriginY(font: font, size: emojiSize)
+        for emoji in prepared.emojis {
+            guard emoji.range.location + emoji.range.length <= attributed.length else { continue }
+            attributed.addAttributes([
+                .discordEmojiToken: emoji.emoji.rawToken,
+                NSAttributedString.Key(kCTRunDelegateAttributeName as String): NativeTimelineRunDelegate.make(
+                    width: emojiSize,
+                    height: emojiSize,
+                    baselineOffset: baselineOffset
+                ),
+            ], range: emoji.range)
         }
-        if !prepared.spoilerRanges.isEmpty {
-            for range in prepared.spoilerRanges {
-                guard range.location + range.length <= attributed.length else { continue }
-                SpoilerAppearance.concealText(in: attributed, range: range)
-            }
+        for range in prepared.spoilerRanges {
+            guard range.location + range.length <= attributed.length else { continue }
+            SpoilerAppearance.concealText(in: attributed, range: range)
         }
         return attributed as CFAttributedString
     }

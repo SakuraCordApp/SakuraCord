@@ -2,25 +2,18 @@ import Foundation
 import MessageRendering
 
 enum MessageReplySummary {
-    nonisolated struct EmojiItem: Sendable, Hashable {
+    nonisolated struct EmojiItem: Sendable {
         let range: NSRange
         let emoji: RenderedEmoji
     }
 
-    nonisolated struct Prepared: Sendable, Hashable {
+    nonisolated struct Prepared: Sendable {
         let source: String
         let text: String
         /// UTF-16 ranges of `text` inside spoilers. Reply bars never reveal
         /// them, so presentation conceals these ranges.
         let spoilerRanges: [NSRange]
-        let emojis: [EmojiItem]
-
-        init(source: String, text: String, spoilerRanges: [NSRange], emojis: [EmojiItem] = []) {
-            self.source = source
-            self.text = text
-            self.spoilerRanges = spoilerRanges
-            self.emojis = emojis
-        }
+        var emojis: [EmojiItem] = []
     }
 
     private final class CachedValue {
@@ -133,10 +126,6 @@ enum MessageReplySummary {
         }
     }
 
-    /// Collapses the rendered text's whitespace to single spaces. A collapsed
-    /// space is a spoiler only inside one spoiler, and adjacent spoilers stay
-    /// separate ranges. Custom emojis are extracted into `Prepared.emojis` and
-    /// represented as object replacement placeholders in `text`.
     private struct ProtectedEmojiTokens {
         let protectedSource: String
         let markerPrefix: String
@@ -211,19 +200,19 @@ enum MessageReplySummary {
             length += valueLength
         }
 
+        func flushPendingSpace(spoilerID: Int?) {
+            guard pendingSpace else { return }
+            append(" ", spoilerID: previousSpoilerID == spoilerID ? spoilerID : nil)
+            pendingSpace = false
+        }
+
         func appendTextSlice(_ slice: String, spoilerID: Int?) {
             for character in slice {
                 if character.isWhitespace {
                     pendingSpace = !text.isEmpty
                     continue
                 }
-                if pendingSpace {
-                    append(
-                        " ",
-                        spoilerID: previousSpoilerID == spoilerID ? spoilerID : nil
-                    )
-                    pendingSpace = false
-                }
+                flushPendingSpace(spoilerID: spoilerID)
                 append(String(character), spoilerID: spoilerID)
                 previousSpoilerID = spoilerID
             }
@@ -256,18 +245,11 @@ enum MessageReplySummary {
                     ))
                     appendTextSlice(before, spoilerID: run.spoilerID)
                 }
-                if match.numberOfRanges > 1,
-                   let indexRange = Range(match.range(at: 1), in: run.text),
+                if let indexRange = Range(match.range(at: 1), in: run.text),
                    let index = Int(run.text[indexRange]),
                    let emoji = emojisByIndex[index]
                 {
-                    if pendingSpace {
-                        append(
-                            " ",
-                            spoilerID: previousSpoilerID == run.spoilerID ? run.spoilerID : nil
-                        )
-                        pendingSpace = false
-                    }
+                    flushPendingSpace(spoilerID: run.spoilerID)
                     let emojiRange = NSRange(location: length, length: 1)
                     append("\u{FFFC}", spoilerID: run.spoilerID)
                     emojis.append(EmojiItem(range: emojiRange, emoji: emoji))
@@ -281,7 +263,7 @@ enum MessageReplySummary {
             }
         }
         guard !text.isEmpty else {
-            return Prepared(source: source, text: "Attachment", spoilerRanges: [], emojis: [])
+            return Prepared(source: source, text: "Attachment", spoilerRanges: [])
         }
         return Prepared(source: source, text: text, spoilerRanges: spoilerRanges, emojis: emojis)
     }

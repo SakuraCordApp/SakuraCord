@@ -1036,18 +1036,6 @@ extension NativeTimelineRowPainter {
     ) {
         guard frame.width > 0, frame.height > 0 else { return }
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-
-        if replySummary.emojis.isEmpty {
-            text(
-                replySummary.text,
-                in: frame,
-                font: font,
-                color: color,
-                concealedSpoilerRanges: replySummary.spoilerRanges
-            )
-            return
-        }
-
         let placement = singleLineText(
             CTLineCreateWithAttributedString(NativeTimelineReplyMetrics.coreTextSummary(
                 replySummary,
@@ -1084,7 +1072,6 @@ extension NativeTimelineRowPainter {
                 continue
             }
             let stringRange = CTRunGetStringRange(run)
-            guard stringRange.location >= 0 else { continue }
             let isConcealed = spoilerRanges.contains { spoilerRange in
                 NSLocationInRange(stringRange.location, spoilerRange)
             }
@@ -1112,13 +1099,7 @@ extension NativeTimelineRowPainter {
             if let image = inlineEmojiImage(token: rawToken, model: model) {
                 drawImage(image, in: emojiFrame, cornerRadius: 0, fillsFrame: false)
             } else {
-                text(
-                    "🙂",
-                    in: emojiFrame,
-                    font: .systemFont(ofSize: max(11, emojiFrame.height * 0.8)),
-                    color: .labelColor,
-                    alignment: .center
-                )
+                drawEmojiFallback(in: emojiFrame)
             }
         }
     }

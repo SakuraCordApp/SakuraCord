@@ -405,28 +405,25 @@ extension NativeTimelineCanvasView {
         if let url = layout.forwardedSourceRegion?.iconURL {
             keys.append(.avatar(url))
         }
-        if let preview = row.replyPreview {
-            if let url = model?.authorPresentation(for: preview, in: message).user.avatarURL {
-                keys.append(.avatar(url))
-            } else if let key = NativeTimelineReplyMediaPolicy.avatarKey(
-                for: row.replyPreview
-            ) {
-                keys.append(key)
-            }
-            keys.append(contentsOf: NativeTimelineReplyMediaPolicy.emojiKeys(
-                for: preview,
-                in: message,
-                model: model
-            ))
+        if let preview = row.replyPreview,
+           let url = model?.authorPresentation(for: preview, in: message).user.avatarURL {
+            keys.append(.avatar(url))
+        } else if let key = NativeTimelineReplyMediaPolicy.avatarKey(
+            for: row.replyPreview
+        ) {
+            keys.append(key)
         }
-        if let thread = message.thread,
-           let preview = NativeTimelineThreadCard.shownPreview(for: thread, from: model?.threadPreviewMessages[thread.id])
-        {
-            keys.append(contentsOf: NativeTimelineReplyMediaPolicy.emojiKeys(
-                for: .presenting(preview),
-                in: preview,
-                model: model
-            ))
+        // The reply line and the thread card's latest message draw their
+        // custom emoji alike.
+        let threadPreview = message.thread.flatMap {
+            NativeTimelineThreadCard.shownPreview(for: $0, from: model?.threadPreviewMessages[$0.id])
+        }
+        let replyLines = [
+            row.replyPreview.map { ($0, message) },
+            threadPreview.map { (MessageReplyPreview.presenting($0), $0) },
+        ]
+        for case let (preview, context)? in replyLines {
+            keys.append(contentsOf: NativeTimelineReplyMediaPolicy.emojiKeys(for: preview, in: context, model: model))
         }
         for region in layout.linkedImageRegions {
             keys.append(region.mediaKey)

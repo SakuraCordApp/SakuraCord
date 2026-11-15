@@ -118,7 +118,7 @@ extension NativeTimelineRowPainter {
         return placement
     }
 
-    private static func coreTextValue(
+    static func coreTextValue(
         _ value: String,
         font: NSFont,
         color: NSColor,
@@ -676,6 +676,17 @@ extension NativeTimelineRowPainter {
         return .image(image, frame, selectionFrame: selectionFrame)
     }
 
+    /// Stands in for a custom emoji whose image has not loaded.
+    static func drawEmojiFallback(in frame: CGRect) {
+        text(
+            "🙂",
+            in: frame,
+            font: .systemFont(ofSize: max(11, frame.height * 0.8)),
+            color: .labelColor,
+            alignment: .center
+        )
+    }
+
     private static func inlineAttachmentSelectionFrame(
         range: CFRange,
         selectionRange: NSRange?,
@@ -710,13 +721,7 @@ extension NativeTimelineRowPainter {
                 bubble: bubble
             )
         case let .emojiFallback(frame, _):
-            text(
-                "🙂",
-                in: frame,
-                font: .systemFont(ofSize: max(11, frame.height * 0.8)),
-                color: .labelColor,
-                alignment: .center
-            )
+            drawEmojiFallback(in: frame)
         }
         if let selectionFrame = draw.selectionFrame {
             attachmentSelectionHighlightColor.setFill()
