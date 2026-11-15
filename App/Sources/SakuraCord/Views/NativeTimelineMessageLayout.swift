@@ -953,11 +953,12 @@ extension NativeTimelineRowLayout {
                         height: MessageRowLayoutMetrics.forwardedLineHeight
                     ),
                     label: sourceLabel,
+                    text: sourceText,
+                    font: sourceFont,
                     iconURL: sameGuild ? nil : sourceGuild?.iconURL,
                     channelID: sourceChannelID,
                     guildID: reference.guildID,
-                    messageID: reference.messageID,
-                    timestamp: snapshot.timestamp
+                    messageID: reference.messageID
                 )
                 verticalOffset += MessageRowLayoutMetrics.forwardedLineHeight
                 hasRichContent = true

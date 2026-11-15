@@ -125,11 +125,13 @@ struct NativeTimelineRowLayout {
     struct ForwardedSourceRegion {
         let frame: CGRect
         let label: String
+        /// The label with the message's date, as measured for `frame`.
+        let text: String
+        let font: NSFont
         let iconURL: URL?
         let channelID: ChannelID
         let guildID: GuildID?
         let messageID: MessageID?
-        let timestamp: Date
     }
 
     /// An animated progress mark hosted as a layer-backed canvas overlay, so

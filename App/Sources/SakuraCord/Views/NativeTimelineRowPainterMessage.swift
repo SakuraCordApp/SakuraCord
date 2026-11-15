@@ -819,20 +819,15 @@ extension NativeTimelineRowPainter {
                 )
             }
             let labelX = source.frame.minX + InterfaceScale.metric(6) + iconWidth + (iconWidth > 0 ? InterfaceScale.metric(6) : 0)
-            let dateText = source.timestamp.formatted(date: .abbreviated, time: .shortened)
-            let label = "\(source.label)  •  \(dateText)  ›"
             text(
-                label,
+                source.text,
                 in: CGRect(
                     x: labelX,
                     y: source.frame.minY,
                     width: max(1, source.frame.maxX - labelX),
                     height: source.frame.height
                 ),
-                font: .messageSystemFont(
-                    ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
-                    weight: .medium
-                ),
+                font: source.font,
                 color: input.interaction.isForwardedSourceHovered ? .labelColor : .secondaryLabelColor,
                 lineBreakMode: .byTruncatingTail
             )
