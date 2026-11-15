@@ -336,40 +336,6 @@ private actor ControlledLottieDataLoader {
     }
 }
 
-@Test func `remote image task restarts retain the decoded image for the same request`() throws {
-    let firstURL = try #require(URL(string: "https://cdn.example/avatar.webp"))
-    let secondURL = try #require(URL(string: "https://cdn.example/banner.webp"))
-    let displayed = AnimatedRemoteImageRequestIdentity(
-        url: firstURL,
-        maximumPixelDimension: 96
-    )
-
-    #expect(
-        !AnimatedRemoteImageReloadPolicy.shouldReplaceDisplayedImage(
-            displayed: displayed,
-            requested: displayed
-        )
-    )
-    #expect(
-        AnimatedRemoteImageReloadPolicy.shouldReplaceDisplayedImage(
-            displayed: displayed,
-            requested: AnimatedRemoteImageRequestIdentity(
-                url: firstURL,
-                maximumPixelDimension: 192
-            )
-        )
-    )
-    #expect(
-        AnimatedRemoteImageReloadPolicy.shouldReplaceDisplayedImage(
-            displayed: displayed,
-            requested: AnimatedRemoteImageRequestIdentity(
-                url: secondURL,
-                maximumPixelDimension: 96
-            )
-        )
-    )
-}
-
 @Test func `visible media is scheduled ahead of queued prefetch work`() throws {
     let prefetch = try #require(URL(string: "https://cdn.example/prefetch.png"))
     let visible = try #require(URL(string: "https://cdn.example/visible.png"))

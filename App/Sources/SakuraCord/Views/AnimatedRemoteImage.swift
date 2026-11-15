@@ -7,29 +7,20 @@ nonisolated struct AnimatedRemoteImageRequestIdentity: Hashable {
     let maximumPixelDimension: Int?
 }
 
-nonisolated enum AnimatedRemoteImageReloadPolicy {
-    static func shouldReplaceDisplayedImage(
-        displayed: AnimatedRemoteImageRequestIdentity?,
-        requested: AnimatedRemoteImageRequestIdentity
-    ) -> Bool {
-        displayed != requested
-    }
-}
-
 /// Displays remote GIF/APNG/WebP assets without flattening them to their first frame.
 struct AnimatedRemoteImage: View {
     let url: URL
-    var animates = true
-    var isLooping = true
+    var animates: Bool
+    var isLooping: Bool
     var playback: AnimatedImagePlayback?
     var previewImage: NSImage?
     var fallbackSystemImage: String?
-    var fallbackInset: CGFloat = InterfaceScale.metric(2)
+    var fallbackInset: CGFloat
     var maximumPixelDimension: Int?
-    var contentMode: ContentMode = .fit
+    var contentMode: ContentMode
     var onFailure: (() -> Void)?
-    var usesSwiftUIRendering = false
-    var resetsWhenStopped = false
+    var usesSwiftUIRendering: Bool
+    var resetsWhenStopped: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityPlayAnimatedImages) private var playsAnimatedImages
@@ -142,10 +133,7 @@ struct AnimatedRemoteImage: View {
                 url: url,
                 maximumPixelDimension: maximumPixelDimension
             )
-            if AnimatedRemoteImageReloadPolicy.shouldReplaceDisplayedImage(
-                displayed: displayedLoadID,
-                requested: loadID
-            ) {
+            if displayedLoadID != loadID {
                 (decodedImage, cachedPoster) = Self.cachedDisplay(url: url, maximumPixelDimension: maximumPixelDimension)
                 displayedLoadID = decodedImage == nil ? nil : loadID
             }
