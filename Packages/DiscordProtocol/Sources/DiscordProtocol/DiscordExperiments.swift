@@ -185,13 +185,14 @@ private extension DiscordExperiments.Population {
         filters = rawFilters.compactMap(DiscordExperiments.Filter.init)
         guard filters.count == rawFilters.count else { return nil }
         self.buckets = buckets.compactMap { entry in
-            guard let pair = entry.arrayValue, pair.count > 1, let bucket = pair[0].intValue else { return nil }
-            let ranges = (pair[1].arrayValue ?? []).compactMap { range -> Range<Int>? in
+            guard let pair = entry.arrayValue, pair.count > 1, let bucket = pair[0].intValue,
+                  let ranges = pair[1].arrayValue else { return nil }
+            return (bucket, ranges.compactMap { range -> Range<Int>? in
                 guard let start = range["s"]?.intValue, let end = range["e"]?.intValue, start <= end else { return nil }
                 return start ..< end
-            }
-            return (bucket, ranges)
+            })
         }
+        guard self.buckets.count == buckets.count else { return nil }
     }
 }
 

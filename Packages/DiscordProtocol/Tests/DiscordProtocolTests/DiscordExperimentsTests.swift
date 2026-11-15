@@ -108,10 +108,11 @@ func `murmurhash3 matches reference vectors`(input: String, expected: UInt32) {
     let fallsThrough = try guildExperiments("[\(everyone(1))]", formatted: "[[\(everyone(-1))]]")
     #expect(fallsThrough.bucket() == 1)
 
-    // A population whose filters cannot be read never matches, rather than matching every guild.
+    // A population whose filters or buckets cannot be read never matches, rather than matching every guild.
     let badFilters = everyone(1, filters: #""garbage""#)
     let badGuildIDs = everyone(1, filters: #"[[\#(MurmurHash3.hash("guild_ids")),"x"]]"#)
-    let unreadable = try guildExperiments("[\(badFilters),\(badGuildIDs),\(everyone(2))]")
+    let badRanges = #"[[[1,"bad"]],[]]"#
+    let unreadable = try guildExperiments("[\(badFilters),\(badGuildIDs),\(badRanges),\(everyone(2))]")
     #expect(unreadable.bucket() == 2)
 
     let notEligible = try guildExperiments("[\(everyone(-1))]")

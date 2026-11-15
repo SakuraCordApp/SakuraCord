@@ -73,9 +73,9 @@ A guild's bucket is evaluated in this order:
    this experiment.
 
 Filters, keyed by the hash of their name, are all required. Range bounds are
-`min_id`/`max_id`, inclusive, with a missing bound open. A population with a
-known filter SakuraCord cannot read never matches, as it fails to build in the
-official client.
+`min_id`/`max_id`, inclusive, with a missing bound open. A population whose
+buckets or known filters SakuraCord cannot read never matches, as it fails to
+build in the official client.
 
 | Filter | Passes when |
 | --- | --- |
