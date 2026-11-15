@@ -1,4 +1,5 @@
 import AppKit
+import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
 
@@ -1098,17 +1099,32 @@ private struct CurrentUserCapsule: View {
                             ))
                             .lineLimit(1)
                         HStack(spacing: InterfaceScale.metric(4)) {
-                            if model.isCurrentUserListeningToMusic {
-                                Image(systemName: "music.note")
-                                    .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .semibold))
-                                    .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
-                                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                            } else if model.currentUserActivity?.type == .playing {
-                                Image(systemName: "gamecontroller.fill")
-                                    .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .semibold))
-                                    .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
-                                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                            let customStatus = (user != nil ? model.profileCustomStatus?.displayText : nil)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let hasCustomStatus = customStatus != nil && !(customStatus?.isEmpty ?? true)
+                            let activity = user != nil ? model.currentUserActivity : nil
+
+                            if let activity {
+                                let category = ActivityCategory.category(for: activity.type)
+                                HStack(spacing: InterfaceScale.metric(2)) {
+                                    Image(systemName: category.iconName)
+                                        .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .semibold))
+                                        .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
+
+                                    if hasCustomStatus, model.currentUserPermittedActivitiesCount >= 2 {
+                                        Text("+\(model.currentUserPermittedActivitiesCount - 1)")
+                                            .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .bold))
+                                            .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
+                                    }
+                                }
+                                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+
+                                if hasCustomStatus {
+                                    Text("•")
+                                        .font(.interfaceSystem(size: max(10, InterfaceTypographyMetrics.interfaceTextSize - 2)))
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+
                             Text(subtitle)
                                 .font(.interfaceSystem(
                                     size: max(
@@ -1121,8 +1137,8 @@ private struct CurrentUserCapsule: View {
                                 .id(subtitle)
                                 .transition(.opacity)
                         }
-                        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: model.isCurrentUserListeningToMusic)
                         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: model.currentUserActivity?.type)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: model.currentUserPermittedActivitiesCount)
                         .animation(.easeInOut(duration: 0.2), value: subtitle)
                     }
 

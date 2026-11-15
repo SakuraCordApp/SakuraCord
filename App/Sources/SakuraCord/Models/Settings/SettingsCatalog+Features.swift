@@ -5,7 +5,7 @@ nonisolated extension SettingsCatalog {
         .features, group: .preferences, title: "Features", image: "square.stack.3d.up.fill",
         help: "Manage hidden channels, the Favorites server, FakeNitro, the message timeline, voice messages, attachments, and on-device translation.",
         keywords: [
-            "channels", "hidden", "favorites", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
+            "channels", "hidden", "favorites", "activity", "rpc", "rich presence", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
             "language",
         ]
     )
@@ -46,6 +46,34 @@ nonisolated extension SettingsCatalog {
             .showHiddenChannels, page: .features, section: .featuresChannels,
             label: "Show hidden channels", help: "Show channels you cannot access, including their available metadata.",
             keywords: ["features", "hidden channels"], scope: .appWideLocal
+        ),
+        control(
+            .activitySharing, page: .features,
+            section: .featuresActivity, label: "Share Activity Status",
+            help: "Broadcast your current activity and presence to Discord.",
+            keywords: ["activity", "presence", "rich presence", "status"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
+            .appleMusicPresence, page: .features,
+            section: .featuresActivity, label: "Share Apple Music & Spotify Playback",
+            help: "Display the song currently playing in macOS Apple Music or Spotify as your listening activity.",
+            keywords: ["apple music", "spotify", "music", "song", "listening", "presence"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
+            .localDiscordRPC, page: .features,
+            section: .featuresActivity, label: "Allow Local Discord RPC & Game Activity",
+            help: "Allow local apps and games on your Mac to connect via Discord IPC socket, and share detected game activities like Roblox (including detection without an IPC connection).",
+            keywords: ["rpc", "ipc", "socket", "games", "roblox", "rich presence"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
+            .activityStackOrder, page: .features,
+            section: .featuresActivity, label: "Activity Stack Priority",
+            help: "Customize the order in which multiple activities appear on your profile and status.",
+            keywords: ["activity", "priority", "stack", "order", "music", "games", "rpc"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
         ),
         control(
             .fakeNitroEmojis, page: .features, section: .featuresFakeNitro,

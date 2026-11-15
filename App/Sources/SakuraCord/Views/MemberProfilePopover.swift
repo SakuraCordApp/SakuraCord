@@ -365,11 +365,11 @@ struct MemberProfilePopover<Footer: View>: View {
                         .transition(
                             .asymmetric(
                                 insertion: .opacity
-                                    .combined(with: .scale(scale: 0.94, anchor: .top))
-                                    .combined(with: .offset(y: -8)),
-                                removal: .opacity
                                     .combined(with: .scale(scale: 0.96, anchor: .top))
-                                    .combined(with: .offset(y: -6))
+                                    .combined(with: .offset(y: -4)),
+                                removal: .opacity
+                                    .combined(with: .scale(scale: 0.98, anchor: .top))
+                                    .combined(with: .offset(y: -2))
                             )
                         )
                         .clipped()
@@ -398,8 +398,12 @@ struct MemberProfilePopover<Footer: View>: View {
                 footer
             }
             .animation(
-                !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.40, dampingFraction: 0.82, blendDuration: 0.15) : nil,
+                !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.15) : nil,
                 value: hasActiveActivity
+            )
+            .animation(
+                !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.38, dampingFraction: 0.82) : nil,
+                value: effectiveRichActivity
             )
             .frame(width: contentWidth, alignment: .leading)
             // Use the card's minimum, not its previous viewport height, so a

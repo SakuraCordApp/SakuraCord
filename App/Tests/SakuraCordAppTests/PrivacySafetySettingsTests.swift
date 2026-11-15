@@ -89,20 +89,22 @@ import Testing
 
     let export = preferences.export(scope: .appWide, page: .privacySafety)
     #expect(export.values == [
-        SettingsControlID.activitySharing.rawValue: .bool(true),
-        SettingsControlID.appleMusicPresence.rawValue: .bool(true),
-        SettingsControlID.localDiscordRPC.rawValue: .bool(true),
-        SettingsControlID.activityStackOrder.rawValue: .strings(["music", "games", "streaming", "other"]),
         SettingsControlID.removeMediaMetadata.rawValue: .bool(false),
         SettingsControlID.anonymiseFileNames.rawValue: .bool(true),
         SettingsControlID.privacyTypingIndicators.rawValue: .bool(true),
         SettingsControlID.externalLinkProtection.rawValue: .string("allLinks"),
     ])
+    let featuresExport = preferences.export(scope: .appWide, page: .features)
+    #expect(featuresExport.values[SettingsControlID.activitySharing.rawValue] == .bool(true))
+    #expect(featuresExport.values[SettingsControlID.appleMusicPresence.rawValue] == .bool(true))
+    #expect(featuresExport.values[SettingsControlID.localDiscordRPC.rawValue] == .bool(true))
+    #expect(featuresExport.values[SettingsControlID.activityStackOrder.rawValue] == .strings(["music", "games", "streaming", "other"]))
     let encoded = try export.encodedData()
     let text = try #require(String(data: encoded, encoding: .utf8))
     #expect(!text.contains("credential-secret"))
 
     preferences.reset(scope: .appWide, page: .privacySafety)
+    preferences.reset(scope: .appWide, page: .features)
     #expect(store.load() == .defaults)
     #expect(defaults.string(forKey: "unregistered.credential") == "credential-secret")
 }
@@ -266,7 +268,6 @@ import Testing
         .privacyTypingIndicators, .anonymiseFileNames, .removeMediaMetadata,
         .externalLinkProtection, .trustedDomains,
         .clearLocalActivity, .ignoredAccounts, .blockedAccounts,
-        .activitySharing, .appleMusicPresence, .localDiscordRPC, .activityStackOrder,
     ]
     let controls = SettingsCatalog.foundation.controls.filter {
         $0.destination.page == .privacySafety
@@ -283,7 +284,6 @@ import Testing
         ("GPS", .removeMediaMetadata),
         ("forward history", .clearLocalActivity),
         ("recent emoji", .clearLocalActivity),
-        ("stack", SettingsControlID.activityStackOrder),
     ] {
         state.searchText = term
         #expect(state.searchResults.contains { $0.id == control })

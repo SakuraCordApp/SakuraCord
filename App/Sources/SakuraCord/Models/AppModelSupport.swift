@@ -1193,9 +1193,9 @@ extension AppModel {
         readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
         configureAttachmentMedia()
         Task { [weak self] in
-            await coordinator.setOnActivityChanged { [weak self] payload in
+            await coordinator.setOnActivityChanged { [weak self] payload, count in
                 Task { @MainActor [weak self] in
-                    self?.applyCurrentUserActivity(payload)
+                    self?.applyCurrentUserActivity(payload, count: count)
                 }
             }
         }

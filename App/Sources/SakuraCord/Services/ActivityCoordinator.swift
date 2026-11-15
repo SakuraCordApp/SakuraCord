@@ -78,7 +78,7 @@ public actor ActivityCoordinator {
     private var inFlightSourceIDs: Set<String> = []
     private var syncGeneration: UInt64 = 0
     private var syncTask: Task<Void, Never>?
-    private var onActivityChangedHandler: (@Sendable (OutgoingActivityPayload?) -> Void)?
+    private var onActivityChangedHandler: (@Sendable (OutgoingActivityPayload?, Int) -> Void)?
     private let logger = Logger(subsystem: "dev.sakuracord", category: "ActivityCoordinator")
 
     public init(
@@ -194,10 +194,11 @@ public actor ActivityCoordinator {
         registeredActivities[source] != nil
     }
 
-    public func setOnActivityChanged(_ handler: (@Sendable (OutgoingActivityPayload?) -> Void)?) {
+    public func setOnActivityChanged(_ handler: (@Sendable (OutgoingActivityPayload?, Int) -> Void)?) {
         self.onActivityChangedHandler = handler
         let primary = currentPrimaryActivity()
-        handler?(primary)
+        let count = currentPermittedActivities().count
+        handler?(primary, count)
     }
 
     private func synchronizeProvider() async {
@@ -219,7 +220,7 @@ public actor ActivityCoordinator {
         let primary = permitted.values.sorted {
             $0.priorityRank(using: order) < $1.priorityRank(using: order)
         }.first
-        onActivityChangedHandler?(primary)
+        onActivityChangedHandler?(primary, permitted.count)
         try? await provider.updateActivityCategoryOrder(order)
         let permittedSourceIDs = Set(permitted.keys.map(\.sourceID))
 

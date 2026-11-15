@@ -286,25 +286,25 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         ),
         SettingsPreferenceRegistration(
             id: .activitySharing,
-            page: .privacySafety,
+            page: .features,
             storage: .appWide(key: "settings.privacy.activitySharing"),
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .appleMusicPresence,
-            page: .privacySafety,
+            page: .features,
             storage: .appWide(key: "settings.privacy.appleMusicPresence"),
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .localDiscordRPC,
-            page: .privacySafety,
+            page: .features,
             storage: .appWide(key: "settings.privacy.localDiscordRPC"),
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .activityStackOrder,
-            page: .privacySafety,
+            page: .features,
             storage: .appWide(key: "settings.privacy.activityStackOrder"),
             defaultValue: .strings(ActivityCategory.defaultOrder.map(\.rawValue))
         ),

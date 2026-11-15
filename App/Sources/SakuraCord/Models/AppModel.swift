@@ -881,6 +881,7 @@ final class AppModel {
     var inspectorVisibility = InspectorVisibility()
     var errorMessage: String?
     var currentUserActivity: OutgoingActivityPayload?
+    var currentUserPermittedActivitiesCount: Int = 0
 
     var currentUserRichActivity: MemberRichActivity? {
         guard let current = currentUserActivity else { return nil }
@@ -1284,8 +1285,9 @@ final class AppModel {
         postInitSetup(coordinator: activityServices.coordinator)
     }
 
-    func applyCurrentUserActivity(_ payload: OutgoingActivityPayload?) {
+    func applyCurrentUserActivity(_ payload: OutgoingActivityPayload?, count: Int = 0) {
         currentUserActivity = payload
+        currentUserPermittedActivitiesCount = count
         guard let currentUserID = currentUser?.id ?? snapshot?.currentUser.id else { return }
 
         if let existing = membersByID[currentUserID] {
