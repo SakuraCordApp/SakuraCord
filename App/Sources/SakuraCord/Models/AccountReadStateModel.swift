@@ -173,31 +173,6 @@ extension AccountReadStateModel {
         usesNewNotifications = true
     }
 
-    func configure(
-        accountID: String?,
-        guilds: [Guild],
-        channels: [Channel],
-        readStates: [ChannelReadState],
-        notificationSettings: [GuildNotificationSettings],
-        usesNewNotifications: Bool = true
-    ) {
-        if self.accountID != accountID {
-            reset(accountID: accountID)
-        }
-        merge(guilds: guilds)
-        merge(channels: channels)
-        self.usesNewNotifications = usesNewNotifications
-        for state in readStates {
-            applySnapshot(state)
-        }
-        seedOmittedReadBoundaries(
-            channelIDs: Set(channels.map(\.id)).subtracting(readStates.map(\.channelID))
-        )
-        for settings in notificationSettings {
-            apply(settings)
-        }
-    }
-
     /// Returns the conversations READY leaves read that were unread.
     @discardableResult
     func replaceSnapshot(_ snapshot: BootstrapSnapshot) -> Set<ChannelID> {
@@ -223,24 +198,17 @@ extension AccountReadStateModel {
     }
 
     nonisolated static func makeInitialState(_ input: InitialStateInput) -> InitialState {
-        let accountID = input.accountID
-        let guilds = input.guilds
-        let channels = input.channels
         let threads = input.threads + input.activeJoinedThreads
-        let readStates = input.readStates
-        let notificationSettings = input.notificationSettings
-        let usesNewNotifications = input.usesNewNotifications
-        let currentUserID = input.currentUserID
         var assembly = makeInitialStateAssembly(
-            guilds: guilds,
-            channels: channels,
+            guilds: input.guilds,
+            channels: input.channels,
             threadCapacity: threads.count
         )
 
-        applyInitialReadStates(readStates, to: &assembly)
+        applyInitialReadStates(input.readStates, to: &assembly)
 
-        let authoritativeReadStateIDs = Set(readStates.map(\.channelID))
-        for channelID in Set(channels.map(\.id)).subtracting(authoritativeReadStateIDs) {
+        let authoritativeReadStateIDs = Set(input.readStates.map(\.channelID))
+        for channelID in Set(input.channels.map(\.id)).subtracting(authoritativeReadStateIDs) {
             guard var entry = assembly.entries[channelID],
                   let latestKnownMessageID = entry.latestKnownMessageID
             else { continue }
@@ -250,12 +218,12 @@ extension AccountReadStateModel {
             assembly.entries[channelID] = entry
         }
 
-        let guildJoinedAtByID = guildJoinedAtByID(guilds)
+        let guildJoinedAtByID = guildJoinedAtByID(input.guilds)
         applyInitialThreads(threads, guildJoinedAtByID: guildJoinedAtByID, to: &assembly)
 
-        let notificationIndex = initialNotificationSettingsIndex(notificationSettings)
+        let notificationIndex = initialNotificationSettingsIndex(input.notificationSettings)
         return InitialState(
-            accountID: accountID,
+            accountID: input.accountID,
             activeJoinedThreadIDs: Set(input.activeJoinedThreads.filter { !$0.isArchived }.map(\.id)),
             entries: assembly.entries,
             settingsByGuild: notificationIndex.settingsByGuild,
@@ -266,8 +234,8 @@ extension AccountReadStateModel {
             defaultNotificationLevelByGuild: assembly.defaultNotificationLevelByGuild,
             guildJoinedAtByID: guildJoinedAtByID,
             forumPostArchivedByID: assembly.forumPostArchivedByID,
-            usesNewNotifications: usesNewNotifications,
-            currentUserID: currentUserID
+            usesNewNotifications: input.usesNewNotifications,
+            currentUserID: input.currentUserID
         )
     }
 
@@ -1147,17 +1115,6 @@ extension AccountReadStateModel {
     func completeAcknowledgement(token: String?, sentWith sentToken: String?) {
         guard let token, acknowledgementToken == sentToken else { return }
         acknowledgementToken = token
-    }
-
-    private func seedOmittedReadBoundaries(channelIDs: Set<ChannelID>) {
-        for channelID in channelIDs {
-            var value = entry(for: channelID)
-            guard let latestKnownMessageID = value.latestKnownMessageID else { continue }
-            value.lastAcknowledgedMessageID = latestKnownMessageID
-            value.mentionCount = 0
-            value.unreadMessageCount = 0
-            self[channelID] = value
-        }
     }
 
     func hasUnreadServerConversations(in guildIDs: Set<GuildID>) -> Bool {

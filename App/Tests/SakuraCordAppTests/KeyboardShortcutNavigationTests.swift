@@ -323,18 +323,21 @@ struct KeyboardShortcutNavigationTests {
         ]
         model.selectedGuildID = guilds[0].id
         model.visibleChannels = channels.filter { $0.guildID == guilds[0].id }.reversed()
-        model.readState.configure(
+        model.readState.applyInitialState(AccountReadStateModel.makeInitialState(.init(
             accountID: "shortcut-navigation-tests",
             guilds: guilds,
             channels: channels,
+            threads: [],
             readStates: channels.map {
                 ChannelReadState(
                     channelID: $0.id,
                     lastAcknowledgedMessageID: MessageID(rawValue: $0.id.rawValue == 11 ? 100 : 50)
                 )
             },
-            notificationSettings: []
-        )
+            notificationSettings: [],
+            usesNewNotifications: true,
+            currentUserID: UserID(rawValue: 1)
+        )))
         return model
     }
 }

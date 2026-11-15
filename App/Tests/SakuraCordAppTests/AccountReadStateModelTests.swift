@@ -89,19 +89,20 @@ struct AccountReadStateModelTests {
         ]
 
         let incremental = AccountReadStateModel()
-        incremental.reset(accountID: "account")
-        incremental.configure(
+        incremental.applyInitialState(AccountReadStateModel.makeInitialState(.init(
             accountID: "account",
             guilds: guilds,
             channels: channels,
+            threads: [],
             readStates: readStates,
-            notificationSettings: settings
-        )
+            notificationSettings: settings,
+            usesNewNotifications: true,
+            currentUserID: currentUser.id
+        )))
         for thread in threads {
             incremental.merge(thread: thread)
         }
         incremental.replaceActiveJoinedThreads(threads)
-        incremental.currentUserID = currentUser.id
 
         let batched = AccountReadStateModel()
         batched.applyInitialState(AccountReadStateModel.makeInitialState(.init(
@@ -144,7 +145,7 @@ struct AccountReadStateModelTests {
         )
         func model(acknowledging boundary: MessageID?, joinedAt: Date?) -> AccountReadStateModel {
             let model = AccountReadStateModel()
-            model.configure(
+            model.applyInitialState(AccountReadStateModel.makeInitialState(.init(
                 accountID: "account",
                 guilds: [
                     Guild(id: guildID, name: "Guild", defaultMessageNotifications: .allMessages, joinedAt: joinedAt)
@@ -158,10 +159,13 @@ struct AccountReadStateModelTests {
                         lastMessageID: MessageID(rawValue: newPostID.rawValue)
                     )
                 ],
+                threads: [],
                 // READY omits a never-acknowledged forum's read state.
                 readStates: boundary.map { [ChannelReadState(channelID: channelID, lastAcknowledgedMessageID: $0)] } ?? [],
-                notificationSettings: []
-            )
+                notificationSettings: [],
+                usesNewNotifications: true,
+                currentUserID: currentUser.id
+            )))
             model.merge(forumPost: newPost)
             return model
         }
@@ -234,9 +238,7 @@ struct AccountReadStateModelTests {
         let threadID = ChannelID(rawValue: 1 << 22)
         let latestMessageID = MessageID(rawValue: 2 << 22)
         let model = AccountReadStateModel()
-        model.reset(accountID: "account")
-        model.currentUserID = currentUser.id
-        model.configure(
+        model.applyInitialState(AccountReadStateModel.makeInitialState(.init(
             accountID: "account",
             guilds: [
                 Guild(
@@ -253,9 +255,12 @@ struct AccountReadStateModelTests {
                     kind: .forum
                 )
             ],
+            threads: [],
             readStates: [],
-            notificationSettings: []
-        )
+            notificationSettings: [],
+            usesNewNotifications: true,
+            currentUserID: currentUser.id
+        )))
         model.merge(
             forumPost: ForumPost(
                 thread: MessageThreadSummary(
@@ -979,9 +984,7 @@ struct AccountReadStateModelTests {
         settings: GuildNotificationSettings? = nil
     ) -> AccountReadStateModel {
         let model = AccountReadStateModel()
-        model.reset(accountID: "account")
-        model.currentUserID = currentUser.id
-        model.configure(
+        model.applyInitialState(AccountReadStateModel.makeInitialState(.init(
             accountID: "account",
             guilds: [
                 Guild(
@@ -999,6 +1002,7 @@ struct AccountReadStateModelTests {
                     lastMessageID: MessageID(rawValue: latest)
                 )
             ],
+            threads: [],
             readStates: [
                 ChannelReadState(
                     channelID: channelID,
@@ -1006,8 +1010,10 @@ struct AccountReadStateModelTests {
                     mentionCount: mentions
                 ),
             ],
-            notificationSettings: settings.map { [$0] } ?? []
-        )
+            notificationSettings: settings.map { [$0] } ?? [],
+            usesNewNotifications: true,
+            currentUserID: currentUser.id
+        )))
         return model
     }
 
