@@ -51,3 +51,15 @@ enum NativeTimelineBeginningText {
         return NativeTimelineAttributedTextBox(attributed)
     }
 }
+
+final class NativeTimelineBeginningSelectionOverlay: NSImageView {
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func isAccessibilityElement() -> Bool {
+        false
+    }
+}

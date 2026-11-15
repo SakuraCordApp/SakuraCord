@@ -3,6 +3,58 @@ import CoreText
 import SakuraCordModels
 import SwiftUI
 
+nonisolated enum NativeTimelineAccessibilityPresentation {
+    static func stickerLabel(_ sticker: MessageSticker) -> String {
+        nonblank(sticker.description) ?? sticker.name
+    }
+
+    static func threadLabel(_ thread: MessageThreadSummary) -> String {
+        let replyCount = thread.messageCount
+        var label = "\(thread.name), \(replyCount) "
+            + (replyCount == 1 ? "reply" : "replies")
+        if thread.isArchived { label += ", archived" }
+        if thread.isLocked { label += ", locked" }
+        return label
+    }
+
+    static func nonblank(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+nonisolated enum NativeTimelineAccessibilityPolicy {
+    static func bufferedViewport(
+        around viewport: CGRect,
+        contentHeight: CGFloat
+    ) -> CGRect {
+        let minY = max(0, viewport.minY - viewport.height)
+        let maxY = min(
+            max(minY, contentHeight),
+            viewport.maxY + viewport.height
+        )
+        return CGRect(
+            x: 0,
+            y: minY,
+            width: viewport.width,
+            height: max(0, maxY - minY)
+        )
+    }
+
+    static func editingOverlayInsertionIndex(
+        in rowIdentifiers: [NativeMessageTimelineItem.Identifier],
+        editingItemIdentifier: NativeMessageTimelineItem.Identifier?
+    ) -> Int? {
+        guard let editingItemIdentifier,
+              let rowIndex = rowIdentifiers.firstIndex(
+                  of: editingItemIdentifier
+              )
+        else { return nil }
+        return rowIndex + 1
+    }
+}
+
 struct NativeTimelineAccessibilityRowState: Equatable {
     let item: NativeMessageTimelineItem
     let translation: MessageTranslationEntry?
