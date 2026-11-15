@@ -220,7 +220,6 @@ final class AppModel {
         NativeTimelineSpoilerRevealStore()
     @ObservationIgnored let timelineSendTransitionStore =
         NativeTimelineSendTransitionStore()
-    @ObservationIgnored var latestMessageRowsRevision: UInt64 = 0
     @ObservationIgnored var messageRowsNonAppendRevision: UInt64 = 0
     @ObservationIgnored var selectedMessageIDs: Set<MessageID> = []
     @ObservationIgnored var selectedMessageStoredIndexByID: [MessageID: Int] = [:]
@@ -417,27 +416,21 @@ final class AppModel {
     @ObservationIgnored var openThreadStarterMessageID: MessageID?
     var threadMessages: [Message] = [] {
         didSet {
-            let oldRows = threadMessageRows
-            let newRows = MessageGrouping.updating(
-                existing: threadMessageRows,
-                oldMessages: oldValue,
-                newMessages: threadMessages
+            let record = threadMessageRowsUpdateJournal.publish(
+                MessageGrouping.updating(
+                    existing: threadMessageRows,
+                    oldMessages: oldValue,
+                    newMessages: threadMessages
+                ),
+                into: &threadMessageRows,
+                revision: &threadMessageRowsRevision
             )
-            let nextRevision = threadMessageRowsRevision &+ 1
-            let record = MessageRowsUpdateRecordBuilder.make(
-                oldRows: oldRows,
-                newRows: newRows,
-                revision: nextRevision
-            )
-            threadMessageRows = newRows
             threadMessageRowsUpdateHint = record.change.map {
                 MessageRowsUpdateHint(
-                    revision: nextRevision,
+                    revision: record.revision,
                     change: $0
                 )
             }
-            threadMessageRowsUpdateJournal.append(record)
-            threadMessageRowsRevision = nextRevision
             NotificationCenter.default.post(
                 name: .sakuracordMessageRowsDidChange,
                 object: self

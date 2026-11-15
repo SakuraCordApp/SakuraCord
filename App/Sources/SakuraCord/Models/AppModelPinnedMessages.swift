@@ -33,7 +33,6 @@ final class PinnedMessagesState {
         preparedRows: [MessageRowPresentation]? = nil,
         notifying notificationObject: AnyObject? = nil
     ) {
-        let oldRows = rows
         let newRows = preparedRows ?? PinnedMessagePresentation.reusingRows(
             oldItems: items,
             oldRows: rows,
@@ -41,14 +40,7 @@ final class PinnedMessagesState {
         )
         precondition(newRows.count == newItems.count)
         items = newItems
-        rows = newRows
-        let nextRevision = rowsRevision &+ 1
-        rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(
-            oldRows: oldRows,
-            newRows: rows,
-            revision: nextRevision
-        ))
-        rowsRevision = nextRevision
+        rowsUpdateJournal.publish(newRows, into: &rows, revision: &rowsRevision)
         NotificationCenter.default.post(
             name: .sakuracordMessageRowsDidChange,
             object: notificationObject

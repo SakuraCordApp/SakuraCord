@@ -198,10 +198,11 @@ final class InboxState {
     }
 
     func publish(channels: [Channel], guilds: [Guild], preparedRows: [MessageRowPresentation]? = nil, notifying model: AnyObject) {
-        let oldRows = rows
-        rows = preparedRows ?? InboxMessageRowInput.reusingRows(rows, inputs: rowInputs(channels: channels, guilds: guilds))
-        rowsRevision &+= 1
-        rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: rows, revision: rowsRevision))
+        rowsUpdateJournal.publish(
+            preparedRows ?? InboxMessageRowInput.reusingRows(rows, inputs: rowInputs(channels: channels, guilds: guilds)),
+            into: &rows,
+            revision: &rowsRevision
+        )
         NotificationCenter.default.post(name: .sakuracordMessageRowsDidChange, object: model)
     }
 

@@ -178,8 +178,7 @@ extension AppModel {
         removedMessageIDs: Set<MessageID> = [],
         invalidatesAllRows: Bool = false
     ) {
-        let nextRevision = latestMessageRowsRevision &+ 1
-        latestMessageRowsRevision = nextRevision
+        let nextRevision = messageRowsRevision &+ 1
         messageRowsUpdateHint = change.map {
             MessageRowsUpdateHint(revision: nextRevision, change: $0)
         }

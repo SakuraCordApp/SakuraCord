@@ -36,14 +36,6 @@ struct GuildResourceState {
     var nextAfter: MessageID?
     /// A reconnect found a read in flight; read forward again once it ends.
     var revalidationPending = false
-
-    /// Publishes rows with the journal record the native timeline applies.
-    mutating func publishRows(_ newRows: [MessageRowPresentation]) {
-        let oldRows = rows
-        rows = newRows
-        revision &+= 1
-        journal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: rows, revision: revision))
-    }
 }
 
 extension AppModel {
@@ -243,7 +235,11 @@ extension AppModel {
             resource.changedMessageIDs.insert(messageID)
         default: return
         }
-        resource.publishRows(MessageGrouping.resourceRows(for: resource.messages, reusing: resource.rows))
+        resource.journal.publish(
+            MessageGrouping.resourceRows(for: resource.messages, reusing: resource.rows),
+            into: &resource.rows,
+            revision: &resource.revision
+        )
         guideResource = resource
         NotificationCenter.default.post(name: .sakuracordMessageRowsDidChange, object: self)
     }
@@ -310,7 +306,7 @@ extension AppModel {
                     return MessageGrouping.resourceRow(for: message)
                 }
                 current.messages += additions.map(\.message)
-                current.publishRows(current.rows + additions)
+                current.journal.publish(current.rows + additions, into: &current.rows, revision: &current.revision)
                 current.hasMore = hasMore
                 current.nextAfter = cursor
                 current.refreshJournal = nil

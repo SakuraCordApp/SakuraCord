@@ -123,12 +123,12 @@ extension AppModel {
                 }
             }
             guard changed else { continue }
-            let oldRows = search.rows
             search.page = page
-            search.rows = MessageSearchPresentation.rows(for: page, channelsByID: messageSearchChannelsByID(additionalChannels: page.channels))
-            let revision = search.rowsRevision &+ 1
-            search.rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: search.rows, revision: revision))
-            search.rowsRevision = revision
+            search.rowsUpdateJournal.publish(
+                MessageSearchPresentation.rows(for: page, channelsByID: messageSearchChannelsByID(additionalChannels: page.channels)),
+                into: &search.rows,
+                revision: &search.rowsRevision
+            )
         }
     }
 

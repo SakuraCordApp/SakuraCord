@@ -796,6 +796,25 @@ final class MessageRowsUpdateJournal {
         }
     }
 
+    /// Replaces `rows` with `newRows`, records the change as the revision
+    /// after `revision`, and advances `revision` to it.
+    @discardableResult
+    func publish(
+        _ newRows: [MessageRowPresentation],
+        into rows: inout [MessageRowPresentation],
+        revision: inout UInt64
+    ) -> MessageRowsUpdateRecord {
+        let record = MessageRowsUpdateRecordBuilder.make(
+            oldRows: rows,
+            newRows: newRows,
+            revision: revision &+ 1
+        )
+        rows = newRows
+        append(record)
+        revision = record.revision
+        return record
+    }
+
     func records(
         after oldRevision: UInt64,
         through newRevision: UInt64
