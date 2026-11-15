@@ -30,7 +30,7 @@ extension AppModel {
             return
         }
 
-        let key = ReactionMutationKey(
+        let key = ReactionKey(
             channelID: message.channelID,
             messageID: message.id,
             reactionID: Reaction(emoji: emoji, count: 0).id
@@ -60,7 +60,7 @@ extension AppModel {
         }
     }
 
-    func scheduleReactionMutation(for key: ReactionMutationKey) {
+    func scheduleReactionMutation(for key: ReactionKey) {
         guard let state = reactionMutations[key], !state.isSending else { return }
         let generation = state.generation
         let debounce = reactionMutationTiming.debounce
@@ -79,7 +79,7 @@ extension AppModel {
     }
 
     func sendReactionMutation(
-        for key: ReactionMutationKey,
+        for key: ReactionKey,
         generation: UInt64
     ) async {
         let session = accountSession()
@@ -175,7 +175,7 @@ extension AppModel {
         }
     }
 
-    func reactionMessage(for key: ReactionMutationKey) -> Message? {
+    func reactionMessage(for key: ReactionKey) -> Message? {
         messageInWorkspace(channelID: key.channelID, messageID: key.messageID)
             ?? presentedGuideResource?.messages.first { $0.id == key.messageID && $0.channelID == key.channelID }
             ?? inbox.retainedMessages.first { $0.id == key.messageID }
@@ -197,7 +197,7 @@ extension AppModel {
 
     func applyCurrentUserReactionState(
         _ reacted: Bool,
-        for key: ReactionMutationKey,
+        for key: ReactionKey,
         emoji: String
     ) {
         guard let currentUserID = snapshot?.currentUser.id else { return }
@@ -209,7 +209,7 @@ extension AppModel {
 
     func reactionPresentationPreserving(_ incoming: Message) -> Message {
         var result = incoming
-        let lookupKey = ReactionMutationKey(
+        let lookupKey = ReactionKey(
             channelID: incoming.channelID,
             messageID: incoming.id,
             reactionID: ""
@@ -249,7 +249,7 @@ extension AppModel {
 
     private func currentUserReactionUpdate(
         _ reacted: Bool,
-        for key: ReactionMutationKey,
+        for key: ReactionKey,
         emoji: String,
         userID: UserID
     ) -> MessageReactionUpdate {
@@ -283,7 +283,7 @@ extension AppModel {
               Set(reaction.reactors.map(\.id)).count < min(reaction.count, ReactionReactor.previewLimit)
         else { return }
         let session = accountSession()
-        let key = ReactionReactorLoadKey(
+        let key = ReactionKey(
             channelID: message.channelID,
             messageID: message.id,
             reactionID: reaction.id
@@ -352,7 +352,7 @@ extension AppModel {
         await task.value
     }
 
-    private func storeReactionReactorPreview(_ reactors: [ReactionReactor], count: Int, for key: ReactionReactorLoadKey) {
+    private func storeReactionReactorPreview(_ reactors: [ReactionReactor], count: Int, for key: ReactionKey) {
         if loadedReactionReactorPreviews[key] == nil, loadedReactionReactorPreviews.count >= 256,
            let evictedKey = loadedReactionReactorPreviews.keys.first {
             loadedReactionReactorPreviews[evictedKey] = nil
@@ -364,7 +364,7 @@ extension AppModel {
 
     func applyReactionReactors(
         _ reactors: [ReactionReactor],
-        for key: ReactionReactorLoadKey
+        for key: ReactionKey
     ) {
         let normalized = reactors.uniqueReactors(limit: ReactionReactor.previewLimit)
 
@@ -423,7 +423,7 @@ extension AppModel {
     }
 
     private func invalidateReactionReactorPreviews(channelID: ChannelID, messageID: MessageID, reactionID: String? = nil) {
-        func matches(_ key: ReactionReactorLoadKey) -> Bool {
+        func matches(_ key: ReactionKey) -> Bool {
             key.channelID == channelID && key.messageID == messageID
                 && (reactionID == nil || key.reactionID == reactionID)
         }
@@ -559,7 +559,7 @@ extension AppModel {
                     emoji: mutation.emoji
                 )
             }
-            let lookupKey = ReactionMutationKey(
+            let lookupKey = ReactionKey(
                 channelID: update.channelID,
                 messageID: update.messageID,
                 reactionID: ""

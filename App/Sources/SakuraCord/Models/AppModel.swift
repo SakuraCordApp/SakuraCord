@@ -32,13 +32,9 @@ final class AppModel {
         var visibleRange: ClosedRange<Int>
     }
 
-    struct ReactionReactorLoadKey: Hashable {
-        var channelID: ChannelID
-        var messageID: MessageID
-        var reactionID: String
-    }
-
-    struct ReactionMutationKey: Hashable {
+    /// One reaction on one message, keying both its reactor loads and its
+    /// add/remove mutations.
+    struct ReactionKey: Hashable {
         var channelID: ChannelID
         var messageID: MessageID
         var reactionID: String
@@ -854,11 +850,11 @@ final class AppModel {
     @ObservationIgnored var interactionDeadlineTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var pendingInteractions: [String: PendingInteractionRecord] = [:]
     @ObservationIgnored var pendingInteractionOrder: [String] = []
-    @ObservationIgnored var reactionReactorLoadTasks: [ReactionReactorLoadKey: Task<Void, Never>] = [:]
-    @ObservationIgnored var reactionReactorLoadIDs: [ReactionReactorLoadKey: UUID] = [:]
+    @ObservationIgnored var reactionReactorLoadTasks: [ReactionKey: Task<Void, Never>] = [:]
+    @ObservationIgnored var reactionReactorLoadIDs: [ReactionKey: UUID] = [:]
     @ObservationIgnored var loadedReactionReactorPreviews:
-        [ReactionReactorLoadKey: (count: Int, reactors: [ReactionReactor])] = [:]
-    @ObservationIgnored var failedReactionReactorLoads: [ReactionReactorLoadKey: Date] = [:]
+        [ReactionKey: (count: Int, reactors: [ReactionReactor])] = [:]
+    @ObservationIgnored var failedReactionReactorLoads: [ReactionKey: Date] = [:]
     @ObservationIgnored var liveScrollingConversationIDs:
         Set<ChannelID> = []
     @ObservationIgnored var timelineScrollActivityRevision: UInt64 = 0
@@ -866,9 +862,9 @@ final class AppModel {
         maximumConcurrentLoads: maximumConcurrentReactionReactorLoads
     )
     @ObservationIgnored var reactionMutations:
-        [ReactionMutationKey: ReactionMutationState] = [:]
+        [ReactionKey: ReactionMutationState] = [:]
     @ObservationIgnored var reactionMutationTasks:
-        [ReactionMutationKey: Task<Void, Never>] = [:]
+        [ReactionKey: Task<Void, Never>] = [:]
     @ObservationIgnored let reactionMutationTiming: ReactionMutationTiming
     @ObservationIgnored var pollVoteMutations: [MessageID: PollVoteMutationState] = [:]
     @ObservationIgnored var pollResultRefreshJournals: [MessageID: ConversationRefreshJournal] = [:]
