@@ -32,7 +32,7 @@ public struct SoundboardSound: Identifiable, Codable, Hashable, Sendable {
 
     public var mediaURL: URL? {
         guard id.allSatisfy(\.isNumber) else { return nil }
-        return URL(string: "https://cdn.discordapp.com/soundboard-sounds/\(id)")
+        return DiscordCDN.soundboardSound(id)
     }
 
     public var emojiReference: EmojiReference? {

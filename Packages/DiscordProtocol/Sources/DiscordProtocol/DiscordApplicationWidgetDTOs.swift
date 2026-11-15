@@ -88,7 +88,9 @@ struct ProfileApplicationWidgetDTO: Decodable {
 
     func domain(application metadata: ProfileWidgetApplicationDTO? = nil) -> ProfileApplicationWidget {
         let metadata = metadata ?? application
-        let iconURL = metadata?.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(applicationID)/\($0).png?size=32&keep_aspect_ratio=false") }
+        let iconURL = metadata?.icon.flatMap {
+            DiscordCDN.applicationIcon(applicationID, hash: $0, fileExtension: "png", size: 32, keepAspectRatio: false)
+        }
         let mappedSurfaces = surfaces.filter { $0.key != "activity_accessory" }.mapValues { surface in
             ProfileWidgetSurface(layout: surface.layout, components: surface.components.mapValues { component in
                 component.fields.mapValues { $0.domain(applicationID: applicationID, assets: resolvedAssets ?? []) }

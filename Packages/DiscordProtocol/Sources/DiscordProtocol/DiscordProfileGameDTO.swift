@@ -112,7 +112,9 @@ struct ProfileGameDTO: Decodable {
     private func assetURL(_ asset: Media.Asset?, size: Int?, format: String?, keepAspectRatio: Bool) -> URL? {
         guard let asset else { return nil }
         if asset.type == "hash", UInt64(id) != nil, !asset.value.isEmpty, asset.value.allSatisfy(\.isHexDigit) {
-            return URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\(asset.value).\(format ?? "png")?size=\(size ?? 128)&keep_aspect_ratio=\(keepAspectRatio)")
+            return DiscordCDN.applicationIcon(
+                id, hash: asset.value, fileExtension: format ?? "png", size: size ?? 128, keepAspectRatio: keepAspectRatio
+            )
         }
         guard asset.type == "url", let url = Self.webURL(asset.value) else { return nil }
         guard url.host?.hasSuffix("discordapp.net") == true else { return DiscordCDN.editingQuery(of: url, removing: [], adding: []) }

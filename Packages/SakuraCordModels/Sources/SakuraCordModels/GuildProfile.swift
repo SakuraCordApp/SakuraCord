@@ -71,7 +71,7 @@ public struct GuildProfile: Decodable, Equatable, Sendable {
     /// The first-party card shows the custom banner only for discoverable servers.
     public var bannerURL: URL? {
         guard isDiscoverable, let customBannerHash else { return nil }
-        return URL(string: "https://cdn.discordapp.com/discovery-splashes/\(id)/\(customBannerHash).jpg?size=512")
+        return DiscordCDN.discoverySplash(id, hash: customBannerHash)
     }
 
     /// Game applications ordered by the server's reported activity, as the first-party card presents them.

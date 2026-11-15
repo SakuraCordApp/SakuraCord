@@ -194,14 +194,7 @@ public struct EmojiReference: Codable, Hashable, Sendable {
 
     public func imageURL(size: Int = 64) -> URL? {
         guard let id else { return nil }
-        var components = URLComponents(
-            string: "https://cdn.discordapp.com/emojis/\(id).\(isAnimated ? "gif" : "png")"
-        )
-        components?.queryItems = [
-            URLQueryItem(name: "size", value: String(size)),
-            URLQueryItem(name: "quality", value: "lossless")
-        ]
-        return components?.url
+        return DiscordCDN.emoji(id, fileExtension: isAnimated ? "gif" : "png", query: "size=\(size)&quality=lossless")
     }
 }
 
@@ -365,11 +358,11 @@ public struct MessageSticker: Identifiable, Codable, Hashable, Sendable {
             return assetURL
         }
         guard format != .lottie else {
-            return URL(string: "https://cdn.discordapp.com/stickers/\(id).json")
+            return DiscordCDN.sticker(id, fileExtension: "json")
         }
-        return URL(
-            string: "https://\(format == .gif ? "media.discordapp.net" : "cdn.discordapp.com")/stickers/\(id).\(format == .gif ? "gif" : "png")"
-        )
+        return format == .gif
+            ? DiscordCDN.sticker(id, fileExtension: "gif", host: "media.discordapp.net")
+            : DiscordCDN.sticker(id, fileExtension: "png")
     }
 }
 

@@ -33,15 +33,13 @@ nonisolated enum StickerSendPolicy {
 extension MessageSticker {
     var pickerMediaURL: URL? {
         if format == .lottie {
-            return URL(string: "https://discord.com/stickers/\(id).json")
+            return DiscordCDN.sticker(id, fileExtension: "json", host: "discord.com")
         }
-        return URL(
-            string: "https://media.discordapp.net/stickers/\(id).webp?size=240&quality=lossless"
-        )
+        return DiscordCDN.sticker(id, fileExtension: "webp", host: "media.discordapp.net", query: "size=240&quality=lossless")
     }
 
     var pickerImageLink: URL? {
-        URL(string: "https://media.discordapp.net/stickers/\(id).webp?size=320&quality=lossless")
+        DiscordCDN.sticker(id, fileExtension: "webp", host: "media.discordapp.net", query: "size=320&quality=lossless")
     }
 }
 

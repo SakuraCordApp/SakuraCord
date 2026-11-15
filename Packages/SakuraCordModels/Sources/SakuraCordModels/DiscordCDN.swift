@@ -18,9 +18,15 @@ public enum DiscordCDN {
         )
     }
 
-    /// An application's icon at 64 points, by the ID as Discord sent it.
-    public static func applicationIcon(_ applicationID: String, hash: String) -> URL? {
-        URL(string: "https://cdn.discordapp.com/app-icons/\(applicationID)/\(hash).webp?size=64")
+    /// An application's icon by the ID as Discord sent it, at 64 points in
+    /// WebP unless a surface asks otherwise.
+    public static func applicationIcon(
+        _ applicationID: String, hash: String, fileExtension: String = "webp", size: Int = 64, keepAspectRatio: Bool? = nil
+    ) -> URL? {
+        URL(
+            string: "https://cdn.discordapp.com/app-icons/\(applicationID)/\(hash).\(fileExtension)?size=\(size)"
+                + (keepAspectRatio.map { "&keep_aspect_ratio=\($0)" } ?? "")
+        )
     }
 
     /// A server's icon; invite and join-request previews leave out the
@@ -99,5 +105,34 @@ public enum DiscordCDN {
 
     private static func isAnimated(_ hash: String) -> String {
         hash.hasPrefix("a_") ? "true" : "false"
+    }
+}
+
+// Stickers, sounds, and server profile and guide images.
+public extension DiscordCDN {
+    /// A sticker in `fileExtension` from `host`, with the query each surface asks for.
+    static func sticker(_ id: String, fileExtension: String, host: String = "cdn.discordapp.com", query: String? = nil) -> URL? {
+        URL(string: "https://\(host)/stickers/\(id).\(fileExtension)" + (query.map { "?\($0)" } ?? ""))
+    }
+
+    static func soundboardSound(_ id: String) -> URL? {
+        URL(string: "https://cdn.discordapp.com/soundboard-sounds/\(id)")
+    }
+
+    /// A discoverable server's custom banner.
+    static func discoverySplash(_ guildID: GuildID, hash: String) -> URL? {
+        URL(string: "https://cdn.discordapp.com/discovery-splashes/\(guildID)/\(hash).jpg?size=512")
+    }
+
+    /// The badge beside a server tag.
+    static func guildTagBadge(_ guildID: GuildID, hash: String) -> URL? {
+        URL(string: "https://cdn.discordapp.com/clan-badges/\(guildID)/\(hash).png?size=16")
+    }
+
+    /// A server guide resource channel's or new-member action's icon.
+    static func guildGuideIcon(_ channelID: ChannelID, hash: String, isNewMemberAction: Bool) -> URL? {
+        URL(
+            string: "https://cdn.discordapp.com/\(isNewMemberAction ? "new-member-actions" : "resource-channels")/\(channelID)/\(hash).png?size=128"
+        )
     }
 }
