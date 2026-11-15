@@ -20,6 +20,45 @@ class ComposerFocusReportingTextView: NSTextView {
     }
 }
 
+/// A composer editor that takes pasted files when its destination accepts
+/// them. AppKit validates Paste and Services against
+/// `readablePasteboardTypes`, then reads the first available type through
+/// `readSelection(from:type:)`. Destinations that cannot take files omit the
+/// attachment types, so the clipboard's text representation is pasted
+/// instead.
+class ComposerAttachmentPasteTextView: ComposerFocusReportingTextView {
+    var onReceiveAttachments: ((_ attachments: ComposerIncomingAttachments, _ isInstant: Bool) -> Bool)?
+    var canReceiveAttachments: (() -> Bool)?
+
+    var receivesAttachments: Bool {
+        isEditable && onReceiveAttachments != nil && canReceiveAttachments?() != false
+    }
+
+    /// The text types the editor pastes when no attachment type is read.
+    var textPasteboardTypes: [NSPasteboard.PasteboardType] { super.readablePasteboardTypes }
+
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        receivesAttachments
+            ? ComposerPasteboardAttachments.readableTypes + textPasteboardTypes
+            : textPasteboardTypes
+    }
+
+    override func readSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        guard ComposerPasteboardAttachments.readableTypes.contains(type) else {
+            return readTextSelection(from: pasteboard, type: type)
+        }
+        // Declining lets AppKit read the next available type.
+        guard receivesAttachments, let onReceiveAttachments,
+              let attachments = ComposerPasteboardAttachments.attachments(from: pasteboard, type: type)
+        else { return false }
+        return onReceiveAttachments(attachments, false)
+    }
+
+    func readTextSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        super.readSelection(from: pasteboard, type: type)
+    }
+}
+
 /// A coordinator that keeps its editor's first-responder status and SwiftUI
 /// focus binding in step.
 protocol ComposerFocusSyncing: AnyObject {

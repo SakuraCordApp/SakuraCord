@@ -51,7 +51,10 @@ struct ForumPostTitleField: NSViewRepresentable {
     func updateNSView(_ field: TitleField, context: Context) {
         context.coordinator.parent = self
         field.editor.canReceiveAttachments = canReceiveAttachments
-        field.editor.receiveAttachments = receiveAttachments
+        field.editor.onReceiveAttachments = { attachments, _ in
+            receiveAttachments(attachments)
+            return true
+        }
         // Follows Interface Size and accent changes, as the body does.
         if field.font != Self.font {
             field.font = Self.font
@@ -103,8 +106,8 @@ struct ForumPostTitleField: NSViewRepresentable {
     }
 
     final class TitleField: NSTextField {
-        let editor: TitleEditor = {
-            let editor = TitleEditor()
+        let editor: ComposerAttachmentPasteTextView = {
+            let editor = ComposerAttachmentPasteTextView()
             editor.isFieldEditor = true
             editor.isRichText = false
             editor.allowsUndo = true
@@ -121,33 +124,6 @@ struct ForumPostTitleField: NSViewRepresentable {
     final class TitleCell: NSTextFieldCell {
         override func fieldEditor(for controlView: NSView) -> NSTextView? {
             (controlView as? TitleField)?.editor
-        }
-    }
-
-    final class TitleEditor: ComposerFocusReportingTextView {
-        var canReceiveAttachments: (() -> Bool)?
-        var receiveAttachments: ((ComposerIncomingAttachments) -> Void)?
-
-        private var receivesAttachments: Bool {
-            isEditable && receiveAttachments != nil && canReceiveAttachments?() != false
-        }
-
-        override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
-            receivesAttachments
-                ? ComposerPasteboardAttachments.readableTypes + super.readablePasteboardTypes
-                : super.readablePasteboardTypes
-        }
-
-        override func readSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
-            guard ComposerPasteboardAttachments.readableTypes.contains(type) else {
-                return super.readSelection(from: pasteboard, type: type)
-            }
-            // Declining lets AppKit read the next available type.
-            guard receivesAttachments, let receiveAttachments,
-                  let attachments = ComposerPasteboardAttachments.attachments(from: pasteboard, type: type)
-            else { return false }
-            receiveAttachments(attachments)
-            return true
         }
     }
 }

@@ -456,15 +456,13 @@ struct ComposerTextView: NSViewRepresentable {
     }
 }
 
-final class ComposerNSTextView: ComposerFocusReportingTextView, WindowModalEscapeConsumer {
+final class ComposerNSTextView: ComposerAttachmentPasteTextView, WindowModalEscapeConsumer {
     var onReturn: ((NSEvent) -> Bool)?
     var onEscape: (() -> Void)?
     var onEditLatestMessage: (() -> Bool)?
     var onNavigateReplySelection: ((MessageReplyNavigationDirection) -> Bool)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
     var onDropTargetChanged: ((_ isTargeted: Bool, _ isInstant: Bool) -> Void)?
-    var onReceiveAttachments: ((_ attachments: ComposerIncomingAttachments, _ isInstant: Bool) -> Bool)?
-    var canReceiveAttachments: (() -> Bool)?
     var plainTextStyle: ComposerTextStyle = .composer
     var plainTypingAttributes: [NSAttributedString.Key: Any] { plainTextStyle.attributes }
     var capturesUnfocusedTyping = false {
@@ -708,31 +706,12 @@ final class ComposerNSTextView: ComposerFocusReportingTextView, WindowModalEscap
         Pasteboard.copy(raw)
     }
 
-    // AppKit validates Paste and Services against these types, then reads
-    // the first available one through `readSelection(from:type:)`.
-    // Destinations that cannot take files omit the attachment types, so the
-    // clipboard's text representation is pasted instead.
-    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
-        receivesAttachments
-            ? ComposerPasteboardAttachments.readableTypes + Self.textPasteboardTypes
-            : Self.textPasteboardTypes
-    }
+    override var textPasteboardTypes: [NSPasteboard.PasteboardType] { Self.pastedTextTypes }
 
-    private var receivesAttachments: Bool {
-        isEditable && onReceiveAttachments != nil && canReceiveAttachments?() != false
-    }
+    private static let pastedTextTypes: [NSPasteboard.PasteboardType] = [.string, .rtfd, .rtf, .html]
 
-    private static let textPasteboardTypes: [NSPasteboard.PasteboardType] = [.string, .rtfd, .rtf, .html]
-
-    override func readSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+    override func readTextSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
         guard isEditable else { return false }
-        if ComposerPasteboardAttachments.readableTypes.contains(type) {
-            // Declining lets AppKit read the next available type.
-            guard receivesAttachments, let onReceiveAttachments,
-                  let attachments = ComposerPasteboardAttachments.attachments(from: pasteboard, type: type)
-            else { return false }
-            return onReceiveAttachments(attachments, false)
-        }
         guard let text = Self.plainText(from: pasteboard, type: type) else { return false }
         if type == .string, receivesAttachments, let onReceiveAttachments,
            let batch = ComposerPasteboardAttachments.longTextAttachment(text)
