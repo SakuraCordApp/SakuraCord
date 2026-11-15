@@ -43,7 +43,6 @@ extension ForumBoardView {
                 let excerptChanged = configureExcerpt(for: postID)
                 if presentationChanged || excerptChanged { changed.append(postID) }
             }
-            _ = model.openThread?.id
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, observationGeneration == generation else { return }

@@ -773,12 +773,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     }
 
     func applyChrome(_ card: ForumBoardCard, id: ForumBoardItem.Identifier, animated: Bool) {
-        let postID = id.postID
         card.applyChrome(
             isHovered: hoveredID == id || keyboardID == id,
             isKeyboardFocused: keyboardID == id,
             isPressed: pressedID == id,
-            isSelected: postID != nil && postID == model?.openThread?.id,
+            isSelected: id.postID.flatMap { presentations[$0]?.isSelected } == true,
             appearance: effectiveAppearance,
             animated: animated
         )
