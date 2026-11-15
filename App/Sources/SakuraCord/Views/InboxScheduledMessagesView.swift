@@ -255,9 +255,10 @@ private struct ScheduledMessageCard: View {
                         ScheduledGIFVideo(url: videoURL)
                     }
                 }
-                .aspectRatio(video.flatMap { video in
-                    video.width.flatMap { width in video.height.flatMap { $0 > 0 ? CGFloat(width) / CGFloat($0) : nil } }
-                }, contentMode: .fit)
+                .aspectRatio(
+                    video.flatMap { RichMediaItem.knownSize(width: $0.width, height: $0.height) }.map { $0.width / $0.height },
+                    contentMode: .fit
+                )
                 .frame(maxWidth: InterfaceScale.metric(240), maxHeight: InterfaceScale.metric(180), alignment: .leading)
                 .blur(radius: media.isSpoiler ? 24 : 0)
                 .overlay {
