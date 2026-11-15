@@ -140,6 +140,9 @@ public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
 }
 
 public struct ChannelReadState: Codable, Hashable, Sendable {
+    /// Discord's `IS_MENTION_LOW_IMPORTANCE` read-state flag.
+    public static let lowImportanceMentionFlag: UInt64 = 1 << 2
+
     public var channelID: ChannelID
     public var lastAcknowledgedMessageID: MessageID?
     public var mentionCount: Int

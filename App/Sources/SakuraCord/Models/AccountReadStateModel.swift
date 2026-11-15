@@ -825,7 +825,7 @@ extension AccountReadStateModel {
         if mentionKind != .none {
             // A real mention promotes any retained low-importance count.
             // Discord clears this flag before incrementing its mention count.
-            if let flags = entry.flags { entry.flags = flags & ~UInt64(4) }
+            if let flags = entry.flags { entry.flags = flags & ~ChannelReadState.lowImportanceMentionFlag }
             if entry.mentionCount == 0 {
                 // MentionStore appends newly mentioned channels. The quick switcher
                 // reverses that order, independent of read-state creation time.

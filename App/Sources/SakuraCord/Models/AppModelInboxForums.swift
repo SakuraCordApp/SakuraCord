@@ -7,7 +7,7 @@ extension AppModel {
         var posts: [ChannelID: ForumPost] = [:]
         while true {
             let page = try await session.provider.forumPosts(in: group.channelID, query: query)
-            guard !Task.isCancelled, isCurrentAccountSession(session), inbox.generation == generation else { return }
+            guard !Task.isCancelled, isCurrentInboxLoad(session, generation: generation) else { return }
             for post in page.posts where !post.thread.isArchived && post.id.rawValue > (group.oldestReadMessageID?.rawValue ?? 0) {
                 posts[post.id] = post
             }

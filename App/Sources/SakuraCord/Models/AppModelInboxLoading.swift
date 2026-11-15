@@ -18,7 +18,7 @@ extension AppModel {
 
     func loadInboxMentionPage(query: InboxMentionQuery, before: MessageID?, session: AppModelAccountSession, generation: UInt64) async throws {
         let page = try await session.provider.inboxMentions(query, before: before)
-        guard !Task.isCancelled, isCurrentAccountSession(session), inbox.generation == generation else { return }
+        guard !Task.isCancelled, isCurrentInboxLoad(session, generation: generation) else { return }
         for thread in page.threads { inbox.threads[thread.id] = thread }
         var combined = Dictionary(uniqueKeysWithValues: inbox.mentions.map { ($0.id, $0) })
         for message in inboxMessagesPreservingRefreshMutations(page.messages) where !inbox.removedIDs.contains(message.id) {
@@ -33,7 +33,7 @@ extension AppModel {
     /// Replaces the retained head with Discord's newest page, keeping older pages already loaded.
     func revalidateInboxMentions(query: InboxMentionQuery, session: AppModelAccountSession, generation: UInt64) async throws {
         let page = try await session.provider.inboxMentions(query, before: nil)
-        guard !Task.isCancelled, isCurrentAccountSession(session), inbox.generation == generation else { return }
+        guard !Task.isCancelled, isCurrentInboxLoad(session, generation: generation) else { return }
         inbox.needsMentionRevalidation = false
         for thread in page.threads { inbox.threads[thread.id] = thread }
         let fresh = inboxMessagesPreservingRefreshMutations(page.messages).filter { !inbox.removedIDs.contains($0.id) }
@@ -71,7 +71,7 @@ extension AppModel {
             let page = try await session.provider.messagesForImmediatePresentation(
                 in: group.channelID, anchoredAt: anchor, limit: 30
             )
-            guard !Task.isCancelled, isCurrentAccountSession(session), inbox.generation == generation else { return }
+            guard !Task.isCancelled, isCurrentInboxLoad(session, generation: generation) else { return }
             for message in page.messages where message.id > (group.oldestReadMessageID ?? MessageID(rawValue: 0))
                 && message.id <= group.newestUnreadMessageID {
                 collected[message.id] = message

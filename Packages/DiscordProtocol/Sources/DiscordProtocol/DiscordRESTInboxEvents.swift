@@ -69,7 +69,7 @@ extension DiscordRESTProvider {
             guard let dto = try? JSONValueDecoder().decode(InboxScheduledEventDTO.self, from: body), var event = dto.domain else { return true }
             event.isInterested = inboxScheduledEvents.events.first { $0.id == event.id }?.isInterested ?? false
             inboxScheduledEvents.events.removeAll { $0.id == event.id }
-            if name != "GUILD_SCHEDULED_EVENT_DELETE", event.status == 1 || event.status == 2 {
+            if name != "GUILD_SCHEDULED_EVENT_DELETE", event.isScheduledOrActive {
                 inboxScheduledEvents.events.append(event)
             }
             if name == "GUILD_SCHEDULED_EVENT_CREATE" {

@@ -33,7 +33,7 @@ extension AppModel {
     func loadInboxEvents(_ group: InboxUnreadGroup, session: AppModelAccountSession, generation: UInt64) async throws {
         guard let guildID = group.guildID else { return }
         let interests = try await session.provider.inboxEventInterests(in: guildID)
-        guard !Task.isCancelled, isCurrentAccountSession(session), inbox.generation == generation,
+        guard !Task.isCancelled, isCurrentInboxLoad(session, generation: generation),
               let index = inbox.groups.firstIndex(where: { $0.id == group.id }) else { return }
         for eventIndex in inbox.scheduledEvents.events.indices where inbox.scheduledEvents.events[eventIndex].guildID == guildID {
             inbox.scheduledEvents.events[eventIndex].isInterested = interests.contains(inbox.scheduledEvents.events[eventIndex].id)
@@ -45,7 +45,7 @@ extension AppModel {
 
     func visibleInboxEvents(for group: InboxUnreadGroup) -> [InboxScheduledEvent] {
         inbox.scheduledEvents.events.filter {
-            $0.guildID == group.guildID && ($0.status == 1 || $0.status == 2)
+            $0.guildID == group.guildID && $0.isScheduledOrActive
                 && $0.id.rawValue > (group.oldestReadMessageID?.rawValue ?? 0)
                 && $0.id.rawValue <= group.newestUnreadMessageID.rawValue
         }.sorted { $0.id < $1.id }

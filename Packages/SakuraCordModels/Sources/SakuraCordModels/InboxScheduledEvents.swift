@@ -31,6 +31,11 @@ public struct InboxScheduledEvent: Identifiable, Equatable, Sendable {
         self.status = status
         self.isInterested = isInterested
     }
+
+    /// Discord's active status (2).
+    public var isActive: Bool { status == 2 }
+    /// The Inbox lists scheduled (1) and active events only.
+    public var isScheduledOrActive: Bool { status == 1 || isActive }
 }
 
 public struct InboxEventReadState: Equatable, Sendable {

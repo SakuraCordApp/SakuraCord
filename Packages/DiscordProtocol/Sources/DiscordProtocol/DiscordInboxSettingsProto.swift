@@ -20,7 +20,7 @@ enum DiscordInboxSettingsProto {
                       let settings = entry.first(where: { $0.field == 2 })?.payload,
                       ProtoReader.fields(settings).contains(where: { $0.field == 1 && $0.varint == 1 })
                 else { continue }
-                if id == 1_539_033_557_786_173_450, let guildID {
+                if id == InboxSettings.eventsChannelID.rawValue, let guildID {
                     collapsedEvents.insert(GuildID(rawValue: guildID))
                 } else { collapsed.insert(ChannelID(rawValue: id)) }
             }
