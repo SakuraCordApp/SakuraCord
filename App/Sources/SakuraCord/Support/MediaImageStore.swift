@@ -174,8 +174,8 @@ final class MediaImageStore {
     var subscribers:
         [MediaImageKey:
             [SubscriberID: (MediaImageLoadOutcome) -> Void]] = [:]
-    let animatedCache: NSCache<NSString, NativeTimelineAnimatedMedia> = {
-        let cache = NSCache<NSString, NativeTimelineAnimatedMedia>()
+    let animatedCache: NSCache<NSString, AnimatedMediaImage> = {
+        let cache = NSCache<NSString, AnimatedMediaImage>()
         cache.countLimit = 32
         cache.totalCostLimit =
             MediaMemoryPolicy.timelineAnimatedImageBytes
@@ -277,7 +277,7 @@ final class MediaImageStore {
         _ decoded: DecodedAnimatedImage,
         for key: MediaImageKey
     ) {
-        let media = NativeTimelineAnimatedMedia(decoded)
+        let media = AnimatedMediaImage(decoded)
         animatedCache.setObject(
             media,
             forKey: key.cacheKey,
@@ -330,7 +330,7 @@ final class MediaImageStore {
                 animatedSubscribers.removeValue(forKey: key)?.values
                 ?? [:].values
             if let decoded {
-                let media = NativeTimelineAnimatedMedia(decoded)
+                let media = AnimatedMediaImage(decoded)
                 animatedCache.setObject(
                     media,
                     forKey: key.cacheKey,
