@@ -203,16 +203,14 @@ extension AppModel {
         forumPaginationError = nil
         forumLoadGeneration &+= 1
         if nextSearch.lowercased().hasPrefix(previousSearch.lowercased()) {
-            let presentation = ForumPostPresentation(
+            present(ForumPostPresentation(
                 posts: forumPosts,
                 recentCount: forumRecentPostCount
             ).filtering(
                 searchText: nextSearch,
                 selectedTagIDs: forumSelectedTagIDs,
                 tagMatch: forumTagMatch
-            )
-            forumPosts = presentation.posts
-            forumRecentPostCount = presentation.recentCount
+            ))
         } else {
             applyForumPresentation()
         }
@@ -494,19 +492,17 @@ extension AppModel {
     }
 
     func applyForumPresentation() {
-        let presentation = ForumPostPresentation.make(
+        present(ForumPostPresentation.make(
             catalogue: forumCataloguePosts,
             searchText: forumSearchText,
             selectedTagIDs: forumSelectedTagIDs,
             tagMatch: forumTagMatch,
             sortOrder: forumSortOrder
-        )
-        forumPosts = presentation.posts
-        forumRecentPostCount = presentation.recentCount
+        ))
     }
 
     func updateForumPresentation(with post: ForumPost) {
-        let presentation = ForumPostPresentation(
+        present(ForumPostPresentation(
             posts: forumPosts,
             recentCount: forumRecentPostCount
         ).updating(
@@ -515,7 +511,10 @@ extension AppModel {
             selectedTagIDs: forumSelectedTagIDs,
             tagMatch: forumTagMatch,
             sortOrder: forumSortOrder
-        )
+        ))
+    }
+
+    private func present(_ presentation: ForumPostPresentation) {
         forumPosts = presentation.posts
         forumRecentPostCount = presentation.recentCount
     }
