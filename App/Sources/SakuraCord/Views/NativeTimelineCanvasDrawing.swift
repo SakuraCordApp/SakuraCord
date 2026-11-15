@@ -576,57 +576,6 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    func rowFrame(at index: Int) -> CGRect {
-        guard items.indices.contains(index) else { return .zero }
-        return CGRect(
-            x: 0,
-            y: displayedRowOrigin(at: index),
-            width: bounds.width,
-            height: displayedRowHeight(at: index)
-        )
-    }
-
-    func rowIndex(at documentY: CGFloat) -> Int? {
-        guard !rowOrigins.isEmpty else { return nil }
-        var lower = 0
-        var upper = rowOrigins.count
-        while lower < upper {
-            let middle = (lower + upper) / 2
-            if visibleRowSpan(at: middle).upperBound <= documentY {
-                lower = middle + 1
-            } else {
-                upper = middle
-            }
-        }
-        return items.indices.contains(lower) ? lower : nil
-    }
-
-    /// The row under a pointer's y whose item and layout are both present.
-    func hitRowIndex(at documentY: CGFloat) -> Int? {
-        guard let index = rowIndex(at: documentY), items.indices.contains(index), layouts.indices.contains(index)
-        else { return nil }
-        return index
-    }
-
-    /// The row of the message with this ID.
-    func rowIndex(forMessageID messageID: MessageID) -> Int? {
-        items.firstIndex { $0.messageID == messageID }
-    }
-
-    /// The row under `point`, and `point` in that row's coordinates.
-    func rowHit(at point: CGPoint) -> (index: Int, local: CGPoint)? {
-        guard let index = hitRowIndex(at: point.y) else { return nil }
-        return (index, CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index)))
-    }
-
-    /// The message under `point` when it falls inside the row-local frame
-    /// `frame` picks for the row's index.
-    func messageID(at point: CGPoint, frame: (Int) -> CGRect?) -> MessageID? {
-        guard case let (index, local)? = rowHit(at: point), let target = frame(index), target.contains(local)
-        else { return nil }
-        return items[index].messageID
-    }
-
     func startMessageJumpHighlight(_ messageID: MessageID) {
         cancelMessageJumpHighlight()
         let highlight = MessageJumpHighlight(

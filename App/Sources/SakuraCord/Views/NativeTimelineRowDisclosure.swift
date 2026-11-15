@@ -160,33 +160,6 @@ extension NativeTimelineCanvasView {
         return nil
     }
 
-    /// Visits displayed rows intersecting `rect` in index order. Rows hidden
-    /// outside an animating gap's or group's clip do not end the walk early.
-    func forEachDisplayedRow(in rect: CGRect, _ body: (Int) -> Void) {
-        guard !items.isEmpty, var index = rowIndex(at: max(0, rect.minY)) else { return }
-        while items.indices.contains(index) {
-            let span = visibleRowSpan(at: index)
-            if span.lowerBound >= rect.maxY { return }
-            if rowMotion.clippedRows.contains(index), span.lowerBound >= clippedRowsMaxY {
-                index = rowMotion.clippedRows.upperBound
-                continue
-            }
-            if span.upperBound > span.lowerBound { body(index) }
-            index += 1
-        }
-    }
-
-    /// Clip both ends into the reveal interval, including empty rows. The
-    /// resulting spans remain ordered while the surrounding rows move.
-    func visibleRowSpan(at index: Int) -> Range<CGFloat> {
-        let minY = displayedRowOrigin(at: index)
-        let maxY = minY + displayedRowHeight(at: index)
-        guard rowMotion.clippedRows.contains(index) else { return minY ..< maxY }
-        let clippedMin = min(clippedRowsMaxY, max(clippedRowsMinY, minY))
-        let clippedMax = min(clippedRowsMaxY, max(clippedRowsMinY, maxY))
-        return clippedMin ..< clippedMax
-    }
-
     func disclosureHeaderIndex(for key: NativeTimelineRowDisclosure.Key, hint: Int? = nil) -> Int? {
         func matches(_ item: NativeMessageTimelineItem) -> Bool {
             switch (key, item) {
