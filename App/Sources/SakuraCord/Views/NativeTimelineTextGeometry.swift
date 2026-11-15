@@ -1,13 +1,5 @@
 import AppKit
-import AVFoundation
-import Combine
 import CoreText
-import ImageIO
-import Lottie
-import MessageRendering
-import QuartzCore
-import SakuraCordModels
-import SwiftUI
 
 struct NativeTimelineTextHit {
     let characterIndex: Int

@@ -254,10 +254,8 @@ struct NativeTimelineRowLayout {
     var audioPlayers: [NativeTimelineVoiceMessageRegion] {
         (voiceMessageRegion.map { [$0] } ?? []) + audioFilePlayers
     }
-    var embedFrames: [CGRect] = []
     var embedRegions: [EmbedRegion] = []
     var sakuraCordDeepLinkRegions: [SakuraCordDeepLinkRegion] = []
-    var componentFrames: [CGRect] = []
     var componentLayouts: [NativeTimelineComponentLayout] = []
     var stickerFrames: [CGRect] = []
     var threadFrame: CGRect?

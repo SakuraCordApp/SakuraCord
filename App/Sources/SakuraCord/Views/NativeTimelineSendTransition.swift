@@ -1616,8 +1616,8 @@ extension NativeTimelineRowLayout {
             + attachmentRegions.map(\.frame)
             + linkedImageRegions.map(\.frame)
             + stickerFrames
-            + embedFrames
-            + componentFrames
+            + embedRegions.map(\.frame)
+            + componentLayouts.map(\.frame)
         guard let first = bodyFrames.first else { return nil }
         let body = bodyFrames.dropFirst().reduce(first) { $0.union($1) }
         return CGRect(

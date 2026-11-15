@@ -1,12 +1,5 @@
 import AppKit
-import AVFoundation
-import Combine
-import CoreText
-import ImageIO
-import Lottie
-import QuartzCore
 import SakuraCordModels
-import SwiftUI
 
 struct NativeTimelineComponentsDrawInput {
     let layout: NativeTimelineComponentLayout
@@ -18,14 +11,6 @@ struct NativeTimelineComponentsDrawInput {
 }
 
 extension NativeTimelineRowPainter {
-    static func schedulePostFirstFrameSymbolPrewarm(
-        appearance: NSAppearance
-    ) {
-        SystemSymbolImageCache.schedulePostFirstFramePrewarm(
-            appearance: appearance
-        )
-    }
-
     static func drawComponents(_ input: NativeTimelineComponentsDrawInput) {
         let hiddenContainerFrames =
             input.message.spoilerRevealStore.map {
@@ -680,13 +665,6 @@ extension NativeTimelineRowPainter {
             cornerRadius: 0,
             fillsFrame: false
         )
-    }
-
-    static func pill(_ frame: CGRect, selected: Bool) {
-        let color = selected ? NSColor.sakuraCordAccentColor : NSColor.quaternaryLabelColor
-        color.withAlphaComponent(selected ? 0.22 : 0.18).setFill()
-        NSBezierPath(roundedRect: frame, xRadius: frame.height / 2, yRadius: frame.height / 2)
-            .fill()
     }
 
 }

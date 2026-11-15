@@ -111,7 +111,7 @@ extension NativeTimelineRowLayout {
             let mediaFrames = layout.linkedImageRegions.map(\.frame)
                 + layout.attachmentRegions.map(\.frame)
                 + [layout.voiceMessageRegion?.frame].compactMap { $0 }
-                + layout.embedFrames
+                + layout.embedRegions.map(\.frame)
                 + layout.stickerFrames
             for frame in mediaFrames {
                 extent = max(extent, ceil(frame.maxX - contentX))
@@ -858,7 +858,6 @@ extension NativeTimelineRowLayout {
                     hasRichContent = true
                 }
             }
-            result.embedFrames = result.embedRegions.map(\.frame)
 
             if let componentLayout = NativeTimelineComponentLayout.make(
                 message: message,
@@ -872,7 +871,6 @@ extension NativeTimelineRowLayout {
                 verticalOffset = componentLayout.frame.maxY
                 hasRichContent = true
             }
-            result.componentFrames = result.componentLayouts.map(\.frame)
             // An activated button shows the dots in place of its label, and a
             // committed select in place of its chevron.
             let dots = InteractionLoadingDots.size

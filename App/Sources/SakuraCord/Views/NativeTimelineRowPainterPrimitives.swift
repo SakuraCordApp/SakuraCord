@@ -232,7 +232,8 @@ extension NativeTimelineRowPainter {
         if isVideo { mediaPlayGlyph(in: frame) }
     }
 
-    /// Where an image of `size` lands when it fills or fits `frame`, centred.
+    /// Draws `image` filling or fitting `frame`, centred and clipped to its
+    /// rounded corners.
     static func drawImage(
         _ image: NSImage,
         in frame: CGRect,

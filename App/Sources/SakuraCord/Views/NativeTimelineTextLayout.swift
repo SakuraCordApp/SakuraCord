@@ -732,19 +732,6 @@ enum NativeTimelineTimestamp {
         headerTexts[key] = text
         return text
     }
-
-    static func text(
-        for date: Date,
-        settings: InterfaceSettingsSnapshot = .defaults,
-        includesSeconds: Bool? = nil
-    ) -> String {
-        InterfaceTimestampFormatter.text(
-            for: date,
-            format: settings.timestampFormat,
-            includesSeconds: includesSeconds
-                ?? settings.includesTimestampSeconds
-        )
-    }
 }
 
 extension NSAttributedString.Key {

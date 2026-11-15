@@ -1004,7 +1004,7 @@ extension NativeTimelineCanvasView {
            )
         {
             mediaReadyConversationID = presentedConversationID
-            NativeTimelineRowPainter.schedulePostFirstFrameSymbolPrewarm(
+            SystemSymbolImageCache.schedulePostFirstFramePrewarm(
                 appearance: effectiveAppearance
             )
             scheduleAnimatedMediaReconciliation()

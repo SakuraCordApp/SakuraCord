@@ -1,12 +1,5 @@
 import AppKit
-import AVFoundation
-import Combine
-import CoreText
-import ImageIO
-import Lottie
-import QuartzCore
 import SakuraCordModels
-import SwiftUI
 
 /// What the pointer hovers or presses in a row as it is drawn; `idle` for
 /// rows drawn without it, such as bitmaps and transition pictures.
@@ -277,10 +270,12 @@ extension NativeTimelineRowPainter {
         if input.interaction.showsCompactTimestamp || input.model?.interfaceSettings.alwaysShowsTimestamps == true,
            let frame = input.layout.compactTimestampFrame
         {
+            let settings = input.model?.interfaceSettings ?? .defaults
             text(
-                NativeTimelineTimestamp.text(
+                InterfaceTimestampFormatter.text(
                     for: input.row.message.timestamp,
-                    settings: input.model?.interfaceSettings ?? .defaults
+                    format: settings.timestampFormat,
+                    includesSeconds: settings.includesTimestampSeconds
                 ),
                 in: frame,
                 font: NativeTimelineCompactTimestampMetrics.font,
