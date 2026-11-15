@@ -59,9 +59,7 @@ extension AppModel {
             )
             guard isCurrent() else { return }
             watchAvailableDirectMessageStreamsAutomatically()
-            if voiceVideoPreferences.playsFeedbackSounds {
-                soundPlayer.play(.userJoin)
-            }
+            playCallFeedback(.userJoin)
             if !voiceVideoPreferences.joinsWithCameraOff, !isCameraEnabled {
                 await toggleCamera()
             }
@@ -510,9 +508,14 @@ extension AppModel {
         voiceConnectedAt = nil
         isCameraEnabled = false
         reconcilePrivateCallSounds()
-        if hadActiveVoice, voiceVideoPreferences.playsFeedbackSounds {
-            soundPlayer.play(.disconnect)
+        if hadActiveVoice {
+            playCallFeedback(.disconnect)
         }
+    }
+
+    /// Plays a call cue unless the user turned call feedback sounds off.
+    func playCallFeedback(_ effect: AppSoundEffect) {
+        if voiceVideoPreferences.playsFeedbackSounds { soundPlayer.play(effect) }
     }
 
     func toggleVoiceMute() async {
@@ -564,8 +567,8 @@ extension AppModel {
             generation: generation,
             voiceSession: session
         ) else { return }
-        if activeVoiceChannel != nil, voiceVideoPreferences.playsFeedbackSounds {
-            soundPlayer.play(sound)
+        if activeVoiceChannel != nil {
+            playCallFeedback(sound)
         }
     }
 
@@ -582,8 +585,8 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return }
-            if activeVoiceChannel != nil, voiceVideoPreferences.playsFeedbackSounds {
-                soundPlayer.play(enabled ? .cameraOn : .cameraOff)
+            if activeVoiceChannel != nil {
+                playCallFeedback(enabled ? .cameraOn : .cameraOff)
             }
             return
         }
@@ -611,9 +614,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ), activeVoiceChannel?.id == channel?.id else { return }
-            if voiceVideoPreferences.playsFeedbackSounds {
-                soundPlayer.play(enabled ? .cameraOn : .cameraOff)
-            }
+            playCallFeedback(enabled ? .cameraOn : .cameraOff)
         } catch {
             guard isCurrentVoiceOperation(
                 account,
@@ -917,10 +918,8 @@ extension AppModel {
         if state.guildID == nil {
             reconcilePrivateCallVoiceState(state)
         }
-        if voiceVideoPreferences.playsFeedbackSounds {
-            for effect in effects {
-                soundPlayer.play(effect)
-            }
+        for effect in effects {
+            playCallFeedback(effect)
         }
     }
 
