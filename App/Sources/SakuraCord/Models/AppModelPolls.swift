@@ -60,12 +60,15 @@ private extension Message {
 
 extension AppModel {
     func canCreatePoll(in channelID: ChannelID) -> Bool {
-        let isThread = openThread?.id == channelID
-        guard let channel = isThread ? openThreadParentChannel : messagePresentationChannelsByID[channelID],
-              (isThread ? openThreadAccess : conversationAccess(for: channel)).canSend else { return false }
-        guard channel.guildID != nil else { return true }
-        guard let permissions = effectiveMessagePermissions(in: channel) else { return false }
-        return permissions & DiscordPermissionBits.sendPolls != 0
+        let permissions = if openThread?.id == channelID {
+            composerSendPermissions(in: .thread)
+        } else {
+            messagePresentationChannelsByID[channelID].flatMap { channel in
+                conversationAccess(for: channel).canSend ? effectiveMessagePermissions(in: channel) : nil
+            }
+        }
+        // Direct messages carry every permission.
+        return (permissions ?? 0) & DiscordPermissionBits.sendPolls != 0
     }
 
     func createPoll(_ poll: PollDraft, in channelID: ChannelID) async -> ComposerSubmissionResult {

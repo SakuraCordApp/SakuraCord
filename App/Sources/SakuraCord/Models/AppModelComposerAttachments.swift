@@ -11,26 +11,30 @@ extension AppModel {
         }
     }
 
-    func isComposerDropEligible(_ destination: MessageComposerDestination) -> Bool {
-        let channel = switch destination {
-        case .channel: selectedChannel
-        case .thread: threadCreation == nil ? openThreadParentChannel : selectedChannel
-        }
-        guard let channel, let permissions = effectiveMessagePermissions(in: channel),
-              permissions & DiscordPermissionBits.attachFiles != 0
-        else { return false }
-        guard commandComposer(for: destination).activeCommand == nil else { return false }
+    /// The effective permissions where a composer destination posts, once it
+    /// can send there: the selected channel, or the open thread's parent. A
+    /// thread being created has no destination yet, so callers decide for it.
+    func composerSendPermissions(in destination: MessageComposerDestination) -> UInt64? {
         switch destination {
         case .channel:
-            guard
-                  selectedConversationAccess.canSend,
-                  let kind = selectedChannel?.kind
-            else { return false }
-            return Self.supportsTyping(kind)
+            guard let channel = selectedChannel, selectedConversationAccess.canSend,
+                  Self.supportsTyping(channel.kind)
+            else { return nil }
+            return effectiveMessagePermissions(in: channel)
         case .thread:
-            if let threadCreation { return !threadCreation.isSubmitting }
-            return openThread != nil && openThreadAccess.canSend
+            guard openThread != nil, openThreadAccess.canSend, let parent = openThreadParentChannel else { return nil }
+            return effectiveMessagePermissions(in: parent)
         }
+    }
+
+    func isComposerDropEligible(_ destination: MessageComposerDestination) -> Bool {
+        guard commandComposer(for: destination).activeCommand == nil else { return false }
+        let permissions = if destination == .thread, let threadCreation {
+            threadCreation.isSubmitting ? nil : selectedChannel.flatMap { effectiveMessagePermissions(in: $0) }
+        } else {
+            composerSendPermissions(in: destination)
+        }
+        return (permissions ?? 0) & DiscordPermissionBits.attachFiles != 0
     }
 
     /// Stages dropped or pasted files, or sends them at once for an instant drop.

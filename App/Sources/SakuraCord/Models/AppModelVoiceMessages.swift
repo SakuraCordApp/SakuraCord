@@ -17,19 +17,10 @@ extension AppModel {
     /// servers, and voice messages are never part of a thread's first message
     /// or scheduled, so none posts at once under the composer's schedule.
     func canSendVoiceMessages(in destination: MessageComposerDestination) -> Bool {
-        guard featuresSettings.voiceMessageRecording, scheduledSendDate(in: destination) == nil else { return false }
-        let channel: Channel?
-        switch destination {
-        case .channel:
-            guard selectedConversationAccess.canSend, let kind = selectedChannel?.kind,
-                  Self.supportsTyping(kind)
-            else { return false }
-            channel = selectedChannel
-        case .thread:
-            guard threadCreation == nil, openThread != nil, openThreadAccess.canSend else { return false }
-            channel = openThreadParentChannel
-        }
-        guard let channel, let permissions = effectiveMessagePermissions(in: channel) else { return false }
+        guard featuresSettings.voiceMessageRecording, scheduledSendDate(in: destination) == nil,
+              destination == .channel || threadCreation == nil,
+              let permissions = composerSendPermissions(in: destination)
+        else { return false }
         return permissions & DiscordPermissionBits.sendVoiceMessages != 0
     }
 
