@@ -535,9 +535,7 @@ extension NativeMemberListCanvasView {
             PresenceIndicatorPresentation.path(for: status, isMobile: isMobile, in: rect).cgPath
         )
         context.setFillColor(
-            Self.color(
-                hex: PresenceIndicatorPresentation.colorHex(for: status)
-            ).cgColor
+            NSColor(hex: PresenceIndicatorPresentation.colorHex(for: status)).cgColor
         )
         context.drawPath(using: .eoFill)
         context.restoreGState()
