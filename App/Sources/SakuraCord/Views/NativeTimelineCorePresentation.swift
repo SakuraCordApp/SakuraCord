@@ -110,13 +110,7 @@ enum NativeTimelineReplyMetrics {
         }
     }
 
-    static var unavailableFont: NSFont {
-        let baseFont = summaryFont
-        return NSFont(
-            descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic),
-            size: baseFont.pointSize
-        ) ?? baseFont
-    }
+    static var unavailableFont: NSFont { summaryFont.italic }
 
     static let unavailableText = "Message could not be loaded"
 

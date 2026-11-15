@@ -346,18 +346,13 @@ extension NativeTimelineRowPainter {
             ).fill()
         }
         if let headerFrame = input.layout.forwardedHeaderFrame {
-            let baseFont = NSFont.messageSystemFont(
-                ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
-                weight: .semibold
-            )
-            let italicFont = NSFont(
-                descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic),
-                size: baseFont.pointSize
-            ) ?? baseFont
             text(
                 "↗ Forwarded",
                 in: headerFrame,
-                font: italicFont,
+                font: NSFont.messageSystemFont(
+                    ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
+                    weight: .semibold
+                ).italic,
                 color: .secondaryLabelColor
             )
         }
