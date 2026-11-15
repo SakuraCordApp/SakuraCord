@@ -335,44 +335,19 @@ extension AccountReadStateModel {
         for thread in threads {
             var entry = assembly.entries[thread.id]
                 ?? .placeholder(channelID: thread.id, channel: assembly.channelByID[thread.id])
-            entry.guildID = thread.guildID
-                ?? thread.parentID.flatMap { assembly.channelByID[$0]?.guildID }
-            entry.parentID = thread.parentID
-            entry.kind = .text
-            if let settings = thread.notificationSettings {
-                entry.threadNotificationSettings = settings
-            }
-            entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, thread.lastMessageID)
-            updateThreadUnread(
-                thread,
-                entry: &entry,
-                isForumPost: thread.parentID.flatMap { assembly.channelByID[$0] }?.kind == .forum,
-                guildJoinedAt: entry.guildID.flatMap { guildJoinedAtByID[$0] }
+            entry.merge(
+                thread: thread,
+                parentChannel: thread.parentID.flatMap { assembly.channelByID[$0] },
+                parentEntry: thread.parentID.flatMap { assembly.entries[$0] },
+                guildJoinedAtByID: guildJoinedAtByID
             )
-            if let parentID = thread.parentID, let parent = assembly.entries[parentID] {
-                entry.isAccessible = parent.isAccessible
-            }
             assembly.entries[thread.id] = entry
             assembly.forumPostArchivedByID[thread.id] = thread.isArchived
-            updateInitialForumParent(thread, in: &assembly)
+            if let parentID = thread.parentID, var parent = assembly.entries[parentID], parent.kind == .forum {
+                parent.notePost(thread.id)
+                assembly.entries[parentID] = parent
+            }
         }
-    }
-
-    /// A thread without a saved acknowledgement (or READY's `0`) is read up to
-    /// Discord's fallback boundary, so its newer messages are unread.
-    private nonisolated static func updateThreadUnread(
-        _ thread: MessageThreadSummary,
-        entry: inout Entry,
-        isForumPost: Bool,
-        guildJoinedAt: Date?
-    ) {
-        if entry.lastAcknowledgedMessageID.map({ $0.rawValue == 0 }) ?? true {
-            entry.lastAcknowledgedMessageID = fallbackAcknowledgedMessageID(
-                for: thread, isForumPost: isForumPost, guildJoinedAt: guildJoinedAt
-            )
-        }
-        entry.latestUnreadMessageID = maximum(entry.latestUnreadMessageID, thread.lastMessageID)
-        entry.unreadMessageCount = entry.isUnread ? max(1, entry.unreadMessageCount) : 0
     }
 
     /// Discord's `ReadStateStore` fallback (build 649389): the later of joining
@@ -394,28 +369,6 @@ extension AccountReadStateModel {
         if boundary <= 0 { boundary = Int(thread.id.discordEpochMilliseconds) - 1 }
         if !isForumPost { boundary = max(boundary, milliseconds(guildJoinedAt ?? now)) }
         return MessageID(rawValue: UInt64(max(boundary, 0) + 1) << 22 - 1)
-    }
-
-    private nonisolated static func updateInitialForumParent(
-        _ thread: MessageThreadSummary,
-        in assembly: inout InitialStateAssembly
-    ) {
-        guard let parentID = thread.parentID,
-              var parent = assembly.entries[parentID],
-              parent.kind == .forum
-        else { return }
-        let threadMessageID = MessageID(rawValue: thread.id.rawValue)
-        parent.latestKnownMessageID = maximum(parent.latestKnownMessageID, threadMessageID)
-        if parent.hasAuthoritativeReadState {
-            parent.latestUnreadMessageID = maximum(
-                parent.latestUnreadMessageID,
-                threadMessageID
-            )
-            parent.unreadMessageCount = parent.isUnread
-                ? max(1, parent.unreadMessageCount)
-                : 0
-        }
-        assembly.entries[parentID] = parent
     }
 
     private nonisolated static func initialNotificationSettingsIndex(
@@ -968,23 +921,12 @@ extension AccountReadStateModel {
 
     func merge(thread: MessageThreadSummary) {
         var entry = entry(for: thread.id)
-        entry.guildID = thread.guildID
-            ?? thread.parentID.flatMap { channelByID[$0]?.guildID }
-        entry.parentID = thread.parentID
-        entry.kind = .text
-        if let settings = thread.notificationSettings {
-            entry.threadNotificationSettings = settings
-        }
-        entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, thread.lastMessageID)
-        Self.updateThreadUnread(
-            thread,
-            entry: &entry,
-            isForumPost: thread.parentID.flatMap { channelByID[$0] }?.kind == .forum,
-            guildJoinedAt: entry.guildID.flatMap { guildJoinedAtByID[$0] }
+        entry.merge(
+            thread: thread,
+            parentChannel: thread.parentID.flatMap { channelByID[$0] },
+            parentEntry: thread.parentID.flatMap { self[$0] },
+            guildJoinedAtByID: guildJoinedAtByID
         )
-        if let parentID = thread.parentID, let parent = self[parentID] {
-            entry.isAccessible = parent.isAccessible
-        }
         self[thread.id] = entry
         forumPostArchivedByID[thread.id] = thread.isArchived
 
@@ -992,16 +934,7 @@ extension AccountReadStateModel {
               var parent = self[parentID],
               parent.kind == .forum
         else { return }
-        let threadMessageID = MessageID(rawValue: thread.id.rawValue)
-        parent.latestKnownMessageID = maximum(parent.latestKnownMessageID, threadMessageID)
-        if parent.hasAuthoritativeReadState {
-            parent.latestUnreadMessageID = maximum(
-                parent.latestUnreadMessageID, threadMessageID
-            )
-            parent.unreadMessageCount = parent.isUnread
-                ? max(1, parent.unreadMessageCount)
-                : 0
-        }
+        parent.notePost(thread.id)
         self[parentID] = parent
     }
 
@@ -1546,6 +1479,47 @@ nonisolated extension AccountReadStateModel.Entry {
         latestKnownMessageID = maximum(latestKnownMessageID, channel.lastMessageID)
         if hasAuthoritativeReadState {
             latestUnreadMessageID = maximum(latestUnreadMessageID, channel.lastMessageID)
+        }
+    }
+
+    /// Takes `thread`'s placement and newest message. A thread without a
+    /// saved acknowledgement (or READY's `0`) is read up to Discord's
+    /// fallback boundary, so its newer messages are unread.
+    mutating func merge(
+        thread: MessageThreadSummary,
+        parentChannel: Channel?,
+        parentEntry: Self?,
+        guildJoinedAtByID: [GuildID: Date]
+    ) {
+        guildID = thread.guildID ?? parentChannel?.guildID
+        parentID = thread.parentID
+        kind = .text
+        if let settings = thread.notificationSettings {
+            threadNotificationSettings = settings
+        }
+        latestKnownMessageID = maximum(latestKnownMessageID, thread.lastMessageID)
+        if lastAcknowledgedMessageID.map({ $0.rawValue == 0 }) ?? true {
+            lastAcknowledgedMessageID = AccountReadStateModel.fallbackAcknowledgedMessageID(
+                for: thread,
+                isForumPost: parentChannel?.kind == .forum,
+                guildJoinedAt: guildID.flatMap { guildJoinedAtByID[$0] }
+            )
+        }
+        latestUnreadMessageID = maximum(latestUnreadMessageID, thread.lastMessageID)
+        unreadMessageCount = isUnread ? max(1, unreadMessageCount) : 0
+        if let parentEntry {
+            isAccessible = parentEntry.isAccessible
+        }
+    }
+
+    /// A forum's newest post is its newest message; only an entry with
+    /// authoritative read state counts it as unread.
+    mutating func notePost(_ threadID: ChannelID) {
+        let threadMessageID = MessageID(rawValue: threadID.rawValue)
+        latestKnownMessageID = maximum(latestKnownMessageID, threadMessageID)
+        if hasAuthoritativeReadState {
+            latestUnreadMessageID = maximum(latestUnreadMessageID, threadMessageID)
+            unreadMessageCount = isUnread ? max(1, unreadMessageCount) : 0
         }
     }
 }
