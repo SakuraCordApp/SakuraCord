@@ -267,4 +267,53 @@ extension ForumBoardView {
         }
         return super.resignFirstResponder()
     }
+
+    // MARK: Tooltips
+
+    func rebuildToolTips() {
+        removeAllToolTips()
+        for (id, _) in cards {
+            guard case .post = id, let entry = layoutState?.entry(for: id),
+                  let frame = cardRegions(for: id)?.exactDateFrame
+            else { continue }
+            addToolTip(frame.offsetBy(dx: entry.frame.minX, dy: entry.frame.minY), owner: self, userData: nil)
+        }
+    }
+
+    func view(_: NSView, stringForToolTip _: NSView.ToolTipTag, point: NSPoint, userData _: UnsafeMutableRawPointer?) -> String {
+        guard let hit = hit(at: point), let postID = hit.entry.item.postID, let presentation = presentations[postID] else { return "" }
+        return isGallery
+            ? "Posted \(presentation.createdAt.formatted(date: .complete, time: .shortened))"
+            : "Last activity \(presentation.lastActivityAt.formatted(date: .complete, time: .shortened))"
+    }
+
+    // MARK: Context menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let model, let channel,
+              let hit = hit(at: convert(event.locationInWindow, from: nil)),
+              let postID = hit.entry.item.postID,
+              let post = postsByID[postID]
+        else { return nil }
+        return contextMenu(for: post, model: model, channel: channel)
+    }
+
+    func contextMenu(for post: ForumPost, model: AppModel, channel: Channel) -> NSMenu {
+        menuBuilder.makeMenu(
+            sections: ThreadActionsMenu(
+                model: model,
+                thread: post.thread,
+                surface: .forumCard,
+                isUnread: model.canMarkConversationRead(channelID: post.id),
+                offersTags: true
+            ).sections,
+            tags: channel.availableTags,
+            appliedTagIDs: post.thread.appliedTagIDs,
+            customEmojiURLsByID: model.customEmojiURLsByID,
+            canToggle: { [weak model] in model?.canToggleForumTag($0, on: post, in: channel) ?? false },
+            toggleTag: { [weak model] tagID in
+                model?.toggleForumTag(tagID, on: post, in: channel)
+            }
+        )
+    }
 }

@@ -344,4 +344,41 @@ extension ForumBoardView {
         }
         if repainted { rebuildToolTips() }
     }
+
+    // MARK: Media
+
+    func refreshMedia() {
+        var keys = Set<MediaImageKey>()
+        var keysByPost: [ChannelID: Set<MediaImageKey>] = [:]
+        let customEmojiURLsByID = model?.customEmojiURLsByID ?? [:]
+        for id in cards.keys {
+            guard let postID = id.postID, let presentation = presentations[postID] else { continue }
+            var postKeys = Set<MediaImageKey>()
+            if let key = presentation.thumbnail?.mediaKey { postKeys.insert(key) }
+            for tag in presentation.tags {
+                if let key = tag.emoji?.mediaKey { postKeys.insert(key) }
+            }
+            if let reaction = presentation.reaction?.reaction {
+                if let key = MessageReactionPresentation.emojiMediaKey(for: reaction, customEmojiURLsByID: customEmojiURLsByID) {
+                    postKeys.insert(key)
+                }
+            }
+            keys.formUnion(postKeys)
+            keysByPost[postID] = postKeys
+        }
+        let store = MediaImageStore.shared
+        store.retainVisibleImages(for: keys, owner: mediaOwner)
+        // Media that leaves view may load next time, as the store retries it.
+        failedMediaKeys.formIntersection(keys)
+        for (postID, postKeys) in keysByPost {
+            for key in postKeys where store.image(for: key) == nil && !failedMediaKeys.contains(key) {
+                store.request(key, owner: mediaOwner, subscriber: postID) { [weak self] outcome in
+                    guard let self, outcome != .cancelled else { return }
+                    if outcome == .failed { failedMediaKeys.insert(key) }
+                    cards[.post(postID)]?.render(scale: backingScale, fading: outcome == .ready)
+                }
+            }
+        }
+        store.cancelStaticRequestsOutsideVisibleSet(owner: mediaOwner)
+    }
 }

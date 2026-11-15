@@ -140,9 +140,9 @@ final class ForumBoardScrollView: NSScrollView {
 /// height as starter messages, thumbnails, reactions and fonts arrived. Here
 /// geometry comes only from `ForumBoardLayout`, late data repaints in place,
 /// and structural changes animate on the compositor. This file owns the state,
-/// updates, layout and card realization; the extensions beside it handle
-/// presentation and painting, pointer and keyboard input, accessibility,
-/// media and menus, and animation.
+/// updates, layout, card realization and pagination; the extensions beside it
+/// handle presentation, painting and media, pointer and keyboard input,
+/// tooltips and menus, accessibility, and animation.
 final class ForumBoardView: NSView, NSViewToolTipOwner {
     weak var model: AppModel?
     private var animatesShimmer = true
@@ -151,14 +151,14 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     /// presentations resolve tags without building a map per post.
     var tagsByID: [ForumTagID: ForumTag] = [:]
     var snapshot: ForumBoardSnapshot?
-    var items: [ForumBoardItem] = []
+    private var items: [ForumBoardItem] = []
     var postsByID: [ChannelID: ForumPost] = [:]
     var layoutState: ForumBoardLayout?
     var metrics = ForumBoardMetrics.current()
-    var titleCounter: ForumTitleLineCounter
+    private var titleCounter: ForumTitleLineCounter
     let cardsLayer = CALayer()
     var cards: [ForumBoardItem.Identifier: ForumBoardCard] = [:]
-    var reusableCards: [ForumBoardCard] = []
+    private var reusableCards: [ForumBoardCard] = []
     /// Cards fading out after a live removal, no longer in `cards`.
     var exitingCards: [ObjectIdentifier: ForumBoardCard] = [:]
     /// Hidden new cards, by card, waiting for their group's bitmaps.
@@ -201,7 +201,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     let menuBuilder = ForumPostMenuBuilder()
     var accessibilityProxies: [ForumBoardItem.Identifier: ForumBoardAccessibilityProxyView] = [:]
     /// A page request is in flight from this board; the model also guards.
-    var isRequestingPage = false
+    private var isRequestingPage = false
     /// Media whose last request failed, so painters can show a fallback.
     var failedMediaKeys = Set<MediaImageKey>()
     /// The entry indices realized last time; nil forces the next refresh to
@@ -377,7 +377,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         schedulePresentationRefresh()
     }
 
-    func scrollToTop() {
+    private func scrollToTop() {
         guard let scrollView = enclosingScrollView else { return }
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: -scrollView.contentInsets.top))
         scrollView.reflectScrolledClipView(scrollView.contentView)
@@ -798,12 +798,30 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         )
     }
 
-    func repaintVisibleCards(fading: Bool, synchronously: Bool = false) {
+    private func repaintVisibleCards(fading: Bool, synchronously: Bool = false) {
         for (id, card) in cards {
             regions[id] = nil
             card.render(scale: backingScale, fading: fading, synchronously: synchronously)
         }
         rebuildToolTips()
+    }
+
+    // MARK: Pagination
+
+    private func requestNextPageIfNeeded() {
+        guard let snapshot, snapshot.hasMore, !snapshot.isLoadingMore, snapshot.paginationError == nil,
+              let model
+        else { return }
+        let visible = visibleRect
+        guard visible.maxY > frame.height - visible.height * 1.5 else { return }
+        // A page can add no visible posts (filtered or undecodable records)
+        // while more remain, so each completed request allows the next.
+        guard !isRequestingPage else { return }
+        isRequestingPage = true
+        Task { [weak self] in
+            await model.loadMoreForumPosts()
+            self?.isRequestingPage = false
+        }
     }
 
     // MARK: Stability probe
