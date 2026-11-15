@@ -517,10 +517,52 @@ ensure_rusage_sampler() {
     printf '%s\n' "$sampler"
 }
 
+# Starts xctrace attached to pid in its own scratch directory, setting the
+# caller's trace_scratch_directory, notify_pid and trace_pid.
+start_trace() {
+    local template="$1" seconds="$2" pid="$3" output="$4" notification
+    notification="dev.sakuracord.performance.trace-started.$$.${RANDOM}"
+    trace_scratch_directory="$(new_xctrace_scratch_directory)"
+    snapshot_xctrace_temporary_files "$trace_scratch_directory"
+    notifyutil -1 "$notification" >"$output/trace-start-notification.txt" &
+    notify_pid=$!
+    TMPDIR="$trace_scratch_directory/" xcrun xctrace record \
+        --template "$template" \
+        --time-limit "${seconds}s" \
+        --no-prompt \
+        --notify-tracing-started "$notification" \
+        --output "$output/recording.trace" \
+        --attach "$pid" &
+    trace_pid=$!
+}
+
+# Samples pid's CPU, energy and network for seconds, setting the caller's
+# top_pid, energy_pid and nettop_pid.
+start_resource_samplers() {
+    local pid="$1" seconds="$2" output="$3" sampler sampler_duration
+    top -pid "$pid" -l "$seconds" -s 1 \
+        -stats pid,cpu,mem,threads,power -o cpu >"$output/activity-monitor.txt" &
+    top_pid=$!
+    sampler="$(ensure_rusage_sampler)"
+    sampler_duration="$(awk -v duration="$seconds" 'BEGIN { print duration + 1 }')"
+    "$sampler" "$pid" "$sampler_duration" 250 >"$output/rusage-energy.csv" \
+        2>"$output/rusage-energy-error.txt" &
+    energy_pid=$!
+    nettop -P -p "$pid" -L "$seconds" -s 1 -x -n \
+        >"$output/network.csv" 2>"$output/network-error.txt" &
+    nettop_pid=$!
+}
+
+finish_resource_samplers() {
+    wait "$top_pid" || true
+    wait "$energy_pid" || true
+    wait "$nettop_pid" || true
+}
+
 record_running_app() (
-    local scenario="$1" seconds="$2" template="$3" pid output trace samples sampler
-    local notification notify_pid trace_pid top_pid energy_pid nettop_pid
-    local trace_scratch_directory trace_status sampler_duration
+    local scenario="$1" seconds="$2" template="$3" pid output
+    local notify_pid trace_pid top_pid energy_pid nettop_pid
+    local trace_scratch_directory trace_status
     trap 'terminate_xctrace_pid "${trace_pid:-}" >/dev/null 2>&1 || true; cleanup_new_xctrace_temporary_files "${trace_scratch_directory:-}" >/dev/null 2>&1 || true; cleanup_xctrace_scratch_directory "${trace_scratch_directory:-}" >/dev/null 2>&1 || true' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
@@ -532,39 +574,15 @@ record_running_app() (
         exit 5
     fi
     output="$(new_output_directory "$scenario")"
-    trace="$output/recording.trace"
-    samples="$seconds"
     mkdir -p "$output"
     write_recording_metadata "$output" "$scenario" "$template"
     printf '%s\n' \
         "Preparing $scenario for ${seconds}s with $template." \
         "Output: $output"
 
-    notification="dev.sakuracord.performance.trace-started.$$.${RANDOM}"
-    trace_scratch_directory="$(new_xctrace_scratch_directory)"
-    snapshot_xctrace_temporary_files "$trace_scratch_directory"
-    notifyutil -1 "$notification" >"$output/trace-start-notification.txt" &
-    notify_pid=$!
-    TMPDIR="$trace_scratch_directory/" xcrun xctrace record \
-        --template "$template" \
-        --time-limit "${seconds}s" \
-        --no-prompt \
-        --notify-tracing-started "$notification" \
-        --output "$trace" \
-        --attach "$pid" &
-    trace_pid=$!
+    start_trace "$template" "$seconds" "$pid" "$output"
     wait_for_trace_start "$notify_pid" "$trace_pid" "$output"
-    top -pid "$pid" -l "$samples" -s 1 \
-        -stats pid,cpu,mem,threads,power -o cpu >"$output/activity-monitor.txt" &
-    top_pid=$!
-    sampler="$(ensure_rusage_sampler)"
-    sampler_duration="$(awk -v duration="$seconds" 'BEGIN { print duration + 1 }')"
-    "$sampler" "$pid" "$sampler_duration" 250 >"$output/rusage-energy.csv" \
-        2>"$output/rusage-energy-error.txt" &
-    energy_pid=$!
-    nettop -P -p "$pid" -L "$samples" -s 1 -x -n \
-        >"$output/network.csv" 2>"$output/network-error.txt" &
-    nettop_pid=$!
+    start_resource_samplers "$pid" "$seconds" "$output"
     touch "$output/interaction-ready"
     printf '%s\n' \
         "Recording active: $scenario." \
@@ -573,10 +591,8 @@ record_running_app() (
     wait "$trace_pid" || trace_status=$?
     trace_pid=""
     (( trace_status == 0 )) || exit "$trace_status"
-    wait "$top_pid" || true
-    wait "$energy_pid" || true
-    wait "$nettop_pid" || true
-    export_trace_tables "$trace" "$output"
+    finish_resource_samplers
+    export_trace_tables "$output/recording.trace" "$output"
     cleanup_new_xctrace_temporary_files "$trace_scratch_directory"
     cleanup_xctrace_scratch_directory "$trace_scratch_directory"
     trace_scratch_directory=""
@@ -585,13 +601,14 @@ record_running_app() (
 )
 
 record_launch() (
-    local scenario="$1" seconds="$2" pid output trace trace_pid notify_pid notification sampler
+    local scenario="$1" seconds="$2" pid output trace_pid notify_pid
+    local top_pid energy_pid nettop_pid launch_environment open_environment assignment
     local stopped_state sandbox_directory sandbox_result sandbox_window
     local performance_account_id debug_credential_directory newest_credential
     local preferred_account_id
     local resource_window_name scroll_input_telemetry scroll_surface
     local requires_interactive_window
-    local trace_scratch_directory trace_status sampler_duration
+    local trace_scratch_directory trace_status
     shift 2
     trap 'terminate_xctrace_pid "${trace_pid:-}" >/dev/null 2>&1 || true; cleanup_new_xctrace_temporary_files "${trace_scratch_directory:-}" >/dev/null 2>&1 || true; cleanup_xctrace_scratch_directory "${trace_scratch_directory:-}" >/dev/null 2>&1 || true; terminate_scoped_pid "${pid:-}" >/dev/null 2>&1 || true' EXIT
     trap 'exit 130' INT
@@ -620,8 +637,6 @@ record_launch() (
     fi
 
     output="$(new_output_directory "$scenario")"
-    trace="$output/recording.trace"
-    notification="dev.sakuracord.performance.trace-started.$$.${RANDOM}"
     mkdir -p "$output"
     resource_window_name="$(scenario_field "$scenario" window)"
     requires_interactive_window=0
@@ -680,6 +695,15 @@ record_launch() (
     mkdir -p "$sandbox_directory"
     sandbox_result="$(mktemp "$sandbox_directory/sakuracord-performance-result.XXXXXX")"
     sandbox_window="$(mktemp "$sandbox_directory/sakuracord-performance-window.XXXXXX")"
+    launch_environment=(
+        SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1
+        "SAKURACORD_PERFORMANCE_ACCOUNT_ID=$performance_account_id"
+        "SAKURACORD_PERFORMANCE_WINDOW_NAME=$resource_window_name"
+        "SAKURACORD_PERFORMANCE_WINDOW_PATH=$sandbox_window"
+        "SAKURACORD_PERFORMANCE_RESULT_PATH=$sandbox_result"
+        "SAKURACORD_SCROLL_INPUT_TELEMETRY=$scroll_input_telemetry"
+        "SAKURACORD_PERFORMANCE_SCROLL_SURFACE=$scroll_surface"
+    )
     if (( requires_interactive_window )); then
         # Computer Use resolves windows through LaunchServices. A raw executable
         # launch is profileable but exposes no operable app window, so scenarios
@@ -688,17 +712,15 @@ record_launch() (
         # publishes its PID. Their
         # measured windows begin only after authenticated workspace setup, well
         # after this bounded pre-attach launch interval.
+        open_environment=()
+        for assignment in "${launch_environment[@]}"; do
+            open_environment+=(--env "$assignment")
+        done
         open -n \
             -i /dev/null \
             -o "$output/app-stdout.log" \
             --stderr "$output/app-output.log" \
-            --env SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1 \
-            --env "SAKURACORD_PERFORMANCE_ACCOUNT_ID=$performance_account_id" \
-            --env "SAKURACORD_PERFORMANCE_WINDOW_NAME=$resource_window_name" \
-            --env "SAKURACORD_PERFORMANCE_WINDOW_PATH=$sandbox_window" \
-            --env "SAKURACORD_PERFORMANCE_RESULT_PATH=$sandbox_result" \
-            --env "SAKURACORD_SCROLL_INPUT_TELEMETRY=$scroll_input_telemetry" \
-            --env "SAKURACORD_PERFORMANCE_SCROLL_SURFACE=$scroll_surface" \
+            "${open_environment[@]}" \
             "$app" \
             --args "$@"
         pid=""
@@ -719,13 +741,7 @@ record_launch() (
         # attach the trace to its stable PID, and only exec the app once tracing
         # is active. The exec preserves the PID so startup and benchmark
         # signposts remain in one process trace.
-        SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1 \
-            SAKURACORD_PERFORMANCE_ACCOUNT_ID="$performance_account_id" \
-            SAKURACORD_PERFORMANCE_WINDOW_NAME="$resource_window_name" \
-            SAKURACORD_PERFORMANCE_WINDOW_PATH="$sandbox_window" \
-            SAKURACORD_PERFORMANCE_RESULT_PATH="$sandbox_result" \
-            SAKURACORD_SCROLL_INPUT_TELEMETRY="$scroll_input_telemetry" \
-            SAKURACORD_PERFORMANCE_SCROLL_SURFACE="$scroll_surface" \
+        env "${launch_environment[@]}" \
             /bin/sh -c 'kill -STOP "$$"; exec "$@"' sh "$executable" "$@" \
             >"$output/app-output.log" 2>&1 &
         pid=$!
@@ -744,18 +760,7 @@ record_launch() (
         exit 4
     fi
 
-    notifyutil -1 "$notification" >"$output/trace-start-notification.txt" &
-    notify_pid=$!
-    trace_scratch_directory="$(new_xctrace_scratch_directory)"
-    snapshot_xctrace_temporary_files "$trace_scratch_directory"
-    TMPDIR="$trace_scratch_directory/" xcrun xctrace record \
-        --template 'Time Profiler' \
-        --time-limit "${seconds}s" \
-        --no-prompt \
-        --notify-tracing-started "$notification" \
-        --output "$trace" \
-        --attach "$pid" &
-    trace_pid=$!
+    start_trace 'Time Profiler' "$seconds" "$pid" "$output"
     if ! wait_for_trace_start "$notify_pid" "$trace_pid" "$output"; then
         kill -CONT "$pid" 2>/dev/null || true
         kill -TERM "$pid" 2>/dev/null || true
@@ -772,28 +777,14 @@ record_launch() (
     fi
     kill -CONT "$pid"
     if samples_process_resources "$scenario" && [[ -n "$pid" ]]; then
-        top -pid "$pid" -l "$seconds" -s 1 \
-            -stats pid,cpu,mem,threads,power -o cpu \
-            >"$output/activity-monitor.txt" &
-        local top_pid=$!
-        sampler="$(ensure_rusage_sampler)"
-        sampler_duration="$(awk -v duration="$seconds" 'BEGIN { print duration + 1 }')"
-        "$sampler" "$pid" "$sampler_duration" 250 \
-            >"$output/rusage-energy.csv" \
-            2>"$output/rusage-energy-error.txt" &
-        local energy_pid=$!
-        nettop -P -p "$pid" -L "$seconds" -s 1 -x -n \
-            >"$output/network.csv" 2>"$output/network-error.txt" &
-        local nettop_pid=$!
+        start_resource_samplers "$pid" "$seconds" "$output"
     fi
     trace_status=0
     wait "$trace_pid" || trace_status=$?
     trace_pid=""
     (( trace_status == 0 )) || exit "$trace_status"
     if samples_process_resources "$scenario" && [[ -n "$pid" ]]; then
-        wait "$top_pid" || true
-        wait "$energy_pid" || true
-        wait "$nettop_pid" || true
+        finish_resource_samplers
         footprint "$pid" >"$output/footprint.txt" \
             2>"$output/footprint-error.txt" || true
     fi
@@ -807,7 +798,7 @@ record_launch() (
     else
         rm -f "$sandbox_window"
     fi
-    export_trace_tables "$trace" "$output"
+    export_trace_tables "$output/recording.trace" "$output"
     if [[ "$scenario" != "startup" \
           && ( ! -s "$output/benchmark-result.tsv" \
                || ! -s "$output/resource-window.tsv" ) ]]; then
@@ -829,6 +820,31 @@ record_scenario() {
     record_launch "$scenario" "$seconds" ${launch_argument:+"$launch_argument"}
 }
 
+# Requires output's Time Profiler, signpost and app PID artifacts, then sets
+# the caller's profile_process and the time_profile_hotspots.py arguments
+# shared by its summaries in hotspot_arguments.
+require_profile_artifacts() {
+    local output="$1" profile_interval="$2" kind="$3"
+    if [[ ! -s "$output/time-profile.xml" \
+          || ! -s "$output/signposts.xml" \
+          || ! -s "$output/app-pid.txt" ]]; then
+        printf '%s\n' \
+            "$kind artifacts require non-empty Time Profiler, signpost, and app PID data." >&2
+        exit 6
+    fi
+    profile_process="$(tr -d '[:space:]' <"$output/app-pid.txt")"
+    if [[ ! "$profile_process" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$kind artifact has an invalid app PID." >&2
+        exit 6
+    fi
+    hotspot_arguments=(
+        "$output/time-profile.xml"
+        --process "$profile_process"
+        --signposts "$output/signposts.xml"
+        --interval "$profile_interval"
+    )
+}
+
 summarize_recording() {
     local output="$1"
     if [[ ! -d "$output" ]]; then
@@ -836,6 +852,7 @@ summarize_recording() {
         exit 6
     fi
     local scenario profile_process profile_interval allow_missing_gestures
+    local -a hotspot_arguments
     allow_missing_gestures="${SAKURACORD_PERFORMANCE_ALLOW_MISSING_GESTURES:-0}"
     scenario="$(
         awk -F '\t' '$1 == "scenario" { print $2 }' "$output/metadata.tsv"
@@ -843,30 +860,13 @@ summarize_recording() {
     profile_interval="$(scenario_field "$scenario" profile)"
     if [[ "$scenario" != "startup" && -n "$profile_interval" \
           && -s "$output/time-profile.xml" ]]; then
-        if [[ ! -s "$output/time-profile.xml" \
-              || ! -s "$output/signposts.xml" \
-              || ! -s "$output/app-pid.txt" ]]; then
-            printf '%s\n' \
-                "Authenticated artifacts require non-empty Time Profiler, signpost, and app PID data." >&2
-            exit 6
-        fi
-        profile_process="$(tr -d '[:space:]' <"$output/app-pid.txt")"
-        if [[ ! "$profile_process" =~ ^[0-9]+$ ]]; then
-            printf '%s\n' "Authenticated artifact has an invalid app PID." >&2
-            exit 6
-        fi
+        require_profile_artifacts "$output" "$profile_interval" Authenticated
         python3 "$root/script/time_profile_hotspots.py" \
-            "$output/time-profile.xml" \
-            --process "$profile_process" \
-            --signposts "$output/signposts.xml" \
-            --interval "$profile_interval" \
+            "${hotspot_arguments[@]}" \
             --limit 50 \
             >"$output/measurement-time-profile.txt"
         python3 "$root/script/time_profile_hotspots.py" \
-            "$output/time-profile.xml" \
-            --process "$profile_process" \
-            --signposts "$output/signposts.xml" \
-            --interval "$profile_interval" \
+            "${hotspot_arguments[@]}" \
             --contains 'OutlineListCoordinator' \
             --app-only \
             --limit 50 \
@@ -875,10 +875,7 @@ summarize_recording() {
             && [[ -s "$output/benchmark-result.tsv" \
               && -n "$(awk -F '\t' '$1 == "delayed_tick_samples_offset_ms_interval_ms" { print $2 }' "$output/benchmark-result.tsv")" ]]; then
             python3 "$root/script/time_profile_hotspots.py" \
-                "$output/time-profile.xml" \
-                --process "$profile_process" \
-                --signposts "$output/signposts.xml" \
-                --interval "$profile_interval" \
+                "${hotspot_arguments[@]}" \
                 --delayed-ticks "$output/benchmark-result.tsv" \
                 --limit 50 \
                 >"$output/delayed-frame-time-profile.txt"
@@ -890,23 +887,9 @@ summarize_recording() {
         fi
     fi
     if [[ "$scenario" == "startup" ]]; then
-        if [[ ! -s "$output/time-profile.xml" \
-              || ! -s "$output/signposts.xml" \
-              || ! -s "$output/app-pid.txt" ]]; then
-            printf '%s\n' \
-                "Startup artifacts require non-empty Time Profiler, signpost, and app PID data." >&2
-            exit 6
-        fi
-        profile_process="$(tr -d '[:space:]' <"$output/app-pid.txt")"
-        if [[ ! "$profile_process" =~ ^[0-9]+$ ]]; then
-            printf '%s\n' "Startup artifact has an invalid app PID." >&2
-            exit 6
-        fi
+        require_profile_artifacts "$output" "$profile_interval" Startup
         python3 "$root/script/time_profile_hotspots.py" \
-            "$output/time-profile.xml" \
-            --process "$profile_process" \
-            --signposts "$output/signposts.xml" \
-            --interval "$profile_interval" \
+            "${hotspot_arguments[@]}" \
             --app-only \
             >"$output/startup-time-profile.txt"
         if [[ ! -s "$output/startup-time-profile.txt" ]]; then
