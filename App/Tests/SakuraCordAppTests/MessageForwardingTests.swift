@@ -934,7 +934,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(imagePlan.contentLineLimit == 1)
     #expect(imagePlan.attachmentSummary == "5 images")
     #expect(imagePlan.attachmentSystemImage == "photo.on.rectangle.angled")
-    #expect(imagePlan.media == ForwardPreviewMedia(
+    #expect(imagePlan.media == CompactMessagePreviewMedia(
         url: imageURL,
         kind: .image(animated: false)
     ))
@@ -950,7 +950,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     ))
     #expect(linked.content == imageURL.absoluteString)
     #expect(linked.attachmentSummary == nil)
-    #expect(linked.media == ForwardPreviewMedia(
+    #expect(linked.media == CompactMessagePreviewMedia(
         url: imageURL,
         kind: .image(animated: false)
     ))
@@ -976,7 +976,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         )]
     ))
     #expect(linkedVideo.attachmentSummary == nil)
-    #expect(linkedVideo.media == ForwardPreviewMedia(
+    #expect(linkedVideo.media == CompactMessagePreviewMedia(
         url: imageURL,
         kind: .image(animated: false)
     ))

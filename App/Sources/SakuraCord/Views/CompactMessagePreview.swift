@@ -1,18 +1,18 @@
 import SakuraCordModels
 import SwiftUI
 
-nonisolated enum ForwardPreviewMediaKind: Equatable {
+nonisolated enum CompactMessagePreviewMediaKind: Equatable {
     case image(animated: Bool)
     case video
     case audio
     case file
 }
 
-nonisolated struct ForwardPreviewMedia: Equatable {
+nonisolated struct CompactMessagePreviewMedia: Equatable {
     /// The image drawn in the thumbnail. For videos this is a still poster
     /// frame, never the video itself.
     let url: URL?
-    let kind: ForwardPreviewMediaKind
+    let kind: CompactMessagePreviewMediaKind
     var isSpoiler = false
 
     static let thumbnailPixelDimension = 128
@@ -22,7 +22,7 @@ nonisolated struct CompactMessagePreviewPlan: Equatable {
     let content: String?
     let attachmentSummary: String?
     let attachmentSystemImage: String?
-    let media: ForwardPreviewMedia?
+    let media: CompactMessagePreviewMedia?
     let mediaOverflowCount: Int
 
     var hasAttachmentRow: Bool { attachmentSummary != nil }
@@ -30,17 +30,17 @@ nonisolated struct CompactMessagePreviewPlan: Equatable {
 
     static func make(message: Message) -> Self {
         let directMedia = message.attachments.map { attachment in
-            let kind: ForwardPreviewMediaKind = switch attachment.mediaKind {
+            let kind: CompactMessagePreviewMediaKind = switch attachment.mediaKind {
             case .image: .image(animated: false)
             case .animatedImage: .image(animated: true)
             case .video: .video
             case .audio: .audio
             case .file: .file
             }
-            return ForwardPreviewMedia(
+            return CompactMessagePreviewMedia(
                 url: kind == .video
                     ? attachment.videoPosterURL(
-                        maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
+                        maximumPixelDimension: CompactMessagePreviewMedia.thumbnailPixelDimension
                     )
                     : attachment.proxyURL ?? attachment.url,
                 kind: kind,
@@ -79,7 +79,7 @@ nonisolated struct CompactMessagePreviewPlan: Equatable {
     }
 
     private static func summary(
-        directMedia: [ForwardPreviewMedia]
+        directMedia: [CompactMessagePreviewMedia]
     ) -> (text: String?, systemImage: String?) {
         let media = directMedia
         guard !media.isEmpty else { return (nil, nil) }
@@ -110,19 +110,19 @@ nonisolated struct CompactMessagePreviewPlan: Equatable {
         "\(count) \(singular)\(count == 1 ? "" : "s")"
     }
 
-    private static func media(for embed: MessageEmbed, isSpoiler: Bool) -> ForwardPreviewMedia? {
+    private static func media(for embed: MessageEmbed, isSpoiler: Bool) -> CompactMessagePreviewMedia? {
         if let video = embed.video {
             if let thumbnail = embed.thumbnail {
                 let url = thumbnail.proxyURL ?? thumbnail.url
                 let animated = url?.pathExtension.lowercased() == "gif"
-                return ForwardPreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: isSpoiler)
+                return CompactMessagePreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: isSpoiler)
             }
-            return ForwardPreviewMedia(
+            return CompactMessagePreviewMedia(
                 url: DiscordVideoPosterURL.url(
                     proxyURL: video.proxyURL,
                     width: video.width,
                     height: video.height,
-                    maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
+                    maximumPixelDimension: CompactMessagePreviewMedia.thumbnailPixelDimension
                 ),
                 kind: .video,
                 isSpoiler: isSpoiler
@@ -132,16 +132,16 @@ nonisolated struct CompactMessagePreviewPlan: Equatable {
         let url = image.proxyURL ?? image.url
         let animated = embed.isGIFV
             || url?.pathExtension.lowercased() == "gif"
-        return ForwardPreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: isSpoiler)
+        return CompactMessagePreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: isSpoiler)
     }
 
-    private static func media(in component: MessageComponent) -> [ForwardPreviewMedia] {
+    private static func media(in component: MessageComponent) -> [CompactMessagePreviewMedia] {
         switch component {
         case .actionRow(_, let children):
             children.flatMap(Self.media(in:))
         case .container(_, _, let spoiler, let children):
             children.flatMap(Self.media(in:)).map { item in
-                ForwardPreviewMedia(url: item.url, kind: item.kind, isSpoiler: spoiler || item.isSpoiler)
+                CompactMessagePreviewMedia(url: item.url, kind: item.kind, isSpoiler: spoiler || item.isSpoiler)
             }
         case .section(_, let children, let accessory):
             children.flatMap(Self.media(in:)) + (accessory.map(Self.media(in:)) ?? [])
@@ -150,22 +150,22 @@ nonisolated struct CompactMessagePreviewPlan: Equatable {
         case .mediaGallery(_, let items):
             items.map { media($0.media) }
         case .file(_, let value):
-            [ForwardPreviewMedia(url: value.proxyURL ?? value.url, kind: .file, isSpoiler: value.isSpoiler)]
+            [CompactMessagePreviewMedia(url: value.proxyURL ?? value.url, kind: .file, isSpoiler: value.isSpoiler)]
         case .button, .select, .textDisplay, .separator, .unsupported:
             []
         }
     }
 
-    private static func media(_ value: ComponentMedia) -> ForwardPreviewMedia {
+    private static func media(_ value: ComponentMedia) -> CompactMessagePreviewMedia {
         let contentType = value.contentType?.lowercased() ?? ""
         let url = value.proxyURL ?? value.url
         if contentType.hasPrefix("video/") {
-            return ForwardPreviewMedia(
+            return CompactMessagePreviewMedia(
                 url: DiscordVideoPosterURL.url(
                     proxyURL: value.proxyURL,
                     width: value.width,
                     height: value.height,
-                    maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
+                    maximumPixelDimension: CompactMessagePreviewMedia.thumbnailPixelDimension
                 ),
                 kind: .video,
                 isSpoiler: value.isSpoiler
@@ -173,7 +173,7 @@ nonisolated struct CompactMessagePreviewPlan: Equatable {
         }
         let animated = contentType == "image/gif"
             || url?.pathExtension.lowercased() == "gif"
-        return ForwardPreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: value.isSpoiler)
+        return CompactMessagePreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: value.isSpoiler)
     }
 
     private static func componentText(in components: [MessageComponent]) -> String {
@@ -292,7 +292,7 @@ struct ForwardedMessagePreview: View {
 }
 
 private struct ForwardPreviewThumbnail: View {
-    let media: ForwardPreviewMedia
+    let media: CompactMessagePreviewMedia
     let overflowCount: Int
 
     var body: some View {
@@ -313,7 +313,7 @@ private struct ForwardPreviewThumbnail: View {
                     AnimatedRemoteImage(
                         url: url,
                         animates: false,
-                        maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension,
+                        maximumPixelDimension: CompactMessagePreviewMedia.thumbnailPixelDimension,
                         contentMode: .fill
                     )
                 }
