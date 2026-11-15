@@ -126,7 +126,7 @@ public extension DiscordRESTProvider {
     ) async throws -> EmbeddedActivityAuthorizationPreview {
         // The official client reads the developer's disclosures first.
         let disclosures: ActivityDisclosuresDTO = try await request("/applications/\(authorization.applicationID)/disclosures")
-        let preview: ActivityAuthorizationPreviewDTO = try await request(
+        let preview: OAuth2AuthorizationPreviewDTO = try await request(
             "/oauth2/authorize",
             query: Self.authorizationQuery(authorization) + [URLQueryItem(name: "integration_type", value: "1")]
         )
@@ -159,10 +159,8 @@ public extension DiscordRESTProvider {
         granted: Bool
     ) async throws -> String {
         let items = try await postAuthorization(authorization, granted: granted)
-        guard granted, items.first(where: { $0.name == "state" })?.value == authorization.state,
-              let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty
-        else { throw OAuth2AuthorizationError.unexpectedResponse }
-        return code
+        guard granted else { throw OAuth2AuthorizationError.unexpectedResponse }
+        return try Self.oauth2AuthorizationCode(in: items, state: authorization.state)
     }
 
     /// The scopes Discord asks a person to grant before it launches an
@@ -203,20 +201,14 @@ public extension DiscordRESTProvider {
             ]),
         ]
         if !granted { body["permissions"] = .string("0") }
-        let (data, response) = try await perform(
+        let authorized: OAuth2AuthorizationLocationDTO = try await request(
             "/oauth2/authorize",
             method: "POST",
             query: Self.authorizationQuery(authorization),
             body: body
         )
-        let authorized: ActivityAuthorizationLocationDTO = try decodedResponse(
-            data, response, method: "POST", path: "/oauth2/authorize"
-        )
-        let items = URLComponents(string: authorized.location)?.queryItems ?? []
-        if let error = items.first(where: { $0.name == "error" })?.value {
-            throw OAuth2AuthorizationError.denied(items.first { $0.name == "error_description" }?.value ?? error)
-        }
-        return items
+        // Unlike app sign-in, Activities don't name a redirect to check the host against.
+        return try Self.oauth2RedirectItems(URLComponents(string: authorized.location))
     }
 
     /// Validates an Activity's OAuth access token for its own application and
@@ -242,12 +234,10 @@ public extension DiscordRESTProvider {
     }
 
     private static func authorizationQuery(_ authorization: EmbeddedActivityAuthorizationRequest) -> [URLQueryItem] {
-        var query = [
-            URLQueryItem(name: "client_id", value: authorization.applicationID.description),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: authorization.scopes.joined(separator: " ")),
-        ]
-        if let state = authorization.state { query.append(URLQueryItem(name: "state", value: state)) }
+        var query = oauth2AuthorizeQuery(
+            clientID: authorization.applicationID.description, redirectURI: nil,
+            scopes: authorization.scopes, state: authorization.state
+        )
         if let challenge = authorization.codeChallenge {
             query.append(URLQueryItem(name: "code_challenge", value: challenge))
             query.append(URLQueryItem(name: "code_challenge_method", value: authorization.codeChallengeMethod ?? "S256"))
@@ -318,16 +308,6 @@ private struct ProxyTicketDTO: Decodable {
     let ticket: String
 }
 
-private struct ActivityAuthorizationPreviewDTO: Decodable {
-    struct Application: Decodable {
-        let id: String
-        let name: String
-    }
-
-    let application: Application
-    let authorized: Bool?
-}
-
 private struct ActivityDisclosuresDTO: Decodable {
     let disclosures: [Int]
     let ackedDisclosures: [Int]
@@ -336,10 +316,6 @@ private struct ActivityDisclosuresDTO: Decodable {
         case disclosures
         case ackedDisclosures = "acked_disclosures"
     }
-}
-
-private struct ActivityAuthorizationLocationDTO: Decodable {
-    let location: String
 }
 
 private struct ActivityShelfDTO: Decodable {

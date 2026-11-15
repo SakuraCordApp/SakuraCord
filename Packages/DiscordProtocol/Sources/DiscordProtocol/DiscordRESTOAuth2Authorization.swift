@@ -55,13 +55,9 @@ extension DiscordRESTProvider {
               request.redirectURI.scheme == "https",
               request.redirectURI.host() != nil
         else { throw OAuth2AuthorizationError.invalidRequest }
-        let query = [
-            URLQueryItem(name: "client_id", value: request.clientID),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "redirect_uri", value: request.redirectURI.absoluteString),
-            URLQueryItem(name: "scope", value: request.scopes.joined(separator: " ")),
-            URLQueryItem(name: "state", value: request.state),
-        ]
+        let query = Self.oauth2AuthorizeQuery(
+            clientID: request.clientID, redirectURI: request.redirectURI, scopes: request.scopes, state: request.state
+        )
         let preview: OAuth2AuthorizationPreviewDTO = try await self.request(
             "/oauth2/authorize",
             query: query,
@@ -73,7 +69,7 @@ extension DiscordRESTProvider {
         guard preview.application.id == request.clientID else {
             throw OAuth2AuthorizationError.unexpectedResponse
         }
-        let (data, response) = try await perform(
+        let authorized: OAuth2AuthorizationLocationDTO = try await self.request(
             "/oauth2/authorize",
             method: "POST",
             query: query,
@@ -86,9 +82,6 @@ extension DiscordRESTProvider {
                     "channel_type": .number(10_000),
                 ]),
             ]
-        )
-        let authorized: OAuth2AuthorizationLocationDTO = try decodedResponse(
-            data, response, method: "POST", path: "/oauth2/authorize"
         )
         return try Self.grant(
             from: authorized.location,
@@ -109,28 +102,54 @@ extension DiscordRESTProvider {
               components.user == nil, components.password == nil, components.fragment == nil,
               components.path == request.redirectURI.path()
         else { throw OAuth2AuthorizationError.unexpectedResponse }
-        let items = components.queryItems ?? []
+        let code = try oauth2AuthorizationCode(in: oauth2RedirectItems(components), state: request.state)
+        return OAuth2AuthorizationGrant(code: code, applicationName: applicationName)
+    }
+
+    /// The `/oauth2/authorize` query both consent flows send, in the
+    /// first-party client's order.
+    static func oauth2AuthorizeQuery(
+        clientID: String, redirectURI: URL?, scopes: [String], state: String?
+    ) -> [URLQueryItem] {
+        var query = [
+            URLQueryItem(name: "client_id", value: clientID),
+            URLQueryItem(name: "response_type", value: "code"),
+        ]
+        if let redirectURI { query.append(URLQueryItem(name: "redirect_uri", value: redirectURI.absoluteString)) }
+        query.append(URLQueryItem(name: "scope", value: scopes.joined(separator: " ")))
+        if let state { query.append(URLQueryItem(name: "state", value: state)) }
+        return query
+    }
+
+    /// The query of the redirect Discord names, throwing the denial it reports.
+    static func oauth2RedirectItems(_ components: URLComponents?) throws -> [URLQueryItem] {
+        let items = components?.queryItems ?? []
         if let error = items.first(where: { $0.name == "error" })?.value {
-            let description = items.first { $0.name == "error_description" }?.value
-            throw OAuth2AuthorizationError.denied(description ?? error)
+            throw OAuth2AuthorizationError.denied(items.first { $0.name == "error_description" }?.value ?? error)
         }
-        guard items.first(where: { $0.name == "state" })?.value == request.state,
+        return items
+    }
+
+    static func oauth2AuthorizationCode(in items: [URLQueryItem], state: String?) throws -> String {
+        guard items.first(where: { $0.name == "state" })?.value == state,
               let code = items.first(where: { $0.name == "code" })?.value,
               !code.isEmpty
         else { throw OAuth2AuthorizationError.unexpectedResponse }
-        return OAuth2AuthorizationGrant(code: code, applicationName: applicationName)
+        return code
     }
 }
 
-private struct OAuth2AuthorizationPreviewDTO: Decodable {
+struct OAuth2AuthorizationPreviewDTO: Decodable {
     struct Application: Decodable {
         let id: String
         let name: String
     }
 
     let application: Application
+    /// Only the Activity consent flow reads this.
+    let authorized: Bool?
 }
 
-private struct OAuth2AuthorizationLocationDTO: Decodable {
+struct OAuth2AuthorizationLocationDTO: Decodable {
     let location: String
 }
