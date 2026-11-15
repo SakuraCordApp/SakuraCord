@@ -43,16 +43,14 @@ extension ForumBoardView {
     }
 
     override func mouseExited(with _: NSEvent) {
-        setHovered(nil)
-        clearInnerHover()
+        clearHover()
     }
 
     func updateHoverFromCurrentPointer() {
         guard let window, window.isKeyWindow else { return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         guard visibleRect.contains(point) else {
-            setHovered(nil)
-            clearInnerHover()
+            clearHover()
             return
         }
         updateHover(at: point)
@@ -60,13 +58,11 @@ extension ForumBoardView {
 
     private func updateHover(at point: CGPoint) {
         guard WindowModalCoordinator.allowsInput(for: self) else {
-            setHovered(nil)
-            clearInnerHover()
+            clearHover()
             return
         }
         guard let hit = hit(at: point), isInteractive(hit.entry.item) else {
-            setHovered(nil)
-            clearInnerHover()
+            clearHover()
             return
         }
         setHovered(hit.entry.item.id)
@@ -105,7 +101,8 @@ extension ForumBoardView {
         return regions.excerptFrame?.origin
     }
 
-    private func clearInnerHover() {
+    private func clearHover() {
+        setHovered(nil)
         for (id, interaction) in interactions where interaction != ForumCardInteraction() {
             interactions[id] = ForumCardInteraction()
             cards[id]?.render(scale: backingScale, fading: false)
@@ -219,10 +216,7 @@ extension ForumBoardView {
     override func keyDown(with event: NSEvent) {
         guard let layoutState else { return super.keyDown(with: event) }
         // Posts and a failed page's retry notice take keyboard focus.
-        let posts = layoutState.entries.filter {
-            if case .paginationStatus = $0.item { return true }
-            return $0.item.postID != nil
-        }
+        let posts = layoutState.entries.filter { isInteractive($0.item) }
         guard !posts.isEmpty else { return super.keyDown(with: event) }
         let currentIndex = keyboardID.flatMap { id in posts.firstIndex { $0.item.id == id } }
         var next: Int?
