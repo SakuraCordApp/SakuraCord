@@ -1271,6 +1271,9 @@ extension NativeTimelineCanvasView {
         let scale = max(1, rowBitmapScale)
         let pixelWidth = max(1, Int(ceil(width * scale)))
         let pixelHeight = max(1, Int(ceil(size.height * scale)))
+        // A row drawn directly, as a hovered one is, renders in the window's
+        // colour space; its picture must too, or a wide-gamut photo changes
+        // colour as the pointer enters or leaves its row.
         guard let representation = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: pixelWidth,
@@ -1282,7 +1285,8 @@ extension NativeTimelineCanvasView {
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
             bitsPerPixel: 0
-        ), let graphics = NSGraphicsContext(bitmapImageRep: representation)
+        )?.retagging(with: window?.colorSpace ?? .sRGB),
+            let graphics = NSGraphicsContext(bitmapImageRep: representation)
         else {
             return NSImage(size: size)
         }
