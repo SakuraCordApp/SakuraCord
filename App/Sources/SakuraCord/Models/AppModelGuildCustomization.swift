@@ -56,8 +56,8 @@ extension AppModel {
     func closeCustomizationPreview() {
         if case .channelPreview? = sideConversations.context {
             closeSideConversations()
-        } else if let selectedChannelID, !isConversationPresented(selectedChannelID) {
-            suspendSelectedConversationPresentation()
+        } else {
+            suspendSelectedConversationPresentationIfHidden()
         }
     }
 

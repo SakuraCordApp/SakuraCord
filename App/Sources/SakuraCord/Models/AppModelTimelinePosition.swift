@@ -40,6 +40,12 @@ extension AppModel {
         )
     }
 
+    /// Suspends the selected conversation once no column presents it.
+    func suspendSelectedConversationPresentationIfHidden() {
+        guard let selectedChannelID, !isConversationPresented(selectedChannelID) else { return }
+        suspendSelectedConversationPresentation()
+    }
+
     func reportTimelineLiveScrolling(
         _ isScrolling: Bool,
         conversationID: ChannelID

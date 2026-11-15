@@ -293,9 +293,7 @@ extension AppModel {
                 isRestoringPreviewSelection = false
             }
             sideConversations.context = nil
-            if let selectedChannelID, !isConversationPresented(selectedChannelID) {
-                suspendSelectedConversationPresentation()
-            }
+            suspendSelectedConversationPresentationIfHidden()
         case .thread, .threadCreation:
             sideConversations.context = nil
         }

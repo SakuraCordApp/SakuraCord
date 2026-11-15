@@ -122,9 +122,7 @@ extension AppModel {
         threadLoadGeneration &+= 1
         AppPerformanceSignposts.beginConversationNavigation(to: thread.id)
         readState.merge(thread: thread)
-        if let selectedChannelID, !isConversationPresented(selectedChannelID) {
-            suspendSelectedConversationPresentation()
-        }
+        suspendSelectedConversationPresentationIfHidden()
         recordConversationDestinationVisit(thread.id)
         readState.beginPresentation(
             channelID: thread.id,
@@ -569,11 +567,9 @@ extension AppModel {
         guard let channelID = selectedChannelID, permissions.canCreateAny else { return }
         // Like Discord, the channel's unsent text becomes the thread's first message.
         let channelDraft = draft
-        openSideConversation(.threadCreation(ThreadCreationDraft(
+        presentThreadCreation(ThreadCreationDraft(
             parentID: channelID, permissions: permissions, isFromThreadBrowser: fromThreadBrowser
-        )))
-        dismissPinnedMessages()
-        if !isConversationPresented(channelID) { suspendSelectedConversationPresentation() }
+        ))
         if !channelDraft.isEmpty {
             translation.resetDraft(.channel)
             updateDraft("")
@@ -612,9 +608,13 @@ extension AppModel {
         let defaultName = ThreadNamePolicy.defaultName(
             for: message, channelNames: names.channels, roleNames: names.roles
         )
-        openSideConversation(.threadCreation(ThreadCreationDraft(startingFrom: message, defaultName: defaultName)))
+        presentThreadCreation(ThreadCreationDraft(startingFrom: message, defaultName: defaultName))
+    }
+
+    private func presentThreadCreation(_ draft: ThreadCreationDraft) {
+        openSideConversation(.threadCreation(draft))
         dismissPinnedMessages()
-        if !isConversationPresented(message.channelID) { suspendSelectedConversationPresentation() }
+        suspendSelectedConversationPresentationIfHidden()
     }
 
     /// Shows required-field errors only for invalid submissions. A valid send
