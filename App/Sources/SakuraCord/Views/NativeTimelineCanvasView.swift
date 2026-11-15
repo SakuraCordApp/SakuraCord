@@ -206,6 +206,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     let authorHoverTicker = DisplayLinkTicker()
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
+    /// The height the floating composer covers at the viewport's bottom.
+    var bottomObscuredHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
     var totalDrawDuration = 0.0
 #if SAKURACORD_MOTION_BENCHMARK
