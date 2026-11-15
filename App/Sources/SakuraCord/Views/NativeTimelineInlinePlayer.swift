@@ -91,7 +91,8 @@ final class NativeTimelineInlinePlayer: NSView, AVPlayerViewDelegate {
             guard let self, let window, event.window === window,
                   event.type == .scrollWheel || event.clickCount == 2,
                   WindowModalCoordinator.allowsInput(for: self),
-                  window.contentView?.hitTest(event.locationInWindow)?.isDescendant(of: self) == true,
+                  let hit = window.contentView?.hitTest(event.locationInWindow), hit.isDescendant(of: self),
+                  event.type == .scrollWheel || isOnPicture(hit),
                   let superview
             else { return event }
             if event.type == .scrollWheel {
@@ -101,6 +102,14 @@ final class NativeTimelineInlinePlayer: NSView, AVPlayerViewDelegate {
             }
             return nil
         }
+    }
+
+    /// AVKit lays its inline controls on glass panels over the picture; a
+    /// double click on one stays with the control.
+    private func isOnPicture(_ view: NSView) -> Bool {
+        sequence(first: view, next: \.superview)
+            .prefix { $0 !== self }
+            .allSatisfy { !($0 is NSGlassEffectView || $0 is NSControl) }
     }
 
     @objc private func openViewer() {
