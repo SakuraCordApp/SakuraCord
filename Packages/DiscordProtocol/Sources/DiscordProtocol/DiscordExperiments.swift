@@ -47,11 +47,9 @@ struct DiscordExperiments: Sendable {
         case memberCountRange(min: Int?, max: Int?)
         case hasFeature(Set<String>)
         case hubTypes(Set<Int>)
-        /// A non-Boolean value never passes.
-        case hasVanityURL(Bool?)
-        /// A missing or non-numeric target never passes.
-        case inRangeByHash(hashKey: String, target: Int?)
-        /// A filter this build cannot read. Like the official client, it passes.
+        case hasVanityURL(Bool)
+        case inRangeByHash(hashKey: String, target: Int)
+        /// A filter this build does not know. Like the official client, it passes.
         case unknown
     }
 
@@ -128,7 +126,6 @@ extension DiscordExperiments.Filter {
         case let .hasVanityURL(wanted): return guild.hasVanityURL == wanted
         case let .inRangeByHash(hashKey, target):
             // The official client doubles the unsigned hash before the modulo.
-            guard let target else { return false }
             return Int(UInt64(MurmurHash3.hash("\(hashKey):\(guild.id.rawValue)")) * 2 % 10_000) < target
         case .unknown: return true
         }
@@ -151,7 +148,10 @@ extension DiscordExperiments {
         for entry in apexEntries {
             guard let fields = entry.arrayValue, fields.count > 1,
                   let hash = fields[0].experimentHash, let variant = fields[1].intValue else { continue }
-            apexAssignments[hash] = ApexAssignment(variant: variant, flags: fields.count > 2 ? fields[2].intValue ?? 0 : 0)
+            // Absent flags are none; unreadable ones could hide UseAsEligibility, so drop the entry.
+            let flags = fields.count > 2 && fields[2] != .null ? fields[2].intValue : 0
+            guard let flags else { continue }
+            apexAssignments[hash] = ApexAssignment(variant: variant, flags: flags)
         }
         // `[hash, hash_key, revision, populations, overrides, overrides_formatted, holdout_name, holdout_bucket, …]`
         for entry in guild?.arrayValue ?? [] {
@@ -177,10 +177,15 @@ extension DiscordExperiments {
     }
 }
 
+// A population or filter the official client could not build never matches
+// there, so one this cannot read is dropped rather than treated as unfiltered.
 private extension DiscordExperiments.Population {
     /// `[[[bucket, [{s, e}, …]], …], [[filter hash, [[key hash, value], …]], …]]`
     init?(_ value: JSONValue) {
-        guard let parts = value.arrayValue, let buckets = parts.first?.arrayValue else { return nil }
+        guard let parts = value.arrayValue, parts.count > 1, let buckets = parts[0].arrayValue,
+              let rawFilters = parts[1].arrayValue else { return nil }
+        filters = rawFilters.compactMap(DiscordExperiments.Filter.init)
+        guard filters.count == rawFilters.count else { return nil }
         self.buckets = buckets.compactMap { entry in
             guard let pair = entry.arrayValue, pair.count > 1, let bucket = pair[0].intValue else { return nil }
             let ranges = (pair[1].arrayValue ?? []).compactMap { range -> Range<Int>? in
@@ -189,7 +194,6 @@ private extension DiscordExperiments.Population {
             }
             return (bucket, ranges)
         }
-        filters = (parts.count > 1 ? parts[1].arrayValue ?? [] : []).map(DiscordExperiments.Filter.init)
     }
 }
 
@@ -200,42 +204,50 @@ private extension DiscordExperiments.Filter {
     ].map { (MurmurHash3.hash($0), $0) })
 
     /// `[filter hash, [[key hash, value], …]]`
-    init(_ filter: JSONValue) {
-        guard let pair = filter.arrayValue, pair.count > 1, let kind = pair[0].experimentHash.flatMap({ Self.kinds[$0] }),
-              let entries = pair[1].arrayValue else {
+    init?(_ filter: JSONValue) {
+        guard let pair = filter.arrayValue else { return nil }
+        guard let kind = pair.first?.experimentHash.flatMap({ Self.kinds[$0] }) else {
             self = .unknown
             return
         }
+        guard pair.count > 1, let rawEntries = pair[1].arrayValue else { return nil }
+        let entries = rawEntries.compactMap(\.arrayValue)
+        guard entries.count == rawEntries.count else { return nil }
         var values: [UInt32: JSONValue] = [:]
-        for entry in entries {
-            guard let item = entry.arrayValue, item.count > 1, let key = item[0].experimentHash else { continue }
-            values[key] = item[1]
+        for entry in entries where entry.count > 1 {
+            if let key = entry[0].experimentHash { values[key] = entry[1] }
         }
-        func value(_ key: String) -> JSONValue? { values[MurmurHash3.hash(key)] }
-        func int(_ key: String) -> Int? { value(key)?.integerValue }
         // These three read their first value whatever its key.
-        let first = entries.first?.arrayValue.flatMap { $0.count > 1 ? $0[1] : nil }
-        switch kind {
-        case "guild_ids":
-            self = .guildIDs(Set((value("guild_ids")?.arrayValue ?? []).compactMap(\.snowflakeValue)))
-        case "guild_id_range":
-            self = .guildIDRange(min: value("min_id")?.snowflakeValue, max: value("max_id")?.snowflakeValue)
-        case "guild_age_range_days":
-            self = .guildAgeRangeDays(min: int("min_id"), max: int("max_id"))
-        case "guild_member_count_range":
-            self = .memberCountRange(min: int("min_id"), max: int("max_id"))
-        case "guild_has_feature":
-            self = .hasFeature(Set((first?.arrayValue ?? []).compactMap(\.stringValue)))
-        case "guild_hub_types":
-            self = .hubTypes(Set((first?.arrayValue ?? []).compactMap(\.intValue)))
-        case "guild_has_vanity_url":
-            guard case let .bool(wanted) = first else { self = .hasVanityURL(nil); return }
-            self = .hasVanityURL(wanted)
+        let first = entries.first.flatMap { $0.count > 1 ? $0[1] : nil }
+        guard let filter = Self.read(kind, values: values, first: first) else { return nil }
+        self = filter
+    }
+
+    private static func read(_ kind: String, values: [UInt32: JSONValue], first: JSONValue?) -> Self? {
+        var isReadable = true
+        func value(_ key: String) -> JSONValue? { values[MurmurHash3.hash(key)] }
+        /// A missing or null bound is open; an unreadable one fails the filter.
+        func bound<T>(_ key: String, _ parse: (JSONValue) -> T?) -> T? {
+            guard let raw = value(key), raw != .null else { return nil }
+            let parsed = parse(raw)
+            if parsed == nil { isReadable = false }
+            return parsed
+        }
+        let filter: Self? = switch kind {
+        case "guild_ids": value("guild_ids")?.arrayValue.map { .guildIDs(Set($0.compactMap(\.snowflakeValue))) }
+        case "guild_id_range": .guildIDRange(min: bound("min_id", \.snowflakeValue), max: bound("max_id", \.snowflakeValue))
+        case "guild_age_range_days": .guildAgeRangeDays(min: bound("min_id", \.integerValue), max: bound("max_id", \.integerValue))
+        case "guild_member_count_range": .memberCountRange(min: bound("min_id", \.integerValue), max: bound("max_id", \.integerValue))
+        case "guild_has_feature": first?.arrayValue.map { .hasFeature(Set($0.compactMap(\.stringValue))) }
+        case "guild_hub_types": first?.arrayValue.map { .hubTypes(Set($0.compactMap(\.intValue))) }
+        case "guild_has_vanity_url": if case let .bool(wanted) = first { .hasVanityURL(wanted) } else { nil }
         default:
             // The official client interpolates a missing key as JavaScript's "undefined".
-            let hashKey = value("hash_key")?.stringValue ?? value("hash_key")?.intValue.map(String.init) ?? "undefined"
-            self = .inRangeByHash(hashKey: hashKey, target: int("target"))
+            value("target")?.integerValue.map {
+                .inRangeByHash(hashKey: value("hash_key")?.stringValue ?? value("hash_key")?.intValue.map(String.init) ?? "undefined", target: $0)
+            }
         }
+        return isReadable ? filter : nil
     }
 }
 

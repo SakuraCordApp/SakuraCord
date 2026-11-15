@@ -51,7 +51,8 @@ func `murmurhash3 matches reference vectors`(input: String, expected: UInt32) {
         """),
         guild: json(#"[[1,null,0,"nope"],"x",[2,null,0,[["bad"],[[[1,[{"s":"0","e":5}]]],"filters"]]]]"#),
         apex: json("""
-        {"assignments":{"1":{"7":{"assignments":[[\(MurmurHash3.hash("2026-01_apex")),2,1,4,2,null],"x",[3]]}},
+        {"assignments":{"1":{"7":{"assignments":[[\(MurmurHash3.hash("2026-01_apex")),2,1,4,2,null],"x",[3],
+         [\(MurmurHash3.hash("2026-01_bad_flags")),1,"8"]]}},
          "2":{"7":{"assignments":[[\(MurmurHash3.hash("2026-01_other_unit")),1,0,1]]}}}}
         """),
         userID: "7"
@@ -60,6 +61,8 @@ func `murmurhash3 matches reference vectors`(input: String, expected: UInt32) {
     #expect(experiments.userBucket("bad") == nil)
     #expect(experiments.apexAssignment("2026-01_apex") == .init(variant: 2, flags: 1))
     #expect(experiments.apexVariant("2026-01_other_unit") == nil)
+    // Unreadable flags could hide UseAsEligibility, so the assignment is dropped.
+    #expect(experiments.apexAssignment("2026-01_bad_flags") == nil)
     #expect(experiments.guildExperiments.keys.sorted() == [2])
     #expect(experiments.guildBucket("missing", guild: .init(id: guildID)) == nil)
 
@@ -98,6 +101,12 @@ func `murmurhash3 matches reference vectors`(input: String, expected: UInt32) {
     #expect(formatted.guildBucket(experimentName, guild: .init(id: guildID)) == 4)
     let fallsThrough = try guildExperiments("[\(everyone(1))]", formatted: "[[\(everyone(-1))]]")
     #expect(fallsThrough.guildBucket(experimentName, guild: .init(id: guildID)) == 1)
+
+    // A population whose filters cannot be read never matches, rather than matching every guild.
+    let badFilters = everyone(1, filters: #""garbage""#)
+    let badGuildIDs = everyone(1, filters: #"[[\#(MurmurHash3.hash("guild_ids")),"x"]]"#)
+    let unreadable = try guildExperiments("[\(badFilters),\(badGuildIDs),\(everyone(2))]")
+    #expect(unreadable.guildBucket(experimentName, guild: .init(id: guildID)) == 2)
 
     let notEligible = try guildExperiments("[\(everyone(-1))]")
     #expect(notEligible.guildBucket(experimentName, guild: .init(id: guildID)) == nil)

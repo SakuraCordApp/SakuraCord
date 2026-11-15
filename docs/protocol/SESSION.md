@@ -49,7 +49,8 @@ fails READY. A missing experiment, or a not-eligible (`-1`) bucket, is off.
   unit (type `1`, the READY user); type `2` is the installation. Flags are
   IsOverride `1`, ExposureTracking `2`, Dependent `4`, UseAsEligibility `8` and
   IsAppLaunch `16`. A UseAsEligibility assignment yields the experiment's
-  default, so it enables no variant. The personal-widget gate
+  default, so it enables no variant; an assignment with unreadable flags is
+  dropped. The personal-widget gate
   (`2026-07-personal-widget`) enables widgets for variants `1` and `2`; `2`
   also shows the create entry point.
 - **Guild:** `[hash, hash_key, revision, populations, overrides,
@@ -72,7 +73,9 @@ A guild's bucket is evaluated in this order:
    this experiment.
 
 Filters, keyed by the hash of their name, are all required. Range bounds are
-`min_id`/`max_id`, inclusive, with a missing bound open.
+`min_id`/`max_id`, inclusive, with a missing bound open. A population with a
+known filter SakuraCord cannot read never matches, as it fails to build in the
+official client.
 
 | Filter | Passes when |
 | --- | --- |
