@@ -162,5 +162,19 @@ import SakuraCordModels
         func cachedMembersForTesting(guildID: GuildID) -> [Member] {
             cachedMembers[guildID] ?? []
         }
+
+        func orderedMemberListIDsForTesting(
+            guildID: GuildID, memberListID: String
+        ) -> [UserID] {
+            orderedMemberListMembers(
+                guildID: guildID, memberListID: memberListID
+            )?.map(\.id) ?? []
+        }
+
+        func memberListGroupsForTesting(
+            guildID: GuildID, memberListID: String
+        ) -> [GuildMemberListGroup] {
+            memberListState.cachedGroups[guildID]?[memberListID] ?? []
+        }
     }
 #endif
