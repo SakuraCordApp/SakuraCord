@@ -522,195 +522,81 @@ extension NativeTimelineCanvasView {
     private func activateReleasedPointer(at point: CGPoint) {
         let pressedActivationTarget = pressedActivationTarget
         self.pressedActivationTarget = nil
-        guard NativeTimelinePointerActivationPolicy.activates(
-            pressed: pressedActivationTarget,
-            released: pointerActivationTarget(at: point)
-        ) else { return }
-        guard case let (index, local)? = rowHit(at: point),
+        guard let released = pointerActivationTarget(at: point),
+              NativeTimelinePointerActivationPolicy.activates(
+                  pressed: pressedActivationTarget,
+                  released: released
+              ),
+              let index = rowHit(at: point)?.index,
               let actions
         else { return }
         let item = items[index]
-        let layout = layouts[index]
-        if case let .suppressedMessages(group) = item {
-            if layout.suppressedHeader?.toggleFrame.contains(local) == true {
-                toggleSuppressedGroup(group)
-            }
-            return
-        }
-        if case let .loader(isLoading, _) = item {
-            if !isLoading,
-               layout.loaderLayout?.controlFrame.contains(local)
-                    == true
+        switch released {
+        case .loader:
+            actions.loadEarlier()
+        case .suppressedMessages:
+            if case let .suppressedMessages(group) = item { toggleSuppressedGroup(group) }
+        case let .textSpoiler(_, _, _, text), let .textMention(_, _, _, _, text), let .textURL(_, _, _, _, text):
+            _ = activateTextHit(
+                text.value.hit,
+                message: item.messageRow?.message,
+                rowIdentifier: item.identifier,
+                region: text.value.region,
+                profileAnchor: textLinkAnchorFrame(for: text.value, in: layouts[index], rowIdentifier: item.identifier)
+            )
+        default:
+            guard let row = item.messageRow else { return }
+            // What no handler takes, the row's own target included, opens the message where the timeline allows.
+            if !activateMessageChrome(released, message: row.message, rowIndex: index),
+               !activateMessageContent(released, message: row.message, layout: layouts[index], rowIndex: index)
             {
-                actions.loadEarlier()
+                actions.openMessage?(row.message)
             }
-            return
         }
-        if case .beginning = item {
-            _ = handleTextClick(in: layout, message: nil, point: local, rowIdentifier: item.identifier)
-            return
-        }
-        guard case let .message(row, _, _) = item else { return }
-        if handleComponentClick(
-            in: layout,
-            message: row.message,
-            point: local,
-            rowIndex: index
-        ) {
-            return
-        }
-        if handleTextClick(
-            in: layout,
-            message: row.message,
-            point: local,
-            rowIdentifier: item.identifier
-        ) {
-            return
-        }
-        if handleMessageChromeClick(row: row, layout: layout, point: local, rowIndex: index) {
-            return
-        }
-        if handleMessageMediaClick(row: row, layout: layout, point: local, rowIndex: index) {
-            return
-        }
-        if let threadFrame = layout.threadFrame,
-           threadFrame.contains(local),
-           let thread = row.message.thread
-        {
-            actions.openThread(thread)
-            return
-        }
-        actions.openMessage?(row.message)
     }
 
-    private func handleMessageChromeClick(
-        row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        point: CGPoint,
+    private func activateMessageChrome(
+        _ target: NativeTimelinePointerActivationTarget,
+        message: Message,
         rowIndex: Int
     ) -> Bool {
-        if let dismissFrame = layout.ephemeralRegion?.dismissFrame,
-           dismissFrame.contains(point)
-        {
-            model?.dismissEphemeralMessage(row.message)
-            return true
-        }
-        if layout.translationRegion?.actionFrame?.contains(point) == true {
-            model?.performMessageTranslationCaptionAction(row.message)
-            return true
-        }
-        switch layout.deliveryAction(at: point) {
-        case .retrySend:
-            actions?.retry(row.message)
-            return true
-        default:
-            break
-        }
-        if let tag = layout.serverTagRegion, tag.frame.contains(point),
-           let guildID = tag.presentation.identity.guildID {
-            showServerTagCard(guildID: guildID, anchor: tag.frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex)))
-            return true
-        }
-        if !row.message.type.hasGeneratedContent,
-           let authorFrame =
-               NativeTimelineAuthorProfileGeometry.hitFrame(
-                   at: point,
-                   avatarFrame: layout.avatarFrame,
-                   authorFrame: layout.authorFrame
-               )
-        {
-            let author =
-                model?.authorPresentation(for: row.message).user
-                ?? row.message.author
+        switch target {
+        case .ephemeralDismiss:
+            model?.dismissEphemeralMessage(message)
+        case .translationAction:
+            model?.performMessageTranslationCaptionAction(message)
+        case .deliveryAction(_, .retrySend):
+            actions?.retry(message)
+        case let .serverTag(_, guildID, anchor):
+            showServerTagCard(guildID: guildID, anchor: anchor.value.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex)))
+        case let .authorProfile(_, anchor):
+            let author = model?.authorPresentation(for: message).user ?? message.author
             showMessageProfile(
                 for: author,
-                sourceMessage: row.message,
-                anchor: authorFrame.offsetBy(
-                    dx: 0,
-                    dy: displayedRowOrigin(at: rowIndex)
-                )
+                sourceMessage: message,
+                anchor: anchor.value.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
             )
-            return true
-        }
-        if layout.commandInvocationRegion?.pillFrame.contains(point) == true {
-            showCommandInvocation(for: row.message)
-            return true
-        }
-        if let invocation = layout.commandInvocationRegion,
-           invocation.profileFrame.contains(point),
-           let user = row.message.interactionMetadata?.user
-        {
+        case let .invocationProfile(_, anchor):
+            guard let user = message.interactionMetadata?.user else { return false }
             showMessageProfile(
                 for: user,
-                sourceMessage: row.message,
-                anchor: invocation.profileFrame.offsetBy(
-                    dx: 0,
-                    dy: displayedRowOrigin(at: rowIndex)
-                )
+                sourceMessage: message,
+                anchor: anchor.value.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
             )
-            return true
-        }
-        if let replyFrame = layout.replyFrame,
-           replyFrame.contains(point),
-           let replyID = row.replyMessageID
-        {
+        case .commandPill:
+            showCommandInvocation(for: message)
+        case let .reply(_, replyID):
             actions?.openReply(replyID)
-            return true
-        }
-        if let source = layout.forwardedSourceRegion,
-           source.frame.contains(point)
-        {
-            if let messageID = source.messageID {
-                model?.navigate(
-                    to: source.guildID,
-                    channelID: source.channelID,
-                    messageID: messageID
-                )
+        case let .forwardedSource(_, channelID, guildID, messageID):
+            if let messageID {
+                model?.navigate(to: guildID, channelID: channelID, messageID: messageID)
             } else {
-                model?.navigate(
-                    to: source.guildID,
-                    linkedChannelID: source.channelID
-                )
+                model?.navigate(to: guildID, linkedChannelID: channelID)
             }
-            return true
+        default:
+            return false
         }
-        return false
-    }
-
-    private func handleMessageMediaClick(
-        row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        point: CGPoint,
-        rowIndex: Int
-    ) -> Bool {
-        if let linkedImage = layout.linkedImageRegions.first(
-            where: { $0.frame.contains(point) }
-        ) {
-            return activateLinkedImage(linkedImage, in: row.message, rowIndex: rowIndex)
-        }
-        if let attachmentRegion = layout.attachmentRegions.first(
-            where: { $0.frame.contains(point) }
-        ) {
-            let attachment = attachmentRegion.attachment
-            guard attachment.mediaKind == .video,
-                  !NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: row.id, store: spoilerRevealStore)
-            else { return activateAttachment(attachment, in: row.message, rowIndex: rowIndex) }
-            playInline(
-                attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
-                frame: attachmentRegion.frame, rowIndex: rowIndex
-            ) { [weak self, attachmentID = attachment.id] index, layout, message in
-                guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
-                _ = self?.openAttachmentInViewer(region.attachment, message: message, rowIndex: index)
-            }
-            return true
-        }
-        if let embedRegion = layout.embedRegions.first(where: {
-            $0.mediaFrame?.contains(point) == true
-        }) {
-            _ = activateEmbedMedia(embedRegion, in: row.message, rowIndex: rowIndex)
-            return true
-        }
-        return false
+        return true
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -1274,9 +1160,9 @@ extension NativeTimelineCanvasView {
                 $0.frame.contains(point)
             }) {
                 switch region.kind {
-                case .image: return .componentImage(message.id, region.componentID)
-                case .media: return .componentMedia(message.id, region.componentID)
-                case .file: return .componentFile(message.id, region.componentID)
+                case .image: return .componentImage(message.id, region.componentID, .init(region))
+                case .media: return .componentMedia(message.id, region.componentID, .init(region))
+                case .file: return .componentFile(message.id, region.componentID, .init(region))
                 }
             }
             if let region = componentLayout.selects.first(where: {
@@ -1284,7 +1170,8 @@ extension NativeTimelineCanvasView {
             }) {
                 return .componentSelect(
                     message.id,
-                    region.componentID
+                    region.componentID,
+                    .init(region)
                 )
             }
         }
@@ -1307,7 +1194,8 @@ extension NativeTimelineCanvasView {
                     return .textSpoiler(
                         messageID,
                         text.region,
-                        rangeLocation: spoilerRange.location
+                        rangeLocation: spoilerRange.location,
+                        hit: .init(text)
                     )
                 }
             }
@@ -1316,7 +1204,8 @@ extension NativeTimelineCanvasView {
                     messageID,
                     text.region,
                     characterIndex: text.hit.characterIndex,
-                    rawToken: mention.rawToken
+                    rawToken: mention.rawToken,
+                    hit: .init(text)
                 )
             }
             if let url = text.hit.url {
@@ -1324,7 +1213,8 @@ extension NativeTimelineCanvasView {
                     messageID,
                     text.region,
                     characterIndex: text.hit.characterIndex,
-                    url: url
+                    url: url,
+                    hit: .init(text)
                 )
             }
         }
@@ -1348,21 +1238,21 @@ extension NativeTimelineCanvasView {
         }
         if let tag = layout.serverTagRegion, tag.frame.contains(point),
            let guildID = tag.presentation.identity.guildID {
-            return .serverTag(message.id, guildID)
+            return .serverTag(message.id, guildID, anchor: .init(tag.frame))
         }
         if !message.type.hasGeneratedContent,
-           NativeTimelineAuthorProfileGeometry.hitFrame(
+           let authorFrame = NativeTimelineAuthorProfileGeometry.hitFrame(
                at: point,
                avatarFrame: layout.avatarFrame,
                authorFrame: layout.authorFrame
-           ) != nil
+           )
         {
-            return .authorProfile(message.id)
+            return .authorProfile(message.id, anchor: .init(authorFrame))
         }
-        if layout.commandInvocationRegion?.profileFrame.contains(point)
-            == true
+        if let profileFrame = layout.commandInvocationRegion?.profileFrame,
+           profileFrame.contains(point)
         {
-            return .invocationProfile(message.id)
+            return .invocationProfile(message.id, anchor: .init(profileFrame))
         }
         if layout.commandInvocationRegion?.pillFrame.contains(point) == true {
             return .commandPill(message.id)
@@ -1387,7 +1277,8 @@ extension NativeTimelineCanvasView {
         }) {
             return .linkedImage(
                 message.id,
-                region.reference.url
+                region.reference.url,
+                .init(region)
             )
         }
         if let region = layout.attachmentRegions.first(where: {
@@ -1395,13 +1286,14 @@ extension NativeTimelineCanvasView {
         }) {
             return .attachment(
                 message.id,
-                region.attachment.id
+                region.attachment.id,
+                .init(region)
             )
         }
         if let region = layout.embedRegions.first(where: {
             $0.mediaFrame?.contains(point) == true
         }) {
-            return .embedMedia(message.id, region.embedID)
+            return .embedMedia(message.id, region.embedID, .init(region))
         }
         if layout.threadFrame?.contains(point) == true,
            let thread = message.thread

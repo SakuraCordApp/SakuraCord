@@ -3,48 +3,51 @@ import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineCanvasView {
-    func handleComponentClick(
-        in layout: NativeTimelineRowLayout,
+    func activateMessageContent(
+        _ target: NativeTimelinePointerActivationTarget,
         message: Message,
-        point: CGPoint,
+        layout: NativeTimelineRowLayout,
         rowIndex: Int
     ) -> Bool {
-        for componentLayout in layout.componentLayouts {
-            for container in componentLayout.containers
-            where container.isSpoiler && container.frame.contains(point) {
-                let key = NativeTimelineComponentRevealKey(
-                    messageID: message.id,
-                    componentID: container.componentID
-                )
-                if !spoilerRevealStore.isMediaRevealed(key) {
-                    reveal(key, rowIndex: rowIndex)
-                    return true
-                }
+        switch target {
+        case let .componentReveal(_, componentID):
+            reveal(NativeTimelineComponentRevealKey(messageID: message.id, componentID: componentID), rowIndex: rowIndex)
+        // A file card's button and link act through their own pointer hit.
+        case let .componentImage(_, _, payload), let .componentMedia(_, _, payload), let .componentFile(_, _, payload):
+            let region = payload.value
+            guard case let .media(media) = region.kind, media.isVideo, !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
+            ) else { return activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex) }
+            playInline(media.displayURL, mediaID: region.componentID, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
+                _ = self?.activateComponentMedia(region, layout: layout, message: message, rowIndex: index)
             }
-            // A file card's button and link act through their own pointer hit.
-            for region in componentLayout.mediaRegions
-            where region.frame.contains(point) {
-                if case let .media(media) = region.kind, media.isVideo, !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                    messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
-                ) {
-                    playInline(media.displayURL, mediaID: region.componentID, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
-                        _ = self?.activateComponentMedia(region, layout: layout, message: message, rowIndex: index)
-                    }
-                    return true
-                }
-                return activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex)
+        case let .componentSelect(_, _, region):
+            if !region.value.isDisabled {
+                showComponentChoicePicker(for: region.value, message: message)
             }
-            for region in componentLayout.selects
-            where region.frame.contains(point) {
-                guard !region.isDisabled else { return true }
-                showComponentChoicePicker(
-                    for: region,
-                    message: message
-                )
-                return true
+        case let .linkedImage(_, _, region):
+            return activateLinkedImage(region.value, in: message, rowIndex: rowIndex)
+        case let .attachment(_, _, region):
+            let attachment = region.value.attachment
+            guard attachment.mediaKind == .video,
+                  !NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore)
+            else { return activateAttachment(attachment, in: message, rowIndex: rowIndex) }
+            playInline(
+                attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
+                frame: region.value.frame, rowIndex: rowIndex
+            ) { [weak self, attachmentID = attachment.id] index, layout, message in
+                guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
+                _ = self?.openAttachmentInViewer(region.attachment, message: message, rowIndex: index)
             }
+        case let .embedMedia(_, _, region):
+            _ = activateEmbedMedia(region.value, in: message, rowIndex: rowIndex)
+        case .thread:
+            guard let thread = message.thread else { return false }
+            actions?.openThread(thread)
+        default:
+            return false
         }
-        return false
+        return true
     }
 
     func activateComponentMedia(
@@ -69,29 +72,6 @@ extension NativeTimelineCanvasView {
             NSWorkspace.shared.open(region.openURL)
         }
         return true
-    }
-
-    func handleTextClick(
-        in layout: NativeTimelineRowLayout,
-        message: Message?,
-        point: CGPoint,
-        rowIdentifier: NativeMessageTimelineItem.Identifier
-    ) -> Bool {
-        guard let pointerHit = textPointerHit(
-            in: layout,
-            point: point
-        ) else { return false }
-        return activateTextHit(
-            pointerHit.hit,
-            message: message,
-            rowIdentifier: rowIdentifier,
-            region: pointerHit.region,
-            profileAnchor: textLinkAnchorFrame(
-                for: pointerHit,
-                in: layout,
-                rowIdentifier: rowIdentifier
-            )
-        )
     }
 
     func textLinkAnchorFrame(

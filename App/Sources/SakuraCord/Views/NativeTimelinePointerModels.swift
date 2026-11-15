@@ -138,43 +138,62 @@ nonisolated struct NativeTimelineHoverFade {
 }
 
 nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
+    /// What a release needs to act on its target. It stays out of the
+    /// target's identity, so a press still matches its release when the row
+    /// lays out again in between.
+    nonisolated struct Payload<Value>: Hashable {
+        let value: Value
+
+        init(_ value: Value) {
+            self.value = value
+        }
+
+        static func == (_: Self, _: Self) -> Bool { true }
+        func hash(into _: inout Hasher) {}
+    }
+
+    typealias TextHit = Payload<NativeTimelineCanvasView.TextPointerHit>
+
     case loader
     case suppressedMessages(MessageID)
     case message(MessageID)
     case componentReveal(MessageID, String)
-    case componentImage(MessageID, String)
-    case componentMedia(MessageID, String)
-    case componentFile(MessageID, String)
-    case componentSelect(MessageID, String)
+    case componentImage(MessageID, String, Payload<NativeTimelineComponentLayout.MediaRegion>)
+    case componentMedia(MessageID, String, Payload<NativeTimelineComponentLayout.MediaRegion>)
+    case componentFile(MessageID, String, Payload<NativeTimelineComponentLayout.MediaRegion>)
+    case componentSelect(MessageID, String, Payload<NativeTimelineComponentLayout.SelectRegion>)
     case textMention(
         MessageID,
         NativeTimelineTextRegion,
         characterIndex: Int,
-        rawToken: String
+        rawToken: String,
+        hit: TextHit
     )
     case textURL(
         MessageID,
         NativeTimelineTextRegion,
         characterIndex: Int,
-        url: URL
+        url: URL,
+        hit: TextHit
     )
     case textSpoiler(
         MessageID,
         NativeTimelineTextRegion,
-        rangeLocation: Int
+        rangeLocation: Int,
+        hit: TextHit
     )
     case ephemeralDismiss(MessageID)
     case deliveryAction(MessageID, NativeTimelineFooterActionTarget.Kind)
     case translationAction(MessageID)
-    case authorProfile(MessageID)
-    case serverTag(MessageID, GuildID)
-    case invocationProfile(MessageID)
+    case authorProfile(MessageID, anchor: Payload<CGRect>)
+    case serverTag(MessageID, GuildID, anchor: Payload<CGRect>)
+    case invocationProfile(MessageID, anchor: Payload<CGRect>)
     case commandPill(MessageID)
     case reply(MessageID, MessageID)
     case forwardedSource(MessageID, ChannelID, GuildID?, MessageID?)
-    case linkedImage(MessageID, URL)
-    case attachment(MessageID, String)
-    case embedMedia(MessageID, String)
+    case linkedImage(MessageID, URL, Payload<NativeTimelineRowLayout.LinkedImageRegion>)
+    case attachment(MessageID, String, Payload<NativeTimelineRowLayout.AttachmentRegion>)
+    case embedMedia(MessageID, String, Payload<NativeTimelineRowLayout.EmbedRegion>)
     case thread(MessageID, ChannelID)
 
     var supportsTextSelection: Bool {
