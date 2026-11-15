@@ -606,7 +606,7 @@ extension NativeTimelineRowPainter {
         }
         systemSymbol(
             SakuraCordSystemSymbol.emojiFaceGrinning,
-            in: NativeTimelineReactionAddControlGeometry.iconFrame(in: frame),
+            in: MessageReactionMetrics.addControlIconFrame(in: frame),
             color: NSColor.labelColor.withAlphaComponent(0.8),
             inset: 0,
             weight: .medium
