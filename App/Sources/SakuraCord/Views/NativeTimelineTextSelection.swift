@@ -189,9 +189,9 @@ extension NativeTimelineCanvasView {
     func setTextSelection(
         _ selection: NativeTimelineTextSelection?
     ) {
-        guard textSelection != selection else { return }
-        let oldIdentifier = textSelection?.itemIdentifier
-        textSelection = selection
+        guard pointer.textSelection != selection else { return }
+        let oldIdentifier = pointer.textSelection?.itemIdentifier
+        pointer.textSelection = selection
         positionAnimatedMediaOverlays()
         reconcileBeginningSelectionOverlay()
         for identifier
@@ -206,7 +206,7 @@ extension NativeTimelineCanvasView {
     }
 
     func reconcileBeginningSelectionOverlay() {
-        guard let selection = textSelection,
+        guard let selection = pointer.textSelection,
               let index = items.firstIndex(where: {
                   $0.identifier == selection.itemIdentifier
               }),
@@ -253,7 +253,7 @@ extension NativeTimelineCanvasView {
     }
 
     func selectedTextValue() -> String? {
-        guard let selection = textSelection,
+        guard let selection = pointer.textSelection,
               selection.range.length > 0,
               let index = items.firstIndex(where: {
                   $0.identifier == selection.itemIdentifier

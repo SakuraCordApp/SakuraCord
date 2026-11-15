@@ -498,7 +498,7 @@ extension NativeTimelineCanvasView {
             || spoilerOverlays.keys.contains { $0.messageID == messageID }
             || activityIndicators.keys.contains { $0.row == identifier }
             || uploadRings.keys.contains { $0.row == identifier }
-            || hoveredCodeBlock?.itemIdentifier == identifier
+            || pointer.hoveredCodeBlock?.itemIdentifier == identifier
             || [voiceMessageOverlay, voiceMessageHoverOverlay].contains { overlay in
                 overlay.map { overlay in layouts[index].audioPlayers.contains { $0.playbackID == overlay.region.playbackID } } ?? false
             }
@@ -766,7 +766,7 @@ extension NativeTimelineCanvasView {
     func redrawForRowMotion(invalidating rect: CGRect? = nil) {
         // Hover regions are cached at the rows' displaced positions.
         clearPointerRegionCaches()
-        if !rowMotionIsRunning, !suppressesHoverPresentation {
+        if !rowMotionIsRunning, !pointer.suppressesHoverPresentation {
             // The motion has landed: tracking areas and cursor rects follow the rows.
             updateTrackingAreas()
             window?.invalidateCursorRects(for: self)

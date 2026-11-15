@@ -68,7 +68,7 @@ extension NativeTimelineCanvasView {
             let viewport = self.enclosingScrollView?.documentVisibleRect
                 ?? self.visibleRect
             let priority: MediaLoadPriority =
-                suppressesHoverPresentation || AppScrollActivity.isActive
+                pointer.suppressesHoverPresentation || AppScrollActivity.isActive
                     ? .prefetch
                     : .visible
             for (identifier, keys) in requests {

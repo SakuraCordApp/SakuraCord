@@ -66,7 +66,7 @@ extension NativeMessageTimelineCoordinator {
             return !preparation.isComplete
         }
         cancelLayoutPreparation()
-        guard canvas?.suppressesHoverPresentation == true else { return false }
+        guard canvas?.pointer.suppressesHoverPresentation == true else { return false }
 
         let newRows = newParent.conversation.rows(in: newParent.model)
         let pendingItems: [NativeMessageTimelineItem]

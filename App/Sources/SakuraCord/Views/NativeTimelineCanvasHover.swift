@@ -31,9 +31,9 @@ extension NativeTimelineCanvasView {
     }
 
     func setHoveredRow(_ value: Int?) {
-        guard hoveredRow != value else { return }
-        let old = hoveredRow
-        hoveredRow = value
+        guard pointer.hoveredRow != value else { return }
+        let old = pointer.hoveredRow
+        pointer.hoveredRow = value
         updateAvatarPlayback()
         invalidateHoverRows(from: old, to: value)
         if value == nil, actionCapsuleState?.isPresentationActive == true {
@@ -56,16 +56,16 @@ extension NativeTimelineCanvasView {
     }
 
     func setHoveredCompactTimestampRow(_ value: Int?) {
-        guard hoveredCompactTimestampRow != value else { return }
-        let old = hoveredCompactTimestampRow
-        hoveredCompactTimestampRow = value
+        guard pointer.hoveredCompactTimestampRow != value else { return }
+        let old = pointer.hoveredCompactTimestampRow
+        pointer.hoveredCompactTimestampRow = value
         invalidateHoverRows(from: old, to: value)
     }
 
     func setHoveredAuthorMessageID(_ value: MessageID?) {
-        guard hoveredAuthorMessageID != value else { return }
-        let old = hoveredAuthorMessageID
-        hoveredAuthorMessageID = value
+        guard pointer.hoveredAuthorMessageID != value else { return }
+        let old = pointer.hoveredAuthorMessageID
+        pointer.hoveredAuthorMessageID = value
         if let index = value.flatMap(visibleMessageRowIndex(for:)), scrollsAuthorGradient(at: index) {
             authorHoverTicker.start(on: self, frameRate: RoleGradientPaint.scrollFrameRate) { [weak self] in
                 self?.stepAuthorHover()
@@ -87,7 +87,7 @@ extension NativeTimelineCanvasView {
     }
 
     private func stepAuthorHover() {
-        guard let index = hoveredAuthorMessageID.flatMap(visibleMessageRowIndex(for:)),
+        guard let index = pointer.hoveredAuthorMessageID.flatMap(visibleMessageRowIndex(for:)),
               let authorFrame = layouts[index].authorFrame
         else {
             authorHoverTicker.stop()
@@ -100,9 +100,9 @@ extension NativeTimelineCanvasView {
     func setHoveredMention(
         _ value: NativeTimelineMentionHover?
     ) {
-        guard hoveredMention != value else { return }
-        let oldIdentifier = hoveredMention?.itemIdentifier
-        hoveredMention = value
+        guard pointer.hoveredMention != value else { return }
+        let oldIdentifier = pointer.hoveredMention?.itemIdentifier
+        pointer.hoveredMention = value
         presentHoverLabel()
         invalidateHoverRows(from: oldIdentifier, to: value?.itemIdentifier)
     }
@@ -110,18 +110,18 @@ extension NativeTimelineCanvasView {
     func setHoveredTextLink(
         _ value: NativeTimelineTextLinkHover?
     ) {
-        guard hoveredTextLink != value else { return }
-        let oldIdentifier = hoveredTextLink?.itemIdentifier
-        hoveredTextLink = value
+        guard pointer.hoveredTextLink != value else { return }
+        let oldIdentifier = pointer.hoveredTextLink?.itemIdentifier
+        pointer.hoveredTextLink = value
         invalidateHoverRows(from: oldIdentifier, to: value?.itemIdentifier)
     }
 
     func setHoveredTextSpoiler(
         _ value: NativeTimelineTextSpoilerHover?
     ) {
-        guard hoveredTextSpoiler != value else { return }
-        let old = hoveredTextSpoiler
-        hoveredTextSpoiler = value
+        guard pointer.hoveredTextSpoiler != value else { return }
+        let old = pointer.hoveredTextSpoiler
+        pointer.hoveredTextSpoiler = value
         invalidateHoverRows(from: old?.itemIdentifier, to: value?.itemIdentifier)
         let now = ProcessInfo.processInfo.systemUptime
         for (spoiler, isHovered) in [(old, false), (value, true)] {
@@ -151,14 +151,14 @@ extension NativeTimelineCanvasView {
     func setHoveredCodeBlock(
         _ value: NativeTimelineCodeBlockPointerTarget?
     ) {
-        hoveredCodeBlock = value
+        pointer.hoveredCodeBlock = value
         updateCodeCopyControl()
     }
 
     /// Shows the hovered code block's copy button with its hover and press,
     /// which follow the pointer within the block.
     func updateCodeCopyControl() {
-        guard hoveredCodeBlock != nil || codeCopyControl != nil else { return }
+        guard pointer.hoveredCodeBlock != nil || codeCopyControl != nil else { return }
         let control = codeCopyControl ?? {
             let created = NativeTimelineCodeCopyControl()
             // Under every overlay, as the row's own drawing is, so a spoiler
@@ -167,10 +167,10 @@ extension NativeTimelineCanvasView {
             codeCopyControl = created
             return created
         }()
-        let isPressed = pressedCodeBlockCopyButton != nil && pressedCodeBlockCopyButton == hoveredCodeBlock
+        let isPressed = pointer.pressedCodeBlockCopyButton != nil && pointer.pressedCodeBlockCopyButton == pointer.hoveredCodeBlock
         control.update(
-            target: hoveredCodeBlock,
-            isHovered: isPressed || hoveredCodeBlock?.copyButtonFrame.contains(currentMouseLocationInCanvas()) == true,
+            target: pointer.hoveredCodeBlock,
+            isHovered: isPressed || pointer.hoveredCodeBlock?.copyButtonFrame.contains(currentMouseLocationInCanvas()) == true,
             isPressed: isPressed
         )
     }
@@ -178,9 +178,9 @@ extension NativeTimelineCanvasView {
     func setHoveredComponentButton(
         _ value: NativeTimelineComponentButtonTarget?
     ) {
-        guard hoveredComponentButton != value else { return }
-        let old = hoveredComponentButton
-        hoveredComponentButton = value
+        guard pointer.hoveredComponentButton != value else { return }
+        let old = pointer.hoveredComponentButton
+        pointer.hoveredComponentButton = value
         for target in [old, value].compactMap({ $0 }) {
             invalidateComponentButton(target)
         }
@@ -267,15 +267,15 @@ extension NativeTimelineCanvasView {
     }
 
     func setHoveredForwardedSourceMessageID(_ value: MessageID?) {
-        guard hoveredForwardedSourceMessageID != value else { return }
-        let old = hoveredForwardedSourceMessageID
-        hoveredForwardedSourceMessageID = value
+        guard pointer.hoveredForwardedSourceMessageID != value else { return }
+        let old = pointer.hoveredForwardedSourceMessageID
+        pointer.hoveredForwardedSourceMessageID = value
         invalidateHoverRows(from: old, to: value)
     }
     func setHoveredFooterAction(_ value: NativeTimelineFooterActionTarget?) {
-        guard hoveredFooterAction != value else { return }
-        let old = hoveredFooterAction
-        hoveredFooterAction = value
+        guard pointer.hoveredFooterAction != value else { return }
+        let old = pointer.hoveredFooterAction
+        pointer.hoveredFooterAction = value
         for target in [old, value].compactMap({ $0 }) {
             // A revealed run's header shares its first row's message ID.
             let header = NativeMessageTimelineItem.Identifier.suppressedMessages(target.messageID)
@@ -291,33 +291,33 @@ extension NativeTimelineCanvasView {
         to destination: CGFloat
     ) {
         let destination = min(max(destination, 0), 1)
-        if visualPressedComponentButton != target {
-            let old = visualPressedComponentButton
-            componentButtonPressAnimationTask?.cancel()
-            componentButtonPressProgress = 0
-            visualPressedComponentButton = target
+        if pointer.visualPressedComponentButton != target {
+            let old = pointer.visualPressedComponentButton
+            pointer.componentButtonPressAnimationTask?.cancel()
+            pointer.componentButtonPressProgress = 0
+            pointer.visualPressedComponentButton = target
             if let old {
                 invalidateComponentButton(old)
                 positionComponentButtonEmoji(old)
             }
         }
-        if abs(componentButtonPressProgress - destination) < 0.001 {
-            componentButtonPressAnimationDestination = nil
+        if abs(pointer.componentButtonPressProgress - destination) < 0.001 {
+            pointer.componentButtonPressAnimationDestination = nil
             if destination == 0 {
-                visualPressedComponentButton = nil
+                pointer.visualPressedComponentButton = nil
             }
             invalidateComponentButton(target)
             positionComponentButtonEmoji(target)
             return
         }
-        guard componentButtonPressAnimationDestination != destination else {
+        guard pointer.componentButtonPressAnimationDestination != destination else {
             return
         }
-        componentButtonPressAnimationTask?.cancel()
-        componentButtonPressAnimationDestination = destination
-        let start = componentButtonPressProgress
+        pointer.componentButtonPressAnimationTask?.cancel()
+        pointer.componentButtonPressAnimationDestination = destination
+        let start = pointer.componentButtonPressProgress
         let startTime = ProcessInfo.processInfo.systemUptime
-        componentButtonPressAnimationTask = Task { @MainActor [weak self] in
+        pointer.componentButtonPressAnimationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 let elapsed =
@@ -331,18 +331,18 @@ extension NativeTimelineCanvasView {
                 let progress =
                     MotionEasing
                         .easeOut(linear)
-                self.componentButtonPressProgress =
+                self.pointer.componentButtonPressProgress =
                     start + (destination - start) * progress
                 self.invalidateComponentButton(target)
                 self.positionComponentButtonEmoji(target)
                 if linear >= 1 {
-                    self.componentButtonPressProgress = destination
-                    self.componentButtonPressAnimationDestination = nil
-                    self.componentButtonPressAnimationTask = nil
+                    self.pointer.componentButtonPressProgress = destination
+                    self.pointer.componentButtonPressAnimationDestination = nil
+                    self.pointer.componentButtonPressAnimationTask = nil
                     if destination == 0,
-                       self.visualPressedComponentButton == target
+                       self.pointer.visualPressedComponentButton == target
                     {
-                        self.visualPressedComponentButton = nil
+                        self.pointer.visualPressedComponentButton = nil
                     }
                     self.invalidateComponentButton(target)
                     self.positionComponentButtonEmoji(target)

@@ -40,7 +40,7 @@ func `timeline layout preparation commits a complete update or discards supersed
     coordinator.canvas = canvas
     defer { withExtendedLifetime(canvas) { coordinator.stopObserving() } }
     coordinator.update(parent: timeline, scrollView: scrollView)
-    canvas.suppressesHoverPresentation = true
+    canvas.pointer.suppressesHoverPresentation = true
 
     if changesPresentation {
         model.invalidateTimelinePresentation()
@@ -63,7 +63,7 @@ func `timeline layout preparation commits a complete update or discards supersed
         #expect(coordinator.layoutPreparationTask == nil)
         #expect(coordinator.messageIDs == replacement.map(\.id))
     } else {
-        canvas.suppressesHoverPresentation = false
+        canvas.pointer.suppressesHoverPresentation = false
         await preparation.value
         #expect(coordinator.layoutPreparationTask == nil)
         #expect(coordinator.messageIDs == messages.map(\.id))

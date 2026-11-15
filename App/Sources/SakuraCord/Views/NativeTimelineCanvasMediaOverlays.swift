@@ -104,7 +104,7 @@ extension NativeTimelineCanvasView {
         reconcileInlineVideoOverlays(
             // Created while scrolling so the embed is not blank, but paused
             // until scrolling settles.
-            plays: playsInlineVideos && !suppressesHoverPresentation
+            plays: playsInlineVideos && !pointer.suppressesHoverPresentation
         )
     }
 
@@ -463,7 +463,7 @@ extension NativeTimelineCanvasView {
                 value: contentText.value,
                 framesetter: contentText.framesetter,
                 frame: NativeTimelineTextGeometry.messageContentDrawingFrame(contentFrame),
-                selectionRange: textSelection.scoped(to: identifier, region: .content)?.range,
+                selectionRange: pointer.textSelection.scoped(to: identifier, region: .content)?.range,
                 revealedSpoilerLocations: revealedTextSpoilerLocations(
                     messageID: row.message.id,
                     region: .content,
@@ -523,7 +523,7 @@ extension NativeTimelineCanvasView {
                     value: textRegion.text.value,
                     framesetter: textRegion.text.framesetter,
                     frame: drawingFrame,
-                    selectionRange: textSelection.scoped(to: identifier, region: textRegionID)?.range,
+                    selectionRange: pointer.textSelection.scoped(to: identifier, region: textRegionID)?.range,
                     revealedSpoilerLocations: revealedTextSpoilerLocations(
                         messageID: message.id,
                         region: textRegionID,
@@ -608,7 +608,7 @@ extension NativeTimelineCanvasView {
                 value: textRegion.text.value,
                 framesetter: textRegion.text.framesetter,
                 frame: drawingFrame,
-                selectionRange: textSelection.scoped(to: identifier, region: textRegionID)?.range,
+                selectionRange: pointer.textSelection.scoped(to: identifier, region: textRegionID)?.range,
                 revealedSpoilerLocations: revealedTextSpoilerLocations(
                     messageID: messageID,
                     region: textRegionID,
@@ -635,10 +635,10 @@ extension NativeTimelineCanvasView {
             let opticalInset = (size - DiscordComponentEmojiMetrics.opticalSize(for: size)) / 2
             var frame = box.insetBy(dx: opticalInset, dy: opticalInset)
             // The emoji dips with its pressed button, about the same centre.
-            if button.opacity >= 1, visualPressedComponentButton == NativeTimelineComponentButtonTarget(
+            if button.opacity >= 1, pointer.visualPressedComponentButton == NativeTimelineComponentButtonTarget(
                 messageID: messageID, componentID: button.componentID
             ) {
-                let scale = NativeTimelineComponentButtonVisualState.scale(pressProgress: componentButtonPressProgress)
+                let scale = NativeTimelineComponentButtonVisualState.scale(pressProgress: pointer.componentButtonPressProgress)
                 frame = CGRect(
                     x: button.frame.midX + (frame.minX - button.frame.midX) * scale,
                     y: button.frame.midY + (frame.minY - button.frame.midY) * scale,
@@ -755,7 +755,7 @@ extension NativeTimelineCanvasView {
                 !item.key.role.playsOnHover
                     || isHoverActive(item.key, hoveredGroup: hoveredGroup, hoveredIdentifier: hoveredIdentifier)
             )
-            overlay.setPlaybackSuppressed(suppressesHoverPresentation)
+            overlay.setPlaybackSuppressed(pointer.suppressesHoverPresentation)
             overlay.display(
                 item.image,
                 mediaFrame: localMediaFrame,
@@ -800,7 +800,7 @@ extension NativeTimelineCanvasView {
     /// The rows of the hovered message group. Its avatar sits on the first
     /// row, or the last in bubble layout, and plays while any row is hovered.
     func hoveredGroupIdentifiers() -> Set<NativeMessageTimelineItem.Identifier> {
-        guard let index = hoveredRow ?? hoveredAuthorMessageID.flatMap({ targetID in
+        guard let index = pointer.hoveredRow ?? pointer.hoveredAuthorMessageID.flatMap({ targetID in
             rowIndex(forMessageID: targetID)
         }), items.indices.contains(index) else { return [] }
         guard case let .message(row, _, _) = items[index] else { return [items[index].identifier] }
@@ -828,13 +828,13 @@ extension NativeTimelineCanvasView {
         for (key, overlay) in animatedMediaOverlays where key.role.playsOnHover {
             overlay.setHoverPlaybackEnabled(
                 isHoverActive(key, hoveredGroup: hoveredGroup, hoveredIdentifier: hoveredIdentifier)
-                    && !suppressesHoverPresentation
+                    && !pointer.suppressesHoverPresentation
             )
         }
     }
 
     private var hoveredRowIdentifier: NativeMessageTimelineItem.Identifier? {
-        hoveredRow.flatMap { items.indices.contains($0) ? items[$0].identifier : nil }
+        pointer.hoveredRow.flatMap { items.indices.contains($0) ? items[$0].identifier : nil }
     }
 
     /// An author's avatar plays while any row of its group is hovered;
@@ -1419,7 +1419,7 @@ extension NativeTimelineCanvasView {
         // must not tear down the active players or decoded frames on every
         // momentum tick. A delayed reconciliation commonly lands after
         // scrolling begins.
-        guard allowsScrolling || !suppressesHoverPresentation else { return }
+        guard allowsScrolling || !pointer.suppressesHoverPresentation else { return }
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {

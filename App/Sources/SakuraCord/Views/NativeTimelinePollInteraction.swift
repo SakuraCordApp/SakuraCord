@@ -47,7 +47,7 @@ extension NativeTimelineCanvasView {
     func pollPresentation(for id: MessageID?) -> NativeTimelinePollPresentation {
         guard let id else { return .init() }
         var state = pollStates[id] ?? .init()
-        if !suppressesHoverPresentation, !overlayBlocksInteractions, hoveredPollTarget?.messageID == id {
+        if !pointer.suppressesHoverPresentation, !pointer.overlayBlocksInteractions, hoveredPollTarget?.messageID == id {
             state.hoveredControl = hoveredPollTarget?.control
         }
         if pressedPollTarget?.messageID == id, hoveredPollTarget == pressedPollTarget {

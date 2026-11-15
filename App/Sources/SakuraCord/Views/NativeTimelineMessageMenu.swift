@@ -345,7 +345,7 @@ extension NativeTimelineCanvasView {
 extension NativeTimelineCanvasView {
     override func menu(for event: NSEvent) -> NSMenu? {
         dismissHoverLabel()
-        guard !overlayBlocksInteractions, !glideBlocksPointer else { return nil }
+        guard !pointer.overlayBlocksInteractions, !glideBlocksPointer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         guard case let (index, localPoint)? = rowHit(at: point),
               case let .message(row, _, _) = items[index]

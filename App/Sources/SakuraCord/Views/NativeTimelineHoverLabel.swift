@@ -67,7 +67,7 @@ extension NativeTimelineCanvasView {
 
     private var hoverLabelTarget: NativeTimelineHoverLabelTarget? {
         if let messageID = pointer.hoveredSilentBadgeMessageID { return .silentBadge(messageID) }
-        return hoveredMention.map(NativeTimelineHoverLabelTarget.timestamp)
+        return pointer.hoveredMention.map(NativeTimelineHoverLabelTarget.timestamp)
     }
 
     private func hoverLabelTitle(for target: NativeTimelineHoverLabelTarget) -> String? {

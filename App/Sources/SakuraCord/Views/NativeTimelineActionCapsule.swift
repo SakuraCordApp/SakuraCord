@@ -39,7 +39,7 @@ extension NativeTimelineCanvasView {
             positionActionCapsule(at: index)
             return
         }
-        guard let index = hoveredRow
+        guard let index = pointer.hoveredRow
                 ?? mediaViewerHighlightedMessageID.flatMap({ messageID in
                     rowIndex(forMessageID: messageID)
                 }),

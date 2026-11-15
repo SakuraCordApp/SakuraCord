@@ -2201,14 +2201,14 @@ func `rapid gesture boundary does not restore timeline presentation between swip
     let canvas = try #require(coordinator.canvas)
 
     coordinator.liveScrollTrackingWillBegin()
-    #expect(canvas.suppressesHoverPresentation)
+    #expect(canvas.pointer.suppressesHoverPresentation)
 
     coordinator.liveScrollTrackingDidEnd()
-    #expect(canvas.suppressesHoverPresentation)
+    #expect(canvas.pointer.suppressesHoverPresentation)
     #expect(coordinator.scrollIdleTask != nil)
 
     coordinator.liveScrollTrackingWillBegin()
-    #expect(canvas.suppressesHoverPresentation)
+    #expect(canvas.pointer.suppressesHoverPresentation)
     coordinator.stopObserving()
 }
 

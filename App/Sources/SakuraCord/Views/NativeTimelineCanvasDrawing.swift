@@ -52,7 +52,7 @@ extension NativeTimelineCanvasView {
         if activeInlinePopoverAnchor?.sourceRect() == nil {
             closeInlinePopover()
         }
-        if let selection = textSelection {
+        if let selection = pointer.textSelection {
             let selectionValue = storage.items.firstIndex(where: {
                 $0.identifier == selection.itemIdentifier
             }).flatMap { index -> NSAttributedString? in
@@ -70,8 +70,8 @@ extension NativeTimelineCanvasView {
                 || NSMaxRange(selection.range)
                     > (selectionValue?.length ?? 0)
             {
-                textSelection = nil
-                textSelectionGesture = nil
+                pointer.textSelection = nil
+                pointer.textSelectionGesture = nil
             }
         }
         // Rows laid out at another width no longer match the chips' frames
@@ -113,11 +113,11 @@ extension NativeTimelineCanvasView {
         reconcileBeginningSelectionOverlay()
         reconcileActivityIndicators()
         reconcileSpoilerOverlays()
-        if !suppressesHoverPresentation {
+        if !pointer.suppressesHoverPresentation {
             updateTrackingAreas()
             window?.invalidateCursorRects(for: self)
         }
-        if !suppressesHoverPresentation {
+        if !pointer.suppressesHoverPresentation {
             reconcileAccessibilityProxiesIfActive()
         }
         redrawMovedShortContentSynchronously(
@@ -195,11 +195,11 @@ extension NativeTimelineCanvasView {
             height: max(displayedContentHeight, self.minimumHeight)
         )
         applyDocumentSize(size)
-        if !suppressesHoverPresentation {
+        if !pointer.suppressesHoverPresentation {
             updateTrackingAreas()
             window?.invalidateCursorRects(for: self)
         }
-        if !suppressesHoverPresentation {
+        if !pointer.suppressesHoverPresentation {
             reconcileAccessibilityProxiesIfActive()
         }
         positionAnimatedMediaOverlays()
@@ -220,7 +220,7 @@ extension NativeTimelineCanvasView {
     /// The row under the pointer shows its hover again after content moves
     /// beneath it.
     func refreshHoverPresentation() {
-        if !suppressesHoverPresentation {
+        if !pointer.suppressesHoverPresentation {
             synchronizeHoverWithCurrentPointer()
         }
         reconcileHoverTooltips()
@@ -321,8 +321,8 @@ extension NativeTimelineCanvasView {
         // Bounds changes arrive for every momentum-scroll tick. All teardown
         // and playback suppression below must happen only at the transition
         // into scrolling, never for each tick.
-        guard !suppressesHoverPresentation else { return }
-        suppressesHoverPresentation = true
+        guard !pointer.suppressesHoverPresentation else { return }
+        pointer.suppressesHoverPresentation = true
         finishSendTransitions()
         // Pause native playback once without destroying its presentation.
         // Recreating AVPlayer overlays on each reconciliation
@@ -368,7 +368,7 @@ extension NativeTimelineCanvasView {
                 interval
             )
         }
-        suppressesHoverPresentation = false
+        pointer.suppressesHoverPresentation = false
         updateAvatarPlayback()
         for overlay in animatedMediaOverlays.values {
             overlay.setPlaybackSuppressed(false)
@@ -398,10 +398,10 @@ extension NativeTimelineCanvasView {
         let mediaViewerHighlightedMessageID = isBlocked ? mediaViewerHighlightedMessageID : nil
         let highlightChanged = self.mediaViewerHighlightedMessageID
             != mediaViewerHighlightedMessageID
-        guard overlayBlocksInteractions != isBlocked || highlightChanged else {
+        guard pointer.overlayBlocksInteractions != isBlocked || highlightChanged else {
             return
         }
-        overlayBlocksInteractions = isBlocked
+        pointer.overlayBlocksInteractions = isBlocked
         self.mediaViewerHighlightedMessageID =
             mediaViewerHighlightedMessageID
         if isBlocked {
@@ -902,33 +902,33 @@ extension NativeTimelineCanvasView {
             || item.messageID == editing.messageID
             || layouts[index].pollLayout != nil
             || hoveredPollTarget?.messageID == item.messageID
-            || hoveredRow == index
+            || pointer.hoveredRow == index
             || mediaViewerHighlightedMessageID == item.messageID
-            || hoveredCompactTimestampRow == index
-            || hoveredAuthorMessageID == item.messageID
-            || hoveredServerTagMessageID == item.messageID
+            || pointer.hoveredCompactTimestampRow == index
+            || pointer.hoveredAuthorMessageID == item.messageID
+            || pointer.hoveredServerTagMessageID == item.messageID
             || serverTagCardPresentation?.messageID == item.messageID
             || pointer.hoveredCommandPillMessageID == item.messageID
-            || hoveredMention?.itemIdentifier == item.identifier
-            || hoveredTextLink?.itemIdentifier == item.identifier
-            || hoveredTextSpoiler?.itemIdentifier == item.identifier
+            || pointer.hoveredMention?.itemIdentifier == item.identifier
+            || pointer.hoveredTextLink?.itemIdentifier == item.identifier
+            || pointer.hoveredTextSpoiler?.itemIdentifier == item.identifier
             || pointer.textSpoilerHoverFades.keys.contains { $0.itemIdentifier == item.identifier }
-            || hoveredComponentButton?.messageID == item.messageID
+            || pointer.hoveredComponentButton?.messageID == item.messageID
             || activeComponentChoiceTarget?.messageID == item.messageID
-            || visualPressedComponentButton?.messageID == item.messageID
+            || pointer.visualPressedComponentButton?.messageID == item.messageID
             || pointer.componentButtonHoverFades.keys.contains { $0.messageID == item.messageID }
             || pointer.fileCardFinishFades.keys.contains { $0.messageID == item.messageID }
-            || hoveredForwardedSourceMessageID == item.messageID
+            || pointer.hoveredForwardedSourceMessageID == item.messageID
             || pointer.hoveredThreadMessageID == item.messageID
-            || hoveredFooterAction?.messageID == item.messageID
+            || pointer.hoveredFooterAction?.messageID == item.messageID
             || isSuppressedToggleHovered(item)
-            || textSelection?.itemIdentifier == item.identifier
+            || pointer.textSelection?.itemIdentifier == item.identifier
             || !revealState.isEmpty
     }
 
     private func isSuppressedToggleHovered(_ item: NativeMessageTimelineItem) -> Bool {
         guard case let .suppressedMessages(group) = item else { return false }
-        return hoveredFooterAction == .init(messageID: group.id, kind: .suppressedToggle)
+        return pointer.hoveredFooterAction == .init(messageID: group.id, kind: .suppressedToggle)
     }
 
     private func drawInteractiveTimelineRow(
@@ -946,30 +946,30 @@ extension NativeTimelineCanvasView {
             in: rowFrame,
             model: model,
             interaction: NativeTimelineRowInteraction(
-                isHovered: hoveredRow == index || presentsViewerHighlight,
-                showsCompactTimestamp: hoveredCompactTimestampRow == index,
-                isAuthorHovered: hoveredAuthorMessageID == item.messageID,
-                isServerTagHovered: hoveredServerTagMessageID == item.messageID || serverTagCardPresentation?.messageID == item.messageID,
+                isHovered: pointer.hoveredRow == index || presentsViewerHighlight,
+                showsCompactTimestamp: pointer.hoveredCompactTimestampRow == index,
+                isAuthorHovered: pointer.hoveredAuthorMessageID == item.messageID,
+                isServerTagHovered: pointer.hoveredServerTagMessageID == item.messageID || serverTagCardPresentation?.messageID == item.messageID,
                 isCommandPillHovered: pointer.hoveredCommandPillMessageID == item.messageID,
-                hoveredMention: hoveredMention?.itemIdentifier == item.identifier ? hoveredMention : nil,
-                hoveredTextLink: hoveredTextLink?.itemIdentifier == item.identifier ? hoveredTextLink : nil,
+                hoveredMention: pointer.hoveredMention?.itemIdentifier == item.identifier ? pointer.hoveredMention : nil,
+                hoveredTextLink: pointer.hoveredTextLink?.itemIdentifier == item.identifier ? pointer.hoveredTextLink : nil,
                 textSpoilerHover: textSpoilerHoverProgress(in: item.identifier),
-                hoveredComponentButton: hoveredComponentButton?.messageID == item.messageID ? hoveredComponentButton : nil,
+                hoveredComponentButton: pointer.hoveredComponentButton?.messageID == item.messageID ? pointer.hoveredComponentButton : nil,
                 activeComponentChoiceTarget: activeComponentChoiceTarget?.messageID == item.messageID ? activeComponentChoiceTarget : nil,
-                pressedComponentButton: visualPressedComponentButton?.messageID == item.messageID ? visualPressedComponentButton : nil,
-                componentButtonPressProgress: visualPressedComponentButton?.messageID == item.messageID ? componentButtonPressProgress : 0,
+                pressedComponentButton: pointer.visualPressedComponentButton?.messageID == item.messageID ? pointer.visualPressedComponentButton : nil,
+                componentButtonPressProgress: pointer.visualPressedComponentButton?.messageID == item.messageID ? pointer.componentButtonPressProgress : 0,
                 fileCardHoverProgress: fileCardHoverProgress(in: item.messageID),
                 fileCardFinishProgress: fileCardFinishProgress(in: item.messageID),
-                isForwardedSourceHovered: hoveredForwardedSourceMessageID == item.messageID,
+                isForwardedSourceHovered: pointer.hoveredForwardedSourceMessageID == item.messageID,
                 threadCardInteraction: threadCardInteraction(forMessageID: item.messageID),
-                isEphemeralDismissHovered: hoveredFooterAction?.messageID == item.messageID && hoveredFooterAction?.kind == .ephemeralDismiss,
-                isTranslationActionHovered: hoveredFooterAction?.messageID == item.messageID && hoveredFooterAction?.kind == .translation,
-                hoveredDeliveryAction: hoveredFooterAction?.messageID == item.messageID ? hoveredFooterAction?.kind : nil,
+                isEphemeralDismissHovered: pointer.hoveredFooterAction?.messageID == item.messageID && pointer.hoveredFooterAction?.kind == .ephemeralDismiss,
+                isTranslationActionHovered: pointer.hoveredFooterAction?.messageID == item.messageID && pointer.hoveredFooterAction?.kind == .translation,
+                hoveredDeliveryAction: pointer.hoveredFooterAction?.messageID == item.messageID ? pointer.hoveredFooterAction?.kind : nil,
                 isSuppressedToggleHovered: isSuppressedToggleHovered(item),
                 hoveredReactionID: hoveredReactionID(inMessageAt: index),
                 isAddReactionHovered: isAddReactionHovered(inMessageAt: index)
             ),
-            textSelection: textSelection,
+            textSelection: pointer.textSelection,
             revealedTextSpoilerState: revealState,
             spoilerRevealStore: spoilerRevealStore,
             pollPresentation: pollPresentation(for: item.messageID),
@@ -1013,7 +1013,7 @@ extension NativeTimelineCanvasView {
         }
         let cached = cachedBitmap(for: item, width: rowFrame.width)
         let drawsDirectly = NativeTimelineScrollingRenderPolicy.usesDirectPainter(
-            isScrolling: suppressesHoverPresentation || AppScrollActivity.isActive,
+            isScrolling: pointer.suppressesHoverPresentation || AppScrollActivity.isActive,
             hasCachedBitmap: cached != nil,
             estimatedBitmapCost: Self.estimatedBitmapCost(
                 width: rowFrame.width,

@@ -24,22 +24,22 @@ extension NativeTimelineCanvasView {
         finishRowMotions()
         removeActionCapsule()
         setTextSelection(nil)
-        textSelectionGesture = nil
-        hoveredRow = nil
-        hoveredCompactTimestampRow = nil
+        pointer.textSelectionGesture = nil
+        pointer.hoveredRow = nil
+        pointer.hoveredCompactTimestampRow = nil
         setHoveredMention(nil)
         setHoveredTextLink(nil)
         setHoveredTextSpoiler(nil)
         setHoveredCodeBlock(nil)
         setHoveredComponentButton(nil)
-        pressedCodeBlockCopyButton = nil
-        pressedComponentButton = nil
+        pointer.pressedCodeBlockCopyButton = nil
+        pointer.pressedComponentButton = nil
         pressedActivationTarget = nil
-        visualPressedComponentButton = nil
-        componentButtonPressProgress = 0
-        componentButtonPressAnimationDestination = nil
-        componentButtonPressAnimationTask?.cancel()
-        componentButtonPressAnimationTask = nil
+        pointer.visualPressedComponentButton = nil
+        pointer.componentButtonPressProgress = 0
+        pointer.componentButtonPressAnimationDestination = nil
+        pointer.componentButtonPressAnimationTask?.cancel()
+        pointer.componentButtonPressAnimationTask = nil
 
         editing.messageID = row.id
         editing.rowIndex = index

@@ -14,13 +14,13 @@ extension NativeTimelineCanvasView {
     /// while a workspace motion moves the rows under a still pointer, which
     /// hit-tested their text on every frame. Each resumes hover once done.
     var tracksHover: Bool {
-        !suppressesHoverPresentation && !WorkspaceLayoutMotion.isMoving
+        !pointer.suppressesHoverPresentation && !WorkspaceLayoutMotion.isMoving
     }
 
     override func updateTrackingAreas() {
         guard tracksHover,
               !glideBlocksPointer,
-              !overlayBlocksInteractions
+              !pointer.overlayBlocksInteractions
         else {
             pointer.removeTrackingAreas(from: self)
             return
@@ -38,7 +38,7 @@ extension NativeTimelineCanvasView {
             userInfo: ["nativeTimelineTrackingKind": "canvas"]
         )
         addTrackingArea(tracking)
-        self.tracking = tracking
+        pointer.trackingArea = tracking
         installVisibleRowTrackingAreas()
         super.updateTrackingAreas()
     }
@@ -46,9 +46,9 @@ extension NativeTimelineCanvasView {
     override func resetCursorRects() {
         removeAllToolTips()
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        guard !suppressesHoverPresentation,
+        guard !pointer.suppressesHoverPresentation,
               !glideBlocksPointer,
-              !overlayBlocksInteractions
+              !pointer.overlayBlocksInteractions
         else { return }
         super.resetCursorRects()
         guard var index = rowIndex(at: max(0, visibleRect.minY)) else {
@@ -222,7 +222,7 @@ extension NativeTimelineCanvasView {
             updateHoverTargets(at: nil)
             return
         }
-        guard WindowModalCoordinator.allowsInput(for: self), tracksHover, !overlayBlocksInteractions else { return }
+        guard WindowModalCoordinator.allowsInput(for: self), tracksHover, !pointer.overlayBlocksInteractions else { return }
         updateHoverTargets(at: convert(event.locationInWindow, from: nil), row: row)
     }
 
@@ -244,7 +244,7 @@ extension NativeTimelineCanvasView {
     func suppressPointerInteractions() {
         // A press begun before the rows moved must not activate on release.
         clearPointerTargets()
-        textSelectionGesture = nil
+        pointer.textSelectionGesture = nil
         if let press = voiceMessagePress {
             voiceMessagePress = nil
             // A scrub paused playback, which its release would resume.
@@ -266,14 +266,14 @@ extension NativeTimelineCanvasView {
 
     override func mouseDown(with event: NSEvent) {
         pointer.didForceClickLookup = false
-        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
+        guard !pointer.overlayBlocksInteractions, !glideBlocksPointer else { return }
         window?.makeFirstResponder(self)
         guard event.buttonNumber == 0 else { return }
         dismissHoverLabel()
         let point = convert(event.locationInWindow, from: nil)
         pressedActivationTarget = nil
         if beginVoiceMessagePress(at: point) {
-            textSelectionGesture = nil
+            pointer.textSelectionGesture = nil
             setTextSelection(nil)
             return
         }
@@ -281,15 +281,15 @@ extension NativeTimelineCanvasView {
             setHoveredPollTarget(hit.target)
             pressedPollTarget = hit.target
             setNeedsDisplay(visibleRect)
-            textSelectionGesture = nil
+            pointer.textSelectionGesture = nil
             setTextSelection(nil)
             return
         }
         if let target = codeBlockCopyButtonHit(at: point) {
-            pressedCodeBlockCopyButton = target
+            pointer.pressedCodeBlockCopyButton = target
             setHoveredCodeBlock(target)
-            textSelectionGesture = nil
-            didDragTextSelection = false
+            pointer.textSelectionGesture = nil
+            pointer.didDragTextSelection = false
             setTextSelection(nil)
             return
         }
@@ -297,7 +297,7 @@ extension NativeTimelineCanvasView {
            !hit.kind.isDisabled
         {
             setHoveredComponentButton(hit.target)
-            pressedComponentButton = hit.target
+            pointer.pressedComponentButton = hit.target
             animateComponentButtonPress(
                 hit.target,
                 to: 1
@@ -306,8 +306,8 @@ extension NativeTimelineCanvasView {
         }
         pressedActivationTarget = pointerActivationTarget(at: point)
         if pressedActivationTarget?.supportsTextSelection == false {
-            textSelectionGesture = nil
-            didDragTextSelection = false
+            pointer.textSelectionGesture = nil
+            pointer.didDragTextSelection = false
             setTextSelection(nil)
             return
         }
@@ -318,18 +318,18 @@ extension NativeTimelineCanvasView {
             clampsToText: true,
             requiresPointInTextContainer: true
         ) else {
-            textSelectionGesture = nil
-            didDragTextSelection = false
+            pointer.textSelectionGesture = nil
+            pointer.didDragTextSelection = false
             setTextSelection(nil)
             return
         }
-        textSelectionGesture = NativeTimelineTextSelectionGesture(
+        pointer.textSelectionGesture = NativeTimelineTextSelectionGesture(
             itemIdentifier: candidate.itemIdentifier,
             region: candidate.region,
             anchor: candidate.caret,
             initialPoint: point
         )
-        didDragTextSelection = false
+        pointer.didDragTextSelection = false
         if event.clickCount >= 3 {
             setTextSelection(NativeTimelineTextSelection(
                 itemIdentifier: candidate.itemIdentifier,
@@ -375,18 +375,18 @@ extension NativeTimelineCanvasView {
 
     override func mouseDragged(with event: NSEvent) {
         guard !pointer.didForceClickLookup else { return }
-        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
+        guard !pointer.overlayBlocksInteractions, !glideBlocksPointer else { return }
         if dragVoiceMessagePress(to: convert(event.locationInWindow, from: nil)) { return }
         if pressedPollTarget != nil {
             setHoveredPollTarget(pollPointerHit(at: convert(event.locationInWindow, from: nil))?.target)
             return
         }
-        if pressedCodeBlockCopyButton != nil {
+        if pointer.pressedCodeBlockCopyButton != nil {
             let point = convert(event.locationInWindow, from: nil)
             setHoveredCodeBlock(codeBlockPointerHit(at: point))
             return
         }
-        if let pressedComponentButton {
+        if let pressedComponentButton = pointer.pressedComponentButton {
             let point = convert(event.locationInWindow, from: nil)
             let hit = componentButtonPointerHit(at: point)
             setHoveredComponentButton(hit?.target)
@@ -401,14 +401,14 @@ extension NativeTimelineCanvasView {
             setHoveredThreadMessageID(threadCardPointerHit(at: convert(event.locationInWindow, from: nil)))
             return
         }
-        guard let gesture = textSelectionGesture else {
+        guard let gesture = pointer.textSelectionGesture else {
             super.mouseDragged(with: event)
             return
         }
         let point = convert(event.locationInWindow, from: nil)
-        if !didDragTextSelection {
+        if !pointer.didDragTextSelection {
             guard gesture.hasExceededDragThreshold(at: point) else { return }
-            didDragTextSelection = true
+            pointer.didDragTextSelection = true
         }
         _ = autoscroll(with: event)
         guard let candidate = timelineTextCaret(
@@ -436,7 +436,7 @@ extension NativeTimelineCanvasView {
             pointer.didForceClickLookup = false
             return
         }
-        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
+        guard !pointer.overlayBlocksInteractions, !glideBlocksPointer else { return }
         if endVoiceMessagePress(at: convert(event.locationInWindow, from: nil)) { return }
         if let pressed = pressedPollTarget {
             pressedPollTarget = nil
@@ -447,10 +447,10 @@ extension NativeTimelineCanvasView {
             return
         }
         if finishCodeBlockCopyClick(event) || finishComponentButtonClick(event) { return }
-        if textSelectionGesture != nil {
-            let consumesClick = didDragTextSelection || (textSelection?.range.length ?? 0) > 0
-            textSelectionGesture = nil
-            didDragTextSelection = false
+        if pointer.textSelectionGesture != nil {
+            let consumesClick = pointer.didDragTextSelection || (pointer.textSelection?.range.length ?? 0) > 0
+            pointer.textSelectionGesture = nil
+            pointer.didDragTextSelection = false
             if consumesClick {
                 pressedActivationTarget = nil
                 return
@@ -460,10 +460,10 @@ extension NativeTimelineCanvasView {
     }
 
     private func finishCodeBlockCopyClick(_ event: NSEvent) -> Bool {
-        if let pressedCodeBlockCopyButton {
+        if let pressedCodeBlockCopyButton = pointer.pressedCodeBlockCopyButton {
             let point = convert(event.locationInWindow, from: nil)
             let released = codeBlockCopyButtonHit(at: point)
-            self.pressedCodeBlockCopyButton = nil
+            pointer.pressedCodeBlockCopyButton = nil
             setHoveredCodeBlock(codeBlockPointerHit(at: point))
             if released?.itemIdentifier
                     == pressedCodeBlockCopyButton.itemIdentifier,
@@ -480,11 +480,11 @@ extension NativeTimelineCanvasView {
     }
 
     private func finishComponentButtonClick(_ event: NSEvent) -> Bool {
-        if let pressedComponentButton {
+        if let pressedComponentButton = pointer.pressedComponentButton {
             let point = convert(event.locationInWindow, from: nil)
             let hit = componentButtonPointerHit(at: point)
             setHoveredComponentButton(hit?.target)
-            self.pressedComponentButton = nil
+            pointer.pressedComponentButton = nil
             animateComponentButtonPress(
                 pressedComponentButton,
                 to: 0
@@ -880,7 +880,7 @@ extension NativeTimelineCanvasView {
         ) { [weak self] event in
             guard let self,
                   event.window === self.window,
-                  !self.overlayBlocksInteractions,
+                  !self.pointer.overlayBlocksInteractions,
                   !self.glideBlocksPointer
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
@@ -969,7 +969,7 @@ extension NativeTimelineCanvasView {
                         ]
                     )
                     addTrackingArea(area)
-                    rowTrackingAreas.append(area)
+                    pointer.rowTrackingAreas.append(area)
                 }
             }
             index += 1
@@ -1030,7 +1030,7 @@ extension NativeTimelineCanvasView {
             updateHoverTargets(at: nil)
             return
         }
-        guard WindowModalCoordinator.allowsInput(for: self), !overlayBlocksInteractions, tracksHover,
+        guard WindowModalCoordinator.allowsInput(for: self), !pointer.overlayBlocksInteractions, tracksHover,
               window?.isKeyWindow == true
         else { return }
         updateHoverTargets(at: currentMouseLocationInCanvas(), measuresVoiceDuration: false)

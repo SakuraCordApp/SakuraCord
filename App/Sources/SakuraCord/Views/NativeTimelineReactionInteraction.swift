@@ -71,7 +71,7 @@ extension NativeTimelineCanvasView {
     }
 
     func rowIndex(for target: NativeTimelineReactionPointerTarget) -> Int? {
-        if let hoveredRow,
+        if let hoveredRow = pointer.hoveredRow,
            items.indices.contains(hoveredRow),
            items[hoveredRow].messageID == target.messageID
         {

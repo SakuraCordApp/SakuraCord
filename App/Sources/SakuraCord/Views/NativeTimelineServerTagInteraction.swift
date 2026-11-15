@@ -11,9 +11,9 @@ extension NativeTimelineCanvasView {
     }
 
     func setHoveredServerTagMessageID(_ value: MessageID?) {
-        guard hoveredServerTagMessageID != value else { return }
-        let old = hoveredServerTagMessageID
-        hoveredServerTagMessageID = value
+        guard pointer.hoveredServerTagMessageID != value else { return }
+        let old = pointer.hoveredServerTagMessageID
+        pointer.hoveredServerTagMessageID = value
         for messageID in [old, value].compactMap({ $0 }) { invalidateVisibleMessageRow(messageID: messageID) }
     }
 

@@ -238,7 +238,7 @@ extension NativeTimelineCanvasView {
             },
             bubbleRegion: layout.bubbleRegion,
             model: model,
-            isHovered: hoveredRow == index || mediaViewerHighlightedMessageID == item.messageID
+            isHovered: pointer.hoveredRow == index || mediaViewerHighlightedMessageID == item.messageID
         )
     }
 
