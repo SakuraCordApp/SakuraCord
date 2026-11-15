@@ -18,10 +18,7 @@ public extension DiscordRESTProvider {
         }
         // The first-party channel pin saves a server override through the bulk
         // route, unlike its per-guild route for DMs.
-        try await updateGuildNotificationSettings(
-            guildID: guildID,
-            settings: ["channel_overrides": .object([channelID.description: .object(override)])]
-        )
+        try await updateGuildChannelOverride(guildID: guildID, channelID: channelID, override: override)
     }
 
     internal func updateGuildNotificationSettings(
@@ -79,12 +76,10 @@ public extension DiscordRESTProvider {
         categoryID: ChannelID,
         level: MessageNotificationLevel
     ) async throws {
-        try await updateCategoryNotificationSettings(
+        try await updateGuildChannelOverride(
             guildID: guildID,
-            categoryID: categoryID,
-            override: [
-                "message_notifications": .number(Double(level.rawValue))
-            ]
+            channelID: categoryID,
+            override: Self.notificationLevelSettings(level)
         )
     }
 
@@ -94,9 +89,9 @@ public extension DiscordRESTProvider {
         isMuted: Bool,
         until: Date?
     ) async throws {
-        try await updateCategoryNotificationSettings(
+        try await updateGuildChannelOverride(
             guildID: guildID,
-            categoryID: categoryID,
+            channelID: categoryID,
             override: Self.muteSettings(isMuted: isMuted, until: until)
         )
     }
@@ -106,25 +101,26 @@ public extension DiscordRESTProvider {
         categoryID: ChannelID,
         isCollapsed: Bool
     ) async throws {
-        try await updateCategoryNotificationSettings(
+        try await updateGuildChannelOverride(
             guildID: guildID,
-            categoryID: categoryID,
+            channelID: categoryID,
             override: ["collapsed": .bool(isCollapsed)]
         )
     }
 
-    internal func updateCategoryNotificationSettings(
+    /// Server channel pins and category overrides, including the collapsed
+    /// state, use the current bulk user-guild settings route, scoped to
+    /// exactly one guild and channel.
+    internal func updateGuildChannelOverride(
         guildID: GuildID,
-        categoryID: ChannelID,
+        channelID: ChannelID,
         override: [String: JSONValue]
     ) async throws {
-        // Category overrides and their collapsed state use the current bulk
-        // user-guild settings route, scoped to exactly one guild/category.
         try await updateGuildNotificationSettings(
             guildID: guildID,
             settings: [
                 "channel_overrides": .object([
-                    categoryID.description: .object(override)
+                    channelID.description: .object(override)
                 ])
             ]
         )
@@ -138,9 +134,7 @@ public extension DiscordRESTProvider {
         try await updateChannelNotificationSettings(
             guildID: guildID,
             channelID: channelID,
-            override: [
-                "message_notifications": .number(Double(level.rawValue))
-            ]
+            override: Self.notificationLevelSettings(level)
         )
     }
 
@@ -150,9 +144,7 @@ public extension DiscordRESTProvider {
     ) async throws {
         try await updateGuildNotificationSettings(
             guildID: guildID,
-            settings: [
-                "message_notifications": .number(Double(level.rawValue))
-            ]
+            settings: Self.notificationLevelSettings(level)
         )
     }
 
@@ -197,6 +189,10 @@ public extension DiscordRESTProvider {
             guildID: guildID,
             settings: [setting.key: setting.value]
         )
+    }
+
+    internal static func notificationLevelSettings(_ level: MessageNotificationLevel) -> [String: JSONValue] {
+        ["message_notifications": .number(Double(level.rawValue))]
     }
 
     /// A mute change: `muted`, with `mute_config` holding a timed mute's end
