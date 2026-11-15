@@ -45,7 +45,7 @@ showing controls. Profile saving is staged: keep failed or newer edits without
 repeating acknowledged writes. File selection/cropping does not save a profile.
 Widget assets use their allocated upload path before references enter the draft.
 
-Personal widgets require their entitlement and rollout assignment. **Game widgets
+Personal widgets require their entitlement and [rollout assignment](SESSION.md#experiments). **Game widgets
 do not inherit the personal-widget Nitro requirement.** Use the eligibility model
 and widget type; do not apply one blanket gate to all widgets. Owned collectibles,
 guild permissions and product-specific restrictions remain independent checks.

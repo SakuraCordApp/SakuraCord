@@ -10,6 +10,7 @@
 | Pending credentials | [AppModelPendingAuthentication.swift](../../App/Sources/SakuraCord/Models/AppModelPendingAuthentication.swift) | [DiscordSessionAuthenticatorTests.swift](../../App/Tests/SakuraCordAppTests/DiscordSessionAuthenticatorTests.swift); [AuthenticationInstallationContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/AuthenticationInstallationContractTests.swift) |
 | Main Gateway | [GatewaySession.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/GatewaySession.swift); [payload builders](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordGatewaySupport.swift) | [GatewaySessionTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GatewaySessionTests.swift); [GatewayCodecTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GatewayCodecTests.swift); [GatewayBacklogTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GatewayBacklogTests.swift) |
 | Service sign-in | [DiscordRESTOAuth2Authorization.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTOAuth2Authorization.swift); [AppModelIssueReports.swift](../../App/Sources/SakuraCord/Models/AppModelIssueReports.swift) | [OAuth2AuthorizationContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/OAuth2AuthorizationContractTests.swift) |
+| Experiments | [DiscordExperiments.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordExperiments.swift) | [DiscordExperimentsTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DiscordExperimentsTests.swift) |
 | Diagnostics | [DiscordAPIDiagnostics.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordAPIDiagnostics.swift); [DiscordDiagnosticSanitizer.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordDiagnosticSanitizer.swift) | [DiscordAPIDiagnosticsTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DiscordAPIDiagnosticsTests.swift); [DiagnosticsSettingsTests.swift](../../App/Tests/SakuraCordAppTests/DiagnosticsSettingsTests.swift) |
 
 ## Client identity and bootstrap
@@ -27,6 +28,68 @@ are hydrated from READY/READY_SUPPLEMENTAL, without a cold
 shape as well as flat DTOs, and integer/string permission values. Partial events
 preserve omitted collections. Resuming a session preserves its established state;
 a fresh READY refreshes the authoritative snapshot with pending intent overlaid.
+
+### Experiments
+
+READY's `experiments`, `guild_experiments` and `apex_experiments` are the
+account's experiment snapshot. Each READY replaces it and disconnect clears it;
+the session makes no `/experiments` request (the unauthenticated pre-login reads
+under [Authentication](#authentication) serve only installation identity). An
+experiment is identified by MurmurHash3 x86 32-bit (seed 0, UTF-8, unsigned) of
+its name. Entries are positional; an unreadable entry is dropped and no shape
+fails READY. A missing experiment, or a not-eligible (`-1`) bucket, is off.
+
+- **User:** `[hash, revision, bucket, override, population, hash_result,
+  aa_mode, trigger_debugging, holdout_name, holdout_revision, holdout_bucket]`.
+  Discord evaluates these server-side; the client reads `bucket`. `override` is
+  `0` when overridden and `-1` otherwise.
+- **Apex:** `{assignments: {<unit type>: {<unit id>: {evaluation_id,
+  assignments: [[hash, variant, flags, revision, tracked_variant, config], …]}}}}`,
+  where only the first four fields are always present. SakuraCord reads the user
+  unit (type `1`, the READY user); type `2` is the installation. Flags are
+  IsOverride `1`, ExposureTracking `2`, Dependent `4`, UseAsEligibility `8` and
+  IsAppLaunch `16`. A UseAsEligibility assignment yields the experiment's
+  default, so it enables no variant. The personal-widget gate
+  (`2026-07-personal-widget`) enables widgets for variants `1` and `2`; `2`
+  also shows the create entry point.
+- **Guild:** `[hash, hash_key, revision, populations, overrides,
+  overrides_formatted, holdout_name, holdout_bucket, aa_mode,
+  trigger_debugging]`. A population is `[[[bucket, [{s, e}, …]], …], [[filter
+  hash, [[key hash, value], …]], …]]`; `overrides` is `[{b: bucket, k: [guild
+  id, …]}]` and `overrides_formatted` is a list of population lists.
+
+A guild's bucket is evaluated in this order:
+
+1. A per-guild `overrides` entry wins; bucket `-1` means not eligible.
+2. Position is `murmur3("<hash_key ?? name>:<guild id>") % 10000`.
+3. Each `overrides_formatted` group, then the rollout `populations`: the first
+   population whose filters all pass gives the bucket whose half-open `[s, e)`
+   range holds the position, or control `0`. A `-1` there, or no passing
+   population, gives nothing and evaluation moves to the next group. A formatted
+   override's bucket is final.
+4. For a rollout bucket only, when `holdout_name` names a different experiment
+   and the guild's bucket in it equals `holdout_bucket`, the guild is not in
+   this experiment.
+
+Filters, keyed by the hash of their name, are all required. Range bounds are
+`min_id`/`max_id`, inclusive, with a missing bound open.
+
+| Filter | Passes when |
+| --- | --- |
+| `guild_ids` | The `guild_ids` list holds the guild. |
+| `guild_id_range` | The guild ID is in range. |
+| `guild_age_range_days` | Whole days since the guild's snowflake time are in range. |
+| `guild_member_count_range` | The known member count is in range; an unknown count fails. |
+| `guild_has_feature` | The guild has any listed feature (the first value, whatever its key). |
+| `guild_hub_types` | The guild's hub type is listed (first value). |
+| `guild_has_vanity_url` | Having a vanity URL equals the first value. |
+| `guild_in_range_by_hash` | `(2 × murmur3("<hash_key>:<guild id>")) % 10000 < target`; the official client doubles the unsigned hash, and a missing target fails. |
+| Anything else | Always (the official client skips filters it does not know). |
+
+These rules match the official client's experiment store, web build 673869,
+read on 15 November 2026 against a live READY. The built-in `/schedule` has no
+experiment gate there; it is offered in DMs and wherever the account has
+`SEND_MESSAGES`.
 
 ## Authentication
 

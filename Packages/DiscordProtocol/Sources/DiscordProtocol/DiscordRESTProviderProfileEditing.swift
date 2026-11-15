@@ -89,8 +89,7 @@ public extension DiscordRESTProvider {
         if let profileStatusSettings {
             presentation.customStatus = DiscordSettingsProto.customStatus(in: profileStatusSettings)?.displayText
         }
-        var eligibility = profileApexAssignments?.widgetEligibility(for: user)
-            ?? ProfileWidgetEligibility(hasFullNitro: user.premiumType == DiscordPremiumType.nitro, hasPersonalWidgetAccess: false)
+        var eligibility = experiments.widgetEligibility(for: user)
         eligibility.showsDeveloperWidgets = profileDeveloperMode
         var mainDTO = response.profile
         mainDTO.guildMember = nil

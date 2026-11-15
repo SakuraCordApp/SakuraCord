@@ -11,7 +11,7 @@ public extension DiscordRESTProvider {
     func uploadProfileWidgetImage(fileURL: URL, filename: String, contentType: String) async throws -> ProfileWidgetImage {
         let anonymisesNames = await anonymisesUploadFilenames()
         guard let user = currentUser else { throw ChatProviderError.unauthenticated }
-        guard profileApexAssignments?.widgetEligibility(for: user).canEditPersonalWidget == true else {
+        guard experiments.widgetEligibility(for: user).canEditPersonalWidget else {
             throw ChatProviderError.invalidRequest("Personal widgets require Nitro and early access.")
         }
         guard fileURL.isFileURL, !filename.isEmpty,

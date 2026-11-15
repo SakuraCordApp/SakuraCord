@@ -203,7 +203,7 @@ extension DiscordRESTProvider {
         currentAccountDetails = nil
         currentAuthSessionIDHash = nil
         accountInformationRevision = UUID()
-        profileApexAssignments = nil
+        experiments = DiscordExperiments()
         pendingStatusEditConnectionClosed()
         resetProfileEditingState()
         derivedCacheGeneration &+= 1

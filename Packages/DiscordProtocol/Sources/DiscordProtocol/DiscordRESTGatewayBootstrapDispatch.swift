@@ -151,7 +151,7 @@ extension DiscordRESTProvider {
         await loadStartupSearchCaches()
         cachedBlockedOrIgnoredUserIDs = ready.blockedOrIgnoredUserIDs
         adoptReadyRelationships(ready.relationships)
-        profileApexAssignments = ready.apexExperiments
+        experiments = ready.experiments
         resetProfileEditingState()
     }
 
