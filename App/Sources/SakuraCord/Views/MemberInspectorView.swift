@@ -113,30 +113,6 @@ struct MemberListLoadingSkeleton: View {
     }
 }
 
-private struct MemberSectionHeader: View {
-    let section: MemberSection
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(6)) {
-            if case .role = section.id {
-                RoleColorIndicator(colorHex: section.colorHex, size: InterfaceScale.metric(8))
-            }
-            Text("\(section.title) — \(section.totalCount)")
-                .font(.interface(.body).weight(.semibold))
-                .foregroundStyle(headerColor)
-        }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, InterfaceScale.metric(10))
-            .padding(.top, InterfaceScale.metric(12))
-            .padding(.bottom, InterfaceScale.metric(5))
-    }
-
-    private var headerColor: Color {
-        guard case .role = section.id else { return .secondary }
-        return SakuraCordAccentColor.color(forRoleColorHex: section.colorHex)
-    }
-}
-
 struct MemberRow: View {
     @Environment(\.roleColorDisplay) private var roleColorDisplay
     @Environment(\.profileCosmeticPolicy) private var cosmeticPolicy
