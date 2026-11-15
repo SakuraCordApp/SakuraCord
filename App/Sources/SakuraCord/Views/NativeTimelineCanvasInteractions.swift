@@ -513,4 +513,58 @@ extension NativeTimelineCanvasView {
             alert.runModal()
         }
     }
+
+    func activateLinkedImage(
+        _ region: NativeTimelineRowLayout.LinkedImageRegion,
+        in message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        if let presentation = MediaViewerPlan.linkedImages(
+            in: message,
+            selectedReferenceID: region.reference.id
+        ) {
+            model?.mediaViewerPresentation = mediaViewerPresentation(presentation, rowIndex: rowIndex)
+        } else {
+            NSWorkspace.shared.open(region.reference.url)
+        }
+        return true
+    }
+
+    func activateAttachment(
+        _ attachment: Attachment,
+        in message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        if NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore) {
+            reveal(.attachment(messageID: message.id, attachmentID: attachment.id), rowIndex: rowIndex)
+        } else if !openAttachmentInViewer(attachment, message: message, rowIndex: rowIndex) {
+            NSWorkspace.shared.open(attachment.url)
+        }
+        return true
+    }
+
+    func activateEmbedMedia(
+        _ region: NativeTimelineRowLayout.EmbedRegion,
+        in message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        if openEmbedMediaInViewer(id: region.embedID, message: message, rowIndex: rowIndex) { return true }
+        guard let url = region.mediaURL else { return false }
+        NSWorkspace.shared.open(url)
+        return true
+    }
+
+    func activateComponentButton(
+        _ region: NativeTimelineComponentLayout.ButtonRegion,
+        message: Message
+    ) -> Bool {
+        guard !region.isDisabled else { return false }
+        if let url = region.url {
+            return MessageLinkActivator.activate(url, model: model)
+        }
+        guard let customID = region.customID else { return false }
+        if model?.presentIssueReport(forComponent: customID, on: message) == true { return true }
+        actions?.submitComponent(message, customID, .button, [])
+        return true
+    }
 }

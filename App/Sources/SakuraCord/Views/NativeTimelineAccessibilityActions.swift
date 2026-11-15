@@ -2,43 +2,6 @@ import AppKit
 import SakuraCordModels
 
 extension NativeTimelineCanvasView {
-    func appendComponentMediaAccessibility(
-        to children: inout [Any],
-        region: NativeTimelineComponentLayout.MediaRegion,
-        message: Message,
-        layout: NativeTimelineRowLayout,
-        rowIndex: Int,
-        parent: NSAccessibilityElement
-    ) {
-        let (label, file): (String, Attachment?) = switch region.kind {
-        case let .image(image): (image.description, nil)
-        case let .media(media): (media.description, nil)
-        case let .file(file): (file.attachment.filename, file.attachment)
-        }
-        let isHiddenSpoiler = NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-            messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
-        )
-        let element = accessibilityElement(
-            role: .button,
-            label: isHiddenSpoiler ? "Reveal spoiler" : label,
-            help: isHiddenSpoiler ? "Reveals the spoiler without opening it" : "Open \(label)",
-            frame: accessibilityChildFrame(region.frame, rowIndex: rowIndex),
-            parent: parent
-        ) { [weak self] in
-            self?.activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex) ?? false
-        }
-        // A file previews when pressed; its card's button downloads it.
-        if let file, !isHiddenSpoiler {
-            element.setAccessibilityCustomActions([
-                NSAccessibilityCustomAction(name: fileCardAction(file, name: label).description) { [weak self] in
-                    self?.activateFileCard(file)
-                    return self != nil
-                },
-            ])
-        }
-        children.append(element)
-    }
-
     func accessibilityMessageActions(
         _ row: MessageRowPresentation,
         rowIndex: Int
@@ -302,67 +265,6 @@ extension NativeTimelineCanvasView {
         return element
     }
 
-    func activateLinkedImage(
-        _ region: NativeTimelineRowLayout.LinkedImageRegion,
-        in message: Message,
-        rowIndex: Int
-    ) -> Bool {
-        if let presentation = MediaViewerPlan.linkedImages(
-            in: message,
-            selectedReferenceID: region.reference.id
-        ) {
-            model?.mediaViewerPresentation = mediaViewerPresentation(presentation, rowIndex: rowIndex)
-        } else {
-            NSWorkspace.shared.open(region.reference.url)
-        }
-        return true
-    }
-
-    func activateAttachment(
-        _ attachment: Attachment,
-        in message: Message,
-        rowIndex: Int
-    ) -> Bool {
-        if NativeTimelineSpoilerConcealmentPolicy.isConcealed(attachment, in: message.id, store: spoilerRevealStore) {
-            reveal(.attachment(messageID: message.id, attachmentID: attachment.id), rowIndex: rowIndex)
-        } else if !openAttachmentInViewer(attachment, message: message, rowIndex: rowIndex) {
-            NSWorkspace.shared.open(attachment.url)
-        }
-        return true
-    }
-
-    func activateEmbedMedia(
-        id: String,
-        in message: Message,
-        rowIndex: Int
-    ) -> Bool {
-        if openEmbedMediaInViewer(id: id, message: message, rowIndex: rowIndex) { return true }
-        guard let region = layouts.lazy
-            .flatMap(\.embedRegions)
-            .first(where: { $0.embedID == id }),
-              let url = region.mediaURL
-        else { return false }
-        NSWorkspace.shared.open(url)
-        return true
-    }
-
-    func activateComponentButton(
-        _ region: NativeTimelineComponentLayout.ButtonRegion,
-        message: Message
-    ) -> Bool {
-        guard !region.isDisabled else { return false }
-        if let url = region.url {
-            return MessageLinkActivator.activate(url, model: model)
-        }
-        guard let customID = region.customID else { return false }
-        if model?.presentIssueReport(forComponent: customID, on: message) == true { return true }
-        actions?.submitComponent(message, customID, .button, [])
-        return true
-    }
-
-}
-
-extension NativeTimelineCanvasView {
     private func accessibilityInboxOrSearchActions(_ message: Message, canDelete: Bool) -> [NSAccessibilityCustomAction] {
         var result = accessibilitySearchResultActions(
             for: message,

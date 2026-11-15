@@ -707,11 +707,7 @@ extension NativeTimelineCanvasView {
         if let embedRegion = layout.embedRegions.first(where: {
             $0.mediaFrame?.contains(point) == true
         }) {
-            if !openEmbedMediaInViewer(id: embedRegion.embedID, message: row.message, rowIndex: rowIndex),
-               let mediaURL = embedRegion.mediaURL
-            {
-                NSWorkspace.shared.open(mediaURL)
-            }
+            _ = activateEmbedMedia(embedRegion, in: row.message, rowIndex: rowIndex)
             return true
         }
         return false

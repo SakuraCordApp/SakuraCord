@@ -1270,7 +1270,7 @@ extension NativeTimelineCanvasView {
                     parent: parent
                 ) { [weak self] in
                     self?.activateEmbedMedia(
-                        id: region.embedID,
+                        region,
                         in: message,
                         rowIndex: rowIndex
                     ) ?? false
@@ -1472,4 +1472,40 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    func appendComponentMediaAccessibility(
+        to children: inout [Any],
+        region: NativeTimelineComponentLayout.MediaRegion,
+        message: Message,
+        layout: NativeTimelineRowLayout,
+        rowIndex: Int,
+        parent: NSAccessibilityElement
+    ) {
+        let (label, file): (String, Attachment?) = switch region.kind {
+        case let .image(image): (image.description, nil)
+        case let .media(media): (media.description, nil)
+        case let .file(file): (file.attachment.filename, file.attachment)
+        }
+        let isHiddenSpoiler = NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+            messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler, store: spoilerRevealStore
+        )
+        let element = accessibilityElement(
+            role: .button,
+            label: isHiddenSpoiler ? "Reveal spoiler" : label,
+            help: isHiddenSpoiler ? "Reveals the spoiler without opening it" : "Open \(label)",
+            frame: accessibilityChildFrame(region.frame, rowIndex: rowIndex),
+            parent: parent
+        ) { [weak self] in
+            self?.activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex) ?? false
+        }
+        // A file previews when pressed; its card's button downloads it.
+        if let file, !isHiddenSpoiler {
+            element.setAccessibilityCustomActions([
+                NSAccessibilityCustomAction(name: fileCardAction(file, name: label).description) { [weak self] in
+                    self?.activateFileCard(file)
+                    return self != nil
+                },
+            ])
+        }
+        children.append(element)
+    }
 }
