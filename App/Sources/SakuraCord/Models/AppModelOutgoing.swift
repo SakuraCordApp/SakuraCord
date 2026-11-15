@@ -503,6 +503,77 @@ extension AppModel {
             cache(message)
         }
     }
+
+    func updateOutgoingState(_ state: OutboxState, nonce: String, channelID: ChannelID, failure: MessageSendFailure? = nil) {
+        composer.outbox.updateState(state, nonce: nonce, channelID: channelID)
+        mutateOutgoingMessage(nonce: nonce, channelID: channelID) {
+            $0.outboxState = state
+            $0.sendFailure = failure
+        }
+    }
+
+    enum OutgoingMessageSlot {
+        case thread(Int)
+        case selected(Int)
+        case cached(Int)
+    }
+
+    /// Finds a message in the open thread, then the selected channel's window,
+    /// then the channel's cache, whichever first holds it.
+    func outgoingMessage(
+        in channelID: ChannelID,
+        where matches: (Message) -> Bool
+    ) -> (slot: OutgoingMessageSlot, message: Message)? {
+        if openThread?.id == channelID, let index = threadMessages.firstIndex(where: matches) {
+            return (.thread(index), threadMessages[index])
+        }
+        if selectedChannelID == channelID, let index = messages.firstIndex(where: matches) {
+            return (.selected(index), messages[index])
+        }
+        guard let cached = messageCache[channelID], let index = cached.firstIndex(where: matches) else { return nil }
+        return (.cached(index), cached[index])
+    }
+
+    func mutateOutgoingMessage(nonce: String, channelID: ChannelID, _ body: (inout Message) -> Void) {
+        guard var found = outgoingMessage(in: channelID, where: { $0.nonce == nonce }) else { return }
+        body(&found.message)
+        switch found.slot {
+        case let .thread(index): threadMessages[index] = found.message
+        case let .selected(index): mutateSelectedMessages { $0[index] = found.message }
+        case let .cached(index): messageCache[channelID]?[index] = found.message
+        }
+    }
+
+    func removeOutgoingMessage(nonce: String, channelID: ChannelID) {
+        if openThread?.id == channelID {
+            threadMessages.removeAll { $0.nonce == nonce }
+            return
+        }
+        if selectedChannelID == channelID {
+            mutateSelectedMessages {
+                $0.removeAll { $0.nonce == nonce }
+            }
+            return
+        }
+        guard var cached = messageCache[channelID] else { return }
+        cached.removeAll { $0.nonce == nonce }
+        messageCache[channelID] = cached
+    }
+
+    func outgoingState(nonce: String, channelID: ChannelID) -> OutboxState? {
+        let visibleState: OutboxState?
+        if openThread?.id == channelID {
+            visibleState = threadMessages.first { $0.nonce == nonce }?.outboxState
+        } else if selectedChannelID == channelID {
+            visibleState = messages.first { $0.nonce == nonce }?.outboxState
+        } else {
+            visibleState = messageCache[channelID]?.first { $0.nonce == nonce }?.outboxState
+        }
+        // Fresh authoritative history can settle a failed send even when its
+        // Gateway event was missed. An old optimistic row cannot downgrade it.
+        if visibleState == .confirmed { return .confirmed }
+        return composer.outbox.state(nonce: nonce, channelID: channelID) ?? visibleState
+    }
 }
 
 extension Message {
