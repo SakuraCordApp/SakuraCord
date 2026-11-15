@@ -292,19 +292,23 @@ enum MessageSearchAutocompletePolicy {
             return Result(suggestions: [], selectsFirst: false)
         }
 
-        let value = String(fragment[fragment.index(after: separator)...])
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"@#"))
+        let rawValue = String(fragment[fragment.index(after: separator)...])
+        let value = rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "\"@#"))
         let rows: [MessageSearchAutocompleteSuggestion]
         switch searchOperator {
         case .from, .mentions:
-            rows = [.heading(searchOperator == .from ? "From User" : "Mentions User")]
-                + userResults(
-                    query: value,
-                    op: searchOperator,
-                    model: model,
-                    index: searchIndex(model: model),
-                    limit: 10
-                )
+            // Discord queries users with the raw value up to its first `#`,
+            // and shows no section when nothing matches.
+            let users = userResults(
+                query: String(rawValue.prefix { $0 != "#" }),
+                op: searchOperator,
+                model: model,
+                index: searchIndex(model: model),
+                limit: 10
+            )
+            rows = users.isEmpty
+                ? []
+                : [.heading(searchOperator == .from ? "From User" : "Mentions User")] + users
         case .in:
             rows = [.heading("In Channel")]
                 + channelResults(
@@ -472,7 +476,7 @@ enum MessageSearchAutocompletePolicy {
             let normalizedQuery = query.trimmingCharacters(
                 in: CharacterSet(charactersIn: "@")
             ).lowercased()
-            if "me".hasPrefix(normalizedQuery), !normalizedQuery.isEmpty,
+            if "me".hasPrefix(normalizedQuery), !query.isEmpty,
                let currentUser = model.currentUser,
                joinedUserIDs.contains(currentUser.id)
             {
@@ -500,7 +504,7 @@ enum MessageSearchAutocompletePolicy {
         }
         let normalizedQuery = query.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
             .lowercased()
-        if "me".hasPrefix(normalizedQuery), !normalizedQuery.isEmpty,
+        if "me".hasPrefix(normalizedQuery), !query.isEmpty,
            let currentUser = model.currentUser
         {
             suggestions.removeAll {
