@@ -64,11 +64,7 @@ enum NativeTimelineEmbedLayout {
             guard let media = mainMedia,
                   let url = NativeTimelineEmbedLayout.resolvedURL(media, attachments: attachments)
             else { return nil }
-            let size = mediaSize(
-                media,
-                maximumWidth: min(maximumWidth, InterfaceScale.metric(500)),
-                maximumHeight: InterfaceScale.metric(350)
-            )
+            let size = mediaSize(media, maximumWidth: min(maximumWidth, InterfaceScale.metric(500)))
             let frame = CGRect(origin: origin, size: size)
             return .init(
                 embedID: embed.id,
@@ -183,11 +179,7 @@ enum NativeTimelineEmbedLayout {
             let naturalTopWidth = naturalTextWidth + thumbnailAllowance
             let mainMedia = self.mainMedia
             let naturalMediaSize = mainMedia.map {
-                mediaSize(
-                    $0,
-                    maximumWidth: maximumContentWidth,
-                    maximumHeight: InterfaceScale.metric(350)
-                )
+                mediaSize($0, maximumWidth: maximumContentWidth)
             }
             let naturalFooterWidth = footer.map {
                 NativeTimelineEmbedLayout.idealWidth($0)
@@ -337,11 +329,7 @@ enum NativeTimelineEmbedLayout {
             }
             let mediaSize = mainMedia.flatMap { media -> CGSize? in
                 guard mediaURL != nil else { return nil }
-                return self.mediaSize(
-                    media,
-                    maximumWidth: min(contentWidth, InterfaceScale.metric(500)),
-                    maximumHeight: InterfaceScale.metric(350)
-                )
+                return self.mediaSize(media, maximumWidth: min(contentWidth, InterfaceScale.metric(500)))
             }
             let mediaGap: CGFloat =
                 mediaSize == nil ? 0 : (topHeight > 0 ? InterfaceScale.metric(9) : 0)
@@ -436,20 +424,12 @@ enum NativeTimelineEmbedLayout {
         }
         }
 
-        private func mediaSize(
-            _ media: MessageEmbedMedia,
-            maximumWidth: CGFloat,
-            maximumHeight: CGFloat
-        ) -> CGSize {
+        private func mediaSize(_ media: MessageEmbedMedia, maximumWidth: CGFloat) -> CGSize {
             if mediaCount > 1 {
                 return NativeTimelineEmbedLayout.groupFrames(count: mediaCount, width: maximumWidth)
                     .reduce(CGRect.null) { $0.union($1) }.size
             }
-            return NativeTimelineEmbedLayout.mediaSize(
-                media,
-                maximumWidth: maximumWidth,
-                maximumHeight: maximumHeight
-            )
+            return NativeTimelineEmbedLayout.mediaSize(media, maximumWidth: maximumWidth)
         }
     }
 
@@ -754,36 +734,16 @@ enum NativeTimelineEmbedLayout {
         RichMediaItem.knownSize(width: media.width, height: media.height)
     }
 
-    private static func mediaSize(
-        _ media: MessageEmbedMedia,
-        maximumWidth: CGFloat,
-        maximumHeight: CGFloat
-    ) -> CGSize {
-        let width = min(InterfaceScale.metric(500), max(InterfaceScale.metric(180), maximumWidth))
-        if let source = knownSize(of: media) {
-            let scale = min(
-                1,
-                width / source.width,
-                maximumHeight / source.height
-            )
-            return CGSize(
-                width: source.width * scale,
-                height: source.height * scale
-            )
-        }
-        let ratio = max(
-            0.2,
-            min(
-                12,
-                CGFloat(media.width ?? 16) / CGFloat(media.height ?? 9)
-            )
-        )
-        let fittedWidth = min(width, maximumHeight * ratio)
-        let fittedHeight = min(maximumHeight, fittedWidth / ratio)
-        return CGSize(
-            width: fittedWidth,
-            height: max(InterfaceScale.metric(80), fittedHeight)
-        )
+    /// One media item framed as a single-item gallery; a side the media
+    /// doesn't report falls back to 16:9's.
+    private static func mediaSize(_ media: MessageEmbedMedia, maximumWidth: CGFloat) -> CGSize {
+        MediaGalleryPlan.frames(
+            count: 1,
+            width: min(InterfaceScale.metric(500), max(InterfaceScale.metric(180), maximumWidth)),
+            aspectRatios: [CGFloat(media.width ?? 16) / CGFloat(media.height ?? 9)],
+            intrinsicSizes: knownSize(of: media).map { [$0] } ?? [],
+            spacing: 0
+        )[0].size
     }
 
     private static func resolvedURL(

@@ -708,25 +708,8 @@ extension NativeTimelineRowLayout {
                 let galleryFrames = MediaGalleryPlan.frames(
                     count: media.count,
                     width: galleryWidth,
-                    aspectRatios: media.map {
-                        guard let width = $0.width,
-                              let height = $0.height,
-                              width > 0,
-                              height > 0
-                        else { return 16 / 9 }
-                        return CGFloat(width) / CGFloat(height)
-                    },
-                    intrinsicSizes: media.map {
-                        guard let width = $0.width,
-                              let height = $0.height,
-                              width > 0,
-                              height > 0
-                        else { return .zero }
-                        return CGSize(
-                            width: CGFloat(width),
-                            height: CGFloat(height)
-                        )
-                    },
+                    aspectRatios: media.map { RichMediaItem.aspectRatio(width: $0.width, height: $0.height) },
+                    intrinsicSizes: media.map { RichMediaItem.knownSize(width: $0.width, height: $0.height) ?? .zero },
                     spacing: InterfaceScale.metric(4)
                 )
                 for (attachment, frame) in zip(media, galleryFrames) {
@@ -921,24 +904,14 @@ extension NativeTimelineRowLayout {
                     verticalOffset += InterfaceScale.metric(8)
                 }
                 let size = min(contentWidth, InterfaceScale.metric(112))
-                let gap = InterfaceScale.metric(8)
-                var stickerX = contentX
-                var rowHeight: CGFloat = 0
-                for _ in message.stickers {
-                    if stickerX + size > contentX + contentWidth,
-                       stickerX > contentX
-                    {
-                        stickerX = contentX
-                        verticalOffset += rowHeight + gap
-                        rowHeight = 0
-                    }
-                    result.stickerFrames.append(
-                        CGRect(x: stickerX, y: verticalOffset, width: size, height: size)
-                    )
-                    stickerX += size + gap
-                    rowHeight = max(rowHeight, size)
-                }
-                verticalOffset += rowHeight
+                let plan = InlineWrappingLayoutPlan.frames(
+                    sizes: Array(repeating: CGSize(width: size, height: size), count: message.stickers.count),
+                    maximumWidth: contentWidth,
+                    horizontalSpacing: InterfaceScale.metric(8),
+                    verticalSpacing: InterfaceScale.metric(8)
+                )
+                result.stickerFrames = plan.frames.map { $0.offsetBy(dx: contentX, dy: verticalOffset) }
+                verticalOffset += plan.size.height
                 hasRichContent = true
             }
 
