@@ -88,10 +88,16 @@ final class MessageComposerState {
         await draftWriteTask?.value
     }
 
-    func restoreDraft(_ value: String, ifUnchangedSince revision: UInt64) {
+    func restoreDraft(_ value: String, in destination: MessageComposerDestination, ifUnchangedSince revision: UInt64) {
         // Check at publication, since clearing can invalidate even a completed read.
-        guard draftRevision == revision, draft.isEmpty else { return }
-        draft = value
+        switch destination {
+        case .channel:
+            guard draftRevision == revision, draft.isEmpty else { return }
+            draft = value
+        case .thread:
+            guard threadDraftRevision == revision, threadDraft.isEmpty else { return }
+            threadDraft = value
+        }
     }
 
     func clearDrafts(in database: SakuraCordDatabase) async throws {

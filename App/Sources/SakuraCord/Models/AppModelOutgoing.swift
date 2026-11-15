@@ -241,15 +241,9 @@ extension AppModel {
         clearsComposer: Bool,
         in destination: MessageComposerDestination
     ) -> Task<Bool, Never>? {
-        func clearText() {
-            switch destination {
-            case .channel: updateDraft("")
-            case .thread: threadDraft = ""
-            }
-        }
         guard !outgoing.isEmpty else {
             // Discord sends nothing for a bare `@silent`, but clears the text.
-            if clearsComposer { clearText() }
+            if clearsComposer { updateDraft("", in: destination) }
             return nil
         }
         if clearsComposer, destination == .channel {
@@ -258,7 +252,7 @@ extension AppModel {
         admitToOutbox(optimisticMessage(for: outgoing, replyPreview: replyPreview), draft: outgoing)
         if clearsComposer {
             setReplyingTo(nil, in: destination)
-            clearText()
+            updateDraft("", in: destination)
             translation.resetDraft(destination)
         }
         return enqueueOutgoingSend(outgoing, isRetry: false, completesReading: true)

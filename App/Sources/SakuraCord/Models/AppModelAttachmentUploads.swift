@@ -367,12 +367,13 @@ extension AppModel {
         _ link: URL,
         to destination: MessageComposerDestination
     ) {
-        let value = link.absoluteString
-        switch destination {
-        case .channel:
-            updateDraft(appending(value, to: draft))
-        case .thread:
-            threadDraft = appending(value, to: threadDraft)
+        let value = appending(link.absoluteString, to: draft(in: destination))
+        if destination == .thread, threadCreation?.isSubmitting == true {
+            // A submitting thread creation refuses typed edits, but a
+            // finished upload's link must still reach its draft.
+            threadDraft = value
+        } else {
+            updateDraft(value, in: destination)
         }
     }
 
