@@ -13,8 +13,8 @@ extension DiscordRESTProvider {
         isFavorite: Bool
     ) async throws -> EmojiUserSettings {
         let current = try await frecencySettingsProto()
-        var patch = DiscordSettingsProto.frecencyPatch(messages, field: 6, limit: 100, preserving: current)
-        patch.append(DiscordSettingsProto.frecencyPatch(reactions, field: 13, limit: 100, preserving: current))
+        var patch = DiscordSettingsProto.frecencyPatch(messages, field: DiscordSettingsProto.emojiFrecencyField, limit: 100, preserving: current)
+        patch.append(DiscordSettingsProto.frecencyPatch(reactions, field: DiscordSettingsProto.reactionFrecencyField, limit: 100, preserving: current))
         if let favoriteKey {
             patch.append(try emojiFavoritePatch(favoriteKey, isFavorite: isFavorite, current: current))
         }
@@ -47,8 +47,8 @@ extension DiscordRESTProvider {
         var patch = changedFields
         if let contribution {
             let current = cachedFrecencySettingsProto ?? Data()
-            patch.append(DiscordSettingsProto.frecencyPatch(contribution.messages, field: 6, limit: 100, preserving: current))
-            patch.append(DiscordSettingsProto.frecencyPatch(contribution.reactions, field: 13, limit: 100, preserving: current))
+            patch.append(DiscordSettingsProto.frecencyPatch(contribution.messages, field: DiscordSettingsProto.emojiFrecencyField, limit: 100, preserving: current))
+            patch.append(DiscordSettingsProto.frecencyPatch(contribution.reactions, field: DiscordSettingsProto.reactionFrecencyField, limit: 100, preserving: current))
         }
         do {
             let response: UserSettingsProtoDTO = try await request(

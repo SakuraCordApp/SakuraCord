@@ -88,8 +88,8 @@ enum DiscordSettingsProto {
         return EmojiUserSettings(
             favoriteKeys: favorites,
             dataVersion: dataVersion(in: data),
-            messageHistory: frecencyHistory(from: data, field: 6) ?? .init(),
-            reactionHistory: frecencyHistory(from: data, field: 13) ?? .init(),
+            messageHistory: frecencyHistory(from: data, field: emojiFrecencyField) ?? .init(),
+            reactionHistory: frecencyHistory(from: data, field: reactionFrecencyField) ?? .init(),
             guildAndChannelUsageScores: guildAndChannelScores,
             guildAndChannelUsage: guildAndChannelUsage,
             guildAndChannelUsageOrder: guildAndChannelUsageOrder

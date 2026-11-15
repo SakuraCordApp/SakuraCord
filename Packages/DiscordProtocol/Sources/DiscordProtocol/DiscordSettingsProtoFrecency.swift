@@ -3,15 +3,13 @@ import SakuraCordModels
 
 /// Shared usage-map encoding for emoji (6), commands (7), applications (9) and reactions (13).
 extension DiscordSettingsProto {
+    static let emojiFrecencyField = 6
     static let applicationCommandFrecencyField = 7
     /// Launched applications, which the Activity shelf lists as Recents.
     static let applicationFrecencyField = 9
+    static let reactionFrecencyField = 13
     /// Discord keeps at most this many command entries when saving.
     static let maximumApplicationCommandFrecencyEntries = 500
-
-    static func applicationCommandFrecency(from data: Data) -> DiscordFrecencyHistory? {
-        frecencyHistory(from: data, field: applicationCommandFrecencyField)
-    }
 
     static func frecencyHistory(from data: Data, field fieldNumber: Int) -> DiscordFrecencyHistory? {
         guard let field = ProtoReader.fields(data).last(where: { $0.field == fieldNumber && $0.wireType == 2 }) else {
@@ -79,13 +77,9 @@ extension DiscordSettingsProto {
         return item
     }
 
-    /// The partial settings proto carrying only field 7, as Discord's client
+    /// The partial settings proto carrying only `field`, as Discord's client
     /// sends it. Entries beyond the limit drop the least recently used, which
     /// also reorders by recency like Discord's serializer.
-    static func applicationCommandFrecencyPatch(_ history: DiscordFrecencyHistory) -> Data {
-        frecencyPatch(history, field: applicationCommandFrecencyField, limit: maximumApplicationCommandFrecencyEntries)
-    }
-
     static func frecencyPatch(_ history: DiscordFrecencyHistory, field: Int, limit: Int, preserving current: Data = Data()) -> Data {
         var entries = history.entries
         if entries.count > limit {
@@ -93,7 +87,7 @@ extension DiscordSettingsProto {
             entries.reverse()
             entries.removeLast(entries.count - limit)
         }
-        if field == 6 || field == 13 {
+        if field == emojiFrecencyField || field == reactionFrecencyField {
             // Protobuf's JS writer enumerates an object: integer-index keys
             // precede other keys even after the serializer's recency pruning.
             entries = entries.enumerated().sorted { left, right in
