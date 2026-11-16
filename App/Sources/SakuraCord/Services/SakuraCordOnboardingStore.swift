@@ -9,13 +9,11 @@ enum SakuraCordOnboardingStore {
     static func registerInstallation() {
         let defaults = DiscordNetworkRedirect.sessionDefaults
         guard defaults.object(forKey: completionKey) == nil else { return }
-        #if DEBUG
         // Each simulator store starts as a new installation.
         if DiscordNetworkRedirect.isActive {
             defaults.set(false, forKey: completionKey)
             return
         }
-        #endif
         guard let bundleID = Bundle.main.bundleIdentifier else { return }
         let existingPreferences = defaults.persistentDomain(forName: bundleID) ?? [:]
         // AppKit can record system preferences even before the app delegate is

@@ -2,6 +2,7 @@ import AppKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import DiscordProtocol
+import SakuraCordModels
 import SwiftUI
 
 private enum DiscordCaptchaPurpose: Equatable {
@@ -125,7 +126,7 @@ struct DiscordLoginView: View {
 
                         // Importing reads real Discord tokens, which never go to the simulator.
                         if onboardingStep == nil, challenge == nil, accountImportState == nil,
-                           networkingEnabled, !SimulatorAccountStorage.isActive {
+                           networkingEnabled, !DiscordNetworkRedirect.isActive {
                             Button("Import account from Discord", systemImage: "square.and.arrow.down") {
                                 beginAccountImport()
                             }
@@ -269,7 +270,7 @@ struct DiscordLoginView: View {
     }
 
     private func beginAccountImport() {
-        guard !isWorking, !isTransitioning, networkingEnabled, !SimulatorAccountStorage.isActive else { return }
+        guard !isWorking, !isTransitioning, networkingEnabled, !DiscordNetworkRedirect.isActive else { return }
         remoteAuthTask?.cancel()
         transitionAuthentication {
             errorTitle = nil

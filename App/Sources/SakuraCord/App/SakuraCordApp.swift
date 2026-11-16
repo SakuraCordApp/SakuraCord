@@ -31,7 +31,7 @@ struct SakuraCordApp: App {
         launchBenchmarks = LaunchBenchmarks(launch: configuration)
         let notificationPreferences = NotificationPreferences()
         let appModel = AppModel(
-            hasSavedAccountsAtLaunch: UserDefaultsSavedAccountStore.current.hasSavedAccounts,
+            hasSavedAccountsAtLaunch: UserDefaultsSavedAccountStore.shared.hasSavedAccounts,
             notificationService: MacNativeNotificationService(),
             soundPlayer: MacAppSoundPlayer(notificationPreferences: notificationPreferences),
             notificationPreferences: notificationPreferences

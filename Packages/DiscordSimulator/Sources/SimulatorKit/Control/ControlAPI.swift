@@ -149,7 +149,7 @@ public final class ControlAPI: Sendable {
             return ok([:])
         case ("POST", "clock", _):
             if let freeze = body["freeze"]?.boolValue { world.clock.freeze(freeze) }
-            if let seconds = body["advance_seconds"].flatMap({ $0.intValue.map(Double.init) ?? (try? doubleValue($0)) }) { world.clock.advance(by: seconds) }
+            if let seconds = body["advance_seconds"]?.doubleValue { world.clock.advance(by: seconds) }
             return ok(["now": World.timestamp(world.clock.now), "frozen": .bool(world.clock.isFrozen)])
         case ("POST", "scripts", _):
             let name = body["name"]?.stringValue ?? route.dropFirst().first ?? ""
@@ -177,9 +177,8 @@ public final class ControlAPI: Sendable {
     }
 
     private func doubleValue(_ json: JSON) throws -> Double {
-        if case let .double(value) = json { return value }
-        if let value = json.intValue { return Double(value) }
-        throw WorldError.invalidBody("not a number")
+        guard let value = json.doubleValue else { throw WorldError.invalidBody("not a number") }
+        return value
     }
 
     /// Users by ID, username or display name.
@@ -273,9 +272,6 @@ extension Optional {
 }
 
 public extension World {
-    /// The scenario's signed-in user.
-    var primaryUserID: Snowflake? { primaryUser }
-
     func summary() -> JSON {
         .object(JSONObject([
             ("now", World.timestamp(clock.now)),

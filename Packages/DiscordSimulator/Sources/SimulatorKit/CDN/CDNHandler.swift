@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Serves `cdn.discordapp.com` and `media.discordapp.net` paths: stored
 /// attachments and uploads, and images generated from asset hashes.
@@ -6,7 +7,7 @@ public final class CDNHandler: Sendable {
     let world: World
     let log: SimulatorLog
     let host: String
-    private let cache = LockedBox<[String: (Data, String)]>([:])
+    private let cache = Mutex<[String: (Data, String)]>([:])
 
     public init(world: World, log: SimulatorLog, host: String) {
         self.world = world
@@ -79,7 +80,7 @@ public final class CDNHandler: Sendable {
     static func seed(_ text: String) -> UInt64 {
         let trimmed = text.hasPrefix("a_") ? String(text.dropFirst(2)) : text
         if let value = UInt64(trimmed.prefix(16), radix: 16) { return value }
-        return trimmed.utf8.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { ($0 ^ UInt64($1)) &* 0x0000_0100_0000_01b3 }
+        return trimmed.hashValueStable
     }
 }
 

@@ -63,6 +63,11 @@ public struct HTTPResponse: Sendable {
         HTTPResponse(status: status, headers: [("Content-Type", "application/json")] + headers, body: body.data())
     }
 
+    /// Discord's JSON error body: `{"message": …, "code": …}`.
+    public static func discordError(_ status: Int, _ message: String, code: Int = 0) -> HTTPResponse {
+        .json(status, .object(JSONObject([("message", .string(message)), ("code", .int(Int64(code)))])))
+    }
+
     public static func empty(_ status: Int) -> HTTPResponse { HTTPResponse(status: status) }
 
     public static func bytes(_ status: Int, _ data: Data, contentType: String) -> HTTPResponse {

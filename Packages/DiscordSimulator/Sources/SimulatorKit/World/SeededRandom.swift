@@ -9,9 +9,7 @@ public struct SeededRandom: RandomNumberGenerator, Sendable {
 
     /// A stream that depends only on this generator's seed and `label`.
     public func fork(_ label: String) -> SeededRandom {
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in label.utf8 { hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3 }
-        return SeededRandom(seed: state ^ hash)
+        SeededRandom(seed: state ^ label.hashValueStable)
     }
 
     public mutating func next() -> UInt64 {
@@ -28,4 +26,18 @@ public struct SeededRandom: RandomNumberGenerator, Sendable {
     public mutating func pick<T>(_ values: [T]) -> T { values[Int(next() % UInt64(values.count))] }
 
     public mutating func chance(_ probability: Double) -> Bool { unit() < probability }
+
+    /// `count` characters from the URL-safe base64 alphabet, as Discord's tokens use.
+    mutating func urlSafeString(_ count: Int) -> String {
+        String((0 ..< count).map { _ in Self.urlSafeAlphabet[Int(next() % 64)] })
+    }
+
+    private static let urlSafeAlphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+}
+
+extension String {
+    /// FNV-1a, stable across runs (Swift's `hashValue` is seeded per process).
+    var hashValueStable: UInt64 {
+        utf8.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { ($0 ^ UInt64($1)) &* 0x0000_0100_0000_01b3 }
+    }
 }

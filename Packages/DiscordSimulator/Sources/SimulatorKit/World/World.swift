@@ -68,7 +68,7 @@ public actor World {
     /// Discord's own sticker packs, outside any guild.
     public var standardStickers: [Sticker] = []
     /// The account the app signs in as.
-    public var primaryUser: Snowflake?
+    public private(set) var primaryUserID: Snowflake?
     /// Files the client uploaded to the attachment host, keyed by `upload_filename`.
     public var pendingUploads: [String: PendingUpload] = [:]
     /// Generator palette per asset hash, so a person's avatar keeps their colours.
@@ -227,11 +227,6 @@ public actor World {
         }
     }
 
-    public func addMember(_ member: Member, to guildID: Snowflake) {
-        guilds[guildID]?.members[member.userID] = member
-        if guilds[guildID]?.memberOrder.contains(member.userID) == false { guilds[guildID]?.memberOrder.append(member.userID) }
-    }
-
     /// Appends a historical message without dispatching anything.
     public func seedMessage(_ message: Message) {
         channels[message.channelID]?.messages.append(message)
@@ -264,7 +259,7 @@ public actor World {
         return generated
     }
 
-    public func setPrimaryUser(_ id: Snowflake) { primaryUser = id }
+    public func setPrimaryUser(_ id: Snowflake) { primaryUserID = id }
 
     public func setPalette(_ palette: Int, forHash hash: String) { palettes[hash] = palette }
 

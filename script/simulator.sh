@@ -47,11 +47,11 @@ stop() {
 }
 
 start() {
-  local arguments=(--port "$PORT")
+  local arguments=()
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      --port) PORT="$2"; arguments=(--port "$PORT"); shift 2 ;;
-      --scenario|--seed|--network|--param) arguments+=("$1" "$2"); shift 2 ;;
+      --port) PORT="$2"; shift 2 ;;
+      --scenario|--seed|--network|--param|--epoch) arguments+=("$1" "$2"); shift 2 ;;
       --freeze-clock|--no-rate-limits|--verbose) arguments+=("$1"); shift ;;
       *) echo "simulator.sh start: unknown option $1" >&2; exit 2 ;;
     esac
@@ -60,7 +60,7 @@ start() {
   build
   local executable
   executable="$(bin_dir)/discord-simulator"
-  nohup "$executable" "${arguments[@]}" >"$LOG_FILE" 2>&1 &
+  nohup "$executable" --port "$PORT" ${arguments[@]+"${arguments[@]}"} >"$LOG_FILE" 2>&1 &
   echo "$!" >"$PID_FILE"
   for _ in $(seq 1 300); do
     if control health >/dev/null 2>&1; then

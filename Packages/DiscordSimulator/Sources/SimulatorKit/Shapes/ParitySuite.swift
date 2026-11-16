@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Drives a running simulator over real HTTP and WebSocket connections, the
 /// way the official client would, and compares every response, Gateway frame
@@ -362,7 +363,7 @@ final class GatewayProbe: @unchecked Sendable {
 
     private let task: URLSessionWebSocketTask
     private let decompressor = ZstdStreamDecompressor()
-    private let frames = LockedBox<[Frame]>([])
+    private let frames = Mutex<[Frame]>([])
     /// Guarded by `frames`' lock.
     private var lastSequence: Int64?
     private(set) var sequenceErrors: [String] = []

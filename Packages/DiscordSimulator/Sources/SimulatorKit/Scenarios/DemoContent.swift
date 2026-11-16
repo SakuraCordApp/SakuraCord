@@ -8,8 +8,6 @@ import Foundation
 public enum DemoContent {
     public static let selfKey = "wren"
     public static let now = DemoTime(day: 0, 21, 30)
-    /// `Calendar` weekday of day 0 (Sunday).
-    public static let dayZeroWeekday = 1
 
     public static var guilds: [DemoGuild] { [porch, garden] }
 

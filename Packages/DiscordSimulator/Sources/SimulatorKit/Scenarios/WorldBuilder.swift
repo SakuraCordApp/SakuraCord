@@ -13,9 +13,8 @@ public struct WorldBuilder {
     /// A real-shaped user token: base64 user ID, timestamp and signature parts.
     public mutating func token(for id: Snowflake) -> String {
         let idPart = Data(id.description.utf8).base64EncodedString().replacingOccurrences(of: "=", with: "")
-        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
-        let time = String((0 ..< 6).map { _ in alphabet[Int(random.next() % 64)] })
-        let signature = String((0 ..< 38).map { _ in alphabet[Int(random.next() % 64)] })
+        let time = random.urlSafeString(6)
+        let signature = random.urlSafeString(38)
         return "\(idPart).\(time).\(signature)"
     }
 
@@ -49,12 +48,5 @@ public struct WorldBuilder {
     /// The @everyone role, created with the guild's ID as Discord does.
     public static func everyoneRole(guildID: Snowflake) -> Role {
         Role(id: guildID, name: "@everyone", permissions: .everyoneDefault)
-    }
-}
-
-extension String {
-    /// FNV-1a, stable across runs (Swift's `hashValue` is seeded per process).
-    var hashValueStable: UInt64 {
-        utf8.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { ($0 ^ UInt64($1)) &* 0x0000_0100_0000_01b3 }
     }
 }

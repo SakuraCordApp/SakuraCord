@@ -68,7 +68,7 @@ enum MessageRoutes {
 
         routes["DELETE /api/v9/channels/{id}/messages/{id}"] = { context in
             try await context.world.deleteMessage(try context.id(1), in: try context.id(0), by: context.userID)
-            return .empty()
+            return .empty
         }
 
     }
@@ -79,7 +79,7 @@ enum MessageRoutes {
             let (name, id) = try MessageRoutes.emoji(context.parameters[2])
             let burst = context.query("type") == "1"
             try await context.world.react(try context.id(1), in: try context.id(0), by: context.userID, emojiName: name, emojiID: id, burst: burst)
-            return .empty()
+            return .empty
         }
         routes["PUT /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/@me"] = react
         let unreact: RouteHandler = { context in
@@ -87,7 +87,7 @@ enum MessageRoutes {
             let segments = context.request.path.split(separator: "/")
             let burst = segments.count >= 2 && segments[segments.count - 2] == "1"
             try await context.world.unreact(try context.id(1), in: try context.id(0), by: context.userID, emojiName: name, emojiID: id, burst: burst)
-            return .empty()
+            return .empty
         }
         routes["DELETE /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/@me"] = unreact
         routes["DELETE /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/0/@me"] = unreact
@@ -112,7 +112,7 @@ enum MessageRoutes {
     private static func registerReadStates(into routes: inout [String: RouteHandler]) {
         routes["POST /api/v9/channels/{id}/typing"] = { context in
             try await context.world.startTyping(context.userID, in: try context.id(0))
-            return .empty()
+            return .empty
         }
 
         routes["POST /api/v9/channels/{id}/messages/{id}/ack"] = { context in
@@ -122,7 +122,7 @@ enum MessageRoutes {
             return .json(.object(JSONObject([("token", .null)])))
         }
 
-        routes["DELETE /api/v9/channels/{id}/messages/ack"] = { _ in .empty() }
+        routes["DELETE /api/v9/channels/{id}/messages/ack"] = { _ in .empty }
 
         routes["POST /api/v9/read-states/ack-bulk"] = { context in
             for entry in try context.json["read_states"]?.arrayValue ?? [] {
@@ -130,7 +130,7 @@ enum MessageRoutes {
                       let message = entry["message_id"]?.stringValue.flatMap(Snowflake.init) else { continue }
                 try await context.world.acknowledge(message, in: channel, by: context.userID)
             }
-            return .empty()
+            return .empty
         }
 
     }
@@ -158,11 +158,11 @@ enum MessageRoutes {
         }
         routes["PUT /api/v9/channels/{id}/messages/pins/{id}"] = { context in
             try await context.world.setPinned(try context.id(1), in: try context.id(0), by: context.userID, pinned: true)
-            return .empty()
+            return .empty
         }
         routes["DELETE /api/v9/channels/{id}/messages/pins/{id}"] = { context in
             try await context.world.setPinned(try context.id(1), in: try context.id(0), by: context.userID, pinned: false)
-            return .empty()
+            return .empty
         }
 
     }
@@ -171,7 +171,7 @@ enum MessageRoutes {
         routes["PUT /api/v9/channels/{id}/polls/{id}/answers/@me"] = { context in
             let answers = (try context.json["answer_ids"]?.arrayValue ?? []).compactMap { $0.intValue.map(Int.init) ?? $0.stringValue.flatMap(Int.init) }
             try await context.world.vote(try context.id(1), in: try context.id(0), by: context.userID, answers: answers)
-            return .empty()
+            return .empty
         }
         routes["GET /api/v9/channels/{id}/polls/{id}/answers/{answer_id}"] = { context in
             let message = try await context.world.message(try context.id(1), in: try context.id(0))
@@ -198,7 +198,7 @@ enum MessageRoutes {
             }
             return .json(.object(JSONObject([("attachments", .array(slots))])))
         }
-        routes["DELETE /api/v9/attachments/{upload_filename}"] = { _ in .empty() }
+        routes["DELETE /api/v9/attachments/{upload_filename}"] = { _ in .empty }
     }
 
     /// `👍`, `name:123`, or `name%3A123` in a reaction path.
@@ -258,7 +258,7 @@ enum MessageRoutes {
             draft.attachments.append(await world.storeAttachment(
                 data, filename: filename, channelID: channelID,
                 description: entry["description"]?.stringValue,
-                durationSeconds: entry["duration_secs"].flatMap { if case let .double(value) = $0 { value } else { $0.intValue.map(Double.init) } },
+                durationSeconds: entry["duration_secs"]?.doubleValue,
                 waveform: entry["waveform"]?.stringValue,
                 flags: Int(entry["flags"]?.intValue ?? 0)
             ))

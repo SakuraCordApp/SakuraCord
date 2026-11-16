@@ -28,7 +28,7 @@ public enum JSON: Sendable, Equatable {
     public var boolValue: Bool? { if case let .bool(value) = self { value } else { nil } }
     public var arrayValue: [JSON]? { if case let .array(value) = self { value } else { nil } }
     public var objectValue: JSONObject? { if case let .object(value) = self { value } else { nil } }
-    public var isNull: Bool { self == .null }
+    public var doubleValue: Double? { if case let .double(value) = self { value } else { intValue.map(Double.init) } }
 }
 
 public struct JSONObject: Sendable, Equatable, Sequence {

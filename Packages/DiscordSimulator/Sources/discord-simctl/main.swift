@@ -1,4 +1,5 @@
 import Foundation
+import SimulatorKit
 
 /// Command-line client for the simulator's control API.
 ///
@@ -17,7 +18,7 @@ import Foundation
 ///   discord-simctl clock freeze|unfreeze|advance <seconds>
 ///   discord-simctl script <name> [key=value]...
 var arguments = Array(CommandLine.arguments.dropFirst())
-var basePort = 47100
+var basePort = Int(DiscordSimulator.Configuration().basePort)
 if let index = arguments.firstIndex(of: "--port"), index + 1 < arguments.count, let port = Int(arguments[index + 1]) {
     basePort = port
     arguments.removeSubrange(index ... index + 1)
@@ -30,7 +31,7 @@ func usage() -> Never {
 
 @MainActor
 func call(_ method: String, _ path: String, _ body: [String: Any]? = nil) async -> Never {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(basePort + 9)/control/\(path)")!)
+    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(basePort + Int(DiscordSimulator.Port.control.rawValue))/control/\(path)")!)
     request.httpMethod = method
     if let body {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)

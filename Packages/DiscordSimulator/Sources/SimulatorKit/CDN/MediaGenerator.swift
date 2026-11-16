@@ -14,8 +14,6 @@ public enum MediaGenerator {
         case smile, heart, star, leaf, frog, cat, sparkle, drop, flower, bee, sun, couch
     }
 
-    public static var paletteCount: Int { palettes.count }
-
     /// Soft abstract shapes that read well as a circle from 32 to 512 px.
     public static func avatarPNG(seed: UInt64, size: Int, palette: Int? = nil) -> Data {
         encode(render(size, size) { drawAvatar($0, seed: seed, palette: palette, phase: 0) }, as: .png)

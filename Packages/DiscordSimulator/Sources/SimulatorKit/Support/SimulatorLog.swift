@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Simulator log: errors and warnings go to stderr immediately and are kept
 /// for the control API, so unknown routes and protocol mistakes are visible.
@@ -10,7 +11,7 @@ public final class SimulatorLog: Sendable {
         public var message: String
     }
 
-    private let entries = LockedBox<[Entry]>([])
+    private let entries = Mutex<[Entry]>([])
     private let verbose: Bool
 
     public init(verbose: Bool = false) { self.verbose = verbose }
@@ -35,17 +36,5 @@ public final class SimulatorLog: Sendable {
             if all.count > 5_000 { all.removeFirst(all.count - 5_000) }
         }
         if print { FileHandle.standardError.write(Data("[\(level.lowercased()):\(area)] \(message)\n".utf8)) }
-    }
-}
-
-/// A lock-protected value for state shared across tasks.
-final class LockedBox<Value>: @unchecked Sendable {
-    private var value: Value
-    private let lock = NSLock()
-    init(_ value: Value) { self.value = value }
-    func withLock<Result>(_ body: (inout Value) throws -> Result) rethrows -> Result {
-        lock.lock()
-        defer { lock.unlock() }
-        return try body(&value)
     }
 }

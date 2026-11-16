@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// The whole simulator: a seeded world behind Discord's REST, Gateway, CDN,
 /// media and upload hosts, plus the control API.
@@ -32,15 +33,14 @@ public final class DiscordSimulator: Sendable {
     public let faults: FaultInjector
     public let scripts: ScriptRunner
     let conditioners: [Port: NetworkConditioner]
-    private let servers = LockedBox<[HTTPServer]>([])
+    private let servers = Mutex<[HTTPServer]>([])
 
     public static func make(configuration: Configuration, catalog: ShapeCatalog? = nil) async throws -> DiscordSimulator {
         guard let scenario = ScenarioRegistry.scenario(named: configuration.scenario) else {
             let names = ScenarioRegistry.all.map { $0.name }.joined(separator: ", ")
             throw WorldError.invalidBody("unknown scenario \(configuration.scenario); available: \(names)")
         }
-        let resolvedCatalog: ShapeCatalog
-        if let catalog { resolvedCatalog = catalog } else { resolvedCatalog = try ShapeCatalog.bundled() }
+        let resolvedCatalog = try catalog ?? ShapeCatalog.bundled()
         let log = SimulatorLog(verbose: configuration.verbose)
         let world = World(seed: configuration.seed, epoch: configuration.epoch ?? ScenarioEpoch.recentSundayEvening(),
                           freezeClock: configuration.freezeClock)
@@ -94,7 +94,7 @@ public final class DiscordSimulator: Sendable {
             ServerDefinition(.api) { await router.handle($0) },
             ServerDefinition(.gateway, webSocket: { _, connection in await hub.handle(connection) }, handler: { [log] request in
                 log.error("gateway", "plain HTTP request to the Gateway host: \(request.method) \(request.target)")
-                return .json(400, .object(JSONObject([("message", "Bad Request"), ("code", 0)])))
+                return .discordError(400, "Bad Request")
             }),
             ServerDefinition(.cdn) { await cdn.handle($0) },
             ServerDefinition(.media) { await media.handle($0) },

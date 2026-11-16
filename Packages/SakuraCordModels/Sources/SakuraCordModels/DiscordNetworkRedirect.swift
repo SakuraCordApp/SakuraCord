@@ -12,8 +12,6 @@ public nonisolated enum DiscordNetworkRedirect {
         environment: ProcessInfo.processInfo.environment
     )
 
-    public static var isActive: Bool { simulatorBasePort != nil }
-
     /// `script/run.sh --simulator-sign-in` clears this suite for a fresh start.
     public static let simulatorDefaultsSuite = "dev.sakuracord.SakuraCord.discord-simulator"
 
@@ -55,6 +53,15 @@ public nonisolated enum DiscordNetworkRedirect {
         return components.url ?? url
     }
     #endif
+
+    /// Whether this launch talks to the simulator; always false in release builds.
+    public static var isActive: Bool {
+        #if DEBUG
+        simulatorBasePort != nil
+        #else
+        false
+        #endif
+    }
 
     public static func resolve(_ url: URL?) -> URL? { url.map { resolve($0) } }
 

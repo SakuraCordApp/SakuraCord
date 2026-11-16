@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// REST faults set through the control API, plus Discord's per-route rate
 /// limits for the routes clients most often hit them on.
@@ -25,8 +26,8 @@ public final class FaultInjector: Sendable {
 
     private struct Bucket { var resetAt: Date; var remaining: Int }
 
-    private let rules = LockedBox<[Rule]>([])
-    private let buckets = LockedBox<[String: Bucket]>([:])
+    private let rules = Mutex<[Rule]>([])
+    private let buckets = Mutex<[String: Bucket]>([:])
     private let enforcesRateLimits: Bool
 
     public init(enforcesRateLimits: Bool = true) { self.enforcesRateLimits = enforcesRateLimits }
@@ -48,7 +49,7 @@ public final class FaultInjector: Sendable {
         if rule.status == 429 { return Self.rateLimited(retryAfter: rule.retryAfter, global: rule.global, bucket: "fault") }
         let message = rule.status == 503 ? "upstream connect error or disconnect/reset before headers. reset reason: overflow"
             : "\(rule.status): Internal Server Error"
-        return .json(rule.status, .object(JSONObject([("message", .string(message)), ("code", 0)])))
+        return .discordError(rule.status, message)
     }
 
     /// Discord limits message creation to 5 per 5 seconds per channel and reactions to 1 per 0.25 s.

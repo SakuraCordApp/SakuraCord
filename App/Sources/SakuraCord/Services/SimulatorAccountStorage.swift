@@ -6,15 +6,6 @@ import SakuraCordModels
 /// Simulator tokens, saved accounts and caches live apart from real ones, so a
 /// real token is never loaded or sent while the redirect is active.
 nonisolated enum SimulatorAccountStorage {
-    /// Whether this launch talks to the simulator; always false in release builds.
-    static var isActive: Bool {
-        #if DEBUG
-        DiscordNetworkRedirect.isActive
-        #else
-        false
-        #endif
-    }
-
     /// Nil outside a simulator launch; release builds always use the default location.
     static var databaseDirectory: URL? {
         #if DEBUG
@@ -41,9 +32,5 @@ nonisolated enum SimulatorAccountStorage {
         guard DiscordNetworkRedirect.isActive else { return nil }
         return ProcessInfo.processInfo.environment["SAKURACORD_SIMULATOR_TOKEN"].flatMap { $0.isEmpty ? nil : $0 }
     }
-
-    static let savedAccountStore: UserDefaultsSavedAccountStore? = DiscordNetworkRedirect.isActive
-        ? UserDefaultsSavedAccountStore(defaults: DiscordNetworkRedirect.sessionDefaults)
-        : nil
     #endif
 }

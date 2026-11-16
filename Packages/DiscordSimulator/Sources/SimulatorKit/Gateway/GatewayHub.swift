@@ -310,5 +310,4 @@ public actor GatewayHub: WorldEventSink {
         return count
     }
 
-    public var liveSessionCount: Int { sessions.values.filter { $0.connection != nil }.count }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Timed event streams for live benchmarks (message arrivals, reaction storms,
 /// presence churn, unread mentions), started through the control API.
@@ -8,7 +9,7 @@ public final class ScriptRunner: Sendable {
     let world: World
     let log: SimulatorLog
     private let scripts: [String: Script]
-    private let running = LockedBox<[String: Task<Void, Never>]>([:])
+    private let running = Mutex<[String: Task<Void, Never>]>([:])
 
     init(world: World, log: SimulatorLog, scripts: [String: Script]) {
         self.world = world

@@ -24,7 +24,7 @@ import Testing
         action()
     }
 
-    // The offline account manages threads, so moderation is offered.
+    // The mock account manages threads, so moderation is offered.
     #expect(["membership", "rename", ThreadActionsMenu.tagsSlotID, "archive", "lock", "pin", "delete"]
         .allSatisfy { entries()[$0] != nil })
     #expect(entries()["mute"] == nil && entries()["notifications"] == nil)

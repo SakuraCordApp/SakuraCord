@@ -1,33 +1,35 @@
 import Foundation
+import Synchronization
 
 /// The simulator's notion of "now". It starts at the scenario's epoch and runs
 /// with real time unless frozen, so timestamps and snowflakes are repeatable.
-public final class SimulatorClock: @unchecked Sendable {
-    private let lock = NSLock()
-    private var anchorSimulated: Date
-    private var anchorReal: Date
-    private var frozen: Bool
+public final class SimulatorClock: Sendable {
+    private struct State {
+        var anchorSimulated: Date
+        var anchorReal: Date
+        var frozen: Bool
+    }
+
+    private let state: Mutex<State>
 
     public init(epoch: Date, frozen: Bool = false) {
-        anchorSimulated = epoch
-        anchorReal = Date()
-        self.frozen = frozen
+        state = Mutex(State(anchorSimulated: epoch, anchorReal: Date(), frozen: frozen))
     }
 
     public var now: Date {
-        lock.withLock { frozen ? anchorSimulated : anchorSimulated.addingTimeInterval(Date().timeIntervalSince(anchorReal)) }
+        state.withLock { $0.frozen ? $0.anchorSimulated : $0.anchorSimulated.addingTimeInterval(Date().timeIntervalSince($0.anchorReal)) }
     }
 
-    public var isFrozen: Bool { lock.withLock { frozen } }
+    public var isFrozen: Bool { state.withLock { $0.frozen } }
 
     public func set(_ date: Date) {
-        lock.withLock { anchorSimulated = date; anchorReal = Date() }
+        state.withLock { $0.anchorSimulated = date; $0.anchorReal = Date() }
     }
 
     public func advance(by seconds: TimeInterval) { set(now.addingTimeInterval(seconds)) }
 
     public func freeze(_ shouldFreeze: Bool) {
         let current = now
-        lock.withLock { anchorSimulated = current; anchorReal = Date(); frozen = shouldFreeze }
+        state.withLock { $0 = State(anchorSimulated: current, anchorReal: Date(), frozen: shouldFreeze) }
     }
 }

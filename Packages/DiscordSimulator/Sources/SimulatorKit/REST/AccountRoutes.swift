@@ -87,8 +87,7 @@ enum AccountRoutes {
 extension World {
     /// A fingerprint or installation ID: `<snowflake>.<27 url-safe characters>`.
     func clientIdentity() -> String {
-        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
-        return "\(nextID()).\(String((0 ..< 27).map { _ in alphabet[Int(random.next() % 64)] }))"
+        "\(nextID()).\(random.urlSafeString(27))"
     }
 
     /// Merges a partial settings proto into the stored one and returns the

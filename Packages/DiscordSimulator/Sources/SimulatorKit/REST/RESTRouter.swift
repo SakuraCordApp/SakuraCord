@@ -28,8 +28,7 @@ public typealias RouteHandler = @Sendable (RouteContext) async throws -> RouteRe
 
 public enum RouteResult: Sendable {
     case json(JSON, status: Int = 200)
-    case empty(status: Int = 204)
-    case raw(HTTPResponse)
+    case empty
 }
 
 /// Routes Discord REST requests. Unmatched routes fail loudly: 404 plus a log line.
@@ -65,7 +64,7 @@ public final class RESTRouter: Sendable {
         let parameters = Self.parameters(path: request.path)
         guard let handler = routes[template] else {
             log.error("rest", "UNKNOWN ROUTE \(request.method) \(request.path) (template \(template))")
-            return .json(404, .object(JSONObject([("message", "404: Not Found"), ("code", 0)])))
+            return .discordError(404, "404: Not Found")
         }
         if let fault = faults.restFault(for: template) { return fault }
         let userID: Snowflake
@@ -73,7 +72,7 @@ public final class RESTRouter: Sendable {
             userID = Snowflake(0)
         } else {
             guard let token = request.header("Authorization"), let resolved = await world.userID(forToken: token) else {
-                return .json(401, .object(JSONObject([("message", "401: Unauthorized"), ("code", 0)])))
+                return .discordError(401, "401: Unauthorized")
             }
             userID = resolved
         }
@@ -84,16 +83,14 @@ public final class RESTRouter: Sendable {
             switch try await handler(context) {
             case let .json(body, status):
                 return .json(status, conform(body, route: template, status: status))
-            case let .empty(status):
-                return .empty(status)
-            case let .raw(response):
-                return response
+            case .empty:
+                return .empty(204)
             }
         } catch let error as WorldError {
-            return .json(error.status, .object(JSONObject([("message", .string(error.message)), ("code", .int(error.code))])))
+            return .discordError(error.status, error.message, code: error.code)
         } catch {
             log.error("rest", "\(template) failed: \(error)")
-            return .json(500, .object(JSONObject([("message", "500: Internal Server Error"), ("code", 0)])))
+            return .discordError(500, "500: Internal Server Error")
         }
     }
 
@@ -117,7 +114,7 @@ public final class RESTRouter: Sendable {
             error = .unknown("Channel", code: 10003)
         }
         guard let error else { return nil }
-        return .json(error.status, .object(JSONObject([("message", .string(error.message)), ("code", .int(error.code))])))
+        return .discordError(error.status, error.message, code: error.code)
     }
 
     func conform(_ body: JSON, route: String, status: Int) -> JSON {

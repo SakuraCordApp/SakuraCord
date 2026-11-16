@@ -1072,7 +1072,7 @@ final class AppModel {
             isEphemeral: isEphemeral, usesInsecureDebugCredentials: usesInsecureDebugCredentials
         )
         self.credentialStore = resolvedCredentialStore
-        self.savedAccountStore = savedAccountStore ?? UserDefaultsSavedAccountStore.current
+        self.savedAccountStore = savedAccountStore ?? UserDefaultsSavedAccountStore.shared
         self.authenticatedProviderFactory =
             authenticatedProviderFactory ?? { handle, installationID in
                 DiscordRESTProvider(
