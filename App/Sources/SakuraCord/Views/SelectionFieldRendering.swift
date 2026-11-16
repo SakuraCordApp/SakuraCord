@@ -273,7 +273,7 @@ enum SelectionFieldRenderer {
                     hints: [.interpolation: NSImageInterpolation.high]
                 )
             } else if url != nil {
-                NSColor.quaternaryLabelColor.setFill()
+                UserAvatarPresentation.placeholderColor.setFill()
                 path.fill()
             } else {
                 NSColor.sakuraCordAccentColor.withAlphaComponent(0.65).setFill()

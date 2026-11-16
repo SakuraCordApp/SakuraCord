@@ -867,7 +867,7 @@ final class TypingIndicator: NSView {
         CATransaction.setDisableActions(true)
         effectiveAppearance.performAsCurrentDrawingAppearance {
             countText.foregroundColor = NSColor.secondaryLabelColor.cgColor
-            let placeholder = NSColor.quaternaryLabelColor.cgColor
+            let placeholder = UserAvatarPresentation.placeholderColor.cgColor
             for slot in stack where slot.picture.contents == nil {
                 slot.picture.backgroundColor = placeholder
             }
@@ -877,7 +877,7 @@ final class TypingIndicator: NSView {
 
     private var placeholderColor: CGColor? {
         var color: CGColor?
-        effectiveAppearance.performAsCurrentDrawingAppearance { color = NSColor.quaternaryLabelColor.cgColor }
+        effectiveAppearance.performAsCurrentDrawingAppearance { color = UserAvatarPresentation.placeholderColor.cgColor }
         return color
     }
 }

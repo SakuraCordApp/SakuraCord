@@ -825,7 +825,7 @@ extension NativeTimelineRowPainter {
         if let url, let image = MediaImageStore.shared.stillImage(for: .avatar(url)) {
             drawImage(image, in: frame, cornerRadius: frame.width / 2, fillsFrame: true)
         } else {
-            NSColor.quaternaryLabelColor.setFill()
+            UserAvatarPresentation.placeholderColor.setFill()
             NSBezierPath(ovalIn: frame).fill()
         }
     }

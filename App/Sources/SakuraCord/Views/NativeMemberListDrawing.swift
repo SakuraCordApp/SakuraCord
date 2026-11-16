@@ -420,7 +420,7 @@ extension NativeMemberListCanvasView {
                 fills: true
             )
         } else {
-            context.setFillColor(NSColor.quaternaryLabelColor.cgColor)
+            context.setFillColor(UserAvatarPresentation.placeholderColor.cgColor)
             context.fill(avatar)
         }
         context.restoreGState()

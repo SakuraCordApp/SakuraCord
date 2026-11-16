@@ -858,7 +858,6 @@ private struct QuickSwitcherRowIcon: View {
                 )
             } else if let imageURL = row.imageURL {
                 AvatarView(name: row.title, url: imageURL, size: size, animates: false, isHovered: false)
-                    .background(Color.secondary.opacity(0.16), in: Circle())
             } else {
                 Image(systemName: row.systemImage)
                     .font(.interfaceSystem(size: 15, weight: .medium))

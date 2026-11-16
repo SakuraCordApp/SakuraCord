@@ -942,7 +942,7 @@ private struct ServerRailVoicePreviewRow: View {
             AvatarView(name: name, url: participant.avatarURL, size: avatarSize, animates: false)
         } else {
             Circle()
-                .fill(Color.secondary.opacity(0.25))
+                .fill(Color(nsColor: UserAvatarPresentation.placeholderColor))
                 .frame(width: avatarSize, height: avatarSize)
         }
     }
