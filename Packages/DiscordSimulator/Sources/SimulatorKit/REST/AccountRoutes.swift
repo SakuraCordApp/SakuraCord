@@ -130,6 +130,7 @@ extension World {
               user.password == password else {
             throw WorldError(status: 400, code: 50035, message: "Invalid Form Body")
         }
+        if signIn.authenticatorCodes[user.id] != nil { return mfaChallenge(for: user.id) }
         guard let token = tokens.first(where: { $0.value == user.id })?.key else { throw WorldError.unauthorized }
         return .object(JSONObject([
             ("user_id", user.id.json), ("token", .string(token)),

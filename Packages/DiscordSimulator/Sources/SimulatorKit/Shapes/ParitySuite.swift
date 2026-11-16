@@ -182,6 +182,10 @@ struct ParityRun {
 
         try await historyVariants(target, messagesPath: messagesPath)
         try await slashCommand(target)
+        try await servers(target)
+        try await inboxAndScheduling(target)
+        try await voice(target, me: me)
+        try await threadMembership(target)
 
         await flowStart()
         _ = try await rest("DELETE", "\(messagesPath)/\(sentID)")

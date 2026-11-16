@@ -38,6 +38,7 @@ public nonisolated enum DiscordNetworkRedirect {
         case "media.discordapp.net": 3
         case "discord-attachments-uploads-prd.storage.googleapis.com": 4
         case _ where host.hasSuffix(".discord.gg"): 1
+        case _ where host.hasSuffix(".discord.media"): 5
         case _ where host.hasPrefix("images-ext-") && host.hasSuffix(".discordapp.net"): 3
         default: nil
         }

@@ -13,6 +13,7 @@ public struct MessageDraft: Sendable {
     public var poll: Poll?
     public var stickerIDs: [Snowflake] = []
     public var type = 0
+    public var call: JSON?
     /// `allowed_mentions.parse` (nil means Discord's default: everything) and
     /// `replied_user`, which decides whether a reply pings its author.
     public var allowedMentionsParse: Set<String>?
@@ -279,6 +280,7 @@ public extension World {
         var message = Message(id: nextID(), channelID: channelID, authorID: authorID, content: draft.content)
         message.type = draft.type
         message.reference = draft.reference
+        message.call = draft.call
         channels[channelID]?.messages.append(message)
         await emit("MESSAGE_CREATE", renderMessageEvent(message), to: audience(for: try channel(channelID)))
         return message

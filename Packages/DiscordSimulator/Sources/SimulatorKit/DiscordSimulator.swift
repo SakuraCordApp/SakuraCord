@@ -21,7 +21,7 @@ public final class DiscordSimulator: Sendable {
 
     /// Offsets from the base port, one per stood-in host.
     public enum Port: UInt16, CaseIterable, Sendable {
-        case api = 0, gateway = 1, cdn = 2, media = 3, upload = 4, control = 9
+        case api = 0, gateway = 1, cdn = 2, media = 3, upload = 4, voice = 5, voiceMedia = 6, control = 9
     }
 
     public let configuration: Configuration
@@ -32,6 +32,7 @@ public final class DiscordSimulator: Sendable {
     public let router: RESTRouter
     public let faults: FaultInjector
     public let scripts: ScriptRunner
+    public let voice: VoiceGateway
     let conditioners: [Port: NetworkConditioner]
     private let servers = Mutex<[HTTPServer]>([])
 
@@ -53,13 +54,22 @@ public final class DiscordSimulator: Sendable {
         AccountRoutes.register(into: &routes)
         ThreadRoutes.register(into: &routes)
         InteractionRoutes.register(into: &routes)
+        CallRoutes.register(into: &routes)
+        ServerRoutes.register(into: &routes)
+        SignInRoutes.register(into: &routes, remoteAuth: hub.remoteAuth)
+        ScheduledMessageRoutes.register(into: &routes)
+        ChannelEditRoutes.register(into: &routes)
+        InboxRoutes.register(into: &routes)
+        AffinityRoutes.register(into: &routes)
+        SearchRoutes.register(into: &routes)
+        SessionRoutes.register(into: &routes)
         var conditioners: [Port: NetworkConditioner] = [:]
         for port in Port.allCases where port != .control {
             conditioners[port] = NetworkConditioner(seed: configuration.seed ^ UInt64(port.rawValue), profile: configuration.network)
         }
         let router = RESTRouter(world: world, catalog: resolvedCatalog, log: log, faults: faults, routes: routes,
-                                unauthenticated: ["POST /auth/login", "POST /api/v9/auth/login",
-                                                  "GET /api/v9/experiments", "GET /api/v9/apex/experiments"])
+                                unauthenticated: SignInRoutes.unauthenticated.union(["POST /auth/login", "POST /api/v9/auth/login",
+                                                                                     "GET /api/v9/experiments", "GET /api/v9/apex/experiments"]))
         return DiscordSimulator(configuration: configuration, catalog: resolvedCatalog, log: log, world: world, faults: faults,
                                 hub: hub, router: router, scripts: ScriptRunner(world: world, log: log, scripts: BenchmarkScripts.all),
                                 conditioners: conditioners)
@@ -76,6 +86,7 @@ public final class DiscordSimulator: Sendable {
         self.router = router
         self.scripts = scripts
         self.conditioners = conditioners
+        voice = VoiceGateway(world: world, log: log, seed: configuration.seed, mediaPort: configuration.basePort + Port.voiceMedia.rawValue)
     }
 
     public func port(_ port: Port) -> UInt16 { configuration.basePort + port.rawValue }
@@ -89,12 +100,17 @@ public final class DiscordSimulator: Sendable {
         let cdn = CDNHandler(world: world, log: log, host: "cdn.discordapp.com")
         let media = CDNHandler(world: world, log: log, host: "media.discordapp.net")
         let upload = UploadHandler(world: world, log: log)
-        let hub = hub, router = router
+        let hub = hub, router = router, voice = voice
+        await world.attachVoiceMedia(voice)
         let instant = NetworkConditioner(seed: configuration.seed, profile: .instant)
         let definitions: [ServerDefinition] = [
             ServerDefinition(.api) { await router.handle($0) },
             ServerDefinition(.gateway, webSocket: { _, connection in await hub.handle(connection) }, handler: { [log] request in
                 log.error("gateway", "plain HTTP request to the Gateway host: \(request.method) \(request.target)")
+                return .discordError(400, "Bad Request")
+            }),
+            ServerDefinition(.voice, webSocket: { _, connection in await voice.handle(connection) }, handler: { [log] request in
+                log.error("voice", "plain HTTP request to the voice server: \(request.method) \(request.target)")
                 return .discordError(400, "Bad Request")
             }),
             ServerDefinition(.cdn) { await cdn.handle($0) },

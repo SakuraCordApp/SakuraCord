@@ -35,6 +35,8 @@ The simulator binds `127.0.0.1` only. One base port `P` (default 47100):
 | P+2 | CDN | `cdn.discordapp.com` |
 | P+3 | Media proxy | `media.discordapp.net`, `images-ext-*.discordapp.net` |
 | P+4 | Attachment uploads | `discord-attachments-uploads-prd.storage.googleapis.com` |
+| P+5 | Voice gateway WebSocket (v8) | `*.discord.media` voice servers |
+| P+6 | Voice media (UDP) | the IP and port the voice server's Ready announces |
 | P+9 | Control API (simulator-only JSON) | none |
 
 ## Scenarios
@@ -72,7 +74,8 @@ runs that must be identical on any day.
 | `nitro <user> none\|basic\|nitro\|classic` | USER_UPDATE and member updates |
 | `boosts <guild> <count>` | Boost count, tier, booster `premium_since`, boost system messages |
 | `presence <user> online\|idle\|dnd\|offline [status text]` | PRESENCE_UPDATE |
-| `ring <caller>` | Incoming DM call to the signed-in user: call message and CALL_CREATE (no voice) |
+| `ring <caller>` | The caller joins a DM call with the signed-in user and rings them (CALL_CREATE, VOICE_STATE_UPDATE, CALL_UPDATE) |
+| `voice <user> join <channel> [--video]` / `leave` / `mute` / `unmute` / `deafen` / `undeafen` / `camera-on` / `camera-off` / `speak` / `quiet` | A simulated person in voice |
 | `network <profile>` or `network <latency-ms> <jitter-ms> [down-Bps] [up-Bps]` | Delay, jitter and bandwidth for every host |
 | `fault 429\|5xx [route] [count]` | REST faults (429s carry `retry_after` and rate-limit headers) |
 | `fault gateway-drop\|gateway-reconnect\|gateway-invalid-session\|gateway-close-resumable` | Gateway drops, op 7, op 9, close 4000 |

@@ -32,6 +32,8 @@ public actor GatewayHub: WorldEventSink {
     let catalog: ShapeCatalog
     let log: SimulatorLog
     let resumeURL: String
+    /// QR sign-in connections arrive on the same port, as `?v=2`.
+    public let remoteAuth: RemoteAuthGateway
     private var sessions: [String: Session] = [:]
     private var random: SeededRandom
     /// Every dispatch sent, in order, for the parity harness.
@@ -43,6 +45,7 @@ public actor GatewayHub: WorldEventSink {
         self.catalog = catalog
         self.log = log
         self.resumeURL = resumeURL
+        remoteAuth = RemoteAuthGateway(world: world, log: log, seed: seed)
         random = SeededRandom(seed: seed).fork("gateway")
     }
 
@@ -50,6 +53,7 @@ public actor GatewayHub: WorldEventSink {
 
     public func handle(_ connection: WebSocketConnection) async {
         let query = connection.request.query
+        if query["v"]?.first == "2" { return await remoteAuth.handle(connection) }
         let codec = GatewayFrameCodec(encoding: query["encoding"]?.first ?? "json", compression: query["compress"]?.first)
         var session: Session?
         await send(frame(op: 10, data: .object(JSONObject([
@@ -60,7 +64,10 @@ public actor GatewayHub: WorldEventSink {
         for await message in connection.messages {
             if case let .close(code, _) = message {
                 // A normal close ends the session; Discord won't resume it.
-                if let session, code == 1000 || code == 1001 { sessions[session.id] = nil }
+                if let session, code == 1000 || code == 1001 {
+                    sessions[session.id] = nil
+                    await world.leaveVoice(session: session.id)
+                }
                 break
             }
             guard let payload = await decodeClientMessage(message, connection: connection, codec: codec) else { return }
@@ -105,8 +112,12 @@ public actor GatewayHub: WorldEventSink {
             if let session { await requestMembers(session, data) }
         case 37:
             if let session { await subscribe(session, data) }
-        case 4, 13, 14, 41, 43:
-            // Voice and calls (out of scope), the legacy lazy request and client telemetry need no reply.
+        case 4:
+            if let session { await updateVoiceState(session, data) }
+        case 13:
+            if let session { await connectPrivateCall(session, data) }
+        case 14, 41, 43:
+            // The legacy lazy request and client telemetry need no reply.
             break
         default:
             log.error("gateway", "unknown opcode \(op); closing 4001")
@@ -237,7 +248,7 @@ public actor GatewayHub: WorldEventSink {
         }
     }
 
-    private func dispatch(_ name: String, _ data: JSON, to session: Session) async {
+    func dispatch(_ name: String, _ data: JSON, to session: Session) async {
         session.sequence += 1
         let shape = catalog.gateway[name]
         if shape == nil { log.warning("gateway", "dispatching \(name), which no capture contains") }

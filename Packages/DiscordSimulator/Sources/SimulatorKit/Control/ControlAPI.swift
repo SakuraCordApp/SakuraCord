@@ -15,7 +15,7 @@ public final class ControlAPI: Sendable {
         let route = Array(segments.dropFirst())
         do {
             let body = request.body.isEmpty ? JSON.object(JSONObject()) : try JSON.parse(request.body)
-            for handler in [observeRoute, messageRoute, worldRoute, simulationRoute] {
+            for handler in [observeRoute, messageRoute, worldRoute, simulationRoute, voiceRoute, serverRoute] {
                 if let response = try await handler(request, route, body) { return response }
             }
             return notFound(request)
@@ -87,7 +87,7 @@ public final class ControlAPI: Sendable {
             } else {
                 channel = try await world.openPrivateChannel(for: me, with: [caller]).id
             }
-            try await world.ring(channel, from: caller)
+            try await world.placeCall(channel, from: caller)
             return ok(["channel_id": channel.json])
         default:
             return nil
@@ -160,7 +160,7 @@ public final class ControlAPI: Sendable {
         }
     }
 
-    private func ok(_ fields: [String: JSON]) -> HTTPResponse {
+    func ok(_ fields: [String: JSON]) -> HTTPResponse {
         var object = JSONObject([("ok", true)])
         for key in fields.keys.sorted() { object[key] = fields[key] }
         return .json(200, .object(object))

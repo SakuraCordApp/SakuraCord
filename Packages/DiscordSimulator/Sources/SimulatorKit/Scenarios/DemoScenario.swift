@@ -46,6 +46,7 @@ struct DemoConverter {
         for sticker in DemoContent.standardStickers { await addSticker(sticker, guildID: nil) }
         if includesGuilds {
             for guild in DemoContent.guilds { try await buildGuild(guild) }
+            try await buildServerExtras()
         }
         for direct in DemoContent.directChannels { try await buildDirectChannel(direct) }
         guard let me = people[DemoContent.selfKey] else { throw WorldError.invalidBody("demo content has no self person") }
@@ -62,6 +63,7 @@ struct DemoConverter {
         await world.setUnfurler(DemoConverter.unfurl)
         try await dressSelf(me)
         await registerBotCommands()
+        try await addInboxState(me: me)
     }
 
     /// Pip answers its slash commands with this week's cards, and its RSVP
@@ -290,6 +292,7 @@ struct DemoConverter {
                                                           moderated: tag.moderated, emojiName: tag.emoji))
                 }
                 await world.addChannel(channel)
+                await seatVoiceStates(demoChannel.voiceStates, channelID: id, guildID: guildID)
             }
             position += 1
         }

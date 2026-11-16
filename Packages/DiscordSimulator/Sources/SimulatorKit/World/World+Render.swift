@@ -231,7 +231,7 @@ public extension World {
         }
         object["join_timestamp"] = World.timestamp(thread.thread?.createTimestamp ?? thread.id.date)
         object["flags"] = 1
-        object["muted"] = false
+        object["muted"] = .bool(thread.mutedThreadMembers.contains(userID))
         object["mute_config"] = .null
         return .object(object)
     }
@@ -404,6 +404,7 @@ public extension World {
         }
         if !message.messageSnapshots.isEmpty { object["message_snapshots"] = .array(message.messageSnapshots) }
         if let poll = message.poll { object["poll"] = renderPoll(poll, viewer: viewer) }
+        object["call"] = message.call
         if !message.stickerIDs.isEmpty {
             let stickers = guilds.values.flatMap(\.stickers) + standardStickers
             object["sticker_items"] = .array(message.stickerIDs.compactMap { id in

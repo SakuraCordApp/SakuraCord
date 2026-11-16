@@ -38,13 +38,33 @@ public enum ShapeChecker {
             // A value only captured as null never showed its own term type, and an
             // empty list is always NIL_EXT whatever tag the captured non-empty one had.
             if !isKey, target.kinds == [.null] { return nil }
+            // ETF has one term for null, the atom `nil`, whatever type the field has when set.
+            if !isKey, tag == "atom", target.kinds.contains(.null) { return nil }
             if tag == "nil", !allowed.isDisjoint(with: ["list", "string"]) { return nil }
+            // Older JSON-only captures saw this type without its ETF term, so there is nothing to compare.
+            let used = Self.kinds(ofETF: tag)
+            if !isKey, !target.kinds.isDisjoint(with: used), allowed.allSatisfy({ Self.kinds(ofETF: $0).isDisjoint(with: used) }) {
+                return ShapeViolation(kind: .unverified, path: path, detail: "\(tag) never captured over ETF")
+            }
             let field = String(trimmed.split(separator: "/").last ?? "")
             let parentPath = trimmed.split(separator: "/").dropLast().joined(separator: "/")
             if !isKey, elsewhere?.acceptsETF(tag, field: field, parent: node.resolve("/" + parentPath)) == true {
                 return ShapeViolation(kind: .unverified, path: path, detail: "ETF \(tag) captured for \(field) in another context")
             }
             return ShapeViolation(kind: .etf, path: path, detail: "used \(tag), captured \(allowed.sorted().joined(separator: "|"))")
+        }
+    }
+
+    /// The JSON kinds an ETF term can carry.
+    static func kinds(ofETF tag: String) -> Set<ValueKind> {
+        switch tag {
+        case "small_int", "integer", "small_big", "large_big": [.int, .snowflake]
+        case "new_float", "float": [.float]
+        case "binary", "string": [.string, .snowflake, .timestamp]
+        case "atom", "small_atom", "atom_utf8", "small_atom_utf8": [.bool, .null]
+        case "map": [.object, .map]
+        case "list", "nil": [.array]
+        default: []
         }
     }
 

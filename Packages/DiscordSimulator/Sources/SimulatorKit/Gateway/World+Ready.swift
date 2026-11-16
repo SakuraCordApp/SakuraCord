@@ -47,7 +47,7 @@ public extension World {
             ("private_channels", .array(privateChannels)),
             ("relationships", .array(relationshipList)),
             ("read_state", .object(JSONObject([("version", 1), ("partial", false), ("entries", .array(readStateEntries))]))),
-            ("user_guild_settings", .object(JSONObject([("version", 1), ("partial", false), ("entries", [])]))),
+            ("user_guild_settings", .object(JSONObject([("version", 1), ("partial", false), ("entries", .array(renderGuildSettingsEntries(userID)))]))),
             ("user_settings_proto", .string(settingsProto[userID]?[1]?.base64EncodedString() ?? "")),
             ("session_id", .string(sessionID)),
             ("session_type", "normal"),
@@ -58,7 +58,7 @@ public extension World {
                 ("activities", []), ("hidden_activities", []), ("processed_at_timestamp", .int(Int64(clock.now.timeIntervalSince1970 * 1000))),
             ]))])),
             ("connected_accounts", []),
-            ("guild_join_requests", []),
+            ("guild_join_requests", .array(readyJoinRequests(userID))),
             ("guild_experiments", []),
             ("experiments", []),
             ("apex_experiments", .object(JSONObject([("assignments", .object(JSONObject()))]))),
@@ -108,7 +108,7 @@ public extension World {
         return .object(object)
     }
 
-    private func readyGuild(_ guild: Guild, viewer userID: Snowflake) -> JSON {
+    func readyGuild(_ guild: Guild, viewer userID: Snowflake) -> JSON {
         let visible = visibleChannels(in: guild, for: userID)
         return .object(JSONObject([
             ("version", .int(Int64(clock.now.timeIntervalSince1970 * 1000))),
@@ -163,7 +163,7 @@ public extension World {
             })),
             ("lazy_private_channels", []),
             ("guilds", .array(guilds.map { guild in
-                .object(JSONObject([("voice_states", []), ("id", guild.id.json), ("embedded_activities", []), ("activity_instances", [])]))
+                .object(JSONObject([("voice_states", renderGuildVoiceStates(guild.id)), ("id", guild.id.json), ("embedded_activities", []), ("activity_instances", [])]))
             })),
             ("game_invites", []),
             ("user_activities", []),

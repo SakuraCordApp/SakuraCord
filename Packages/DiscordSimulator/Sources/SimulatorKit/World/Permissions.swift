@@ -26,6 +26,7 @@ public struct Permissions: OptionSet, Sendable, Hashable {
     public static let useExternalEmojis = Permissions(rawValue: 1 << 18)
     public static let connect = Permissions(rawValue: 1 << 20)
     public static let speak = Permissions(rawValue: 1 << 21)
+    public static let moveMembers = Permissions(rawValue: 1 << 24)
     public static let changeNickname = Permissions(rawValue: 1 << 26)
     public static let manageNicknames = Permissions(rawValue: 1 << 27)
     public static let manageRoles = Permissions(rawValue: 1 << 28)

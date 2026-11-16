@@ -70,8 +70,18 @@ public actor World {
     /// Simulated bots' slash command replies and button behavior, set by scenarios.
     var commandReplies: [String: CommandReply] = [:]
     var componentResponders: [String: ComponentResponder] = [:]
+    /// Invites, applications to join, server guides and onboarding.
+    public var servers = ServerState()
+    /// Two-factor sign-in codes and pending login tickets.
+    public var signIn = SignInState()
     /// The account the app signs in as.
     public private(set) var primaryUserID: Snowflake?
+    /// Messages users scheduled, keyed by scheduled message ID.
+    public var scheduledMessages: [Snowflake: ScheduledMessage] = [:]
+    /// Notification settings per user and guild, wire-shaped; DMs use guild ID 0.
+    public var guildSettings: [Snowflake: [Snowflake: JSONObject]] = [:]
+    /// Voice states, private calls and voice server grants.
+    var voice = VoiceRegistry()
     /// Files the client uploaded to the attachment host, keyed by `upload_filename`.
     public var pendingUploads: [String: PendingUpload] = [:]
     /// Generator palette per asset hash, so a person's avatar keeps their colours.

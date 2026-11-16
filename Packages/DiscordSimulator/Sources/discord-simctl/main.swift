@@ -9,6 +9,7 @@ import SimulatorKit
 ///   discord-simctl react <channel> <message-id> <author> <emoji>
 ///   discord-simctl typing <channel> <author>
 ///   discord-simctl ring <caller>          (an incoming DM call to the signed-in user)
+///   discord-simctl voice <user> join <channel> [--video] | leave | mute|unmute|deafen|undeafen|camera-on|camera-off | speak|quiet
 ///   discord-simctl nitro <user> none|basic|nitro|classic
 ///   discord-simctl boosts <guild> <count>
 ///   discord-simctl presence <user> online|idle|dnd|offline [activity text]
@@ -17,6 +18,9 @@ import SimulatorKit
 ///   discord-simctl faults-clear
 ///   discord-simctl clock freeze|unfreeze|advance <seconds>
 ///   discord-simctl script <name> [key=value]...
+///   discord-simctl qr scan|approve|cancel [user]   (the phone side of QR sign-in)
+///   discord-simctl application <guild> <user> approve|reject [reason]
+///   discord-simctl mfa <user> <six-digit-code>|off
 var arguments = Array(CommandLine.arguments.dropFirst())
 var basePort = Int(DiscordSimulator.Configuration().basePort)
 if let index = arguments.firstIndex(of: "--port"), index + 1 < arguments.count, let port = Int(arguments[index + 1]) {
@@ -86,6 +90,18 @@ case "delete": await call("DELETE", "messages/\(argument(2))", ["channel": argum
 case "react": await call("POST", "reactions", ["channel": argument(1), "message_id": argument(2), "author": argument(3), "emoji": argument(4)])
 case "typing": await call("POST", "typing", ["channel": argument(1), "author": argument(2)])
 case "ring": await call("POST", "calls", ["caller": argument(1)])
+case "voice":
+    let user = argument(1)
+    let flags = ["mute": ("self_mute", true), "unmute": ("self_mute", false), "deafen": ("self_deaf", true),
+                 "undeafen": ("self_deaf", false), "camera-on": ("self_video", true), "camera-off": ("self_video", false)]
+    switch argument(2) {
+    case "join": await call("POST", "voice", ["user": user, "channel": argument(3), "self_video": arguments.contains("--video")])
+    case "leave": await call("DELETE", "voice", ["user": user])
+    case "speak", "quiet": await call("POST", "voice/speaking", ["user": user, "speaking": arguments[2] == "speak"])
+    default:
+        guard let (key, value) = flags[arguments[2]] else { usage() }
+        await call("PATCH", "voice", ["user": user, key: value])
+    }
 case "nitro":
     let types = ["none": 0, "classic": 1, "nitro": 2, "basic": 3]
     guard let type = types[argument(2)] else { usage() }
@@ -109,6 +125,15 @@ case "fault":
     if arguments.count > 3 { body["count"] = Int(arguments[3]) }
     await call("POST", "faults", body)
 case "faults-clear": await call("DELETE", "faults")
+case "qr":
+    var body: [String: Any] = ["action": argument(1)]
+    if arguments.count > 2 { body["user"] = arguments[2] }
+    await call("POST", "remote-auth", body)
+case "application":
+    var body: [String: Any] = ["guild": argument(1), "user": argument(2), "action": argument(3)]
+    if arguments.count > 4 { body["reason"] = arguments[4...].joined(separator: " ") }
+    await call("POST", "join-requests", body)
+case "mfa": await call("PUT", "users/\(argument(1))/mfa", argument(2) == "off" ? [:] : ["authenticator_code": argument(2)])
 case "clock":
     switch argument(1) {
     case "freeze": await call("POST", "clock", ["freeze": true])

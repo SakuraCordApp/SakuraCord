@@ -133,6 +133,8 @@ public struct Channel: Sendable {
     public var flags = 0
     public var thread: ThreadMetadata?
     public var threadMembers: [Snowflake] = []
+    /// Thread members who muted the thread.
+    public var mutedThreadMembers: Set<Snowflake> = []
     public var appliedTags: [Snowflake] = []
     public var availableTags: [ForumTag] = []
     public var defaultSortOrder: Int?
@@ -283,6 +285,8 @@ public struct Message: Sendable {
     public var webhookID: Snowflake?
     public var applicationID: Snowflake?
     public var interaction: InteractionRecord?
+    /// A call message's participants and end, wire-shaped.
+    public var call: JSON?
 
     public var timestamp: Date { id.date }
 }
