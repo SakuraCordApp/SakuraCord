@@ -109,7 +109,6 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public var permissionOverwrites: [ChannelPermissionOverwrite]?
     public var memberListID: String?
     public var lastMessageID: MessageID?
-    public var lastPinTimestamp: Date?
     public var flags: UInt64
     public var availableTags: [ForumTag]
     public var defaultReaction: ForumDefaultReaction?
@@ -146,7 +145,6 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         permissionOverwrites: [ChannelPermissionOverwrite]? = nil,
         memberListID: String? = nil,
         lastMessageID: MessageID? = nil,
-        lastPinTimestamp: Date? = nil,
         flags: UInt64 = 0,
         availableTags: [ForumTag] = [],
         defaultReaction: ForumDefaultReaction? = nil,
@@ -182,7 +180,6 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.permissionOverwrites = permissionOverwrites
         self.memberListID = memberListID
         self.lastMessageID = lastMessageID
-        self.lastPinTimestamp = lastPinTimestamp
         self.flags = flags
         self.availableTags = availableTags
         self.defaultReaction = defaultReaction
@@ -229,7 +226,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, guildID, name, hasExplicitName, iconURL, ownerID, topic, kind, category, categoryID, position, categoryPosition
         case isAgeRestricted, blockedUserWarningDismissed, isMessageRequest, isSpam
-        case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, memberListID, lastMessageID, lastPinTimestamp
+        case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, memberListID, lastMessageID
         case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
         case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
         case rateLimitPerUser
@@ -263,7 +260,6 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         )
         memberListID = try values.decodeIfPresent(String.self, forKey: .memberListID)
         lastMessageID = try values.decodeIfPresent(MessageID.self, forKey: .lastMessageID)
-        lastPinTimestamp = try values.decodeIfPresent(Date.self, forKey: .lastPinTimestamp)
         flags = try values.decodeIfPresent(UInt64.self, forKey: .flags) ?? 0
         availableTags = try values.decodeIfPresent([ForumTag].self, forKey: .availableTags) ?? []
         defaultReaction = try values.decodeIfPresent(

@@ -248,6 +248,17 @@ from READY without consuming later guild-settings events there. Swiftcord v1
 `14465d927ebe1ba34b3befa00f9365fad7b56eb9` has no equivalent filter in its
 [channel list](https://github.com/SwiftcordApp/Swiftcord/blob/14465d927ebe1ba34b3befa00f9365fad7b56eb9/Swiftcord/Views/Server/ChannelList.swift).
 
+### Channels the user cannot view
+
+READY still lists guild channels the user cannot view, but as placeholders: the
+name is `___hidden___`, `flags` includes `1 << 17`, and the only permission
+overwrite denies `VIEW_CHANNEL` to `@everyone`. Topic, last message and last pin
+are null. Like the official client, the sidebar, keyboard navigation, mention
+autocomplete and pinned channels leave out every channel whose effective
+permissions lack `VIEW_CHANNEL`. A selected channel that loses access shows a
+locked, unavailable state. Observed in every placeholder of a captured READY
+from Official Fresh host `0.0.411`, web build `673919`, on 16 November 2026.
+
 ## Server Guide
 
 Guide entry reads `new-member-welcome`, optional guild profile enrichment and

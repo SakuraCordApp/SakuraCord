@@ -249,14 +249,10 @@ struct GatewayMessageDeleteBulkDTO: Decodable {
 }
 
 struct GatewayChannelPinsUpdateDTO: Decodable {
-    var guildID: String?
     var channelID: String
-    var lastPinTimestamp: String?
 
     enum CodingKeys: String, CodingKey {
-        case guildID = "guild_id"
         case channelID = "channel_id"
-        case lastPinTimestamp = "last_pin_timestamp"
     }
 }
 
