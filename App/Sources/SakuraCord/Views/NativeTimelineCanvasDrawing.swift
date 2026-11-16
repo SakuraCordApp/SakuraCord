@@ -8,6 +8,76 @@ extension NativeTimelineCanvasView {
     /// Taller rows are rasterized in tiles, only where exposed.
     static let wholeRowBitmapMaximumHeight: CGFloat = 256
 
+    struct TimelineRowTileMetrics: Equatable {
+        let tileIndex: Int
+        let startPixel: Int
+        let endPixel: Int
+        let pixelWidth: Int
+        let pixelHeight: Int
+        let tileOrigin: CGFloat
+        let size: NSSize
+
+        static func metrics(
+            for tileIndex: Int,
+            rowWidth: CGFloat,
+            rowHeight: CGFloat,
+            scale: CGFloat
+        ) -> TimelineRowTileMetrics {
+            let effectiveScale = max(1, scale)
+            let pixelWidth = max(1, Int(ceil(max(0, rowWidth) * effectiveScale)))
+            if tileIndex < 0 {
+                let pixelHeight = max(1, Int(ceil(max(0, rowHeight) * effectiveScale)))
+                return TimelineRowTileMetrics(
+                    tileIndex: -1,
+                    startPixel: 0,
+                    endPixel: pixelHeight,
+                    pixelWidth: pixelWidth,
+                    pixelHeight: pixelHeight,
+                    tileOrigin: 0,
+                    size: NSSize(width: rowWidth, height: rowHeight)
+                )
+            }
+            let totalRowPixels = max(1, Int(round(max(0, rowHeight) * effectiveScale)))
+            let tileHeightPixels = max(1, Int(round(NativeTimelineCanvasView.bitmapTileHeight * effectiveScale)))
+            let startPixel = tileIndex * tileHeightPixels
+            let endPixel = min(totalRowPixels, startPixel + tileHeightPixels)
+            let pixelHeight = max(1, endPixel - startPixel)
+            let tileOrigin = CGFloat(startPixel) / effectiveScale
+            let tileHeight = CGFloat(pixelHeight) / effectiveScale
+            return TimelineRowTileMetrics(
+                tileIndex: tileIndex,
+                startPixel: startPixel,
+                endPixel: endPixel,
+                pixelWidth: pixelWidth,
+                pixelHeight: pixelHeight,
+                tileOrigin: tileOrigin,
+                size: NSSize(width: rowWidth, height: tileHeight)
+            )
+        }
+
+        static func destinationFrame(
+            for tileIndex: Int,
+            rowFrame: CGRect,
+            scale: CGFloat
+        ) -> CGRect {
+            let effectiveScale = max(1, scale)
+            let rowOriginPixel = Int(round(rowFrame.minY * effectiveScale))
+            let metrics = metrics(
+                for: tileIndex,
+                rowWidth: rowFrame.width,
+                rowHeight: rowFrame.height,
+                scale: effectiveScale
+            )
+            let tileMinY = CGFloat(rowOriginPixel + metrics.startPixel) / effectiveScale
+            return CGRect(
+                x: rowFrame.minX,
+                y: tileMinY,
+                width: metrics.size.width,
+                height: metrics.size.height
+            )
+        }
+    }
+
     func apply(
         storage: NativeTimelineCanvasStorage,
         model: AppModel,
@@ -940,13 +1010,23 @@ extension NativeTimelineCanvasView {
         if rowFrame.height > Self.wholeRowBitmapMaximumHeight {
             let exposed = rowFrame.intersection(dirtyRect)
             guard !exposed.isEmpty else { return }
-            let firstTile = max(0, Int(floor((exposed.minY - rowFrame.minY) / Self.bitmapTileHeight)))
-            let lastTile = max(firstTile, Int(ceil((exposed.maxY - rowFrame.minY) / Self.bitmapTileHeight)) - 1)
+            let scale = max(1, rowBitmapScale)
+            let rowOriginPixel = Int(round(rowFrame.minY * scale))
+            let totalRowPixels = max(1, Int(round(rowFrame.height * scale)))
+            let tileHeightPixels = max(1, Int(round(Self.bitmapTileHeight * scale)))
+            let exposedMinYPixel = Int(floor(exposed.minY * scale))
+            let exposedMaxYPixel = Int(ceil(exposed.maxY * scale))
+            let exposedStartInRow = max(0, exposedMinYPixel - rowOriginPixel)
+            let exposedEndInRow = min(totalRowPixels, exposedMaxYPixel - rowOriginPixel)
+            guard exposedStartInRow < exposedEndInRow else { return }
+            let totalTiles = (totalRowPixels + tileHeightPixels - 1) / tileHeightPixels
+            let firstTile = max(0, exposedStartInRow / tileHeightPixels)
+            let lastTile = min(totalTiles - 1, max(firstTile, (exposedEndInRow - 1) / tileHeightPixels))
             for tileIndex in firstTile ... lastTile {
-                let offset = CGFloat(tileIndex) * Self.bitmapTileHeight
-                let tileFrame = CGRect(
-                    x: rowFrame.minX, y: rowFrame.minY + offset,
-                    width: rowFrame.width, height: min(Self.bitmapTileHeight, rowFrame.height - offset)
+                let tileFrame = TimelineRowTileMetrics.destinationFrame(
+                    for: tileIndex,
+                    rowFrame: rowFrame,
+                    scale: scale
                 )
                 let image = cachedBitmap(for: item, width: rowFrame.width, tileIndex: tileIndex)
                     ?? bitmap(
@@ -1263,14 +1343,17 @@ extension NativeTimelineCanvasView {
         let appearanceName = effectiveAppearance.name
 
         let rasterStart = ProcessInfo.processInfo.systemUptime
-        let tileOrigin = tileIndex < 0 ? 0 : CGFloat(tileIndex) * Self.bitmapTileHeight
-        let size = NSSize(
-            width: width,
-            height: tileIndex < 0 ? layout.height : min(Self.bitmapTileHeight, layout.height - tileOrigin)
-        )
         let scale = max(1, rowBitmapScale)
-        let pixelWidth = max(1, Int(ceil(width * scale)))
-        let pixelHeight = max(1, Int(ceil(size.height * scale)))
+        let metrics = TimelineRowTileMetrics.metrics(
+            for: tileIndex,
+            rowWidth: width,
+            rowHeight: layout.height,
+            scale: scale
+        )
+        let tileOrigin = metrics.tileOrigin
+        let size = metrics.size
+        let pixelWidth = metrics.pixelWidth
+        let pixelHeight = metrics.pixelHeight
         // A row drawn directly, as a hovered one is, renders in the window's
         // colour space; its picture must too, or a wide-gamut photo changes
         // colour as the pointer enters or leaves its row.

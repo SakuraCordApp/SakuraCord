@@ -2577,6 +2577,53 @@ func `batched unicode reaction rendering is pixel identical to individual render
     }
 }
 
+@MainActor @Test(arguments: [1.0, 2.0, 3.0], [0.0, 0.25, 0.3333, 0.5, 0.75])
+func `timeline row tiles abut seamlessly without subpixel gaps at fractional origins and scales`(
+    scale: CGFloat,
+    fractionalOrigin: CGFloat
+) {
+    let rowFrame = CGRect(x: 0, y: 100 + fractionalOrigin, width: 450, height: 600)
+    let totalRowPixels = Int(round(rowFrame.height * scale))
+    let tileHeightPixels = Int(round(NativeTimelineCanvasView.bitmapTileHeight * scale))
+    let totalTiles = (totalRowPixels + tileHeightPixels - 1) / tileHeightPixels
+    #expect(totalTiles > 1)
+
+    var previousFrame: CGRect?
+    var accumulatedPixelHeight = 0
+
+    for tileIndex in 0 ..< totalTiles {
+        let metrics = NativeTimelineCanvasView.TimelineRowTileMetrics.metrics(
+            for: tileIndex,
+            rowWidth: rowFrame.width,
+            rowHeight: rowFrame.height,
+            scale: scale
+        )
+        let frame = NativeTimelineCanvasView.TimelineRowTileMetrics.destinationFrame(
+            for: tileIndex,
+            rowFrame: rowFrame,
+            scale: scale
+        )
+
+        #expect(metrics.size.width == rowFrame.width)
+        #expect(frame.size.width == rowFrame.width)
+        #expect(metrics.size.height == frame.size.height)
+        #expect(metrics.pixelHeight == Int(round(frame.size.height * scale)))
+
+        accumulatedPixelHeight += metrics.pixelHeight
+
+        if let previousFrame {
+            let previousMaxYPixel = Int(round(previousFrame.maxY * scale))
+            let currentMinYPixel = Int(round(frame.minY * scale))
+            #expect(previousMaxYPixel == currentMinYPixel)
+            #expect(abs(previousFrame.maxY - frame.minY) < 0.0001)
+        }
+
+        previousFrame = frame
+    }
+
+    #expect(accumulatedPixelHeight == totalRowPixels)
+}
+
 private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {
     let bytesPerRow = image.width * 4
     var bytes = [UInt8](
