@@ -118,7 +118,8 @@ struct BenchWorld {
         while people.count < count {
             let person = DemoText.person(index: people.count + 1)
             let created = ScenarioEpoch.accountsReference(for: world.epoch).addingTimeInterval(-Double(900 + people.count % 700) * 86_400)
-            people.append(await world.addPerson(person, created: created, avatar: builder.hash(seed: person.avatar.seed)))
+            let avatar = person.avatar.map { builder.hash(seed: $0.seed) }
+            people.append(await world.addPerson(person, created: created, avatar: avatar))
         }
     }
 
@@ -128,8 +129,6 @@ struct BenchWorld {
         let founded = world.epoch.addingTimeInterval(-Double(500 + index) * 86_400)
         let guildID = await world.nextID(at: founded)
         var guild = Guild(id: guildID, name: DemoText.serverName(index: index), ownerID: me)
-        guild.icon = builder.hash(seed: random.next())
-        await world.registerAsset(guild.icon!)
         guild.roles = [WorldBuilder.everyoneRole(guildID: guildID)]
         guild.features = ["COMMUNITY", "THREADS_ENABLED"]
         for (offset, id) in ([me] + people.prefix(members - 1)).enumerated() {
@@ -167,8 +166,6 @@ struct BenchWorld {
             let founded = world.epoch.addingTimeInterval(-Double(200 + index) * 86_400)
             let guildID = await world.nextID(at: founded)
             var guild = Guild(id: guildID, name: DemoText.serverName(index: index), ownerID: people[index % people.count])
-            guild.icon = builder.hash(seed: random.next())
-            await world.setPalette(index % 12, forHash: guild.icon!)
             guild.roles = [WorldBuilder.everyoneRole(guildID: guildID)]
             for (offset, id) in ([me] + people.shuffledPrefix(12, using: &random)).enumerated() {
                 guild.members[id] = Member(userID: id, joinedAt: founded.addingTimeInterval(Double(offset) * 600))

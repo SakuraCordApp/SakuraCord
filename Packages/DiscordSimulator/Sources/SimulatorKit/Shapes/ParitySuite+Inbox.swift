@@ -14,11 +14,7 @@ extension ParityRun {
 
         let path = "/api/v9/users/@me/scheduled-messages"
         let clock = simulator.world.clock
-        let later = { (minutes: Double) -> JSON in
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return .string(formatter.string(from: clock.now.addingTimeInterval(minutes * 60)))
-        }
+        let later = { (minutes: Double) in World.timestamp(clock.now.addingTimeInterval(minutes * 60)) }
         await flowStart()
         let scheduled = try await rest("POST", path, body: .object(JSONObject([
             ("channel_id", .string(channel)), ("content", "parity scheduled"), ("scheduled_timestamp", later(60)),

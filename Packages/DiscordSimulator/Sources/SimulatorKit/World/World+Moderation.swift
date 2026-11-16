@@ -1,5 +1,11 @@
 import Foundation
 
+extension Member {
+    /// Guild member flags Discord sets as a member goes through onboarding.
+    static let completedOnboarding = 1 << 1
+    static let startedOnboarding = 1 << 3
+}
+
 // Member moderation and role changes, with the audit log entries Discord
 // dispatches to members who can view the audit log.
 extension World {
@@ -11,7 +17,7 @@ extension World {
     }
 
     /// Moderators act only on members ranked below them.
-    private func requireModeration(_ permission: Permissions, by moderator: Snowflake, on target: Snowflake, in guild: Guild) throws {
+    func requireModeration(_ permission: Permissions, by moderator: Snowflake, on target: Snowflake, in guild: Guild) throws {
         guard guild.permissions(of: moderator).contains(permission) else { throw WorldError.missingPermissions }
         guard target == moderator || rank(moderator, in: guild) > rank(target, in: guild) else { throw WorldError.missingPermissions }
     }
@@ -43,10 +49,14 @@ extension World {
             member.communicationDisabledUntil = until.stringValue.flatMap(World.parseTimestamp)
         }
         guilds[guildID]?.members[target] = member
-        let rendered = renderMember(member, guildID: guildID, includeUser: true)
-        await emit("GUILD_MEMBER_UPDATE", rendered.merging(["guild_id": guildID.json]), to: .guild(guildID, channel: nil))
+        await emitMemberUpdate(member, in: guildID)
         if !changes.isEmpty { await emitAuditLog(guildID, action: 24, target: target, by: moderator, changes: changes) }
-        return rendered
+        return renderMember(member, guildID: guildID, includeUser: true)
+    }
+
+    func emitMemberUpdate(_ member: Member, in guildID: Snowflake) async {
+        await emit("GUILD_MEMBER_UPDATE", renderMember(member, guildID: guildID, includeUser: true).merging(["guild_id": guildID.json]),
+                   to: .guild(guildID, channel: nil))
     }
 
     /// Removes a member: everyone sees them go, and they lose the guild.
@@ -57,7 +67,6 @@ extension World {
         guilds[guildID]?.members[userID] = nil
         guilds[guildID]?.memberOrder.removeAll { $0 == userID }
         await emit("GUILD_DELETE", .object(JSONObject([("id", guildID.json)])), to: .users([userID]))
-        if users[userID]?.bot == true { await emitCommandIndexUpdate(guildID) }
     }
 
     /// Creates, edits (`role` non-nil with an existing ID) or deletes (`role` nil) a role.

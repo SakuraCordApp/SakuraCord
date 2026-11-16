@@ -6,8 +6,18 @@ extension ControlAPI {
     func moderationRoute(_ request: HTTPRequest, _ route: [String], _ body: JSON) async throws -> HTTPResponse? {
         switch (request.method, route.first ?? "", route.count) {
         case ("POST", "members", _):
-            // Someone (or a bot) joins a server.
-            try await world.addMember(try await resolveUser(body["user"]), to: try await resolveGuild(body["guild"]?.stringValue ?? ""))
+            // Someone joins a server; a bot is installed by the owner, as through its OAuth2 link.
+            let (guildID, userID) = (try await resolveGuild(body["guild"]?.stringValue ?? ""), try await resolveUser(body["user"]))
+            if let bot = await world.users[userID], bot.bot {
+                try await world.installBot(bot, in: guildID, by: try await world.guild(guildID).ownerID, scopes: ["bot", "applications.commands"])
+            } else {
+                try await world.addMember(userID, to: guildID)
+            }
+            return ok([:])
+        case ("PUT", "bots", 2):
+            // `responsive: false` makes a bot ignore interactions, so they fail after three seconds.
+            let bot = try await resolveUser(.string(route[1]))
+            await world.setBotResponsive(bot, body["responsive"]?.boolValue ?? true)
             return ok([:])
         case ("POST", "automod", _):
             return try await createAutoModRule(body)
@@ -18,23 +28,7 @@ extension ControlAPI {
         case ("POST", "moderation", _):
             return try await moderate(body)
         case ("POST", "roles", 1), ("PATCH", "roles", 2), ("DELETE", "roles", 2):
-            let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
-            if request.method == "DELETE" {
-                try await world.saveRole(nil, deleting: Snowflake(route[1]), in: guildID)
-                return ok([:])
-            }
-            var role = Role(id: await world.nextID(), name: "new role", position: 1, permissions: .everyoneDefault)
-            if route.count == 2 {
-                guard let existing = try await world.guild(guildID).roles.first(where: { $0.id == Snowflake(route[1]) }) else {
-                    throw WorldError.unknown("Role", code: 10011)
-                }
-                role = existing
-            }
-            if let name = body["name"]?.stringValue { role.name = name }
-            if let color = body["color"]?.intValue { role.color = Int(color) }
-            if let hoist = body["hoist"]?.boolValue { role.hoist = hoist }
-            try await world.saveRole(role, in: guildID)
-            return ok(["id": role.id.json])
+            return try await saveRole(request.method, route, body)
         case ("POST", "events", _):
             let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
             let start = world.clock.now.addingTimeInterval((body["starts_in_minutes"]?.doubleValue ?? 60) * 60)
@@ -55,7 +49,29 @@ extension ControlAPI {
         }
     }
 
-    /// A keyword rule that blocks matching messages; `timeout_seconds` also times the sender out.
+    /// Creates (`POST roles`), edits (`PATCH roles/{id}`) or deletes (`DELETE roles/{id}`) a role.
+    private func saveRole(_ method: String, _ route: [String], _ body: JSON) async throws -> HTTPResponse {
+        let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
+        if method == "DELETE" {
+            try await world.saveRole(nil, deleting: Snowflake(route[1]), in: guildID)
+            return ok([:])
+        }
+        var role = Role(id: await world.nextID(), name: "new role", position: 1, permissions: .everyoneDefault)
+        if route.count == 2 {
+            guard let existing = try await world.guild(guildID).roles.first(where: { $0.id == Snowflake(route[1]) }) else {
+                throw WorldError.unknown("Role", code: 10011)
+            }
+            role = existing
+        }
+        if let name = body["name"]?.stringValue { role.name = name }
+        if let color = body["color"]?.intValue { role.color = Int(color) }
+        if let hoist = body["hoist"]?.boolValue { role.hoist = hoist }
+        try await world.saveRole(role, in: guildID)
+        return ok(["id": role.id.json])
+    }
+
+    /// A keyword rule: it blocks matching messages unless `block` is false, posts alerts to `alert_channel`,
+    /// and times the sender out for `timeout_seconds`.
     private func createAutoModRule(_ body: JSON) async throws -> HTTPResponse {
         let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
         let owner = try await world.guild(guildID).ownerID
@@ -64,6 +80,8 @@ extension ControlAPI {
                            keywords: (body["keywords"]?.arrayValue ?? []).compactMap(\.stringValue))
         rule.allowList = (body["allow_list"]?.arrayValue ?? []).compactMap(\.stringValue)
         rule.timeoutSeconds = body["timeout_seconds"]?.intValue.map(Int.init)
+        rule.blocks = body["block"]?.boolValue ?? true
+        if body["alert_channel"] != nil { rule.alertChannelID = try await resolveChannel(JSON.object(JSONObject([("channel", body["alert_channel"] ?? .null)]))) }
         guard !rule.keywords.isEmpty else { throw WorldError.invalidBody("keywords: at least one") }
         await world.saveAutoModRule(rule)
         return ok(["id": rule.id.json])
@@ -77,9 +95,7 @@ extension ControlAPI {
         let moderator = try await body["moderator"].asyncMap { try await resolveUser($0) } ?? owner
         switch body["action"]?.stringValue {
         case "kick":
-            guard try await world.guild(guildID).permissions(of: moderator).contains(.kickMembers) else { throw WorldError.missingPermissions }
-            try await world.removeMember(target, from: guildID)
-            await world.emitAuditLog(guildID, action: 20, target: target, by: moderator, changes: [])
+            try await world.kickMember(target, from: guildID, by: moderator)
         case "timeout", "untimeout":
             let until = body["action"]?.stringValue == "timeout"
                 ? World.timestamp(world.clock.now.addingTimeInterval((body["minutes"]?.doubleValue ?? 10) * 60)) : JSON.null

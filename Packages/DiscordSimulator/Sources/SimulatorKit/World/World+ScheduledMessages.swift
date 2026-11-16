@@ -70,13 +70,14 @@ extension World {
     func sendDueScheduledMessages() async {
         let now = clock.now
         for scheduled in scheduledMessages.values.filter({ $0.sendAt <= now }).sorted(by: { $0.sendAt < $1.sendAt }) {
-            // A message that can no longer be sent (channel gone, access lost) is dropped, as Discord does.
+            // Not captured: a message that can no longer be sent (channel gone, access lost) is dropped.
             _ = try? await sendScheduledMessage(scheduled.id, by: scheduled.userID)
         }
     }
 
     private func scheduledMessage(_ id: Snowflake, of userID: Snowflake) throws -> ScheduledMessage {
         guard let scheduled = scheduledMessages[id], scheduled.userID == userID else {
+            // Not captured: the error for someone else's or an unknown scheduled message.
             throw WorldError(status: 404, code: 0, message: "404: Not Found")
         }
         return scheduled
@@ -91,12 +92,7 @@ extension World {
     }
 
     private static func scheduledDate(_ value: JSON?) throws -> Date {
-        let text = value?.stringValue ?? ""
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = fractional.date(from: text) ?? ISO8601DateFormatter().date(from: text) else {
-            throw WorldError.invalidBody("scheduled_timestamp")
-        }
+        guard let date = value?.stringValue.flatMap(parseTimestamp) else { throw WorldError.invalidBody("scheduled_timestamp") }
         return date
     }
 

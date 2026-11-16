@@ -3,7 +3,8 @@ import Foundation
 /// Slash command catalogues and the command behind a bot's reply. Modern bots
 /// share their application's ID, and every demo bot offers the same commands.
 extension World {
-    static let botCommands = [("gamenight", "Post the next board game night"), ("digest", "Show this week's porch digest")]
+    static let botCommands = [("gamenight", "Post the next board game night"), ("digest", "Show this week's porch digest"),
+                              ("signup", "Sign up for game night")]
     /// `/gamenight game:` suggests from the shelf as you type.
     static let gameShelf = ["Wingspan", "Codenames", "Azul", "Ticket to Ride", "Cascadia", "Just One", "Sushi Go Party!", "Patchwork"]
 
@@ -51,7 +52,8 @@ extension World {
     private func renderCommand(_ applicationID: Snowflake, index: Int, guildID: Snowflake?) -> JSON {
         let (name, description) = Self.botCommands[index]
         var object = JSONObject([
-            ("id", Snowflake(applicationID.rawValue + UInt64(index) + 2).json), ("type", 1), ("application_id", applicationID.json),
+            // Workers 3 and up: bots created back to back must not share command IDs.
+            ("id", applicationID.withWorker(3 + UInt64(index)).json), ("type", 1), ("application_id", applicationID.json),
             ("version", Snowflake(applicationID.rawValue + 100).json), ("default_member_permissions", .null), ("nsfw", false),
             ("name", .string(name)), ("description", .string(description)), ("dm_permission", true), ("contexts", [0, 1, 2]),
             ("integration_types", [0]),
@@ -73,5 +75,12 @@ extension World {
         return .object(JSONObject([
             ("id", command["id"] ?? .null), ("name", .string(interaction.name)), ("type", 1), ("application_command", command),
         ]))
+    }
+
+    /// A bot joining or leaving changes the guild's commands; clients refetch the catalogue.
+    func emitCommandIndexUpdate(_ guildID: Snowflake) async {
+        await emit("GUILD_APPLICATION_COMMAND_INDEX_UPDATE", .object(JSONObject([
+            ("guild_id", guildID.json), ("application_command_counts", .object(JSONObject())), ("bot_users", []), ("version", 0),
+        ])), to: .guild(guildID, channel: nil))
     }
 }

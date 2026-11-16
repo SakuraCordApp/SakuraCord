@@ -63,7 +63,7 @@ final class EmbeddedActivityHost: NSObject {
         #endif
         voiceStates = currentVoiceStates()
         observeVoice()
-        webView.loadHTMLString(hostPage(proxyTicket: proxyTicket), baseURL: Self.hostURL)
+        webView.loadHTMLString(hostPage(proxyTicket: proxyTicket), baseURL: hostPageBaseURL)
     }
 
     func stop() {
@@ -75,6 +75,18 @@ final class EmbeddedActivityHost: NSObject {
     }
 
     private static let hostURL = URL(string: "https://discord.com/activities")!
+
+    /// A debug simulator launch serves the Activity over plain HTTP, which a page
+    /// with an HTTPS base blocks as mixed content, so the base takes its scheme.
+    private var hostPageBaseURL: URL {
+        #if DEBUG
+            if DiscordNetworkRedirect.isActive, var components = URLComponents(url: Self.hostURL, resolvingAgainstBaseURL: false) {
+                components.scheme = DiscordNetworkRedirect.resolve(application.activityURL).scheme
+                return components.url ?? Self.hostURL
+            }
+        #endif
+        return Self.hostURL
+    }
 
     /// The Activity iframe with the official client's sandbox, permissions and
     /// launch parameters, and the relay between it and this host.
@@ -450,7 +462,7 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
         // relay page itself never leaves, and links aimed at it open in the
         // browser. Once stopped, it unloads, which ends the Activity's audio.
         guard !isStopped, navigationAction.targetFrame?.isMainFrame == true,
-              let url = navigationAction.request.url, url != Self.hostURL
+              let url = navigationAction.request.url, url != hostPageBaseURL
         else { return decisionHandler(.allow) }
         decisionHandler(.cancel)
         if navigationAction.navigationType == .linkActivated { Task { await openExternally(url) } }

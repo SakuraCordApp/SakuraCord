@@ -42,8 +42,7 @@ extension World {
 
     /// `POST /guilds/{id}/scheduled-events`. The creator is marked interested, as on Discord.
     func createScheduledEvent(in guildID: Snowflake, by userID: Snowflake, body: JSON) async throws -> ScheduledEvent {
-        let guild = try guild(guildID)
-        guard guild.members[userID] != nil else { throw WorldError.missingAccess }
+        let guild = try memberGuild(guildID, of: userID)
         guard !guild.permissions(of: userID).isDisjoint(with: [.manageEvents, .createEvents]) else { throw WorldError.missingPermissions }
         guard let name = body["name"]?.stringValue, (1 ... 100).contains(name.count) else { throw WorldError.invalidBody("name: required") }
         guard let type = body["entity_type"]?.intValue.flatMap({ ScheduledEvent.EntityType(rawValue: Int($0)) }) else {
@@ -89,7 +88,7 @@ extension World {
     /// `PUT`/`DELETE .../users/@me`: marks or clears interest. Repeating either changes nothing.
     func setEventInterest(_ id: Snowflake, in guildID: Snowflake, userID: Snowflake, interested: Bool) async throws {
         var event = try scheduledEvent(id, in: guildID)
-        guard try guild(guildID).members[userID] != nil else { throw WorldError.missingAccess }
+        _ = try memberGuild(guildID, of: userID)
         guard event.interested.contains(userID) != interested else { return }
         if interested { event.interested.append(userID) } else { event.interested.removeAll { $0 == userID } }
         servers.scheduledEvents[id] = event
@@ -109,9 +108,7 @@ extension World {
 
     /// `GET /users/@me/scheduled-events?guild_ids=…`: the user's RSVPs.
     func eventRSVPs(_ userID: Snowflake, guildIDs: [Snowflake]) -> JSON {
-        .array(guildIDs.flatMap { scheduledEvents(in: $0) }.filter { $0.interested.contains(userID) }.map { event in
-            .object(JSONObject([("response", 1), ("user_id", userID.json), ("guild_scheduled_event_id", event.id.json)]))
-        })
+        .array(guildIDs.flatMap { scheduledEvents(in: $0) }.filter { $0.interested.contains(userID) }.map { renderEventRSVP($0, userID: userID) })
     }
 
     private func eventAuditChanges(_ event: ScheduledEvent, created: Bool) -> [JSON] {

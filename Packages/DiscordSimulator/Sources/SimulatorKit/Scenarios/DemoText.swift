@@ -20,6 +20,8 @@ public enum DemoText {
         let statuses: [DemoStatus] = [.online, .online, .idle, .dnd, .offline, .offline, .offline]
         let premium: DemoPremium = index % 11 == 0 ? .nitro : index % 7 == 0 ? .nitroBasic : .none
         let custom = rng.chance(0.3) ? rng.pick(customStatuses) : nil
+        let presence = DemoPresence(rng.pick(statuses), custom: custom?.text, emoji: custom?.emoji)
+        let avatar = DemoImageStyle(seed: rng.next(), palette: Int(rng.next() % 12))
         return DemoPerson(
             key: "person-\(index)",
             username: "\(first.lowercased()).\(surname.lowercased())\(round > 0 ? String(round) : "")",
@@ -27,8 +29,9 @@ public enum DemoText {
             pronouns: rng.pick(["she/her", "he/him", "they/them", "she/they", "he/they", ""]),
             bio: rng.chance(0.6) ? rng.pick(bios) : "",
             premium: premium,
-            presence: DemoPresence(rng.pick(statuses), custom: custom?.text, emoji: custom?.emoji),
-            avatar: DemoImageStyle(seed: rng.next(), palette: Int(rng.next() % 12)),
+            presence: presence,
+            // About one in eleven server members never set an avatar, as in captured member lists.
+            avatar: avatar.seed % 100 < 9 ? nil : avatar,
             banner: premium == .nitro ? DemoImageStyle(seed: rng.next(), palette: Int(rng.next() % 12)) : nil,
             bannerColor: UInt32(truncatingIfNeeded: rng.next()) & 0xffffff,
             accentColor: UInt32(truncatingIfNeeded: rng.next()) & 0xffffff

@@ -25,10 +25,10 @@ extension World {
             await addRelationship(userID, Relationship(userID: otherID, type: .friend, since: now))
             await addRelationship(otherID, Relationship(userID: userID, type: .friend, since: now))
         case .blocked:
-            throw ChannelEditRoutes.NotSimulated(description: "friend request to someone you blocked (never captured)")
+            throw NotSimulated(description: "friend request to someone you blocked (never captured)")
         case .unrelated, nil:
             if relationships[otherID]?[userID]?.type == .blocked {
-                throw ChannelEditRoutes.NotSimulated(description: "friend request to someone who blocked you (never captured)")
+                throw NotSimulated(description: "friend request to someone who blocked you (never captured)")
             }
             await addRelationship(userID, Relationship(userID: otherID, type: .outgoing, since: now))
             await addRelationship(otherID, Relationship(userID: userID, type: .incoming, since: now))

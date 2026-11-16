@@ -49,8 +49,7 @@ extension World {
             let slice = items.indices.contains(range.lowerBound) ? Array(items[range.lowerBound ... min(range.upperBound, items.count - 1)]) : []
             return .object(JSONObject([("op", "SYNC"), ("range", .array([.int(range.lowerBound), .int(range.upperBound)])), ("items", .array(slice))]))
         }
-        // Discord names a list by its channel's overwrites; channels everyone sees share "everyone".
-        let listID = channel.overwrites.isEmpty ? "everyone" : String(channel.id.rawValue.description.hashValueStable % 4_294_967_296)
+        let listID = memberListID(channel, in: guild)
         return .object(JSONObject([
             ("ops", .array(ops)),
             ("online_count", .int(reported ? onlineCount(guild) : viewers.count { isOnline($0.userID) })),
@@ -58,6 +57,43 @@ extension World {
             ("id", .string(listID)), ("guild_id", guildID.json),
             ("groups", .array(groups.map { group in .object(JSONObject([("id", .string(group.id)), ("count", .int(group.count))])) })),
         ]))
+    }
+
+    /// The list ID the official client derives for a channel (web client bundle): `everyone` when
+    /// @everyone can view it and no overwrite denies viewing; otherwise MurmurHash3 of the
+    /// channel's own overwrites that allow or deny viewing. Threads check their parent but hash
+    /// their own (empty) overwrites, and private threads never count as viewable by everyone.
+    func memberListID(_ channel: Channel, in guild: Guild) -> String {
+        let source = channel.type == .privateThread ? nil : permissionChannel(channel)
+        let everyone = guild.everyoneRole?.permissions.contains(.viewChannel) == true
+        if let source, everyone, !source.overwrites.contains(where: { $0.deny.contains(.viewChannel) }) { return "everyone" }
+        let entries = channel.overwrites.compactMap { overwrite -> String? in
+            if overwrite.allow.contains(.viewChannel) { return "allow:\(overwrite.id)" }
+            return overwrite.deny.contains(.viewChannel) ? "deny:\(overwrite.id)" : nil
+        }
+        return String(Self.murmur3(Array(entries.sorted().joined(separator: ",").utf8)))
+    }
+
+    /// MurmurHash3 x86 32-bit, seed 0.
+    static func murmur3(_ bytes: [UInt8]) -> UInt32 {
+        let c1: UInt32 = 0xcc9e_2d51, c2: UInt32 = 0x1b87_3593
+        var hash: UInt32 = 0
+        func mix(_ value: UInt32) -> UInt32 { (value &* c1).rotatedLeft(15) &* c2 }
+        let blocks = bytes.count / 4
+        for block in 0 ..< blocks {
+            let index = block * 4
+            let word = UInt32(bytes[index]) | UInt32(bytes[index + 1]) << 8 | UInt32(bytes[index + 2]) << 16 | UInt32(bytes[index + 3]) << 24
+            hash = (hash ^ mix(word)).rotatedLeft(13) &* 5 &+ 0xe654_6b64
+        }
+        var tail: UInt32 = 0
+        for (offset, byte) in bytes[(blocks * 4)...].enumerated() { tail |= UInt32(byte) << (8 * UInt32(offset)) }
+        if bytes.count % 4 > 0 { hash ^= mix(tail) }
+        hash ^= UInt32(truncatingIfNeeded: bytes.count)
+        hash ^= hash >> 16
+        hash &*= 0x85eb_ca6b
+        hash ^= hash >> 13
+        hash &*= 0xc2b2_ae35
+        return hash ^ (hash >> 16)
     }
 
     func isOnline(_ userID: Snowflake) -> Bool { ![.offline, .invisible].contains(presences[userID]?.status ?? .offline) }
@@ -91,4 +127,8 @@ extension World {
         }
         return .object(JSONObject([("threads", .object(threads))]))
     }
+}
+
+private extension UInt32 {
+    func rotatedLeft(_ count: UInt32) -> UInt32 { self << count | self >> (32 - count) }
 }

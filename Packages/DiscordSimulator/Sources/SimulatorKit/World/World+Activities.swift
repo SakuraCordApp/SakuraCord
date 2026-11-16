@@ -145,10 +145,6 @@ public extension World {
     /// The Activity a proxy ticket was issued for (the `{id}.discordsays.com` host the page is served as).
     func activityApplication(forTicket ticket: String) -> Snowflake? { voice.activityTickets[ticket] }
 
-    func activityInstance(_ applicationID: Snowflake, in channelID: Snowflake) -> ActivityInstance? {
-        voice.activities[activityKey(applicationID, channelID)]
-    }
-
     /// `GET /applications/{id}/disclosures`.
     func activityDisclosures(_ applicationID: Snowflake, for userID: Snowflake) throws -> JSON {
         _ = try activityApp(applicationID)

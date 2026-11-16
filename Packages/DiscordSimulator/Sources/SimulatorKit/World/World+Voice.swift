@@ -175,13 +175,12 @@ public extension World {
 
     /// Leaves voice: VOICE_STATE_UPDATE with no channel, then the channel or call's own clean-up.
     func leaveVoice(_ userID: Snowflake) async {
-        guard voice.states[userID] != nil else { return }
-        await leaveStreams(userID)
         guard let state = voice.states.removeValue(forKey: userID) else { return }
         voice.grants = voice.grants.filter { $0.value.sessionID != state.sessionID }
         await emitVoiceState(state, left: true)
         await leaveActivities(userID, in: state.channelID)
         await channelEmptied(state)
+        await leaveStreams(userID)
         await voice.media?.disconnect(sessionID: state.sessionID)
         await voice.media?.participantsChanged(in: state.channelID)
     }

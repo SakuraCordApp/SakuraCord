@@ -79,7 +79,7 @@ final class ActivityHost: Sendable {
             if (payload.cmd === 'DISPATCH') {
                 if (payload.evt === 'READY') {
                     command('SUBSCRIBE', {}, 'ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE');
-                    command('GET_INSTANCE_CONNECTED_PARTICIPANTS').then(data => showPlayers(data && data.participants));
+                    command('GET_ACTIVITY_INSTANCE_CONNECTED_PARTICIPANTS').then(data => showPlayers(data && data.participants));
                 } else if (payload.evt === 'ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE') {
                     showPlayers(payload.data && payload.data.participants);
                 }

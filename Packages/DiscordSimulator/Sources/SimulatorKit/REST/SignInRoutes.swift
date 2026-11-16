@@ -49,8 +49,13 @@ extension World {
         ]))
     }
 
-    func completeMFA(ticket: String, code: String, method: String) throws -> JSON {
+    private func mfaUser(ticket: String) throws -> Snowflake {
         guard let userID = signIn.tickets[ticket] else { throw WorldError(status: 401, code: 0, message: "Invalid two-factor auth ticket") }
+        return userID
+    }
+
+    func completeMFA(ticket: String, code: String, method: String) throws -> JSON {
+        let userID = try mfaUser(ticket: ticket)
         let digits = code.filter { !$0.isWhitespace && $0 != "-" }
         let accepted = switch method {
         case "backup": signIn.backupCodes[userID]?.remove(digits.lowercased()) != nil
@@ -59,16 +64,21 @@ extension World {
         }
         guard accepted else { throw WorldError(status: 400, code: 60008, message: "Invalid two-factor code") }
         signIn.tickets[ticket] = nil
+        return try signedIn(userID)
+    }
+
+    /// The token answer that ends a sign-in, after the password or the second factor.
+    func signedIn(_ userID: Snowflake) throws -> JSON {
         guard let token = tokens.first(where: { $0.value == userID })?.key else { throw WorldError.unauthorized }
         return .object(JSONObject([
-            ("token", .string(token)), ("user_settings", .object(JSONObject([("locale", "en-US"), ("theme", "dark")]))),
-            ("user_id", userID.json),
+            ("user_id", userID.json), ("token", .string(token)),
+            ("user_settings", .object(JSONObject([("locale", "en-US"), ("theme", "dark")]))),
         ]))
     }
 
     /// Sends the code by SMS; the response masks the phone number.
     func sendMFASMS(ticket: String) throws -> JSON {
-        guard let userID = signIn.tickets[ticket] else { throw WorldError(status: 401, code: 0, message: "Invalid two-factor auth ticket") }
+        let userID = try mfaUser(ticket: ticket)
         guard let phone = signIn.phones[userID] else { throw WorldError.invalidBody("ticket: SMS is not enabled for this account") }
         return .object(JSONObject([("phone", .string(String(repeating: "*", count: max(0, phone.count - 4)) + phone.suffix(4)))]))
     }

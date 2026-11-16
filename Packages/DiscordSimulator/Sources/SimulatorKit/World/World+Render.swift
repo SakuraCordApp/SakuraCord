@@ -323,16 +323,26 @@ public extension World {
     }
 
     func renderInteractionMetadata(_ interaction: InteractionRecord, guildID: Snowflake?) -> JSON {
-        .object(JSONObject([
+        let owners = JSON.object(JSONObject(guildID.map { [("0", $0.json)] } ?? [("1", interaction.userID.json)]))
+        // A modal submit names the command that opened the modal instead of its own command.
+        if let command = interaction.openedBy {
+            var opened = interaction
+            (opened.id, opened.type, opened.openedBy) = (command, 2, nil)
+            return .object(JSONObject([
+                ("id", interaction.id.json), ("type", .int(interaction.type)), ("user", renderUser(interaction.userID)),
+                ("authorizing_integration_owners", owners), ("triggering_interaction_metadata", renderInteractionMetadata(opened, guildID: guildID)),
+            ]))
+        }
+        return .object(JSONObject([
             ("id", interaction.id.json), ("type", .int(interaction.type)), ("name", .string(interaction.name)),
-            ("command_type", 1), ("user", renderUser(interaction.userID)),
-            ("authorizing_integration_owners", .object(JSONObject(guildID.map { [("0", $0.json)] } ?? [("1", interaction.userID.json)]))),
+            ("command_type", 1), ("user", renderUser(interaction.userID)), ("authorizing_integration_owners", owners),
         ]))
     }
 
     /// The deprecated `interaction` object, which Discord still sends beside `interaction_metadata`.
     func renderLegacyInteraction(_ interaction: InteractionRecord, guildID: Snowflake?) -> JSON {
-        var legacy = JSONObject([("id", interaction.id.json), ("type", .int(interaction.type)),
+        // A modal submit's legacy object describes the command that opened the modal.
+        var legacy = JSONObject([("id", (interaction.openedBy ?? interaction.id).json), ("type", .int(interaction.openedBy == nil ? interaction.type : 2)),
                                  ("name", .string(interaction.name)), ("user", renderUser(interaction.userID))])
         if let guildID, let member = guilds[guildID]?.members[interaction.userID] {
             legacy["member"] = renderMember(member, guildID: guildID, includeUser: false)
@@ -340,11 +350,11 @@ public extension World {
         return .object(legacy)
     }
 
-    /// Discord gives each embed an ID; these use snowflake worker 2, which other IDs here never do.
+    /// Discord gives each embed an ID; these use snowflake worker 2.
     func renderEmbeds(_ message: Message) -> JSON {
         .array(message.embeds.enumerated().map { index, embed in
             guard case var .object(fields) = embed, fields["id"] == nil else { return embed }
-            fields["id"] = Snowflake((message.id.rawValue & ~(0x1F << 17) | 2 << 17) + UInt64(index)).json
+            fields["id"] = Snowflake(message.id.withWorker(2).rawValue + UInt64(index)).json
             return .object(fields)
         })
     }

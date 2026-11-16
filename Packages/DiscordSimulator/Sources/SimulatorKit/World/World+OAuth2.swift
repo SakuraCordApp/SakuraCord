@@ -17,29 +17,49 @@ extension World {
     }
 
     /// The redirect named in the request, which must be registered, or the application's first.
-    private func oauthRedirect(_ appID: Snowflake, query: HTTPRequest) throws -> String {
+    private func oauthRedirect(_ appID: Snowflake, request: HTTPRequest) throws -> String {
         let registered = servers.oauthRedirects[appID] ?? []
-        guard let redirect = query.query["redirect_uri"]?.first ?? registered.first, registered.contains(redirect) else {
+        guard let redirect = request.query["redirect_uri"]?.first ?? registered.first, registered.contains(redirect) else {
             throw WorldError.invalidBody("redirect_uri: Invalid \"redirect_uri\" in request.")
         }
         return redirect
     }
 
-    /// `GET /oauth2/authorize`: what the consent screen shows.
+    private func scopes(_ request: HTTPRequest) -> [String] {
+        (request.query["scope"]?.first ?? "identify").split(separator: " ").map(String.init)
+    }
+
+    /// `GET /oauth2/authorize`: what the consent screen shows. Adding a bot lists the servers the user
+    /// can add it to (Manage Server) instead of a redirect.
     func oauthPreview(_ request: HTTPRequest, viewer: Snowflake) throws -> JSON {
         let app = try oauthApplication(request.query["client_id"]?.first)
-        return .object(JSONObject([
+        var object = JSONObject([
             ("application", renderOAuthApplication(app)), ("user", renderUser(viewer)),
             ("authorized", .bool(servers.oauthGrants[viewer]?[app.id] != nil)),
             ("integration_type", .int(Int(request.query["integration_type"]?.first ?? "0") ?? 0)),
-            ("redirect_uri", .string(try oauthRedirect(app.id, query: request))),
-        ]))
+        ])
+        if scopes(request).contains("bot") {
+            object["bot"] = renderUser(app.id).merging(["approximate_guild_count": .int(guilds.values.count { $0.members[app.id] != nil })])
+            object["guilds"] = .array(guilds(of: viewer).filter { $0.permissions(of: viewer).contains(.manageGuild) }.map { guild in
+                .object(JSONObject([("id", guild.id.json), ("name", .string(guild.name)), ("icon", .optional(guild.icon)), ("mfa_level", 0),
+                                    ("permissions", .string(guild.permissions(of: viewer).wireString))]))
+            })
+        } else {
+            object["redirect_uri"] = .string(try oauthRedirect(app.id, request: request))
+        }
+        return .object(object)
     }
 
     /// `POST /oauth2/authorize`: approving replaces any earlier grant; either way Discord answers with where to redirect.
     func oauthAuthorize(_ request: HTTPRequest, body: JSON, viewer: Snowflake) async throws -> JSON {
         let app = try oauthApplication(request.query["client_id"]?.first)
-        let redirect = try oauthRedirect(app.id, query: request)
+        let scopes = scopes(request)
+        if scopes.contains("bot"), body["authorize"]?.boolValue == true {
+            guard let guildID = body["guild_id"]?.stringValue.flatMap(Snowflake.init) else { throw WorldError.invalidBody("guild_id: required") }
+            try await installBot(app, in: guildID, by: viewer, scopes: scopes)
+            return .object(JSONObject([("location", "https://discord.com/oauth2/authorized")]))
+        }
+        let redirect = try oauthRedirect(app.id, request: request)
         let issuer = "iss=https%3A%2F%2Fdiscord.com"
         guard body["authorize"]?.boolValue == true else {
             let denied = "error=access_denied&error_description=The+resource+owner+or+authorization+server+denied+the+request&\(issuer)"
@@ -49,7 +69,6 @@ extension World {
             await emit("OAUTH2_TOKEN_REVOKE", .object(JSONObject([("access_token", .string(previous.accessToken))])), to: .users([viewer]))
             await emit("OAUTH2_TOKEN_DELETE", .object(JSONObject([("application_id", app.id.json), ("id", previous.id.json)])), to: .users([viewer]))
         }
-        let scopes = (request.query["scope"]?.first ?? "identify").split(separator: " ").map(String.init)
         let grant = OAuth2Grant(id: nextID(), scopes: scopes, accessToken: random.urlSafeString(30))
         servers.oauthGrants[viewer, default: [:]][app.id] = grant
         await emit("OAUTH2_TOKEN_CREATE", .object(JSONObject([

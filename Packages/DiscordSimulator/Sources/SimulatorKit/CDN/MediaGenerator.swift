@@ -10,17 +10,25 @@ public enum MediaGenerator {
         case landscape, sunset, food, cake, plant, cat, dog, city, couch, bike, medal, desk, garden
     }
 
+    /// Flat drawings for emoji, avatars and server icons.
     public enum EmojiMotif: String, Sendable, Hashable, CaseIterable {
         case smile, heart, star, leaf, frog, cat, sparkle, drop, flower, bee, sun, couch
+        case bread, shoe, guitar, moon, box, suitcase, robot, house, book, gamepad, note, laptop, pin, play, globe, pencil, palette, sunflower
+
+        /// The ones custom emoji are drawn from.
+        static let emoji: [EmojiMotif] = [.smile, .heart, .star, .leaf, .frog, .cat, .sparkle, .drop, .flower, .bee, .sun, .couch]
     }
 
-    /// Soft abstract shapes that read well as a circle from 32 to 512 px.
-    public static func avatarPNG(seed: UInt64, size: Int, palette: Int? = nil) -> Data {
-        encode(render(size, size) { drawAvatar($0, seed: seed, palette: palette, phase: 0) }, as: .png)
+    /// An avatar: `art` when one was picked for the person, otherwise a crowd avatar from the seed.
+    public static func avatarPNG(seed: UInt64, size: Int, art: Art? = nil) -> Data {
+        encode(render(size, size) { drawArt($0, art ?? .crowd, seed: seed, phase: 0) }, as: .png)
     }
 
-    public static func guildIconPNG(seed: UInt64, size: Int, palette: Int? = nil) -> Data {
-        encode(render(size, size) { drawGuildIcon($0, seed: seed, palette: palette) }, as: .png)
+    /// A server, group or badge icon: `art` when picked, otherwise soft petals in `palette`.
+    public static func guildIconPNG(seed: UInt64, size: Int, art: Art? = nil, palette: Int? = nil) -> Data {
+        encode(render(size, size) { canvas in
+            if let art { drawArt(canvas, art, seed: seed, phase: 0) } else { drawGuildIcon(canvas, seed: seed, palette: palette) }
+        }, as: .png)
     }
 
     public static func bannerPNG(width: Int, height: Int, seed: UInt64, palette: Int? = nil) -> Data {
@@ -59,9 +67,9 @@ public enum MediaGenerator {
         }, as: .png)
     }
 
-    /// A looping GIF: drifting avatar blobs, or a bouncing `motif` on a
-    /// transparent background for animated emoji.
-    public static func animatedGIF(seed: UInt64, frames: Int = 12, size: Int = 128, motif: EmojiMotif? = nil) -> Data {
+    /// A looping GIF: a bouncing `motif` on a transparent background for animated
+    /// emoji, an avatar's `art` moving gently, or drifting blobs.
+    public static func animatedGIF(seed: UInt64, frames: Int = 12, size: Int = 128, motif: EmojiMotif? = nil, art: Art? = nil) -> Data {
         let data = NSMutableData()
         let destination = CGImageDestinationCreateWithData(data, UTType.gif.identifier as CFString, frames, nil)!
         CGImageDestinationSetProperties(destination, [
@@ -72,6 +80,8 @@ public enum MediaGenerator {
             let image = render(size, size) { canvas in
                 if let motif {
                     drawMotif(canvas, motif, seed: seed, phase: phase)
+                } else if let art {
+                    drawArt(canvas, art, seed: seed, phase: phase)
                 } else {
                     drawAvatar(canvas, seed: seed, palette: nil, phase: phase)
                 }
@@ -106,13 +116,6 @@ public enum MediaGenerator {
         return data as Data
     }
 
-    /// An avatar, guild icon or emoji image for `style`: GIF when animated.
-    public static func avatar(_ style: DemoImageStyle, size: Int) -> Data {
-        style.animated
-            ? animatedGIF(seed: style.seed, size: size)
-            : avatarPNG(seed: style.seed, size: size, palette: style.palette)
-    }
-
     /// Bytes for a media reference; `nil` only for a missing bundled file.
     public static func data(for media: DemoMediaRef, width: Int, height: Int) -> Data? {
         switch media {
@@ -131,7 +134,7 @@ public enum MediaGenerator {
 
 // MARK: - Rendering
 
-private struct RGB {
+struct RGB {
     var red: Double
     var green: Double
     var blue: Double
@@ -174,7 +177,7 @@ private func palette(_ index: Int?, _ rng: inout SeededRandom) -> [RGB] {
 }
 
 /// A drawing surface in unit-friendly coordinates: origin bottom-left.
-private struct Canvas {
+struct Canvas {
     let context: CGContext
     let width: Double
     let height: Double
@@ -247,7 +250,7 @@ private struct Canvas {
     }
 }
 
-private func render(_ width: Int, _ height: Int, _ draw: (Canvas) -> Void) -> CGImage {
+func render(_ width: Int, _ height: Int, _ draw: (Canvas) -> Void) -> CGImage {
     let context = CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
@@ -257,9 +260,9 @@ private func render(_ width: Int, _ height: Int, _ draw: (Canvas) -> Void) -> CG
     return context.makeImage()!
 }
 
-private enum Encoding { case png, jpeg }
+enum Encoding { case png, jpeg }
 
-private func encode(_ image: CGImage, as encoding: Encoding) -> Data {
+func encode(_ image: CGImage, as encoding: Encoding) -> Data {
     let data = NSMutableData()
     let type = encoding == .png ? UTType.png : UTType.jpeg
     let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil)!
@@ -269,12 +272,12 @@ private func encode(_ image: CGImage, as encoding: Encoding) -> Data {
     return data as Data
 }
 
-private func defaultMotif(_ seed: UInt64) -> MediaGenerator.EmojiMotif {
+func defaultMotif(_ seed: UInt64) -> MediaGenerator.EmojiMotif {
     var rng = SeededRandom(seed: seed).fork("motif")
-    return rng.pick(MediaGenerator.EmojiMotif.allCases)
+    return rng.pick(MediaGenerator.EmojiMotif.emoji)
 }
 
-private extension SeededRandom {
+extension SeededRandom {
     mutating func range(_ lower: Double, _ upper: Double) -> Double { lower + (upper - lower) * unit() }
 }
 
@@ -380,7 +383,7 @@ private func drawBanner(_ canvas: Canvas, seed: UInt64, palette index: Int?) {
 
 // MARK: - Photos
 
-private func drawPhoto(_ canvas: Canvas, scene: MediaGenerator.PhotoScene, rng: inout SeededRandom) {
+func drawPhoto(_ canvas: Canvas, scene: MediaGenerator.PhotoScene, rng: inout SeededRandom) {
     switch scene {
     case .landscape: landscape(canvas, &rng)
     case .sunset: sunset(canvas, &rng)
@@ -637,7 +640,7 @@ private func garden(_ canvas: Canvas, _ rng: inout SeededRandom) {
 // MARK: - Emoji motifs
 
 /// Shared colouring for a motif: a tint, or one flat colour for sticker outlines.
-private struct MotifStyle {
+struct MotifStyle {
     let silhouette: RGB?
     let tint: Double
     var dark: RGB { silhouette ?? RGB(0x3b2a2a) }
@@ -753,7 +756,7 @@ private func drawObject(_ canvas: Canvas, _ motif: MediaGenerator.EmojiMotif, _ 
 
 /// Draws `motif` centred with `inset` margin. `phase` animates a gentle
 /// bounce; `silhouette` paints every part one colour (for sticker outlines).
-private func drawMotif(_ canvas: Canvas, _ motif: MediaGenerator.EmojiMotif, seed: UInt64, phase: Double, inset: Double = 0.06, silhouette: RGB? = nil) {
+func drawMotif(_ canvas: Canvas, _ motif: MediaGenerator.EmojiMotif, seed: UInt64, phase: Double, inset: Double = 0.06, silhouette: RGB? = nil) {
     var rng = SeededRandom(seed: seed)
     let context = canvas.context
     context.saveGState()
@@ -766,7 +769,7 @@ private func drawMotif(_ canvas: Canvas, _ motif: MediaGenerator.EmojiMotif, see
     let style = MotifStyle(silhouette: silhouette, tint: tint)
     switch motif {
     case .smile, .frog, .cat, .bee: drawCreature(canvas, motif, style, &rng)
-    default: drawObject(canvas, motif, style, &rng)
+    default: if let pictogram = pictograms[motif] { pictogram(canvas, style) } else { drawObject(canvas, motif, style, &rng) }
     }
     context.restoreGState()
 }

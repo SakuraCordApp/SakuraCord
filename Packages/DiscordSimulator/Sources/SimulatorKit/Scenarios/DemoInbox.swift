@@ -15,11 +15,9 @@ extension DemoConverter {
             _ = try await world.setThreadMuted(thread, by: me, muted: true)
         }
         let tomorrowMorning = Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: world.epoch.addingTimeInterval(86_400))!
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         _ = try await world.scheduleMessage(JSONObject([
             ("channel_id", running.json), ("content", "morning! meeting at the bridge at 7:30, slow pace as always 🐢"),
-            ("scheduled_timestamp", .string(formatter.string(from: tomorrowMorning))), ("flags", 0), ("attachments", []),
+            ("scheduled_timestamp", World.timestamp(tomorrowMorning)), ("flags", 0), ("attachments", []),
         ]), by: me)
     }
 }

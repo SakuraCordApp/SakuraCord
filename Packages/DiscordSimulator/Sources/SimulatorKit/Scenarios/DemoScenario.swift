@@ -93,8 +93,8 @@ struct DemoConverter {
                 for group in (entry["value"]?.stringValue ?? "").components(separatedBy: " · ") {
                     let parts = group.split(separator: " ", maxSplits: 1).map(String.init)
                     guard parts.count == 2, groups[parts[0]] != nil else { continue }
-                    // "Nico (birthday rules: he picks)" is still Nico.
-                    groups[parts[0]] = parts[1].components(separatedBy: ", ").filter { $0 != name && !$0.hasPrefix(name + " ") }
+                    // "Nico (birthday rules: he picks)" is still Nico; "Sam Smith" is not Sam.
+                    groups[parts[0]] = parts[1].components(separatedBy: ", ").filter { $0 != name && !$0.hasPrefix(name + " (") }
                 }
                 groups[mark, default: []].append(name)
                 let text = marks.compactMap { groups[$0.1]?.isEmpty == false ? "\($0.1) \(groups[$0.1]!.joined(separator: ", "))" : nil }
@@ -119,10 +119,12 @@ struct DemoConverter {
             user.premiumSince = user.premiumType == .none ? nil : created.addingTimeInterval(200 * 86_400)
             user.accentColor = Int(person.accentColor)
             user.bannerColor = String(format: "#%06x", person.bannerColor)
-            let avatarHash = builder.hash(seed: person.avatar.seed, animated: person.avatar.animated && user.premiumType == .nitro)
-            user.avatar = avatarHash
-            avatars[person.key] = avatarHash
-            await world.setPalette(person.avatar.palette, forHash: avatarHash)
+            if let avatar = person.avatar {
+                let avatarHash = builder.hash(seed: avatar.seed, animated: avatar.animated && user.premiumType == .nitro)
+                user.avatar = avatarHash
+                avatars[person.key] = avatarHash
+                await world.setStyle(avatar, forHash: avatarHash)
+            }
             if let banner = person.banner, user.premiumType == .nitro {
                 let bannerHash = builder.hash(seed: banner.seed)
                 user.banner = bannerHash
@@ -192,7 +194,7 @@ struct DemoConverter {
         var guild = Guild(id: guildID, name: demo.name, ownerID: owner)
         guild.description = demo.description
         guild.icon = builder.hash(seed: demo.icon.seed, animated: demo.icon.animated && demo.boostTier >= 1)
-        await world.setPalette(demo.icon.palette, forHash: guild.icon!)
+        await world.setStyle(demo.icon, forHash: guild.icon!)
         if let banner = demo.banner, demo.boostTier >= 2 {
             guild.banner = builder.hash(seed: banner.seed)
             await world.setPalette(banner.palette, forHash: guild.banner!)
@@ -633,7 +635,7 @@ struct DemoConverter {
         if demo.isGroup { channel.ownerID = demo.owner.flatMap { people[$0] } ?? me }
         if let icon = demo.icon {
             channel.icon = builder.hash(seed: icon.seed)
-            await world.setPalette(icon.palette, forHash: channel.icon!)
+            await world.setStyle(icon, forHash: channel.icon!)
         }
         channels[demo.key] = channel.id
         await world.addChannel(channel)
@@ -650,7 +652,8 @@ struct DemoConverter {
         var state = ReadState(lastAckedID: last.id)
         if let label, let target = labels["\(channelKey)/\(label)"], let index = messages.firstIndex(where: { $0.id == target.message }) {
             state.lastAckedID = index > 0 ? messages[index - 1].id : Snowflake(target.message.rawValue - 1)
-            state.mentionCount = messages[index...].filter { $0.mentions.contains(me) || $0.mentionEveryone }.count
+            let channel = try await world.channel(channelID)
+            state.mentionCount = await world.mentionCount(of: me, in: channel, after: state.lastAckedID ?? Snowflake(0))
         }
         await world.setReadState(me, channel: channelID, state)
     }
@@ -704,6 +707,11 @@ public extension World {
     }
 
     func addStandardSticker(_ sticker: Sticker) { standardStickers.append(sticker) }
+
+    func setStyle(_ style: DemoImageStyle, forHash hash: String) {
+        setPalette(style.palette, forHash: hash)
+        if let art = style.art { setArt(art, forHash: hash) }
+    }
 
     func markPinned(_ channelID: Snowflake, at date: Date) {
         if (channels[channelID]?.lastPinTimestamp ?? .distantPast) < date { channels[channelID]?.lastPinTimestamp = date }

@@ -86,11 +86,14 @@ public struct DemoImageStyle: Sendable, Hashable {
     public var seed: UInt64
     public var palette: Int
     public var animated: Bool
+    /// The picture, for avatars and icons; nil leaves it to the seed.
+    public var art: MediaGenerator.Art?
 
-    public init(seed: UInt64, palette: Int, animated: Bool = false) {
+    public init(seed: UInt64, palette: Int, animated: Bool = false, art: MediaGenerator.Art? = nil) {
         self.seed = seed
         self.palette = palette
         self.animated = animated
+        self.art = art
     }
 }
 
@@ -102,7 +105,8 @@ public struct DemoPerson: Sendable, Hashable, Identifiable {
     public var bio: String
     public var premium: DemoPremium
     public var presence: DemoPresence
-    public var avatar: DemoImageStyle
+    /// Nil for someone who never set one, who shows Discord's default avatar.
+    public var avatar: DemoImageStyle?
     /// Profile banner image; Nitro only.
     public var banner: DemoImageStyle?
     public var bannerColor: UInt32
@@ -115,7 +119,7 @@ public struct DemoPerson: Sendable, Hashable, Identifiable {
 
     public init(
         key: String, username: String, displayName: String, pronouns: String = "", bio: String = "",
-        premium: DemoPremium = .none, presence: DemoPresence, avatar: DemoImageStyle,
+        premium: DemoPremium = .none, presence: DemoPresence, avatar: DemoImageStyle?,
         banner: DemoImageStyle? = nil, bannerColor: UInt32, accentColor: UInt32,
         themeColors: [UInt32]? = nil, isBot: Bool = false
     ) {

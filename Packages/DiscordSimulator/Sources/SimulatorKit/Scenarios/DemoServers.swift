@@ -9,15 +9,29 @@ extension DemoConverter {
         guard let porch = guildKeys.first(where: { $0.value == "porch" })?.key,
               let garden = guildKeys.first(where: { $0.value == "garden" })?.key else { return }
         let porchOwner = try await world.guild(porch).ownerID, gardenOwner = try await world.guild(garden).ownerID
-        await addInvite("porchlight", guild: porch, channel: channels["general"], inviter: porchOwner, created: -30, maxAge: 0)
-        await addInvite("lindenstreet", guild: garden, channel: channels["garden-chat"], inviter: gardenOwner, created: -90, maxAge: 0)
+        await addInvite("porchlight", guild: porch, channel: channels["general"], inviter: porchOwner, created: -30)
+        await addInvite("lindenstreet", guild: garden, channel: channels["garden-chat"], inviter: gardenOwner, created: -90)
         await world.setServerState { $0.brandColors[porch] = "#e07a5f" }
         await addGardenGuide(garden)
         await addEvents(porch: porch, garden: garden)
         // The garden keeps weedkiller talk out of chat.
         let rule = AutoModRule(id: await world.nextID(), guildID: garden, creatorID: people["marisol"] ?? gardenOwner, name: "No weedkiller",
                                keywords: ["roundup", "*glyphosate*", "weedkiller"])
-        await world.setServerState { $0.autoModRules[rule.id] = rule }
+        // Plot trades go to the coordinators' notice board for a look, without blocking anyone.
+        var trades = AutoModRule(id: await world.nextID(), guildID: garden, creatorID: people["marisol"] ?? gardenOwner, name: "Flag plot trades",
+                                 keywords: ["*plot for sale*", "selling my plot"])
+        trades.blocks = false
+        trades.alertChannelID = channels["garden-notice"]
+        await world.setServerState { [trades] state in
+            state.autoModRules[rule.id] = rule
+            state.autoModRules[trades.id] = trades
+        }
+        await addSignupForm()
+        for guildID in [porch, garden] {
+            for member in try await world.guild(guildID).memberOrder where await world.users[member]?.bot == true {
+                await world.registerIntegration(member, in: guildID)
+            }
+        }
         if let pip = people["pip"] { await world.setServerState { $0.oauthRedirects[pip] = ["https://pip.example.net/discord/callback"] } }
         try await buildBookClub()
     }
@@ -48,11 +62,11 @@ extension DemoConverter {
         }
     }
 
-    private func addInvite(_ code: String, guild: Snowflake, channel: Snowflake?, inviter: Snowflake, created days: Int, maxAge: Int) async {
+    private func addInvite(_ code: String, guild: Snowflake, channel: Snowflake?, inviter: Snowflake, created days: Int) async {
         guard let channel else { return }
         let created = world.epoch.addingTimeInterval(Double(days) * 86_400)
         let invite = Invite(id: await world.nextID(at: created), code: code, guildID: guild, channelID: channel, inviterID: inviter,
-                            createdAt: created, maxAge: maxAge, uses: 3)
+                            createdAt: created, maxAge: 0, uses: 3)
         await world.setServerState { $0.invites[code] = invite }
     }
 
@@ -106,7 +120,7 @@ extension DemoConverter {
         var guild = Guild(id: guildID, name: "Riverside Readers", ownerID: owner)
         guild.description = "A neighbourhood book club. One book a month, tea always."
         guild.icon = builder.hash(seed: 0xb00c)
-        await world.setPalette(5, forHash: guild.icon!)
+        await world.setStyle(DemoImageStyle(seed: 0xb00c, palette: 5, art: .drawing(.book, background: 0x1565c0)), forHash: guild.icon!)
         guild.features = ["COMMUNITY", "MEMBER_VERIFICATION_GATE_ENABLED", "MEMBER_VERIFICATION_MANUAL_APPROVAL"]
         guild.verificationLevel = 1
         guild.roles = [WorldBuilder.everyoneRole(guildID: guildID)]
@@ -135,7 +149,40 @@ extension DemoConverter {
             state.verificationForms[guildID] = form
             state.brandColors[guildID] = "#3d7ea6"
         }
-        await addInvite(Self.bookClubInvite, guild: guildID, channel: general.id, inviter: owner, created: -12, maxAge: 0)
+        await addInvite(Self.bookClubInvite, guild: guildID, channel: general.id, inviter: owner, created: -12)
+    }
+
+    /// Pip's `/signup` opens a game-night form (radio and checkbox groups) and confirms privately.
+    private func addSignupForm() async {
+        func option(_ label: String, _ value: String) -> JSON { .object(JSONObject([("label", .string(label)), ("value", .string(value))])) }
+        func labelled(_ id: Int, _ label: String, _ description: String, _ component: JSONObject) -> JSON {
+            var component = component
+            component["id"] = .int(id + 1)
+            return .object(JSONObject([("component", .object(component)), ("description", .string(description)), ("id", .int(id)),
+                                       ("label", .string(label)), ("type", 18)]))
+        }
+        let modal: JSON = .object(JSONObject([
+            ("custom_id", "gamenight_signup"), ("title", "Game night sign-up"),
+            ("components", .array([
+                labelled(1, "Which game?", "Pick one for the first table", JSONObject([
+                    ("custom_id", "game"), ("type", 21), ("required", true),
+                    ("options", .array(World.gameShelf.prefix(4).map { option($0, $0.lowercased()) })),
+                ])),
+                labelled(3, "What will you bring?", "Choose up to three", JSONObject([
+                    ("custom_id", "snacks"), ("type", 22), ("min_values", 0), ("max_values", 3),
+                    ("options", [option("🥨 Pretzels", "pretzels"), option("🍪 Cookies", "cookies"), option("🧃 Juice", "juice"), option("🍕 Pizza", "pizza")]),
+                ])),
+                labelled(5, "Can you host?", "Your place, about six people", JSONObject([
+                    ("custom_id", "host"), ("type", 21), ("required", true), ("options", [option("🏠 Yes", "yes"), option("🚪 Not this time", "no")]),
+                ])),
+            ])),
+        ]))
+        await world.setCommandReply("signup", CommandReply(modal: modal))
+        await world.setModalResponder(customID: "gamenight_signup") { values in
+            let snacks = values["snacks"].map { $0.isEmpty ? "nothing" : $0.joined(separator: ", ") } ?? "nothing"
+            let host = values["host"]?.first == "yes" ? "and you're hosting 🏠" : "and someone else is hosting"
+            return "You're in for **\(values["game"]?.first ?? "a game")**, bringing \(snacks), \(host). See you Thursday!"
+        }
     }
 
     private static func action(_ channel: Snowflake, type: Int, _ title: String) -> JSON {

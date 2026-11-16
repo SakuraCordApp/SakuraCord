@@ -18,98 +18,98 @@ public enum DemoContent {
             premium: .nitro,
             presence: DemoPresence(.online, custom: "repotting everything", emoji: "🪴",
                                    activity: .listening(song: "Slow Tide", artist: "The Paper Lanterns", album: "Harbour Songs")),
-            avatar: DemoImageStyle(seed: 0x57e1, palette: 7, animated: true), banner: DemoImageStyle(seed: 0x57e2, palette: 7),
+            avatar: DemoImageStyle(seed: 0x57e1, palette: 7, animated: true, art: .drawing(.leaf, background: 0xe1bee7)), banner: DemoImageStyle(seed: 0x57e2, palette: 7),
             bannerColor: 0x52b788, accentColor: 0x2d6a4f, themeColors: [0x2d6a4f, 0xd8f3dc]
         ),
         DemoPerson(
             key: "tomas", username: "tomas.b", displayName: "Tomás", pronouns: "he/him",
             bio: "line cook. will feed you.\nnew kitchen, who dis 🍳", premium: .nitroBasic,
             presence: DemoPresence(.idle, custom: "unpacking forever", emoji: "📦"),
-            avatar: DemoImageStyle(seed: 0x7012, palette: 4), bannerColor: 0xffb347, accentColor: 0xd1495b
+            avatar: DemoImageStyle(seed: 0x7012, palette: 4, art: .drawing(.box, background: 0x8d6e63)), bannerColor: 0xffb347, accentColor: 0xd1495b
         ),
         DemoPerson(
             key: "priya", username: "priya.k", displayName: "Priya", pronouns: "she/her",
             bio: "med student. powered by iced coffee and flashcards ☕", premium: .none,
             presence: DemoPresence(.idle, custom: "passed. sleeping for a week", emoji: "😴"),
-            avatar: DemoImageStyle(seed: 0x9a1a, palette: 3), bannerColor: 0x8e7cc3, accentColor: 0x4b3f72
+            avatar: DemoImageStyle(seed: 0x9a1a, palette: 3, art: .drawing(.moon, background: 0x283593)), bannerColor: 0x8e7cc3, accentColor: 0x4b3f72
         ),
         DemoPerson(
             key: "june", username: "junebug.runs", displayName: "June", pronouns: "she/her",
             bio: "slow runner, fast snacker 🏃‍♀️\n21.1 km survivor", premium: .none,
             presence: DemoPresence(.online, custom: "sub-2 club", emoji: "🏅"),
-            avatar: DemoImageStyle(seed: 0x1e7e, palette: 8), bannerColor: 0xff9e80, accentColor: 0xf25f5c
+            avatar: DemoImageStyle(seed: 0x1e7e, palette: 8, art: .drawing(.shoe, background: 0xffe1d6)), bannerColor: 0xff9e80, accentColor: 0xf25f5c
         ),
         DemoPerson(
             key: "oskar", username: "oskar.lund", displayName: "Oskar", pronouns: "he/him",
             bio: "bass in Quiet Neighbours 🎸\nbike: alive again", premium: .none,
             presence: DemoPresence(.online, activity: .listening(song: "Lowlands", artist: "Mossgrove", album: "Night Ferry")),
-            avatar: DemoImageStyle(seed: 0x05ca, palette: 9), bannerColor: 0x3d4a8a, accentColor: 0x6c7bbf
+            avatar: DemoImageStyle(seed: 0x05ca, palette: 9, art: .drawing(.guitar, background: 0x00695c)), bannerColor: 0x3d4a8a, accentColor: 0x6c7bbf
         ),
         DemoPerson(
             key: "hana", username: "hana.bakes", displayName: "Hana", pronouns: "she/they",
             bio: "baker 🍞 cat mom to Miso (a thief)", premium: .none,
             presence: DemoPresence(.online, custom: "proofing", emoji: "🍞"),
-            avatar: DemoImageStyle(seed: 0x4a7a, palette: 10), bannerColor: 0xe2a0b5, accentColor: 0x9d6381
+            avatar: DemoImageStyle(seed: 0x4a7a, palette: 10, art: .drawing(.bread, background: 0xfde9cc)), bannerColor: 0xe2a0b5, accentColor: 0x9d6381
         ),
         DemoPerson(
             key: "rafi", username: "rafi.m", displayName: "Rafi", pronouns: "he/him",
             bio: "chemistry teacher. garage full of bike parts. it was a positive hm", premium: .none,
             presence: DemoPresence(.idle, activity: .playing("Lighthouse Keeper")),
-            avatar: DemoImageStyle(seed: 0x2af1, palette: 1), bannerColor: 0x2e86ab, accentColor: 0x1b4965
+            avatar: DemoImageStyle(seed: 0x2af1, palette: 1, art: .photo(.bike)), bannerColor: 0x2e86ab, accentColor: 0x1b4965
         ),
         DemoPerson(
             key: "lou", username: "lou.wanders", displayName: "Lou", pronouns: "she/her",
             bio: "will plan a whole trip around one bakery ✈️", premium: .none,
             presence: DemoPresence(.offline),
-            avatar: DemoImageStyle(seed: 0x10a0, palette: 0), bannerColor: 0xf28c8c, accentColor: 0x6c5b9e
+            avatar: DemoImageStyle(seed: 0x10a0, palette: 0, art: .photo(.sunset)), bannerColor: 0xf28c8c, accentColor: 0x6c5b9e
         ),
         DemoPerson(
             key: "sam", username: "sam.drums", displayName: "Sam", pronouns: "they/them",
             bio: "drums @ Quiet Neighbours\nshhh @ the library", premium: .none,
             presence: DemoPresence(.dnd, custom: "library shift", emoji: "📚"),
-            avatar: DemoImageStyle(seed: 0x5a3d, palette: 11), bannerColor: 0x6b8094, accentColor: 0x3a4a5c
+            avatar: DemoImageStyle(seed: 0x5a3d, palette: 11, art: .monogram("SD", background: 0x263238)), bannerColor: 0x6b8094, accentColor: 0x3a4a5c
         ),
         DemoPerson(
             key: "nico", username: "nico.ribbit", displayName: "Nico", pronouns: "he/him",
             bio: "frog enthusiast 🐸 ask me about frogs", premium: .none,
             presence: DemoPresence(.online, custom: "birthday mode", emoji: "🎂", activity: .playing("Pond Life")),
-            avatar: DemoImageStyle(seed: 0x71c0, palette: 2), bannerColor: 0x5e9f6e, accentColor: 0x2f5d50
+            avatar: DemoImageStyle(seed: 0x71c0, palette: 2, art: .drawing(.frog, background: 0xd7f2d0)), bannerColor: 0x5e9f6e, accentColor: 0x2f5d50
         ),
         DemoPerson(
             key: "felix", username: "felix.and.biscuit", displayName: "Felix", pronouns: "he/him",
             bio: "Biscuit's human 🐕", premium: .none,
             presence: DemoPresence(.offline),
-            avatar: DemoImageStyle(seed: 0xfe11, palette: 6), bannerColor: 0xe0b184, accentColor: 0x6b4f4f
+            avatar: DemoImageStyle(seed: 0xfe11, palette: 6, art: .photo(.dog)), bannerColor: 0xe0b184, accentColor: 0x6b4f4f
         ),
         DemoPerson(
             key: "marisol", username: "marisol.grows", displayName: "Marisol", pronouns: "she/her",
             bio: "Linden Street Garden coordinator 🌻 compost evangelist", premium: .none,
             presence: DemoPresence(.online, custom: "turning the compost", emoji: "🌻"),
-            avatar: DemoImageStyle(seed: 0x3a21, palette: 4), bannerColor: 0xffe29a, accentColor: 0xff7f50
+            avatar: DemoImageStyle(seed: 0x3a21, palette: 4, art: .photo(.plant)), bannerColor: 0xffe29a, accentColor: 0xff7f50
         ),
         DemoPerson(
             key: "kofi", username: "kofi.honey", displayName: "Kofi", pronouns: "he/him",
             bio: "keeps the bees. brings honey to meetings 🐝", premium: .none,
             presence: DemoPresence(.idle),
-            avatar: DemoImageStyle(seed: 0xc0f1, palette: 6), bannerColor: 0xb07d62, accentColor: 0xffb347
+            avatar: DemoImageStyle(seed: 0xc0f1, palette: 6, art: .drawing(.bee, background: 0x4e342e)), bannerColor: 0xb07d62, accentColor: 0xffb347
         ),
         DemoPerson(
             key: "ada", username: "ada.p", displayName: "Ada", pronouns: "she/her",
             bio: "retired music teacher. plot 14. grows too many courgettes", premium: .none,
             presence: DemoPresence(.offline),
-            avatar: DemoImageStyle(seed: 0xada0, palette: 10), bannerColor: 0xfad2e1, accentColor: 0x9d6381
+            avatar: nil, bannerColor: 0xfad2e1, accentColor: 0x9d6381
         ),
         DemoPerson(
             key: "rosa", username: "rosa.inks", displayName: "Rosa", pronouns: "she/her",
             bio: "illustrator. met you at the garden open day 🌱", premium: .none,
             presence: DemoPresence(.online),
-            avatar: DemoImageStyle(seed: 0x2054, palette: 5), bannerColor: 0xe07a9c, accentColor: 0xa23b72
+            avatar: nil, bannerColor: 0xe07a9c, accentColor: 0xa23b72
         ),
         DemoPerson(
             key: "pip", username: "pip", displayName: "Pip", pronouns: "",
             bio: "Porch helper 🏡 game nights, reminders, birthdays and the watering rota.", premium: .none,
             presence: DemoPresence(.online, activity: .watching("the porch")),
-            avatar: DemoImageStyle(seed: 0x0919, palette: 1), bannerColor: 0x56c1c1, accentColor: 0x2e86ab, isBot: true
+            avatar: DemoImageStyle(seed: 0x0919, palette: 1, art: .drawing(.robot, background: 0xad1457)), bannerColor: 0x56c1c1, accentColor: 0x2e86ab, isBot: true
         ),
     ]
 
@@ -203,7 +203,7 @@ public enum DemoContent {
 
     static let moveCrew = DemoDirectChannel(
         "gdm-move", recipients: ["tomas", "oskar", "rafi"], name: "move crew 📦",
-        icon: DemoImageStyle(seed: 0x60e, palette: 4), owner: "tomas", messages: [
+        icon: DemoImageStyle(seed: 0x60e, palette: 4, art: .drawing(.box, background: 0xff8a65)), owner: "tomas", messages: [
             Msg("tomas", at(-8, 17, 0), "made a chat for saturday logistics. you're here because you have arms"),
             Msg("tomas", at(-8, 17, 1), "", system: .recipientAdded("rafi")),
             Msg("rafi", at(-8, 17, 3), "and a chain tool"),

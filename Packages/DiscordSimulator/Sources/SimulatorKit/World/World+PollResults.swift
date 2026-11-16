@@ -23,6 +23,7 @@ extension World {
     }
 
     /// The `poll_result` embed: question and totals, plus the winning answer when there is a single winner.
+    /// The capture had no votes; the `victor_answer_*` fields follow Discord's documentation.
     private func pollResultEmbed(_ poll: Poll) -> JSON {
         let counts = poll.answers.map(\.voters.count)
         let total = counts.reduce(0, +)

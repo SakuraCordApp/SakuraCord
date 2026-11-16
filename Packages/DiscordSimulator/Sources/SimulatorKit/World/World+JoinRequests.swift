@@ -16,7 +16,7 @@ extension World {
     func startJoinRequest(_ guildID: Snowflake, by userID: Snowflake) async throws -> JoinRequest {
         let guild = try guild(guildID)
         guard guild.members[userID] == nil, servers.verificationForms[guildID] != nil else { throw WorldError.missingAccess }
-        if let open = joinRequest(guildID, userID: userID), open.status == .started || open.status == .submitted { return open }
+        if let open = joinRequest(guildID, userID: userID), open.isOpen { return open }
         let request = JoinRequest(id: nextID(), guildID: guildID, userID: userID)
         servers.joinRequests[request.id] = request
         await emitJoinRequest("GUILD_JOIN_REQUEST_CREATE", request)
@@ -33,7 +33,7 @@ extension World {
         }
         var request = joinRequest(guildID, userID: userID)
         if request == nil || request?.status == .rejected { request = try await startJoinRequest(guildID, by: userID) }
-        guard var request, request.status == .started || request.status == .submitted else { throw WorldError.missingAccess }
+        guard var request, request.isOpen else { throw WorldError.missingAccess }
         request.status = .submitted
         request.formResponses = fields
         servers.joinRequests[request.id] = request
@@ -65,6 +65,16 @@ extension World {
         if approve { try await addMember(applicant, to: guildID) }
     }
 
+    /// `POST /guilds/{id}/requests/{id}/ack`: the applicant has seen the decision.
+    func acknowledgeJoinRequest(_ id: Snowflake, in guildID: Snowflake, by userID: Snowflake) async throws {
+        guard var request = servers.joinRequests[id], request.guildID == guildID, request.userID == userID, !request.isOpen else {
+            throw WorldError.notFound
+        }
+        request.lastSeen = clock.now
+        servers.joinRequests[id] = request
+        await emitJoinRequest("GUILD_JOIN_REQUEST_UPDATE", request)
+    }
+
     private func emitJoinRequest(_ name: String, _ request: JoinRequest, detailed: Bool = false) async {
         await emit(name, .object(JSONObject([
             ("guild_id", request.guildID.json),
@@ -78,7 +88,7 @@ extension World {
             ("created_at", World.timestamp(request.id.date)), ("reviewed_at", World.optionalTimestamp(request.reviewedAt)),
             ("join_request_id", request.id.json), ("id", request.id.json),
             ("rejection_reason", .optional(request.rejectionReason)), ("application_status", .string(request.status.rawValue)),
-            ("last_seen", World.optionalTimestamp(request.reviewedAt)), ("guild_id", request.guildID.json),
+            ("last_seen", World.optionalTimestamp(request.lastSeen ?? request.reviewedAt)), ("guild_id", request.guildID.json),
             ("user_id", request.userID.json), ("interview_channel_id", .null),
         ])
         if includeUser { object["user"] = renderUser(request.userID) }
@@ -100,12 +110,12 @@ extension World {
 
     /// Guilds the user has an open application to.
     func joinRequestGuilds(_ userID: Snowflake) -> JSON {
-        let ids = servers.joinRequests.values.filter { $0.userID == userID && ($0.status == .started || $0.status == .submitted) }
+        let ids = servers.joinRequests.values.filter { $0.userID == userID && $0.isOpen }
             .sorted { $0.id < $1.id }.map(\.guildID)
         return .array(ids.compactMap { guilds[$0] }.map(renderGuildPreview))
     }
 
-    /// READY's `guild_join_requests`: the user's applications still under review or decided but not joined.
+    /// READY's `guild_join_requests`: every application the user has made.
     func readyJoinRequests(_ userID: Snowflake) -> [JSON] {
         servers.joinRequests.values.filter { $0.userID == userID }.sorted { $0.id < $1.id }
             .map { renderJoinRequest($0, includeUser: false, includeAnswers: false) }
@@ -137,15 +147,13 @@ extension World {
     // MARK: Server guide and onboarding
 
     func serverGuide(_ guildID: Snowflake, viewer: Snowflake) throws -> JSON {
-        let guild = try guild(guildID)
-        guard guild.members[viewer] != nil else { throw WorldError.missingAccess }
+        _ = try memberGuild(guildID, of: viewer)
         guard let guide = servers.guides[guildID] else { throw WorldError.notFound }
         return .object(JSONObject([("guild_id", guildID.json)] + guide.map { ($0.key, $0.value) }))
     }
 
     func newMemberActions(_ guildID: Snowflake, viewer: Snowflake) throws -> JSON {
-        let guild = try guild(guildID)
-        guard guild.members[viewer] != nil else { throw WorldError.missingAccess }
+        _ = try memberGuild(guildID, of: viewer)
         let done = servers.completedActions[guildID]?[viewer] ?? []
         return .object(JSONObject([
             ("guild_id", guildID.json), ("user_id", viewer.json),
@@ -168,8 +176,7 @@ extension World {
     }
 
     func onboarding(_ guildID: Snowflake, viewer: Snowflake) throws -> JSON {
-        let guild = try guild(guildID)
-        guard guild.members[viewer] != nil else { throw WorldError.missingAccess }
+        _ = try memberGuild(guildID, of: viewer)
         let config = servers.onboarding[guildID] ?? JSONObject([
             ("prompts", []), ("default_channel_ids", []), ("enabled", false), ("mode", 0),
         ])
@@ -182,8 +189,9 @@ extension World {
         return .object(object)
     }
 
-    /// `PUT /guilds/{id}/onboarding-responses`: stores the answers and swaps the roles they grant.
-    func saveOnboardingResponses(_ guildID: Snowflake, userID: Snowflake, body: JSON) async throws -> JSON {
+    /// `POST` (first answers) or `PUT /guilds/{id}/onboarding-responses`: stores the answers and swaps the roles
+    /// they grant. Finishing onboarding marks the member and posts their welcome, as captured.
+    func saveOnboardingResponses(_ guildID: Snowflake, userID: Snowflake, body: JSON, initial: Bool) async throws -> JSON {
         guard var member = try guild(guildID).members[userID] else { throw WorldError.missingAccess }
         let options = (servers.onboarding[guildID]?["prompts"]?.arrayValue ?? []).flatMap { $0["options"]?.arrayValue ?? [] }
         func roles(_ answers: [String]) -> Set<Snowflake> {
@@ -203,12 +211,14 @@ extension World {
         ])
         servers.onboardingResponses[guildID, default: [:]][userID] = stored
         let newRoles = member.roles.filter { !revoked.contains($0) } + granted.subtracting(member.roles).sorted()
-        if newRoles != member.roles {
+        let completes = initial && member.flags & Member.completedOnboarding == 0
+        if newRoles != member.roles || completes {
             member.roles = newRoles
+            if completes { member.flags |= Member.completedOnboarding | Member.startedOnboarding }
             guilds[guildID]?.members[userID] = member
-            await emit("GUILD_MEMBER_UPDATE", renderMember(member, guildID: guildID, includeUser: true).merging(["guild_id": guildID.json]),
-                       to: .guild(guildID, channel: nil))
+            await emitMemberUpdate(member, in: guildID)
         }
+        if completes { try await postJoinMessage(userID, in: try guild(guildID)) }
         return .object(JSONObject([("guild_id", guildID.json), ("user_id", userID.json)] + stored.map { ($0.key, $0.value) }))
     }
 }

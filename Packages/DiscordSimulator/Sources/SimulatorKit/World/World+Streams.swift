@@ -8,6 +8,8 @@ public struct GoLiveStream: Sendable {
     public var channelID: Snowflake
     /// The stream's own media server, the `server_id` its connections identify with.
     public var rtcServerID: Snowflake
+    /// The stream's own RTC channel, one below its server: what viewers identify with and the DAVE group ID.
+    public var rtcChannelID: Snowflake { Snowflake(rtcServerID.rawValue - 1) }
     public var region: String
     public var viewers: [Snowflake] = []
     public var paused = false
@@ -18,13 +20,13 @@ public struct GoLiveStream: Sendable {
     }
 }
 
-/// Go Live (Gateway ops 18–22). No capture has these yet (needs a second
-/// account streaming), so the stream key format, STREAM_CREATE, STREAM_UPDATE,
-/// STREAM_SERVER_UPDATE and STREAM_DELETE follow Discord's known payloads;
-/// the streamer's VOICE_STATE_UPDATE gains `self_stream` as captured.
+/// Go Live (Gateway ops 18–22), as captured from the official client streaming:
+/// starting sends STREAM_CREATE, the streamer's VOICE_STATE_UPDATE with
+/// `self_stream`, then STREAM_SERVER_UPDATE. Leaving voice while streaming
+/// sends the leave (still `self_stream`), the channel's own clean-up, then
+/// STREAM_DELETE; the client's op 19 that follows gets a second STREAM_DELETE.
+/// Watching and stopping while staying in voice are not captured yet.
 public extension World {
-    func stream(_ key: String) -> GoLiveStream? { voice.streams[key] }
-
     func stream(rtcServerID: Snowflake) -> GoLiveStream? { voice.streams.values.first { $0.rtcServerID == rtcServerID } }
 
     /// Op 18: start streaming into the voice channel or call the user is in.
@@ -34,11 +36,11 @@ public extension World {
         if !channel.type.isPrivate { try require(.stream, userID, channel) }
         let key = GoLiveStream.key(userID: userID, channelID: channelID, guildID: guildID)
         await endStream(key, reason: "stream_ended")
-        let stream = GoLiveStream(key: key, userID: userID, guildID: guildID, channelID: channelID, rtcServerID: nextID(),
+        let stream = GoLiveStream(key: key, userID: userID, guildID: guildID, channelID: channelID, rtcServerID: nextRTCServerID(),
                                   region: region ?? voice.calls[channelID]?.region ?? "rotterdam")
         voice.streams[key] = stream
-        try await updateVoiceFlags(userID) { $0.selfStream = true }
         await emit("STREAM_CREATE", renderStream(stream), to: .users([userID]))
+        try await updateVoiceFlags(userID) { $0.selfStream = true }
         await grantStream(stream, to: userID, sessionID: sessionID)
         if state.simulated { await voice.media?.participantsChanged(in: stream.rtcServerID) }
     }
@@ -51,12 +53,18 @@ public extension World {
         voice.streams[key] = stream
         await emit("STREAM_CREATE", renderStream(stream), to: .users([userID]))
         await grantStream(stream, to: userID, sessionID: sessionID)
-        await emit("STREAM_UPDATE", renderStream(stream), to: .users(Set([stream.userID] + stream.viewers).subtracting([userID])))
+        await emit("STREAM_UPDATE", renderStreamUpdate(stream), to: .users(Set([stream.userID] + stream.viewers).subtracting([userID])))
     }
 
-    /// Op 19: the streamer ends the stream; a viewer stops watching.
+    /// Op 19: the streamer ends the stream; a viewer stops watching. A streamer's op 19 for a stream
+    /// already gone (they left voice) is answered with STREAM_DELETE again, as captured.
     func deleteStream(_ key: String, by userID: Snowflake) async {
-        guard let stream = voice.streams[key] else { return }
+        guard let stream = voice.streams[key] else {
+            if key.hasSuffix(":\(userID)") {
+                await emit("STREAM_DELETE", renderStreamDelete(key, reason: "user_requested"), to: .users([userID]))
+            }
+            return
+        }
         if stream.userID == userID {
             await endStream(key, reason: "user_requested")
         } else if stream.viewers.contains(userID) {
@@ -69,14 +77,15 @@ public extension World {
         guard var stream = voice.streams[key], stream.userID == userID else { return }
         stream.paused = paused
         voice.streams[key] = stream
-        await emit("STREAM_UPDATE", renderStream(stream), to: .users(Set([stream.userID] + stream.viewers)))
+        await emit("STREAM_UPDATE", renderStreamUpdate(stream), to: .users(Set([stream.userID] + stream.viewers)))
         await voice.media?.participantsChanged(in: stream.rtcServerID)
     }
 
     /// A simulated person already streaming when the world starts (scenarios; no events).
     func seedStream(_ userID: Snowflake, channelID: Snowflake, guildID: Snowflake?) {
         let key = GoLiveStream.key(userID: userID, channelID: channelID, guildID: guildID)
-        voice.streams[key] = GoLiveStream(key: key, userID: userID, guildID: guildID, channelID: channelID, rtcServerID: nextID(), region: "rotterdam")
+        voice.streams[key] = GoLiveStream(key: key, userID: userID, guildID: guildID, channelID: channelID, rtcServerID: nextRTCServerID(),
+                                           region: "rotterdam")
     }
 
     /// Who is in a media room: a stream's streamer (sending video unless paused) and viewers, or a voice channel's people.
@@ -91,9 +100,12 @@ public extension World {
         }
     }
 
-    /// `GET /streams/{key}/preview`: a thumbnail of the stream.
+    /// `GET /streams/{key}/preview`: a thumbnail of the stream. Previews come from the streamer's client; a
+    /// real streamer's isn't there (the capture's own preview right after starting was a 404), a simulated one's is.
     func streamPreview(_ key: String, viewer: Snowflake) throws -> JSON {
-        guard let stream = voice.streams[key] else { throw WorldError.unknown("Stream", code: 10_049) }
+        guard let stream = voice.streams[key], voice.states[stream.userID]?.simulated == true else {
+            throw WorldError.unknown("Stream", code: 10_049)
+        }
         // The preview tile shows to anyone who can see the channel, not only people connected to it.
         guard let channel = channels[stream.channelID], canView(viewer, channel) else { throw WorldError.missingAccess }
         let path = "/stream-previews/\(stream.rtcServerID).jpg"
@@ -101,20 +113,16 @@ public extension World {
         return .object(JSONObject([("url", .string("https://media.discordapp.net\(path)?version=\(Int64(clock.now.timeIntervalSince1970))"))]))
     }
 
-    /// Someone left voice: their stream ends and they stop watching others.
+    /// Someone left voice (after their leave was announced): their stream ends and they stop watching others.
     internal func leaveStreams(_ userID: Snowflake) async {
-        // The leave's own VOICE_STATE_UPDATE ends `self_stream`; no separate update.
-        for stream in voice.streams.values where stream.userID == userID {
-            voice.states[userID]?.selfStream = false
-            await endStream(stream.key, reason: "stream_ended")
-        }
+        for stream in voice.streams.values where stream.userID == userID { await endStream(stream.key, reason: "user_requested") }
         for stream in voice.streams.values where stream.viewers.contains(userID) { await stopWatching(stream.key, viewer: userID) }
     }
 
     private func endStream(_ key: String, reason: String) async {
         guard let stream = voice.streams.removeValue(forKey: key) else { return }
         voice.grants = voice.grants.filter { $0.value.rtcServerID != stream.rtcServerID }
-        await emit("STREAM_DELETE", renderStreamDelete(stream, reason: reason), to: .users(Set([stream.userID] + stream.viewers)))
+        await emit("STREAM_DELETE", renderStreamDelete(stream.key, reason: reason), to: .users(Set([stream.userID] + stream.viewers)))
         if voice.states[stream.userID]?.selfStream == true { try? await updateVoiceFlags(stream.userID) { $0.selfStream = false } }
         await voice.media?.participantsChanged(in: stream.rtcServerID)
     }
@@ -124,8 +132,8 @@ public extension World {
         stream.viewers.removeAll { $0 == viewer }
         voice.streams[key] = stream
         voice.grants = voice.grants.filter { !($0.value.rtcServerID == stream.rtcServerID && $0.value.userID == viewer) }
-        await emit("STREAM_DELETE", renderStreamDelete(stream, reason: "user_requested"), to: .users([viewer]))
-        await emit("STREAM_UPDATE", renderStream(stream), to: .users(Set([stream.userID] + stream.viewers)))
+        await emit("STREAM_DELETE", renderStreamDelete(stream.key, reason: "user_requested"), to: .users([viewer]))
+        await emit("STREAM_UPDATE", renderStreamUpdate(stream), to: .users(Set([stream.userID] + stream.viewers)))
         await voice.media?.participantsChanged(in: stream.rtcServerID)
     }
 
@@ -139,14 +147,30 @@ public extension World {
         ])), to: .users([userID]))
     }
 
+    /// A server ID whose RTC channel (one below) is a fresh ID too.
+    private func nextRTCServerID() -> Snowflake {
+        let channel = nextID()
+        _ = nextID()
+        return Snowflake(channel.rawValue + 1)
+    }
+
+    /// STREAM_CREATE: the stream with its RTC server and channel.
     private func renderStream(_ stream: GoLiveStream) -> JSON {
         .object(JSONObject([
-            ("stream_key", .string(stream.key)), ("rtc_server_id", stream.rtcServerID.json), ("viewer_ids", .array(stream.viewers.map(\.json))),
-            ("region", .string(stream.region)), ("paused", .bool(stream.paused)),
+            ("paused", .bool(stream.paused)), ("region", .string(stream.region)), ("rtc_channel_id", stream.rtcChannelID.json),
+            ("rtc_server_id", stream.rtcServerID.json), ("stream_key", .string(stream.key)), ("viewer_ids", .array(stream.viewers.map(\.json))),
         ]))
     }
 
-    private func renderStreamDelete(_ stream: GoLiveStream, reason: String) -> JSON {
-        .object(JSONObject([("stream_key", .string(stream.key)), ("unavailable", false), ("reason", .string(reason))]))
+    /// STREAM_UPDATE: no RTC IDs, and a null `guild_id`.
+    private func renderStreamUpdate(_ stream: GoLiveStream) -> JSON {
+        .object(JSONObject([
+            ("guild_id", .null), ("paused", .bool(stream.paused)), ("region", .string(stream.region)), ("stream_key", .string(stream.key)),
+            ("viewer_ids", .array(stream.viewers.map(\.json))),
+        ]))
+    }
+
+    private func renderStreamDelete(_ key: String, reason: String) -> JSON {
+        .object(JSONObject([("reason", .string(reason)), ("stream_key", .string(key))]))
     }
 }

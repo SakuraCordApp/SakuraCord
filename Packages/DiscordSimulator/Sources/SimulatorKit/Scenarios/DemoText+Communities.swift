@@ -15,6 +15,22 @@ public enum CommunityKind: String, Sendable, CaseIterable {
         }
     }
 
+    /// What a server icon of this kind shows.
+    var iconMotifs: [MediaGenerator.EmojiMotif] {
+        switch self {
+        case .gaming: [.gamepad, .star, .robot, .sparkle]
+        case .art: [.palette, .pencil, .flower]
+        case .study: [.book, .pencil, .moon]
+        case .music: [.note, .guitar]
+        case .tech: [.laptop, .robot]
+        case .fandom: [.star, .moon, .heart, .sparkle]
+        case .local: [.house, .pin, .leaf, .sun]
+        case .creator: [.play, .heart, .star]
+        case .hub: [.globe, .smile, .sparkle]
+        case .friends: [.smile, .heart, .house, .sun, .cat]
+        }
+    }
+
     var bank: CommunityBank {
         switch self {
         case .gaming: .gaming
@@ -59,6 +75,11 @@ public extension DemoText {
         var line = rng.pick(bank.lines)
         while let range = line.range(of: "{thing}") { line.replaceSubrange(range, with: rng.pick(bank.things)) }
         return line
+    }
+
+    /// A name for a server folder or a group DM.
+    static func folderName(_ rng: inout SeededRandom) -> String {
+        rng.pick(["games", "art stuff", "friends", "school", "music", "big servers", "local", "work-ish", "archive", "🌙", "✨ faves", "creators"])
     }
 
     /// The `index`th name from `names`, numbered once the bank runs out, so names stay unique.

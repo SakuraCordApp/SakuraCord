@@ -26,8 +26,12 @@ extension RealisticWorld {
         let members = [me] + people.shuffledPrefix(max(1, held - 1), using: &rng)
         var guild = Guild(id: guildID, name: DemoText.communityName(kind, &rng),
                           ownerID: members.count > 1 ? members[1] : me)
-        guild.icon = bench.builder.hash(seed: rng.next())
-        await world.registerAsset(guild.icon!)
+        // About one server in thirty has no icon and shows its initials, as in captured READYs.
+        if !rng.chance(0.03) {
+            let icon = bench.builder.hash(seed: rng.next())
+            await world.setArt(.drawing(rng.pick(kind.iconMotifs), background: rng.pick(Self.iconBackgrounds)), forHash: icon)
+            guild.icon = icon
+        }
         guild.approximateMemberCount = profile.memberCount > members.count ? profile.memberCount : nil
         // Big servers have a small share of members online at once.
         guild.approximatePresenceCount = guild.approximateMemberCount.map { max(members.count, Int(Double($0) * (0.08 + rng.unit() * 0.17))) }
@@ -58,7 +62,7 @@ extension RealisticWorld {
         try await addThreads(profile.activeThreads, draft, &rng)
         try await addForumPosts(profile.forumPosts, draft, &rng)
         await addEvents(profile.scheduledEvents, draft, &rng)
-        await addSettings(profile, draft, &rng)
+        try await addSettings(profile, draft, &rng)
         await seatVoice(profile.peopleInVoice, draft, &rng)
         let others = draft.members.filter { $0 != me }
         let shares = profile.activity.channelShares
@@ -72,6 +76,9 @@ extension RealisticWorld {
                                                                     founded: founded, roles: Array(roles.dropFirst(3).map(\.id))))
         }
     }
+
+    private static let iconBackgrounds: [UInt32] = [0x5865f2, 0x2e7d32, 0xc62828, 0x6a1b9a, 0x00838f, 0xef6c00, 0x37474f,
+                                                     0xad1457, 0x1565c0, 0x558b2f, 0x4e342e, 0x283593, 0x00695c, 0xf9a825]
 
     private func roles(_ count: Int, kind: CommunityKind, founded: Date, _ rng: inout SeededRandom) async -> [Role] {
         var roles: [Role] = []
@@ -106,7 +113,9 @@ extension RealisticWorld {
             // Drawn on first request: a big account has thousands of emoji.
             let seed = rng.next()
             for ext in ["png", "webp"] { await world.storeLazyMedia("/emojis/\(id).\(ext)") { (MediaGenerator.emojiPNG(seed: seed), "image/png") } }
-            if emoji.animated { await world.storeLazyMedia("/emojis/\(id).gif") { (MediaGenerator.animatedGIF(seed: seed), "image/gif") } }
+            if emoji.animated {
+                await world.storeLazyMedia("/emojis/\(id).gif") { (MediaGenerator.animatedGIF(seed: seed, motif: defaultMotif(seed)), "image/gif") }
+            }
             emojis.append(emoji)
         }
         return emojis
@@ -119,7 +128,7 @@ extension RealisticWorld {
             let name = DemoText.numbered(kind.bank.emoji, index)
             stickers.append(Sticker(id: id, name: name, description: nil, tags: name))
             let seed = rng.next()
-            for ext in ["png", "webp"] { await world.storeLazyMedia("/stickers/\(id).\(ext)") { (MediaGenerator.emojiPNG(seed: seed, size: 320), "image/png") } }
+            for ext in ["png", "webp"] { await world.storeLazyMedia("/stickers/\(id).\(ext)") { (MediaGenerator.stickerPNG(seed: seed), "image/png") } }
         }
         return stickers
     }
@@ -158,7 +167,7 @@ extension RealisticWorld {
                     channel.position = index
                     channel.parentID = parentID
                     if restricted > 0 {
-                        // Announcements are read-only; other restricted channels give a role extra rights.
+                        // Announcements are read-only for @everyone; other restricted channels only stop @everyone pings, so the account can still use them.
                         restricted -= 1
                         channel.overwrites = [type == .announcement
                             ? PermissionOverwrite(id: draft.guildID, kind: .role, allow: [], deny: .sendMessages)
@@ -217,32 +226,24 @@ extension RealisticWorld {
         }
     }
 
-    /// Notification settings, stored only for servers the account changed, as Discord does.
-    private func addSettings(_ profile: ServerProfile, _ draft: ServerDraft, _ rng: inout SeededRandom) async {
+    /// Notification settings, stored only for servers the account changed, as Discord does. They go
+    /// through the same patch as `PATCH /users/@me/guilds/settings`; nothing is connected yet to hear it.
+    private func addSettings(_ profile: ServerProfile, _ draft: ServerDraft, _ rng: inout SeededRandom) async throws {
         let settings = profile.settings
         guard settings != ServerSettingsProfile() else { return }
         var overrides: [Snowflake: JSONObject] = [:]
-        func override(_ id: Snowflake, _ change: (inout JSONObject) -> Void) {
-            var value = overrides[id] ?? JSONObject([("channel_id", id.json), ("message_notifications", 3), ("muted", false),
-                                                     ("mute_config", .null), ("collapsed", false), ("flags", 0)])
-            change(&value)
-            overrides[id] = value
-        }
-        for id in draft.messageChannels.shuffledPrefix(settings.mutedChannels, using: &rng) { override(id) { $0["muted"] = true } }
-        for id in draft.categories.shuffledPrefix(settings.collapsedCategories, using: &rng) { override(id) { $0["collapsed"] = true } }
+        for id in draft.messageChannels.shuffledPrefix(settings.mutedChannels, using: &rng) { overrides[id, default: JSONObject()]["muted"] = true }
+        for id in draft.categories.shuffledPrefix(settings.collapsedCategories, using: &rng) { overrides[id, default: JSONObject()]["collapsed"] = true }
         for id in draft.messageChannels.shuffledPrefix(settings.notificationOverrides, using: &rng) {
-            let level = Int64(rng.next() % 3)
-            override(id) { $0["message_notifications"] = .int(level) }
+            overrides[id, default: JSONObject()]["message_notifications"] = .int(Int64(rng.next() % 3))
         }
-        let object = JSONObject([
-            ("guild_id", draft.guildID.json), ("suppress_everyone", .bool(settings.suppressEveryone)),
-            ("suppress_roles", .bool(settings.suppressRoles)), ("mute_scheduled_events", false),
-            ("message_notifications", .int(Int64(settings.messageNotifications))), ("flags", 0), ("mobile_push", true),
-            ("muted", .bool(settings.muted)), ("mute_config", .null), ("hide_muted_channels", .bool(settings.hideMutedChannels)),
-            ("channel_overrides", .array(overrides.keys.sorted().compactMap { overrides[$0].map(JSON.object) })),
-            ("notify_highlights", 0), ("version", 1),
+        let patch = JSONObject([
+            ("suppress_everyone", .bool(settings.suppressEveryone)), ("suppress_roles", .bool(settings.suppressRoles)),
+            ("message_notifications", .int(Int64(settings.messageNotifications))), ("muted", .bool(settings.muted)),
+            ("hide_muted_channels", .bool(settings.hideMutedChannels)),
+            ("channel_overrides", .object(JSONObject(overrides.keys.sorted().map { ($0.description, .object(overrides[$0]!)) }))),
         ])
-        await world.setGuildSettingsQuietly(me, draft.guildID, object)
+        _ = try await world.patchGuildSettings(me, guilds: JSONObject([(draft.guildID.description, .object(patch))]))
     }
 
     private func seatVoice(_ count: Int, _ draft: ServerDraft, _ rng: inout SeededRandom) async {
@@ -257,11 +258,5 @@ extension RealisticWorld {
             state.simulated = true
             await world.seedVoiceState(state)
         }
-    }
-}
-
-extension World {
-    func setGuildSettingsQuietly(_ userID: Snowflake, _ guildID: Snowflake, _ settings: JSONObject) {
-        guildSettings[userID, default: [:]][guildID] = settings
     }
 }

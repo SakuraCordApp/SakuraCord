@@ -22,6 +22,25 @@ enum ProtobufMerge {
             .reduce(into: Data()) { $0 += $1.bytes }
     }
 
+    /// Increments `versions.data_version` (field 1, its field 3), keeping the
+    /// versions' other fields. Settings with no versions start at 1.
+    static func bumpingDataVersion(_ settings: Data) -> Data {
+        guard let sections = fields(settings) else { return settings }
+        let versions = sections.first { $0.number == 1 }.flatMap { fields($0.payload) } ?? []
+        let dataVersion = versions.first { $0.number == 3 }.flatMap { varint($0.payload) } ?? 0
+        let kept = versions.filter { $0.number != 3 }.reduce(into: Data()) { $0 += $1.bytes }
+        return merge(settings, Protobuf.field(1, kept + Protobuf.varint(3, dataVersion + 1))) ?? settings
+    }
+
+    private static func varint(_ data: Data) -> UInt64? {
+        var value: UInt64 = 0
+        for (index, byte) in data.prefix(10).enumerated() {
+            value |= UInt64(byte & 0x7F) << (7 * UInt64(index))
+            if byte & 0x80 == 0 { return value }
+        }
+        return nil
+    }
+
     static func fields(_ data: Data) -> [Field]? {
         let bytes = [UInt8](data)
         var index = 0, result: [Field] = []

@@ -31,6 +31,7 @@ extension World {
         var channel = try groupDM(channelID, member: userID)
         _ = try user(added)
         guard !channel.recipients.contains(added) else { return }
+        // Not captured: the friends-only rule, the ten-person cap and their errors follow Discord's documentation.
         guard relationships[userID]?[added]?.type == .friend else { throw WorldError(status: 403, code: 50007, message: "Cannot send messages to this user") }
         guard channel.recipients.count < 10 else { throw WorldError(status: 400, code: 30011, message: "Maximum number of group DM recipients reached (10)") }
         channel.recipients.append(added)
@@ -50,6 +51,7 @@ extension World {
     }
 
     /// `DELETE /channels/{id}` on a private channel: leaving a group, or closing a DM (which only hides it).
+    /// Closing a 1:1 DM was never captured; it mirrors leaving a group for the closer.
     func closePrivateChannel(_ channelID: Snowflake, by userID: Snowflake) async throws -> JSON {
         let channel = try channel(channelID)
         guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
@@ -68,6 +70,7 @@ extension World {
     private func dropRecipient(_ removed: Snowflake, from channel: Channel, by userID: Snowflake) async throws {
         var channel = channel
         channel.recipients.removeAll { $0 == removed }
+        // Not captured (the owner stayed): ownership passes to the next member, as Discord documents.
         let ownerLeft = channel.ownerID == removed
         if ownerLeft { channel.ownerID = channel.recipients.first }
         openPrivateChannels[removed]?.removeAll { $0 == channel.id }

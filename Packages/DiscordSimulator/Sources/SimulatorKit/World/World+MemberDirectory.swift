@@ -48,7 +48,8 @@ extension World {
         let index = directory.firstIndex + offset
         let person = DemoText.person(index: index)
         let created = ScenarioEpoch.accountsReference(for: epoch).addingTimeInterval(-Double(300 + index % 2_000) * 86_400)
-        let userID = addPerson(person, created: created, avatar: String(format: "%016llx%016llx", person.avatar.seed, index.description.hashValueStable))
+        let avatar = person.avatar.map { String(format: "%016llx%016llx", $0.seed, index.description.hashValueStable) }
+        let userID = addPerson(person, created: created, avatar: avatar)
         var member = Member(userID: userID, joinedAt: directory.founded.addingTimeInterval(Double(offset % 997) * 3_600))
         if !directory.roles.isEmpty, offset % 3 == 0 { member.roles = [directory.roles[offset % directory.roles.count]] }
         guilds[guildID]?.members[userID] = member
@@ -58,13 +59,13 @@ extension World {
     }
 
     /// A generated person as a user with their presence; returns their ID.
-    func addPerson(_ person: DemoPerson, created: Date, avatar: String) -> Snowflake {
+    func addPerson(_ person: DemoPerson, created: Date, avatar: String?) -> Snowflake {
         var user = User(id: nextID(at: created), username: person.username, globalName: person.displayName)
         user.bio = person.bio
         user.pronouns = person.pronouns
         user.premiumType = person.premium.premiumType
         user.avatar = avatar
-        setPalette(person.avatar.palette, forHash: avatar)
+        if let avatar, let style = person.avatar { setPalette(style.palette, forHash: avatar) }
         let status = PresenceStatus(rawValue: person.presence.status.rawValue) ?? .offline
         let presence = person.presence.customStatus.map { WorldBuilder.presence(status, custom: $0, emoji: person.presence.customStatusEmoji) }
         addUser(user, presence: presence ?? Presence(status: status))

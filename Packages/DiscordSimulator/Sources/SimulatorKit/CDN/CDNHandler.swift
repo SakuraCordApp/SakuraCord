@@ -48,6 +48,7 @@ public final class CDNHandler: Sendable {
         let animated = stem.hasPrefix("a_") && (file.hasSuffix(".gif") || request.query["animated"]?.first == "true")
         let seed = Self.seed(stem)
         let palette = await world.palettes[stem]
+        let art = await world.arts[stem]
         // Generated images exist only for assets the world created; anything else is a bad URL.
         let key: String = switch kind {
         case "assets": segments.dropLast().last ?? stem
@@ -58,12 +59,12 @@ public final class CDNHandler: Sendable {
         guard kind == "embed" || known else { return nil }
         switch kind {
         case "avatars", "guilds" where segments.contains("avatars"):
-            if animated { return (MediaGenerator.animatedGIF(seed: seed, size: size), "image/gif") }
-            return (MediaGenerator.avatarPNG(seed: seed, size: size, palette: palette), "image/png")
+            if animated { return (MediaGenerator.animatedGIF(seed: seed, size: size, art: art), "image/gif") }
+            return (MediaGenerator.avatarPNG(seed: seed, size: size, art: art), "image/png")
         case "embed" where segments.count >= 3 && segments[1] == "avatars":
-            return (MediaGenerator.avatarPNG(seed: UInt64(stem) ?? 0, size: size, palette: Int(stem)), "image/png")
+            return (MediaGenerator.defaultAvatarPNG(index: Int(stem) ?? 0, size: size), "image/png")
         case "icons", "splashes", "discovery-splashes", "role-icons", "guild-tag-badges", "badge-icons", "app-icons", "channel-icons":
-            return (MediaGenerator.guildIconPNG(seed: seed, size: size, palette: palette), "image/png")
+            return (MediaGenerator.guildIconPNG(seed: seed, size: size, art: art, palette: palette), "image/png")
         case "banners", "guilds" where segments.contains("banners"):
             let width = max(size, 600)
             return (MediaGenerator.bannerPNG(width: width, height: width * 2 / 5, seed: seed, palette: palette), "image/png")

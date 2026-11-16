@@ -30,10 +30,19 @@ extension ParityRun {
         }
 
         try await soundboardAndGoLive(guild: target.guild, channel: voiceChannel.id, me: me)
+        try await watchSimulatedStream(guild: target.guild, channel: voiceChannel.id, me: me, streamer: target.otherUser)
 
+        // Leaving voice while streaming, as captured: the leave, the channel's clean-up, STREAM_DELETE; then op 19 gets another.
+        await flowStart()
+        try await probe.send(Self.goLive(guild: target.guild, channel: voiceChannel.id))
         await flowStart()
         try await probe.send(Self.voiceStateUpdate(guild: target.guild, channel: nil))
-        await voiceFlow("voice-leave", expecting: ["VOICE_STATE_UPDATE", "VOICE_CHANNEL_START_TIME_UPDATE", "VOICE_CHANNEL_STATUS_UPDATE"])
+        await voiceFlow("voice-leave-streaming",
+                        expecting: ["VOICE_STATE_UPDATE", "VOICE_CHANNEL_START_TIME_UPDATE", "VOICE_CHANNEL_STATUS_UPDATE", "STREAM_DELETE"])
+        await flowStart()
+        let key = GoLiveStream.key(userID: me, channelID: voiceChannel.id, guildID: target.guild)
+        try await probe.send(.object(JSONObject([("op", 19), ("d", .object(JSONObject([("stream_key", .string(key))])))])))
+        await voiceFlow("go-live-delete-after-leave", expecting: ["STREAM_DELETE"])
 
         try await privateCall(me: me)
     }
@@ -45,20 +54,28 @@ extension ParityRun {
         _ = try await rest("POST", "/api/v9/channels/\(channel)/send-soundboard-sound", body: ["sound_id": "1", "emoji_id": .null, "emoji_name": "🔔"])
         await voiceFlow("soundboard", expecting: ["VOICE_CHANNEL_EFFECT_SEND"])
 
-        await flowStart()
-        try await probe.send(.object(JSONObject([("op", 18), ("d", .object(JSONObject([
-            ("type", "guild"), ("guild_id", .string(guild.description)), ("channel_id", .string(channel.description)), ("preferred_region", .null),
-        ])))])))
-        await voiceFlow("go-live-start", expecting: ["VOICE_STATE_UPDATE", "STREAM_CREATE", "STREAM_SERVER_UPDATE"])
+        // Starting, as the official client does: op 18, then op 22 (not paused).
         let key = GoLiveStream.key(userID: me, channelID: channel, guildID: guild)
+        let previewPath = "/api/v9/streams/\(key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key)/preview"
         await flowStart()
-        try await probe.send(.object(JSONObject([("op", 22), ("d", .object(JSONObject([("stream_key", .string(key)), ("paused", true)])))])))
-        let preview = try await rest("GET", "/api/v9/streams/\(key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key)/preview")
-        if preview["url"]?.stringValue?.hasPrefix("https://media.discordapp.net/") != true { report.sequenceFailures.append("go-live: preview has no media URL") }
+        try await probe.send(Self.goLive(guild: guild, channel: channel))
+        try await probe.send(Self.pauseStream(key, paused: false))
+        // The streamer's own preview isn't uploaded yet: a 404, as captured.
+        if try await rest("GET", previewPath)["url"] != nil { report.sequenceFailures.append("go-live: a new stream's own preview should be a 404") }
+        await voiceFlow("go-live-start", expecting: ["STREAM_CREATE", "VOICE_STATE_UPDATE", "STREAM_SERVER_UPDATE", "STREAM_UPDATE"])
+        await flowStart()
+        try await probe.send(Self.pauseStream(key, paused: true))
         await voiceFlow("go-live-pause", expecting: ["STREAM_UPDATE"])
+        // Stopping while staying in voice, as captured: STREAM_DELETE, then the voice state without `self_stream`; the preview is gone.
         await flowStart()
         try await probe.send(.object(JSONObject([("op", 19), ("d", .object(JSONObject([("stream_key", .string(key))])))])))
-        await voiceFlow("go-live-end", expecting: ["STREAM_DELETE", "VOICE_STATE_UPDATE"])
+        let ended = await voiceFlow("go-live-end", expecting: ["STREAM_DELETE", "VOICE_STATE_UPDATE"])
+        if ended.last?.payload["d"]?["self_stream"] != nil { report.sequenceFailures.append("go-live: self_stream should be gone after stopping") }
+        _ = try await rest("GET", previewPath)
+    }
+
+    static func pauseStream(_ key: String, paused: Bool) -> JSON {
+        .object(JSONObject([("op", 22), ("d", .object(JSONObject([("stream_key", .string(key)), ("paused", .bool(paused))])))]))
     }
 
     /// Starting a DM call, ringing, cancelling the ring and hanging up.
@@ -111,6 +128,14 @@ extension ParityRun {
             probe.close()
             udp.close()
         }
+        guard let connection = await probe.connect([
+            ("server_id", .string(serverID.description)), ("user_id", .string(userID.description)), ("session_id", .string(sessionID)),
+            ("token", .string(token)), ("max_dave_protocol_version", 1), ("video", true),
+            ("streams", [["type": "video", "rid": "100", "quality": 100]]),
+        ], udp: udp) else {
+            report.sequenceFailures.append("voice: no ready, IP discovery or session description")
+            return
+        }
         var failures: [String] = []
         func expect(_ op: Int64, after message: JSON? = nil) async -> JSON? {
             if let message { probe.send(message) }
@@ -118,22 +143,9 @@ extension ParityRun {
             if reply == nil { failures.append("voice gateway never sent op \(op)") }
             return reply
         }
-        _ = await expect(8)
-        let ready = await expect(2, after: Self.voiceFrame(0, [
-            ("server_id", .string(serverID.description)), ("user_id", .string(userID.description)), ("session_id", .string(sessionID)),
-            ("token", .string(token)), ("max_dave_protocol_version", 1), ("video", true),
-            ("streams", [["type": "video", "rid": "100", "quality": 100]]),
-        ]))
-        guard let ssrc = ready?["d"]?["ssrc"]?.intValue, let (address, port) = await udp.discover(ssrc: UInt32(ssrc)) else {
-            report.sequenceFailures += (failures + ["no IP discovery answer"]).map { "voice: \($0)" }
-            return
-        }
-        let description = await expect(4, after: Self.voiceFrame(1, [
-            ("protocol", "udp"), ("data", .object(JSONObject([("address", .string(address)), ("port", .int(Int64(port))), ("mode", "aead_aes256_gcm_rtpsize")]))),
-        ]))
-        let key = (description?["d"]?["secret_key"]?.arrayValue ?? []).compactMap { $0.intValue.map(UInt8.init) }
-        if description?["d"]?["dave_protocol_version"]?.intValue != 1 { failures.append("session description doesn't select DAVE") }
-        _ = await expect(6, after: Self.voiceFrame(3, [("t", 1_234), ("seq_ack", ready?["seq"] ?? 0)]))
+        let key = connection.key
+        if connection.description["d"]?["dave_protocol_version"]?.intValue != 1 { failures.append("session description doesn't select DAVE") }
+        _ = await expect(6, after: Self.voiceFrame(3, [("t", 1_234), ("seq_ack", connection.ready["seq"] ?? 0)]))
 
         // DAVE: take the external sender (op 25) and send a key package (op 26).
         guard let package = await probe.waitForBinary(op: 25),
@@ -147,12 +159,7 @@ extension ParityRun {
         _ = try? await world.updateVoiceState(speaker, sessionID: "parity-speaker", VoiceStateRequest(guildID: serverID, channelID: channel), simulated: true)
         _ = await expect(11)
         // The simulated person creates the group and welcomes us (op 30); we're ready (op 23) and it executes (op 22).
-        if let welcome = await probe.waitForBinary(op: 30), welcome.count > 2, member.join(welcome: welcome.dropFirst(2)) {
-            _ = await expect(22, after: Self.voiceFrame(23, [("transition_id", .int(Int64(welcome[welcome.startIndex]) << 8 | Int64(welcome[welcome.startIndex + 1])))]))
-            member.useCurrentKey()
-        } else {
-            failures.append("no DAVE welcome from the simulated person's commit")
-        }
+        if await !probe.acceptWelcome(into: member) { failures.append("no DAVE welcome and transition from the simulated person's commit") }
         try? await simulator.voice.setSpeaking(speaker, true)
         let speaking = await expect(5)
         if let packet = await udp.receive(), let (header, body) = try? VoiceCrypto.open(packet, key: key, mode: .aes256GCM) {
@@ -193,13 +200,7 @@ extension ParityRun {
         probe.sendBinary(Data([26]) + member.keyPackage())
         _ = try? await world.updateVoiceState(speaker, sessionID: "parity-speaker-2", VoiceStateRequest(guildID: room.guild, channelID: room.channel),
                                               simulated: true)
-        guard let welcome = await probe.waitForBinary(op: 30), welcome.count > 2, member.join(welcome: welcome.dropFirst(2)) else {
-            return failures + ["no DAVE welcome after the rejoin"]
-        }
-        let transition = Int64(welcome[welcome.startIndex]) << 8 | Int64(welcome[welcome.startIndex + 1])
-        probe.send(Self.voiceFrame(23, [("transition_id", .int(transition))]))
-        if await probe.waitFor(op: 22) == nil { failures.append("no execute transition after the rejoin") }
-        member.useCurrentKey()
+        guard await probe.acceptWelcome(into: member) else { return failures + ["no DAVE welcome and transition after the rejoin"] }
         try? await voice.setSpeaking(speaker, true)
         let ssrc = await probe.waitFor(op: 5)?["d"]?["ssrc"]?.intValue
         // Packets from before the rejoin may still be queued; they carry the old group's keys.
@@ -227,6 +228,12 @@ extension ParityRun {
         return "no video RTP from a simulated camera"
     }
 
+    static func goLive(guild: Snowflake, channel: Snowflake) -> JSON {
+        .object(JSONObject([("op", 18), ("d", .object(JSONObject([
+            ("type", "guild"), ("guild_id", .string(guild.description)), ("channel_id", .string(channel.description)), ("preferred_region", .null),
+        ])))]))
+    }
+
     static func voiceStateUpdate(guild: Snowflake?, channel: Snowflake?) -> JSON {
         .object(JSONObject([("op", 4), ("d", .object(JSONObject([
             ("guild_id", guild.map { .string($0.description) } ?? .null), ("channel_id", channel.map { .string($0.description) } ?? .null),
@@ -239,7 +246,7 @@ extension ParityRun {
     }
 }
 
-/// A minimal voice gateway client (JSON text frames).
+/// A minimal voice gateway client (JSON text frames, binary DAVE frames).
 final class VoiceProbe: @unchecked Sendable {
     private let task: URLSessionWebSocketTask
     private let messages = Mutex<[JSON]>([])
@@ -292,6 +299,35 @@ final class VoiceProbe: @unchecked Sendable {
     }
 
     func close() { task.cancel(with: .normalClosure, reason: nil) }
+
+    struct Connection {
+        var ready: JSON
+        var description: JSON
+        var key: [UInt8]
+    }
+
+    /// Hello, Identify → Ready, IP discovery, Select Protocol (AES-GCM) → Session Description, and the transport key.
+    func connect(_ identify: [(String, JSON)], udp: UDPProbe) async -> Connection? {
+        guard await waitFor(op: 8) != nil else { return nil }
+        send(ParityRun.voiceFrame(0, identify))
+        guard let ready = await waitFor(op: 2), let ssrc = ready["d"]?["ssrc"]?.intValue,
+              let (address, port) = await udp.discover(ssrc: UInt32(ssrc)) else { return nil }
+        send(ParityRun.voiceFrame(1, [
+            ("protocol", "udp"), ("data", .object(JSONObject([("address", .string(address)), ("port", .int(Int64(port))), ("mode", "aead_aes256_gcm_rtpsize")]))),
+        ]))
+        guard let description = await waitFor(op: 4) else { return nil }
+        return Connection(ready: ready, description: description,
+                          key: (description["d"]?["secret_key"]?.arrayValue ?? []).compactMap { $0.intValue.map(UInt8.init) })
+    }
+
+    /// The welcome into a DAVE group (op 30), ready (op 23), execute (op 22), then the new keys.
+    func acceptWelcome(into member: DaveMember) async -> Bool {
+        guard let welcome = await waitForBinary(op: 30), welcome.count > 2, member.join(welcome: welcome.dropFirst(2)) else { return false }
+        send(ParityRun.voiceFrame(23, [("transition_id", .int(Int64(welcome[welcome.startIndex]) << 8 | Int64(welcome[welcome.startIndex + 1])))]))
+        guard await waitFor(op: 22) != nil else { return false }
+        member.useCurrentKey()
+        return true
+    }
 }
 
 /// A minimal voice UDP client: IP discovery, then receiving RTP.

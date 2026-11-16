@@ -43,6 +43,12 @@ public struct WorldError: Error, Sendable {
     }
 }
 
+/// A real Discord request whose behavior was never captured: the router answers
+/// 500 and logs an ERROR, so the gap is loud rather than a quiet stub.
+public struct NotSimulated: Error, CustomStringConvertible {
+    public var description: String
+}
+
 /// All simulated Discord state. Every mutation goes through this actor and
 /// reports the Gateway events Discord would dispatch for it.
 public actor World {
@@ -74,11 +80,13 @@ public actor World {
     public var servers = ServerState()
     /// Two-factor sign-in codes and pending login tickets.
     public var signIn = SignInState()
+    /// Installed bots, open modals, and bots that ignore interactions.
+    public var bots = BotState()
     /// The account the app signs in as.
     public private(set) var primaryUserID: Snowflake?
     /// Messages users scheduled, keyed by scheduled message ID.
     public var scheduledMessages: [Snowflake: ScheduledMessage] = [:]
-    /// Notification settings per user and guild, wire-shaped; DMs use guild ID 0.
+    /// Notification settings per user and guild, wire-shaped.
     public var guildSettings: [Snowflake: [Snowflake: JSONObject]] = [:]
     /// Each user's past avatars (`id`, `storage_hash`, `description`), newest first.
     public var avatarHistory: [Snowflake: [JSONObject]] = [:]
@@ -92,6 +100,8 @@ public actor World {
     public var pendingUploads: [String: PendingUpload] = [:]
     /// Generator palette per asset hash, so a person's avatar keeps their colours.
     public var palettes: [String: Int] = [:]
+    /// The picture an avatar or icon hash shows, when one was picked rather than left to the seed.
+    public var arts: [String: MediaGenerator.Art] = [:]
     /// Media generated on first request (large worlds would take too long to render up front).
     public var lazyMedia: [String: @Sendable () -> (data: Data, contentType: String)] = [:]
     /// Bytes served by the CDN and media hosts, keyed by path.
@@ -289,12 +299,14 @@ public actor World {
 
     public func setPalette(_ palette: Int, forHash hash: String) { palettes[hash] = palette }
 
+    public func setArt(_ art: MediaGenerator.Art, forHash hash: String) { arts[hash] = art }
+
     /// Makes an asset hash (or SKU ID) known to the CDN, which 404s anything else.
     public func registerAsset(_ key: String, palette: Int? = nil) {
         palettes[key] = palette ?? Int(key.hashValueStable % 12)
     }
 
-    public func isKnownAsset(_ key: String) -> Bool { palettes[key] != nil || key == Self.premiumBadgeIcon }
+    public func isKnownAsset(_ key: String) -> Bool { palettes[key] != nil || arts[key] != nil || key == Self.premiumBadgeIcon }
 
     /// The profile badge icon for Nitro subscribers.
     public nonisolated static let premiumBadgeIcon = "2ba85e8026a8614b640c2837bcdfe21b"

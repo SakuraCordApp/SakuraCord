@@ -21,6 +21,13 @@ public struct Snowflake: Hashable, Comparable, Sendable, CustomStringConvertible
         Date(timeIntervalSince1970: Double(Int64(rawValue >> 22) + Self.discordEpochMilliseconds) / 1000)
     }
 
+    /// The same moment and increment under another worker number. The world
+    /// mints IDs as worker 1, so records derived from one ID (embeds, a bot's
+    /// commands, a sticker pack) get IDs nothing else can take.
+    public func withWorker(_ worker: UInt64) -> Snowflake {
+        Snowflake(rawValue & ~(0x1F << 17) | (worker & 0x1F) << 17)
+    }
+
     public var description: String { String(rawValue) }
     public var json: JSON { .string(description) }
 

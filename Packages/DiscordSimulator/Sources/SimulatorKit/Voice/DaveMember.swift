@@ -1,5 +1,6 @@
 import CDave
 import Foundation
+import Synchronization
 
 /// A DAVE client: an MLS member of a voice room's group with a frame encryptor
 /// for its own media and decryptors for others', all from upstream libdave's
@@ -163,6 +164,20 @@ final class DaveExternalSender: @unchecked Sendable {
 }
 
 enum Dave {
+    private static let logSink = Mutex<SimulatorLog?>(nil)
+
+    /// libdave logs every key package, commit and encryptor stat line by default; only its
+    /// warnings and errors reach the simulator's log, through upstream's log sink.
+    static func routeLogs(to log: SimulatorLog) {
+        logSink.withLock { $0 = log }
+        daveSetLogSinkCallback { severity, file, line, message in
+            guard severity.rawValue >= DAVE_LOGGING_SEVERITY_WARNING.rawValue, severity != DAVE_LOGGING_SEVERITY_NONE,
+                  let log = Dave.logSink.withLock({ $0 }) else { return }
+            let text = "\(message.map { String(cString: $0) } ?? "") (\(file.map { String(cString: $0) } ?? ""):\(line))"
+            if severity == DAVE_LOGGING_SEVERITY_ERROR { log.error("dave", text) } else { log.warning("dave", text) }
+        }
+    }
+
     /// Collects a libdave output buffer and frees it.
     static func output(_ body: (UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>, UnsafeMutablePointer<Int>) -> Void) -> Data {
         var pointer: UnsafeMutablePointer<UInt8>?

@@ -3,11 +3,6 @@ import Foundation
 /// Editing, deleting and joining threads and forum posts (`/channels/{id}`, `/thread-members/@me`),
 /// and creating, editing and deleting guild channels.
 enum ChannelEditRoutes {
-    /// A real route whose behavior for this kind of channel hasn't been built yet: a 500 and an ERROR log, never a quiet stub.
-    struct NotSimulated: Error, CustomStringConvertible {
-        var description: String
-    }
-
     static func register(into routes: inout [String: RouteHandler]) {
         routes["PATCH /api/v9/channels/{id}"] = { context in
             let world = context.world
@@ -20,7 +15,8 @@ enum ChannelEditRoutes {
                 return .json(await world.renderChannel(try await world.editGroupDM(channel.id, by: context.userID, patch: try context.json),
                                                        viewer: context.userID))
             }
-            guard channel.guildID != nil else { throw NotSimulated(description: "editing a channel of type \(channel.type)") }
+            // Discord's answer to editing a 1:1 DM was never captured.
+            guard channel.type != .dm else { throw NotSimulated(description: "editing a DM") }
             let edited = try await world.editGuildChannel(channel.id, by: context.userID, patch: try context.json)
             return .json(await world.renderChannel(edited, viewer: context.userID))
         }
@@ -33,7 +29,6 @@ enum ChannelEditRoutes {
                 return .json(rendered)
             }
             if channel.type.isPrivate { return .json(try await world.closePrivateChannel(channel.id, by: context.userID)) }
-            guard channel.guildID != nil else { throw NotSimulated(description: "deleting a channel of type \(channel.type)") }
             return .json(await world.renderChannel(try await world.deleteGuildChannel(channel.id, by: context.userID), viewer: context.userID))
         }
 
@@ -46,6 +41,10 @@ enum ChannelEditRoutes {
             return .empty
         }
 
+        routes["PATCH /api/v9/guilds/{id}/channels"] = { context in
+            try await context.world.reorderChannels(in: try context.id(0), by: context.userID, body: try context.json)
+            return .empty
+        }
         routes["POST /api/v9/guilds/{id}/channels"] = { context in
             let world = context.world
             let channel = try await world.createGuildChannel(in: try context.id(0), by: context.userID, body: try context.json)

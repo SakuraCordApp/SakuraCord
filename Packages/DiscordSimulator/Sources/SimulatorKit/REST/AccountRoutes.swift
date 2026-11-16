@@ -84,9 +84,10 @@ extension World {
     }
 
     /// Merges a partial settings proto into the stored one and returns the
-    /// full result, which is also what other sessions receive.
+    /// full result, which is also what other sessions receive. Every write
+    /// moves the settings' data version on by one, as captured.
     func patchSettings(_ userID: Snowflake, type: Int, patch: Data) async throws -> Data {
-        guard let data = ProtobufMerge.merge(settingsProto[userID]?[type] ?? Data(), patch) else {
+        guard let data = ProtobufMerge.merge(settingsProto[userID]?[type] ?? Data(), patch).map(ProtobufMerge.bumpingDataVersion) else {
             throw WorldError.invalidBody("settings: not a protobuf message")
         }
         settingsProto[userID, default: [:]][type] = data
@@ -128,11 +129,7 @@ extension World {
             throw WorldError(status: 400, code: 50035, message: "Invalid Form Body")
         }
         if signIn.authenticatorCodes[user.id] != nil { return mfaChallenge(for: user.id) }
-        guard let token = tokens.first(where: { $0.value == user.id })?.key else { throw WorldError.unauthorized }
-        return .object(JSONObject([
-            ("user_id", user.id.json), ("token", .string(token)),
-            ("user_settings", .object(JSONObject([("locale", "en-US"), ("theme", "dark")]))),
-        ]))
+        return try signedIn(user.id)
     }
 
     func renderProfile(_ userID: Snowflake, viewer: Snowflake, guildID: Snowflake?) throws -> JSON {
@@ -176,12 +173,15 @@ extension World {
         }
         if let guildID, let guild = guilds[guildID], let member = guild.members[userID] {
             object["guild_member"] = renderMember(member, guildID: guildID, includeUser: true).merging(["bio": ""])
-            object["guild_member_profile"] = .object(JSONObject([
-                ("guild_id", guildID.json), ("pronouns", .string(member.pronouns)), ("bio", .optional(member.bio)),
+            var serverProfile = JSONObject([
+                ("guild_id", guildID.json), ("pronouns", .string(member.pronouns)),
                 ("banner", .optional(member.banner)), ("accent_color", .optional(member.accentColor)), ("profile_effect", .null),
                 ("theme_colors", member.themeColors.map { .array($0.map { .int($0) }) } ?? .null), ("popout_animation_particle_type", .null),
                 ("emoji", .null), ("collectibles", []),
-            ]))
+            ])
+            // Discord leaves an unset server bio out rather than sending null.
+            if let bio = member.bio { serverProfile["bio"] = .string(bio) }
+            object["guild_member_profile"] = .object(serverProfile)
         }
         return .object(object)
     }

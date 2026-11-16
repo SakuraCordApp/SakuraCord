@@ -61,7 +61,7 @@ enum LiveActivity {
     }
 
     private static func perform(_ kind: Kind, _ plan: LiveActivityPlan, _ world: World, _ random: inout SeededRandom) async throws {
-        guard !plan.members.isEmpty, !plan.channels.isEmpty else { return }
+        guard !plan.channels.isEmpty else { return }
         let person = random.pick(plan.members)
         let channel = pickChannel(plan, &random)
         switch kind {

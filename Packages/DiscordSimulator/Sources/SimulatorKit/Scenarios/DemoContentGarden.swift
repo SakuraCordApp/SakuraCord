@@ -6,7 +6,7 @@ extension DemoContent {
     static let garden = DemoGuild(
         key: "garden", name: "Linden Street Garden",
         description: "Community garden on Linden Street. Plots, compost, bees and good company 🌻",
-        icon: DemoImageStyle(seed: 0x6a2d, palette: 2, animated: true), banner: DemoImageStyle(seed: 0x6a2e, palette: 7),
+        icon: DemoImageStyle(seed: 0x6a2d, palette: 2, animated: true, art: .drawing(.sunflower, background: 0x2e7d32)), banner: DemoImageStyle(seed: 0x6a2e, palette: 7),
         splash: DemoImageStyle(seed: 0x6a2f, palette: 4), owner: "marisol", vanityCode: "lindenstreet", boostCount: 15,
         roles: [
             DemoRole("coordinators", "Coordinators", color: 0xf4a261, hoist: true, permissions: .admin, icon: "🌻"),

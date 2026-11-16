@@ -11,6 +11,8 @@ final class DaveRoom {
     }
 
     let externalSender: DaveExternalSender
+    /// The MLS group ID: the voice channel, or a Go Live stream's RTC channel (clients use the channel they identify with).
+    let groupID: Snowflake
     /// Nil until the group exists.
     var epoch: UInt32?
     var leaves: [UInt32: Snowflake] = [:]
@@ -21,7 +23,10 @@ final class DaveRoom {
     var lastTransition: UInt16 = 0
     var simulated: [Snowflake: DaveMember] = [:]
 
-    init(externalSender: DaveExternalSender) { self.externalSender = externalSender }
+    init(externalSender: DaveExternalSender, groupID: Snowflake) {
+        self.externalSender = externalSender
+        self.groupID = groupID
+    }
 
     var members: Set<Snowflake> { Set(leaves.values) }
 }
@@ -38,7 +43,8 @@ final class DaveRoom {
 extension VoiceGateway {
     /// Op 25 for a client that selected DAVE.
     func daveJoined(_ client: Client) async {
-        guard let room = daveRoom(client.grant.room) else { return }
+        let groupID = await world.stream(rtcServerID: client.grant.room)?.rtcChannelID ?? client.grant.channelID
+        guard let room = daveRoom(client.grant.room, groupID: groupID) else { return }
         await sendBinary(25, room.externalSender.package, to: client)
         await syncDave(in: client.grant.room)
     }
@@ -83,12 +89,7 @@ extension VoiceGateway {
         let present = await world.mediaParticipants(in: roomID)
         let simulated = present.filter(\.simulated).map(\.userID)
         let everyone = Set(simulated).union(connected)
-        for userID in simulated where room.simulated[userID] == nil {
-            guard let member = DaveMember(userID: userID, groupID: roomID, externalSender: room.externalSender.package, recognized: Array(everyone))
-            else { continue }
-            room.simulated[userID] = member
-            room.keyPackages.append((userID, member.keyPackage()))
-        }
+        for userID in simulated where room.simulated[userID] == nil { enlist(userID, in: room, recognizing: everyone) }
         for member in room.simulated.values { everyone.forEach(member.recognize) }
         room.keyPackages.removeAll { !everyone.contains($0.userID) }
         room.simulated = room.simulated.filter { everyone.contains($0.key) }
@@ -174,14 +175,16 @@ extension VoiceGateway {
         for client in daveClients(in: roomID) where remaining.contains(client.grant.userID) {
             await send(24, .object(JSONObject([("protocol_version", 1), ("epoch", 1)])), to: client)
         }
-        for userID in remaining {
-            guard room.simulated[userID] != nil,
-                  let member = DaveMember(userID: userID, groupID: roomID, externalSender: room.externalSender.package, recognized: [])
-            else { continue }
-            room.simulated[userID] = member
-            room.keyPackages.append((userID, member.keyPackage()))
-        }
+        for userID in remaining where room.simulated[userID] != nil { enlist(userID, in: room, recognizing: remaining) }
         await media.setDave(room.simulated, in: roomID)
+    }
+
+    /// A simulated person's fresh member, with its key package waiting for the next round.
+    private func enlist(_ userID: Snowflake, in room: DaveRoom, recognizing others: Set<Snowflake>) {
+        guard let member = DaveMember(userID: userID, groupID: room.groupID, externalSender: room.externalSender.package, recognized: Array(others))
+        else { return }
+        room.simulated[userID] = member
+        room.keyPackages.append((userID, member.keyPackage()))
     }
 
     private func forceTransition(_ transition: UInt16, in roomID: Snowflake) async {
@@ -204,10 +207,10 @@ extension VoiceGateway {
         await advanceDave(in: roomID)
     }
 
-    private func daveRoom(_ roomID: Snowflake) -> DaveRoom? {
+    private func daveRoom(_ roomID: Snowflake, groupID: Snowflake) -> DaveRoom? {
         if let room = daveRooms[roomID] { return room }
-        guard let sender = DaveExternalSender(groupID: roomID) else { return nil }
-        let room = DaveRoom(externalSender: sender)
+        guard let sender = DaveExternalSender(groupID: groupID) else { return nil }
+        let room = DaveRoom(externalSender: sender, groupID: groupID)
         daveRooms[roomID] = room
         return room
     }

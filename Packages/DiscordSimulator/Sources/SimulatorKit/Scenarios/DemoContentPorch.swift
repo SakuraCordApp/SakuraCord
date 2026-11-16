@@ -7,7 +7,7 @@ import Foundation
 extension DemoContent {
     static let porch = DemoGuild(
         key: "porch", name: "The Porch", description: "friends, snacks, and whatever's going on 🏡",
-        icon: DemoImageStyle(seed: 0x9024, palette: 4), owner: "wren", boostCount: 4,
+        icon: DemoImageStyle(seed: 0x9024, palette: 4, art: .drawing(.house, background: 0x3e2a47)), owner: "wren", boostCount: 4,
         roles: [
             DemoRole("keyholders", "Keyholders", color: 0xe0a458, hoist: true, permissions: .admin),
             DemoRole("porch-lights", "Porch Lights", color: 0xf2c14e, hoist: true, permissions: .moderator),

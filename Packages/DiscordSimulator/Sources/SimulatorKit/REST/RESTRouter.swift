@@ -56,9 +56,20 @@ public final class RESTRouter: Sendable {
     public var routeTemplates: [String] { routes.keys.sorted() }
 
     public func handle(_ request: HTTPRequest) async -> HTTPResponse {
-        let response = await route(request)
+        let response = request.path.hasPrefix("/assets/") ? clientAsset(request) : await route(request)
         log.info("rest", "\(request.method) \(request.target) -> \(response.status)")
         return response
+    }
+
+    /// The client's own bundled images on discord.com. Only the default avatars are
+    /// served, drawn by us; any other asset fails loudly.
+    private func clientAsset(_ request: HTTPRequest) -> HTTPResponse {
+        let file = String(request.path.dropFirst("/assets/".count))
+        guard request.method == "GET", let index = MediaGenerator.defaultAvatarAssets.firstIndex(of: file) else {
+            log.error("rest", "UNKNOWN ASSET \(request.method) \(request.path)")
+            return .bytes(404, Data("Not Found".utf8), contentType: "text/plain")
+        }
+        return .bytes(200, MediaGenerator.defaultAvatarPNG(index: index, size: 256), contentType: "image/png")
     }
 
     private func route(_ request: HTTPRequest) async -> HTTPResponse {

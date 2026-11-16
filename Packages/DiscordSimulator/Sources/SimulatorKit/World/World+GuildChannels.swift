@@ -15,11 +15,15 @@ extension World {
 
     private func overwrites(_ value: JSON?) -> [PermissionOverwrite]? {
         value?.arrayValue?.compactMap { entry in
-            guard let id = entry["id"]?.stringValue.flatMap(Snowflake.init),
-                  let kind = PermissionOverwrite.Kind(rawValue: Int(entry["type"]?.intValue ?? 0)) else { return nil }
-            func bits(_ key: String) -> Permissions { Permissions(rawValue: entry[key]?.stringValue.flatMap(UInt64.init) ?? 0) }
-            return PermissionOverwrite(id: id, kind: kind, allow: bits("allow"), deny: bits("deny"))
+            entry["id"]?.stringValue.flatMap(Snowflake.init).flatMap { overwrite(entry, id: $0, kind: Int(entry["type"]?.intValue ?? 0)) }
         }
+    }
+
+    /// `{type, allow, deny}` with permission bit strings, as clients send overwrites.
+    private func overwrite(_ entry: JSON, id: Snowflake, kind: Int) -> PermissionOverwrite? {
+        guard let kind = PermissionOverwrite.Kind(rawValue: kind) else { return nil }
+        func bits(_ key: String) -> Permissions { Permissions(rawValue: entry[key]?.stringValue.flatMap(UInt64.init) ?? 0) }
+        return PermissionOverwrite(id: id, kind: kind, allow: bits("allow"), deny: bits("deny"))
     }
 
     private func requireCategory(_ id: Snowflake?, in guildID: Snowflake) throws {
@@ -100,57 +104,90 @@ extension World {
         return channel
     }
 
-    /// `PUT /channels/{id}/permissions/{id}` (`allow` nil deletes): needs Manage Roles in the channel.
+    /// `PUT /channels/{id}/permissions/{id}`, or `DELETE` when `body` is nil: needs Manage Roles in the channel.
+    /// The audit entry (13 create, 14 update, 15 delete) names the overwrite in `options`, as captured.
     func setPermissionOverwrite(_ channelID: Snowflake, target: Snowflake, by userID: Snowflake, body: JSON?) async throws {
         var channel = try channel(channelID)
         guard let guildID = channel.guildID else { throw WorldError.missingAccess }
         try require(.manageRoles, userID, channel)
         let previous = channel.overwrites.first { $0.id == target }
-        var options = JSONObject([("id", target.json)])
         let action: Int
-        var changes: [JSON]
+        let changes: [JSON]
+        let kind: PermissionOverwrite.Kind
         if let body {
-            guard let kind = PermissionOverwrite.Kind(rawValue: Int(body["type"]?.intValue ?? -1)) else { throw WorldError.invalidBody("type: required") }
-            func bits(_ key: String) -> Permissions { Permissions(rawValue: body[key]?.stringValue.flatMap(UInt64.init) ?? 0) }
-            let overwrite = PermissionOverwrite(id: target, kind: kind, allow: bits("allow"), deny: bits("deny"))
+            guard let overwrite = overwrite(body, id: target, kind: Int(body["type"]?.intValue ?? -1)) else {
+                throw WorldError.invalidBody("type: required")
+            }
             if let index = channel.overwrites.firstIndex(where: { $0.id == target }) {
                 channel.overwrites[index] = overwrite
             } else {
                 channel.overwrites.append(overwrite)
             }
-            action = previous == nil ? 13 : 14
+            (action, kind) = (previous == nil ? 13 : 14, overwrite.kind)
             changes = previous.map { old in
                 [("allow", old.allow, overwrite.allow), ("deny", old.deny, overwrite.deny)].filter { $0.1 != $0.2 }
                     .map { auditChange($0.0, old: .int(Int64($0.1.rawValue)), new: .string($0.2.wireString)) }
             } ?? [auditChange("id", old: nil, new: target.json), auditChange("type", old: nil, new: .int(kind.rawValue)),
                   auditChange("allow", old: nil, new: .string(overwrite.allow.wireString)),
                   auditChange("deny", old: nil, new: .string(overwrite.deny.wireString))]
-            if kind == .role { options["role_name"] = .optional(guilds[guildID]?.roles.first { $0.id == target }?.name) }
-            options["type"] = .string(String(kind.rawValue))
         } else {
             guard let previous else { return }
             channel.overwrites.removeAll { $0.id == target }
-            action = 15
-            changes = [auditChange("id", old: target.json, new: nil), auditChange("type", old: .int(previous.kind.rawValue), new: nil),
+            (action, kind) = (15, previous.kind)
+            changes = [auditChange("id", old: target.json, new: nil), auditChange("type", old: .int(kind.rawValue), new: nil),
                        auditChange("allow", old: .int(Int64(previous.allow.rawValue)), new: nil),
                        auditChange("deny", old: .int(Int64(previous.deny.rawValue)), new: nil)]
-            if previous.kind == .role { options["role_name"] = .optional(guilds[guildID]?.roles.first { $0.id == target }?.name) }
-            options["type"] = .string(String(previous.kind.rawValue))
         }
+        var options = JSONObject([("id", target.json)])
+        if kind == .role { options["role_name"] = .optional(guilds[guildID]?.roles.first { $0.id == target }?.name) }
+        options["type"] = .string(String(kind.rawValue))
         channels[channelID] = channel
         await emit("CHANNEL_UPDATE", renderChannelEvent(channel), to: audience(for: channel))
         await emitAuditLog(guildID, action: action, target: channelID, by: userID, changes: changes, options: options)
     }
 
+    /// `PATCH /guilds/{id}/channels`: `[{id, position, parent_id?, lock_permissions?}]`, needs Manage Channels.
+    /// Each moved channel gets a CHANNEL_UPDATE in request order; one audit entry (action 16) follows the
+    /// first, and further reorders by the same moderator within a few minutes fold into it, as captured.
+    func reorderChannels(in guildID: Snowflake, by userID: Snowflake, body: JSON) async throws {
+        let guild = try guild(guildID)
+        guard guild.permissions(of: userID).contains(.manageChannels) else { throw WorldError.missingPermissions }
+        guard let entries = body.arrayValue, !entries.isEmpty else { throw WorldError.invalidBody("expected an array of channel positions") }
+        var moved: [Channel] = []
+        for entry in entries {
+            guard let id = entry["id"]?.stringValue.flatMap(Snowflake.init), var channel = channels[id], channel.guildID == guildID,
+                  !channel.type.isThread else { throw WorldError.invalidBody("id: Unknown channel") }
+            var changed = false
+            if let position = entry["position"]?.intValue, Int(position) != channel.position {
+                channel.position = Int(position)
+                changed = true
+            }
+            if let parent = entry["parent_id"] {
+                let parentID = parent.stringValue.flatMap(Snowflake.init)
+                try requireCategory(parentID, in: guildID)
+                changed = changed || parentID != channel.parentID
+                channel.parentID = parentID
+                if entry["lock_permissions"]?.boolValue == true, let parentID {
+                    channel.overwrites = channels[parentID]?.overwrites ?? []
+                    changed = true
+                }
+            }
+            if changed { moved.append(channel) }
+        }
+        for channel in moved { channels[channel.id] = channel }
+        let now = clock.now
+        let folds = servers.lastChannelReorder[guildID].map { $0.userID == userID && now.timeIntervalSince($0.at) < 300 } ?? false
+        servers.lastChannelReorder[guildID] = (userID, now)
+        for (index, channel) in moved.enumerated() {
+            await emit("CHANNEL_UPDATE", renderChannelEvent(channel), to: audience(for: channel))
+            if index == 0, !folds {
+                await emitAuditLog(guildID, action: 16, target: nil, by: userID, changes: [], options: JSONObject([("count", "1")]))
+            }
+        }
+    }
+
     /// CHANNEL_CREATE/UPDATE/DELETE carry the guild channel plus its version.
     private func renderChannelEvent(_ channel: Channel) -> JSON {
         renderChannel(channel).merging(["version": .int(Int64(clock.now.timeIntervalSince1970 * 1000))])
-    }
-
-    /// A bot joining or leaving changes the guild's commands; clients refetch the catalogue.
-    func emitCommandIndexUpdate(_ guildID: Snowflake) async {
-        await emit("GUILD_APPLICATION_COMMAND_INDEX_UPDATE", .object(JSONObject([
-            ("guild_id", guildID.json), ("application_command_counts", .object(JSONObject())), ("bot_users", []), ("version", 0),
-        ])), to: .guild(guildID, channel: nil))
     }
 }

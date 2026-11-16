@@ -24,7 +24,8 @@ public extension World {
 
         let readStateEntries: [JSON] = (readStates[userID] ?? [:]).sorted { $0.key < $1.key }.map { channelID, state in
             var entry = JSONObject([("id", channelID.json), ("mention_count", .int(state.mentionCount)), ("flags", 0)])
-            if let acked = state.lastAckedID { entry["last_acked_id"] = acked.json }
+            // Channel read states carry the last read message as `last_message_id`; only typed ones use `last_acked_id`.
+            if let acked = state.lastAckedID { entry["last_message_id"] = acked.json }
             if let pin = state.lastPinTimestamp { entry["last_pin_timestamp"] = World.timestamp(pin) }
             if let viewed = state.lastViewed { entry["last_viewed"] = .int(viewed) }
             return .object(entry)

@@ -1,11 +1,11 @@
 import Foundation
 
-/// Discord's voice server: the voice gateway (v8, JSON text frames) that a
-/// client reaches through the endpoint in VOICE_SERVER_UPDATE. No capture
-/// covers it (the official client's native voice module talks to it outside
-/// the captured browser layer), so messages, close codes and sequencing follow
-/// Discord's documented voice connection protocol
-/// (discord.com/developers/docs/topics/voice-connections).
+/// Discord's voice server: the voice gateway (JSON text frames, binary for DAVE)
+/// that a client reaches through the endpoint in VOICE_SERVER_UPDATE. No capture
+/// has its frames, so the ops and fields the server sends follow the captured
+/// official client's own voice-gateway parser, and close codes and sequencing
+/// follow Discord's documented voice protocol
+/// (discord.com/developers/docs/topics/voice-connections); DESIGN.md lists what is inferred.
 ///
 /// Simulated people in a channel have no connection of their own; the server
 /// announces them like any other client.
@@ -51,6 +51,7 @@ public actor VoiceGateway: VoiceMediaHost {
         self.world = world
         self.log = log
         media = VoiceMediaServer(port: mediaPort, log: log)
+        Dave.routeLogs(to: log)
         random = SeededRandom(seed: seed).fork("voice")
     }
 
@@ -105,7 +106,7 @@ public actor VoiceGateway: VoiceMediaHost {
         case 5:
             let speaking = JSONObject([("user_id", .string(client.grant.userID.description)), ("ssrc", .int(Int64(client.ssrc))),
                                        ("speaking", data["speaking"] ?? 0)])
-            for peer in peers(of: client) { await send(5, .object(speaking), to: peer) }
+            for peer in connectedClients(in: client.grant.room) where peer !== client { await send(5, .object(speaking), to: peer) }
         case 12:
             client.video = data
             await media.addAliases([data["video_ssrc"], data["rtx_ssrc"]].compactMap { $0?.intValue.map(UInt32.init) }, to: client.ssrc)
@@ -164,13 +165,7 @@ public actor VoiceGateway: VoiceMediaHost {
         }
         let acknowledged = data["seq_ack"]?.intValue ?? 0
         client.connection = connection
-        for (sequence, message) in client.sent where sequence > acknowledged {
-            switch message {
-            case let .text(text): await connection.send(text: text)
-            case let .binary(data): await connection.send(binary: data)
-            case .close: break
-            }
-        }
+        for (sequence, message) in client.sent where sequence > acknowledged { await Self.transmit(message, over: connection) }
         await send(9, .null, to: client)
         await syncPeers(in: client.grant.room)
         return client
@@ -223,7 +218,7 @@ public actor VoiceGateway: VoiceMediaHost {
                               kind: await world.stream(rtcServerID: channelID) == nil ? .camera : .screen)
         updateConversation(in: channelID, present: present)
         await syncDave(in: channelID)
-        for client in clients.values where client.grant.room == channelID && client.connection != nil {
+        for client in connectedClients(in: channelID) {
             let others = present.filter { $0.userID != client.grant.userID }
             let joined = others.filter { client.peers[$0.userID] == nil }
             if !joined.isEmpty { await send(11, .object(JSONObject([("user_ids", .array(joined.map { .string($0.userID.description) }))])), to: client) }
@@ -249,18 +244,15 @@ public actor VoiceGateway: VoiceMediaHost {
         guard !speaking || !state.selfMute else { throw WorldError.invalidBody("user is muted") }
         let payload = JSON.object(JSONObject([("user_id", .string(userID.description)), ("ssrc", .int(Int64(ssrc(for: userID, in: state.channelID)))),
                                               ("speaking", .int(speaking ? 1 : 0))]))
-        for client in clients.values where client.grant.room == state.channelID && client.connection != nil {
-            await send(5, payload, to: client)
-        }
+        for client in connectedClients(in: state.channelID) { await send(5, payload, to: client) }
         if speaking { await media.startTalking(userID, ssrc: ssrc(for: userID, in: state.channelID), channelID: state.channelID) } else { await media.stopTalking(userID) }
     }
 
-    func hasListeners(in channelID: Snowflake) -> Bool {
-        clients.values.contains { $0.grant.room == channelID && $0.connection != nil }
-    }
+    func hasListeners(in channelID: Snowflake) -> Bool { !connectedClients(in: channelID).isEmpty }
 
-    private func peers(of client: Client) -> [Client] {
-        clients.values.filter { $0 !== client && $0.grant.room == client.grant.room && $0.connection != nil }
+    /// Clients connected to a room right now (a dropped one may still resume).
+    func connectedClients(in room: Snowflake) -> [Client] {
+        clients.values.filter { $0.grant.room == room && $0.connection != nil }
     }
 
     /// A participant's op 12: their SSRCs and video stream, from their own op 12 or, for simulated people, their camera flag.
@@ -268,8 +260,9 @@ public actor VoiceGateway: VoiceMediaHost {
         let audio = Int64(ssrc(for: state.userID, in: state.channelID))
         let user = JSON.object(JSONObject([("user_id", .string(state.userID.description))]))
         if let client = clients.values.first(where: { $0.grant.userID == state.userID && $0.grant.room == state.channelID }) {
-            return user.merging(client.video?.objectValue.map { Dictionary($0.map { ($0.key, $0.value) }) { first, _ in first } }
-                ?? ["audio_ssrc": .int(audio), "video_ssrc": 0, "rtx_ssrc": 0, "streams": []])
+            guard var video = client.video?.objectValue else { return user.merging(["audio_ssrc": .int(audio), "video_ssrc": 0, "rtx_ssrc": 0, "streams": []]) }
+            video["user_id"] = .string(state.userID.description)
+            return .object(video)
         }
         let on = state.selfVideo
         return user.merging([
@@ -314,17 +307,19 @@ public actor VoiceGateway: VoiceMediaHost {
     private func deliver(_ message: WebSocketMessage, to client: Client) async {
         client.sent.append((client.sequence, message))
         if client.sent.count > Self.resumeBuffer { client.sent.removeFirst(client.sent.count - Self.resumeBuffer) }
+        if let connection = client.connection { await Self.transmit(message, over: connection) }
+    }
+
+    private static func transmit(_ message: WebSocketMessage, over connection: WebSocketConnection) async {
         switch message {
-        case let .text(text): await client.connection?.send(text: text)
-        case let .binary(data): await client.connection?.send(binary: data)
+        case let .text(text): await connection.send(text: text)
+        case let .binary(data): await connection.send(binary: data)
         case .close: break
         }
     }
 
     /// Connected clients in a room that use DAVE.
-    func daveClients(in room: Snowflake) -> [Client] {
-        clients.values.filter { $0.grant.room == room && $0.connection != nil && $0.daveVersion > 0 }
-    }
+    func daveClients(in room: Snowflake) -> [Client] { connectedClients(in: room).filter { $0.daveVersion > 0 } }
 
     /// Hello and heartbeat ACKs carry no sequence number.
     static func frame(op: Int64, _ data: [String: JSON]) -> String {

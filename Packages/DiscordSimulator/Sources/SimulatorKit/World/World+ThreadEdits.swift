@@ -28,9 +28,8 @@ extension World {
         let thread = try channel(threadID)
         guard thread.threadMembers.contains(userID) else { throw WorldError.unknown("Member", code: 10007) }
         if muted { channels[threadID]?.mutedThreadMembers.insert(userID) } else { channels[threadID]?.mutedThreadMembers.remove(userID) }
-        let member = renderThreadMember(channels[threadID]!, userID: userID, includeIDs: true)
-        await emit("THREAD_MEMBER_UPDATE", member.merging(["guild_id": thread.guildID?.json ?? .null]), to: .users([userID]))
-        return member
+        await emitThreadMemberUpdate(channels[threadID]!, userID: userID)
+        return renderThreadMember(channels[threadID]!, userID: userID, includeIDs: true)
     }
 
     /// `PATCH /channels/{id}` on a thread or forum post: name, archive, lock, tags.
@@ -41,7 +40,8 @@ extension World {
         }
         guard canView(userID, thread) else { throw WorldError.missingAccess }
         let manages = permissions(of: userID, in: thread).contains(.manageThreads)
-        // Owners may rename, archive and retag their own thread; locking and editing others' need Manage Threads.
+        // Documented, not captured: owners may rename, archive and retag their own thread;
+        // locking and editing others' need Manage Threads.
         if !manages, thread.ownerID != userID || patch["locked"] != nil || metadata.locked { throw WorldError.missingPermissions }
         if let name = patch["name"]?.stringValue {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,10 +61,7 @@ extension World {
         let parent = channels[thread.parentID ?? threadID] ?? thread
         await emit("THREAD_UPDATE", renderThread(thread, viewer: nil), to: audience(for: parent))
         // An open thread the editor belongs to also refreshes their membership.
-        if !metadata.archived, thread.threadMembers.contains(userID) {
-            let member = renderThreadMember(thread, userID: userID, includeIDs: true)
-            await emit("THREAD_MEMBER_UPDATE", member.merging(["guild_id": thread.guildID?.json ?? .null]), to: .users([userID]))
-        }
+        if !metadata.archived, thread.threadMembers.contains(userID) { await emitThreadMemberUpdate(thread, userID: userID) }
         return thread
     }
 
@@ -82,7 +79,14 @@ extension World {
         return thread
     }
 
-    /// THREAD_MEMBERS_UPDATE goes to the thread's members, plus anyone who just left.
+    /// THREAD_MEMBER_UPDATE: the user's own membership, sent only to them.
+    func emitThreadMemberUpdate(_ thread: Channel, userID: Snowflake) async {
+        let member = renderThreadMember(thread, userID: userID, includeIDs: true).merging(["guild_id": thread.guildID?.json ?? .null])
+        await emit("THREAD_MEMBER_UPDATE", member, to: .users([userID]))
+    }
+
+    /// THREAD_MEMBERS_UPDATE goes to the thread's members, plus anyone who just left. Captures show
+    /// the joiner and leaver receiving it; that other members do is assumed.
     private func emitThreadMembers(_ thread: Channel, added: [Snowflake], removed: [Snowflake], extraRecipients: Set<Snowflake>) async {
         var payload = JSONObject()
         if let guildID = thread.guildID { payload["guild_id"] = guildID.json }

@@ -50,16 +50,17 @@ extension World {
         }
     }
 
-    /// Discord's own stickers as one pack.
+    /// Discord's own stickers as one pack, whose IDs derive from its cover sticker's.
     func stickerPacks() -> JSON {
         guard let cover = standardStickers.first else { return .object(JSONObject([("sticker_packs", [])])) }
+        let packID = cover.id.withWorker(2).json
         let pack = JSONObject([
-            ("id", Snowflake(cover.id.rawValue + 1).json), ("sku_id", Snowflake(cover.id.rawValue + 2).json),
+            ("id", packID), ("sku_id", cover.id.withWorker(3).json),
             ("name", "Porch Pals"), ("description", "Little friends for every mood"),
             ("stickers", .array(standardStickers.enumerated().map { index, sticker in
-                renderSticker(sticker, guildID: nil).merging(["pack_id": Snowflake(cover.id.rawValue + 1).json, "sort_value": .int(index)])
+                renderSticker(sticker, guildID: nil).merging(["pack_id": packID, "sort_value": .int(index)])
             })),
-            ("cover_sticker_id", cover.id.json), ("banner_asset_id", Snowflake(cover.id.rawValue + 3).json),
+            ("cover_sticker_id", cover.id.json), ("banner_asset_id", cover.id.withWorker(4).json),
         ])
         return .object(JSONObject([("sticker_packs", [.object(pack)])]))
     }

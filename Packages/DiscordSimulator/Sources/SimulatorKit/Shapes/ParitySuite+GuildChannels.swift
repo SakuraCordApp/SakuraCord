@@ -1,7 +1,7 @@
 import Foundation
 
 extension ParityRun {
-    /// Creating, editing and deleting guild channels; a bot joining and leaving; autocomplete; an OAuth2 token's identity.
+    /// Creating, editing and deleting guild channels; removing and installing a bot; autocomplete; an OAuth2 token's identity.
     mutating func guildChannels(_ target: Targets, me: Snowflake) async throws {
         let world = simulator.world
         let base = "/api/v9/guilds/\(target.guild)"
@@ -20,9 +20,16 @@ extension ParityRun {
         let users = await world.users
         let guild = try await world.guild(target.guild)
         guard let bot = guild.members.keys.sorted().first(where: { users[$0]?.bot == true }) else { return }
+        // Removing the bot, then adding it back through its OAuth2 link.
         await flowStart()
-        try await world.removeMember(bot, from: target.guild)
-        try await world.addMember(bot, to: target.guild)
+        _ = try await rest("DELETE", "/api/v9/guilds/\(target.guild)/members/\(bot)?reason=")
+        let install = "client_id=\(bot)&scope=bot%20applications.commands"
+        _ = try await rest("GET", "/api/v9/oauth2/authorize?\(install)&integration_type=0")
+        _ = try await rest("POST", "/api/v9/oauth2/authorize?\(install)", body: .object(JSONObject([
+            ("guild_id", .string(target.guild.description)), ("permissions", "0"), ("authorize", true), ("integration_type", 0),
+            ("location_context", .object(JSONObject([("guild_id", .string(target.guild.description)),
+                                                     ("channel_id", .string(target.channel.description)), ("channel_type", 0)]))),
+        ])))
         _ = try await rest("POST", "/api/v9/interactions", body: .object(JSONObject([
             ("type", 4), ("application_id", .string(bot.description)), ("guild_id", .string(target.guild.description)),
             ("channel_id", .string(target.channel.description)), ("session_id", "parity"), ("nonce", .string(nonce())),
@@ -70,6 +77,10 @@ extension ParityRun {
               let gardenChat = await world.visibleChannels(in: garden, for: me).first(where: { $0.type == .text })
         else { throw WorldError.invalidBody("demo garden has no onboarding") }
         await flowStart()
+        _ = try await rest("POST", "/api/v9/guilds/\(garden.id)/onboarding-responses", body: .object(JSONObject([
+            ("onboarding_responses", [option]), ("onboarding_prompts_seen", .object(JSONObject())),
+            ("onboarding_responses_seen", .object(JSONObject())),
+        ])))
         _ = try await rest("PUT", "/api/v9/guilds/\(garden.id)/onboarding-responses", body: .object(JSONObject([
             ("onboarding_responses", [option]), ("onboarding_prompts_seen", .object(JSONObject())),
             ("onboarding_responses_seen", .object(JSONObject())),
@@ -78,6 +89,29 @@ extension ParityRun {
         _ = try await rest("POST", "/api/v9/channels/\(gardenChat.id)/messages", body: .object(JSONObject([
             ("content", "is roundup ok on the paths?"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0),
         ])))
+        // An alert-only rule lets the message through and posts an AutoMod alert for the coordinators.
+        _ = try await rest("POST", "/api/v9/channels/\(gardenChat.id)/messages", body: .object(JSONObject([
+            ("content", "anyone want my plot for sale cheap?"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0),
+        ])))
+        await flowEnd(nil)
+    }
+}
+
+extension ParityRun {
+    /// Dragging a channel: the client sends the new positions of every channel that moves.
+    mutating func reorderChannels(_ target: Targets, me: Snowflake) async throws {
+        let world = simulator.world
+        let channels = await world.visibleChannels(in: try world.guild(target.guild), for: me).filter { $0.type != .category }
+            .sorted { $0.position < $1.position }
+        guard channels.count >= 2 else { throw WorldError.invalidBody("target server needs two channels to reorder") }
+        let (first, second) = (channels[0], channels[1])
+        func positions(_ pairs: [(Channel, Int)]) -> JSON {
+            .array(pairs.map { ["id": .string($0.0.id.description), "position": .int($0.1)] })
+        }
+        await flowStart()
+        // Swap the top two, then put them back (a reorder by the same moderator folds into one audit entry).
+        _ = try await rest("PATCH", "/api/v9/guilds/\(target.guild)/channels", body: positions([(second, first.position), (first, second.position)]))
+        _ = try await rest("PATCH", "/api/v9/guilds/\(target.guild)/channels", body: positions([(first, first.position), (second, second.position)]))
         await flowEnd(nil)
     }
 }

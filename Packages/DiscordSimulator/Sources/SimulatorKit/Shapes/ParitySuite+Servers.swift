@@ -40,10 +40,11 @@ extension ParityRun {
         if let id = submitted["id"]?.stringValue { _ = try await rest("GET", "/api/v9/join-requests/\(id)") }
         _ = try await rest("DELETE", "/api/v9/guilds/\(club.id)/requests/@me")
         _ = try await rest("POST", "/api/v9/guilds/\(club.id)/requests/@me")
-        _ = try await rest("PUT", "/api/v9/guilds/\(club.id)/requests/@me",
-                           body: .object(JSONObject([("version", form["version"] ?? .null), ("form_fields", answers)])))
+        let resubmitted = try await rest("PUT", "/api/v9/guilds/\(club.id)/requests/@me",
+                                         body: .object(JSONObject([("version", form["version"] ?? .null), ("form_fields", answers)])))
         guard let me = await world.primaryUserID else { return }
         try await world.reviewJoinRequest(club.id, applicant: me, approve: true, by: club.ownerID, reason: nil)
+        if let id = resubmitted["id"]?.stringValue { _ = try await rest("POST", "/api/v9/guilds/\(club.id)/requests/\(id)/ack") }
         await flowEnd(nil)
 
         await flowStart()

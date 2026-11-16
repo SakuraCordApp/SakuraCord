@@ -49,6 +49,7 @@ extension ParityRun {
             ]))),
         ])))])))])))
         for frame in try await probe.waitFor("GUILD_MEMBER_LIST_UPDATE") where frame.op == 0 { checkFrame(frame) }
+        try await checkReadOnlyListID(probe)
         try await probe.send(.object(JSONObject([("op", 8), ("d", .object(JSONObject([
             ("guild_id", .array([guild.id.json])), ("query", "a"), ("limit", 10), ("presences", true),
         ])))])))
@@ -58,6 +59,24 @@ extension ParityRun {
         }
         // Live activity that arrived meanwhile.
         for frame in await probe.drain(settle: .seconds(2)) where frame.op == 0 { checkFrame(frame) }
+    }
+
+    /// A channel whose @everyone overwrite only stops sending is still everyone's list: the official
+    /// client names it `everyone` and ignores updates for any other ID.
+    private mutating func checkReadOnlyListID(_ probe: GatewayProbe) async throws {
+        let channels = await simulator.world.channels.values.sorted { $0.id < $1.id }
+        guard let channel = channels.first(where: { channel in
+            !channel.overwrites.isEmpty && channel.overwrites.allSatisfy { $0.id == channel.guildID && $0.deny == .sendMessages }
+        }), let guildID = channel.guildID else { throw WorldError.invalidBody("scenario has no read-only channel") }
+        try await probe.send(.object(JSONObject([("op", 37), ("d", .object(JSONObject([("subscriptions", .object(JSONObject([
+            (guildID.description, .object(JSONObject([("channels", .object(JSONObject([(channel.id.description, [[0, 99]])])))]))),
+        ])))])))])))
+        report.checked.append("LIST ID read-only channel")
+        for frame in try await probe.waitFor("GUILD_MEMBER_LIST_UPDATE") where frame.name == "GUILD_MEMBER_LIST_UPDATE" {
+            checkFrame(frame)
+            let id = frame.payload["d"]?["id"]?.stringValue ?? "none"
+            if id != "everyone" { report.sequenceFailures.append("member list of read-only channel \(channel.id) is \(id), expected everyone") }
+        }
     }
 
     /// Discord sends GUILD_CREATE when a server becomes available; check the generated server's as it would be sent.

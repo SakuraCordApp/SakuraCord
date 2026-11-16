@@ -195,6 +195,8 @@ struct ParityRun {
         try await applications(target)
         try await guildChannels(target, me: me)
         try await channelSettingsAndAutoMod(target, me: me)
+        try await reorderChannels(target, me: me)
+        try await modalsAndFailures(target)
         try await inboxAndScheduling(target)
         try await voice(target, me: me)
         try await activities(target)
@@ -202,6 +204,7 @@ struct ParityRun {
         try await profileEditing(target, me: me)
         try await expressionPickers(target)
         try await friendsAndGroups(target, me: me)
+        try await privacySettingRoundTrip()
         try await mentionsAndServerProfile(target, me: me)
 
         await flowStart()

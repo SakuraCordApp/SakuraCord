@@ -189,7 +189,7 @@ public actor VoiceMediaServer {
     }
 
     /// NAL units of an Annex B frame (4-byte start codes, as `outgoing` writes them).
-    static func annexBUnits(_ frame: Data) -> [Data] {
+    private static func annexBUnits(_ frame: Data) -> [Data] {
         let bytes = [UInt8](frame)
         var starts: [Int] = []
         var index = 0
@@ -240,8 +240,6 @@ public actor VoiceMediaServer {
         for (userID, talker) in talkers where talker.channelID == channelID && !present.contains(userID) { stopTalking(userID) }
     }
 
-    func isTalking(_ userID: Snowflake) -> Bool { talkers[userID] != nil }
-
     // MARK: Simulated video
 
     /// Keeps exactly `senders` (sending SSRC to person) streaming generated video into `room`.
@@ -272,7 +270,7 @@ public actor VoiceMediaServer {
     }
 
     /// RFC 6184 payloads for one frame: small NAL units whole, larger ones as FU-A fragments.
-    static func h264Payloads(_ units: [Data]) -> [Data] {
+    private static func h264Payloads(_ units: [Data]) -> [Data] {
         units.flatMap { unit -> [Data] in
             guard unit.count > maximumPayload, let first = unit.first else { return [unit] }
             let body = unit.dropFirst()

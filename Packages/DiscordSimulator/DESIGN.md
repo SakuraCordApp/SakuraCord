@@ -69,6 +69,17 @@ search (op 8) asks for them. Refresh the skeletons with
 `discord-sim-profile extract <capture.jsonl>... --out FILE [--mark MARK] [--seed N]`.
 Benchmark scenarios build on `demo-lite`.
 
+Avatars and icons are drawn by `MediaGenerator` from each asset hash and its
+`MediaGenerator.Art`: the hand-written people and servers each have their own
+drawing, photo or initials; generated people get crowd avatars (motif, colour
+and pattern from the seed) and generated servers an icon for their kind of
+community. As in captured READYs and member lists, about 9% of generated people
+and 3% of generated servers have none; benchmark servers never have an icon.
+Accounts without an avatar load the client's default-avatar files from
+`discord.com/assets/<hash>.png`; the simulator draws its own at the six paths of
+the client's `DEFAULT_AVATARS` list, in that order (source: official web client
+bundle), and any other `/assets/` path is a loud 404.
+
 The account modes start the `live-activity` script with the simulator: each
 generated server's messages, replies, typing, reactions, edits, deletes,
 presence changes and voice joins at its measured rates (scaled up in
@@ -168,10 +179,29 @@ its owner) and follows Discord's documented response.
 
 ## Voice and DAVE
 
-The voice gateway (P+5) and media (P+6) follow Discord's documented voice
-protocol; no capture covers them. Calls use DAVE (protocol version 1) when the
-client offers it: the voice server is the MLS external sender, and simulated
-people are real group members whose Opus and H.264 frames libdave encrypts.
+No capture has voice-gateway (P+5) or media (P+6) frames: the official
+client's native voice module sends them outside the captured layer. The ops
+and fields the server sends (hello, ready, session description, speaking,
+clients connect/disconnect, flags, platform, video, DAVE ops 21–30) follow the
+captured official client's own voice-gateway parser; close codes, sequencing,
+IP discovery and the `_rtpsize` transport modes follow Discord's documented
+voice protocol; DAVE rounds follow Discord's DAVE protocol. Calls use DAVE
+(protocol version 1) when the client offers it: the voice server is the MLS
+external sender, and simulated people are real group members whose Opus and
+H.264 frames libdave encrypts.
+
+Inferred, not captured:
+
+- Values: hello's `heartbeat_interval` (13,750 ms), op 18 `flags` and op 20
+  `platform` of 0, a simulated camera's op 12 stream limits (1280×720, 30 fps),
+  SSRCs (audio, then video and RTX at +1 and +2), a 200-message resume buffer.
+- DAVE rounds: the first commit wins; a simulated member creates a new group
+  when there is one; a transition executes after 5 s if a member never
+  answers; a group left with one member starts over with op 24 (epoch 1, no
+  `transition_id`, as the official client parses it and a live test showed).
+- A stream's group ID is its `rtc_channel_id`, which viewers identify with.
+- Media: simulated speech and video are generated (Opus, H.264 with a keyframe
+  every second) and sent at 50 and 15 packets/frames per second.
 
 ### Vendored sources
 

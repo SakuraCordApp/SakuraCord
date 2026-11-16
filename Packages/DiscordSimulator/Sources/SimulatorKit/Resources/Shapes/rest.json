@@ -148,7 +148,7 @@
     }
   },
   "DELETE /api/v9/channels/{id}/messages/ack": {
-    "samples": 205,
+    "samples": 220,
     "headers": [
       "content-type"
     ],
@@ -173,7 +173,7 @@
     }
   },
   "DELETE /api/v9/channels/{id}/messages/{id}": {
-    "samples": 30,
+    "samples": 33,
     "headers": [
       "content-type"
     ],
@@ -225,7 +225,7 @@
     }
   },
   "DELETE /api/v9/guilds/{id}/auto-moderation/rules/{id}": {
-    "samples": 1,
+    "samples": 2,
     "headers": [
       "content-type"
     ],
@@ -234,6 +234,15 @@
     }
   },
   "DELETE /api/v9/guilds/{id}/emojis/{id}": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
+  "DELETE /api/v9/guilds/{id}/members/{id}": {
     "samples": 1,
     "headers": [
       "content-type"
@@ -288,7 +297,7 @@
     }
   },
   "DELETE /api/v9/invites/{code}": {
-    "samples": 1,
+    "samples": 2,
     "headers": [
       "content-type"
     ],
@@ -391,7 +400,7 @@
     }
   },
   "DELETE /api/v9/users/@me/guilds/{id}": {
-    "samples": 3,
+    "samples": 4,
     "headers": [
       "content-type"
     ],
@@ -415,7 +424,7 @@
     }
   },
   "DELETE /api/v9/users/@me/relationships/{id}": {
-    "samples": 4,
+    "samples": 5,
     "headers": [
       "content-type"
     ],
@@ -451,7 +460,7 @@
     }
   },
   "GET /api/v9/activities/shelf": {
-    "samples": 25,
+    "samples": 27,
     "headers": [
       "content-type"
     ],
@@ -1849,7 +1858,7 @@
     }
   },
   "GET /api/v9/applications/public": {
-    "samples": 508,
+    "samples": 564,
     "headers": [
       "content-type"
     ],
@@ -1890,7 +1899,7 @@
                 "id": {"t": "snowflake"},
                 "username": {"t": "string"},
                 "global_name": {"t": "null"},
-                "avatar": {"t": "string"},
+                "avatar": {"t": "null|string"},
                 "avatar_decoration_data": {"t": "null"},
                 "collectibles": {"t": "null"},
                 "discriminator": {"t": "string"},
@@ -2340,7 +2349,7 @@
     }
   },
   "GET /api/v9/applications/{id}/disclosures": {
-    "samples": 13,
+    "samples": 14,
     "headers": [
       "content-type"
     ],
@@ -2359,7 +2368,7 @@
     }
   },
   "GET /api/v9/applications/{id}/public": {
-    "samples": 3,
+    "samples": 8,
     "headers": [
       "content-type"
     ],
@@ -2376,7 +2385,7 @@
           "is_monetized": {"t": "bool"},
           "is_verified": {"t": "bool"},
           "is_discoverable": {"t": "bool"},
-          "cover_image": {"t": "string"},
+          "cover_image": {"t": "string", "opt": true},
           "third_party_skus": {
             "t": "array",
             "i": {
@@ -2404,7 +2413,7 @@
               "primary_guild": {"t": "null"},
               "clan": {"t": "null"},
               "bot": {"t": "bool"},
-              "banner": {"t": "null"},
+              "banner": {"t": "null|string"},
               "banner_color": {"t": "null"},
               "accent_color": {"t": "null"}
             }
@@ -2523,6 +2532,7 @@
           "flags": {"t": "int"},
           "flags_new": {"t": "string"},
           "hook": {"t": "bool"},
+          "guild_id": {"t": "snowflake", "opt": true},
           "aliases": {
             "t": "array",
             "i": {"t": "string"},
@@ -2663,7 +2673,7 @@
     }
   },
   "GET /api/v9/auth/location-metadata": {
-    "samples": 51,
+    "samples": 55,
     "headers": [
       "content-type"
     ],
@@ -2686,7 +2696,7 @@
     }
   },
   "GET /api/v9/auth/sessions": {
-    "samples": 8,
+    "samples": 10,
     "headers": [
       "content-type"
     ],
@@ -3013,7 +3023,7 @@
     }
   },
   "GET /api/v9/channels/{id}/messages": {
-    "samples": 365,
+    "samples": 385,
     "headers": [
       "content-type"
     ],
@@ -3131,6 +3141,17 @@
                 "t": "object",
                 "f": {
                   "type": {"t": "string"},
+                  "image": {
+                    "t": "object",
+                    "f": {
+                      "url": {"t": "string"},
+                      "proxy_url": {"t": "string"},
+                      "width": {"t": "int"},
+                      "height": {"t": "int"},
+                      "flags": {"t": "int"}
+                    },
+                    "opt": true
+                  },
                   "fields": {
                     "t": "array",
                     "i": {
@@ -4349,8 +4370,24 @@
                     },
                     "display_name_styles": {"t": "null"},
                     "banner_color": {"t": "null"},
-                    "clan": {"t": "null"},
-                    "primary_guild": {"t": "null"}
+                    "clan": {
+                      "t": "null|object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    },
+                    "primary_guild": {
+                      "t": "null|object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    }
                   }
                 }
               },
@@ -4405,8 +4442,24 @@
                     },
                     "display_name_styles": {"t": "null"},
                     "banner_color": {"t": "null"},
-                    "clan": {"t": "null"},
-                    "primary_guild": {"t": "null"}
+                    "clan": {
+                      "t": "null|object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    },
+                    "primary_guild": {
+                      "t": "null|object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    }
                   }
                 },
                 "authorizing_integration_owners": {
@@ -5131,7 +5184,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/application-command-index": {
-    "samples": 33,
+    "samples": 38,
     "headers": [
       "content-type"
     ],
@@ -5350,7 +5403,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/auto-moderation/rules": {
-    "samples": 2,
+    "samples": 4,
     "headers": [
       "content-type"
     ],
@@ -5374,6 +5427,7 @@
                   "metadata": {
                     "t": "object",
                     "f": {
+                      "channel_id": {"t": "snowflake", "opt": true},
                       "duration_seconds": {"t": "int", "opt": true}
                     }
                   }
@@ -5383,7 +5437,10 @@
             "trigger_type": {"t": "int"},
             "enabled": {"t": "bool"},
             "exempt_roles": {"t": "array"},
-            "exempt_channels": {"t": "array"},
+            "exempt_channels": {
+              "t": "array",
+              "i": {"t": "snowflake"}
+            },
             "trigger_metadata": {
               "t": "object",
               "f": {
@@ -5404,7 +5461,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/config-gates": {
-    "samples": 2,
+    "samples": 4,
     "headers": [
       "content-type"
     ],
@@ -5419,7 +5476,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/discovery-metadata": {
-    "samples": 7,
+    "samples": 8,
     "headers": [
       "content-type"
     ],
@@ -5666,7 +5723,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/invites": {
-    "samples": 3,
+    "samples": 4,
     "headers": [
       "content-type"
     ],
@@ -5931,7 +5988,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/member-verification": {
-    "samples": 19,
+    "samples": 20,
     "headers": [
       "content-type"
     ],
@@ -6146,7 +6203,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/new-member-welcome": {
-    "samples": 23,
+    "samples": 26,
     "headers": [
       "content-type"
     ],
@@ -6194,7 +6251,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/onboarding": {
-    "samples": 19,
+    "samples": 23,
     "headers": [
       "content-type"
     ],
@@ -6268,7 +6325,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/powerups": {
-    "samples": 65,
+    "samples": 69,
     "headers": [
       "content-type"
     ],
@@ -6532,7 +6589,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/profile": {
-    "samples": 15,
+    "samples": 18,
     "headers": [
       "content-type"
     ],
@@ -6602,7 +6659,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/requests": {
-    "samples": 64,
+    "samples": 69,
     "headers": [
       "content-type"
     ],
@@ -6676,7 +6733,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/requests/users/{id}": {
-    "samples": 3,
+    "samples": 4,
     "headers": [
       "content-type"
     ],
@@ -6687,12 +6744,12 @@
           "t": "object",
           "f": {
             "created_at": {"t": "timestamp"},
-            "reviewed_at": {"t": "null"},
+            "reviewed_at": {"t": "null|timestamp"},
             "join_request_id": {"t": "snowflake"},
             "id": {"t": "snowflake"},
             "rejection_reason": {"t": "null"},
             "application_status": {"t": "string"},
-            "last_seen": {"t": "null"},
+            "last_seen": {"t": "null|timestamp"},
             "guild_id": {"t": "snowflake"},
             "user_id": {"t": "snowflake"},
             "interview_channel_id": {"t": "null"},
@@ -6722,28 +6779,83 @@
                   "description": {"t": "null"},
                   "automations": {"t": "null"},
                   "required": {"t": "bool"},
-                  "values": {
-                    "t": "array",
-                    "i": {"t": "string"},
-                    "opt": true
-                  },
                   "choices": {
                     "t": "array",
                     "i": {"t": "string"},
                     "opt": true
                   },
                   "placeholder": {"t": "null", "opt": true},
+                  "values": {
+                    "t": "array",
+                    "i": {"t": "string"},
+                    "opt": true
+                  },
                   "response": {"t": "bool|int|string"}
                 }
               }
-            }
+            },
+            "actioned_by_user": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "username": {"t": "string"},
+                "global_name": {"t": "string"},
+                "avatar": {"t": "string"},
+                "avatar_decoration_data": {
+                  "t": "object",
+                  "f": {
+                    "asset": {"t": "string"},
+                    "sku_id": {"t": "snowflake"},
+                    "expires_at": {"t": "null"}
+                  }
+                },
+                "collectibles": {
+                  "t": "object",
+                  "f": {
+                    "nameplate": {
+                      "t": "object",
+                      "f": {
+                        "asset": {"t": "string"},
+                        "palette": {"t": "string"},
+                        "label": {"t": "string"},
+                        "sku_id": {"t": "snowflake"},
+                        "expires_at": {"t": "null"}
+                      }
+                    }
+                  }
+                },
+                "discriminator": {"t": "string"},
+                "display_name_styles": {"t": "null"},
+                "public_flags": {"t": "int"},
+                "primary_guild": {
+                  "t": "object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                },
+                "clan": {
+                  "t": "object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                }
+              },
+              "opt": true
+            },
+            "actioned_at": {"t": "snowflake", "opt": true}
           }
         }
       }
     }
   },
   "GET /api/v9/guilds/{id}/roles/member-counts": {
-    "samples": 13,
+    "samples": 14,
     "headers": [
       "content-type"
     ],
@@ -6835,7 +6947,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/templates": {
-    "samples": 25,
+    "samples": 30,
     "headers": [
       "content-type"
     ],
@@ -6873,7 +6985,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/top-games": {
-    "samples": 7,
+    "samples": 8,
     "headers": [
       "content-type"
     ],
@@ -6887,7 +6999,7 @@
     }
   },
   "GET /api/v9/guilds/{id}/welcome-screen": {
-    "samples": 12,
+    "samples": 15,
     "headers": [
       "content-type"
     ],
@@ -6902,7 +7014,7 @@
     }
   },
   "GET /api/v9/invites/{code}": {
-    "samples": 25,
+    "samples": 26,
     "headers": [
       "content-type"
     ],
@@ -6951,19 +7063,19 @@
               "clan": {
                 "t": "null|object",
                 "f": {
-                  "identity_guild_id": {"t": "null"},
+                  "identity_guild_id": {"t": "null|snowflake"},
                   "identity_enabled": {"t": "bool"},
-                  "tag": {"t": "null"},
-                  "badge": {"t": "null"}
+                  "tag": {"t": "null|string"},
+                  "badge": {"t": "null|string"}
                 }
               },
               "primary_guild": {
                 "t": "null|object",
                 "f": {
-                  "identity_guild_id": {"t": "null"},
+                  "identity_guild_id": {"t": "null|snowflake"},
                   "identity_enabled": {"t": "bool"},
-                  "tag": {"t": "null"},
-                  "badge": {"t": "null"}
+                  "tag": {"t": "null|string"},
+                  "badge": {"t": "null|string"}
                 }
               }
             },
@@ -7577,7 +7689,7 @@
     }
   },
   "GET /api/v9/oauth2/authorize": {
-    "samples": 13,
+    "samples": 14,
     "headers": [
       "content-type"
     ],
@@ -7597,6 +7709,7 @@
               "is_monetized": {"t": "bool"},
               "is_verified": {"t": "bool"},
               "is_discoverable": {"t": "bool"},
+              "approximate_guild_count": {"t": "int", "opt": true},
               "cover_image": {"t": "string", "opt": true},
               "flags": {"t": "int"},
               "flags_new": {"t": "string"},
@@ -7640,10 +7753,11 @@
                 "t": "array",
                 "i": {"t": "int"}
               },
-              "max_participants": {"t": "null|int"},
+              "max_participants": {"t": "null|int", "opt": true},
               "tags": {
                 "t": "array",
-                "i": {"t": "string"}
+                "i": {"t": "string"},
+                "opt": true
               }
             }
           },
@@ -7683,32 +7797,65 @@
               "primary_guild": {
                 "t": "null|object",
                 "f": {
-                  "identity_guild_id": {"t": "null"},
+                  "identity_guild_id": {"t": "null|snowflake"},
                   "identity_enabled": {"t": "bool"},
-                  "tag": {"t": "null"},
-                  "badge": {"t": "null"}
+                  "tag": {"t": "null|string"},
+                  "badge": {"t": "null|string"}
                 }
               },
               "clan": {
                 "t": "null|object",
                 "f": {
-                  "identity_guild_id": {"t": "null"},
+                  "identity_guild_id": {"t": "null|snowflake"},
                   "identity_enabled": {"t": "bool"},
-                  "tag": {"t": "null"},
-                  "badge": {"t": "null"}
+                  "tag": {"t": "null|string"},
+                  "badge": {"t": "null|string"}
                 }
               }
             }
           },
           "authorized": {"t": "bool"},
           "integration_type": {"t": "int"},
-          "redirect_uri": {"t": "string"}
+          "bot": {
+            "t": "object",
+            "f": {
+              "id": {"t": "snowflake"},
+              "username": {"t": "string"},
+              "global_name": {"t": "null"},
+              "avatar": {"t": "string"},
+              "avatar_decoration_data": {"t": "null"},
+              "collectibles": {"t": "null"},
+              "discriminator": {"t": "string"},
+              "display_name_styles": {"t": "null"},
+              "public_flags": {"t": "int"},
+              "primary_guild": {"t": "null"},
+              "clan": {"t": "null"},
+              "bot": {"t": "bool"},
+              "approximate_guild_count": {"t": "int"}
+            },
+            "opt": true
+          },
+          "guilds": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "icon": {"t": "null|string"},
+                "mfa_level": {"t": "int"},
+                "permissions": {"t": "string|snowflake"}
+              }
+            },
+            "opt": true
+          },
+          "redirect_uri": {"t": "string", "opt": true}
         }
       }
     }
   },
   "GET /api/v9/safety-hub/@me": {
-    "samples": 8,
+    "samples": 10,
     "headers": [
       "content-type"
     ],
@@ -7740,7 +7887,7 @@
     }
   },
   "GET /api/v9/soundboard-default-sounds": {
-    "samples": 9,
+    "samples": 11,
     "headers": [
       "content-type"
     ],
@@ -7806,7 +7953,7 @@
     }
   },
   "GET /api/v9/storefront/pricing": {
-    "samples": 19,
+    "samples": 21,
     "headers": [
       "content-type"
     ],
@@ -7872,7 +8019,7 @@
     }
   },
   "GET /api/v9/storefront/products/skus": {
-    "samples": 13,
+    "samples": 14,
     "headers": [
       "content-type"
     ],
@@ -8077,7 +8224,7 @@
     }
   },
   "GET /api/v9/storefront/recommended-items": {
-    "samples": 5,
+    "samples": 8,
     "headers": [
       "content-type"
     ],
@@ -8101,7 +8248,7 @@
     }
   },
   "GET /api/v9/streams/{id}/preview": {
-    "samples": 1,
+    "samples": 4,
     "headers": [
       "content-type"
     ],
@@ -8111,11 +8258,18 @@
         "f": {
           "url": {"t": "string"}
         }
+      },
+      "404": {
+        "t": "object",
+        "f": {
+          "message": {"t": "string"},
+          "code": {"t": "int"}
+        }
       }
     }
   },
   "GET /api/v9/users/@me": {
-    "samples": 382,
+    "samples": 419,
     "headers": [
       "content-type"
     ],
@@ -8210,7 +8364,7 @@
     }
   },
   "GET /api/v9/users/@me/achievements/unread-state": {
-    "samples": 32,
+    "samples": 40,
     "headers": [
       "content-type"
     ],
@@ -8225,7 +8379,7 @@
     }
   },
   "GET /api/v9/users/@me/activities/statistics/applications": {
-    "samples": 56,
+    "samples": 61,
     "headers": [
       "content-type"
     ],
@@ -8246,7 +8400,7 @@
     }
   },
   "GET /api/v9/users/@me/affinities/guilds": {
-    "samples": 54,
+    "samples": 59,
     "headers": [
       "content-type"
     ],
@@ -8292,7 +8446,7 @@
     }
   },
   "GET /api/v9/users/@me/affinities/v2/users": {
-    "samples": 58,
+    "samples": 63,
     "headers": [
       "content-type"
     ],
@@ -8339,7 +8493,7 @@
     }
   },
   "GET /api/v9/users/@me/application-command-index": {
-    "samples": 44,
+    "samples": 47,
     "headers": [
       "content-type"
     ],
@@ -8538,7 +8692,7 @@
     }
   },
   "GET /api/v9/users/@me/badges": {
-    "samples": 223,
+    "samples": 240,
     "headers": [
       "content-type"
     ],
@@ -8631,7 +8785,7 @@
     }
   },
   "GET /api/v9/users/@me/connections": {
-    "samples": 17,
+    "samples": 18,
     "headers": [
       "content-type"
     ],
@@ -8659,7 +8813,7 @@
     }
   },
   "GET /api/v9/users/@me/connections/spotify/{connection_id}/access-token": {
-    "samples": 15,
+    "samples": 16,
     "headers": [
       "content-type"
     ],
@@ -9164,7 +9318,7 @@
     }
   },
   "GET /api/v9/users/@me/mfa/webauthn/credentials": {
-    "samples": 204,
+    "samples": 214,
     "headers": [
       "content-type"
     ],
@@ -9185,7 +9339,7 @@
     }
   },
   "GET /api/v9/users/@me/notes/{id}": {
-    "samples": 51,
+    "samples": 56,
     "headers": [
       "content-type"
     ],
@@ -9244,7 +9398,7 @@
     }
   },
   "GET /api/v9/users/@me/relationships": {
-    "samples": 8,
+    "samples": 10,
     "headers": [
       "content-type"
     ],
@@ -9331,7 +9485,7 @@
     }
   },
   "GET /api/v9/users/@me/saved-messages": {
-    "samples": 204,
+    "samples": 214,
     "headers": [
       "content-type"
     ],
@@ -9642,8 +9796,29 @@
       }
     }
   },
+  "GET /api/v9/users/@me/settings-proto/1": {
+    "samples": 2,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "settings": {"t": "string"}
+        }
+      },
+      "401": {
+        "t": "object",
+        "f": {
+          "message": {"t": "string"},
+          "code": {"t": "int"}
+        }
+      }
+    }
+  },
   "GET /api/v9/users/@me/settings-proto/2": {
-    "samples": 101,
+    "samples": 107,
     "headers": [
       "content-type"
     ],
@@ -9664,7 +9839,7 @@
     }
   },
   "GET /api/v9/users/@me/survey": {
-    "samples": 18,
+    "samples": 20,
     "headers": [
       "content-type",
       "retry-after",
@@ -9688,7 +9863,7 @@
     }
   },
   "GET /api/v9/users/@me/virtual-currency/balance": {
-    "samples": 29,
+    "samples": 36,
     "headers": [
       "content-type"
     ],
@@ -9702,7 +9877,7 @@
     }
   },
   "GET /api/v9/users/@me/widgets/suggested-games": {
-    "samples": 3,
+    "samples": 4,
     "headers": [
       "content-type"
     ],
@@ -9746,7 +9921,7 @@
     }
   },
   "GET /api/v9/users/{id}/application-identities": {
-    "samples": 54,
+    "samples": 59,
     "headers": [
       "content-type"
     ],
@@ -9958,7 +10133,7 @@
     }
   },
   "GET /api/v9/users/{id}/badges": {
-    "samples": 44,
+    "samples": 48,
     "headers": [
       "content-type"
     ],
@@ -10066,7 +10241,7 @@
     }
   },
   "GET /api/v9/users/{id}/profile": {
-    "samples": 184,
+    "samples": 200,
     "headers": [
       "content-type"
     ],
@@ -10135,6 +10310,7 @@
               },
               "flags": {"t": "int"},
               "bot": {"t": "bool", "opt": true},
+              "system": {"t": "bool", "opt": true},
               "banner": {"t": "null|string"},
               "banner_color": {"t": "null|string"},
               "accent_color": {"t": "null|int"},
@@ -10348,7 +10524,7 @@
                 "f": {
                   "id": {"t": "snowflake"},
                   "username": {"t": "string"},
-                  "global_name": {"t": "string"},
+                  "global_name": {"t": "null|string"},
                   "avatar": {"t": "string"},
                   "avatar_decoration_data": {
                     "t": "null|object",
@@ -10393,7 +10569,8 @@
                       "tag": {"t": "null|string"},
                       "badge": {"t": "null|string"}
                     }
-                  }
+                  },
+                  "bot": {"t": "bool", "opt": true}
                 }
               },
               "bio": {"t": "string"},
@@ -10408,7 +10585,13 @@
               "guild_id": {"t": "snowflake"},
               "pronouns": {"t": "string"},
               "profile_effect": {"t": "null"},
-              "collectibles": {"t": "array"}
+              "collectibles": {"t": "array"},
+              "bio": {"t": "string", "opt": true},
+              "banner": {"t": "null", "opt": true},
+              "accent_color": {"t": "null", "opt": true},
+              "theme_colors": {"t": "null", "opt": true},
+              "popout_animation_particle_type": {"t": "null", "opt": true},
+              "emoji": {"t": "null", "opt": true}
             },
             "opt": true
           },
@@ -10508,7 +10691,7 @@
     }
   },
   "GET /api/v9/wishlists/{id}": {
-    "samples": 36,
+    "samples": 40,
     "headers": [
       "content-type"
     ],
@@ -11394,6 +11577,25 @@
       }
     }
   },
+  "PATCH /api/v9/guilds/{id}/channels": {
+    "samples": 2,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "array",
+      "i": {
+        "t": "object",
+        "f": {
+          "id": {"t": "snowflake"},
+          "position": {"t": "int"}
+        }
+      }
+    },
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
   "PATCH /api/v9/guilds/{id}/member-verification": {
     "samples": 9,
     "headers": [
@@ -11694,7 +11896,7 @@
     }
   },
   "PATCH /api/v9/guilds/{id}/requests/{id}": {
-    "samples": 7,
+    "samples": 8,
     "headers": [
       "content-type"
     ],
@@ -11744,12 +11946,12 @@
                 "field_type": {"t": "string"},
                 "label": {"t": "string"},
                 "required": {"t": "bool"},
-                "values": {
+                "choices": {
                   "t": "array",
                   "i": {"t": "string"},
                   "opt": true
                 },
-                "choices": {
+                "values": {
                   "t": "array",
                   "i": {"t": "string"},
                   "opt": true
@@ -11797,19 +11999,19 @@
               "clan": {
                 "t": "object",
                 "f": {
-                  "identity_guild_id": {"t": "null"},
+                  "identity_guild_id": {"t": "null|snowflake"},
                   "identity_enabled": {"t": "bool"},
-                  "tag": {"t": "null"},
-                  "badge": {"t": "null"}
+                  "tag": {"t": "null|string"},
+                  "badge": {"t": "null|string"}
                 }
               },
               "primary_guild": {
                 "t": "object",
                 "f": {
-                  "identity_guild_id": {"t": "null"},
+                  "identity_guild_id": {"t": "null|snowflake"},
                   "identity_enabled": {"t": "bool"},
-                  "tag": {"t": "null"},
-                  "badge": {"t": "null"}
+                  "tag": {"t": "null|string"},
+                  "badge": {"t": "null|string"}
                 }
               }
             }
@@ -12352,7 +12554,7 @@
     }
   },
   "PATCH /api/v9/users/@me/settings-proto/1": {
-    "samples": 91,
+    "samples": 97,
     "headers": [
       "content-type"
     ],
@@ -12372,7 +12574,7 @@
     }
   },
   "PATCH /api/v9/users/@me/settings-proto/2": {
-    "samples": 15,
+    "samples": 16,
     "headers": [
       "content-type"
     ],
@@ -12450,7 +12652,7 @@
     }
   },
   "POST /api/v9/applications/{id}/disclosures": {
-    "samples": 1,
+    "samples": 2,
     "headers": [
       "content-type"
     ],
@@ -12613,7 +12815,7 @@
     }
   },
   "POST /api/v9/channels/{id}/invites": {
-    "samples": 5,
+    "samples": 6,
     "headers": [
       "content-type"
     ],
@@ -12921,7 +13123,7 @@
     }
   },
   "POST /api/v9/channels/{id}/messages": {
-    "samples": 109,
+    "samples": 112,
     "headers": [
       "content-type"
     ],
@@ -13603,7 +13805,7 @@
     }
   },
   "POST /api/v9/channels/{id}/messages/{id}/ack": {
-    "samples": 128,
+    "samples": 141,
     "headers": [
       "content-type"
     ],
@@ -14585,8 +14787,23 @@
       }
     }
   },
-  "POST /api/v9/guilds/{id}/auto-moderation/rules": {
+  "POST /api/v9/guilds/{id}/ack/4/{id}": {
     "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "request": {"t": "object"},
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "token": {"t": "null"}
+        }
+      }
+    }
+  },
+  "POST /api/v9/guilds/{id}/auto-moderation/rules": {
+    "samples": 2,
     "headers": [
       "content-type"
     ],
@@ -14614,14 +14831,22 @@
             "t": "object",
             "f": {
               "type": {"t": "int"},
-              "metadata": {"t": "object"}
+              "metadata": {
+                "t": "object",
+                "f": {
+                  "channel_id": {"t": "snowflake", "opt": true}
+                }
+              }
             }
           }
         },
         "enabled": {"t": "bool"},
         "creator_id": {"t": "snowflake"},
         "position": {"t": "int"},
-        "exempt_channels": {"t": "array"},
+        "exempt_channels": {
+          "t": "array",
+          "i": {"t": "snowflake"}
+        },
         "exempt_roles": {"t": "array"}
       }
     },
@@ -14643,7 +14868,8 @@
                 "metadata": {
                   "t": "object",
                   "f": {
-                    "custom_message": {"t": "null"}
+                    "custom_message": {"t": "null", "opt": true},
+                    "channel_id": {"t": "snowflake", "opt": true}
                   }
                 }
               }
@@ -14652,7 +14878,10 @@
           "trigger_type": {"t": "int"},
           "enabled": {"t": "bool"},
           "exempt_roles": {"t": "array"},
-          "exempt_channels": {"t": "array"},
+          "exempt_channels": {
+            "t": "array",
+            "i": {"t": "snowflake"}
+          },
           "trigger_metadata": {
             "t": "object",
             "f": {
@@ -14739,7 +14968,7 @@
     }
   },
   "POST /api/v9/guilds/{id}/members-search": {
-    "samples": 7,
+    "samples": 9,
     "headers": [
       "content-type"
     ],
@@ -14747,7 +14976,21 @@
       "t": "object",
       "f": {
         "or_query": {"t": "object"},
-        "and_query": {"t": "object"},
+        "and_query": {
+          "t": "object",
+          "f": {
+            "usernames": {
+              "t": "object",
+              "f": {
+                "or_query": {
+                  "t": "array",
+                  "i": {"t": "string"}
+                }
+              },
+              "opt": true
+            }
+          }
+        },
         "limit": {"t": "int"}
       }
     },
@@ -15088,7 +15331,7 @@
     }
   },
   "POST /api/v9/guilds/{id}/migrate-command-scope": {
-    "samples": 108,
+    "samples": 112,
     "headers": [
       "content-type"
     ],
@@ -15102,7 +15345,7 @@
     }
   },
   "POST /api/v9/guilds/{id}/new-member-action/{id}": {
-    "samples": 3,
+    "samples": 5,
     "headers": [
       "content-type"
     ],
@@ -15128,6 +15371,50 @@
         "f": {
           "message": {"t": "string"},
           "code": {"t": "int"}
+        }
+      }
+    }
+  },
+  "POST /api/v9/guilds/{id}/onboarding-responses": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "onboarding_responses": {
+          "t": "array",
+          "i": {"t": "snowflake"}
+        },
+        "onboarding_prompts_seen": {
+          "t": "map",
+          "v": {"t": "int"}
+        },
+        "onboarding_responses_seen": {
+          "t": "map",
+          "v": {"t": "int"}
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "guild_id": {"t": "snowflake"},
+          "user_id": {"t": "snowflake"},
+          "onboarding_responses": {
+            "t": "array",
+            "i": {"t": "snowflake"}
+          },
+          "onboarding_prompts_seen": {
+            "t": "map",
+            "v": {"t": "int"}
+          },
+          "onboarding_responses_seen": {
+            "t": "map",
+            "v": {"t": "int"}
+          }
         }
       }
     }
@@ -15169,6 +15456,15 @@
           }
         }
       }
+    }
+  },
+  "POST /api/v9/guilds/{id}/requests/{id}/ack": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "204": {"t": ""}
     }
   },
   "POST /api/v9/guilds/{id}/roles": {
@@ -15382,7 +15678,7 @@
     }
   },
   "POST /api/v9/interactions": {
-    "samples": 12,
+    "samples": 18,
     "headers": [
       "content-type"
     ],
@@ -15397,10 +15693,35 @@
         "data": {
           "t": "object",
           "f": {
-            "version": {"t": "snowflake"},
+            "version": {"t": "snowflake", "opt": true},
             "id": {"t": "snowflake"},
-            "name": {"t": "string"},
-            "type": {"t": "int"},
+            "custom_id": {"t": "string", "opt": true},
+            "components": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "type": {"t": "int"},
+                  "component": {
+                    "t": "object",
+                    "f": {
+                      "type": {"t": "int"},
+                      "custom_id": {"t": "string"},
+                      "values": {
+                        "t": "array",
+                        "i": {"t": "string"},
+                        "opt": true
+                      },
+                      "value": {"t": "string", "opt": true}
+                    }
+                  }
+                }
+              },
+              "opt": true
+            },
+            "guild_id": {"t": "snowflake", "opt": true},
+            "name": {"t": "string", "opt": true},
+            "type": {"t": "int", "opt": true},
             "options": {
               "t": "array",
               "i": {
@@ -15408,10 +15729,23 @@
                 "f": {
                   "type": {"t": "int"},
                   "name": {"t": "string"},
-                  "value": {"t": "string"},
+                  "options": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "type": {"t": "int"},
+                        "name": {"t": "string"},
+                        "value": {"t": "string"}
+                      }
+                    },
+                    "opt": true
+                  },
+                  "value": {"t": "string", "opt": true},
                   "focused": {"t": "bool", "opt": true}
                 }
-              }
+              },
+              "opt": true
             },
             "application_command": {
               "t": "object",
@@ -15419,13 +15753,15 @@
                 "id": {"t": "snowflake"},
                 "type": {"t": "int"},
                 "application_id": {"t": "snowflake"},
+                "guild_id": {"t": "snowflake", "opt": true},
                 "version": {"t": "snowflake"},
                 "name": {"t": "string"},
                 "description": {"t": "string"},
-                "dm_permission": {"t": "bool"},
+                "dm_permission": {"t": "bool", "opt": true},
                 "contexts": {
                   "t": "array",
-                  "i": {"t": "int"}
+                  "i": {"t": "int"},
+                  "opt": true
                 },
                 "integration_types": {
                   "t": "array",
@@ -15441,7 +15777,59 @@
                       "type": {"t": "int"},
                       "name": {"t": "string"},
                       "description": {"t": "string"},
-                      "required": {"t": "bool"},
+                      "options": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "type": {"t": "int"},
+                            "name": {"t": "string"},
+                            "description": {"t": "string"},
+                            "options": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "type": {"t": "int"},
+                                  "name": {"t": "string"},
+                                  "description": {"t": "string"},
+                                  "required": {"t": "bool"},
+                                  "description_localized": {"t": "string"},
+                                  "name_localized": {"t": "string"}
+                                }
+                              },
+                              "opt": true
+                            },
+                            "channel_types": {
+                              "t": "array",
+                              "i": {"t": "int"},
+                              "opt": true
+                            },
+                            "min_value": {"t": "int|float", "opt": true},
+                            "max_value": {"t": "int|float", "opt": true},
+                            "required": {"t": "bool", "opt": true},
+                            "autocomplete": {"t": "bool", "opt": true},
+                            "min_length": {"t": "int", "opt": true},
+                            "max_length": {"t": "int", "opt": true},
+                            "choices": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "name": {"t": "string"},
+                                  "value": {"t": "string"},
+                                  "name_localized": {"t": "string"}
+                                }
+                              },
+                              "opt": true
+                            },
+                            "description_localized": {"t": "string"},
+                            "name_localized": {"t": "string"}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "required": {"t": "bool", "opt": true},
                       "autocomplete": {"t": "bool", "opt": true},
                       "description_localized": {"t": "string"},
                       "name_localized": {"t": "string"}
@@ -15450,7 +15838,8 @@
                 },
                 "description_localized": {"t": "string", "opt": true},
                 "name_localized": {"t": "string"}
-              }
+              },
+              "opt": true
             },
             "attachments": {"t": "array", "opt": true}
           }
@@ -15466,7 +15855,7 @@
     }
   },
   "POST /api/v9/invites/{code}": {
-    "samples": 7,
+    "samples": 8,
     "headers": [
       "content-type"
     ],
@@ -15521,19 +15910,19 @@
               "clan": {
                 "t": "object",
                 "f": {
-                  "identity_guild_id": {"t": "null"},
+                  "identity_guild_id": {"t": "null|snowflake"},
                   "identity_enabled": {"t": "bool"},
-                  "tag": {"t": "null"},
-                  "badge": {"t": "null"}
+                  "tag": {"t": "null|string"},
+                  "badge": {"t": "null|string"}
                 }
               },
               "primary_guild": {
                 "t": "object",
                 "f": {
-                  "identity_guild_id": {"t": "null"},
+                  "identity_guild_id": {"t": "null|snowflake"},
                   "identity_enabled": {"t": "bool"},
-                  "tag": {"t": "null"},
-                  "badge": {"t": "null"}
+                  "tag": {"t": "null|string"},
+                  "badge": {"t": "null|string"}
                 }
               }
             }
@@ -15622,13 +16011,14 @@
     }
   },
   "POST /api/v9/oauth2/authorize": {
-    "samples": 13,
+    "samples": 14,
     "headers": [
       "content-type"
     ],
     "request": {
       "t": "object",
       "f": {
+        "guild_id": {"t": "snowflake", "opt": true},
         "permissions": {"t": "string", "opt": true},
         "authorize": {"t": "bool"},
         "integration_type": {"t": "int"},
@@ -16081,7 +16471,7 @@
     }
   },
   "POST /api/v9/users/@me/relationships": {
-    "samples": 3,
+    "samples": 4,
     "headers": [
       "content-type"
     ],
@@ -16093,6 +16483,7 @@
       }
     },
     "responses": {
+      "204": {"t": ""},
       "400": {
         "t": "object",
         "f": {
@@ -16712,7 +17103,7 @@
     }
   },
   "PUT /api/v9/guilds/{id}/requests/@me": {
-    "samples": 6,
+    "samples": 7,
     "headers": [
       "content-type"
     ],
@@ -16730,17 +17121,17 @@
               "description": {"t": "null"},
               "automations": {"t": "null"},
               "required": {"t": "bool"},
-              "values": {
-                "t": "array",
-                "i": {"t": "string"},
-                "opt": true
-              },
               "choices": {
                 "t": "array",
                 "i": {"t": "string"},
                 "opt": true
               },
               "placeholder": {"t": "null", "opt": true},
+              "values": {
+                "t": "array",
+                "i": {"t": "string"},
+                "opt": true
+              },
               "response": {"t": "bool|int|string"}
             }
           }
@@ -16882,15 +17273,15 @@
     }
   },
   "PUT /api/v9/users/@me/relationships/{id}": {
-    "samples": 5,
+    "samples": 6,
     "headers": [
       "content-type"
     ],
     "request": {
       "t": "object",
       "f": {
-        "confirm_stranger_request": {"t": "bool", "opt": true},
-        "type": {"t": "int", "opt": true}
+        "type": {"t": "int", "opt": true},
+        "confirm_stranger_request": {"t": "bool", "opt": true}
       }
     },
     "responses": {

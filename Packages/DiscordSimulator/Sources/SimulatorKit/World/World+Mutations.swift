@@ -36,11 +36,7 @@ public extension World {
     func sendMessage(_ draft: MessageDraft, as authorID: Snowflake, in channelID: Snowflake, checkPermissions: Bool = true) async throws -> Message {
         var channel = try channel(channelID)
         guard channel.type.holdsMessages else { throw WorldError(status: 400, code: 50008, message: "Cannot send messages in a non-text channel") }
-        if checkPermissions {
-            try require(channel.type.isThread ? .sendMessagesInThreads : .sendMessages, authorID, channel)
-            if !draft.attachments.isEmpty { try require(.attachFiles, authorID, channel) }
-            try await enforceAutoMod(draft.content, by: authorID, in: channel)
-        }
+        let autoModAlert = checkPermissions ? try await checkSend(draft, by: authorID, in: channel) : nil
         let trimmed = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty, draft.attachments.isEmpty, draft.embeds.isEmpty, draft.poll == nil, draft.stickerIDs.isEmpty,
            draft.forwardSnapshot == nil {
@@ -77,6 +73,11 @@ public extension World {
            !message.mentions.contains(replied.authorID), replied.authorID != authorID {
             message.mentions.append(replied.authorID)
         }
+        // Ephemeral interaction replies reach only the user who interacted and never join the history.
+        if message.flags & 64 != 0, let viewer = draft.interaction?.userID {
+            await emit("MESSAGE_CREATE", renderMessageEvent(message), to: .users([viewer]))
+            return message
+        }
         channel.messages.append(message)
         channel.totalMessageSent += 1
         if channel.type.isThread, !channel.threadMembers.contains(authorID) { channel.threadMembers.append(authorID) }
@@ -93,7 +94,15 @@ public extension World {
             }
         }
         await emit("MESSAGE_CREATE", renderMessageEvent(message), to: audience(for: channel))
+        if let autoModAlert { try await postAutoModAlert(autoModAlert.rule, keyword: autoModAlert.keyword, for: message) }
         return message
+    }
+
+    /// Send permissions, then AutoMod; returns an alert-only AutoMod match to report once the message is posted.
+    private func checkSend(_ draft: MessageDraft, by authorID: Snowflake, in channel: Channel) async throws -> (rule: AutoModRule, keyword: String)? {
+        try require(channel.type.isThread ? .sendMessagesInThreads : .sendMessages, authorID, channel)
+        if !draft.attachments.isEmpty { try require(.attachFiles, authorID, channel) }
+        return try await enforceAutoMod(draft.content, by: authorID, in: channel)
     }
 
     internal struct Mentions {
@@ -110,9 +119,11 @@ public extension World {
 
     /// Everyone a message pings: direct mentions, members of mentioned roles,
     /// and for @everyone/@here everyone who can see the channel.
+    /// The read-state mentions `message` gives. Every DM and group DM message counts for
+    /// each other recipient, which is what the count badge on an unread DM shows.
     internal func mentionedUsers(_ message: Message, in channel: Channel) -> Set<Snowflake> {
         var users = Set(message.mentions)
-        if channel.type.isPrivate { return users }
+        if channel.type.isPrivate { return Set(channel.recipients).subtracting([message.authorID]) }
         if message.mentionEveryone {
             users.formUnion(recipients(of: audience(for: channel)))
         } else if !message.mentionRoles.isEmpty, let guildID = channel.guildID, let guild = guilds[guildID] {
@@ -122,6 +133,10 @@ public extension World {
         }
         users.remove(message.authorID)
         return users
+    }
+
+    func mentionCount(of userID: Snowflake, in channel: Channel, after messageID: Snowflake) -> Int {
+        channel.messages.count { $0.id > messageID && mentionedUsers($0, in: channel).contains(userID) }
     }
 
     internal func parseMentions(_ content: String, in channel: Channel) -> Mentions {
@@ -304,7 +319,7 @@ public extension World {
         var state = readStates[userID]?[channelID] ?? ReadState()
         state.lastAckedID = messageID
         // Mentions after the acknowledged message stay unread.
-        state.mentionCount = channel.messages.filter { $0.id > messageID && mentionedUsers($0, in: channel).contains(userID) }.count
+        state.mentionCount = mentionCount(of: userID, in: channel, after: messageID)
         state.lastViewed = Int(clock.now.timeIntervalSince(Date(timeIntervalSince1970: Double(Snowflake.discordEpochMilliseconds) / 1000)) / 86_400)
         readStates[userID, default: [:]][channelID] = state
         await emit("MESSAGE_ACK", .object(JSONObject([
@@ -342,10 +357,7 @@ public extension World {
         guard case var .object(created) = renderThread(thread, viewer: nil) else { return thread }
         created["newly_created"] = true
         await emit("THREAD_CREATE", .object(created), to: audience(for: parent))
-        var member = JSONObject()
-        if case let .object(own) = renderThreadMember(thread, userID: userID, includeIDs: true) { member = own }
-        if let guildID = parent.guildID { member["guild_id"] = guildID.json }
-        await emit("THREAD_MEMBER_UPDATE", .object(member), to: .users([userID]))
+        await emitThreadMemberUpdate(thread, userID: userID)
         if var starter {
             starter.id = id
             try await sendMessage(starter, as: userID, in: id)

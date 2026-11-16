@@ -17,6 +17,9 @@ extension ParityRun {
         _ = try await rest("DELETE", "\(path)/\(stranger)")
         _ = try await rest("PUT", "\(path)/\(stranger)", body: .object(JSONObject()))
         _ = try await rest("DELETE", "\(path)/\(stranger)")
+        guard let username = await world.users[stranger]?.username else { throw WorldError.unknown("User", code: 10013) }
+        _ = try await rest("POST", path, body: ["username": .string(username), "discriminator": .null])
+        _ = try await rest("DELETE", "\(path)/\(stranger)")
         try await world.putRelationship(stranger, with: me, type: nil)
         _ = try await rest("PUT", "\(path)/\(stranger)", body: ["confirm_stranger_request": false])
         _ = try await rest("POST", path, body: ["username": "nobody.by.this.name", "discriminator": .null])
@@ -31,6 +34,22 @@ extension ParityRun {
             _ = try await rest("DELETE", "/api/v9/channels/\(id)")
         }
         await flowEnd(nil)
+    }
+
+    /// The message-request filter toggle: the client sends the whole privacy section (field 8);
+    /// it must come back as sent, with the data version moved on.
+    mutating func privacySettingRoundTrip() async throws {
+        let path = "/api/v9/users/@me/settings-proto/1"
+        let before = try await rest("GET", path)["settings"]?.stringValue.flatMap { Data(base64Encoded: $0) } ?? Data()
+        let privacy = Protobuf.field(8, Protobuf.field(17, Data([0x08, 0x01])))
+        await flowStart()
+        let after = try await rest("PATCH", path, body: ["settings": .string(privacy.base64EncodedString())])["settings"]?.stringValue
+            .flatMap { Data(base64Encoded: $0) } ?? Data()
+        await flowEnd(nil)
+        func section(_ settings: Data, _ number: UInt64) -> Data? { ProtobufMerge.fields(settings)?.first { $0.number == number }?.bytes }
+        if section(after, 8) != privacy || section(after, 1) == section(before, 1) {
+            report.sequenceFailures.append("settings-proto: privacy section or data version did not round-trip")
+        }
     }
 
     mutating func mentionsAndServerProfile(_ target: Targets, me: Snowflake) async throws {

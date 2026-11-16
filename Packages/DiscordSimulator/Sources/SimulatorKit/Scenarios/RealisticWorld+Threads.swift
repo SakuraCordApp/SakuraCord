@@ -28,13 +28,11 @@ extension RealisticWorld {
         }
     }
 
-    /// A public thread whose first messages are stored now and the rest on first look. A forum post's
-    /// starter message shares the post's ID, as on Discord.
+    /// A public thread with a few replies. A forum post's starter message shares the post's ID, as on Discord.
     @discardableResult
     private mutating func addThread(_ name: String, parent: Snowflake, _ draft: ServerDraft, opened: Date, joined: Bool,
                                     _ rng: inout SeededRandom, starter: String? = nil) async throws -> Snowflake {
         let authors = draft.members.filter { $0 != me }
-        guard !authors.isEmpty else { return parent }
         let owner = rng.pick(authors)
         let id = await world.nextID(at: opened)
         var thread = Channel(id: id, type: .publicThread, guildID: draft.guildID, name: name)

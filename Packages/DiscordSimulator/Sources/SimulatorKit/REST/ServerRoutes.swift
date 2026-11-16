@@ -7,6 +7,10 @@ enum ServerRoutes {
         registerJoinRequests(into: &routes)
         registerGuide(into: &routes)
 
+        routes["DELETE /api/v9/guilds/{id}/members/{id}"] = { context in
+            try await context.world.kickMember(try context.id(1), from: try context.id(0), by: context.userID)
+            return .empty
+        }
         routes["PATCH /api/v9/guilds/{id}/members/{id}"] = { context in
             .json(try await context.world.modifyMember(try context.id(1), in: try context.id(0), by: context.userID, body: try context.json))
         }
@@ -60,6 +64,10 @@ enum ServerRoutes {
             let request = try await world.submitJoinRequest(try context.id(0), by: context.userID, body: try context.json)
             return .json(await world.renderJoinRequest(request, includeUser: false, includeAnswers: false), status: 201)
         }
+        routes["POST /api/v9/guilds/{id}/requests/{id}/ack"] = { context in
+            try await context.world.acknowledgeJoinRequest(try context.id(1), in: try context.id(0), by: context.userID)
+            return .empty
+        }
         routes["POST /api/v9/guilds/{id}/requests/@me"] = { context in
             let world = context.world
             let request = try await world.startJoinRequest(try context.id(0), by: context.userID)
@@ -90,10 +98,11 @@ enum ServerRoutes {
         routes["POST /api/v9/guilds/{id}/new-member-action/{id}"] = { context in
             .json(try await context.world.completeNewMemberAction(try context.id(0), channelID: try context.id(1), viewer: context.userID))
         }
-        // The app sends POST for its first answers; only PUT is captured, and it takes the same body.
+        // First answers come by POST, later edits by PUT, with the same body.
         for method in ["POST", "PUT"] {
             routes["\(method) /api/v9/guilds/{id}/onboarding-responses"] = { context in
-                .json(try await context.world.saveOnboardingResponses(try context.id(0), userID: context.userID, body: try context.json))
+                .json(try await context.world.saveOnboardingResponses(try context.id(0), userID: context.userID, body: try context.json,
+                                                                      initial: method == "POST"))
             }
         }
         routes["GET /api/v9/guilds/{id}/onboarding"] = { context in

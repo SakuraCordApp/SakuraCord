@@ -26,9 +26,12 @@ public struct JoinRequest: Sendable {
     public var guildID: Snowflake
     public var userID: Snowflake
     public var status: Status = .started
+    public var isOpen: Bool { status == .started || status == .submitted }
     /// The submitted form fields, each with its `response`, wire-shaped.
     public var formResponses: [JSON] = []
     public var reviewedAt: Date?
+    /// When the applicant last acknowledged the decision.
+    public var lastSeen: Date?
     public var actionedBy: Snowflake?
     public var actionID: Snowflake?
     public var rejectionReason: String?
@@ -55,15 +58,24 @@ public struct ServerState: Sendable {
     public var eventAckVersion: Int64 = 1
     /// Registered OAuth2 redirect URIs per application, and each user's grants.
     public var oauthRedirects: [Snowflake: [String]] = [:]
+    public var oauthGrants: [Snowflake: [Snowflake: OAuth2Grant]] = [:]
     public var autoModRules: [Snowflake: AutoModRule] = [:]
+    /// Who last reordered each guild's channels and when; Discord folds repeats into that audit entry.
+    public var lastChannelReorder: [Snowflake: (userID: Snowflake, at: Date)] = [:]
     /// Each member's onboarding answers and what they've seen, wire-shaped, per guild.
     public var onboardingResponses: [Snowflake: [Snowflake: JSONObject]] = [:]
-    public var oauthGrants: [Snowflake: [Snowflake: OAuth2Grant]] = [:]
 }
 
 // MARK: Invites and membership
 
 extension World {
+    /// The guild, if `userID` is a member; member-only routes answer Missing Access otherwise.
+    func memberGuild(_ guildID: Snowflake, of userID: Snowflake) throws -> Guild {
+        let guild = try guild(guildID)
+        guard guild.members[userID] != nil else { throw WorldError.missingAccess }
+        return guild
+    }
+
     func invite(_ code: String) throws -> Invite {
         guard let invite = servers.invites[code], invite.expiresAt.map({ $0 > clock.now }) ?? true,
               invite.maxUses == 0 || invite.uses < invite.maxUses, guilds[invite.guildID] != nil
@@ -88,43 +100,40 @@ extension World {
 
     /// `POST /invites/{code}`: joins the guild, or starts an application when it reviews new members.
     func acceptInvite(_ code: String, by userID: Snowflake) async throws -> JSON {
-        var invite = try invite(code)
+        let invite = try invite(code)
         let guild = try guild(invite.guildID)
-        var response = renderInvite(invite, viewer: userID)
-        if guild.members[userID] != nil {
-            return response.merging(["new_member": false])
-        }
+        let response = renderInvite(invite, viewer: userID)
+        if guild.members[userID] != nil { return response.merging(["new_member": false]) }
         if guild.features.contains("MEMBER_VERIFICATION_MANUAL_APPROVAL") {
             _ = try await startJoinRequest(guild.id, by: userID)
             return response.merging(["new_member": true, "show_verification_form": true])
         }
-        invite.uses += 1
-        servers.invites[code] = invite
+        servers.invites[code]?.uses += 1
         try await addMember(userID, to: guild.id)
-        response = response.merging(["new_member": true])
-        return response
+        return response.merging(["new_member": true])
     }
 
-    /// Adds a member: the joiner receives the whole guild, everyone else the new member,
-    /// and the system channel welcomes them.
+    /// Adds a member: the joiner receives the whole guild, everyone else the new member, and the
+    /// system channel welcomes them (after onboarding, when the server has it).
     func addMember(_ userID: Snowflake, to guildID: Snowflake) async throws {
         var guild = try guild(guildID)
         guard guild.members[userID] == nil else { return }
-        guild.members[userID] = Member(userID: userID, joinedAt: clock.now)
+        let member = Member(userID: userID, joinedAt: clock.now)
+        guild.members[userID] = member
         guild.memberOrder.append(userID)
         guilds[guildID] = guild
         if !guildOrder.contains(guildID) { guildOrder.append(guildID) }
         await emit("GUILD_CREATE", renderGuildCreate(guild, viewer: userID), to: .users([userID]))
-        if let member = guild.members[userID] {
-            let added = renderMember(member, guildID: guildID, includeUser: true).merging(["guild_id": guildID.json])
-            await emit("GUILD_MEMBER_ADD", added, to: .users(Set(guild.members.keys).subtracting([userID])))
-        }
-        if users[userID]?.bot == true { await emitCommandIndexUpdate(guildID) }
-        if let systemChannel = guild.systemChannelID {
-            var notice = MessageDraft()
-            notice.type = 7
-            _ = try await sendSystemMessage(notice, as: userID, in: systemChannel)
-        }
+        await emit("GUILD_MEMBER_ADD", renderMember(member, guildID: guildID, includeUser: true).merging(["guild_id": guildID.json]),
+                   to: .users(Set(guild.members.keys).subtracting([userID])))
+        if servers.onboarding[guildID]?["enabled"] != true { try await postJoinMessage(userID, in: guild) }
+    }
+
+    func postJoinMessage(_ userID: Snowflake, in guild: Guild) async throws {
+        guard let systemChannel = guild.systemChannelID else { return }
+        var notice = MessageDraft()
+        notice.type = 7
+        _ = try await sendSystemMessage(notice, as: userID, in: systemChannel)
     }
 
     /// `DELETE /users/@me/guilds/{id}`. Owners must transfer the server first.
@@ -146,7 +155,6 @@ extension World {
         guard let guild = guilds[invite.guildID], let channel = channels[invite.channelID] else { return .null }
         var object = JSONObject([
             ("type", 0), ("code", .string(invite.code)), ("id", invite.id.json),
-            ("inviter", invite.inviterID.map(renderUser) ?? .null),
             ("max_age", .int(invite.maxAge)), ("created_at", World.timestamp(invite.createdAt)),
             ("expires_at", World.optionalTimestamp(invite.expiresAt)), ("flags", 0),
             ("guild", .object(JSONObject([
@@ -169,7 +177,7 @@ extension World {
             let permissions = guild.members[viewer] != nil ? guild.permissions(of: viewer) : guild.everyoneRole?.permissions ?? []
             object["is_nickname_changeable"] = .bool(permissions.contains(.changeNickname))
         }
-        if invite.inviterID == nil { object["inviter"] = nil }
+        if let inviter = invite.inviterID { object["inviter"] = renderUser(inviter) }
         return .object(object)
     }
 
@@ -197,8 +205,7 @@ extension World {
         object["members"] = .array(guild.memberOrder.prefix(100).compactMap { id in
             guild.members[id].map { renderMember($0, guildID: guild.id, includeUser: true) }
         })
-        object["presences"] = .array(guild.memberOrder.filter { (presences[$0]?.status ?? .offline) != .offline }
-            .prefix(100).map { renderPresence($0, guildID: nil) })
+        object["presences"] = .array(guild.memberOrder.filter(isOnline).prefix(100).map { renderPresence($0, guildID: nil) })
         object["voice_states"] = []
         object["embedded_activities"] = []
         object["activity_instances"] = []
@@ -207,15 +214,13 @@ extension World {
 
     /// A member's view of a guild's roles and the channels they can see.
     func guildLists(_ guildID: Snowflake, viewer: Snowflake) throws -> (roles: JSON, channels: JSON) {
-        let guild = try guild(guildID)
-        guard guild.members[viewer] != nil else { throw WorldError.missingAccess }
+        let guild = try memberGuild(guildID, of: viewer)
         return (.array(guild.roles.map(renderRole)), .array(visibleChannels(in: guild, for: viewer).map { renderChannel($0, viewer: viewer) }))
     }
 
     /// Members holding a role, as `GET /guilds/{id}/roles/{id}/member-ids` lists them.
     func roleMemberIDs(_ guildID: Snowflake, roleID: Snowflake, viewer: Snowflake) throws -> JSON {
-        let guild = try guild(guildID)
-        guard guild.members[viewer] != nil else { throw WorldError.missingAccess }
+        let guild = try memberGuild(guildID, of: viewer)
         guard guild.roles.contains(where: { $0.id == roleID }) else { throw WorldError.unknown("Role", code: 10011) }
         return .array(guild.memberOrder.filter { guild.members[$0]?.roles.contains(roleID) == true }.prefix(100).map(\.json))
     }

@@ -170,18 +170,39 @@ struct RealisticWorld {
     private static let folderColors = [0x5865f2, 0x57f287, 0xfee75c, 0xeb459e, 0xed4245, 0x9b59b6, 0x1abc9c, 0xe67e22]
 
     private mutating func addDirectMessages() async throws {
-        let existing = await world.openPrivateChannels[me]?.count ?? 0
+        let existing = await world.openPrivateChannels[me] ?? []
         let dms = profile.directMessages
-        let partners = people.shuffledPrefix(max(0, dms.dms - existing), using: &random)
-        for (index, partner) in partners.enumerated() {
-            try await addPrivateChannel(recipients: [partner], index: index, group: false)
+        var direct: [Snowflake] = [], groups: [Snowflake] = []
+        for (index, partner) in people.shuffledPrefix(max(0, dms.dms - existing.count), using: &random).enumerated() {
+            direct.append(try await addPrivateChannel(recipients: [partner], index: index, group: false))
         }
         for (index, size) in dms.groupSizes.prefix(dms.groupDMs).enumerated() {
-            try await addPrivateChannel(recipients: Array(people.shuffledPrefix(max(2, size), using: &random)), index: index, group: true)
+            groups.append(try await addPrivateChannel(recipients: Array(people.shuffledPrefix(max(2, size), using: &random)), index: index, group: true))
+        }
+        // Real accounts have a handful of unread DMs whatever their size; the rest were read.
+        let unread = 3 + Int(random.next() % 4) - (await world.unreadCount(me, in: existing))
+        // The unread ones are recent conversations with people, now and then a group.
+        for channelID in Array(direct.prefix(10) + groups.prefix(3)).shuffledPrefix(max(0, unread), using: &random) {
+            try await addUnreadMessages(channelID)
         }
     }
 
-    private mutating func addPrivateChannel(recipients: [Snowflake], index: Int, group: Bool) async throws {
+    /// A few messages since the account last looked; each counts toward the DM's badge.
+    private mutating func addUnreadMessages(_ channelID: Snowflake) async throws {
+        let channel = try await world.channel(channelID)
+        guard let read = channel.messages.last else { return }
+        let others = channel.recipients.filter { $0 != me }
+        // Real unread DMs mostly hold one or two messages, now and then a handful.
+        let count = random.chance(0.85) ? 1 + Int(random.next() % 2) : 3 + Int(random.next() % 4)
+        for step in 1 ... count {
+            try await bench.seed(MessageDraft(content: DemoText.message(&random)), author: random.pick(others), channel: channelID,
+                                 at: read.timestamp.addingTimeInterval(Double(step) * 90))
+        }
+        let mentions = await world.mentionCount(of: me, in: try await world.channel(channelID), after: read.id)
+        await world.setReadState(me, channel: channelID, ReadState(lastAckedID: read.id, mentionCount: mentions))
+    }
+
+    private mutating func addPrivateChannel(recipients: [Snowflake], index: Int, group: Bool) async throws -> Snowflake {
         // Most DMs went quiet long ago; the list is sorted by last message.
         let last = world.epoch.addingTimeInterval(-Double(3_600 + index * index * 2_400) - random.unit() * 86_400)
         var channel = Channel(id: await world.nextID(at: last.addingTimeInterval(-200 * 86_400)), type: group ? .groupDM : .dm)
@@ -197,6 +218,7 @@ struct RealisticWorld {
         await world.planHistory(channel.id, HistoryPlan(count: 20 + Int(random.next() % 120), seed: random.next(), authors: channel.recipients,
                                                         kind: .friends, start: last.addingTimeInterval(-120 * 86_400),
                                                         end: last.addingTimeInterval(-60)))
+        return channel.id
     }
 
     private mutating func addRelationships() async {
@@ -241,14 +263,12 @@ enum Protobuf {
 }
 
 extension World {
+    func unreadCount(_ userID: Snowflake, in channelIDs: [Snowflake]) -> Int {
+        channelIDs.count { id in channels[id]?.lastMessageID.map { (readStates[userID]?[id]?.lastAckedID ?? Snowflake(0)) < $0 } ?? false }
+    }
+
     /// Replaces the settings sections `patch` carries, keeping the rest (building only; no event).
     func mergeSettingsProto(_ userID: Snowflake, type: Int, _ patch: Data) {
         settingsProto[userID, default: [:]][type] = ProtobufMerge.merge(settingsProto[userID]?[type] ?? Data(), patch) ?? patch
-    }
-}
-
-extension DemoText {
-    static func folderName(_ rng: inout SeededRandom) -> String {
-        rng.pick(["games", "art stuff", "friends", "school", "music", "big servers", "local", "work-ish", "archive", "🌙", "✨ faves", "creators"])
     }
 }

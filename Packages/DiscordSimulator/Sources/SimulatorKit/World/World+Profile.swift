@@ -9,6 +9,7 @@ extension World {
         var user = try user(userID)
         if let name = body["global_name"] {
             let trimmed = name.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Not captured: Discord's documented 32-character limit.
             guard (trimmed?.count ?? 0) <= 32 else { throw WorldError.invalidBody("global_name: Must be between 1 and 32 in length.") }
             user.globalName = trimmed?.isEmpty == false ? trimmed : nil
         }
@@ -30,7 +31,7 @@ extension World {
             if sku == .null { user.collectibles = nil }
         }
         if body["display_name_font_id"] != nil || body["display_name_colors"] != nil {
-            throw ChannelEditRoutes.NotSimulated(description: "display name styles (never captured)")
+            throw NotSimulated(description: "display name styles (never captured)")
         }
         let edited = user
         try await updateUser(userID) { $0 = edited }
@@ -41,24 +42,15 @@ extension World {
     /// Only the user's own sessions hear about it (USER_UPDATE).
     func editProfileDetails(_ userID: Snowflake, body: JSON) async throws -> JSON {
         var user = try user(userID)
-        if let bio = body["bio"]?.stringValue {
-            guard bio.count <= 190 else { throw WorldError.invalidBody("bio: Must be 190 or fewer in length.") }
-            user.bio = bio
-        }
-        if let pronouns = body["pronouns"]?.stringValue {
-            guard pronouns.count <= 40 else { throw WorldError.invalidBody("pronouns: Must be 40 or fewer in length.") }
-            user.pronouns = pronouns
-        }
+        if let bio = try Self.capped(body["bio"], 190, "bio") { user.bio = bio }
+        if let pronouns = try Self.capped(body["pronouns"], 40, "pronouns") { user.pronouns = pronouns }
         if let accent = body["accent_color"] { user.accentColor = accent.intValue.map(Int.init) }
         if let banner = body["banner"] {
             user.banner = try banner.stringValue.map { try storeUploadedImage($0, path: { "/banners/\(userID)/\($0)" }) }
         }
-        if let colors = body["theme_colors"]?.arrayValue {
-            let values = colors.compactMap { $0.intValue.map(Int.init) }
-            user.themeColors = values.count == 2 ? values : nil
-        }
+        if let colors = body["theme_colors"] { user.themeColors = Self.themeColors(colors) }
         if let skus = body["collectibles_sku_ids"]?.arrayValue, !skus.isEmpty {
-            throw ChannelEditRoutes.NotSimulated(description: "profile collectibles (never captured)")
+            throw NotSimulated(description: "profile collectibles (never captured)")
         }
         users[userID] = user
         await emit("USER_UPDATE", renderSelf(userID), to: .users([userID]))
@@ -80,7 +72,7 @@ extension World {
             member.banner = try banner.stringValue.map { try storeUploadedImage($0, path: { "/guilds/\(guildID)/users/\(userID)/banners/\($0)" }) }
         }
         if let collectibles = body["collectibles"], collectibles != .null {
-            throw ChannelEditRoutes.NotSimulated(description: "server nameplates (never captured)")
+            throw NotSimulated(description: "server nameplates (never captured)")
         }
         guilds[guildID]?.members[userID] = member
         let rendered: JSON
@@ -90,26 +82,18 @@ extension World {
             rendered = renderMember(member, guildID: guildID, includeUser: true)
             await emit("GUILD_MEMBER_UPDATE", rendered.merging(["guild_id": guildID.json]), to: .guild(guildID, channel: nil))
         }
-        return rendered.merging(["bio": "", "permissions": .string(guild.permissions(of: userID).wireString)])
+        return rendered.merging(["bio": .string(member.bio ?? ""), "permissions": .string(guild.permissions(of: userID).wireString)])
     }
 
     /// `PATCH /guilds/{id}/profile/@me`: the per-server bio, pronouns, banner and theme.
     /// Everyone in the server sees it through GUILD_MEMBER_UPDATE.
     func editServerProfileDetails(_ userID: Snowflake, in guildID: Snowflake, body: JSON) async throws -> JSON {
         guard var member = try guild(guildID).members[userID] else { throw WorldError.unknown("Guild", code: 10004) }
-        if let pronouns = body["pronouns"]?.stringValue {
-            guard pronouns.count <= 40 else { throw WorldError.invalidBody("pronouns: Must be 40 or fewer in length.") }
-            member.pronouns = pronouns
-        }
-        if let bio = body["bio"] {
-            guard (bio.stringValue?.count ?? 0) <= 190 else { throw WorldError.invalidBody("bio: Must be 190 or fewer in length.") }
-            member.bio = bio.stringValue.flatMap { $0.isEmpty ? nil : $0 }
-        }
+        if let pronouns = try Self.capped(body["pronouns"], 40, "pronouns") { member.pronouns = pronouns }
+        // An empty or null server bio falls back to the main profile's.
+        if body["bio"] != nil { member.bio = try Self.capped(body["bio"], 190, "bio").flatMap { $0.isEmpty ? nil : $0 } }
         if let accent = body["accent_color"] { member.accentColor = accent.intValue.map(Int.init) }
-        if let colors = body["theme_colors"]?.arrayValue {
-            let values = colors.compactMap { $0.intValue.map(Int.init) }
-            member.themeColors = values.count == 2 ? values : nil
-        }
+        if let colors = body["theme_colors"] { member.themeColors = Self.themeColors(colors) }
         if let banner = body["banner"] {
             member.banner = try banner.stringValue.map { try storeUploadedImage($0, path: { "/guilds/\(guildID)/users/\(userID)/banners/\($0)" }) }
         }
@@ -191,6 +175,19 @@ extension World {
         registerAsset(hash)
         for ext in ["png", "webp", "jpg", "gif"] { storeMedia(path("\(hash).\(ext)"), data, contentType: contentType) }
         return hash
+    }
+
+    /// Not captured: the length limits are Discord's documented ones (190 for bios, 40 for pronouns).
+    private static func capped(_ value: JSON?, _ limit: Int, _ field: String) throws -> String? {
+        guard let text = value?.stringValue else { return nil }
+        guard text.count <= limit else { throw WorldError.invalidBody("\(field): Must be \(limit) or fewer in length.") }
+        return text
+    }
+
+    /// `[primary, accent]`, or `[null, null]` to clear.
+    private static func themeColors(_ value: JSON) -> [Int]? {
+        let values = (value.arrayValue ?? []).compactMap { $0.intValue.map(Int.init) }
+        return values.count == 2 ? values : nil
     }
 
     /// Collectibles can only be cleared or kept; the simulator sells nothing.
