@@ -499,15 +499,21 @@ extension NativeTimelineCanvasView {
     }
 
     func installViewportGeometry(frame: CGRect, bounds: CGRect) {
-        if self.bounds != bounds {
-            self.bounds = bounds
+        let scale = max(1, rowBitmapScale)
+        let roundedOriginY = round(frame.minY * scale) / scale
+        var targetFrame = frame
+        targetFrame.origin.y = roundedOriginY
+        var targetBounds = bounds
+        targetBounds.origin.y = roundedOriginY
+        if self.bounds != targetBounds {
+            self.bounds = targetBounds
             // A fast gesture can replace the entire overscanned window in one
             // event. Explicitly request the new bounded backing contents so
             // Core Animation never presents an empty document slice while
             // waiting for an unrelated invalidation.
             needsDisplay = true
         }
-        if self.frame != frame {
+        if self.frame != targetFrame {
             // `setFrameSize` invokes `onWidthChange` synchronously. That
             // callback can relayout the timeline and recursively install a
             // newer document-sized viewport. Installing this pass's bounds
@@ -515,13 +521,13 @@ extension NativeTimelineCanvasView {
             // the callback returns. Before this ordering, the first scroll
             // event repaired the stale launch geometry, making the content
             // visibly jump into place.
-            self.frame = frame
+            self.frame = targetFrame
             // Setting the frame after a bounds change of a different size
             // leaves the two sizes at different scales, which AppKit keeps
             // through the resize and shows as stretched contents. Settle them
             // together unless the callback installed newer geometry.
-            if self.frame == frame, self.bounds != bounds {
-                self.bounds = bounds
+            if self.frame == targetFrame, self.bounds != targetBounds {
+                self.bounds = targetBounds
                 needsDisplay = true
             }
         }

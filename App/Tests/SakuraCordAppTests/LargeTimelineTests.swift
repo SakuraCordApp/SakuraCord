@@ -2624,6 +2624,39 @@ func `timeline row tiles abut seamlessly without subpixel gaps at fractional ori
     #expect(accumulatedPixelHeight == totalRowPixels)
 }
 
+@Test(arguments: [1.0, 2.0, 3.0], [0.0, 0.25, 0.3333, 0.5, 0.75])
+func `viewport window policy rounds origin to backing pixel grid while preserving bounds clamps`(
+    scale: CGFloat,
+    fraction: CGFloat
+) {
+    let viewport = CGRect(x: 0, y: 500 + fraction, width: 600, height: 800)
+    let documentSize = CGSize(width: 600, height: 5000)
+    let currentFrame = CGRect(x: 0, y: 0, width: 600, height: 800)
+
+    let geometry = NativeTimelineViewportWindowPolicy.geometry(
+        viewport: viewport,
+        documentSize: documentSize,
+        currentFrame: currentFrame,
+        scale: scale
+    )
+
+    let expectedOriginPixel = Int(round((viewport.minY - NativeTimelineViewportWindowPolicy.overscan) * scale))
+    #expect(Int(round(geometry.frame.minY * scale)) == expectedOriginPixel)
+    #expect(geometry.frame.minY == geometry.bounds.minY)
+    #expect(geometry.frame.minY >= 0)
+    #expect(geometry.frame.maxY <= documentSize.height)
+
+    // Early return path reuses currentFrame with rounded origin
+    let earlyReturnGeometry = NativeTimelineViewportWindowPolicy.geometry(
+        viewport: viewport,
+        documentSize: documentSize,
+        currentFrame: geometry.frame,
+        scale: scale
+    )
+    #expect(earlyReturnGeometry.frame.minY == geometry.frame.minY)
+    #expect(earlyReturnGeometry.bounds.minY == geometry.frame.minY)
+}
+
 private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {
     let bytesPerRow = image.width * 4
     var bytes = [UInt8](

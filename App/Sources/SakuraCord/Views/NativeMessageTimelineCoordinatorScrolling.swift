@@ -11,8 +11,10 @@ nonisolated enum NativeTimelineViewportWindowPolicy {
         viewport: CGRect,
         documentSize: CGSize,
         currentFrame: CGRect,
+        scale: CGFloat = 1,
         overscan: CGFloat = Self.overscan
     ) -> (frame: CGRect, bounds: CGRect) {
+        let effectiveScale = max(1, scale)
         let minimumRetainedBuffer = min(Self.minimumRetainedBuffer, overscan)
         let documentHeight = max(1, documentSize.height)
         let viewportWidth = max(1, viewport.width)
@@ -40,18 +42,28 @@ nonisolated enum NativeTimelineViewportWindowPolicy {
            retainsLeadingBuffer,
            retainsTrailingBuffer
         {
+            let roundedOriginY = min(
+                maximumOriginY,
+                max(0, round(currentFrame.minY * effectiveScale) / effectiveScale)
+            )
+            var frame = currentFrame
+            frame.origin.y = roundedOriginY
             let bounds = CGRect(
                 x: 0,
-                y: currentFrame.minY,
+                y: roundedOriginY,
                 width: currentFrame.width,
                 height: currentFrame.height
             )
-            return (currentFrame, bounds)
+            return (frame, bounds)
         }
 
-        let originY = min(
+        let rawOriginY = min(
             maximumOriginY,
             max(0, viewport.minY - overscan)
+        )
+        let originY = min(
+            maximumOriginY,
+            max(0, round(rawOriginY * effectiveScale) / effectiveScale)
         )
         let frame = CGRect(
             x: 0,
@@ -278,6 +290,7 @@ extension NativeMessageTimelineCoordinator {
             viewport: viewport,
             documentSize: documentView.frame.size,
             currentFrame: canvas.frame,
+            scale: canvas.rowBitmapScale,
             overscan: previewsInMotion ? 0 : NativeTimelineViewportWindowPolicy.overscan
         )
         canvas.installViewportGeometry(
