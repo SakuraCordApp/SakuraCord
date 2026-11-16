@@ -11,7 +11,7 @@ never from SakuraCord's protocol code, so the app's mistakes aren't mirrored.
 ## Running it
 
 ```sh
-script/simulator.sh start [--scenario demo] [--seed 1] [--network instant|lan|broadband|mobile] [--epoch ISO8601] [--freeze-clock]
+script/simulator.sh start [--scenario demo] [--seed 1] [--network standard|instant|lan|broadband|mobile] [--epoch ISO8601] [--freeze-clock]
 script/run.sh --simulator [SCENARIO]      # starts the simulator if needed, launches the debug app signed in
 script/run.sh --simulator-sign-in         # launches signed out; sign in with the email and password `world` prints
 script/simulator.sh ctl world             # accounts, guilds, channels
@@ -79,6 +79,11 @@ runs that must be identical on any day.
 | `clock freeze\|unfreeze\|advance <seconds>` | The simulated clock behind timestamps and IDs |
 | `script <name> key=value...` | Live streams for benchmarks: `timeline-stress`, `unread-churn`, `presence-churn`, `rail-badges` |
 | `log [LEVEL]` / `routes` / `world` | Loud failures (unknown routes and assets), implemented routes, world summary |
+
+The default `standard` profile adds a fixed 35 ms per request and per Gateway
+message plus broadband transfer time, with no jitter, so every run, benchmarks
+included, sees the same timings. `instant` turns delay off; `lan`, `broadband`
+and `mobile` add jitter.
 
 `GET /control/network` lists every injected delay; two runs with the same seed
 and requests list the same delays.

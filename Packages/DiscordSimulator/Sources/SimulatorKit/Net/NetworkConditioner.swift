@@ -24,6 +24,12 @@ public final class NetworkConditioner: Sendable {
         }
 
         public static let instant = Profile(latencyMilliseconds: 0, jitterMilliseconds: 0)
+        /// The default: a home connection with a fixed delay and no jitter, so
+        /// every run, benchmarks included, sees the same timings.
+        public static let standard = Profile(
+            latencyMilliseconds: 35, jitterMilliseconds: 0,
+            downloadBytesPerSecond: 12_500_000, uploadBytesPerSecond: 2_500_000
+        )
         public static let lan = Profile(latencyMilliseconds: 2, jitterMilliseconds: 0.5)
         public static let broadband = Profile(
             latencyMilliseconds: 35, jitterMilliseconds: 8,
@@ -37,6 +43,7 @@ public final class NetworkConditioner: Sendable {
         public static func named(_ name: String) -> Profile? {
             switch name.lowercased() {
             case "instant": .instant
+            case "standard": .standard
             case "lan": .lan
             case "broadband": .broadband
             case "mobile": .mobile

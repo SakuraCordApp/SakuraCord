@@ -9,7 +9,7 @@ public final class DiscordSimulator: Sendable {
         public var seed: UInt64 = 1
         public var scenario = "demo"
         public var parameters: [String: String] = [:]
-        public var network: NetworkConditioner.Profile = .instant
+        public var network: NetworkConditioner.Profile = .standard
         public var freezeClock = false
         /// The world's "now"; nil means the most recent Sunday evening.
         public var epoch: Date?
