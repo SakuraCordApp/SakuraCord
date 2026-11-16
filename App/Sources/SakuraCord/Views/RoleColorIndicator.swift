@@ -76,9 +76,10 @@ struct RoleColorIndicator: View {
     }
 }
 
+@MainActor
 extension LinearGradient {
     /// A role's gradient, returning to its first colour as Discord's does.
-    @MainActor static func role(_ primary: UInt32?, _ secondary: UInt32?, _ tertiary: UInt32?) -> LinearGradient? {
+    static func role(_ primary: UInt32?, _ secondary: UInt32?, _ tertiary: UInt32?) -> LinearGradient? {
         guard let primary, let secondary else { return nil }
         let colors = [primary, secondary] + (tertiary.map { [$0] } ?? []) + [primary]
         return LinearGradient(colors: colors.map { Color(hex: $0) }, startPoint: .leading, endPoint: .trailing)

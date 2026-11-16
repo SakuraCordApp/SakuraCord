@@ -1,6 +1,8 @@
 #include "session.h"
 
+#include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <thread>
 #include <vector>
 
@@ -32,6 +34,11 @@ namespace mls {
 struct QueuedProposal {
     ::mlspp::ValidatedContent content;
     ::mlspp::bytes_ns::bytes ref;
+};
+
+struct OutboundCommit {
+    ::mlspp::MLSMessage message;
+    ::mlspp::State nextState;
 };
 
 std::unique_ptr<ISession> CreateSession(KeyPairContextType context,
@@ -84,9 +91,8 @@ void Session::Reset() noexcept
     ClearPendingState();
 
     currentState_.reset();
-    outboundCachedGroupState_.reset();
 
-    protocolVersion_ = 0;
+    protocolVersion_ = kDisabledVersion;
     groupId_.clear();
 }
 
@@ -118,10 +124,16 @@ try {
 
     DISCORD_LOG(LS_INFO) << "Unmarshalling MLS external sender";
 
-    DISCORD_LOG(LS_INFO) << "Sender: " << ::mlspp::bytes_ns::bytes(marshalledExternalSender);
+    DISCORD_LOG(LS_VERBOSE) << "Sender: " << ::mlspp::bytes_ns::bytes(marshalledExternalSender);
 
-    externalSender_ = std::make_unique<::mlspp::ExternalSender>(
-      ::mlspp::tls::get<::mlspp::ExternalSender>(marshalledExternalSender));
+    auto externalSender = ::mlspp::tls::get<::mlspp::ExternalSender>(marshalledExternalSender);
+
+    if (pendingGroupState_ && *externalSender_ == externalSender) {
+        DISCORD_LOG(LS_INFO) << "External sender unchanged, keeping pending MLS group";
+        return;
+    }
+
+    externalSender_ = std::make_unique<::mlspp::ExternalSender>(std::move(externalSender));
 
     if (!groupId_.empty()) {
         CreatePendingGroup();
@@ -136,9 +148,18 @@ catch (const std::exception& e) {
     return;
 }
 
+void Session::AddRecognizedUser(std::string const& userId) noexcept
+{
+    recognizedUserIDs_.insert(userId);
+}
+
+void Session::RemoveRecognizedUser(std::string const& userId) noexcept
+{
+    recognizedUserIDs_.erase(userId);
+}
+
 std::optional<std::vector<uint8_t>> Session::ProcessProposals(
-  std::vector<uint8_t> proposals,
-  std::set<std::string> const& recognizedUserIDs) noexcept
+  std::vector<uint8_t> proposals) noexcept
 try {
     if (!pendingGroupState_ && !currentState_) {
         DISCORD_LOG(LS_ERROR)
@@ -147,14 +168,11 @@ try {
         return std::nullopt;
     }
 
-    if (!stateWithProposals_) {
-        stateWithProposals_ = std::make_unique<::mlspp::State>(
-          pendingGroupState_ ? *pendingGroupState_ : *currentState_);
-    }
+    const auto& baseState = pendingGroupState_ ? *pendingGroupState_ : *currentState_;
 
     DISCORD_LOG(LS_INFO) << "Processing MLS proposals message of " << proposals.size() << " bytes";
 
-    DISCORD_LOG(LS_INFO) << "Proposals: " << ::mlspp::bytes_ns::bytes(proposals);
+    DISCORD_LOG(LS_VERBOSE) << "Proposals: " << ::mlspp::bytes_ns::bytes(proposals);
 
     ::mlspp::tls::istream inStream(proposals);
 
@@ -163,60 +181,81 @@ try {
 
     DISCORD_LOG(LS_INFO) << "Revoking: " << isRevoke;
 
-    const auto suite = stateWithProposals_->cipher_suite();
+    const auto suite = baseState.cipher_suite();
+
+    // work on copies so that a refused batch leaves the queued state untouched
+    auto nextQueue = proposalQueue_;
+    std::unique_ptr<::mlspp::State> nextState;
 
     if (isRevoke) {
         std::vector<::mlspp::bytes_ns::bytes> refs;
         inStream >> refs;
 
-        for (const auto& ref : refs) {
-            bool found = false;
-            for (auto it = proposalQueue_.begin(); it != proposalQueue_.end(); it++) {
-                if (it->ref == ref) {
-                    found = true;
-                    proposalQueue_.erase(it);
-                    break;
-                }
-            }
+        nextState = std::make_unique<::mlspp::State>(baseState);
 
-            if (!found) {
-                DISCORD_LOG(LS_ERROR) << "Cannot revoke unrecognized proposal ref";
-                TRACK_MLS_ERROR("Unrecognized proposal revocation");
-                return std::nullopt;
+        size_t revokedCount = 0;
+        for (auto it = nextQueue.begin(); it != nextQueue.end();) {
+            if (std::find(refs.begin(), refs.end(), it->ref) != refs.end()) {
+                ++revokedCount;
+                it = nextQueue.erase(it);
+            }
+            else {
+                // success will queue the proposal, failure will throw
+                nextState->handle(it->content);
+                ++it;
             }
         }
 
-        stateWithProposals_ = std::make_unique<::mlspp::State>(
-          pendingGroupState_ ? *pendingGroupState_ : *currentState_);
-
-        for (auto& prop : proposalQueue_) {
-            // success will queue the proposal, failure will throw
-            stateWithProposals_->handle(prop.content);
+        // queued refs are unique, so a short count means a revoked ref is unknown or repeated
+        if (revokedCount != refs.size()) {
+            DISCORD_LOG(LS_ERROR) << "Cannot revoke unrecognized or repeated proposal ref";
+            TRACK_MLS_ERROR("Unrecognized proposal revocation");
+            return std::nullopt;
         }
     }
     else {
         std::vector<::mlspp::MLSMessage> messages;
         inStream >> messages;
 
-        for (const auto& proposalMessage : messages) {
-            auto validatedMessage = stateWithProposals_->unwrap(proposalMessage);
+        nextState =
+          std::make_unique<::mlspp::State>(stateWithProposals_ ? *stateWithProposals_ : baseState);
 
-            if (!ValidateProposalMessage(validatedMessage.authenticated_content(),
-                                         *stateWithProposals_,
-                                         recognizedUserIDs)) {
+        for (const auto& proposalMessage : messages) {
+            auto validatedMessage = nextState->unwrap(proposalMessage);
+            auto ref = suite.ref(validatedMessage.authenticated_content());
+
+            // mlspp ignores a ref it has already cached, so the queue must not hold one twice
+            if (std::any_of(nextQueue.begin(), nextQueue.end(), [&](const QueuedProposal& queued) {
+                    return queued.ref == ref;
+                })) {
+                DISCORD_LOG(LS_ERROR) << "Duplicate MLS proposal ref";
+                TRACK_MLS_ERROR("Duplicate proposal ref");
+                return std::nullopt;
+            }
+
+            if (!ValidateProposalMessage(validatedMessage.authenticated_content(), *nextState)) {
                 return std::nullopt;
             }
 
             // success will queue the proposal, failure will throw
-            stateWithProposals_->handle(validatedMessage);
+            nextState->handle(validatedMessage);
 
-            auto ref = suite.ref(validatedMessage.authenticated_content());
-
-            proposalQueue_.push_back({
+            nextQueue.push_back({
               std::move(validatedMessage),
               std::move(ref),
             });
         }
+    }
+
+    if (!ValidateQueuedProposals(nextQueue, *nextState)) {
+        return std::nullopt;
+    }
+
+    if (nextQueue.empty()) {
+        DISCORD_LOG(LS_INFO) << "No queued MLS proposals to commit";
+        stateWithProposals_ = std::move(nextState);
+        proposalQueue_ = std::move(nextQueue);
+        return std::nullopt;
     }
 
     // generate a commit
@@ -230,7 +269,7 @@ try {
     };
 
     auto [commitMessage, welcomeMessage, newState] =
-      stateWithProposals_->commit(commitSecret, commitOpts, {});
+      nextState->commit(commitSecret, commitOpts, {});
 
     DISCORD_LOG(LS_INFO)
       << "Prepared commit/welcome/next state for MLS group from received proposals";
@@ -239,18 +278,21 @@ try {
     auto outStream = ::mlspp::tls::ostream();
     outStream << commitMessage;
 
-    // keep a copy of the commit, we can check incoming pending group commit later for a match
-    pendingGroupCommit_ = std::make_unique<::mlspp::MLSMessage>(std::move(commitMessage));
-
     // if there were any add proposals in this commit, then we also include the welcome message
     if (welcomeMessage.secrets.size() > 0) {
         outStream << welcomeMessage;
     }
 
-    // cache the outbound state in case we're the winning sender
-    outboundCachedGroupState_ = std::make_unique<::mlspp::State>(std::move(newState));
+    stateWithProposals_ = std::move(nextState);
+    proposalQueue_ = std::move(nextQueue);
 
-    DISCORD_LOG(LS_INFO) << "Output: " << ::mlspp::bytes_ns::bytes(outStream.bytes());
+    // the voice gateway may select any commit we produced this epoch, not only the latest
+    if (outboundCommits_.size() >= kMaxRetainedOutboundCommits) {
+        outboundCommits_.pop_front();
+    }
+    outboundCommits_.push_back({std::move(commitMessage), std::move(newState)});
+
+    DISCORD_LOG(LS_VERBOSE) << "Output: " << ::mlspp::bytes_ns::bytes(outStream.bytes());
 
     return outStream.bytes();
 }
@@ -260,8 +302,7 @@ catch (const std::exception& e) {
     return std::nullopt;
 }
 
-bool Session::IsRecognizedUserID(const ::mlspp::Credential& cred,
-                                 std::set<std::string> const& recognizedUserIDs) const
+bool Session::IsRecognizedUserID(const ::mlspp::Credential& cred) const
 {
     std::string uid = UserCredentialToString(cred, protocolVersion_);
     if (uid.empty()) {
@@ -269,7 +310,7 @@ bool Session::IsRecognizedUserID(const ::mlspp::Credential& cred,
         return false;
     }
 
-    if (recognizedUserIDs.find(uid) == recognizedUserIDs.end()) {
+    if (uid != selfUserId_ && recognizedUserIDs_.find(uid) == recognizedUserIDs_.end()) {
         DISCORD_LOG(LS_ERROR) << "Attempted to verify credential for unrecognized user ID: " << uid;
         return false;
     }
@@ -278,8 +319,7 @@ bool Session::IsRecognizedUserID(const ::mlspp::Credential& cred,
 }
 
 bool Session::ValidateProposalMessage(::mlspp::AuthenticatedContent const& message,
-                                      ::mlspp::State const& targetState,
-                                      std::set<std::string> const& recognizedUserIDs) const
+                                      ::mlspp::State const& targetState) const
 {
     if (message.wire_format != ::mlspp::WireFormat::mls_public_message) {
         DISCORD_LOG(LS_ERROR) << "MLS proposal message must be PublicMessage";
@@ -311,7 +351,7 @@ bool Session::ValidateProposalMessage(::mlspp::AuthenticatedContent const& messa
     case ::mlspp::ProposalType::add: {
         const auto& credential =
           ::mlspp::tls::var::get<::mlspp::Add>(proposal.content).key_package.leaf_node.credential;
-        if (!IsRecognizedUserID(credential, recognizedUserIDs)) {
+        if (!IsRecognizedUserID(credential)) {
             DISCORD_LOG(LS_ERROR) << "MLS add proposal must be for recognized user";
             TRACK_MLS_ERROR("Unexpected user ID in add proposal");
             return false;
@@ -330,10 +370,18 @@ bool Session::ValidateProposalMessage(::mlspp::AuthenticatedContent const& messa
     return true;
 }
 
+bool Session::ValidateQueuedProposals(std::list<QueuedProposal> const& queue,
+                                      ::mlspp::State const& targetState) const
+{
+    return std::all_of(queue.begin(), queue.end(), [&](const QueuedProposal& queued) {
+        return ValidateProposalMessage(queued.content.authenticated_content(), targetState);
+    });
+}
+
 RosterVariant Session::ProcessCommit(std::vector<uint8_t> commit) noexcept
 try {
-    DISCORD_LOG(LS_INFO) << "Processing commit";
-    DISCORD_LOG(LS_INFO) << "Commit: " << ::mlspp::bytes_ns::bytes(commit);
+    DISCORD_LOG(LS_INFO) << "Processing MLS commit of " << commit.size() << " bytes";
+    DISCORD_LOG(LS_VERBOSE) << "Commit: " << ::mlspp::bytes_ns::bytes(commit);
 
     if (!stateWithProposals_) {
         if (!currentState_) {
@@ -349,20 +397,17 @@ try {
 
     auto commitMessage = ::mlspp::tls::get<::mlspp::MLSMessage>(commit);
 
-    bool isGroupInitializationCommit = pendingGroupCommit_ && commitMessage == *pendingGroupCommit_;
-    if (!currentState_ && !isGroupInitializationCommit) {
+    auto outboundCommit = std::find_if(
+      outboundCommits_.begin(), outboundCommits_.end(), [&commitMessage](const auto& outbound) {
+          return outbound.message == commitMessage;
+      });
+    bool isOutboundCommit = outboundCommit != outboundCommits_.end();
+    if (!currentState_ && !isOutboundCommit) {
         throw std::invalid_argument("Unexpected commit before welcome");
     }
 
     if (commitMessage.group_id() != groupId_) {
         throw std::invalid_argument("MLS commit message was for unexpected group");
-    }
-
-    // in case we're the sender of this commit
-    // we need to pull the cached state from our outbound cache
-    std::optional<::mlspp::State> optionalCachedState = std::nullopt;
-    if (outboundCachedGroupState_) {
-        optionalCachedState = *(outboundCachedGroupState_.get());
     }
 
     auto validatedMessage = stateWithProposals_->unwrap(commitMessage);
@@ -387,26 +432,71 @@ try {
     const auto& commitContent =
       ::mlspp::tls::var::get<::mlspp::Commit>(authenticatedContent.content.content);
 
+    std::vector<::mlspp::ProposalRef> committedRefs;
     for (const auto& proposalOrRef : commitContent.proposals) {
         if (::mlspp::tls::variant<::mlspp::ProposalOrRefType>::type(proposalOrRef.content) !=
             ::mlspp::ProposalOrRefType::reference) {
             throw std::invalid_argument("Unexpected non-ref proposal");
         }
+        committedRefs.push_back(
+          ::mlspp::tls::var::get<::mlspp::ProposalRef>(proposalOrRef.content));
     }
 
-    auto newState = stateWithProposals_->handle(validatedMessage, optionalCachedState);
+    const std::set<::mlspp::ProposalRef> committedRefSet(committedRefs.begin(),
+                                                         committedRefs.end());
+    if (committedRefSet.size() != committedRefs.size()) {
+        throw std::invalid_argument("Commit references a proposal more than once");
+    }
+
+    std::set<::mlspp::ProposalRef> queuedRefSet;
+    for (const auto& queued : proposalQueue_) {
+        queuedRefSet.insert(queued.ref);
+    }
+    if (queuedRefSet.size() != proposalQueue_.size()) {
+        throw std::invalid_argument("Queued proposals contain a duplicate ref");
+    }
+
+    if (committedRefSet != queuedRefSet) {
+        throw std::invalid_argument("Commit does not cover queued proposals");
+    }
+
+    // with coverage checked, the queued proposals are exactly what this commit applies
+    if (!ValidateQueuedProposals(proposalQueue_, *stateWithProposals_)) {
+        throw std::invalid_argument("Commit includes invalid queued proposal");
+    }
+
+    // mlspp only checks that a cached state has the expected group, epoch and leaf index, so we
+    // must only supply it for the exact commit it was prepared for
+    std::optional<::mlspp::State> cachedState;
+    if (isOutboundCommit) {
+        if (std::next(outboundCommit) != outboundCommits_.end()) {
+            DISCORD_LOG(LS_INFO) << "Commit matches an earlier one of the "
+                                 << outboundCommits_.size()
+                                 << " outbound commits retained for this epoch";
+        }
+        cachedState = outboundCommit->nextState;
+    }
+
+    auto newState = stateWithProposals_->handle(validatedMessage, cachedState);
 
     if (!newState) {
         throw std::runtime_error("Commit handling did not produce a new state");
+    }
+
+    const auto committer =
+      ::mlspp::tls::var::get<::mlspp::MemberSender>(authenticatedContent.content.sender.sender)
+        .sender;
+    const auto committerLeafBefore = stateWithProposals_->tree().leaf_node(committer);
+    const auto committerLeafAfter = newState->tree().leaf_node(committer);
+    if (!committerLeafBefore || !committerLeafAfter ||
+        committerLeafBefore->credential != committerLeafAfter->credential) {
+        throw std::invalid_argument("Commit changes committer credential");
     }
 
     DISCORD_LOG(LS_INFO) << "Successfully processed MLS commit, updating state; our leaf index is "
                          << newState->index().val << "; current epoch is " << newState->epoch();
 
     RosterMap ret = ReplaceState(std::make_unique<::mlspp::State>(std::move(*newState)));
-
-    // reset the outbound cached group since we handled the commit for this epoch
-    outboundCachedGroupState_.reset();
 
     ClearPendingState();
 
@@ -418,9 +508,7 @@ catch (const std::exception& e) {
     return failed_t{};
 }
 
-std::optional<RosterMap> Session::ProcessWelcome(
-  std::vector<uint8_t> welcome,
-  std::set<std::string> const& recognizedUserIDs) noexcept
+std::optional<RosterMap> Session::ProcessWelcome(std::vector<uint8_t> welcome) noexcept
 try {
     if (!joinKeyPackage_) {
         throw std::invalid_argument("Missing join key package");
@@ -443,7 +531,8 @@ try {
         throw std::invalid_argument("Already joined/created group");
     }
 
-    DISCORD_LOG(LS_INFO) << "Processing welcome: " << ::mlspp::bytes_ns::bytes(welcome);
+    DISCORD_LOG(LS_INFO) << "Processing MLS welcome of " << welcome.size() << " bytes";
+    DISCORD_LOG(LS_VERBOSE) << "Welcome: " << ::mlspp::bytes_ns::bytes(welcome);
 
     // unmarshal the incoming welcome
     auto unmarshalledWelcome = ::mlspp::tls::get<::mlspp::Welcome>(welcome);
@@ -459,7 +548,7 @@ try {
       std::map<::mlspp::bytes_ns::bytes, ::mlspp::bytes_ns::bytes>());
 
     // perform application-level verification of the new state
-    if (!VerifyWelcomeState(*newState, recognizedUserIDs)) {
+    if (!VerifyWelcomeState(*newState)) {
         DISCORD_LOG(LS_ERROR) << "Group received in MLS welcome is not valid";
 
         return std::nullopt;
@@ -537,8 +626,7 @@ RosterMap Session::ReplaceState(std::unique_ptr<::mlspp::State>&& state)
     return changeMap;
 }
 
-bool Session::VerifyWelcomeState(::mlspp::State const& state,
-                                 std::set<std::string> const& recognizedUserIDs) const
+bool Session::VerifyWelcomeState(::mlspp::State const& state) const
 {
     if (!externalSender_) {
         DISCORD_LOG(LS_ERROR) << "Cannot verify MLS welcome without an external sender";
@@ -573,7 +661,7 @@ bool Session::VerifyWelcomeState(::mlspp::State const& state,
     }
 
     for (const auto& leaf : state.roster()) {
-        if (!IsRecognizedUserID(leaf.credential, recognizedUserIDs)) {
+        if (!IsRecognizedUserID(leaf.credential)) {
             DISCORD_LOG(LS_ERROR) << "MLS welcome lists unrecognized user ID";
             TRACK_MLS_ERROR("Welcome message lists unrecognized user ID");
             return false;
@@ -656,8 +744,9 @@ try {
                                             LeafNodeExtensionsForProtocolVersion(protocolVersion_),
                                             *selfSigPrivateKey_);
 
-    DISCORD_LOG(LS_INFO) << "Generated key package: "
-                         << ::mlspp::bytes_ns::bytes(::mlspp::tls::marshal(*joinKeyPackage_));
+    DISCORD_LOG(LS_INFO) << "Generated key package";
+    DISCORD_LOG(LS_VERBOSE) << "Key package: "
+                            << ::mlspp::bytes_ns::bytes(::mlspp::tls::marshal(*joinKeyPackage_));
 }
 catch (const std::exception& e) {
     DISCORD_LOG(LS_ERROR) << "Failed to initialize join key package: " << e.what();
@@ -666,6 +755,9 @@ catch (const std::exception& e) {
 
 void Session::CreatePendingGroup() noexcept
 try {
+    pendingGroupState_.reset();
+    ClearNextEpochState();
+
     if (groupId_.empty()) {
         DISCORD_LOG(LS_ERROR) << "Cannot create MLS group without a group ID";
         return;
@@ -727,14 +819,12 @@ std::unique_ptr<IKeyRatchet> Session::GetKeyRatchet(std::string const& userId) c
         return nullptr;
     }
 
-    // change the string user ID to a little endian 64 bit user ID
     auto u64userId = strtoull(userId.c_str(), nullptr, 10);
-    auto userIdBytes = ::mlspp::bytes_ns::bytes(sizeof(u64userId));
-    memcpy(userIdBytes.data(), &u64userId, sizeof(u64userId));
+    auto userIdBytes = LittleEndianBytesFrom(u64userId);
 
     // generate the base secret for the hash ratchet
-    auto baseSecret =
-      currentState_->do_export(Session::USER_MEDIA_KEY_BASE_LABEL, userIdBytes, kAesGcm128KeyBytes);
+    auto baseSecret = currentState_->do_export(
+      std::string(Session::USER_MEDIA_KEY_BASE_LABEL), userIdBytes, kAesGcm128KeyBytes);
 
     // this assumes the MLS ciphersuite produces a kAesGcm128KeyBytes sized key
     // would need to be updated to a different ciphersuite if there's a future mismatch
@@ -828,7 +918,6 @@ catch (const std::exception& e) {
 void Session::ClearPendingState()
 {
     pendingGroupState_.reset();
-    pendingGroupCommit_.reset();
 
     joinInitPrivateKey_.reset();
     joinKeyPackage_.reset();
@@ -836,6 +925,13 @@ void Session::ClearPendingState()
     selfHPKEPrivateKey_.reset();
 
     selfLeafNode_.reset();
+
+    ClearNextEpochState();
+}
+
+void Session::ClearNextEpochState()
+{
+    outboundCommits_.clear();
 
     stateWithProposals_.reset();
     proposalQueue_.clear();

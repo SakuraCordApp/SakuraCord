@@ -64,6 +64,7 @@ private:
 
     std::mutex keyGenMutex_;
     std::unique_ptr<IKeyRatchet> keyRatchet_;
+    std::vector<uint8_t> keyDomainIdentity_;
     std::shared_ptr<ICryptor> cryptor_;
     KeyGeneration currentKeyGeneration_{0};
     TruncatedSyncNonce truncatedNonce_{0};
@@ -76,7 +77,7 @@ private:
 
     using TimePoint = std::chrono::time_point<std::chrono::steady_clock>;
     TimePoint lastStatsTime_{TimePoint::min()};
-    std::array<EncryptorStats, 2> stats_;
+    std::array<EncryptorStats, 2> stats_{};
 
     ProtocolVersionChangedCallback protocolVersionChangedCallback_;
     ProtocolVersion currentProtocolVersion_{MaxSupportedProtocolVersion()};

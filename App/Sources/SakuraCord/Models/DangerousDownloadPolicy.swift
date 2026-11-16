@@ -52,11 +52,12 @@ nonisolated enum DangerousDownloadPolicy {
     }
 }
 
+@MainActor
 extension DangerousDownloadPolicy {
     /// Asks with Discord's warning before a potentially dangerous download,
     /// as a sheet on `window` or, over the media viewer, which sits above
     /// sheets, as its own panel; true to download.
-    @MainActor static func confirm(in window: NSWindow?) async -> Bool {
+    static func confirm(in window: NSWindow?) async -> Bool {
         guard window?.attachedSheet == nil else { return false }
         let alert = NSAlert()
         alert.alertStyle = .warning

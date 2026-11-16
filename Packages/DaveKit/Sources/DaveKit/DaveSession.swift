@@ -56,22 +56,26 @@ class DaveSession {
         daveSessionGetProtocolVersion(sessionHandle)
     }
 
-    func processProposals(proposals: Data, knownUserIds: [String]) -> Data? {
+    func addRecognizedUser(userId: String) {
+        daveSessionAddRecognizedUser(sessionHandle, userId)
+    }
+
+    func removeRecognizedUser(userId: String) {
+        daveSessionRemoveRecognizedUser(sessionHandle, userId)
+    }
+
+    func processProposals(proposals: Data) -> Data? {
         var welcomeData: UnsafeMutablePointer<UInt8>?
         var welcomeDataLength = 0
-        withCStringArray(knownUserIds) { knownUserIds in
-            proposals.withUnsafeBytes { proposals in
-                let proposals = proposals.bindMemory(to: UInt8.self)
-                daveSessionProcessProposals(
-                    self.sessionHandle,
-                    proposals.baseAddress,
-                    proposals.count,
-                    knownUserIds.baseAddress,
-                    knownUserIds.count,
-                    &welcomeData,
-                    &welcomeDataLength
-                )
-            }
+        proposals.withUnsafeBytes { proposals in
+            let proposals = proposals.bindMemory(to: UInt8.self)
+            daveSessionProcessProposals(
+                self.sessionHandle,
+                proposals.baseAddress,
+                proposals.count,
+                &welcomeData,
+                &welcomeDataLength
+            )
         }
 
         guard let welcomeData else { return nil }
@@ -79,18 +83,14 @@ class DaveSession {
         return Data(bytes: welcomeData, count: welcomeDataLength)
     }
 
-    func processWelcome(welcome: Data, knownUserIds: [String]) -> Welcome? {
-        let result = withCStringArray(knownUserIds) { knownUserIds in
-            welcome.withUnsafeBytes { welcome in
-                let welcome = welcome.bindMemory(to: UInt8.self)
-                return daveSessionProcessWelcome(
-                    self.sessionHandle,
-                    welcome.baseAddress,
-                    welcome.count,
-                    knownUserIds.baseAddress,
-                    knownUserIds.count
-                )
-            }
+    func processWelcome(welcome: Data) -> Welcome? {
+        let result = welcome.withUnsafeBytes { welcome in
+            let welcome = welcome.bindMemory(to: UInt8.self)
+            return daveSessionProcessWelcome(
+                self.sessionHandle,
+                welcome.baseAddress,
+                welcome.count
+            )
         }
 
         if let result {
@@ -114,20 +114,6 @@ class DaveSession {
             return Commit(handle: handle)
         } else {
             return nil
-        }
-    }
-
-    private func withCStringArray<Result>(
-        _ strings: [String],
-        _ body: (UnsafeMutableBufferPointer<UnsafePointer<CChar>?>) -> Result
-    ) -> Result {
-        let storage = strings.map { strdup($0) }
-        defer { storage.forEach { free($0) } }
-        var pointers: [UnsafePointer<CChar>?] = storage.map { pointer in
-            pointer.map { UnsafePointer<CChar>($0) }
-        }
-        return pointers.withUnsafeMutableBufferPointer { buffer in
-            body(buffer)
         }
     }
 }

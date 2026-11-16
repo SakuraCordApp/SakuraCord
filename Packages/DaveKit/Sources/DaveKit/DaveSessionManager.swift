@@ -59,6 +59,9 @@ public actor DaveSessionManager {
     /// A new Identify has a new authoritative participant list and MLS session.
     /// A Gateway Resume must retain these instead.
     public func resetForFreshSession() {
+        for userId in decryptors.keys {
+            session.removeRecognizedUser(userId: userId)
+        }
         decryptors.removeAll()
         preparedTransitions.removeAll()
         lastPreparedTransitionVersion = 0
@@ -70,12 +73,14 @@ public actor DaveSessionManager {
     public func addUser(userId: String) {
         guard decryptors[userId] == nil else { return }
         decryptors[userId] = Decryptor()
+        session.addRecognizedUser(userId: userId)
         setupKeyRatchetForUser(userId: userId, protocolVersion: lastPreparedTransitionVersion)
         daveProtocolLogger.info("DAVE participant added; participantCount=\(self.decryptors.count)")
     }
 
     public func removeUser(userId: String) {
         decryptors.removeValue(forKey: userId)
+        session.removeRecognizedUser(userId: userId)
     }
 
     // MARK: - Encryption / Decryption
@@ -192,7 +197,7 @@ public actor DaveSessionManager {
     /// Opcode MLS_PROPOSALS (27)
     public func mlsProposals(proposals: Data) async {
         daveProtocolLogger.info("DAVE proposals received; bytes=\(proposals.count)")
-        let welcome = session.processProposals(proposals: proposals, knownUserIds: knownUserIds)
+        let welcome = session.processProposals(proposals: proposals)
         if let welcome {
             await delegate?.mlsCommitWelcome(welcome: welcome)
         }
@@ -219,11 +224,7 @@ public actor DaveSessionManager {
     /// Opcode MLS_WELCOME (30)
     public func mlsWelcome(transitionId: UInt16, welcome: Data) async {
         daveProtocolLogger.info("DAVE welcome received; id=\(transitionId), bytes=\(welcome.count)")
-        let welcome = session.processWelcome(
-            welcome: welcome,
-            knownUserIds: knownUserIds
-        )
-        guard welcome != nil else {
+        guard session.processWelcome(welcome: welcome) != nil else {
             await delegate?.mlsInvalidCommitWelcome(transitionId: transitionId)
             await selectProtocol(protocolVersion: session.getProtocolVersion())
             return
@@ -236,10 +237,6 @@ public actor DaveSessionManager {
     }
 
     // MARK: - Private Methods
-
-    private var knownUserIds: [String] {
-        Array(decryptors.keys) + [selfUserId]
-    }
 
     private func setupKeyRatchetForEncryptor(protocolVersion: UInt16) {
         if protocolVersion == Self.disabledProtocolVersion {
