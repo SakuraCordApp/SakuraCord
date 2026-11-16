@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds, starts, stops and queries the local Discord simulator.
 #
-#   script/simulator.sh start [--scenario NAME] [--seed N] [--network PROFILE] [--port N] [--param k=v]... [--freeze-clock]
+#   script/simulator.sh start [--scenario NAME] [--seed N] [--epoch ISO8601] [--network PROFILE] [--port N] [--param k=v]... [--freeze-clock]
 #   script/simulator.sh stop | status | token | build | ctl <discord-simctl arguments>
 set -euo pipefail
 
