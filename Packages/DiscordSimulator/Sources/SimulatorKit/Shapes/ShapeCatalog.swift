@@ -50,7 +50,7 @@ public enum RouteTemplate {
     }
 
     static func looksLikeIdentifier(_ segment: String) -> Bool {
-        segment.count >= 12 && segment.contains(where: \.isNumber) && segment.contains(where: \.isLetter)
+        segment.count >= 8 && segment.contains(where: \.isNumber) && segment.contains(where: \.isLetter)
     }
 }
 

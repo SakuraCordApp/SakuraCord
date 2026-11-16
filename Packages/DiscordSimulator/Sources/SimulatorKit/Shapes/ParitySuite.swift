@@ -50,6 +50,11 @@ public enum ParitySuite {
         }
     }
 
+    /// The captured flows this suite replays and checks for event order.
+    static let replayedFlows: Set<String> = [
+        "send-message", "reply", "edit-message", "unreact", "pin", "upload", "create-thread", "delete-message", "history-variants",
+    ]
+
     public static func run(seed: UInt64 = 7, mutate: Mutation? = nil) async -> Report {
         var configuration = DiscordSimulator.Configuration()
         configuration.seed = seed

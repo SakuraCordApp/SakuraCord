@@ -18,6 +18,8 @@ struct ParityTests {
             == "GET /api/v9/users/@me/connections/spotify/{connection_id}")
         #expect(RouteTemplate.template(method: "GET", path: "/api/v9/applications/a1b2c3d4e5f6g7h8/assets")
             == "GET /api/v9/applications/{id}/assets")
+        #expect(RouteTemplate.template(method: "POST", path: "/api/v9/applications/880218394199220334/activities/pc-id_31770/instances/1300000000000000000/leave")
+            == "POST /api/v9/applications/{id}/activities/{id}/instances/{id}/leave")
         #expect(RouteTemplate.template(method: "GET", path: "/api/v9/users/@me/settings-proto/2")
             == "GET /api/v9/users/@me/settings-proto/2")
     }

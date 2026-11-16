@@ -141,7 +141,9 @@ public struct ShapeExtractor {
             let left = Self.time(of: lhs.element), right = Self.time(of: rhs.element)
             return left == right ? lhs.offset < rhs.offset : left < right
         }.map(\.element)
-        guard finished.label != "capture", finished.label != "startup", let steps = Self.flowSequence(records), !steps.isEmpty else { return }
+        // Only flows the parity suite replays: other capture labels are research
+        // free text, which can name accounts, and would sit unused in the catalog.
+        guard ParitySuite.replayedFlows.contains(finished.label), let steps = Self.flowSequence(records), !steps.isEmpty else { return }
         if catalog.sequences[finished.label] == nil { catalog.sequences[finished.label] = steps }
     }
 

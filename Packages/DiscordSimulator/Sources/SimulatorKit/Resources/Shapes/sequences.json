@@ -1,15 +1,4 @@
 {
-  "cleanup": [
-    "REST DELETE /api/v9/channels/{id}/messages/pins/{id}",
-    "GW MESSAGE_UPDATE",
-    "GW CHANNEL_PINS_UPDATE",
-    "REST DELETE /api/v9/channels/{id}/messages/{id}",
-    "GW MESSAGE_DELETE",
-    "REST DELETE /api/v9/channels/{id}/messages/{id}",
-    "GW MESSAGE_DELETE",
-    "REST DELETE /api/v9/channels/{id}/messages/{id}",
-    "GW MESSAGE_DELETE"
-  ],
   "create-thread": [
     "REST POST /api/v9/channels/{id}/messages/{id}/threads",
     "GW MESSAGE_UPDATE",
@@ -33,20 +22,6 @@
     "REST PUT /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/@me",
     "GW MESSAGE_REACTION_ADD"
   ],
-  "embed-and-poll": [
-    "REST POST /api/v9/channels/{id}/messages",
-    "GW MESSAGE_CREATE",
-    "GW MESSAGE_UPDATE",
-    "REST POST /api/v9/channels/{id}/messages",
-    "GW MESSAGE_CREATE",
-    "REST PUT /api/v9/channels/{id}/polls/{id}/answers/@me",
-    "GW MESSAGE_POLL_VOTE_ADD",
-    "REST DELETE /api/v9/channels/{id}/messages/{id}",
-    "GW MESSAGE_DELETE",
-    "REST DELETE /api/v9/channels/{id}/messages/{id}",
-    "GW MESSAGE_DELETE",
-    "REST POST /api/v9/channels/{id}/messages/{id}/ack"
-  ],
   "history-variants": [
     "REST POST /api/v9/channels/{id}/messages",
     "GW MESSAGE_CREATE",
@@ -63,20 +38,6 @@
     "REST PUT /api/v9/channels/{id}/polls/{id}/answers/@me",
     "GW MESSAGE_POLL_VOTE_ADD"
   ],
-  "open-alpha": [
-    "REST POST /api/v9/channels/{id}/messages/{id}/ack",
-    "GW MESSAGE_ACK"
-  ],
-  "open-long-paginate": [
-    "REST POST /api/v9/channels/{id}/post-data",
-    "REST POST /api/v9/channels/{id}/messages/{id}/ack",
-    "GW MESSAGE_ACK",
-    "REST POST /api/v9/channels/{id}/messages/{id}/ack"
-  ],
-  "open-showcase-scroll": [
-    "REST POST /api/v9/channels/{id}/messages/{id}/ack",
-    "GW MESSAGE_ACK"
-  ],
   "pin": [
     "REST PUT /api/v9/channels/{id}/messages/pins/{id}",
     "GW CHANNEL_PINS_UPDATE",
@@ -87,11 +48,6 @@
   "reply": [
     "REST POST /api/v9/channels/{id}/messages",
     "GW MESSAGE_CREATE"
-  ],
-  "send-artist-command": [
-    "REST POST /api/v9/interactions",
-    "REST POST /api/v9/channels/{id}/messages/{id}/ack",
-    "GW MESSAGE_ACK"
   ],
   "send-message": [
     "REST POST /api/v9/channels/{id}/messages",
