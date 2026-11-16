@@ -6,6 +6,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <dave/dave_interfaces.h>
@@ -31,6 +32,7 @@ namespace dave {
 namespace mls {
 
 struct QueuedProposal;
+struct OutboundCommit;
 
 class Session final : public ISession {
 public:
@@ -39,6 +41,8 @@ public:
             MLSFailureCallback callback) noexcept;
 
     virtual ~Session() noexcept;
+
+    static constexpr size_t kMaxRetainedOutboundCommits = 16;
 
     virtual void Init(
       ProtocolVersion version,
@@ -58,15 +62,15 @@ public:
     virtual void SetExternalSender(
       std::vector<uint8_t> const& externalSenderPackage) noexcept override;
 
+    virtual void AddRecognizedUser(std::string const& userId) noexcept override;
+    virtual void RemoveRecognizedUser(std::string const& userId) noexcept override;
+
     virtual std::optional<std::vector<uint8_t>> ProcessProposals(
-      std::vector<uint8_t> proposals,
-      std::set<std::string> const& recognizedUserIDs) noexcept override;
+      std::vector<uint8_t> proposals) noexcept override;
 
     virtual RosterVariant ProcessCommit(std::vector<uint8_t> commit) noexcept override;
 
-    virtual std::optional<RosterMap> ProcessWelcome(
-      std::vector<uint8_t> welcome,
-      std::set<std::string> const& recognizedUserIDs) noexcept override;
+    virtual std::optional<RosterMap> ProcessWelcome(std::vector<uint8_t> welcome) noexcept override;
 
     virtual std::vector<uint8_t> GetMarshalledKeyPackage() noexcept override;
 
@@ -87,24 +91,25 @@ private:
 
     void CreatePendingGroup() noexcept;
 
-    bool IsRecognizedUserID(const ::mlspp::Credential& cred,
-                            std::set<std::string> const& recognizedUserIDs) const;
+    bool IsRecognizedUserID(const ::mlspp::Credential& cred) const;
     bool ValidateProposalMessage(::mlspp::AuthenticatedContent const& message,
-                                 ::mlspp::State const& targetState,
-                                 std::set<std::string> const& recognizedUserIDs) const;
-    bool VerifyWelcomeState(::mlspp::State const& state,
-                            std::set<std::string> const& recognizedUserIDs) const;
+                                 ::mlspp::State const& targetState) const;
+    bool ValidateQueuedProposals(std::list<QueuedProposal> const& queue,
+                                 ::mlspp::State const& targetState) const;
+    bool VerifyWelcomeState(::mlspp::State const& state) const;
 
     RosterMap ReplaceState(std::unique_ptr<::mlspp::State>&& state);
 
     void ClearPendingState();
+    void ClearNextEpochState();
 
-    inline static const std::string USER_MEDIA_KEY_BASE_LABEL = "Discord Secure Frames v0";
+    static constexpr std::string_view USER_MEDIA_KEY_BASE_LABEL = "Discord Secure Frames v0";
 
-    ProtocolVersion protocolVersion_;
+    ProtocolVersion protocolVersion_{kDisabledVersion};
     std::vector<uint8_t> groupId_;
     std::string signingKeyId_;
     std::string selfUserId_;
+    std::set<std::string> recognizedUserIDs_;
     KeyPairContextType keyPairContext_{nullptr};
 
     std::unique_ptr<::mlspp::LeafNode> selfLeafNode_;
@@ -117,9 +122,8 @@ private:
     std::unique_ptr<::mlspp::ExternalSender> externalSender_;
 
     std::unique_ptr<::mlspp::State> pendingGroupState_;
-    std::unique_ptr<::mlspp::MLSMessage> pendingGroupCommit_;
 
-    std::unique_ptr<::mlspp::State> outboundCachedGroupState_;
+    std::list<OutboundCommit> outboundCommits_;
 
     std::unique_ptr<::mlspp::State> currentState_;
     RosterMap roster_;
