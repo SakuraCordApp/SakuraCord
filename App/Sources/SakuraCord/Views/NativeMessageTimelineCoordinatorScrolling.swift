@@ -18,11 +18,18 @@ nonisolated enum NativeTimelineViewportWindowPolicy {
         let minimumRetainedBuffer = min(Self.minimumRetainedBuffer, overscan)
         let documentHeight = max(1, documentSize.height)
         let viewportWidth = max(1, viewport.width)
-        let canvasHeight = min(
-            documentHeight,
-            max(1, viewport.height + overscan * 2)
-        )
-        let maximumOriginY = max(0, documentHeight - canvasHeight)
+
+        let targetMinY = max(0, min(documentHeight, viewport.minY - overscan))
+        let targetMaxY = max(targetMinY, min(documentHeight, viewport.maxY + overscan))
+
+        let alignedMinYPixel = max(0, Int(floor(targetMinY * effectiveScale)))
+        let alignedMinY = CGFloat(alignedMinYPixel) / effectiveScale
+
+        let alignedMaxYPixel = Int(ceil(targetMaxY * effectiveScale))
+        let alignedMaxY = min(documentHeight, CGFloat(alignedMaxYPixel) / effectiveScale)
+
+        let canvasHeight = max(1, alignedMaxY - alignedMinY)
+        let originY = alignedMinY
 
         let frameCoversViewport =
             abs(currentFrame.width - viewportWidth) < 0.5
@@ -42,29 +49,18 @@ nonisolated enum NativeTimelineViewportWindowPolicy {
            retainsLeadingBuffer,
            retainsTrailingBuffer
         {
-            let roundedOriginY = min(
-                maximumOriginY,
-                max(0, round(currentFrame.minY * effectiveScale) / effectiveScale)
-            )
+            let alignedOriginY = max(0, CGFloat(Int(floor(currentFrame.minY * effectiveScale))) / effectiveScale)
             var frame = currentFrame
-            frame.origin.y = roundedOriginY
+            frame.origin.y = alignedOriginY
             let bounds = CGRect(
                 x: 0,
-                y: roundedOriginY,
+                y: alignedOriginY,
                 width: currentFrame.width,
                 height: currentFrame.height
             )
             return (frame, bounds)
         }
 
-        let rawOriginY = min(
-            maximumOriginY,
-            max(0, viewport.minY - overscan)
-        )
-        let originY = min(
-            maximumOriginY,
-            max(0, round(rawOriginY * effectiveScale) / effectiveScale)
-        )
         let frame = CGRect(
             x: 0,
             y: originY,

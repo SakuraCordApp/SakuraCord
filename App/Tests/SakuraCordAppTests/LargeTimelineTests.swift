@@ -2625,36 +2625,75 @@ func `timeline row tiles abut seamlessly without subpixel gaps at fractional ori
 }
 
 @Test(arguments: [1.0, 2.0, 3.0], [0.0, 0.25, 0.3333, 0.5, 0.75])
-func `viewport window policy rounds origin to backing pixel grid while preserving bounds clamps`(
+func `viewport window policy preserves coverage with zero overscan and fractional document heights`(
     scale: CGFloat,
     fraction: CGFloat
 ) {
-    let viewport = CGRect(x: 0, y: 500 + fraction, width: 600, height: 800)
-    let documentSize = CGSize(width: 600, height: 5000)
-    let currentFrame = CGRect(x: 0, y: 0, width: 600, height: 800)
+    let documentHeight: CGFloat = 5000.25 + fraction
+    let documentSize = CGSize(width: 600, height: documentHeight)
 
-    let geometry = NativeTimelineViewportWindowPolicy.geometry(
+    // 1. Zero overscan during moving width previews
+    let viewport = CGRect(x: 0, y: 500 + fraction, width: 600, height: 800)
+    let zeroOverscanGeometry = NativeTimelineViewportWindowPolicy.geometry(
         viewport: viewport,
         documentSize: documentSize,
-        currentFrame: currentFrame,
-        scale: scale
+        currentFrame: .zero,
+        scale: scale,
+        overscan: 0
     )
 
-    let expectedOriginPixel = Int(round((viewport.minY - NativeTimelineViewportWindowPolicy.overscan) * scale))
-    #expect(Int(round(geometry.frame.minY * scale)) == expectedOriginPixel)
-    #expect(geometry.frame.minY == geometry.bounds.minY)
-    #expect(geometry.frame.minY >= 0)
-    #expect(geometry.frame.maxY <= documentSize.height)
+    // Viewport must be fully covered at top and bottom
+    #expect(zeroOverscanGeometry.frame.minY <= viewport.minY)
+    #expect(zeroOverscanGeometry.frame.maxY >= min(documentHeight, viewport.maxY))
+    #expect(zeroOverscanGeometry.frame.minY >= 0)
+    #expect(zeroOverscanGeometry.frame.maxY <= documentHeight)
+    #expect(zeroOverscanGeometry.frame.minY == zeroOverscanGeometry.bounds.minY)
+    #expect(zeroOverscanGeometry.frame.height == zeroOverscanGeometry.bounds.height)
 
-    // Early return path reuses currentFrame with rounded origin
+    // 2. Fractional document height near bottom boundary with zero overscan
+    let bottomViewport = CGRect(
+        x: 0,
+        y: max(0, documentHeight - 800),
+        width: 600,
+        height: 800
+    )
+    let bottomGeometry = NativeTimelineViewportWindowPolicy.geometry(
+        viewport: bottomViewport,
+        documentSize: documentSize,
+        currentFrame: .zero,
+        scale: scale,
+        overscan: 0
+    )
+
+    #expect(bottomGeometry.frame.minY <= bottomViewport.minY)
+    #expect(bottomGeometry.frame.maxY >= min(documentHeight, bottomViewport.maxY))
+    #expect(bottomGeometry.frame.maxY <= documentHeight)
+
+    // 3. Normal overscan
+    let normalGeometry = NativeTimelineViewportWindowPolicy.geometry(
+        viewport: viewport,
+        documentSize: documentSize,
+        currentFrame: .zero,
+        scale: scale,
+        overscan: NativeTimelineViewportWindowPolicy.overscan
+    )
+
+    #expect(normalGeometry.frame.minY <= viewport.minY)
+    #expect(normalGeometry.frame.maxY >= min(documentHeight, viewport.maxY))
+    #expect(normalGeometry.frame.minY >= 0)
+    #expect(normalGeometry.frame.maxY <= documentHeight)
+
+    // Early return path preserves coverage and bounds equality
     let earlyReturnGeometry = NativeTimelineViewportWindowPolicy.geometry(
         viewport: viewport,
         documentSize: documentSize,
-        currentFrame: geometry.frame,
-        scale: scale
+        currentFrame: normalGeometry.frame,
+        scale: scale,
+        overscan: NativeTimelineViewportWindowPolicy.overscan
     )
-    #expect(earlyReturnGeometry.frame.minY == geometry.frame.minY)
-    #expect(earlyReturnGeometry.bounds.minY == geometry.frame.minY)
+    #expect(earlyReturnGeometry.frame.minY <= viewport.minY)
+    #expect(earlyReturnGeometry.frame.minY == earlyReturnGeometry.bounds.minY)
+    #expect(earlyReturnGeometry.frame.height == earlyReturnGeometry.bounds.height)
 }
 
 private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {

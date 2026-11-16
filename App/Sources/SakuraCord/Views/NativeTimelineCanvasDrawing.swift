@@ -500,7 +500,7 @@ extension NativeTimelineCanvasView {
 
     func installViewportGeometry(frame: CGRect, bounds: CGRect) {
         let scale = max(1, rowBitmapScale)
-        let roundedOriginY = round(frame.minY * scale) / scale
+        let roundedOriginY = max(0, CGFloat(Int(floor(frame.minY * scale))) / scale)
         var targetFrame = frame
         targetFrame.origin.y = roundedOriginY
         var targetBounds = bounds
