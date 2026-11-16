@@ -96,11 +96,16 @@ enum NativeTimelineEmbedLayout {
                     )
                 }
                 let title = embed.title.map {
-                    NativeTimelineAttributedTextBox.plain(
-                        $0,
-                        font: .messageSystemFont(ofSize: 14, weight: .semibold),
-                        color: embed.url == nil ? .labelColor : .linkColor,
-                        link: embed.url
+                    NativeTimelineEmbedLayout.resolvedTextBox(
+                        prepared: RichMessageAttributedText.prepare(source: $0),
+                        scope: embed.url == nil ? "title" : "title:\(embed.url!.absoluteString)",
+                        emojiSize: InterfaceTypographyMetrics.message(16),
+                        baseFontSize: InterfaceScale.fontSize(InterfaceTypographyMetrics.message(14)),
+                        baseFontWeight: .semibold,
+                        link: embed.url,
+                        embed: embed,
+                        message: message,
+                        source: source
                     )
                 }
                 let description = (["image", "video", "gifv"].contains(embed.type?.lowercased() ?? "") ? nil : embed.description).map {
@@ -117,10 +122,15 @@ enum NativeTimelineEmbedLayout {
                 let fields = embed.fields.enumerated().map { index, field in
                     PreparedField(
                         field: field,
-                        name: NativeTimelineAttributedTextBox.plain(
-                            field.name,
-                            font: .messageSystemFont(ofSize: 11, weight: .bold),
-                            color: .labelColor
+                        name: NativeTimelineEmbedLayout.resolvedTextBox(
+                            prepared: RichMessageAttributedText.prepare(source: field.name),
+                            scope: "field:name:\(index)",
+                            emojiSize: InterfaceTypographyMetrics.message(13),
+                            baseFontSize: InterfaceScale.fontSize(InterfaceTypographyMetrics.message(11)),
+                            baseFontWeight: .bold,
+                            embed: embed,
+                            message: message,
+                            source: source
                         ),
                         value: NativeTimelineEmbedLayout.resolvedTextBox(
                             prepared: RichMessageAttributedText.prepare(
@@ -508,12 +518,15 @@ enum NativeTimelineEmbedLayout {
         scope: String,
         emojiSize: CGFloat,
         fontSizeAdjustment: CGFloat = 0,
+        baseFontSize: CGFloat? = nil,
+        baseFontWeight: NSFont.Weight? = nil,
+        link: URL? = nil,
         embed: MessageEmbed,
         message: Message,
         source: AppModel?
     ) -> NativeTimelineAttributedTextBox {
         let mentions = MessageMentionResolver.presentations(for: prepared, model: source, message: message)
-        let baseFontSize = InterfaceScale.fontSize(
+        let resolvedBaseFontSize = baseFontSize ?? InterfaceScale.fontSize(
             InterfaceTypographyMetrics.messageTextSize + fontSizeAdjustment
         )
         let emojiSize = InterfaceScale.metric(emojiSize)
@@ -522,7 +535,7 @@ enum NativeTimelineEmbedLayout {
             scope: "embed:\(embed.id):\(scope)",
             prepared: prepared,
             emojiSize: emojiSize,
-            baseFontSize: baseFontSize,
+            baseFontSize: resolvedBaseFontSize,
             presentations: mentions
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
@@ -530,8 +543,10 @@ enum NativeTimelineEmbedLayout {
                 NativeTimelineCoreText.make(
                     prepared: prepared,
                     emojiSize: emojiSize,
-                    baseFontSize: baseFontSize,
-                    mentionPresentations: mentions
+                    baseFontSize: resolvedBaseFontSize,
+                    baseFontWeight: baseFontWeight,
+                    mentionPresentations: mentions,
+                    link: link
                 ),
                 layoutHeightAdjustment: 1
             )

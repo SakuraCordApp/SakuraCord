@@ -2599,6 +2599,61 @@ func `batched unicode reaction rendering is pixel identical to individual render
     }
 }
 
+@Test
+@MainActor
+func `embed title and field names parse custom emojis into tokens`() throws {
+    let embed = MessageEmbed(
+        id: "embed-1",
+        title: "<:droppy:1552288514723553352> Droppy Levels",
+        description: "Level overview",
+        url: URL(string: "https://example.com"),
+        fields: [
+            MessageEmbedField(
+                name: "<:daily_drop:1552288514723553352> Daily Drop",
+                value: "Ready to claim",
+                isInline: true
+            ),
+            MessageEmbedField(
+                name: "<:kudos:1552288607103107072> Kudos",
+                value: "100",
+                isInline: true
+            )
+        ]
+    )
+    let message = Message(
+        id: MessageID(rawValue: 9_001),
+        channelID: ChannelID(rawValue: 9_002),
+        author: User(id: UserID(rawValue: 9_003), username: "droppy", displayName: "Droppy"),
+        content: "",
+        embeds: [embed]
+    )
+    let region = try #require(NativeTimelineEmbedLayout.make(
+        embed: embed,
+        message: message,
+        source: nil,
+        attachments: [],
+        origin: .zero,
+        maximumWidth: 400
+    ))
+
+    var emojiTokens: [String] = []
+    for textRegion in region.textRegions {
+        let value = textRegion.text.value
+        value.enumerateAttribute(
+            .discordEmojiToken,
+            in: NSRange(location: 0, length: value.length)
+        ) { rawValue, _, _ in
+            if let token = rawValue as? String {
+                emojiTokens.append(token)
+            }
+        }
+    }
+
+    #expect(emojiTokens.contains("<:droppy:1552288514723553352>"))
+    #expect(emojiTokens.contains("<:daily_drop:1552288514723553352>"))
+    #expect(emojiTokens.contains("<:kudos:1552288607103107072>"))
+}
+
 private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {
     let bytesPerRow = image.width * 4
     var bytes = [UInt8](

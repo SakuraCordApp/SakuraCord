@@ -329,16 +329,18 @@ nonisolated enum NativeTimelineCoreText {
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
+        baseFontWeight: NSFont.Weight? = nil,
         bodyScale: CGFloat = 1,
         mentionPresentations: [String: MentionPresentation],
-        usesMessageLineHeight: Bool = false
+        usesMessageLineHeight: Bool = false,
+        link: URL? = nil
     ) -> NSAttributedString {
         let resolvedBaseFontSize =
             prepared.isEmojiOnly
                 ? emojiSize
                 : baseFontSize ?? InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
         let bodyScale = prepared.isEmojiOnly ? 1 : bodyScale
-        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize * bodyScale)
+        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize * bodyScale, weight: baseFontWeight ?? .regular)
         let output = NSMutableAttributedString(
             attributedString: scaledMarkdown(
                 prepared.markdownPlan,
@@ -412,18 +414,62 @@ nonisolated enum NativeTimelineCoreText {
             }
             output.replaceCharacters(in: range, with: replacement)
         }
-        output.enumerateAttribute(.link, in: fullRange) { value, range, _ in
-            guard value != nil else { return }
+        if let baseFontWeight {
+            applyBaseFontWeight(baseFontWeight, to: output, range: fullRange)
+        }
+        applyLinks(link: link, to: output, range: fullRange)
+        normalizeParagraphMetrics(in: output)
+        return output
+    }
+
+    private static func applyBaseFontWeight(
+        _ baseFontWeight: NSFont.Weight,
+        to output: NSMutableAttributedString,
+        range: NSRange
+    ) {
+        output.enumerateAttribute(.font, in: range) { value, attrRange, _ in
+            guard let font = value as? NSFont else { return }
+            let traits = font.fontDescriptor.symbolicTraits
+            let isItalic = traits.contains(.italic)
+            let isBold = traits.contains(.bold)
+            let isMonospaced = traits.contains(.monoSpace)
+            let targetWeight: NSFont.Weight = (isBold && baseFontWeight == .semibold) ? .bold : baseFontWeight
+            var newFont = isMonospaced
+                ? NSFont.monospacedSystemFont(ofSize: font.pointSize, weight: targetWeight)
+                : NSFont.systemFont(ofSize: font.pointSize, weight: targetWeight)
+            if isItalic {
+                newFont = newFont.italic
+            }
+            output.addAttribute(.font, value: newFont, range: attrRange)
+        }
+    }
+
+    private static func applyLinks(
+        link: URL?,
+        to output: NSMutableAttributedString,
+        range: NSRange
+    ) {
+        if let link {
             output.addAttributes(
                 [
+                    .link: link,
                     .foregroundColor: NSColor.linkColor,
                     .underlineStyle: 0,
                 ],
                 range: range
             )
+        } else {
+            output.enumerateAttribute(.link, in: range) { value, attrRange, _ in
+                guard value != nil else { return }
+                output.addAttributes(
+                    [
+                        .foregroundColor: NSColor.linkColor,
+                        .underlineStyle: 0,
+                    ],
+                    range: attrRange
+                )
+            }
         }
-        normalizeParagraphMetrics(in: output)
-        return output
     }
 
     static func normalizeParagraphMetrics(
