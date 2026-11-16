@@ -201,7 +201,6 @@ private struct ServerInviteDTO: Decodable {
         func domain() -> User? {
             guard let userID = UserID(id) else { return nil }
             let url = avatar.flatMap { URL(string: "https://cdn.discordapp.com/avatars/\(id)/\($0).webp?size=32") }
-                ?? DiscordProfileImageAssets.defaultAvatarURL(userID: id, discriminator: discriminator)
             return User(id: userID, username: username, discriminator: discriminator ?? "0",
                         displayName: globalName ?? username, avatarURL: url)
         }

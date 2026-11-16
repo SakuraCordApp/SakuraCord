@@ -252,7 +252,7 @@ func `draft clearing orders earlier and later edits around deletion`(editsAfterC
     let other = User(id: UserID(rawValue: 2), username: "other", displayName: "Other")
     var renamed = old
     renamed.displayName = "New"
-    renamed.avatarURL = URL(string: "https://example.com/new.png")
+    renamed.avatarURL = URL(string: "https://example.com/new.png")!
     let channelID = ChannelID(rawValue: 200)
     let message = Message(id: MessageID(rawValue: 300), channelID: channelID, author: old, content: "retained")
     model.selectedChannelID = channelID
@@ -344,10 +344,10 @@ func `refresh identity replay preserves event order and later guild mentions`(re
         let old = User(id: UserID(rawValue: 1), username: "person", displayName: "Old")
         var global = old
         global.displayName = "New global name"
-        global.avatarURL = URL(string: "https://example.com/global.png")
+        global.avatarURL = URL(string: "https://example.com/global.png")!
         var guild = global
         guild.displayName = "Guild nickname"
-        guild.avatarURL = URL(string: "https://example.com/guild.png")
+        guild.avatarURL = URL(string: "https://example.com/guild.png")!
         var original = Message(id: MessageID(rawValue: 300), channelID: channelID, author: old, content: "original")
         original.mentionedUsers = [old]
         model.selectedChannelID = channelID

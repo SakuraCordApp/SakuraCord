@@ -80,6 +80,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     public var roleIDs: [RoleID]
     public var roles: [GuildRole]
     public var guildAvatarURL: URL?
+    public var avatarURL: URL { guildAvatarURL ?? user.avatarURL }
     /// The account-wide display name before `user.displayName` is replaced by
     /// a guild nickname for presentation.
     public var globalDisplayName: String?

@@ -369,7 +369,7 @@ func `thread mention updates preserve guild avatars after eviction`(evicted: Boo
         default: break
         }
     }
-    let avatar = resolved.mentionedUsers.first?.avatarURL?.absoluteString ?? "nil"
+    let avatar = resolved.mentionedUsers.first?.avatarURL.absoluteString ?? "nil"
     #expect(avatar.contains("/guilds/7/users/2/avatars/"))
 }
 

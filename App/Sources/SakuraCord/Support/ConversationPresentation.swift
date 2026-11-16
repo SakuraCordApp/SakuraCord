@@ -121,7 +121,7 @@ nonisolated enum HiddenChannelAccessPresentation {
                 id: "member:\(overwrite.id)",
                 kind: .member,
                 name: member.user.displayName,
-                avatarURL: member.guildAvatarURL ?? member.user.avatarURL,
+                avatarURL: member.avatarURL,
                 colorHex: MessageAuthorPresentation.topRoleColor(in: member.roles)
             )
         }

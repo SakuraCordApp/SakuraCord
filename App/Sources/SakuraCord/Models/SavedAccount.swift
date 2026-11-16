@@ -20,6 +20,10 @@ nonisolated struct SavedAccount: Codable, Hashable, Identifiable, Sendable {
         displayName ?? username ?? "Discord Account"
     }
 
+    var resolvedAvatarURL: URL? {
+        avatarURL ?? UserID(accountID).map { User.defaultAvatarURL(id: $0) }
+    }
+
     var resolvedSubtitle: String {
         if let username {
             return "@\(username)"

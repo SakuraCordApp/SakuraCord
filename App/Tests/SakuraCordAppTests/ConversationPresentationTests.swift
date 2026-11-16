@@ -603,14 +603,14 @@ func `server verification blocks sends without exposing hidden channels`(state: 
     #expect(initial.isWebhook && !initial.isLoading && initial.errorMessage == nil)
     #expect(model.profileTasks[.contextual] == nil)
     first.author.displayName = "Second persona"
-    first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/second.png")
+    first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/second.png")!
     model.showProfile(for: first.author, sourceMessage: first)
     let second = try #require(model.liveProfilePresentation(for: .contextual))
     #expect(second.member.user == first.author)
     #expect(second.profile?.avatarURL == first.author.avatarURL)
     #expect(second.requestID != initial.requestID)
     #expect(model.profileCache.isEmpty)
-    first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/ready.png")
+    first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/ready.png")!
     model.consumeMessageUpdated(first, preparedTextPlan: nil)
     let refreshed = try #require(model.liveProfilePresentation(for: .contextual))
     #expect(refreshed.requestID == second.requestID)

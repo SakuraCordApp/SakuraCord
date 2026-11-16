@@ -198,7 +198,7 @@ enum ApplicationCommandSuggestionFactory {
                 detail: member.user.username,
                 leadingVisual: .user(
                     name: member.user.displayName,
-                    avatarURL: member.guildAvatarURL ?? member.user.avatarURL,
+                    avatarURL: member.avatarURL,
                     status: member.status
                 ),
                 action: .value(

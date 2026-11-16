@@ -13,7 +13,8 @@ final class ProfileThemeState {
 
     func source(for profile: UserProfile?, scale: CGFloat, allowsTheme: Bool? = nil) -> URL? {
         guard let profile, allowsTheme ?? (profile.user.premiumType == DiscordPremiumType.nitro),
-              profile.themeHexes.count < 2, let url = profile.avatarURL ?? profile.defaultAvatarURL else { return nil }
+              profile.themeHexes.count < 2 else { return nil }
+        let url = profile.avatarURL
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               parts.host == "cdn.discordapp.com", parts.path.contains("/avatars/") else { return url }
         // Discord's theme extraction requests a static avatar at 80 points,
