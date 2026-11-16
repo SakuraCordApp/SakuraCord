@@ -18,6 +18,7 @@ struct ProfileRichTextView: View {
             onRevealSpoiler: { revealedSpoilerLocations.insert($0) }
         )
         .task(id: source) {
+            revealedSpoilerLocations = []
             emojiImages = [:]
             for emoji in Set(EmojiDescriptor.all(in: source)) {
                 guard !Task.isCancelled,
@@ -50,6 +51,7 @@ struct ProfileStatusTextView: View {
             onHoverChange: onHoverChange
         )
         .task(id: source) {
+            revealedSpoilerLocations = []
             emojiImages = [:]
             for emoji in Set(EmojiDescriptor.all(in: source)) {
                 guard !Task.isCancelled,
@@ -404,7 +406,13 @@ enum ProfileInlineAttributedText {
                 }
                 replacement = MentionAttachmentRenderer.attributedString(presentation: presentation, font: font)
             }
+            let retainedAttributes = output.attributes(at: range.location, effectiveRange: nil)
+                .filter { [.paragraphStyle, .discordMarkdownBlock, .discordMarkdownEm].contains($0.key) }
             output.replaceCharacters(in: range, with: replacement)
+            output.addAttributes(
+                retainedAttributes,
+                range: NSRange(location: range.location, length: replacement.length)
+            )
             if let spoiler {
                 output.addAttribute(
                     .discordMarkdownSpoiler,
@@ -720,23 +728,29 @@ class ProfileSelectableTextView: NSTextView {
         updateHoverLabel(hit: hit, at: point)
     }
 
+    private struct TimestampHit {
+        let index: Int
+        let token: DiscordTimestampToken
+        let rawToken: String
+    }
+
     private func updateHoverLabel(hit: (Int, MentionTextAttachment)?, at point: NSPoint) {
-        let timestampHit: (Int, DiscordTimestampToken, String)? = {
+        let timestampHit: TimestampHit? = {
             guard WindowModalCoordinator.allowsInput(for: self),
                   NSEvent.pressedMouseButtons == 0,
                   let (index, attachment) = hit,
                   let token = DiscordTimestampToken(rawToken: attachment.presentation.rawToken),
                   hiddenSpoiler(at: point) == nil
             else { return nil }
-            return (index, token, attachment.presentation.rawToken)
+            return TimestampHit(index: index, token: token, rawToken: attachment.presentation.rawToken)
         }()
 
-        guard let (index, timestampToken, rawToken) = timestampHit else {
+        guard let hit = timestampHit else {
             dismissHoverLabel()
             return
         }
 
-        if rawToken != dismissedTimestampToken {
+        if hit.rawToken != dismissedTimestampToken {
             dismissedTimestampToken = nil
         }
         guard dismissedTimestampToken == nil else {
@@ -744,13 +758,13 @@ class ProfileSelectableTextView: NSTextView {
             return
         }
 
-        if hoveredTimestampToken?.rawToken == rawToken && hoveredTimestampToken?.index == index {
+        if hoveredTimestampToken?.rawToken == hit.rawToken, hoveredTimestampToken?.index == hit.index {
             return
         }
-        hoveredTimestampToken = (index, rawToken)
-        let title = timestampToken.date.formatted(date: .complete, time: .shortened)
+        hoveredTimestampToken = (hit.index, hit.rawToken)
+        let title = hit.token.date.formatted(date: .complete, time: .shortened)
         let anchor = StablePopoverAnchor(sourceView: self) { [weak self] in
-            self?.mentionAttachmentRect(at: index, rawToken: rawToken)
+            self?.mentionAttachmentRect(at: hit.index, rawToken: hit.rawToken)
         }
         hoverLabelCoordinator.update(
             anchor: anchor,
@@ -763,10 +777,8 @@ class ProfileSelectableTextView: NSTextView {
     }
 
     func dismissHoverLabel() {
-        if let current = hoveredTimestampToken?.rawToken {
-            dismissedTimestampToken = current
-        }
         hoveredTimestampToken = nil
+        dismissedTimestampToken = nil
         hoverLabelCoordinator.close()
     }
 

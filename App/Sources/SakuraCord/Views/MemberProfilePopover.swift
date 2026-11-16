@@ -656,7 +656,7 @@ struct ProfileStatusBubble: View {
             .contentShape(ProfileStatusBubbleLayout.shape)
             .onModalHover { isBubbleHovering = $0 }
             .animation(.snappy(duration: 0.16), value: isExpanded)
-            .help(isTextHovering ? "" : displayText)
+            .help(isTextHovering || text.contains("||") ? "" : displayText)
             .accessibilityLabel("Custom status: \(displayText)")
             .zIndex(2)
     }
