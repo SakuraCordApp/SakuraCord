@@ -324,60 +324,6 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
     )
 }
 
-@Test func `hidden channel details resolve explicitly allowed members and roles`() {
-    let guildID = GuildID(rawValue: 100)
-    let memberID = UserID(rawValue: 1)
-    let allowedRole = GuildRole(
-        id: RoleID(rawValue: 10), name: "Design", position: 20, colorHex: 0xF472B6
-    )
-    let deniedRole = GuildRole(
-        id: RoleID(rawValue: 11), name: "Guests", position: 5, colorHex: 0x94A3B8
-    )
-    let member = Member(
-        user: User(id: memberID, username: "maya", displayName: "Maya • Orbit"),
-        roleName: "Design",
-        isOnline: true,
-        roles: [allowedRole]
-    )
-    let channel = Channel(
-        id: ChannelID(rawValue: 200),
-        guildID: guildID,
-        name: "staff-vault",
-        permissionOverwrites: [
-            ChannelPermissionOverwrite(
-                id: guildID.description,
-                type: 0,
-                allow: DiscordPermissionBits.viewChannel
-            ),
-            ChannelPermissionOverwrite(
-                id: deniedRole.id.description,
-                type: 0,
-                deny: DiscordPermissionBits.viewChannel
-            ),
-            ChannelPermissionOverwrite(
-                id: allowedRole.id.description,
-                type: 0,
-                allow: DiscordPermissionBits.viewChannel
-            ),
-            ChannelPermissionOverwrite(
-                id: memberID.description,
-                type: 1,
-                allow: DiscordPermissionBits.viewChannel
-            )
-        ]
-    )
-
-    let principals = HiddenChannelAccessPresentation.allowedPrincipals(
-        channel: channel,
-        members: [member],
-        roles: [allowedRole, deniedRole]
-    )
-
-    #expect(principals.map(\.id) == ["member:1", "role:10"])
-    #expect(principals.map(\.name) == ["Maya • Orbit", "Design"])
-    #expect(principals.first?.colorHex == 0xF472B6)
-}
-
 @Test func `thread access requires send messages in threads and honors locks`() {
     let readable = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
     let sendable = readable | DiscordPermissionBits.sendMessagesInThreads

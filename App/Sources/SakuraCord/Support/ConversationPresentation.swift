@@ -90,67 +90,6 @@ nonisolated enum ChannelIconPresentation {
     }
 }
 
-nonisolated struct HiddenChannelAccessPrincipal: Identifiable, Equatable {
-    enum Kind: Int, Equatable {
-        case member
-        case role
-    }
-
-    let id: String
-    let kind: Kind
-    let name: String
-    let avatarURL: URL?
-    let colorHex: UInt32?
-}
-
-nonisolated enum HiddenChannelAccessPresentation {
-    static func allowedPrincipals(
-        channel: Channel,
-        members: [Member],
-        roles: [GuildRole]
-    ) -> [HiddenChannelAccessPrincipal] {
-        let allowedOverwrites = (channel.permissionOverwrites ?? []).filter {
-            $0.allow & DiscordPermissionBits.viewChannel != 0
-        }
-        let membersByID = Dictionary(uniqueKeysWithValues: members.map { ($0.id.description, $0) })
-        let rolesByID = Dictionary(uniqueKeysWithValues: roles.map { ($0.id.description, $0) })
-
-        let allowedMembers: [HiddenChannelAccessPrincipal] = allowedOverwrites.compactMap { overwrite in
-            guard overwrite.type == 1, let member = membersByID[overwrite.id] else { return nil }
-            return HiddenChannelAccessPrincipal(
-                id: "member:\(overwrite.id)",
-                kind: .member,
-                name: member.user.displayName,
-                avatarURL: member.avatarURL,
-                colorHex: MessageAuthorPresentation.topRoleColor(in: member.roles)
-            )
-        }
-
-        let allowedRoles = allowedOverwrites.compactMap { overwrite -> GuildRole? in
-            guard overwrite.type == 0,
-                  overwrite.id != channel.guildID?.description,
-                  let role = rolesByID[overwrite.id],
-                  role.name != "@everyone" else { return nil }
-            return role
-        }
-        .sorted {
-            if $0.position != $1.position { return $0.position > $1.position }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
-        .map { role in
-            HiddenChannelAccessPrincipal(
-                id: "role:\(role.id)",
-                kind: .role,
-                name: role.name,
-                avatarURL: nil,
-                colorHex: role.colorHex
-            )
-        }
-
-        return allowedMembers + allowedRoles
-    }
-}
-
 nonisolated enum ConversationPermissionResolver {
     static func effectivePermissions(
         guild: Guild,

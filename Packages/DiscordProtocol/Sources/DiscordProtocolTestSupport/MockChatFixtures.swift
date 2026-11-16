@@ -543,8 +543,7 @@ private struct MockFixtureAssembly {
                 ],
                 lastMessageID: MessageID(
                     ClientNonce.make(now: now.addingTimeInterval(-3_900))
-                ),
-                lastPinTimestamp: now.addingTimeInterval(-8 * 24 * 60 * 60 - 2_400)
+                )
             ),
             Channel(
                 id: MockChatProvider.feedbackForumID, guildID: auroraID, name: "feedback",
