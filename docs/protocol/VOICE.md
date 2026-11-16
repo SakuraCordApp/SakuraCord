@@ -54,7 +54,9 @@ pending transitions, following the [DAVE recovery protocol](https://github.com/d
 Prepare-epoch (op 24) carries only `epoch` and `protocol_version`; Discord
 omits `transition_id` when the last other participant leaves and the group is
 [reset to its sole member](https://github.com/discord/dave-protocol/blob/main/protocol.md#sole-member-reset).
-Epoch 1 always discards the local group and sends a new key package. A later
+Epoch 1 always discards the local group and sends a new key package; the
+prepare-transition with ID 0 that follows a reset executes at once and leaves
+the sender without a key until a commit or welcome establishes the group. A later
 epoch keeps the group and only sets the protocol version; ratchets switch on
 the prepare-transition, commit or welcome that carries the transition ID. This
 matches production web build `641803`, which reads no other op 24 field.

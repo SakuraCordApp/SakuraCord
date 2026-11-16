@@ -38,6 +38,15 @@ private actor TestDelegate: DaveSessionDelegate {
     #expect(await delegate.readyTransitionIDs.isEmpty)
 }
 
+@Test func `sole member reset executes before the new group exists`() async {
+    let delegate = TestDelegate()
+    let manager = DaveSessionManager(selfUserId: "1", groupId: 10, delegate: delegate)
+
+    await manager.prepareEpoch(epoch: "1", protocolVersion: 1)
+    await manager.prepareTransition(transitionId: 0, protocolVersion: 1)
+    #expect(await delegate.keyPackageCount == 1)
+}
+
 @Test func `passthrough encryption round trips H 264 frames`() async throws {
     let delegate = TestDelegate()
     let manager = DaveSessionManager(selfUserId: "1", groupId: 10, delegate: delegate)

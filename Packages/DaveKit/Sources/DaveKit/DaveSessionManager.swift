@@ -67,7 +67,7 @@ public actor DaveSessionManager {
         lastPreparedTransitionVersion = 0
         session.reset()
         encryptor.setPassthroughMode(enabled: false)
-        encryptor.clearKeyRatchet()
+        encryptor.setKeyRatchet(keyRatchet: nil)
     }
 
     public func addUser(userId: String) {
