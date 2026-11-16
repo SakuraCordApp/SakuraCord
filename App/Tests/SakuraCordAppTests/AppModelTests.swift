@@ -1,5 +1,6 @@
 import AppKit
 @testable import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import MessageRendering
 import Observation
@@ -218,7 +219,7 @@ import UserNotifications
 
 @MainActor
 @Test func `numbered navigation maps and selects direct messages and eight servers in rail order`() async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let guilds = (1 ... 10).map {
         Guild(id: GuildID(rawValue: UInt64($0)), name: "Server \($0)")
     }
@@ -255,7 +256,7 @@ import UserNotifications
 
 @MainActor
 @Test func `switching servers restores each server's last opened channel`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let auroraID = GuildID(rawValue: 100)
     let nativeLabID = GuildID(rawValue: 101)
@@ -288,7 +289,7 @@ import UserNotifications
 
 @MainActor
 @Test func `message search Escape respects focused and unfocused behavior`() async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     model.presentMessageSearch()
     model.messageSearch.queryText = "road"
@@ -363,7 +364,7 @@ import UserNotifications
 
 @MainActor
 @Test func `command f scopes message search to the current conversation`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let channel = try #require(model.selectedChannel)
 
@@ -409,7 +410,7 @@ import UserNotifications
 
 @MainActor
 @Test func `app model loads demo and sends message`() async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     #expect(model.snapshot != nil)
     #expect(model.selectedChannel != nil)
@@ -496,7 +497,7 @@ import UserNotifications
 
 @MainActor
 @Test func `inaccessible private channels remain visible but are excluded from unread state`() async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let privateChannelID = ChannelID(rawValue: 215)
 
@@ -520,7 +521,7 @@ import UserNotifications
 @MainActor
 @Test func `selecting an inaccessible text channel performs no message read`() async throws {
     let provider = InaccessibleChannelRequestCountingProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channel = try hiddenMockChannel(kind: .text, in: model)
 
@@ -536,7 +537,7 @@ import UserNotifications
 @MainActor
 @Test func `unresolved channel waits for readable access before loading`() async throws {
     let provider = InaccessibleChannelRequestCountingProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     var snapshot = try #require(model.snapshot)
     var guild = try #require(snapshot.guilds.first)
@@ -599,7 +600,7 @@ import UserNotifications
 
 @MainActor
 @Test func `bootstrap membership gates onboarding without guessing and guide visibility follows resources or tasks`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     var snapshot = try await MockChatProvider().bootstrap()
     let guildID = try #require(snapshot.guilds.first?.id)
     snapshot.guilds[0].features.formUnion([GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide])
@@ -634,7 +635,7 @@ import UserNotifications
 @MainActor
 @Test func `flags-only self member updates unlock the sidebar and retry initial history`() async throws {
     let provider = InaccessibleChannelRequestCountingProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     var snapshot = try #require(model.snapshot)
     var guild = try #require(snapshot.guilds.first)
@@ -683,7 +684,7 @@ import UserNotifications
 @MainActor
 @Test func `selecting an inaccessible forum performs no forum read`() async throws {
     let provider = InaccessibleChannelRequestCountingProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channel = try hiddenMockChannel(kind: .forum, in: model)
 
@@ -698,7 +699,7 @@ import UserNotifications
 @MainActor
 @Test func `inaccessible voice performs no history read or join`() async throws {
     let provider = InaccessibleChannelRequestCountingProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channel = try hiddenMockChannel(kind: .voice, in: model)
 
@@ -720,7 +721,7 @@ import UserNotifications
     throws
 {
     let provider = StartupUnreadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
 
     await model.start()
 
@@ -747,7 +748,7 @@ import UserNotifications
 @MainActor
 @Test func `gateway guild metadata update preserves projected server unread`() async throws {
     let provider = StartupUnreadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     let guildID = GuildID(rawValue: 77_000)
@@ -774,7 +775,7 @@ import UserNotifications
 @MainActor
 @Test func `gateway guild layout update preserves projected server unread`() async throws {
     let provider = StartupUnreadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     let guildID = GuildID(rawValue: 77_000)
@@ -795,7 +796,7 @@ import UserNotifications
     throws
 {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     let guildID = GuildID(rawValue: 77_100)
@@ -845,7 +846,7 @@ import UserNotifications
 @MainActor
 @Test func `reopening a channel reuses session memory without another history request`() async throws {
     let provider = ChannelLoadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let first = try #require(model.visibleChannels.first)
     let second = try #require(model.visibleChannels.dropFirst().first)
@@ -895,7 +896,7 @@ import UserNotifications
 @MainActor
 @Test func `guild history resolves missing authors into the timeline member store`() async throws {
     let provider = LocalHistoryMemberTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
 
     await model.start()
 
@@ -924,7 +925,7 @@ import UserNotifications
 
 @MainActor
 @Test func `history member hydration refreshes only affected message rows`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 76_400)
     let affectedAuthor = User(
         id: UserID(rawValue: 76_401),
@@ -999,7 +1000,7 @@ import UserNotifications
 @MainActor
 @Test func `snapshot refresh preserves the account unread notification mode`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let currentUser = try #require(model.snapshot?.currentUser)
     let guildID = GuildID(rawValue: 78_000)
@@ -1059,7 +1060,7 @@ import UserNotifications
             ChannelReadState(channelID: removedID, lastAcknowledgedMessageID: MessageID(rawValue: 100), mentionCount: 1, version: 1),
         ], notificationSettings: [GuildNotificationSettings(guildID: guildID, isMuted: true)]
     )
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider(snapshot: initial, messages: []))
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider(snapshot: initial, messages: []))
     await model.start()
     model.selectedChannelID = channelID
     await model.channelLoadTask?.value
@@ -1090,7 +1091,7 @@ import UserNotifications
 @MainActor
 @Test func `gateway ready refreshes the account unread notification mode`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let guildID = GuildID(rawValue: 79_000)
     let channelID = ChannelID(rawValue: 79_001)
@@ -1147,7 +1148,7 @@ import UserNotifications
     throws
 {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
 
@@ -1282,7 +1283,7 @@ import UserNotifications
     let provider = ReactionMutationTestProvider(
         initialReaction: Reaction(emoji: "🔥", count: 2, reactors: [reactor])
     )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let original = try #require(model.messages.first(where: { !$0.reactions.isEmpty }))
 
@@ -1420,7 +1421,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `forum pagination failures preserve posts and can be retried`() async throws {
     let provider = ForumPaginationTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     #expect(
@@ -1457,7 +1458,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `opening a forum acknowledges only the parent new post boundary`() async throws {
     let provider = ForumVisitAcknowledgementTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     #expect(
@@ -1486,7 +1487,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 
 @MainActor
 @Test func `forum thread links select their parent and open the post`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
     model.selectedChannelID = forum.id
@@ -1509,7 +1510,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `returning to a forum clears the previous forum query state`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
     let otherChannel = try #require(
@@ -1544,7 +1545,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `returning to a forum keeps its sort and view but not its filters`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
     let otherChannel = try #require(
@@ -1625,7 +1626,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `ordinary linked channels load their guild before forum resolution`() async {
     let provider = LinkedChannelNavigationTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let target = provider.targetChannel
 
@@ -1643,7 +1644,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `forum catalogue omissions keep the open post open and listed`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
 
@@ -1672,7 +1673,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `inbox navigation resolves a thread no local projection knows`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
     let otherChannel = try #require(model.snapshot?.channels.first {
@@ -1697,7 +1698,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `gateway forum catalogues keep forwarding thread destinations current`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
     let thread = MessageThreadSummary(
@@ -1726,7 +1727,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 @MainActor
 @Test func `forum cache events cannot close an ordinary text thread`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channel = try #require(model.snapshot?.channels.first(where: { $0.kind == .text }))
     model.selectedChannelID = channel.id
@@ -1750,7 +1751,7 @@ func `an open private thread a fresh READY omits is withheld from viewing until 
     recoversThroughGateway: Bool
 ) async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let snapshot = try #require(model.snapshot)
     let guildID = try #require(model.selectedGuildID)
@@ -1825,7 +1826,7 @@ func `an open private thread a fresh READY omits is withheld from viewing until 
 @MainActor
 @Test func `reopening a private thread without membership evidence resolves its access again`() async throws {
     let provider = ThreadAccessRecoveryTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let thread = provider.memberlessThread
 
@@ -1848,7 +1849,7 @@ func `an open private thread a fresh READY omits is withheld from viewing until 
 @MainActor
 @Test func `directly opening another post retires a pending link navigation`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
     let posts = try await provider.forumPosts(in: forum.id, query: ForumPostQuery(limit: 100)).posts
@@ -1872,7 +1873,7 @@ func `an open private thread a fresh READY omits is withheld from viewing until 
 @MainActor
 @Test func `creating a thread makes a repeated pending link a new navigation`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let guildID = try #require(model.selectedGuildID)
     let channel = try #require(model.snapshot?.channels.first { $0.kind == .text && $0.guildID == guildID })
@@ -1906,7 +1907,7 @@ func `an open private thread a fresh READY omits is withheld from viewing until 
 @MainActor
 @Test func `deleting a guild's last channel clears its selection and open thread`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let guildID = try #require(model.selectedGuildID)
     let channel = try #require(model.snapshot?.channels.first {
@@ -1926,7 +1927,7 @@ func `an open private thread a fresh READY omits is withheld from viewing until 
 @MainActor
 @Test(arguments: [(false, false), (true, false), (true, true)])
 func `authoritative thread deletion removes open cached and resource conversations`(location: (isOpen: Bool, resourceOnly: Bool)) {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let parent = ChannelID(rawValue: 200)
     let thread = MessageThreadSummary(id: ChannelID(rawValue: 201), parentID: parent, name: "Deleted thread")
     let author = User(id: UserID(rawValue: 1), username: "author", displayName: "Author")
@@ -1971,7 +1972,7 @@ func `authoritative thread deletion removes open cached and resource conversatio
 @MainActor
 @Test func `thread send preserves history and confirmation revisions across navigation`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(
         model.snapshot?.channels.first(where: { $0.kind == .forum })
@@ -2088,7 +2089,7 @@ func `authoritative thread deletion removes open cached and resource conversatio
 
 @MainActor
 @Test func `forum creation clears queued upload progress after completion`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
     let tag = try #require(forum.availableTags.first(where: { !$0.isModerated }))
@@ -2111,7 +2112,7 @@ func `authoritative thread deletion removes open cached and resource conversatio
 
 @MainActor
 @Test func `deleting an offline forum post removes its card and closes its thread`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
     let currentUserID = try #require(model.snapshot?.currentUser.id)
@@ -2152,127 +2153,67 @@ func `authoritative thread deletion removes open cached and resource conversatio
 }
 
 @MainActor
-@Test func `only supported offline flags select testing mode`() {
-    #expect(AppLaunchConfiguration(arguments: ["SakuraCord"]).mode == .normal)
-    #expect(AppLaunchConfiguration(arguments: ["SakuraCord", "--offline"]).mode == .offlineTesting)
-    let signIn = AppLaunchConfiguration(arguments: ["SakuraCord", "--offline-sign-in"])
-    #expect(signIn.mode == .offlineTesting)
-    #expect(signIn.includesSignInFixture)
-    let longList = AppLaunchConfiguration(arguments: ["SakuraCord", "--offline-long-server-list"])
-    #expect(longList.mode == .offlineTesting)
-    #expect(longList.includesLongServerList)
-    let forumPerformance = AppLaunchConfiguration(
-        arguments: ["SakuraCord", "--offline-forum-performance"]
+@Test func `benchmark flags select their benchmarks`() {
+    let unknown = AppLaunchConfiguration(arguments: ["SakuraCord", "--offline"])
+    #expect(unknown.benchmarks.isEmpty)
+    #expect(!unknown.runsAnyReadOnlyPerformanceBenchmark)
+    let chat = AppLaunchConfiguration(arguments: ["SakuraCord", "--benchmark-chat-autoscroll"])
+    #expect(chat.runsChatPerformanceAutoScroll)
+    #expect(!chat.runsChatLiveStress)
+    #expect(!chat.runsMemberListPerformanceAutoScroll)
+    #expect(chat.reportsAnimatedMediaPerformance)
+    let live = AppLaunchConfiguration(arguments: ["SakuraCord", "--benchmark-chat-live-autoscroll"])
+    #expect(live.runsChatPerformanceAutoScroll)
+    #expect(live.runsChatLiveStress)
+    #expect(!live.liveStressRunsReactions)
+    #expect(live.liveStressRunsArrivals)
+    #expect(live.liveStressRunsMutations)
+    let reactions = AppLaunchConfiguration(
+        arguments: ["SakuraCord", "--benchmark-chat-live-autoscroll", "--benchmark-chat-live-reactions-only"]
     )
-    #expect(forumPerformance.mode == .offlineTesting)
-    #expect(forumPerformance.includesForumPerformanceFixture)
-    let chatPerformance = AppLaunchConfiguration(
-        arguments: ["SakuraCord", "--offline-chat-performance"]
-    )
-    #expect(chatPerformance.mode == .offlineTesting)
-    #expect(chatPerformance.includesChatPerformanceFixture)
-    #expect(!chatPerformance.runsChatPerformanceAutoScroll)
-    let chatAutoScroll = AppLaunchConfiguration(
-        arguments: ["SakuraCord", "--offline-chat-performance-autoscroll"]
-    )
-    #expect(chatAutoScroll.mode == .offlineTesting)
-    #expect(chatAutoScroll.includesChatPerformanceFixture)
-    #expect(chatAutoScroll.runsChatPerformanceAutoScroll)
-    #expect(!chatAutoScroll.runsChatLiveArrivalStress)
-    let chatLiveAutoScroll = AppLaunchConfiguration(
-        arguments: ["SakuraCord", "--offline-chat-performance-live-autoscroll"]
-    )
-    #expect(chatLiveAutoScroll.mode == .offlineTesting)
-    #expect(chatLiveAutoScroll.includesChatPerformanceFixture)
-    #expect(chatLiveAutoScroll.runsChatPerformanceAutoScroll)
-    #expect(chatLiveAutoScroll.runsChatLiveArrivalStress)
-    let chatMediaAutoScroll = AppLaunchConfiguration(
-        arguments: ["SakuraCord", "--offline-chat-media-performance-autoscroll"]
-    )
-    #expect(chatMediaAutoScroll.mode == .offlineTesting)
-    #expect(chatMediaAutoScroll.includesChatPerformanceFixture)
-    #expect(chatMediaAutoScroll.includesChatMediaPerformanceFixture)
-    #expect(chatMediaAutoScroll.runsChatPerformanceAutoScroll)
-    #expect(!chatMediaAutoScroll.runsChatLiveArrivalStress)
-    let pinsAutoScroll = AppLaunchConfiguration(
-        arguments: ["SakuraCord", "--offline-pins-performance-autoscroll"]
-    )
-    #expect(pinsAutoScroll.mode == .offlineTesting)
-    #expect(pinsAutoScroll.includesPinsPerformanceFixture)
-    #expect(pinsAutoScroll.includesChatPerformanceFixture)
-    let authenticatedAutoScroll = AppLaunchConfiguration(
-        arguments: [
-            "SakuraCord",
-            "--debug-authenticated-chat-performance-autoscroll",
-        ]
-    )
-    #expect(authenticatedAutoScroll.mode == .normal)
-    #expect(!authenticatedAutoScroll.includesChatPerformanceFixture)
-    #expect(authenticatedAutoScroll.runsChatPerformanceAutoScroll)
-    #expect(!authenticatedAutoScroll.runsMemberListPerformanceAutoScroll)
-    #expect(!authenticatedAutoScroll.runsChatLiveArrivalStress)
-    let authenticatedMemberListAutoScroll = AppLaunchConfiguration(
-        arguments: [
-            "SakuraCord",
-            "--debug-authenticated-member-list-performance-autoscroll",
-        ]
-    )
-    #expect(authenticatedMemberListAutoScroll.mode == .normal)
-    #expect(authenticatedMemberListAutoScroll.runsMemberListPerformanceAutoScroll)
-    #expect(!authenticatedMemberListAutoScroll.runsChatPerformanceAutoScroll)
-    let authenticatedGestureScroll = AppLaunchConfiguration(
-        arguments: [
-            "SakuraCord",
-            "--debug-authenticated-gesture-scroll-performance",
-        ]
-    )
-    #expect(authenticatedGestureScroll.mode == .normal)
-    #expect(authenticatedGestureScroll.runsAuthenticatedGestureScrollBenchmark)
-    #expect(authenticatedGestureScroll.runsAnyReadOnlyPerformanceBenchmark)
-    let authenticatedLoadingOverlap = AppLaunchConfiguration(
-        arguments: [
-            "SakuraCord",
-            "--debug-authenticated-loading-scroll-overlap-performance",
-        ]
-    )
-    #expect(authenticatedLoadingOverlap.mode == .normal)
-    #expect(
-        authenticatedLoadingOverlap
-            .runsLoadingScrollOverlapBenchmark
-    )
-    #expect(authenticatedLoadingOverlap.runsAnyReadOnlyPerformanceBenchmark)
-    let incomingPrivateCall = AppLaunchConfiguration(
-        arguments: ["SakuraCord", "--offline-incoming-private-call"]
-    )
-    #expect(incomingPrivateCall.mode == .offlineTesting)
-    #expect(incomingPrivateCall.includesIncomingPrivateCallFixture)
+    #expect(reactions.liveStressRunsReactions)
+    #expect(!reactions.liveStressRunsArrivals)
+    #expect(!reactions.liveStressRunsMutations)
+    let modifierOnly = AppLaunchConfiguration(arguments: ["SakuraCord", "--benchmark-chat-idle"])
+    #expect(modifierOnly.isChatPerformanceIdle)
+    #expect(!modifierOnly.runsAnyReadOnlyPerformanceBenchmark)
+    let pins = AppLaunchConfiguration(arguments: ["SakuraCord", "--benchmark-pins-autoscroll"])
+    #expect(pins.runsPinsPerformanceAutoScroll)
+    #expect(!pins.runsChatPerformanceAutoScroll)
+    let memberList = AppLaunchConfiguration(arguments: ["SakuraCord", "--benchmark-member-list-autoscroll"])
+    #expect(memberList.runsMemberListPerformanceAutoScroll)
+    #expect(!memberList.runsChatPerformanceAutoScroll)
+    let gestureScroll = AppLaunchConfiguration(arguments: ["SakuraCord", "--benchmark-gesture-scroll"])
+    #expect(gestureScroll.requestsGestureScrollBenchmark)
+    #expect(gestureScroll.runsGestureScrollBenchmark)
+    #expect(gestureScroll.runsAnyReadOnlyPerformanceBenchmark)
+    let loadingOverlap = AppLaunchConfiguration(arguments: ["SakuraCord", "--benchmark-loading-scroll-overlap"])
+    #expect(loadingOverlap.requestsLoadingScrollOverlapBenchmark)
+    #expect(loadingOverlap.runsLoadingScrollOverlapBenchmark)
+    #expect(loadingOverlap.runsAnyReadOnlyPerformanceBenchmark)
+    let galleryResize = AppLaunchConfiguration(arguments: ["SakuraCord", "--benchmark-forum-gallery-resize"])
+    #expect(galleryResize.runsForumPerformanceAutoScroll)
+    #expect(galleryResize.runsForumGalleryResize)
 }
 
 @MainActor
 @Test func `network disabled normal launch stops signed out without mock data`() async {
-    let model = AppModel(launchMode: .normal, discordNetworkDisabledOverride: true)
+    let model = AppModel(discordNetworkDisabledOverride: true)
     #expect(model.sessionState == .restoring)
     await model.start()
 
     #expect(model.sessionState == .signedOut)
     #expect(model.snapshot == nil)
     #expect(model.visibleChannels.isEmpty)
-    #expect(!model.isOfflineTesting)
+    #expect(!model.isEphemeral)
 }
 
 @MainActor
-@Test(arguments: [false, true]) func `offline launch never consults its credential store`(signIn: Bool) async {
+@Test func `ephemeral launch never consults its credential store`() async {
     let credentials = CredentialAccessProbeStore()
-    let model = AppModel(launchMode: .offlineTesting, awaitsOfflineSignIn: signIn, credentialStore: credentials)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider(), credentialStore: credentials)
 
     await model.start()
-    if signIn {
-        #expect(model.sessionState == .signedOut)
-        #expect(model.snapshot == nil)
-        #expect(model.isDiscordNetworkingDisabled)
-        #expect(await credentials.accessCount == 0)
-        #expect(await model.completeOfflineSignIn() == nil)
-    }
 
     #expect(model.sessionState == .workspace)
     #expect(await credentials.accessCount == 0)
@@ -2359,7 +2300,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
     let credentials = MultiAccountCredentialStore(accountIDs: ["93000", "94000"])
     let savedAccounts = SavedAccountStoreSpy()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: credentials,
@@ -2420,7 +2360,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
 @Test func `stale bootstrap persistence cannot replace the current account`() async {
     let savedAccounts = SuspendedSavedAccountStore()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         savedAccountStore: savedAccounts,
@@ -2448,7 +2387,7 @@ func `authoritative thread deletion removes open cached and resource conversatio
 @MainActor
 @Test func `workspace presentation does not wait for initial history`() async {
     let provider = SuspendedBootstrapTestProvider(suspendsMessages: true)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
 
     let start = Task { await model.start() }
     await provider.waitUntilBootstrapStarts()
@@ -2469,7 +2408,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
 @Test func `network disabled insecure debug launch prepares its credential store`() async {
     let credentials = CredentialAccessProbeStore()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: true,
         usesInsecureDebugCredentialsOverride: true,
         credentialStore: credentials
@@ -2486,7 +2424,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
     let provider = SuspendedBootstrapTestProvider()
     let notifications = PermissionRecordingNotificationService()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         authenticatedProviderFactory: { _, _ in provider },
@@ -2527,7 +2464,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
     let credentials = PendingCredentialRecordingStore()
     var openedAccountIDs: [String] = []
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: credentials,
@@ -2570,7 +2506,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
     let provider = SuspendedBootstrapTestProvider(pendingCredential: pending)
     let credentials = PendingCredentialRecordingStore()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: credentials,
@@ -2611,7 +2546,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
     )
     let credentials = PendingCredentialRecordingStore()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: credentials,
@@ -2838,7 +2772,6 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     let provider = SuspendedBootstrapTestProvider(bootstrapError: .invalidRequest("fixture bootstrap stopped"))
     let notifications = PermissionRecordingNotificationService()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         authenticatedProviderFactory: { _, _ in provider },
@@ -2875,7 +2808,6 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     let credentials = MultiAccountCredentialStore(accountIDs: ["93000"])
     let savedAccounts = SavedAccountStoreSpy()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: credentials,
@@ -2905,7 +2837,7 @@ func `cache cleanup failure cannot retain a logged out credential`(hasCredential
     let credentials = MultiAccountCredentialStore(accountIDs: hasCredential ? ["93000", "94000"] : ["94000"])
     let savedAccounts = SavedAccountStoreSpy()
     let model = AppModel(
-        launchMode: .normal, restoresStoredSession: false,
+        restoresStoredSession: false,
         credentialStore: credentials, savedAccountStore: savedAccounts
     )
     let handle = CredentialHandle(accountID: "93000")
@@ -2946,7 +2878,7 @@ func `removing a saved account without a credential still clears derived caches`
     UserDefaults.standard.set("invisible", forKey: statusKeys[1])
     let savedAccounts = SavedAccountStoreSpy()
     let model = AppModel(
-        launchMode: .normal, restoresStoredSession: false,
+        restoresStoredSession: false,
         credentialStore: MultiAccountCredentialStore(accountIDs: ["94000"]), savedAccountStore: savedAccounts
     )
     model.activeAccountID = "94000"
@@ -2969,7 +2901,7 @@ func `removing a saved account without a credential still clears derived caches`
     let began = AsyncStream<Void>.makeStream()
     let release = AsyncStream<Void>.makeStream()
     await provider.installPrivacyClearGate(began: began.continuation, release: release.stream)
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.installAccountSession(provider: provider, database: nil)
     let clearing = Task { try await model.clearLocalActivity() }
     var iterator = began.stream.makeAsyncIterator()
@@ -3006,7 +2938,6 @@ private extension DiscordRESTProvider {
     let credentials = FailingRemovalCredentialStore(accountID: "93000")
     let provider = SuspendedBootstrapTestProvider()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: credentials,
@@ -3043,7 +2974,6 @@ private extension DiscordRESTProvider {
     let database = try SakuraCordDatabase(inMemory: true)
     let notifications = PermissionRecordingNotificationService()
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         authenticatedProviderFactory: { _, _ in provider },
@@ -3082,7 +3012,6 @@ private extension DiscordRESTProvider {
         suspendsLoads: true
     )
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: CredentialAccessProbeStore(),
@@ -3176,7 +3105,6 @@ private extension DiscordRESTProvider {
         suspendsLoads: false
     )
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: CredentialAccessProbeStore(),
@@ -3229,7 +3157,7 @@ private extension DiscordRESTProvider {
         accountID: newAccountID,
         directory: directory
     )
-    let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    let model = AppModel(isEphemeral: true, provider: oldProvider)
     model.database = oldDatabase
     model.selectedChannelID = oldProvider.channelID
     model.replaceSelectedMessages(with: [oldProvider.editTarget])
@@ -3279,7 +3207,7 @@ private extension DiscordRESTProvider {
 @Test func `account session identity changes only with an atomically installed provider database pair`() {
     let firstProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let secondProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
-    let model = AppModel(launchMode: .offlineTesting, provider: firstProvider)
+    let model = AppModel(isEphemeral: true, provider: firstProvider)
     let first = model.accountSession()
     let replacementDatabase = try? SakuraCordDatabase(inMemory: true)
 
@@ -3298,7 +3226,7 @@ private extension DiscordRESTProvider {
 @MainActor
 @Test func `account transition fails closed before reaching the installed provider`() async {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: true)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     model.accountTransitionIsActive = true
 
     let sent = await model.performOutgoingSend(
@@ -3314,7 +3242,6 @@ private extension DiscordRESTProvider {
 @Test func `a started account transition cannot be superseded by credential reuse`() async {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         authenticatedProviderFactory: { _, _ in provider }
@@ -3351,7 +3278,7 @@ func `completed old account earlier pages cannot enter replacement conversations
         accountID: newAccountID,
         directory: directory
     )
-    let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    let model = AppModel(isEphemeral: true, provider: oldProvider)
     model.database = oldDatabase
     model.selectedChannelID = oldProvider.channelID
     model.replaceSelectedMessages(with: [oldProvider.selectedNewest])
@@ -3404,7 +3331,7 @@ func `completed old account earlier pages cannot enter replacement conversations
 @Test(arguments: [false, true])
 func `quit warning tracks Discord attachment sends until success or failure`(fails: Bool) async throws {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: true, failsSend: fails)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let draft = SendMessageDraft(
         channelID: provider.channelID,
         content: "attachment",
@@ -3429,7 +3356,7 @@ func `quit warning tracks Discord attachment sends until success or failure`(fai
 @Test(arguments: [false, true], [false, true])
 func `GIF completion preserves newer text and channel drafts`(changesChannel: Bool, fails: Bool) async throws {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: true, failsSend: fails)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let channel = Channel(id: provider.channelID, guildID: nil, name: "shared")
     model.snapshot = BootstrapSnapshot(currentUser: provider.editTarget.author, guilds: [], channels: [channel], members: [])
     model.visibleChannels = [channel]
@@ -3464,7 +3391,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @Test func `stale GIF send cannot restore an old account draft`() async throws {
     let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: true)
     let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
-    let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    let model = AppModel(isEphemeral: true, provider: oldProvider)
     let channel = Channel(id: oldProvider.channelID, guildID: nil, name: "shared")
     model.snapshot = BootstrapSnapshot(
         currentUser: oldProvider.editTarget.author,
@@ -3512,7 +3439,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
         name: "command-boundary",
         kind: .text
     )
-    let commandModel = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    let commandModel = AppModel(isEphemeral: true, provider: oldProvider)
     commandModel.snapshot = BootstrapSnapshot(
         currentUser: oldProvider.editTarget.author,
         guilds: [],
@@ -3540,7 +3467,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
         name: "private-call-boundary",
         kind: .directMessage
     )
-    let callModel = AppModel(launchMode: .offlineTesting, provider: oldCallProvider)
+    let callModel = AppModel(isEphemeral: true, provider: oldCallProvider)
     callModel.snapshot = BootstrapSnapshot(
         currentUser: oldCallProvider.editTarget.author,
         guilds: [],
@@ -3571,7 +3498,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
         name: "shared-channel-boundary",
         kind: .text
     )
-    let channelModel = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    let channelModel = AppModel(isEphemeral: true, provider: oldProvider)
     channelModel.snapshot = BootstrapSnapshot(
         currentUser: oldProvider.editTarget.author,
         guilds: [],
@@ -3595,7 +3522,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     let newGuildProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let oldGuildID = GuildID(rawValue: 96_100)
     let replacementGuildID = GuildID(rawValue: 96_101)
-    let guildModel = AppModel(launchMode: .offlineTesting, provider: oldGuildProvider)
+    let guildModel = AppModel(isEphemeral: true, provider: oldGuildProvider)
     guildModel.snapshot = BootstrapSnapshot(
         currentUser: oldGuildProvider.editTarget.author,
         guilds: [Guild(id: oldGuildID, name: "Old account guild")],
@@ -3619,7 +3546,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `cancelled enqueued thread load never leaves a refresh journal`() async {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let firstThread = MessageThreadSummary(
         id: provider.threadID,
         parentID: provider.channelID,
@@ -3658,7 +3585,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @Test func `old private call deletion cannot tear down replacement voice state`() async {
     let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
-    let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    let model = AppModel(isEphemeral: true, provider: oldProvider)
     let sharedChannel = Channel(
         id: oldProvider.channelID,
         guildID: nil,
@@ -3692,7 +3619,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: oldProvider,
         notificationService: notifications,
         notificationPreferences: notificationPreferences
@@ -3724,7 +3651,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
 @MainActor
 @Test func `replying targets the selected message and clears after sending`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let target = try #require(model.messages.first)
 
@@ -3744,7 +3671,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @Test func `reply ping choice is shared and survives self replies account resets and relaunch`() async throws {
     let defaults = InMemoryPreferences()
     let preferences = SettingsPreferenceStore(defaults: defaults)
-    let model = AppModel(launchMode: .offlineTesting, composerPreferences: preferences)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider(), composerPreferences: preferences)
     await model.start()
     let currentUser = try #require(model.snapshot?.currentUser)
     let target = try #require(model.messages.first { $0.author.id != currentUser.id })
@@ -3800,19 +3727,19 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     #expect(preferences.value(for: .replyMentionsAuthor) == .bool(false))
 
     let relaunched = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         composerPreferences: SettingsPreferenceStore(defaults: defaults)
     )
     await relaunched.start()
     let nextTarget = try #require(relaunched.messages.first { $0.author.id != relaunched.snapshot?.currentUser.id })
     relaunched.reply(to: nextTarget)
     #expect(!relaunched.replyMentionsAuthor)
-    #expect(AppModel(launchMode: .offlineTesting).replyMentionsAuthor)
+    #expect(AppModel(isEphemeral: true, provider: MockChatProvider()).replyMentionsAuthor)
 }
 
 @MainActor
 @Test func `reply selection navigates both directions without wrapping`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let messages = model.messages
     #expect(messages.count >= 2)
@@ -3837,7 +3764,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
 @MainActor
 @Test func `reply Escape cancels reply state`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let target = try #require(model.messages.last)
 
@@ -3849,7 +3776,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
 @MainActor
 @Test func `side chats close from the top and a thread returns to its context`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let voiceChannel = try #require(model.visibleChannels.first(where: { $0.kind == .voice }))
     model.selectedChannelID = voiceChannel.id
@@ -3877,7 +3804,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `replying in a forum post targets the thread message and clears after sending`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let forum = try #require(
         model.snapshot?.channels.first(where: { $0.kind == .forum })
@@ -4016,7 +3943,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `member viewport replays after subscription arming and guild reentry`() async throws {
     let provider = DelayedMemberViewportTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let snapshot = try await provider.bootstrap()
     let guild = try #require(snapshot.guilds.first)
     let channel = try #require(snapshot.channels.first { $0.guildID == guild.id })
@@ -4110,7 +4037,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `empty member load bootstraps the initial viewport`() async throws {
     let provider = DelayedMemberViewportTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let snapshot = try await provider.bootstrap()
     let guild = try #require(snapshot.guilds.first)
     let channel = try #require(snapshot.channels.first { $0.guildID == guild.id })
@@ -4173,7 +4100,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `first guild visit keeps its channel selected while permissions load`() async {
     let provider = FirstGuildVisitPermissionTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
 
     await model.start()
 
@@ -4196,7 +4123,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
 @MainActor
 @Test func `automatic first channel moves to first readable channel when access resolves hidden`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let guildID = GuildID(rawValue: 77_300)
     let privateChannel = Channel(
         id: ChannelID(rawValue: 77_301), guildID: guildID, name: "staff"
@@ -4227,7 +4154,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
 @MainActor
 @Test func `selecting voice channel opens its text chat by default without joining`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let voiceChannel = try #require(model.visibleChannels.first(where: { $0.kind == .voice }))
 
@@ -4243,7 +4170,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `voice channel selection reuses the session page when chat is reopened`() async throws {
     let provider = ChannelLoadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let voiceChannel = ChannelID(rawValue: 91003)
 
@@ -4280,7 +4207,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `connection gap refreshes the selected session page once`() async throws {
     let provider = ChannelLoadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 91001)
     model.connectionState = .ready
@@ -4308,7 +4235,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `gateway recovery republishes an active voice state once`() async {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     model.activeVoiceChannel = Channel(
         id: provider.channelID,
         guildID: nil,
@@ -4334,7 +4261,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test func `server disconnected voice session tears down locally without leaving the replacement client`() async throws {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let snapshot = try await provider.bootstrap()
     model.snapshot = snapshot
     model.activeVoiceChannel = Channel(
@@ -4365,7 +4292,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
 @MainActor
 @Test func `account status changes from other clients update the current user and self member`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let currentUserID = try #require(model.snapshot?.currentUser.id)
     let others = model.members.filter { $0.id != currentUserID }
@@ -4395,7 +4322,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 @MainActor
 @Test(arguments: [false, true])
 func `selecting member loads full profile and expands independently`(fromInbox: Bool) async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     var member = try #require(model.members.first)
     let destination: ProfilePresentationDestination = fromInbox ? .contextual : .inspector
@@ -4435,7 +4362,7 @@ func `selecting member loads full profile and expands independently`(fromInbox: 
 
 @MainActor
 @Test func `startup prefetches current user profile for initial guild`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
 
     let currentUser = try #require(model.snapshot?.currentUser)
@@ -4463,7 +4390,7 @@ private func reactionMutationTestModel(
     timing: AppModel.ReactionMutationTiming = .init(debounce: .zero)
 ) -> AppModel {
     AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         reactionMutationTiming: timing
     )
@@ -4498,7 +4425,7 @@ private func hiddenMockChannel(
 @MainActor
 @Test func `app model reconciles lazy production reactors without repeated reads`() async throws {
     let provider = ChannelLoadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     let message = try #require(model.messages.first)
@@ -4517,7 +4444,7 @@ private func hiddenMockChannel(
 @MainActor
 @Test func `failed earlier page stays retryable without refreshing the newest page`() async throws {
     let provider = ChannelLoadTestProvider(failsFirstEarlierPage: true)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
 
     await model.start()
     let channelID = try #require(model.selectedChannelID)
@@ -4546,7 +4473,7 @@ func `gateway mutations keep exact indexes after repeated history prepends`(
     whileScrolling: Bool
 ) async throws {
     let provider = MockChatProvider(timelineMessageCount: 2_000)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     let timelineChannelID = ChannelID(rawValue: 210)
@@ -4590,7 +4517,7 @@ func `gateway mutations keep exact indexes after repeated history prepends`(
 @MainActor
 @Test func `distant message navigation owns a contiguous bidirectional history window`() async throws {
     let provider = MockChatProvider(timelineMessageCount: 500)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     let channelID = ChannelID(rawValue: 210)
@@ -4649,7 +4576,7 @@ func `history requests use the official client's counts and anchors`(inThread: B
     let conversationID = inThread ? ChannelID(rawValue: 95_999) : historyParityChannelID
     func id(_ offset: Int) -> MessageID { MessageID(rawValue: conversationID.rawValue + UInt64(offset)) }
     let provider = ChannelLoadTestProvider(paginatedThreadID: conversationID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     if inThread {
         model.open(MessageThreadSummary(id: conversationID, parentID: ChannelID(rawValue: 91_001), name: "Counts"))
         await model.threadLoadTask?.value
@@ -4686,7 +4613,7 @@ func `jumping to unread makes one around read, or pages when nothing was acknowl
 ) async throws {
     let channelID = historyParityChannelID
     let provider = ChannelLoadTestProvider(paginatedThreadID: channelID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     #expect(await until { model.selectedChannelID == channelID && model.hasCompletedInitialMessageLoad })
     #expect(model.readState.applyRemote(ChannelReadState(
@@ -4722,7 +4649,7 @@ func `returning to a detached channel window restores it without a request unles
 ) async throws {
     let channelID = historyParityChannelID
     let provider = ChannelLoadTestProvider(paginatedThreadID: channelID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.consumeImmediately(.connectionChanged(.ready))
     #expect(await until { model.selectedChannelID == channelID && model.hasCompletedInitialMessageLoad })
@@ -4775,7 +4702,7 @@ func `a jump into a channel with nothing loaded makes one around read and finish
 ) async {
     let channelID = historyParityChannelID
     let provider = ChannelLoadTestProvider(paginatedThreadID: channelID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     #expect(await until { model.selectedChannelID == channelID && model.hasCompletedInitialMessageLoad })
     model.selectedChannelID = ChannelID(rawValue: 91_002)
@@ -4808,7 +4735,7 @@ func `a jump into a channel with nothing loaded makes one around read and finish
 @Test func `a failed channel send keeps its row across a jump to unread and Jump to Present`() async throws {
     let channelID = historyParityChannelID
     let provider = ChannelLoadTestProvider(paginatedThreadID: channelID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     #expect(await until { model.selectedChannelID == channelID && model.hasCompletedInitialMessageLoad })
     model.appendOutgoingMessage(Message(
@@ -4846,7 +4773,7 @@ func `a jump into a channel with nothing loaded makes one around read and finish
 func `a gateway deletion during a jump or jump to present is not undone by its read`(toPresent: Bool) async {
     let channelID = historyParityChannelID
     let provider = ChannelLoadTestProvider(paginatedThreadID: channelID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     #expect(await until { model.selectedChannelID == channelID && model.hasCompletedInitialMessageLoad })
     if toPresent {
@@ -4877,7 +4804,7 @@ func `a gateway deletion during a jump or jump to present is not undone by its r
 @Test func `an earlier page that arrives after a jump replaced the window is discarded`() async {
     let channelID = historyParityChannelID
     let provider = ChannelLoadTestProvider(paginatedThreadID: channelID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     #expect(await until { model.selectedChannelID == channelID && model.hasCompletedInitialMessageLoad })
 
@@ -4904,7 +4831,7 @@ func `interrupted thread history reloads after navigation`(switchesDirectly: Boo
         name: "Interrupted history"
     )
     let provider = ChannelLoadTestProvider(blockFirstMessageRequestIn: thread.id)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let preview = Message(
         id: MessageID(rawValue: thread.id.rawValue - 1),
         channelID: thread.id,
@@ -4939,7 +4866,7 @@ func `interrupted thread history reloads after navigation`(switchesDirectly: Boo
 @Test func `forum starter preview does not bridge paginated history`() async {
     let threadID = ChannelID(rawValue: 92_099)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let starter = Message(
         id: MessageID(rawValue: threadID.rawValue),
         channelID: threadID,
@@ -4989,7 +4916,7 @@ func `interrupted thread history reloads after navigation`(switchesDirectly: Boo
 @Test func `jumping into thread history pages forward to the newest reply without a gap`() async {
     let threadID = ChannelID(rawValue: 93_099)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 290)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let thread = MessageThreadSummary(id: threadID, parentID: ChannelID(rawValue: 91_001), name: "Linked")
     let author = User(id: UserID(rawValue: 91_000), username: "tester", displayName: "Tester")
     func id(_ offset: Int) -> MessageID { MessageID(rawValue: threadID.rawValue + UInt64(offset)) }
@@ -5049,7 +4976,7 @@ func `interrupted thread history reloads after navigation`(switchesDirectly: Boo
 @Test func `a failed thread send keeps its row across a jump to older history and back`() async {
     let threadID = ChannelID(rawValue: 95_099)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let thread = MessageThreadSummary(id: threadID, parentID: ChannelID(rawValue: 91_001), name: "Failed send")
     model.open(thread)
     await model.threadLoadTask?.value
@@ -5086,7 +5013,7 @@ func `interrupted thread history reloads after navigation`(switchesDirectly: Boo
 func `a late send confirmation outside the thread window stays out of it and its cache`(arrivesWhileClosed: Bool) async {
     let threadID = ChannelID(rawValue: 95_199)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let thread = MessageThreadSummary(id: threadID, parentID: ChannelID(rawValue: 91_001), name: "Late")
     let author = User(id: UserID(rawValue: 91_000), username: "tester", displayName: "Tester")
     func ids(_ offsets: Range<Int>) -> [MessageID] {
@@ -5128,7 +5055,7 @@ func `a late send confirmation outside the thread window stays out of it and its
 @Test func `a send while reconnect revalidation is pending still recovers the missed replies`() async throws {
     let threadID = ChannelID(rawValue: 96_199)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.consumeImmediately(.connectionChanged(.ready))
     let thread = MessageThreadSummary(id: threadID, parentID: try #require(model.selectedChannelID), name: "Pending")
@@ -5163,7 +5090,7 @@ func `a late send confirmation outside the thread window stays out of it and its
 @Test func `retrying a failed thread link jump reloads and scrolls to its target`() async throws {
     let threadID = ChannelID(rawValue: 96_399)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let thread = MessageThreadSummary(id: threadID, parentID: try #require(model.selectedChannelID), name: "Jump retry")
     model.forumCataloguePosts = [ForumPost(thread: thread)]
@@ -5184,7 +5111,7 @@ func `a late send confirmation outside the thread window stays out of it and its
 @Test func `a send while a thread jump loads returns to the newest messages`() async {
     let threadID = ChannelID(rawValue: 96_499)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let thread = MessageThreadSummary(id: threadID, parentID: ChannelID(rawValue: 91_001), name: "Jump send")
     let author = User(id: UserID(rawValue: 91_000), username: "tester", displayName: "Tester")
     func id(_ offset: Int) -> MessageID { MessageID(rawValue: threadID.rawValue + UInt64(offset)) }
@@ -5223,7 +5150,7 @@ func `a late send confirmation outside the thread window stays out of it and its
 @Test func `retrying a failed newest thread read repairs an unverified window`() async throws {
     let threadID = ChannelID(rawValue: 96_299)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.consumeImmediately(.connectionChanged(.ready))
     let thread = MessageThreadSummary(id: threadID, parentID: try #require(model.selectedChannelID), name: "Retry")
@@ -5260,7 +5187,7 @@ func `a late send confirmation outside the thread window stays out of it and its
 @Test func `sending from older thread history sends what was submitted before the newest messages load`() async throws {
     let threadID = ChannelID(rawValue: 96_099)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let thread = MessageThreadSummary(
         id: threadID,
@@ -5296,7 +5223,7 @@ func `a late send confirmation outside the thread window stays out of it and its
 @Test func `a newest thread page read before a Gateway gap does not claim the newest messages`() async throws {
     let threadID = ChannelID(rawValue: 97_099)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.consumeImmediately(.connectionChanged(.ready))
     let thread = MessageThreadSummary(id: threadID, parentID: try #require(model.selectedChannelID), name: "Gap")
@@ -5343,7 +5270,7 @@ func `a late send confirmation outside the thread window stays out of it and its
 @Test func `jumping to older thread history stops acknowledging the newest reply`() async throws {
     let threadID = ChannelID(rawValue: 97_199)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let thread = MessageThreadSummary(id: threadID, parentID: try #require(model.selectedChannelID), name: "Read")
     model.open(thread)
@@ -5369,7 +5296,7 @@ func `a late send confirmation outside the thread window stays out of it and its
 func `a jump to older thread history wins over an overlapping reconnect refresh`(jumpFinishesFirst: Bool) async throws {
     let threadID = ChannelID(rawValue: 98_099)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.consumeImmediately(.connectionChanged(.ready))
     let thread = MessageThreadSummary(id: threadID, parentID: try #require(model.selectedChannelID), name: "Jump")
@@ -5407,7 +5334,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 @Test func `an edit completing after a return to the newest thread messages stays out of the window`() async throws {
     let threadID = ChannelID(rawValue: 99_099)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID, paginatedThreadMessageCount: 300)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let thread = MessageThreadSummary(id: threadID, parentID: ChannelID(rawValue: 91_001), name: "Edit")
     let target = MessageID(rawValue: threadID.rawValue + 20)
     model.openThreadConversation(thread, starter: nil, startedAt: nil, initialMessages: [], historyTarget: target)
@@ -5428,7 +5355,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 @Test func `an earlier page for a closed thread instance is discarded after reopening`() async {
     let threadID = ChannelID(rawValue: 94_099)
     let provider = ChannelLoadTestProvider(paginatedThreadID: threadID)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let thread = MessageThreadSummary(id: threadID, parentID: ChannelID(rawValue: 91_001), name: "Stale")
     model.open(thread)
     await model.threadLoadTask?.value
@@ -5457,7 +5384,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 @MainActor
 @Test func `failed earlier thread page retries inside the shared conversation`() async throws {
     let provider = ChannelLoadTestProvider(failsFirstEarlierPage: true)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let parentID = try #require(model.selectedChannelID)
     let thread = MessageThreadSummary(
@@ -5492,7 +5419,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 @MainActor
 @Test func `reaction preview enrichment waits for live timeline scrolling to end`() async throws {
     let provider = ChannelLoadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     let message = try #require(model.messages.first)
@@ -5536,7 +5463,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `unread projection waits for live timeline scrolling to end`() async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let channelID = model.selectedChannelID ?? ChannelID(rawValue: 1)
 
@@ -5550,7 +5477,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `reading a channel mid-scroll clears its indicators before scrolling ends`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: StartupUnreadTestProvider())
+    let model = AppModel(isEphemeral: true, provider: StartupUnreadTestProvider())
     await model.start()
     let channelID = try #require(model.visibleChannels.first).id
     let guildID = GuildID(rawValue: 77_000)
@@ -5574,7 +5501,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `permission revocation applies while unread publication is deferred`() async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let privateChannelID = ChannelID(rawValue: 215)
     #expect(
@@ -5596,7 +5523,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `ready role snapshot replaces stale guild role sets`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let firstGuildID = GuildID(rawValue: 91_001)
     let secondGuildID = GuildID(rawValue: 91_002)
     let firstRoleID = RoleID(rawValue: 92_001)
@@ -5622,7 +5549,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `guild role updates preserve unrelated guild access projection`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let user = User(
         id: UserID(rawValue: 92_100), username: "member", displayName: "Member"
     )
@@ -5675,7 +5602,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `role snapshot preserves unchanged guild access projection`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let user = User(
         id: UserID(rawValue: 92_200), username: "member", displayName: "Member"
     )
@@ -5742,7 +5669,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `channel replacement removes deleted access projection entries`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let user = User(
         id: UserID(rawValue: 92_300), username: "member", displayName: "Member"
     )
@@ -5782,7 +5709,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `channel access replacement preserves unchanged access projections`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let user = User(
         id: UserID(rawValue: 92_310), username: "member", displayName: "Member"
     )
@@ -5839,7 +5766,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 
 @MainActor
 @Test func `gateway lifecycle projections update app workspace state`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let oldUser = User(
         id: UserID(rawValue: 93_001), username: "before", displayName: "Before"
     )
@@ -5882,7 +5809,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 @MainActor
 @Test func `provider member refresh revokes access during live scrolling`() async {
     let provider = MemberRoleRevocationTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = provider.channelID
 
@@ -5903,7 +5830,7 @@ func `a jump to older thread history wins over an overlapping reconnect refresh`
 @Test(arguments: [false, true])
 func `visible reaction preview reads stay within the app request budget`(hasPartialPreview: Bool) async {
     let provider = ChannelLoadTestProvider(reactionPreviewResultCount: 2)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     await withTaskGroup(of: Void.self) { group in
@@ -5958,7 +5885,7 @@ func `visible reaction preview reads stay within the app request budget`(hasPart
 @Test(arguments: [false, true])
 func `revisited messages restore reactor identities without another request`(isSelected: Bool) async throws {
     let provider = ChannelLoadTestProvider(reactionPreviewResultCount: 2)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 91001)
     model.selectedChannelID = isSelected ? channelID : ChannelID(rawValue: 91002)
@@ -6004,7 +5931,7 @@ func `revisited messages restore reactor identities without another request`(isS
     let provider = ChannelLoadTestProvider(
         reactionPreviewResultCount: 2, suspendsFirstReactionRequest: true
     )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let message = Message(
         id: MessageID(rawValue: 92500), channelID: ChannelID(rawValue: 91001),
@@ -6029,7 +5956,7 @@ func `revisited messages restore reactor identities without another request`(isS
 @Test(arguments: [false, true])
 func `reaction changes discard pending preview identities even if the count returns`(restoresCount: Bool) async throws {
     let provider = ChannelLoadTestProvider(reactionPreviewResultCount: 2, suspendsFirstReactionRequest: true)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let remaining = ReactionReactor(id: UserID(rawValue: 2), displayName: "Two")
     let newcomer = try #require(model.snapshot?.currentUser)
@@ -6070,7 +5997,7 @@ func `reaction changes discard pending preview identities even if the count retu
 @Test(arguments: [false, true])
 func `reaction changes preserve unrelated pending and saved previews`(clearsAll: Bool) async throws {
     let provider = ChannelLoadTestProvider(reactionPreviewResultCount: 2, suspendsFirstReactionRequest: true)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let message = Message(
         id: MessageID(rawValue: 92502), channelID: ChannelID(rawValue: 91001),
@@ -6104,7 +6031,7 @@ func `reaction changes preserve unrelated pending and saved previews`(clearsAll:
     let provider = VoiceMigrationTestProvider()
     let sounds = RecordingAppSoundPlayer()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         soundPlayer: sounds
     )
@@ -6132,7 +6059,7 @@ func `reaction changes preserve unrelated pending and saved previews`(clearsAll:
 @MainActor
 @Test func `newer voice join wins when prior call teardown completes out of order`() async throws {
     let provider = SuspendedVoiceReplacementProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let channels = provider.testChannels
     let currentUser = provider.currentUser
     model.snapshot = BootstrapSnapshot(
@@ -6164,7 +6091,7 @@ func `private calls remain app wide and reconcile incoming ongoing and deleted s
     let provider = VoiceMigrationTestProvider()
     let sounds = RecordingAppSoundPlayer()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         soundPlayer: sounds,
         notificationPreferences: NotificationPreferences(defaults: InMemoryPreferences())
@@ -6267,7 +6194,7 @@ func `private calls remain app wide and reconcile incoming ongoing and deleted s
 @MainActor
 @Test func `concurrent private call actions stay within one request budget`() async throws {
     let provider = PrivateCallActionTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channel = try #require(
         model.snapshot?.channels.first(where: {
@@ -7155,7 +7082,7 @@ private actor MemberRoleRevocationTestProvider: ChatProviderStub {
 @Test(arguments: [0, 1, 2])
 func `delayed DM creation respects newer navigation`(subsequentChoice: Int) async throws {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: true)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     model.snapshot = try await provider.bootstrap()
     let user = User(id: UserID(rawValue: 96_004), username: "recipient", displayName: "Recipient")
     model.openDirectMessage(with: user)
@@ -8552,7 +8479,7 @@ private actor DelayedMemberViewportTestProvider: ChatProviderStub {
 
 @MainActor
 @Test func `thread previews clear on deletion and replacement but preserve other parents`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let parent = ChannelID(rawValue: 200)
     let thread = MessageThreadSummary(id: ChannelID(rawValue: 201), parentID: parent, name: "Thread")
     let other = MessageThreadSummary(id: ChannelID(rawValue: 301), parentID: ChannelID(rawValue: 300), name: "Other")
@@ -8587,7 +8514,7 @@ func `resource thread permissions belong to its parent rather than the selected 
         permissionOverwrites: [.init(id: guildID.description, type: 0, deny: parentAllows ? permissions : 0)])
     let resource = Channel(id: ChannelID(rawValue: 201), guildID: guildID, name: "Resource",
         permissionOverwrites: [.init(id: guildID.description, type: 0, deny: parentAllows ? 0 : permissions)])
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.snapshot = BootstrapSnapshot(currentUser: user, guilds: [guild], channels: [selected, resource], members: [])
     model.serverRailGuildsByID[guildID] = guild
     model.currentUserRoleIDsByGuild[guildID] = []
@@ -8619,7 +8546,7 @@ private func threadWithHistory(in parent: Channel, provider: MockChatProvider) a
 @MainActor
 @Test func `a cached thread reopened in the pane shows its messages from the first frame`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let parent = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 210) })
     model.selectedChannelID = parent.id
@@ -8641,7 +8568,7 @@ private func threadWithHistory(in parent: Channel, provider: MockChatProvider) a
 
 @MainActor @Test func `the member list closes an open thread pane and does not bring it back`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let parent = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 210) })
     model.selectedChannelID = parent.id

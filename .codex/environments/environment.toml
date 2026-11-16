@@ -11,9 +11,9 @@ icon = "run"
 command = "./script/run.sh"
 
 [[actions]]
-name = "Run Offline"
+name = "Run Simulator"
 icon = "run"
-command = "./script/run.sh --offline"
+command = "./script/run.sh --simulator"
 
 [[actions]]
 name = "Build & Run"
@@ -21,9 +21,9 @@ icon = "run"
 command = "./script/build_and_run.sh"
 
 [[actions]]
-name = "Build & Run Offline"
+name = "Build & Run Simulator"
 icon = "run"
-command = "./script/build_and_run.sh --offline"
+command = "./script/build_and_run.sh --simulator"
 
 [[actions]]
 name = "Build & Run Release"
@@ -36,11 +36,11 @@ icon = "test"
 command = "./script/test.sh app"
 
 [[actions]]
-name = "Run Offline Sign In"
+name = "Run Simulator Sign In"
 icon = "run"
-command = "./script/run.sh --offline-sign-in"
+command = "./script/run.sh --simulator-sign-in"
 
 [[actions]]
-name = "Build & Run Offline Sign In"
+name = "Build & Run Simulator Sign In"
 icon = "run"
-command = "./script/build_and_run.sh --offline-sign-in"
+command = "./script/build_and_run.sh --simulator-sign-in"

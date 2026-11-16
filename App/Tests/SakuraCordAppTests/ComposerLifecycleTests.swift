@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import AppKit
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import SakuraCordPersistence
@@ -64,7 +65,7 @@ func composerCompositionStaysWithinConversation(destinationDraft: String) throws
 @MainActor
 @Test(arguments: ["", "destination draft"], [false, true])
 func cachedChannelDraftIsolation(destinationDraft: String, editsDuringRestoration: Bool) async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let database = try #require(model.database)
     let user = User(id: UserID(rawValue: 1), username: "author", displayName: "Author")
     let source = Channel(id: ChannelID(rawValue: 200), guildID: nil, name: "source", kind: .directMessage)
@@ -95,7 +96,7 @@ func cachedChannelDraftIsolation(destinationDraft: String, editsDuringRestoratio
 
 @MainActor
 @Test func `thread drafts survive leaving and reopening the thread`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let parentID = try #require(model.selectedChannelID)
     let first = MessageThreadSummary(id: ChannelID(rawValue: 9_100), parentID: parentID, name: "First")
@@ -135,7 +136,7 @@ func cachedChannelDraftIsolation(destinationDraft: String, editsDuringRestoratio
 
 @MainActor
 @Test func `session invalidation clears composer and returns to saved account sign in`() async throws {
-    let model = AppModel(launchMode: .normal, provider: MockChatProvider())
+    let model = AppModel(provider: MockChatProvider())
     model.draft = "old account"
     model.threadDraft = "old thread"
     model.isAuthenticated = true
@@ -162,7 +163,7 @@ func cachedChannelDraftIsolation(destinationDraft: String, editsDuringRestoratio
 
 @MainActor
 @Test func `uncached sparse edits survive visible reconciliation and pending history refresh`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 200)
     let author = User(id: UserID(rawValue: 1), username: "author", displayName: "Author")
     let original = Message(id: MessageID(rawValue: 300), channelID: channelID, author: author, content: "original")
@@ -192,7 +193,7 @@ func cachedChannelDraftIsolation(destinationDraft: String, editsDuringRestoratio
 @MainActor
 @Test(arguments: [false, true])
 func `visible sparse edits preserve unrelated fresh history fields`(usesAsyncConsumer: Bool) async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 200)
     let user = User(id: UserID(rawValue: 1), username: "author", displayName: "Author")
     let original = Message(id: MessageID(rawValue: 300), channelID: channelID, author: user, content: "old")
@@ -223,7 +224,7 @@ func `draft clearing orders earlier and later edits around deletion`(editsAfterC
     let inactiveDatabase = try SakuraCordDatabase(inMemory: true)
     let inactiveChannelID = ChannelID(rawValue: 201)
     try await inactiveDatabase.saveDraft("other account", channelID: inactiveChannelID)
-    let model = AppModel(launchMode: .offlineTesting, accountDatabaseFactory: { _ in inactiveDatabase })
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider(), accountDatabaseFactory: { _ in inactiveDatabase })
     model.activeAccountID = "1"
     model.savedAccounts = [SavedAccount(handle: CredentialHandle(accountID: "2"))]
     model.installAccountSession(provider: MockChatProvider(), database: database)
@@ -247,7 +248,7 @@ func `draft clearing orders earlier and later edits around deletion`(editsAfterC
 
 @MainActor
 @Test func `profile changes update retained authors and mentions without replacing fresh history fields`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let old = User(id: UserID(rawValue: 1), username: "old", displayName: "Old")
     let other = User(id: UserID(rawValue: 2), username: "other", displayName: "Other")
     var renamed = old
@@ -278,7 +279,7 @@ func `draft clearing orders earlier and later edits around deletion`(editsAfterC
 @MainActor
 @Test func `GIF send from an older window first restores contiguous newest history`() async throws {
     let provider = MockChatProvider(timelineMessageCount: 500)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 210)
     let targetID = MessageID(rawValue: 5_000_100)
@@ -297,7 +298,7 @@ func `draft clearing orders earlier and later edits around deletion`(editsAfterC
 
 @MainActor
 @Test func `sparse updates discard plans prepared before history replacement`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 200)
     let user = User(id: UserID(rawValue: 1), username: "audit", displayName: "Audit")
     let original = Message(id: MessageID(rawValue: 300), channelID: channelID, author: user, content: "old content")
@@ -318,7 +319,7 @@ func `draft clearing orders earlier and later edits around deletion`(editsAfterC
 
 @MainActor
 @Test func `identity changes reconcile pages still awaiting publication`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let old = User(id: UserID(rawValue: 1), username: "old", displayName: "Old")
     var renamed = old
     renamed.displayName = "New"
@@ -339,7 +340,7 @@ func `draft clearing orders earlier and later edits around deletion`(editsAfterC
 @Test(arguments: [false, true], [false, true])
 func `refresh identity replay preserves event order and later guild mentions`(retainsMessage: Bool, identityLast: Bool) {
     for usesFullMessage in [false, true] {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         let channelID = ChannelID(rawValue: 200)
         let old = User(id: UserID(rawValue: 1), username: "person", displayName: "Old")
         var global = old
@@ -385,7 +386,7 @@ func `refresh identity replay preserves event order and later guild mentions`(re
 @MainActor
 @Test func `draft restoration sees the latest accepted write`() async throws {
     let database = try SakuraCordDatabase(inMemory: true)
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.installAccountSession(provider: MockChatProvider(), database: database)
     let channelID = ChannelID(rawValue: 200)
     for index in 0 ..< 100 {
@@ -404,7 +405,7 @@ func `refresh identity replay preserves event order and later guild mentions`(re
 @Test(arguments: [false, true], [false, true])
 func `clearing drafts invalidates unpublished restorations`(clearsAll: Bool, editsAfterClear: Bool) async throws {
     let database = try SakuraCordDatabase(inMemory: true)
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.installAccountSession(provider: MockChatProvider(), database: database)
     let channelID = ChannelID(rawValue: 200)
     model.selectedChannelID = channelID
@@ -427,7 +428,7 @@ func `clearing drafts invalidates unpublished restorations`(clearsAll: Bool, edi
 
 @MainActor
 @Test func `clearing local activity resets the active saved search order`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     model.snapshot?.forwardChannelStoreOrder = [ChannelID(rawValue: 200), ChannelID(rawValue: 201)]
     let revision = model.destinationSearchSourceRevision

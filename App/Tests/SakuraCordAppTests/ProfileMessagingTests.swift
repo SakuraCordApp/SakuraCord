@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 
@@ -10,7 +11,7 @@ import Testing
     let destination = try #require(snapshot.channels.first { $0.kind == .directMessage })
     let recipient = try #require(destination.recipients.first { $0.id != snapshot.currentUser.id })
     let source = try #require(snapshot.channels.first { $0.kind == .text })
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     model.snapshot = snapshot
     model.selectedChannelID = source.id
     await model.channelLoadTask?.value

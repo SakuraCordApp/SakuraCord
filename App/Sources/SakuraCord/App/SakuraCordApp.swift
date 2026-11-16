@@ -1,5 +1,4 @@
 import AppKit
-import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
 import UserNotifications
@@ -24,54 +23,17 @@ struct SakuraCordApp: App {
         DiagnosticsPreferences.restore()
         let configuration = AppLaunchConfiguration.current
 #if DEBUG
-        ForumLayoutStabilityProbe.shared.isEnabled = configuration.includesForumPerformanceFixture
+        ForumLayoutStabilityProbe.shared.isEnabled = configuration.runsForumPerformanceAutoScroll
 #endif
-#if SAKURACORD_MOTION_BENCHMARK
+#if SAKURACORD_MOTION_BENCHMARK && DEBUG
         WorkspaceMotionProbes.isEnabled = configuration.sideChatMotionOptions != nil
-        MockChatProvider.motionFixture = configuration.sideChatMotionOptions.map {
-            MockChatProvider.MotionFixture(
-                threadCount: $0.cycles + 1,
-                messageCount: $0.threadMessageCount,
-                historyDelay: .milliseconds($0.historyDelayMilliseconds)
-            )
-        }
 #endif
-        let mockProvider = configuration.mode == .offlineTesting
-            ? MockChatProvider(
-                serverList: configuration.mockServerList,
-                forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil,
-                forumPreviewsHydrateLate: configuration.includesForumPerformanceFixture,
-                timelineMessageCount: configuration.includesChatPerformanceFixture ? 5_000 : nil,
-                pinnedMessageCount: configuration.includesPinsPerformanceFixture ? 5_000 : nil,
-                timelineIncludesAnimatedMedia:
-                    configuration.includesChatMediaPerformanceFixture,
-                timelineIncludesVoiceMessages:
-                    configuration.includesChatVoicePerformanceFixture,
-                timelineIncludesFiles:
-                    configuration.includesChatFilesPerformanceFixture,
-                includesIncomingPrivateCall:
-                    configuration.includesIncomingPrivateCallFixture,
-                friendCount: configuration.runsFriendsPerformanceBenchmark ? 1_000 : nil
-            )
-            : nil
-        launchBenchmarks = LaunchBenchmarks(launch: configuration, provider: mockProvider)
-        let provider: (any ChatProvider)? = mockProvider
-        let notificationService = MacNativeNotificationService(
-            deliversNotifications: configuration.mode != .offlineTesting
-        )
+        launchBenchmarks = LaunchBenchmarks(launch: configuration)
         let notificationPreferences = NotificationPreferences()
-        let soundPlayer: any AppSoundPlaying =
-            configuration.mode == .offlineTesting
-            ? NoopAppSoundPlayer()
-            : MacAppSoundPlayer(notificationPreferences: notificationPreferences)
         let appModel = AppModel(
-            launchMode: configuration.mode,
-            awaitsOfflineSignIn: configuration.includesSignInFixture,
-            hasSavedAccountsAtLaunch: configuration.mode == .normal
-                && UserDefaultsSavedAccountStore.shared.hasSavedAccounts,
-            provider: provider,
-            notificationService: notificationService,
-            soundPlayer: soundPlayer,
+            hasSavedAccountsAtLaunch: UserDefaultsSavedAccountStore.current.hasSavedAccounts,
+            notificationService: MacNativeNotificationService(),
+            soundPlayer: MacAppSoundPlayer(notificationPreferences: notificationPreferences),
             notificationPreferences: notificationPreferences
         )
         appModel.inspectorVisibility = GeneralWindowRestorationStore.shared.loadInspectorVisibility()
@@ -144,9 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sessionStartTask: Task<Void, Never>?
 
     override init() {
-        if AppLaunchConfiguration.current.mode == .normal {
-            SakuraCordOnboardingStore.registerInstallation()
-        }
+        SakuraCordOnboardingStore.registerInstallation()
         updateController = AppUpdateController()
         super.init()
         Self.current = self

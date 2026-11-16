@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import AppKit
 import Foundation
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 
@@ -51,7 +52,7 @@ import Testing
         isUnreadBoundary: false,
         isHighlighted: false
     )
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let layout = NativeTimelineRowLayout.make(
         item: item,
         width: 900,
@@ -127,7 +128,7 @@ import Testing
         isUnreadBoundary: false,
         isHighlighted: false
     )
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let layout = NativeTimelineRowLayout.make(
         item: item,
         width: 900,
@@ -199,7 +200,7 @@ import Testing
             isHighlighted: false
         ),
         width: 900,
-        source: AppModel(launchMode: .offlineTesting)
+        source: AppModel(isEphemeral: true, provider: MockChatProvider())
     )
     let regions = layout.sakuraCordDeepLinkRegions
     try #require(regions.count == 3)
@@ -279,7 +280,7 @@ import Testing
 
 @MainActor
 @Test func `ephemeral messages expose no server message actions`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let canvas = NativeTimelineCanvasView(frame: CGRect(x: 0, y: 0, width: 600, height: 200))
     canvas.model = model
     for flags: MessageFlags in [.ephemeral, [.ephemeral, .loading]] {

@@ -1,4 +1,5 @@
 import Foundation
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 @testable import SakuraCord
@@ -109,7 +110,7 @@ import Testing
 
 @MainActor
 @Test func `native token attachment characters never become search content`() async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     model.messageSearchInputText = "\u{FFFC}road\u{FFFC}"
     #expect(model.messageSearch.queryText == "road")
@@ -117,7 +118,7 @@ import Testing
 
 @MainActor
 @Test func `typing resolvable people stays text while static syntax becomes native tokens`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let user = try #require(model.messageSearchUsers.first)
 

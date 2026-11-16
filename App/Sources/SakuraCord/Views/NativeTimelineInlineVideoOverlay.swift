@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import QuartzCore
+import SakuraCordModels
 
 @MainActor
 final class NativeTimelineInlineVideoOverlay: NSView {
@@ -146,7 +147,7 @@ final class NativeTimelineInlineVideoOverlay: NSView {
             let item = AppPerformanceSignposts.measureSync(
                 "TimelineInlineVideoItemCreation"
             ) {
-                AVPlayerItem(url: url)
+                AVPlayerItem(url: DiscordNetworkRedirect.resolve(url))
             }
 
             await Task.yield()

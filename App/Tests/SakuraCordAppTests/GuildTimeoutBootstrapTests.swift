@@ -9,7 +9,7 @@ import Testing
 @Test(arguments: [false, true])
 func `membership timeout changes received before bootstrap publication survive its older snapshot`(removingTimeout: Bool) async throws {
     let provider = GatedBootstrapRaceProvider(timeoutRemoval: removingTimeout)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let start = Task { await model.start() }
     await provider.waitForStaleRead()
     try await provider.publishTimeoutChange()

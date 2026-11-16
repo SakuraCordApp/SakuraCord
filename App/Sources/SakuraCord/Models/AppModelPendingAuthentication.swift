@@ -9,7 +9,7 @@ extension AppModel {
     ) async -> Bool {
         guard !discordNetworkDisabled else {
             await credential.discard()
-            errorMessage = "Discord networking is disabled in offline UI mode."
+            errorMessage = "Discord networking is disabled."
             return false
         }
         guard await accountTransitionCoordinator.acquireIfAvailable() else {

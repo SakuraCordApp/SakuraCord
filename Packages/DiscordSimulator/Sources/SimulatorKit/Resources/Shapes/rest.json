@@ -1,0 +1,3463 @@
+{
+  "DELETE /api/v9/channels/{id}/messages/ack": {
+    "samples": 8,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "version": {"t": "int"},
+        "read_state_type": {"t": "int"}
+      }
+    },
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
+  "DELETE /api/v9/channels/{id}/messages/pins/{id}": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
+  "DELETE /api/v9/channels/{id}/messages/{id}": {
+    "samples": 8,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
+  "DELETE /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/0/@me": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
+  "GET /api/v9/applications/public": {
+    "samples": 7,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "id": {"t": "snowflake"},
+            "name": {"t": "string"},
+            "icon": {"t": "string"},
+            "description": {"t": "string"},
+            "summary": {"t": "string"},
+            "type": {"t": "null|int"},
+            "is_monetized": {"t": "bool"},
+            "is_verified": {"t": "bool"},
+            "is_discoverable": {"t": "bool"},
+            "parent_id": {"t": "snowflake", "opt": true},
+            "linked_games": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "type": {"t": "int"},
+                  "application": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "snowflake"},
+                      "name": {"t": "string"},
+                      "icon": {"t": "string"},
+                      "description": {"t": "string"},
+                      "summary": {"t": "string"},
+                      "type": {"t": "null|int"},
+                      "is_monetized": {"t": "bool"},
+                      "is_verified": {"t": "bool"},
+                      "is_discoverable": {"t": "bool"},
+                      "deeplink_uri": {"t": "string", "opt": true},
+                      "parent_id": {"t": "snowflake", "opt": true},
+                      "connection_entrypoint_url": {"t": "string", "opt": true},
+                      "cover_image": {"t": "string", "opt": true},
+                      "splash": {"t": "string", "opt": true},
+                      "third_party_skus": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "id": {"t": "string"},
+                            "sku": {"t": "string"},
+                            "distributor": {"t": "string"}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "linked_games": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "id": {"t": "snowflake"},
+                            "type": {"t": "int"}
+                          }
+                        }
+                      },
+                      "content_classification": {
+                        "t": "object",
+                        "f": {
+                          "agency_ratings": {
+                            "t": "object",
+                            "f": {
+                              "esrb": {
+                                "t": "object",
+                                "f": {
+                                  "rating": {"t": "int"},
+                                  "descriptors": {
+                                    "t": "array",
+                                    "i": {"t": "int"}
+                                  }
+                                }
+                              },
+                              "pegi": {
+                                "t": "object",
+                                "f": {
+                                  "rating": {"t": "int"},
+                                  "descriptors": {"t": "array"}
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "opt": true
+                      },
+                      "flags": {"t": "int"},
+                      "flags_new": {"t": "string"},
+                      "overlay": {"t": "bool", "opt": true},
+                      "overlay_compatibility_hook": {"t": "bool", "opt": true},
+                      "hook": {"t": "bool"},
+                      "aliases": {
+                        "t": "array",
+                        "i": {"t": "string"},
+                        "opt": true
+                      },
+                      "guild_id": {"t": "snowflake", "opt": true},
+                      "executables": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "os": {"t": "string"},
+                            "name": {"t": "string"},
+                            "is_launcher": {"t": "bool"}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "storefront_available": {"t": "bool"},
+                      "bot_public": {"t": "bool", "opt": true},
+                      "bot_require_code_grant": {"t": "bool", "opt": true},
+                      "terms_of_service_url": {"t": "string", "opt": true},
+                      "privacy_policy_url": {"t": "string", "opt": true},
+                      "install_params": {
+                        "t": "object",
+                        "f": {
+                          "scopes": {
+                            "t": "array",
+                            "i": {"t": "string"}
+                          },
+                          "permissions": {"t": "string"}
+                        },
+                        "opt": true
+                      },
+                      "application_account_link_benefit_config": {
+                        "t": "object",
+                        "f": {
+                          "reward_image": {"t": "string"},
+                          "reward_name": {"t": "string"}
+                        },
+                        "opt": true
+                      },
+                      "integration_types_config": {
+                        "t": "map",
+                        "v": {
+                          "t": "object",
+                          "f": {
+                            "oauth2_install_params": {
+                              "t": "object",
+                              "f": {
+                                "scopes": {
+                                  "t": "array",
+                                  "i": {"t": "string"}
+                                },
+                                "permissions": {"t": "string"}
+                              },
+                              "opt": true
+                            }
+                          }
+                        }
+                      },
+                      "verify_key": {"t": "string"},
+                      "embedded_surfaces": {"t": "array"}
+                    }
+                  }
+                }
+              },
+              "opt": true
+            },
+            "cover_image": {"t": "string", "opt": true},
+            "splash": {"t": "string", "opt": true},
+            "third_party_skus": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "string"},
+                  "sku": {"t": "string"},
+                  "distributor": {"t": "string"}
+                }
+              },
+              "opt": true
+            },
+            "content_classification": {
+              "t": "object",
+              "f": {
+                "agency_ratings": {
+                  "t": "object",
+                  "f": {
+                    "esrb": {
+                      "t": "object",
+                      "f": {
+                        "rating": {"t": "int"},
+                        "descriptors": {
+                          "t": "array",
+                          "i": {"t": "int"}
+                        }
+                      }
+                    },
+                    "pegi": {
+                      "t": "object",
+                      "f": {
+                        "rating": {"t": "int"},
+                        "descriptors": {"t": "array"}
+                      },
+                      "opt": true
+                    },
+                    "apple": {
+                      "t": "object",
+                      "f": {
+                        "rating": {"t": "int"},
+                        "descriptors": {
+                          "t": "array",
+                          "i": {"t": "int"}
+                        }
+                      },
+                      "opt": true
+                    }
+                  }
+                }
+              },
+              "opt": true
+            },
+            "bot": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "username": {"t": "string"},
+                "global_name": {"t": "null"},
+                "avatar": {"t": "string"},
+                "avatar_decoration_data": {"t": "null"},
+                "collectibles": {"t": "null"},
+                "discriminator": {"t": "string"},
+                "display_name_styles": {"t": "null"},
+                "public_flags": {"t": "int"},
+                "primary_guild": {"t": "null"},
+                "clan": {"t": "null"},
+                "bot": {"t": "bool"},
+                "banner": {"t": "null|string"},
+                "banner_color": {"t": "null"},
+                "accent_color": {"t": "null"}
+              },
+              "opt": true
+            },
+            "flags": {"t": "int"},
+            "flags_new": {"t": "string"},
+            "overlay_methods": {"t": "int", "opt": true},
+            "overlay": {"t": "bool", "opt": true},
+            "hook": {"t": "bool"},
+            "aliases": {
+              "t": "array",
+              "i": {"t": "string"},
+              "opt": true
+            },
+            "guild_id": {"t": "snowflake", "opt": true},
+            "executables": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "os": {"t": "string"},
+                  "name": {"t": "string"},
+                  "is_launcher": {"t": "bool"}
+                }
+              },
+              "opt": true
+            },
+            "storefront_available": {"t": "bool"},
+            "bot_public": {"t": "bool", "opt": true},
+            "bot_require_code_grant": {"t": "bool", "opt": true},
+            "terms_of_service_url": {"t": "string", "opt": true},
+            "privacy_policy_url": {"t": "string", "opt": true},
+            "install_params": {
+              "t": "object",
+              "f": {
+                "scopes": {
+                  "t": "array",
+                  "i": {"t": "string"}
+                },
+                "permissions": {"t": "string"}
+              },
+              "opt": true
+            },
+            "custom_install_url": {"t": "string", "opt": true},
+            "integration_types_config": {
+              "t": "map",
+              "v": {
+                "t": "object",
+                "f": {
+                  "oauth2_install_params": {
+                    "t": "object",
+                    "f": {
+                      "scopes": {
+                        "t": "array",
+                        "i": {"t": "string"}
+                      },
+                      "permissions": {"t": "string"}
+                    },
+                    "opt": true
+                  }
+                }
+              }
+            },
+            "verify_key": {"t": "string"},
+            "embedded_surfaces": {"t": "array"}
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/channels/{id}/messages": {
+    "samples": 21,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "type": {"t": "int"},
+            "content": {"t": "string"},
+            "mentions": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "username": {"t": "string"},
+                  "avatar": {"t": "string"},
+                  "discriminator": {"t": "string"},
+                  "public_flags": {"t": "int"},
+                  "flags": {"t": "int"},
+                  "banner": {"t": "null"},
+                  "accent_color": {"t": "null"},
+                  "global_name": {"t": "string"},
+                  "avatar_decoration_data": {
+                    "t": "object",
+                    "f": {
+                      "asset": {"t": "string"},
+                      "sku_id": {"t": "snowflake"},
+                      "expires_at": {"t": "null"}
+                    }
+                  },
+                  "collectibles": {
+                    "t": "object",
+                    "f": {
+                      "nameplate": {
+                        "t": "object",
+                        "f": {
+                          "sku_id": {"t": "snowflake"},
+                          "asset": {"t": "string"},
+                          "label": {"t": "string"},
+                          "palette": {"t": "string"}
+                        }
+                      }
+                    }
+                  },
+                  "display_name_styles": {"t": "null"},
+                  "banner_color": {"t": "null"},
+                  "clan": {
+                    "t": "object",
+                    "f": {
+                      "identity_guild_id": {"t": "snowflake"},
+                      "identity_enabled": {"t": "bool"},
+                      "tag": {"t": "string"},
+                      "badge": {"t": "string"}
+                    }
+                  },
+                  "primary_guild": {
+                    "t": "object",
+                    "f": {
+                      "identity_guild_id": {"t": "snowflake"},
+                      "identity_enabled": {"t": "bool"},
+                      "tag": {"t": "string"},
+                      "badge": {"t": "string"}
+                    }
+                  }
+                }
+              }
+            },
+            "mention_roles": {"t": "array"},
+            "attachments": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "filename": {"t": "string"},
+                  "size": {"t": "int"},
+                  "url": {"t": "string"},
+                  "proxy_url": {"t": "string"},
+                  "duration_secs": {"t": "int|float", "opt": true},
+                  "waveform": {"t": "string", "opt": true},
+                  "width": {"t": "int", "opt": true},
+                  "height": {"t": "int", "opt": true},
+                  "description": {"t": "string", "opt": true},
+                  "content_type": {"t": "string", "opt": true},
+                  "original_content_type": {"t": "string", "opt": true},
+                  "flags": {"t": "int", "opt": true},
+                  "content_scan_version": {"t": "int"},
+                  "placeholder": {"t": "string", "opt": true},
+                  "placeholder_version": {"t": "int", "opt": true},
+                  "title": {"t": "string", "opt": true}
+                }
+              }
+            },
+            "embeds": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "type": {"t": "string"},
+                  "url": {"t": "string", "opt": true},
+                  "title": {"t": "string", "opt": true},
+                  "description": {"t": "string", "opt": true},
+                  "color": {"t": "int", "opt": true},
+                  "author": {
+                    "t": "object",
+                    "f": {
+                      "name": {"t": "string"},
+                      "url": {"t": "string"}
+                    },
+                    "opt": true
+                  },
+                  "fields": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "name": {"t": "string"},
+                        "value": {"t": "string"},
+                        "inline": {"t": "bool"}
+                      }
+                    },
+                    "opt": true
+                  },
+                  "provider": {
+                    "t": "object",
+                    "f": {
+                      "name": {"t": "string"},
+                      "url": {"t": "string", "opt": true}
+                    },
+                    "opt": true
+                  },
+                  "thumbnail": {
+                    "t": "object",
+                    "f": {
+                      "url": {"t": "string"},
+                      "proxy_url": {"t": "string"},
+                      "width": {"t": "int"},
+                      "height": {"t": "int"},
+                      "content_type": {"t": "string"},
+                      "placeholder": {"t": "string"},
+                      "placeholder_version": {"t": "int"},
+                      "description": {"t": "string", "opt": true},
+                      "flags": {"t": "int"}
+                    },
+                    "opt": true
+                  },
+                  "video": {
+                    "t": "object",
+                    "f": {
+                      "url": {"t": "string"},
+                      "width": {"t": "int"},
+                      "height": {"t": "int"},
+                      "placeholder": {"t": "string"},
+                      "placeholder_version": {"t": "int"},
+                      "flags": {"t": "int"}
+                    },
+                    "opt": true
+                  },
+                  "content_scan_version": {"t": "int"},
+                  "components": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "type": {"t": "int"},
+                        "id": {"t": "int"},
+                        "accent_color": {"t": "null|int"},
+                        "components": {
+                          "t": "array",
+                          "i": {
+                            "t": "object",
+                            "f": {
+                              "type": {"t": "int"},
+                              "id": {"t": "int"},
+                              "components": {
+                                "t": "array",
+                                "i": {
+                                  "t": "object",
+                                  "f": {
+                                    "type": {"t": "int"},
+                                    "id": {"t": "int"},
+                                    "style": {"t": "int"},
+                                    "label": {"t": "string"},
+                                    "url": {"t": "string"}
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "items": {
+                                "t": "array",
+                                "i": {
+                                  "t": "object",
+                                  "f": {
+                                    "media": {
+                                      "t": "object",
+                                      "f": {
+                                        "id": {"t": "snowflake"},
+                                        "url": {"t": "string"},
+                                        "proxy_url": {"t": "string"},
+                                        "width": {"t": "int"},
+                                        "height": {"t": "int"},
+                                        "placeholder": {"t": "string"},
+                                        "placeholder_version": {"t": "int"},
+                                        "content_scan_metadata": {
+                                          "t": "object",
+                                          "f": {
+                                            "version": {"t": "int"},
+                                            "flags": {"t": "int"}
+                                          }
+                                        },
+                                        "content_type": {"t": "string"},
+                                        "loading_state": {"t": "int"},
+                                        "flags": {"t": "int"}
+                                      }
+                                    },
+                                    "description": {"t": "null|string"},
+                                    "spoiler": {"t": "bool"}
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "content": {"t": "string", "opt": true}
+                            }
+                          }
+                        },
+                        "spoiler": {"t": "bool"}
+                      }
+                    },
+                    "opt": true
+                  }
+                }
+              }
+            },
+            "timestamp": {"t": "timestamp"},
+            "edited_timestamp": {"t": "null"},
+            "flags": {"t": "int"},
+            "components": {"t": "array"},
+            "sticker_items": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "name": {"t": "string"},
+                  "format_type": {"t": "int"}
+                }
+              },
+              "opt": true
+            },
+            "mention_games": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "name": {"t": "string"},
+                  "aliases": {
+                    "t": "array",
+                    "i": {"t": "string"}
+                  },
+                  "description": {"t": "string"},
+                  "icon_hash": {"t": "string"},
+                  "executables": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "os": {"t": "string"},
+                        "name": {"t": "string"},
+                        "arguments": {"t": "string", "opt": true},
+                        "is_launcher": {"t": "bool"}
+                      }
+                    }
+                  },
+                  "third_party_skus": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "distributor": {"t": "string"},
+                        "id": {"t": "string"}
+                      }
+                    }
+                  },
+                  "overlay": {"t": "bool"},
+                  "overlay_warn": {"t": "bool"},
+                  "overlay_compatibility_hook": {"t": "bool"},
+                  "overlay_methods": {"t": "int"},
+                  "hook": {"t": "bool"},
+                  "themes": {
+                    "t": "array",
+                    "i": {"t": "string"}
+                  },
+                  "linked_applications": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "id": {"t": "snowflake"},
+                        "type": {"t": "int"}
+                      }
+                    }
+                  },
+                  "media": {
+                    "t": "object",
+                    "f": {
+                      "cover_url": {"t": "string"},
+                      "artwork_urls": {
+                        "t": "array",
+                        "i": {"t": "string"}
+                      },
+                      "icon": {
+                        "t": "object",
+                        "f": {
+                          "type": {"t": "string"},
+                          "value": {"t": "string"}
+                        }
+                      },
+                      "banner": {
+                        "t": "object",
+                        "f": {
+                          "type": {"t": "string"},
+                          "value": {"t": "string"}
+                        }
+                      },
+                      "cover": {
+                        "t": "object",
+                        "f": {
+                          "type": {"t": "string"},
+                          "value": {"t": "string"}
+                        }
+                      },
+                      "artwork": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "type": {"t": "string"},
+                            "value": {"t": "string"}
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "first_release_date": {"t": "timestamp"},
+                  "genres": {
+                    "t": "array",
+                    "i": {"t": "int"}
+                  },
+                  "platforms": {
+                    "t": "array",
+                    "i": {"t": "int"}
+                  },
+                  "platform_availability": {
+                    "t": "array",
+                    "i": {"t": "string"}
+                  },
+                  "screenshot_urls": {
+                    "t": "array",
+                    "i": {"t": "string"}
+                  },
+                  "trailers": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "id": {"t": "snowflake"},
+                        "application_id": {"t": "snowflake"},
+                        "width": {"t": "int"},
+                        "height": {"t": "int"},
+                        "mime_type": {"t": "string"},
+                        "size": {"t": "int"}
+                      }
+                    }
+                  },
+                  "websites": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "url": {"t": "string"},
+                        "category": {"t": "int"}
+                      }
+                    }
+                  },
+                  "companies": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "name": {"t": "string"},
+                        "roles": {
+                          "t": "array",
+                          "i": {"t": "int"}
+                        }
+                      }
+                    }
+                  },
+                  "reviews": {
+                    "t": "object",
+                    "f": {
+                      "opencritic": {
+                        "t": "object",
+                        "f": {
+                          "top_critic_rating": {"t": "float"},
+                          "top_critic_rating_count": {"t": "int"},
+                          "tier": {"t": "int"}
+                        }
+                      },
+                      "app_store": {
+                        "t": "object",
+                        "f": {
+                          "rating": {"t": "float"},
+                          "rating_count": {"t": "int"},
+                          "global_rating_count": {"t": "int"}
+                        }
+                      },
+                      "google_play": {
+                        "t": "object",
+                        "f": {
+                          "rating": {"t": "float"},
+                          "rating_count": {"t": "int"}
+                        }
+                      }
+                    }
+                  },
+                  "opencritic_url": {"t": "string"},
+                  "l30_rank": {"t": "int"},
+                  "community_guild_ids": {
+                    "t": "array",
+                    "i": {"t": "snowflake"}
+                  },
+                  "game_flags": {"t": "int"},
+                  "content_classification": {
+                    "t": "object",
+                    "f": {
+                      "agency_ratings": {
+                        "t": "object",
+                        "f": {
+                          "esrb": {
+                            "t": "object",
+                            "f": {
+                              "rating": {"t": "int"},
+                              "descriptors": {
+                                "t": "array",
+                                "i": {"t": "int"}
+                              }
+                            }
+                          },
+                          "pegi": {
+                            "t": "object",
+                            "f": {
+                              "rating": {"t": "int"},
+                              "descriptors": {"t": "array"}
+                            }
+                          },
+                          "apple": {
+                            "t": "object",
+                            "f": {
+                              "rating": {"t": "int"},
+                              "descriptors": {
+                                "t": "array",
+                                "i": {"t": "int"}
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "opt": true
+            },
+            "id": {"t": "snowflake"},
+            "channel_id": {"t": "snowflake"},
+            "author": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "username": {"t": "string"},
+                "avatar": {"t": "null|string"},
+                "discriminator": {"t": "string"},
+                "public_flags": {"t": "int"},
+                "flags": {"t": "int"},
+                "bot": {"t": "bool", "opt": true},
+                "banner": {"t": "null", "opt": true},
+                "accent_color": {"t": "null", "opt": true},
+                "global_name": {"t": "null|string"},
+                "avatar_decoration_data": {
+                  "t": "null|object",
+                  "f": {
+                    "asset": {"t": "string"},
+                    "sku_id": {"t": "snowflake"},
+                    "expires_at": {"t": "null"}
+                  },
+                  "opt": true
+                },
+                "collectibles": {
+                  "t": "null|object",
+                  "f": {
+                    "nameplate": {
+                      "t": "object",
+                      "f": {
+                        "sku_id": {"t": "snowflake"},
+                        "asset": {"t": "string"},
+                        "label": {"t": "string"},
+                        "palette": {"t": "string"}
+                      }
+                    }
+                  },
+                  "opt": true
+                },
+                "display_name_styles": {"t": "null", "opt": true},
+                "banner_color": {"t": "null", "opt": true},
+                "clan": {
+                  "t": "null|object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                },
+                "primary_guild": {
+                  "t": "null|object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                }
+              }
+            },
+            "pinned": {"t": "bool"},
+            "mention_everyone": {"t": "bool"},
+            "tts": {"t": "bool"},
+            "reactions": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "emoji": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "null"},
+                      "name": {"t": "string"}
+                    }
+                  },
+                  "count": {"t": "int"},
+                  "count_details": {
+                    "t": "object",
+                    "f": {
+                      "burst": {"t": "int"},
+                      "normal": {"t": "int"}
+                    }
+                  },
+                  "burst_colors": {"t": "array"},
+                  "me_burst": {"t": "bool"},
+                  "burst_me": {"t": "bool"},
+                  "me": {"t": "bool"},
+                  "burst_count": {"t": "int"}
+                }
+              },
+              "opt": true
+            },
+            "poll": {
+              "t": "object",
+              "f": {
+                "question": {
+                  "t": "object",
+                  "f": {
+                    "text": {"t": "string"}
+                  }
+                },
+                "answers": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "answer_id": {"t": "int"},
+                      "poll_media": {
+                        "t": "object",
+                        "f": {
+                          "text": {"t": "string"}
+                        }
+                      }
+                    }
+                  }
+                },
+                "expiry": {"t": "timestamp"},
+                "allow_multiselect": {"t": "bool"},
+                "layout_type": {"t": "int"},
+                "results": {
+                  "t": "object",
+                  "f": {
+                    "answer_counts": {
+                      "t": "array",
+                      "i": {
+                        "t": "object",
+                        "f": {
+                          "id": {"t": "int"},
+                          "count": {"t": "int"},
+                          "me_voted": {"t": "bool"}
+                        }
+                      }
+                    },
+                    "is_finalized": {"t": "bool"}
+                  }
+                }
+              },
+              "opt": true
+            },
+            "message_reference": {
+              "t": "object",
+              "f": {
+                "type": {"t": "int"},
+                "channel_id": {"t": "snowflake"},
+                "message_id": {"t": "snowflake", "opt": true},
+                "guild_id": {"t": "snowflake", "opt": true}
+              },
+              "opt": true
+            },
+            "message_snapshots": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "message": {
+                    "t": "object",
+                    "f": {
+                      "type": {"t": "int"},
+                      "content": {"t": "string"},
+                      "mentions": {"t": "array"},
+                      "mention_roles": {"t": "array"},
+                      "attachments": {"t": "array"},
+                      "embeds": {"t": "array"},
+                      "timestamp": {"t": "timestamp"},
+                      "edited_timestamp": {"t": "null"},
+                      "flags": {"t": "int"},
+                      "components": {"t": "array"}
+                    }
+                  }
+                }
+              },
+              "opt": true
+            },
+            "position": {"t": "int", "opt": true},
+            "referenced_message": {
+              "t": "object",
+              "f": {
+                "type": {"t": "int"},
+                "content": {"t": "string"},
+                "mentions": {"t": "array"},
+                "mention_roles": {"t": "array"},
+                "attachments": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "snowflake"},
+                      "filename": {"t": "string"},
+                      "size": {"t": "int"},
+                      "url": {"t": "string"},
+                      "proxy_url": {"t": "string"},
+                      "width": {"t": "int"},
+                      "height": {"t": "int"},
+                      "description": {"t": "string", "opt": true},
+                      "content_type": {"t": "string"},
+                      "original_content_type": {"t": "string"},
+                      "flags": {"t": "int", "opt": true},
+                      "content_scan_version": {"t": "int"},
+                      "placeholder": {"t": "string"},
+                      "placeholder_version": {"t": "int"},
+                      "title": {"t": "string", "opt": true}
+                    }
+                  }
+                },
+                "embeds": {"t": "array"},
+                "timestamp": {"t": "timestamp"},
+                "edited_timestamp": {"t": "null"},
+                "flags": {"t": "int"},
+                "components": {"t": "array"},
+                "id": {"t": "snowflake"},
+                "channel_id": {"t": "snowflake"},
+                "author": {
+                  "t": "object",
+                  "f": {
+                    "id": {"t": "snowflake"},
+                    "username": {"t": "string"},
+                    "avatar": {"t": "string"},
+                    "discriminator": {"t": "string"},
+                    "public_flags": {"t": "int"},
+                    "flags": {"t": "int"},
+                    "banner": {"t": "null"},
+                    "accent_color": {"t": "null"},
+                    "global_name": {"t": "string"},
+                    "avatar_decoration_data": {
+                      "t": "object",
+                      "f": {
+                        "asset": {"t": "string"},
+                        "sku_id": {"t": "snowflake"},
+                        "expires_at": {"t": "null"}
+                      }
+                    },
+                    "collectibles": {
+                      "t": "object",
+                      "f": {
+                        "nameplate": {
+                          "t": "object",
+                          "f": {
+                            "sku_id": {"t": "snowflake"},
+                            "asset": {"t": "string"},
+                            "label": {"t": "string"},
+                            "palette": {"t": "string"}
+                          }
+                        }
+                      }
+                    },
+                    "display_name_styles": {"t": "null"},
+                    "banner_color": {"t": "null"},
+                    "clan": {
+                      "t": "object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    },
+                    "primary_guild": {
+                      "t": "object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    }
+                  }
+                },
+                "pinned": {"t": "bool"},
+                "mention_everyone": {"t": "bool"},
+                "tts": {"t": "bool"},
+                "thread": {
+                  "t": "object",
+                  "f": {
+                    "id": {"t": "snowflake"},
+                    "type": {"t": "int"},
+                    "last_message_id": {"t": "snowflake"},
+                    "flags": {"t": "int"},
+                    "guild_id": {"t": "snowflake"},
+                    "name": {"t": "string"},
+                    "parent_id": {"t": "snowflake"},
+                    "rate_limit_per_user": {"t": "int"},
+                    "bitrate": {"t": "int"},
+                    "user_limit": {"t": "int"},
+                    "rtc_region": {"t": "null"},
+                    "owner_id": {"t": "snowflake"},
+                    "thread_metadata": {
+                      "t": "object",
+                      "f": {
+                        "archived": {"t": "bool"},
+                        "archive_timestamp": {"t": "timestamp"},
+                        "auto_archive_duration": {"t": "int"},
+                        "locked": {"t": "bool"},
+                        "create_timestamp": {"t": "timestamp"}
+                      }
+                    },
+                    "message_count": {"t": "int"},
+                    "member_count": {"t": "int"},
+                    "total_message_sent": {"t": "int"},
+                    "member_ids_preview": {
+                      "t": "array",
+                      "i": {"t": "snowflake"}
+                    }
+                  },
+                  "opt": true
+                }
+              },
+              "opt": true
+            },
+            "webhook_id": {"t": "snowflake", "opt": true},
+            "thread": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "type": {"t": "int"},
+                "last_message_id": {"t": "snowflake"},
+                "flags": {"t": "int"},
+                "guild_id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "parent_id": {"t": "snowflake"},
+                "rate_limit_per_user": {"t": "int"},
+                "bitrate": {"t": "int"},
+                "user_limit": {"t": "int"},
+                "rtc_region": {"t": "null"},
+                "owner_id": {"t": "snowflake"},
+                "thread_metadata": {
+                  "t": "object",
+                  "f": {
+                    "archived": {"t": "bool"},
+                    "archive_timestamp": {"t": "timestamp"},
+                    "auto_archive_duration": {"t": "int"},
+                    "locked": {"t": "bool"},
+                    "create_timestamp": {"t": "timestamp"}
+                  }
+                },
+                "message_count": {"t": "int"},
+                "member_count": {"t": "int"},
+                "total_message_sent": {"t": "int"},
+                "member_ids_preview": {
+                  "t": "array",
+                  "i": {"t": "snowflake"}
+                }
+              },
+              "opt": true
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/channels/{id}/messages/pins": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "items": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "pinned_at": {"t": "timestamp"},
+                "message": {
+                  "t": "object",
+                  "f": {
+                    "type": {"t": "int"},
+                    "content": {"t": "string"},
+                    "mentions": {"t": "array"},
+                    "mention_roles": {"t": "array"},
+                    "attachments": {"t": "array"},
+                    "embeds": {"t": "array"},
+                    "timestamp": {"t": "timestamp"},
+                    "edited_timestamp": {"t": "timestamp"},
+                    "flags": {"t": "int"},
+                    "components": {"t": "array"},
+                    "id": {"t": "snowflake"},
+                    "channel_id": {"t": "snowflake"},
+                    "author": {
+                      "t": "object",
+                      "f": {
+                        "id": {"t": "snowflake"},
+                        "username": {"t": "string"},
+                        "avatar": {"t": "string"},
+                        "discriminator": {"t": "string"},
+                        "public_flags": {"t": "int"},
+                        "flags": {"t": "int"},
+                        "banner": {"t": "null"},
+                        "accent_color": {"t": "null"},
+                        "global_name": {"t": "string"},
+                        "avatar_decoration_data": {
+                          "t": "object",
+                          "f": {
+                            "asset": {"t": "string"},
+                            "sku_id": {"t": "snowflake"},
+                            "expires_at": {"t": "null"}
+                          }
+                        },
+                        "collectibles": {
+                          "t": "object",
+                          "f": {
+                            "nameplate": {
+                              "t": "object",
+                              "f": {
+                                "sku_id": {"t": "snowflake"},
+                                "asset": {"t": "string"},
+                                "label": {"t": "string"},
+                                "palette": {"t": "string"}
+                              }
+                            }
+                          }
+                        },
+                        "display_name_styles": {"t": "null"},
+                        "banner_color": {"t": "null"},
+                        "clan": {
+                          "t": "object",
+                          "f": {
+                            "identity_guild_id": {"t": "snowflake"},
+                            "identity_enabled": {"t": "bool"},
+                            "tag": {"t": "string"},
+                            "badge": {"t": "string"}
+                          }
+                        },
+                        "primary_guild": {
+                          "t": "object",
+                          "f": {
+                            "identity_guild_id": {"t": "snowflake"},
+                            "identity_enabled": {"t": "bool"},
+                            "tag": {"t": "string"},
+                            "badge": {"t": "string"}
+                          }
+                        }
+                      }
+                    },
+                    "pinned": {"t": "bool"},
+                    "mention_everyone": {"t": "bool"},
+                    "tts": {"t": "bool"}
+                  }
+                }
+              }
+            }
+          },
+          "has_more": {"t": "bool"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/channels/{id}/polls/{id}/answers/{answer_id}": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "users": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "username": {"t": "string"},
+                "avatar": {"t": "string"},
+                "discriminator": {"t": "string"},
+                "public_flags": {"t": "int"},
+                "flags": {"t": "int"},
+                "banner": {"t": "null"},
+                "accent_color": {"t": "null"},
+                "global_name": {"t": "string"},
+                "avatar_decoration_data": {
+                  "t": "object",
+                  "f": {
+                    "asset": {"t": "string"},
+                    "sku_id": {"t": "snowflake"},
+                    "expires_at": {"t": "null"}
+                  }
+                },
+                "collectibles": {
+                  "t": "object",
+                  "f": {
+                    "nameplate": {
+                      "t": "object",
+                      "f": {
+                        "sku_id": {"t": "snowflake"},
+                        "asset": {"t": "string"},
+                        "label": {"t": "string"},
+                        "palette": {"t": "string"}
+                      }
+                    }
+                  }
+                },
+                "display_name_styles": {"t": "null"},
+                "banner_color": {"t": "null"},
+                "clan": {
+                  "t": "object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                },
+                "primary_guild": {
+                  "t": "object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/channels/{id}/threads/search": {
+    "samples": 2,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "threads": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "type": {"t": "int"},
+                "last_message_id": {"t": "snowflake"},
+                "flags": {"t": "int"},
+                "guild_id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "parent_id": {"t": "snowflake"},
+                "rate_limit_per_user": {"t": "int"},
+                "bitrate": {"t": "int"},
+                "user_limit": {"t": "int"},
+                "rtc_region": {"t": "null"},
+                "owner_id": {"t": "snowflake"},
+                "thread_metadata": {
+                  "t": "object",
+                  "f": {
+                    "archived": {"t": "bool"},
+                    "archive_timestamp": {"t": "timestamp"},
+                    "auto_archive_duration": {"t": "int"},
+                    "locked": {"t": "bool"},
+                    "create_timestamp": {"t": "timestamp"}
+                  }
+                },
+                "message_count": {"t": "int"},
+                "member_count": {"t": "int"},
+                "total_message_sent": {"t": "int"},
+                "owner": {
+                  "t": "object",
+                  "f": {
+                    "avatar": {"t": "null"},
+                    "banner": {"t": "null"},
+                    "communication_disabled_until": {"t": "null"},
+                    "flags": {"t": "int"},
+                    "joined_at": {"t": "timestamp"},
+                    "nick": {"t": "null"},
+                    "pending": {"t": "bool"},
+                    "premium_since": {"t": "null"},
+                    "roles": {
+                      "t": "array",
+                      "i": {"t": "snowflake"}
+                    },
+                    "unusual_dm_activity_until": {"t": "null"},
+                    "collectibles": {"t": "null"},
+                    "display_name_styles": {"t": "null"},
+                    "member_gaming_leaderboard_data": {"t": "null"},
+                    "user": {
+                      "t": "object",
+                      "f": {
+                        "id": {"t": "snowflake"},
+                        "username": {"t": "string"},
+                        "avatar": {"t": "string"},
+                        "discriminator": {"t": "string"},
+                        "public_flags": {"t": "int"},
+                        "flags": {"t": "int"},
+                        "banner": {"t": "null"},
+                        "accent_color": {"t": "int"},
+                        "global_name": {"t": "string"},
+                        "avatar_decoration_data": {
+                          "t": "object",
+                          "f": {
+                            "asset": {"t": "string"},
+                            "sku_id": {"t": "snowflake"},
+                            "expires_at": {"t": "null"}
+                          }
+                        },
+                        "collectibles": {
+                          "t": "object",
+                          "f": {
+                            "nameplate": {
+                              "t": "object",
+                              "f": {
+                                "sku_id": {"t": "snowflake"},
+                                "asset": {"t": "string"},
+                                "label": {"t": "string"},
+                                "palette": {"t": "string"}
+                              }
+                            }
+                          }
+                        },
+                        "display_name_styles": {"t": "null"},
+                        "banner_color": {"t": "string"},
+                        "clan": {
+                          "t": "object",
+                          "f": {
+                            "identity_guild_id": {"t": "snowflake"},
+                            "identity_enabled": {"t": "bool"},
+                            "tag": {"t": "string"},
+                            "badge": {"t": "string"}
+                          }
+                        },
+                        "primary_guild": {
+                          "t": "object",
+                          "f": {
+                            "identity_guild_id": {"t": "snowflake"},
+                            "identity_enabled": {"t": "bool"},
+                            "tag": {"t": "string"},
+                            "badge": {"t": "string"}
+                          }
+                        }
+                      }
+                    },
+                    "mute": {"t": "bool"},
+                    "deaf": {"t": "bool"}
+                  }
+                },
+                "member_ids_preview": {
+                  "t": "array",
+                  "i": {"t": "snowflake"}
+                }
+              }
+            }
+          },
+          "members": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "user_id": {"t": "snowflake"},
+                "join_timestamp": {"t": "timestamp"},
+                "flags": {"t": "int"},
+                "muted": {"t": "bool"},
+                "mute_config": {"t": "null"}
+              }
+            }
+          },
+          "has_more": {"t": "bool"},
+          "first_messages": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "type": {"t": "int"},
+                "content": {"t": "string"},
+                "mentions": {"t": "array"},
+                "mention_roles": {"t": "array"},
+                "attachments": {"t": "array"},
+                "embeds": {"t": "array"},
+                "timestamp": {"t": "timestamp"},
+                "edited_timestamp": {"t": "null"},
+                "flags": {"t": "int"},
+                "components": {"t": "array"},
+                "id": {"t": "snowflake"},
+                "channel_id": {"t": "snowflake"},
+                "author": {
+                  "t": "object",
+                  "f": {
+                    "id": {"t": "snowflake"},
+                    "username": {"t": "string"},
+                    "avatar": {"t": "string"},
+                    "discriminator": {"t": "string"},
+                    "public_flags": {"t": "int"},
+                    "flags": {"t": "int"},
+                    "banner": {"t": "null"},
+                    "accent_color": {"t": "null"},
+                    "global_name": {"t": "string"},
+                    "avatar_decoration_data": {
+                      "t": "object",
+                      "f": {
+                        "asset": {"t": "string"},
+                        "sku_id": {"t": "snowflake"},
+                        "expires_at": {"t": "null"}
+                      }
+                    },
+                    "collectibles": {
+                      "t": "object",
+                      "f": {
+                        "nameplate": {
+                          "t": "object",
+                          "f": {
+                            "sku_id": {"t": "snowflake"},
+                            "asset": {"t": "string"},
+                            "label": {"t": "string"},
+                            "palette": {"t": "string"}
+                          }
+                        }
+                      }
+                    },
+                    "display_name_styles": {"t": "null"},
+                    "banner_color": {"t": "null"},
+                    "clan": {
+                      "t": "object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    },
+                    "primary_guild": {
+                      "t": "object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    }
+                  }
+                },
+                "pinned": {"t": "bool"},
+                "mention_everyone": {"t": "bool"},
+                "tts": {"t": "bool"},
+                "position": {"t": "int"}
+              }
+            },
+            "opt": true
+          },
+          "total_results": {"t": "int"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/guilds/{id}/application-command-index": {
+    "samples": 4,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "applications": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "description": {"t": "string"},
+                "icon": {"t": "string", "opt": true},
+                "bot_id": {"t": "snowflake"},
+                "flags": {"t": "string"},
+                "embedded_surfaces": {"t": "array", "opt": true}
+              }
+            }
+          },
+          "application_commands": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "type": {"t": "int"},
+                "application_id": {"t": "snowflake"},
+                "guild_id": {"t": "snowflake", "opt": true},
+                "version": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "description": {"t": "string", "opt": true},
+                "default_member_permissions": {"t": "string", "opt": true},
+                "options": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "type": {"t": "int"},
+                      "name": {"t": "string"},
+                      "description": {"t": "string"},
+                      "options": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "type": {"t": "int"},
+                            "name": {"t": "string"},
+                            "description": {"t": "string"},
+                            "options": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "type": {"t": "int"},
+                                  "name": {"t": "string"},
+                                  "description": {"t": "string"},
+                                  "required": {"t": "bool"}
+                                }
+                              },
+                              "opt": true
+                            },
+                            "min_value": {"t": "int|float", "opt": true},
+                            "max_value": {"t": "int|float", "opt": true},
+                            "required": {"t": "bool", "opt": true},
+                            "autocomplete": {"t": "bool", "opt": true},
+                            "min_length": {"t": "int", "opt": true},
+                            "max_length": {"t": "int", "opt": true},
+                            "choices": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "name": {"t": "string"},
+                                  "value": {"t": "string"}
+                                }
+                              },
+                              "opt": true
+                            },
+                            "channel_types": {
+                              "t": "array",
+                              "i": {"t": "int"},
+                              "opt": true
+                            }
+                          }
+                        },
+                        "opt": true
+                      },
+                      "required": {"t": "bool", "opt": true},
+                      "autocomplete": {"t": "bool", "opt": true}
+                    }
+                  },
+                  "opt": true
+                },
+                "dm_permission": {"t": "bool", "opt": true},
+                "integration_types": {
+                  "t": "array",
+                  "i": {"t": "int"}
+                },
+                "global_popularity_rank": {"t": "int", "opt": true}
+              }
+            }
+          },
+          "version": {"t": "snowflake"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/guilds/{id}/messages/search": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "analytics_id": {"t": "string"},
+          "messages": {
+            "t": "array",
+            "i": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "type": {"t": "int"},
+                  "content": {"t": "string"},
+                  "mentions": {"t": "array"},
+                  "mention_roles": {"t": "array"},
+                  "attachments": {"t": "array"},
+                  "embeds": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "type": {"t": "string"},
+                        "title": {"t": "string"},
+                        "description": {"t": "string"},
+                        "color": {"t": "int"},
+                        "fields": {
+                          "t": "array",
+                          "i": {
+                            "t": "object",
+                            "f": {
+                              "name": {"t": "string"},
+                              "value": {"t": "string"},
+                              "inline": {"t": "bool"}
+                            }
+                          }
+                        },
+                        "content_scan_version": {"t": "int"}
+                      }
+                    }
+                  },
+                  "timestamp": {"t": "timestamp"},
+                  "edited_timestamp": {"t": "null"},
+                  "flags": {"t": "int"},
+                  "components": {"t": "array"},
+                  "id": {"t": "snowflake"},
+                  "channel_id": {"t": "snowflake"},
+                  "author": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "snowflake"},
+                      "username": {"t": "string"},
+                      "avatar": {"t": "null"},
+                      "discriminator": {"t": "string"},
+                      "public_flags": {"t": "int"},
+                      "flags": {"t": "int"},
+                      "bot": {"t": "bool"},
+                      "global_name": {"t": "null"},
+                      "clan": {"t": "null"},
+                      "primary_guild": {"t": "null"}
+                    }
+                  },
+                  "pinned": {"t": "bool"},
+                  "mention_everyone": {"t": "bool"},
+                  "tts": {"t": "bool"},
+                  "webhook_id": {"t": "snowflake"},
+                  "hit": {"t": "bool"}
+                }
+              }
+            }
+          },
+          "doing_deep_historical_index": {"t": "bool"},
+          "total_results": {"t": "int"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/guilds/{id}/powerups": {
+    "samples": 3,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {"t": "array"}
+    }
+  },
+  "GET /api/v9/guilds/{id}/premium/subscriptions": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {"t": "array"}
+    }
+  },
+  "GET /api/v9/guilds/{id}/requests": {
+    "samples": 4,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "total": {"t": "int"},
+          "guild_join_requests": {"t": "array"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/sticker-packs": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "sticker_packs": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "sku_id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "description": {"t": "string"},
+                "stickers": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "snowflake"},
+                      "name": {"t": "string"},
+                      "tags": {"t": "string"},
+                      "type": {"t": "int"},
+                      "format_type": {"t": "int"},
+                      "description": {"t": "string"},
+                      "asset": {"t": "string"},
+                      "pack_id": {"t": "snowflake"},
+                      "sort_value": {"t": "int"}
+                    }
+                  }
+                },
+                "cover_sticker_id": {"t": "snowflake"},
+                "banner_asset_id": {"t": "snowflake"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/application-command-index": {
+    "samples": 4,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "applications": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "description": {"t": "string"},
+                "icon": {"t": "string"},
+                "bot_id": {"t": "snowflake"},
+                "flags": {"t": "string"},
+                "embedded_surfaces": {
+                  "t": "array",
+                  "i": {"t": "int"},
+                  "opt": true
+                },
+                "embedded_activity_config": {
+                  "t": "object",
+                  "f": {
+                    "supported_platforms": {
+                      "t": "array",
+                      "i": {"t": "string"}
+                    }
+                  },
+                  "opt": true
+                }
+              }
+            }
+          },
+          "application_commands": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "type": {"t": "int"},
+                "application_id": {"t": "snowflake"},
+                "version": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "description": {"t": "string", "opt": true},
+                "default_member_permissions": {"t": "string", "opt": true},
+                "description_default": {"t": "string", "opt": true},
+                "options": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "type": {"t": "int"},
+                      "name": {"t": "string"},
+                      "description": {"t": "string"},
+                      "description_default": {"t": "string", "opt": true},
+                      "min_value": {"t": "int", "opt": true},
+                      "max_value": {"t": "int", "opt": true},
+                      "options": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "type": {"t": "int"},
+                            "name": {"t": "string"},
+                            "description": {"t": "string"},
+                            "channel_types": {
+                              "t": "array",
+                              "i": {"t": "int"},
+                              "opt": true
+                            },
+                            "description_default": {"t": "string", "opt": true},
+                            "options": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "type": {"t": "int"},
+                                  "name": {"t": "string"},
+                                  "description": {"t": "string"},
+                                  "description_default": {"t": "string", "opt": true},
+                                  "min_value": {"t": "int", "opt": true},
+                                  "max_value": {"t": "int", "opt": true},
+                                  "required": {"t": "bool", "opt": true},
+                                  "max_length": {"t": "int", "opt": true},
+                                  "channel_types": {
+                                    "t": "array",
+                                    "i": {"t": "int"},
+                                    "opt": true
+                                  },
+                                  "choices": {
+                                    "t": "array",
+                                    "i": {
+                                      "t": "object",
+                                      "f": {
+                                        "name": {"t": "string"},
+                                        "value": {"t": "int|string"}
+                                      }
+                                    },
+                                    "opt": true
+                                  },
+                                  "autocomplete": {"t": "bool", "opt": true}
+                                }
+                              },
+                              "opt": true
+                            },
+                            "min_value": {"t": "int|float", "opt": true},
+                            "max_value": {"t": "int|float", "opt": true},
+                            "autocomplete": {"t": "bool", "opt": true},
+                            "required": {"t": "bool", "opt": true},
+                            "min_length": {"t": "int", "opt": true},
+                            "choices": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "name": {"t": "string"},
+                                  "value": {"t": "int|string"}
+                                }
+                              },
+                              "opt": true
+                            },
+                            "max_length": {"t": "int", "opt": true}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "required": {"t": "bool", "opt": true},
+                      "min_length": {"t": "int", "opt": true},
+                      "autocomplete": {"t": "bool", "opt": true},
+                      "max_length": {"t": "int", "opt": true},
+                      "choices": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "name": {"t": "string"},
+                            "value": {"t": "int|string"}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "channel_types": {
+                        "t": "array",
+                        "i": {"t": "int"},
+                        "opt": true
+                      }
+                    }
+                  },
+                  "opt": true
+                },
+                "dm_permission": {"t": "bool"},
+                "contexts": {
+                  "t": "array",
+                  "i": {"t": "int"},
+                  "opt": true
+                },
+                "integration_types": {
+                  "t": "array",
+                  "i": {"t": "int"}
+                },
+                "global_popularity_rank": {"t": "int", "opt": true},
+                "handler": {"t": "int", "opt": true}
+              }
+            }
+          },
+          "version": {"t": "snowflake"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/badges": {
+    "samples": 4,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "badges": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "badge_id": {"t": "int"},
+                "name": {"t": "string"},
+                "description": {"t": "string", "opt": true},
+                "leveling_instructions": {"t": "string", "opt": true},
+                "info_label": {"t": "string", "opt": true},
+                "rarity": {"t": "int"},
+                "simple_icon_url": {"t": "string"},
+                "simple_icon_raster_url": {"t": "string"},
+                "complex_icon_static_url": {"t": "string", "opt": true},
+                "is_earnable": {"t": "bool"},
+                "owned": {"t": "bool"},
+                "hidden": {"t": "bool"},
+                "obtained_at": {"t": "timestamp", "opt": true},
+                "current_tier": {"t": "string|snowflake", "opt": true},
+                "next_tier": {"t": "string|snowflake", "opt": true},
+                "tier_obtained_at": {
+                  "t": "object|map",
+                  "f": {
+                    "one_year": {"t": "timestamp", "opt": true},
+                    "sampler": {"t": "timestamp", "opt": true}
+                  },
+                  "v": {"t": "timestamp"},
+                  "opt": true
+                },
+                "tiers": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "key": {"t": "string|snowflake"},
+                      "name": {"t": "string", "opt": true},
+                      "rarity": {"t": "int"},
+                      "simple_icon_url": {"t": "string"},
+                      "simple_icon_raster_url": {"t": "string"},
+                      "complex_icon_static_url": {"t": "string", "opt": true},
+                      "complex_icon_animated_url": {"t": "string", "opt": true},
+                      "requirements": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "progress_type": {"t": "int"},
+                            "threshold": {"t": "int"},
+                            "unit": {"t": "string", "opt": true}
+                          }
+                        }
+                      },
+                      "owned": {"t": "bool"},
+                      "milestone_text": {"t": "string", "opt": true}
+                    }
+                  },
+                  "opt": true
+                },
+                "progress": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "progress_type": {"t": "int"},
+                      "current": {"t": "int"},
+                      "floor": {"t": "int"},
+                      "threshold": {"t": "int"},
+                      "unit": {"t": "null|string"},
+                      "window": {"t": "null"},
+                      "progress_helper_text": {"t": "string"}
+                    }
+                  },
+                  "opt": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/connections": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "id": {"t": "string"},
+            "name": {"t": "string"},
+            "type": {"t": "string"},
+            "friend_sync": {"t": "bool"},
+            "integrations": {"t": "array"},
+            "metadata_visibility": {"t": "int"},
+            "show_activity": {"t": "bool"},
+            "two_way_link": {"t": "bool"},
+            "verified": {"t": "bool"},
+            "visibility": {"t": "int"},
+            "revoked": {"t": "bool"},
+            "access_token": {"t": "string", "opt": true}
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/connections/spotify/{connection_id}/access-token": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "access_token": {"t": "string"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/guilds/premium/subscription-slots": {
+    "samples": 2,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {"t": "array"}
+    }
+  },
+  "GET /api/v9/users/@me/mfa/webauthn/credentials": {
+    "samples": 4,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "id": {"t": "snowflake"},
+            "type": {"t": "int"},
+            "name": {"t": "string"},
+            "last_used": {"t": "timestamp"},
+            "cred_id": {"t": "string"}
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/notes/{id}": {
+    "samples": 3,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "404": {
+        "t": "object",
+        "f": {
+          "message": {"t": "string"},
+          "code": {"t": "int"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/relationships": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "id": {"t": "snowflake"},
+            "type": {"t": "int"},
+            "nickname": {"t": "null|string"},
+            "user_ignored": {"t": "bool"},
+            "user": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "username": {"t": "string"},
+                "global_name": {"t": "null|string"},
+                "avatar": {"t": "null|string"},
+                "avatar_decoration_data": {
+                  "t": "null|object",
+                  "f": {
+                    "asset": {"t": "string"},
+                    "sku_id": {"t": "snowflake"},
+                    "expires_at": {"t": "null"}
+                  }
+                },
+                "collectibles": {
+                  "t": "null|object",
+                  "f": {
+                    "nameplate": {
+                      "t": "object",
+                      "f": {
+                        "asset": {"t": "string"},
+                        "palette": {"t": "string"},
+                        "label": {"t": "string"},
+                        "sku_id": {"t": "snowflake"},
+                        "expires_at": {"t": "null"}
+                      }
+                    }
+                  }
+                },
+                "discriminator": {"t": "string"},
+                "display_name_styles": {
+                  "t": "null|object",
+                  "f": {
+                    "font_id": {"t": "int"},
+                    "effect_id": {"t": "int"},
+                    "colors": {
+                      "t": "array",
+                      "i": {"t": "int"}
+                    }
+                  }
+                },
+                "public_flags": {"t": "int"},
+                "primary_guild": {
+                  "t": "null|object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                },
+                "clan": {
+                  "t": "null|object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                }
+              }
+            },
+            "is_spam_request": {"t": "bool"},
+            "since": {"t": "timestamp"},
+            "note": {"t": "string", "opt": true}
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/saved-messages": {
+    "samples": 4,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "reminders": {"t": "array"},
+          "bookmark_ids": {"t": "array"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/settings-proto/2": {
+    "samples": 4,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "settings": {"t": "string"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/{id}/application-identities": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "identities": {"t": "array"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/{id}/badges": {
+    "samples": 3,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "badges": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "badge_id": {"t": "int"},
+                "name": {"t": "string"},
+                "description": {"t": "string"},
+                "info_label": {"t": "string"},
+                "rarity": {"t": "int"},
+                "simple_icon_url": {"t": "string"},
+                "simple_icon_raster_url": {"t": "string"},
+                "is_earnable": {"t": "bool"},
+                "owned": {"t": "bool"},
+                "progress": {"t": "null"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/{id}/profile": {
+    "samples": 5,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "user": {
+            "t": "object",
+            "f": {
+              "id": {"t": "snowflake"},
+              "username": {"t": "string"},
+              "global_name": {"t": "string"},
+              "avatar": {"t": "string"},
+              "avatar_decoration_data": {"t": "null"},
+              "collectibles": {"t": "null"},
+              "discriminator": {"t": "string"},
+              "display_name_styles": {"t": "null"},
+              "public_flags": {"t": "int"},
+              "primary_guild": {"t": "null"},
+              "clan": {"t": "null"},
+              "flags": {"t": "int"},
+              "banner": {"t": "null"},
+              "banner_color": {"t": "null"},
+              "accent_color": {"t": "null"},
+              "bio": {"t": "string"}
+            }
+          },
+          "connected_accounts": {"t": "array"},
+          "premium_type": {"t": "int"},
+          "premium_since": {"t": "null"},
+          "premium_guild_since": {"t": "null"},
+          "profile_themes_experiment_bucket": {"t": "int"},
+          "user_profile": {
+            "t": "object",
+            "f": {
+              "bio": {"t": "string"},
+              "accent_color": {"t": "null"},
+              "pronouns": {"t": "string"},
+              "profile_effect": {"t": "null"},
+              "collectibles": {"t": "array"}
+            }
+          },
+          "badges": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "string"},
+                "description": {"t": "string"},
+                "icon": {"t": "string"},
+                "link": {"t": "string"}
+              }
+            }
+          },
+          "guild_badges": {"t": "array"},
+          "widgets": {"t": "array"},
+          "wishlist_settings": {
+            "t": "map",
+            "v": {
+              "t": "object",
+              "f": {
+                "visibility": {"t": "int"},
+                "updated_at": {"t": "timestamp"}
+              }
+            }
+          },
+          "mutual_friends": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "username": {"t": "string"},
+                "global_name": {"t": "null|string"},
+                "avatar": {"t": "string"},
+                "avatar_decoration_data": {
+                  "t": "null|object",
+                  "f": {
+                    "asset": {"t": "string"},
+                    "sku_id": {"t": "snowflake"},
+                    "expires_at": {"t": "null"}
+                  }
+                },
+                "collectibles": {
+                  "t": "null|object",
+                  "f": {
+                    "nameplate": {
+                      "t": "object",
+                      "f": {
+                        "asset": {"t": "string"},
+                        "palette": {"t": "string"},
+                        "label": {"t": "string"},
+                        "sku_id": {"t": "snowflake"},
+                        "expires_at": {"t": "null"}
+                      }
+                    }
+                  }
+                },
+                "discriminator": {"t": "string"},
+                "display_name_styles": {
+                  "t": "null|object",
+                  "f": {
+                    "font_id": {"t": "int"},
+                    "effect_id": {"t": "int"},
+                    "colors": {
+                      "t": "array",
+                      "i": {"t": "int"}
+                    }
+                  }
+                },
+                "public_flags": {"t": "int"},
+                "primary_guild": {
+                  "t": "null|object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                },
+                "clan": {
+                  "t": "null|object",
+                  "f": {
+                    "identity_guild_id": {"t": "snowflake"},
+                    "identity_enabled": {"t": "bool"},
+                    "tag": {"t": "string"},
+                    "badge": {"t": "string"}
+                  }
+                }
+              }
+            },
+            "opt": true
+          },
+          "mutual_friends_count": {"t": "int", "opt": true},
+          "mutual_guilds": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "nick": {"t": "null"}
+              }
+            },
+            "opt": true
+          },
+          "guild_member": {
+            "t": "object",
+            "f": {
+              "avatar": {"t": "null"},
+              "banner": {"t": "null"},
+              "communication_disabled_until": {"t": "null"},
+              "flags": {"t": "int"},
+              "joined_at": {"t": "timestamp"},
+              "nick": {"t": "null"},
+              "pending": {"t": "bool"},
+              "premium_since": {"t": "null"},
+              "roles": {
+                "t": "array",
+                "i": {"t": "snowflake"}
+              },
+              "unusual_dm_activity_until": {"t": "null"},
+              "user": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "username": {"t": "string"},
+                  "global_name": {"t": "string"},
+                  "avatar": {"t": "string"},
+                  "avatar_decoration_data": {"t": "null"},
+                  "collectibles": {"t": "null"},
+                  "discriminator": {"t": "string"},
+                  "display_name_styles": {"t": "null"},
+                  "public_flags": {"t": "int"},
+                  "primary_guild": {"t": "null"},
+                  "clan": {"t": "null"}
+                }
+              },
+              "bio": {"t": "string"},
+              "mute": {"t": "bool"},
+              "deaf": {"t": "bool"}
+            },
+            "opt": true
+          },
+          "guild_member_profile": {
+            "t": "object",
+            "f": {
+              "guild_id": {"t": "snowflake"},
+              "pronouns": {"t": "string"},
+              "profile_effect": {"t": "null"},
+              "collectibles": {"t": "array"}
+            },
+            "opt": true
+          },
+          "legacy_username": {"t": "null"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/wishlists/{id}": {
+    "samples": 2,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "id": {"t": "snowflake"},
+          "user_id": {"t": "snowflake"},
+          "wishlist_items": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "sku_id": {"t": "snowflake"},
+                "sku_product_line": {"t": "int"},
+                "sku_name": {"t": "string"},
+                "sku": {
+                  "t": "object",
+                  "f": {
+                    "id": {"t": "snowflake"},
+                    "type": {"t": "int"},
+                    "product_line": {"t": "int"},
+                    "application_id": {"t": "snowflake"},
+                    "name": {"t": "string"},
+                    "flags": {"t": "int"},
+                    "slug": {"t": "string"},
+                    "premium": {"t": "bool"},
+                    "exclusive": {"t": "bool"},
+                    "thumbnail_asset_id": {"t": "null"},
+                    "tenant_metadata": {"t": "object"}
+                  }
+                }
+              }
+            }
+          },
+          "applications": {"t": "array"},
+          "storefront_pricing": {
+            "t": "object",
+            "f": {
+              "sku_price_map": {
+                "t": "map",
+                "v": {
+                  "t": "object",
+                  "f": {
+                    "pricing_result_id": {"t": "snowflake"},
+                    "storefront_promotion_ids": {"t": "array"},
+                    "reward_result_ids": {"t": "array"},
+                    "offer_result_ids": {"t": "array"}
+                  }
+                }
+              },
+              "pricing_result_id_map": {
+                "t": "map",
+                "v": {"t": "object"}
+              },
+              "reward_result_id_map": {"t": "object"},
+              "offer_result_id_map": {"t": "object"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "PATCH /api/v9/channels/{id}/messages/{id}": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "content": {"t": "string"}
+      }
+    },
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "type": {"t": "int"},
+          "content": {"t": "string"},
+          "mentions": {"t": "array"},
+          "mention_roles": {"t": "array"},
+          "attachments": {"t": "array"},
+          "embeds": {"t": "array"},
+          "timestamp": {"t": "timestamp"},
+          "edited_timestamp": {"t": "timestamp"},
+          "flags": {"t": "int"},
+          "components": {"t": "array"},
+          "id": {"t": "snowflake"},
+          "channel_id": {"t": "snowflake"},
+          "author": {
+            "t": "object",
+            "f": {
+              "id": {"t": "snowflake"},
+              "username": {"t": "string"},
+              "avatar": {"t": "string"},
+              "discriminator": {"t": "string"},
+              "public_flags": {"t": "int"},
+              "flags": {"t": "int"},
+              "banner": {"t": "null"},
+              "accent_color": {"t": "null"},
+              "global_name": {"t": "string"},
+              "avatar_decoration_data": {
+                "t": "object",
+                "f": {
+                  "asset": {"t": "string"},
+                  "sku_id": {"t": "snowflake"},
+                  "expires_at": {"t": "null"}
+                }
+              },
+              "collectibles": {
+                "t": "object",
+                "f": {
+                  "nameplate": {
+                    "t": "object",
+                    "f": {
+                      "sku_id": {"t": "snowflake"},
+                      "asset": {"t": "string"},
+                      "label": {"t": "string"},
+                      "palette": {"t": "string"}
+                    }
+                  }
+                }
+              },
+              "display_name_styles": {"t": "null"},
+              "banner_color": {"t": "null"},
+              "clan": {
+                "t": "object",
+                "f": {
+                  "identity_guild_id": {"t": "snowflake"},
+                  "identity_enabled": {"t": "bool"},
+                  "tag": {"t": "string"},
+                  "badge": {"t": "string"}
+                }
+              },
+              "primary_guild": {
+                "t": "object",
+                "f": {
+                  "identity_guild_id": {"t": "snowflake"},
+                  "identity_enabled": {"t": "bool"},
+                  "tag": {"t": "string"},
+                  "badge": {"t": "string"}
+                }
+              }
+            }
+          },
+          "pinned": {"t": "bool"},
+          "mention_everyone": {"t": "bool"},
+          "tts": {"t": "bool"}
+        }
+      }
+    }
+  },
+  "PATCH /api/v9/users/@me/settings-proto/2": {
+    "samples": 3,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "settings": {"t": "string"}
+      }
+    },
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "settings": {"t": "string"}
+        }
+      }
+    }
+  },
+  "POST /api/v9/channels/{id}/attachments": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "files": {
+          "t": "array",
+          "i": {
+            "t": "object",
+            "f": {
+              "filename": {"t": "string"},
+              "file_size": {"t": "int"},
+              "id": {"t": "string"},
+              "is_clip": {"t": "bool"},
+              "original_content_type": {"t": "string"}
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "attachments": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "int"},
+                "upload_url": {"t": "string"},
+                "upload_filename": {"t": "string"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "POST /api/v9/channels/{id}/messages": {
+    "samples": 11,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "mobile_network_type": {"t": "string"},
+        "content": {"t": "string"},
+        "nonce": {"t": "snowflake"},
+        "tts": {"t": "bool"},
+        "message_reference": {
+          "t": "object",
+          "f": {
+            "guild_id": {"t": "snowflake"},
+            "channel_id": {"t": "snowflake"},
+            "message_id": {"t": "snowflake"},
+            "type": {"t": "int", "opt": true}
+          },
+          "opt": true
+        },
+        "allowed_mentions": {
+          "t": "object",
+          "f": {
+            "parse": {
+              "t": "array",
+              "i": {"t": "string"}
+            },
+            "replied_user": {"t": "bool"}
+          },
+          "opt": true
+        },
+        "flags": {"t": "int"},
+        "sticker_ids": {
+          "t": "array",
+          "i": {"t": "snowflake"},
+          "opt": true
+        },
+        "poll": {
+          "t": "object",
+          "f": {
+            "question": {
+              "t": "object",
+              "f": {
+                "text": {"t": "string"}
+              }
+            },
+            "answers": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "poll_media": {
+                    "t": "object",
+                    "f": {
+                      "text": {"t": "string"}
+                    }
+                  }
+                }
+              }
+            },
+            "allow_multiselect": {"t": "bool"},
+            "duration": {"t": "int"},
+            "layout_type": {"t": "int"}
+          },
+          "opt": true
+        },
+        "attachments": {
+          "t": "array",
+          "i": {
+            "t": "object",
+            "f": {
+              "id": {"t": "string"},
+              "filename": {"t": "string"},
+              "uploaded_filename": {"t": "string"},
+              "original_content_type": {"t": "string"}
+            }
+          },
+          "opt": true
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "type": {"t": "int"},
+          "content": {"t": "string"},
+          "mentions": {"t": "array"},
+          "mention_roles": {"t": "array"},
+          "attachments": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "filename": {"t": "string"},
+                "size": {"t": "int"},
+                "url": {"t": "string"},
+                "proxy_url": {"t": "string"},
+                "width": {"t": "int"},
+                "height": {"t": "int"},
+                "content_type": {"t": "string"},
+                "original_content_type": {"t": "string"},
+                "content_scan_version": {"t": "int"},
+                "placeholder": {"t": "string"},
+                "placeholder_version": {"t": "int"}
+              }
+            }
+          },
+          "embeds": {"t": "array"},
+          "timestamp": {"t": "timestamp"},
+          "edited_timestamp": {"t": "null"},
+          "flags": {"t": "int"},
+          "components": {"t": "array"},
+          "stickers": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "tags": {"t": "string"},
+                "type": {"t": "int"},
+                "format_type": {"t": "int"},
+                "description": {"t": "string"},
+                "asset": {"t": "string"},
+                "pack_id": {"t": "snowflake"},
+                "sort_value": {"t": "int"}
+              }
+            },
+            "opt": true
+          },
+          "sticker_items": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "format_type": {"t": "int"}
+              }
+            },
+            "opt": true
+          },
+          "id": {"t": "snowflake"},
+          "channel_id": {"t": "snowflake"},
+          "author": {
+            "t": "object",
+            "f": {
+              "id": {"t": "snowflake"},
+              "username": {"t": "string"},
+              "avatar": {"t": "string"},
+              "discriminator": {"t": "string"},
+              "public_flags": {"t": "int"},
+              "flags": {"t": "int"},
+              "banner": {"t": "null"},
+              "accent_color": {"t": "int"},
+              "global_name": {"t": "string"},
+              "avatar_decoration_data": {
+                "t": "object",
+                "f": {
+                  "asset": {"t": "string"},
+                  "sku_id": {"t": "snowflake"},
+                  "expires_at": {"t": "null"}
+                }
+              },
+              "collectibles": {
+                "t": "object",
+                "f": {
+                  "nameplate": {
+                    "t": "object",
+                    "f": {
+                      "sku_id": {"t": "snowflake"},
+                      "asset": {"t": "string"},
+                      "label": {"t": "string"},
+                      "palette": {"t": "string"}
+                    }
+                  }
+                }
+              },
+              "display_name_styles": {"t": "null"},
+              "banner_color": {"t": "string"},
+              "clan": {
+                "t": "object",
+                "f": {
+                  "identity_guild_id": {"t": "snowflake"},
+                  "identity_enabled": {"t": "bool"},
+                  "tag": {"t": "string"},
+                  "badge": {"t": "string"}
+                }
+              },
+              "primary_guild": {
+                "t": "object",
+                "f": {
+                  "identity_guild_id": {"t": "snowflake"},
+                  "identity_enabled": {"t": "bool"},
+                  "tag": {"t": "string"},
+                  "badge": {"t": "string"}
+                }
+              }
+            }
+          },
+          "pinned": {"t": "bool"},
+          "mention_everyone": {"t": "bool"},
+          "tts": {"t": "bool"},
+          "nonce": {"t": "snowflake"},
+          "poll": {
+            "t": "object",
+            "f": {
+              "question": {
+                "t": "object",
+                "f": {
+                  "text": {"t": "string"}
+                }
+              },
+              "answers": {
+                "t": "array",
+                "i": {
+                  "t": "object",
+                  "f": {
+                    "answer_id": {"t": "int"},
+                    "poll_media": {
+                      "t": "object",
+                      "f": {
+                        "text": {"t": "string"}
+                      }
+                    }
+                  }
+                }
+              },
+              "expiry": {"t": "timestamp"},
+              "allow_multiselect": {"t": "bool"},
+              "layout_type": {"t": "int"},
+              "results": {
+                "t": "object",
+                "f": {
+                  "answer_counts": {"t": "array"},
+                  "is_finalized": {"t": "bool"}
+                }
+              }
+            },
+            "opt": true
+          },
+          "position": {"t": "int", "opt": true},
+          "message_reference": {
+            "t": "object",
+            "f": {
+              "type": {"t": "int"},
+              "channel_id": {"t": "snowflake"},
+              "message_id": {"t": "snowflake"},
+              "guild_id": {"t": "snowflake"}
+            },
+            "opt": true
+          },
+          "message_snapshots": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "message": {
+                  "t": "object",
+                  "f": {
+                    "type": {"t": "int"},
+                    "content": {"t": "string"},
+                    "mentions": {"t": "array"},
+                    "mention_roles": {"t": "array"},
+                    "attachments": {"t": "array"},
+                    "embeds": {"t": "array"},
+                    "timestamp": {"t": "timestamp"},
+                    "edited_timestamp": {"t": "null"},
+                    "flags": {"t": "int"},
+                    "components": {"t": "array"}
+                  }
+                }
+              }
+            },
+            "opt": true
+          },
+          "referenced_message": {
+            "t": "object",
+            "f": {
+              "type": {"t": "int"},
+              "content": {"t": "string"},
+              "mentions": {"t": "array"},
+              "mention_roles": {"t": "array"},
+              "attachments": {"t": "array"},
+              "embeds": {"t": "array"},
+              "timestamp": {"t": "timestamp"},
+              "edited_timestamp": {"t": "timestamp"},
+              "flags": {"t": "int"},
+              "components": {"t": "array"},
+              "id": {"t": "snowflake"},
+              "channel_id": {"t": "snowflake"},
+              "author": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "username": {"t": "string"},
+                  "avatar": {"t": "string"},
+                  "discriminator": {"t": "string"},
+                  "public_flags": {"t": "int"},
+                  "flags": {"t": "int"},
+                  "banner": {"t": "null"},
+                  "accent_color": {"t": "null"},
+                  "global_name": {"t": "string"},
+                  "avatar_decoration_data": {
+                    "t": "object",
+                    "f": {
+                      "asset": {"t": "string"},
+                      "sku_id": {"t": "snowflake"},
+                      "expires_at": {"t": "null"}
+                    }
+                  },
+                  "collectibles": {
+                    "t": "object",
+                    "f": {
+                      "nameplate": {
+                        "t": "object",
+                        "f": {
+                          "sku_id": {"t": "snowflake"},
+                          "asset": {"t": "string"},
+                          "label": {"t": "string"},
+                          "palette": {"t": "string"}
+                        }
+                      }
+                    }
+                  },
+                  "display_name_styles": {"t": "null"},
+                  "banner_color": {"t": "null"},
+                  "clan": {
+                    "t": "object",
+                    "f": {
+                      "identity_guild_id": {"t": "snowflake"},
+                      "identity_enabled": {"t": "bool"},
+                      "tag": {"t": "string"},
+                      "badge": {"t": "string"}
+                    }
+                  },
+                  "primary_guild": {
+                    "t": "object",
+                    "f": {
+                      "identity_guild_id": {"t": "snowflake"},
+                      "identity_enabled": {"t": "bool"},
+                      "tag": {"t": "string"},
+                      "badge": {"t": "string"}
+                    }
+                  }
+                }
+              },
+              "pinned": {"t": "bool"},
+              "mention_everyone": {"t": "bool"},
+              "tts": {"t": "bool"}
+            },
+            "opt": true
+          }
+        }
+      }
+    }
+  },
+  "POST /api/v9/channels/{id}/messages/{id}/ack": {
+    "samples": 8,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "token": {"t": "null"},
+        "last_viewed": {"t": "int"}
+      }
+    },
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "token": {"t": "null"}
+        }
+      }
+    }
+  },
+  "POST /api/v9/channels/{id}/messages/{id}/threads": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "name": {"t": "string"},
+        "type": {"t": "int"},
+        "auto_archive_duration": {"t": "int"},
+        "location": {"t": "string"}
+      }
+    },
+    "responses": {
+      "201": {
+        "t": "object",
+        "f": {
+          "id": {"t": "snowflake"},
+          "type": {"t": "int"},
+          "last_message_id": {"t": "snowflake"},
+          "flags": {"t": "int"},
+          "guild_id": {"t": "snowflake"},
+          "name": {"t": "string"},
+          "parent_id": {"t": "snowflake"},
+          "rate_limit_per_user": {"t": "int"},
+          "bitrate": {"t": "int"},
+          "user_limit": {"t": "int"},
+          "rtc_region": {"t": "null"},
+          "owner_id": {"t": "snowflake"},
+          "thread_metadata": {
+            "t": "object",
+            "f": {
+              "archived": {"t": "bool"},
+              "archive_timestamp": {"t": "timestamp"},
+              "auto_archive_duration": {"t": "int"},
+              "locked": {"t": "bool"},
+              "create_timestamp": {"t": "timestamp"}
+            }
+          },
+          "message_count": {"t": "int"},
+          "member_count": {"t": "int"},
+          "total_message_sent": {"t": "int"},
+          "member": {
+            "t": "object",
+            "f": {
+              "id": {"t": "snowflake"},
+              "user_id": {"t": "snowflake"},
+              "join_timestamp": {"t": "timestamp"},
+              "flags": {"t": "int"},
+              "muted": {"t": "bool"},
+              "mute_config": {"t": "null"}
+            }
+          },
+          "member_ids_preview": {
+            "t": "array",
+            "i": {"t": "snowflake"}
+          }
+        }
+      }
+    }
+  },
+  "POST /api/v9/channels/{id}/post-data": {
+    "samples": 2,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "thread_ids": {
+          "t": "array",
+          "i": {"t": "snowflake"}
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "threads": {
+            "t": "map",
+            "v": {
+              "t": "object",
+              "f": {
+                "first_message": {
+                  "t": "object",
+                  "f": {
+                    "id": {"t": "snowflake"},
+                    "type": {"t": "int"},
+                    "content": {"t": "string"},
+                    "channel_id": {"t": "snowflake"},
+                    "author": {
+                      "t": "object",
+                      "f": {
+                        "id": {"t": "snowflake"},
+                        "username": {"t": "string"},
+                        "global_name": {"t": "string"},
+                        "avatar": {"t": "string"},
+                        "avatar_decoration_data": {
+                          "t": "null|object",
+                          "f": {
+                            "asset": {"t": "string"},
+                            "sku_id": {"t": "snowflake"},
+                            "expires_at": {"t": "null"}
+                          }
+                        },
+                        "collectibles": {
+                          "t": "null|object",
+                          "f": {
+                            "nameplate": {
+                              "t": "object",
+                              "f": {
+                                "asset": {"t": "string"},
+                                "palette": {"t": "string"},
+                                "label": {"t": "string"},
+                                "sku_id": {"t": "snowflake"},
+                                "expires_at": {"t": "null"}
+                              }
+                            }
+                          }
+                        },
+                        "discriminator": {"t": "string"},
+                        "display_name_styles": {"t": "null"},
+                        "public_flags": {"t": "int"},
+                        "primary_guild": {
+                          "t": "null|object",
+                          "f": {
+                            "identity_guild_id": {"t": "snowflake"},
+                            "identity_enabled": {"t": "bool"},
+                            "tag": {"t": "string"},
+                            "badge": {"t": "string"}
+                          }
+                        },
+                        "clan": {
+                          "t": "null|object",
+                          "f": {
+                            "identity_guild_id": {"t": "snowflake"},
+                            "identity_enabled": {"t": "bool"},
+                            "tag": {"t": "string"},
+                            "badge": {"t": "string"}
+                          }
+                        }
+                      }
+                    },
+                    "attachments": {"t": "array"},
+                    "embeds": {"t": "array"},
+                    "mentions": {"t": "array"},
+                    "mention_roles": {"t": "array"},
+                    "mention_everyone": {"t": "bool"},
+                    "pinned": {"t": "bool"},
+                    "tts": {"t": "bool"},
+                    "timestamp": {"t": "timestamp"},
+                    "edited_timestamp": {"t": "null"},
+                    "flags": {"t": "int"},
+                    "components": {"t": "array"},
+                    "position": {"t": "int"}
+                  }
+                },
+                "owner": {
+                  "t": "object",
+                  "f": {
+                    "avatar": {"t": "null"},
+                    "banner": {"t": "null"},
+                    "communication_disabled_until": {"t": "null"},
+                    "flags": {"t": "int"},
+                    "joined_at": {"t": "timestamp"},
+                    "nick": {"t": "null"},
+                    "pending": {"t": "bool"},
+                    "premium_since": {"t": "null"},
+                    "roles": {
+                      "t": "array",
+                      "i": {"t": "snowflake"}
+                    },
+                    "unusual_dm_activity_until": {"t": "null"},
+                    "user": {
+                      "t": "object",
+                      "f": {
+                        "id": {"t": "snowflake"},
+                        "username": {"t": "string"},
+                        "global_name": {"t": "string"},
+                        "avatar": {"t": "string"},
+                        "avatar_decoration_data": {
+                          "t": "null|object",
+                          "f": {
+                            "asset": {"t": "string"},
+                            "sku_id": {"t": "snowflake"},
+                            "expires_at": {"t": "null"}
+                          }
+                        },
+                        "collectibles": {
+                          "t": "null|object",
+                          "f": {
+                            "nameplate": {
+                              "t": "object",
+                              "f": {
+                                "asset": {"t": "string"},
+                                "palette": {"t": "string"},
+                                "label": {"t": "string"},
+                                "sku_id": {"t": "snowflake"},
+                                "expires_at": {"t": "null"}
+                              }
+                            }
+                          }
+                        },
+                        "discriminator": {"t": "string"},
+                        "display_name_styles": {"t": "null"},
+                        "public_flags": {"t": "int"},
+                        "primary_guild": {
+                          "t": "null|object",
+                          "f": {
+                            "identity_guild_id": {"t": "snowflake"},
+                            "identity_enabled": {"t": "bool"},
+                            "tag": {"t": "string"},
+                            "badge": {"t": "string"}
+                          }
+                        },
+                        "clan": {
+                          "t": "null|object",
+                          "f": {
+                            "identity_guild_id": {"t": "snowflake"},
+                            "identity_enabled": {"t": "bool"},
+                            "tag": {"t": "string"},
+                            "badge": {"t": "string"}
+                          }
+                        }
+                      }
+                    },
+                    "mute": {"t": "bool"},
+                    "deaf": {"t": "bool"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "POST /api/v9/channels/{id}/typing": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
+  "POST /api/v9/guilds/{id}/migrate-command-scope": {
+    "samples": 4,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "integration_ids_with_app_commands": {"t": "array"}
+        }
+      }
+    }
+  },
+  "PUT /api/v9/channels/{id}/messages/pins/{id}": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
+  "PUT /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/@me": {
+    "samples": 3,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "204": {"t": ""}
+    }
+  },
+  "PUT /api/v9/channels/{id}/polls/{id}/answers/@me": {
+    "samples": 2,
+    "headers": [
+      "content-type"
+    ],
+    "request": {
+      "t": "object",
+      "f": {
+        "answer_ids": {
+          "t": "array",
+          "i": {"t": "string"}
+        }
+      }
+    },
+    "responses": {
+      "204": {"t": ""}
+    }
+  }
+}

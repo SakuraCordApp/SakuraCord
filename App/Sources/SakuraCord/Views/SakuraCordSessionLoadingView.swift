@@ -108,7 +108,6 @@ struct ChannelListLoadingSkeleton: View {
 /// placeholders inside the already-mounted workspace navigation container.
 struct SakuraCordSessionLoadingView: View {
     let state: AppModel.SessionState
-    let isOfflineTesting: Bool
     var isAccountSwitch = false
     var isEmbeddedInWorkspace = false
     var embeddedSidebarWidth = ChatChromeMetrics.serverRailWidth + 230
@@ -353,9 +352,6 @@ struct SakuraCordSessionLoadingView: View {
     }
 
     private var detail: String {
-        if isOfflineTesting {
-            return "Loading offline testing data…"
-        }
         switch state {
         case .restoring: return "Checking your saved session…"
         case .connecting: return "Loading your chats…"

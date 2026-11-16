@@ -94,13 +94,14 @@ cd SakuraCord
 ./script/install_git_hooks.sh
 git config --local --get core.hooksPath
 ./script/setup_local_signing_identity.sh
-./script/build_and_run.sh --offline
+./script/build_and_run.sh --simulator
 ```
 
-The hooks command must print `.githooks`. The offline demo does not contact
-Discord and is the safest way to explore the app from source. Developers can
-find authenticated launch modes, focused fixtures, validation commands, and
-local credential guidance in the [development guide](docs/DEVELOPMENT.md).
+The hooks command must print `.githooks`. `--simulator` signs in to a local
+Discord simulator with fictional servers and never contacts Discord, the safest
+way to explore the app from source. Developers can find authenticated launch
+modes, simulator scenarios, benchmarks, validation commands, and local
+credential guidance in the [development guide](docs/DEVELOPMENT.md).
 
 ## Contributing and support
 

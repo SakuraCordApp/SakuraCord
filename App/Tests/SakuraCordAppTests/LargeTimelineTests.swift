@@ -1,6 +1,7 @@
 import AppKit
 import CoreText
 import Foundation
+@testable import DiscordProtocolTestSupport
 import ImageIO
 import MessageRendering
 @testable import SakuraCord
@@ -503,7 +504,7 @@ func `concealed spoiler covers survive repeated far offscreen recycling and pagi
         defer: false
     )
     window.contentView = scrollView
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let actions = NativeTimelineRowActions(
         loadEarlier: {},
         openReply: { _ in },
@@ -692,7 +693,7 @@ func `animated attachment and component spoilers start only after their own reve
     storage.layouts = [layout]
     storage.rowOrigins = [0]
     storage.contentHeight = layout.height
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let canvas = NativeTimelineCanvasView(
         frame: CGRect(x: 0, y: 0, width: 560, height: layout.height)
     )
@@ -798,7 +799,7 @@ func `switching channels resets spoiler reveal across shared timeline canvases`(
     storage.layouts = [layout]
     storage.rowOrigins = [0]
     storage.contentHeight = layout.height
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.selectedChannelID = message.channelID
     let actions = NativeTimelineRowActions(
         loadEarlier: {},
@@ -1042,7 +1043,7 @@ func `inline rich tokens inherit their enclosing spoiler`() throws {
 @Test
 @MainActor
 func `forum previews conceal hidden spoilers and share their reveal with the timeline`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let messageID = MessageID(rawValue: 8_600)
     let source = "before ||secret [site](https://example.com) <:glow:123>|| after"
     let preview = ForumPostPreviewTextView()
@@ -1385,7 +1386,7 @@ func `benchmark run finalization does not require coordinator lifetime`() {
     )
     window.contentView = scrollView
     let storage = NativeTimelineCanvasStorage()
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let actions = NativeTimelineRowActions(
         loadEarlier: {},
         openReply: { _ in },
@@ -1458,7 +1459,7 @@ func `benchmark run finalization does not require coordinator lifetime`() {
     window.contentView = scrollView
     canvas.apply(
         storage: storage,
-        model: AppModel(launchMode: .offlineTesting),
+        model: AppModel(isEphemeral: true, provider: MockChatProvider()),
         actions: NativeTimelineRowActions(
             loadEarlier: {},
             openReply: { _ in },
@@ -1832,7 +1833,7 @@ func `benchmark run finalization does not require coordinator lifetime`() {
 
 @MainActor @Test
 func `fitting exact unread run opens at true bottom and reports newest boundary`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     model.navigate(to: ChannelID(rawValue: 210))
     await model.guildActivationTask?.value
@@ -1910,7 +1911,7 @@ func `fitting exact unread run opens at true bottom and reports newest boundary`
 
 @MainActor @Test
 func `a moved unread boundary leaves its old row when rows change in the same update`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     model.navigate(to: ChannelID(rawValue: 210))
     await model.guildActivationTask?.value
@@ -1969,7 +1970,7 @@ func `a moved unread boundary leaves its old row when rows change in the same up
 
 @MainActor @Test
 func `scrolling a tall unread timeline to bottom publishes the read boundary`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     model.navigate(to: ChannelID(rawValue: 210))
     await model.guildActivationTask?.value
@@ -2044,7 +2045,7 @@ func `scrolling a tall unread timeline to bottom publishes the read boundary`() 
 
 @MainActor @Test
 func `media rich timeline establishes unread context before display and preserves it while resizing`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     model.navigate(to: ChannelID(rawValue: 210))
     await model.guildActivationTask?.value
@@ -2134,7 +2135,7 @@ func `media rich timeline establishes unread context before display and preserve
 
 @MainActor @Test
 func `completed initial ten message page exposes history reserve before first upward delta`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 99_221)
     let author = User(
         id: UserID(rawValue: 99_222),
@@ -2231,7 +2232,7 @@ func `completed initial ten message page exposes history reserve before first up
 
 @MainActor @Test
 func `rapid gesture boundary does not restore timeline presentation between swipes`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 99_260)
     let timeline = NativeMessageTimelineView(
         model: model,
@@ -2272,7 +2273,7 @@ func `rapid gesture boundary does not restore timeline presentation between swip
 
 @MainActor @Test
 func `completed anchored page exposes the same history reserve below its loaded window`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 99_241)
     let author = User(
         id: UserID(rawValue: 99_242),

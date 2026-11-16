@@ -1,4 +1,5 @@
 import Foundation
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 @testable import SakuraCord
@@ -9,7 +10,7 @@ func `history insertion reconciles an overlapping timeline before publishing row
     loadsEarlier: Bool,
     includesExistingID: Bool
 ) async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 900)
     let author = User(id: UserID(rawValue: 901), username: "history", displayName: "History")
     let page = (1 ... 3).map { index in

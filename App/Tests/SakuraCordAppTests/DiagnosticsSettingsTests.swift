@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import MediaPipeline
 import SakuraCordModels
@@ -54,7 +55,7 @@ import UserNotifications
 @Test func `Diagnostics status follows account reset without retaining identity`() {
     let preferences = InMemoryPreferences()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         notificationPreferences: NotificationPreferences(defaults: preferences),
         voiceVideoPreferences: VoiceVideoPreferences(defaults: preferences)
     )
@@ -143,7 +144,7 @@ import UserNotifications
 @Test func `Support summary excludes identity device and arbitrary error fields`() throws {
     let preferences = InMemoryPreferences()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         notificationPreferences: NotificationPreferences(defaults: preferences),
         voiceVideoPreferences: VoiceVideoPreferences(defaults: preferences)
     )

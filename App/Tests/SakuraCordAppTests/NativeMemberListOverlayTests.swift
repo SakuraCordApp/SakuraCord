@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 @testable import SakuraCord
 import AppKit
 import SakuraCordModels
@@ -221,7 +222,7 @@ func `cancelled member document preparation stops cooperatively`() async {
 func `member list cursor rebuild handles server tags outside the viewport`() throws {
     var taggedMember = member(id: 1, name: "Tagged")
     taggedMember.user.primaryGuild = PrimaryGuildIdentity(guildID: GuildID(rawValue: 42), tag: "TEST")
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let canvas = NativeMemberListCanvasView(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
     let scrollView = NSScrollView(frame: CGRect(x: 0, y: 0, width: 300, height: 100))
     scrollView.documentView = canvas

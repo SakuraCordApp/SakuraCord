@@ -70,6 +70,13 @@ nonisolated protocol SavedAccountStoring: Sendable {
 
 actor UserDefaultsSavedAccountStore: SavedAccountStoring {
     nonisolated static let shared = UserDefaultsSavedAccountStore()
+    /// Simulator sessions keep their accounts apart from real ones.
+    nonisolated static var current: UserDefaultsSavedAccountStore {
+        #if DEBUG
+        if let simulator = SimulatorAccountStorage.savedAccountStore { return simulator }
+        #endif
+        return shared
+    }
 
     private nonisolated static let accountsKey =
         "dev.sakuracord.saved-account-presentations"

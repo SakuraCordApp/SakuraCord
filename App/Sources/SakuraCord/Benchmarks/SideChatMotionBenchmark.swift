@@ -1,23 +1,24 @@
-#if SAKURACORD_MOTION_BENCHMARK
+#if SAKURACORD_MOTION_BENCHMARK && DEBUG
 import AppKit
-import DiscordProtocol
 import OSLog
 import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
-/// Offline side chat motion benchmark: opens, closes and widens fixture
-/// threads and toggles the member list while recording every display-link
-/// frame with the geometry of the workspace columns, the toolbar and the
-/// timelines. `script/motion_benchmark_analyze.py` turns the recording into
-/// frame pacing, hitch and geometry-continuity metrics. Read-only against
-/// the offline fixture.
+/// Side chat motion benchmark: opens, closes and widens the simulator
+/// `side-chat-motion` scenario's threads and toggles the member list while
+/// recording every display-link frame with the geometry of the workspace
+/// columns, the toolbar and the timelines. `script/motion_benchmark_analyze.py`
+/// turns the recording into frame pacing, hitch and geometry-continuity
+/// metrics. Read-only.
 @MainActor
 enum SideChatMotionBenchmark {
     static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "SideChatMotionBenchmark")
 
     nonisolated struct Options: Equatable, Sendable {
         var cycles = 6
+        /// The simulator's latency and messages per thread, which the script
+        /// configures; recorded with the results.
         var historyDelayMilliseconds = 0
         var threadMessageCount = 150
         var settleSeconds = 1.2
@@ -28,7 +29,7 @@ enum SideChatMotionBenchmark {
         /// Opens a forum post and follows it, pausing for screenshots,
         /// instead of running the cycles.
         var showsFollowShowcase = false
-        /// Opens the first fixture thread in the pane and leaves the window
+        /// Opens the first scenario thread in the pane and leaves the window
         /// to the tester, for checks driven from outside.
         var holdsPane = false
         /// Cycles that resize the window on every frame: bare, beside the
@@ -62,7 +63,12 @@ enum SideChatMotionBenchmark {
             await showFollowShowcase(model: model)
             return
         }
-        model.selectedChannelID = MockChatProvider.generalChannelID
+        guard let general = SimulatorBenchmarkControl.channel(named: "general", in: model),
+              await SimulatorBenchmarkControl.open(general, in: model)
+        else {
+            logger.error("Side chat motion benchmark could not find #general")
+            return
+        }
         if options.holdsPane, let thread = await motionThreads(model: model, count: 1)?.first {
             model.showInspector = false
             model.open(thread)
@@ -73,7 +79,7 @@ enum SideChatMotionBenchmark {
               let window = PerformanceBenchmarkHarness.mainWindow,
               let contentView = window.contentView
         else {
-            logger.error("Side chat motion benchmark could not find its fixture threads")
+            logger.error("Side chat motion benchmark could not find its scenario threads")
             return
         }
         model.showInspector = false
@@ -130,7 +136,7 @@ enum SideChatMotionBenchmark {
             for cycle in 0 ..< options.forumCycles {
                 await perform(forumSteps(post: posts[cycle % posts.count]), cycle: cycle)
             }
-            model.selectedChannelID = MockChatProvider.generalChannelID
+            model.selectedChannelID = general.id
             try? await Task.sleep(for: .seconds(2))
         }
 
@@ -308,9 +314,11 @@ enum SideChatMotionBenchmark {
         logger.notice("SIDE_CHAT_MOTION_SHOWCASE done")
     }
 
-    /// The offline forum's posts, once the forum is selected and loaded.
+    /// The scenario forum's posts, once the forum is selected and loaded.
     private static func forumPosts(model: AppModel) async -> [ForumPost]? {
-        model.selectedChannelID = MockChatProvider.feedbackForumID
+        guard let forum = SimulatorBenchmarkControl.channel(named: "feedback", kind: .forum, in: model),
+              await SimulatorBenchmarkControl.open(forum, in: model)
+        else { return nil }
         guard await PerformanceBenchmarkHarness.waitUntil({ !model.forumPosts.isEmpty }, seconds: 10) else { return nil }
         try? await Task.sleep(for: .seconds(1))
         return model.forumPosts

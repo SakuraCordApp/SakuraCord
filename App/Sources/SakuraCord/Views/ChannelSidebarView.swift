@@ -91,7 +91,6 @@ struct ChannelSidebarView: View {
     let connectionState: ConnectionState
     let currentStatus: PresenceStatus
     let isAuthenticated: Bool
-    let isOfflineTesting: Bool
     let activeVoiceChannelID: ChannelID?
     let connectAccount: () -> Void
     let updateStatus: (PresenceStatus) async -> Void
@@ -125,7 +124,6 @@ struct ChannelSidebarView: View {
                 connectionState: connectionState,
                 currentStatus: currentStatus,
                 isAuthenticated: isAuthenticated,
-                isOfflineTesting: isOfflineTesting,
                 connectAccount: connectAccount,
                 updateStatus: updateStatus
             )

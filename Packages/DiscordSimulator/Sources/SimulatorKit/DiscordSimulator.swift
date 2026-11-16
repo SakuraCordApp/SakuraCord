@@ -1,0 +1,133 @@
+import Foundation
+
+/// The whole simulator: a seeded world behind Discord's REST, Gateway, CDN,
+/// media and upload hosts, plus the control API.
+public final class DiscordSimulator: Sendable {
+    public struct Configuration: Sendable {
+        public var basePort: UInt16 = 47100
+        public var seed: UInt64 = 1
+        public var scenario = "demo"
+        public var parameters: [String: String] = [:]
+        public var network: NetworkConditioner.Profile = .instant
+        public var freezeClock = false
+        /// The world's "now"; nil means the most recent Sunday evening.
+        public var epoch: Date?
+        public var enforcesRateLimits = true
+        public var verbose = false
+
+        public init() {}
+    }
+
+    /// Offsets from the base port, one per stood-in host.
+    public enum Port: UInt16, CaseIterable, Sendable {
+        case api = 0, gateway = 1, cdn = 2, media = 3, upload = 4, control = 9
+    }
+
+    public let configuration: Configuration
+    public let world: World
+    public let catalog: ShapeCatalog
+    public let log: SimulatorLog
+    public let hub: GatewayHub
+    public let router: RESTRouter
+    public let faults: FaultInjector
+    public let scripts: ScriptRunner
+    let conditioners: [Port: NetworkConditioner]
+    private let servers = LockedBox<[HTTPServer]>([])
+
+    public static func make(configuration: Configuration, catalog: ShapeCatalog? = nil) async throws -> DiscordSimulator {
+        guard let scenario = ScenarioRegistry.scenario(named: configuration.scenario) else {
+            let names = ScenarioRegistry.all.map { $0.name }.joined(separator: ", ")
+            throw WorldError.invalidBody("unknown scenario \(configuration.scenario); available: \(names)")
+        }
+        let resolvedCatalog: ShapeCatalog
+        if let catalog { resolvedCatalog = catalog } else { resolvedCatalog = try ShapeCatalog.bundled() }
+        let log = SimulatorLog(verbose: configuration.verbose)
+        let world = World(seed: configuration.seed, epoch: configuration.epoch ?? ScenarioEpoch.recentSundayEvening(),
+                          freezeClock: configuration.freezeClock)
+        try await ScenarioRegistry.build(scenario, into: world, parameters: configuration.parameters)
+        let faults = FaultInjector(enforcesRateLimits: configuration.enforcesRateLimits)
+        let hub = GatewayHub(world: world, catalog: resolvedCatalog, log: log, seed: configuration.seed)
+        await world.attach(hub)
+        var routes: [String: RouteHandler] = [:]
+        MessageRoutes.register(into: &routes)
+        AccountRoutes.register(into: &routes)
+        ThreadRoutes.register(into: &routes)
+        var conditioners: [Port: NetworkConditioner] = [:]
+        for port in Port.allCases where port != .control {
+            conditioners[port] = NetworkConditioner(seed: configuration.seed ^ UInt64(port.rawValue), profile: configuration.network)
+        }
+        let router = RESTRouter(world: world, catalog: resolvedCatalog, log: log, faults: faults, routes: routes,
+                                unauthenticated: ["POST /auth/login", "POST /api/v9/auth/login",
+                                                  "GET /api/v9/experiments", "GET /api/v9/apex/experiments"])
+        return DiscordSimulator(configuration: configuration, catalog: resolvedCatalog, log: log, world: world, faults: faults,
+                                hub: hub, router: router, scripts: ScriptRunner(world: world, log: log, scripts: BenchmarkScripts.all),
+                                conditioners: conditioners)
+    }
+
+    private init(configuration: Configuration, catalog: ShapeCatalog, log: SimulatorLog, world: World, faults: FaultInjector,
+                 hub: GatewayHub, router: RESTRouter, scripts: ScriptRunner, conditioners: [Port: NetworkConditioner]) {
+        self.configuration = configuration
+        self.catalog = catalog
+        self.log = log
+        self.world = world
+        self.faults = faults
+        self.hub = hub
+        self.router = router
+        self.scripts = scripts
+        self.conditioners = conditioners
+    }
+
+    public func port(_ port: Port) -> UInt16 { configuration.basePort + port.rawValue }
+
+    public func setNetworkProfile(_ profile: NetworkConditioner.Profile) {
+        conditioners.values.forEach { $0.setProfile(profile) }
+    }
+
+    public func start() async throws {
+        let control = ControlAPI(simulator: self)
+        let cdn = CDNHandler(world: world, log: log, host: "cdn.discordapp.com")
+        let media = CDNHandler(world: world, log: log, host: "media.discordapp.net")
+        let upload = UploadHandler(world: world, log: log)
+        let hub = hub, router = router
+        let instant = NetworkConditioner(seed: configuration.seed, profile: .instant)
+        let definitions: [ServerDefinition] = [
+            ServerDefinition(.api) { await router.handle($0) },
+            ServerDefinition(.gateway, webSocket: { _, connection in await hub.handle(connection) }, handler: { [log] request in
+                log.error("gateway", "plain HTTP request to the Gateway host: \(request.method) \(request.target)")
+                return .json(400, .object(JSONObject([("message", "Bad Request"), ("code", 0)])))
+            }),
+            ServerDefinition(.cdn) { await cdn.handle($0) },
+            ServerDefinition(.media) { await media.handle($0) },
+            ServerDefinition(.upload) { await upload.handle($0) },
+            ServerDefinition(.control) { await control.handle($0) },
+        ]
+        for definition in definitions {
+            let port = definition.port
+            let server = HTTPServer(name: "\(port)", port: self.port(port), conditioner: conditioners[port] ?? instant,
+                                    handler: definition.handler, webSocketHandler: definition.webSocket)
+            try await server.start()
+            servers.withLock { $0.append(server) }
+        }
+    }
+
+    public func stop() {
+        scripts.cancelAll()
+        servers.withLock { servers in
+            servers.forEach { $0.stop() }
+            servers.removeAll()
+        }
+    }
+}
+
+/// One listening endpoint: its port, HTTP handler and optional WebSocket upgrade handler.
+private struct ServerDefinition {
+    let port: DiscordSimulator.Port
+    let webSocket: HTTPServer.WebSocketHandler?
+    let handler: HTTPServer.Handler
+
+    init(_ port: DiscordSimulator.Port, webSocket: HTTPServer.WebSocketHandler? = nil, handler: @escaping HTTPServer.Handler) {
+        self.port = port
+        self.webSocket = webSocket
+        self.handler = handler
+    }
+}

@@ -239,7 +239,7 @@ struct StaticEmojiImage: View {
     let url: URL
 
     var body: some View {
-        AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+        AsyncImage(url: DiscordNetworkRedirect.resolve(url), transaction: Transaction(animation: nil)) { phase in
             if case let .success(image) = phase {
                 image
                     .resizable()

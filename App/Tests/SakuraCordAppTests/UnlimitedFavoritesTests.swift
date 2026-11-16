@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -9,7 +10,7 @@ struct UnlimitedFavoritesTests {
     /// Guards the account: favourites past the limit never reach Discord's
     /// synced list, and Discord's own edits never lose or resurrect them.
     @Test func `favourites past the limit stay local and Discord's list stays authoritative`() {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         let synced = (1 ... 3).map {
             FavoritesSettings.Entry(id: ChannelID(rawValue: $0), position: UInt32($0), channelType: 11)
         }
@@ -45,7 +46,7 @@ struct UnlimitedFavoritesTests {
     /// Turn On Unlimited Favorites re-adds it.
     @Test func `a suggestion kept past the limit lands in Channels`() throws {
         for turnsOnFromNotice in [false, true] {
-            let model = AppModel(launchMode: .offlineTesting)
+            let model = AppModel(isEphemeral: true, provider: MockChatProvider())
             let synced = (1 ... 3).map {
                 FavoritesSettings.Entry(id: ChannelID(rawValue: $0), position: UInt32($0), channelType: 11)
             }
@@ -72,7 +73,7 @@ struct UnlimitedFavoritesTests {
     /// in Channels only when the list has room for the category.
     @Test func `a suggestion near the entry cap never sends Discord more than it allows`() throws {
         func model(threads: Int, unseen: Int, categories: Int) -> AppModel {
-            let model = AppModel(launchMode: .offlineTesting)
+            let model = AppModel(isEphemeral: true, provider: MockChatProvider())
             var entries = (0 ..< categories).map {
                 FavoritesSettings.Entry(id: ChannelID(rawValue: UInt64(1_000 + $0)), isCategory: true, nickname: "C\($0)", position: UInt32($0))
             }
@@ -111,7 +112,7 @@ struct UnlimitedFavoritesTests {
     /// Guards the account: an addition never sends Discord more favourites
     /// than the limit, even when an unseen (deleted) favourite is stored.
     @Test func `an addition at the limit drops unseen favourites instead of exceeding it`() {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         let stored = [
             FavoritesSettings.Entry(id: ChannelID(rawValue: 1), position: 1, channelType: 11),
             FavoritesSettings.Entry(id: ChannelID(rawValue: 2), position: 2, channelType: 11),

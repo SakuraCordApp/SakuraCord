@@ -102,7 +102,7 @@ struct GuildCustomizationView: View {
             Text("My Profile").font(.interface(.headline))
             if let user = model.currentUser {
                 let member = model.onboardingMember(in: guildID)
-                AsyncImage(url: member?.guildAvatarURL ?? user.avatarURL) { image in image.resizable().scaledToFill() } placeholder: { Color.secondary.opacity(0.2) }
+                AsyncImage(url: DiscordNetworkRedirect.resolve(member?.guildAvatarURL ?? user.avatarURL)) { image in image.resizable().scaledToFill() } placeholder: { Color.secondary.opacity(0.2) }
                     .frame(width: InterfaceScale.metric(80), height: InterfaceScale.metric(80)).clipShape(Circle())
                 Text(member?.guildNickname ?? user.displayName).font(.interface(.title2).weight(.semibold))
             }

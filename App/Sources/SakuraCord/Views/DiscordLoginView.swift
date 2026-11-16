@@ -24,9 +24,8 @@ struct DiscordLoginView: View {
     let onOnboardingCompleted: @MainActor () -> Void
     let onConnected: @MainActor (PendingDiscordCredential) async -> String?
 
-    @State private var authenticator: any DiscordSignInAuthenticating
-    @State private var remoteAuthManager: any DiscordSignInRemoteAuthenticating
-    @State private var offlineService: OfflineSignInService?
+    @State private var authenticator = DiscordSessionAuthenticator()
+    @State private var remoteAuthManager = DiscordRemoteAuthManager()
     @State private var identifier = ""
     @State private var password = ""
     @State private var mfaCode = ""
@@ -54,13 +53,11 @@ struct DiscordLoginView: View {
     @State private var formVisible = false
     @State private var panelVisible = true
     @State private var isTransitioning = false
-    @State private var entranceRevision = 0
     @FocusState private var focusedField: DiscordLoginField?
 
     init(
         showsCancel: Bool,
         networkingEnabled: Bool,
-        offlineSignIn: Bool = false,
         savedAccountIDs: Set<String> = [],
         playsWelcome: Bool = false,
         showsOnboarding: Bool = false,
@@ -77,12 +74,6 @@ struct DiscordLoginView: View {
         // Retain this entrance's decision after its launch permission is consumed.
         _playsWelcome = State(initialValue: playsWelcome)
         self.onConnected = onConnected
-        let offlineService = offlineSignIn ? OfflineSignInService() : nil
-        _offlineService = State(initialValue: offlineService)
-        _authenticator = State(initialValue: offlineService.map { $0 as any DiscordSignInAuthenticating }
-            ?? DiscordSessionAuthenticator())
-        _remoteAuthManager = State(initialValue: offlineService.map { $0 as any DiscordSignInRemoteAuthenticating }
-            ?? DiscordRemoteAuthManager())
     }
 
     var body: some View {
@@ -132,8 +123,9 @@ struct DiscordLoginView: View {
                             .disabled(isTransitioning)
                         }
 
+                        // Importing reads real Discord tokens, which never go to the simulator.
                         if onboardingStep == nil, challenge == nil, accountImportState == nil,
-                           networkingEnabled, offlineService == nil {
+                           networkingEnabled, !SimulatorAccountStorage.isActive {
                             Button("Import account from Discord", systemImage: "square.and.arrow.down") {
                                 beginAccountImport()
                             }
@@ -151,19 +143,6 @@ struct DiscordLoginView: View {
                     .accessibilityHidden(!formVisible)
                 }
                 .scrollIndicators(.hidden)
-            }
-
-            if let offlineService, formVisible, onboardingStep == nil {
-                OfflineSignInControls(
-                    service: offlineService,
-                    canScan: remoteAuthState.isReady && !isWorking && challenge == nil,
-                    canSimulateMFA: challenge == nil,
-                    simulateMFA: { presentMFA(OfflineSignInService.mfaChallenge()) },
-                    replay: replayEntrance
-                )
-                .disabled(isWorking || isTransitioning)
-                .padding(.bottom, InterfaceScale.metric(12))
-                .frame(maxHeight: .infinity, alignment: .bottom)
             }
 
             windowDragRegion
@@ -202,13 +181,13 @@ struct DiscordLoginView: View {
                 await remoteAuthManager.disconnect()
                 return
             }
-            if networkingEnabled || offlineService != nil {
+            if networkingEnabled {
                 startRemoteAuth()
             } else {
                 remoteAuthState = .disabled
             }
         }
-        .task(id: entranceRevision) { await revealEntrance() }
+        .task { await revealEntrance() }
         .onChange(of: selectedMFAMethod) { _, method in
             if method == .sms { sendSMS() }
         }
@@ -290,7 +269,7 @@ struct DiscordLoginView: View {
     }
 
     private func beginAccountImport() {
-        guard !isWorking, !isTransitioning, networkingEnabled else { return }
+        guard !isWorking, !isTransitioning, networkingEnabled, !SimulatorAccountStorage.isActive else { return }
         remoteAuthTask?.cancel()
         transitionAuthentication {
             errorTitle = nil
@@ -392,26 +371,6 @@ struct DiscordLoginView: View {
         } catch {}
     }
 
-    private func replayEntrance() {
-        authenticationTask?.cancel()
-        identifier = ""
-        password = ""
-        challenge = nil
-        selectedMFAMethod = nil
-        mfaCode = ""
-        smsCooldownEndsAt = nil
-        errorTitle = nil
-        errorMessage = nil
-        onboardingStep = .welcome
-        showsContinue = false
-        playsWelcome = true
-        welcomeProgress = 0
-        formVisible = false
-        panelVisible = true
-        focusedField = nil
-        entranceRevision += 1
-    }
-
     private func advanceOnboarding() {
         guard let onboardingStep, !isTransitioning else { return }
         transitionAuthentication {
@@ -452,7 +411,7 @@ struct DiscordLoginView: View {
 
     private func submitCredentials() {
         guard canSubmitCredentials else { return }
-        guard networkingEnabled || offlineService != nil else {
+        guard networkingEnabled else {
             errorTitle = "Sign-in unavailable"
             errorMessage = "Discord networking is disabled for this launch."
             return

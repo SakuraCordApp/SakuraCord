@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -6,7 +7,7 @@ import Testing
 
 @MainActor
 @Test func `thread actions offer notification settings only once joined and invoke the model`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let forum = try #require(model.snapshot?.channels.first { $0.kind == .forum })
     model.selectedChannelID = forum.id
@@ -40,7 +41,7 @@ import Testing
 @MainActor
 @Test func `joining from the side pane keeps it open and a rename reaches every projection`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.selectGuild(GuildID(rawValue: 101))
     await model.guildActivationTask?.value
@@ -75,7 +76,7 @@ import Testing
 @MainActor
 @Test func `a thread from a message keeps its draft when creation fails and sends its first message once created`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.selectGuild(GuildID(rawValue: 101))
     await model.guildActivationTask?.value

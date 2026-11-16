@@ -2,25 +2,7 @@ import Foundation
 import SakuraCordModels
 import Testing
 @testable import DiscordProtocol
-
-@Test func `offline incoming private call fixture is app wide`() async throws {
-    let provider = MockChatProvider(includesIncomingPrivateCall: true)
-    let stream = await provider.eventStream()
-    var iterator = stream.makeAsyncIterator()
-    let event = try #require(await iterator.next())
-
-    guard case .privateCallChanged(let call) = event else {
-        Issue.record("Expected the seeded private call to be the first app-wide event")
-        return
-    }
-    #expect(call.channelID == ChannelID(rawValue: 400))
-    #expect(call.ongoingRings == [
-        PrivateCallRing(
-            recipientID: UserID(rawValue: 1),
-            senderID: UserID(rawValue: 2)
-        )
-    ])
-}
+@testable import DiscordProtocolTestSupport
 
 @Test func `forum channel metadata decodes official field names`() throws {
     let data = Data(
@@ -103,7 +85,7 @@ import Testing
     #expect(refreshed.posts.contains(where: { $0.id == pinned.id }))
 }
 
-@Test func `mock fixture is synthetic rich and available offline`() async throws {
+@Test func `mock fixture is synthetic and rich`() async throws {
     let provider = MockChatProvider()
     let snapshot = try await provider.bootstrap()
 
@@ -256,65 +238,6 @@ private func verifyAnimatedAndCommandFixtures(
     #expect(failedFixture.outboxState == .failed)
 }
 
-@Test func `mock long server list fixture provides scrollable guild and emoji rails`() async throws
-{
-    let provider = MockChatProvider(serverList: .long)
-    let snapshot = try await provider.bootstrap()
-
-    #expect(snapshot.guilds.count == 20)
-    let lastGuild = try #require(snapshot.guilds.last)
-    #expect(lastGuild.name == "Scroll Test 18")
-    #expect(lastGuild.iconURL == nil)
-    #expect(snapshot.guildRailItems.count == 11)
-    #expect(
-        snapshot.guildRailItems.compactMap { item -> GuildFolder? in
-            guard case .folder(let folder) = item else { return nil }
-            return folder
-        }.map(\.name) == ["Native Projects", "Communities"])
-
-    let channels = try await provider.channels(in: lastGuild.id)
-    let channel = try #require(channels.first)
-    #expect(channel.name == "general")
-    #expect(try await !(provider.messages(in: channel.id, before: nil, limit: 50)).messages.isEmpty)
-    #expect(try await (provider.members(in: lastGuild.id)).count == 2)
-}
-
-@Test func `mock timeline stress emits deterministic live message bursts`() async throws {
-    let provider = MockChatProvider(timelineMessageCount: 120)
-    _ = try await provider.bootstrap()
-    let channelID = ChannelID(rawValue: 210)
-    let stream = await provider.eventStream()
-    let collector = Task { () -> [Message] in
-        var messages: [Message] = []
-        for await event in stream {
-            guard case let .messageCreated(message) = event,
-                  message.channelID == channelID
-            else { continue }
-            messages.append(message)
-            if messages.count == 12 {
-                return messages
-            }
-        }
-        return messages
-    }
-
-    await provider.emitTimelineStressMessages(
-        in: channelID,
-        count: 12,
-        burstSize: 4,
-        burstInterval: .milliseconds(1)
-    )
-    let emitted = await collector.value
-    let page = try await provider.messages(in: channelID, before: nil, limit: 20)
-    await provider.disconnect()
-
-    #expect(emitted.count == 12)
-    #expect(emitted.map(\.id) == emitted.map(\.id).sorted())
-    #expect(Set(emitted.map(\.id)).count == 12)
-    #expect(Array(page.messages.suffix(12)).map(\.id) == emitted.map(\.id))
-    #expect(emitted.allSatisfy { !$0.content.isEmpty && $0.channelID == channelID })
-}
-
 @Test func `mock message history pages remain contiguous around a distant target`() async throws {
     let provider = MockChatProvider(timelineMessageCount: 500)
     _ = try await provider.bootstrap()
@@ -351,115 +274,6 @@ private func verifyAnimatedAndCommandFixtures(
         MessageID(rawValue: 5_000_000 + UInt64($0))
     })
     #expect(later.hasMoreAfter)
-}
-
-@Test func `mock timeline mutation stress emits deterministic updates and deletes`() async throws {
-    enum MutationEvent: Equatable {
-        case updated(MessageID, String)
-        case deleted(MessageID)
-    }
-
-    let provider = MockChatProvider(timelineMessageCount: 120)
-    _ = try await provider.bootstrap()
-    let channelID = ChannelID(rawValue: 210)
-    let stream = await provider.eventStream()
-    let collector = Task { () -> [MutationEvent] in
-        var events: [MutationEvent] = []
-        for await event in stream {
-            switch event {
-            case let .messageUpdated(message)
-            where message.channelID == channelID:
-                events.append(.updated(message.id, message.content))
-            case let .messageDeleted(eventChannelID, messageID)
-            where eventChannelID == channelID:
-                events.append(.deleted(messageID))
-            default:
-                continue
-            }
-            if events.count == 12 {
-                return events
-            }
-        }
-        return events
-    }
-
-    await provider.emitTimelineMutationStress(
-        in: channelID,
-        operationCount: 12,
-        deleteEvery: 4,
-        lookback: 24,
-        initialDelay: .zero,
-        operationInterval: .milliseconds(1)
-    )
-    let events = await collector.value
-    let page = try await provider.messages(
-        in: channelID,
-        before: nil,
-        limit: 200
-    )
-    await provider.disconnect()
-
-    #expect(events.count == 12)
-    #expect(events.filter {
-        if case .deleted = $0 { true } else { false }
-    }.count == 3)
-    #expect(events.filter {
-        if case .updated = $0 { true } else { false }
-    }.count == 9)
-    let deletedIDs = Set(events.compactMap { event -> MessageID? in
-        guard case let .deleted(messageID) = event else { return nil }
-        return messageID
-    })
-    let finalUpdatedContent = Dictionary(
-        events.compactMap { event -> (MessageID, String)? in
-            guard case let .updated(messageID, content) = event else {
-                return nil
-            }
-            return (messageID, content)
-        },
-        uniquingKeysWith: { _, newer in newer }
-    )
-    for event in events {
-        switch event {
-        case let .updated(messageID, content):
-            #expect(content.contains("stress"))
-            if !deletedIDs.contains(messageID),
-               finalUpdatedContent[messageID] == content
-            {
-                #expect(page.messages.contains {
-                    $0.id == messageID && $0.content == content
-                })
-            }
-        case let .deleted(messageID):
-            #expect(!page.messages.contains { $0.id == messageID })
-        }
-    }
-}
-
-@Test func `media timeline fixture uses bundled video lottie and animated raster rows`() async throws {
-    let provider = MockChatProvider(
-        timelineMessageCount: 120,
-        timelineIncludesAnimatedMedia: true
-    )
-    _ = try await provider.bootstrap()
-    let page = try await provider.messages(
-        in: ChannelID(rawValue: 210),
-        before: nil,
-        limit: 120
-    )
-
-    let videos = page.messages.flatMap(\.embeds).compactMap(\.video)
-        .filter { $0.contentType == "video/mp4" }
-    let lottieStickers = page.messages.flatMap(\.stickers)
-        .filter { $0.format == .lottie }
-
-    #expect(!videos.isEmpty)
-    #expect(videos.allSatisfy { $0.url?.isFileURL == true })
-    #expect(!lottieStickers.isEmpty)
-    #expect(lottieStickers.allSatisfy { $0.mediaURL?.isFileURL == true })
-    #expect(page.messages.contains {
-        $0.content.contains("file://") && $0.content.contains(".gif")
-    })
 }
 
 @Test func `mock reactions provide local avatar fixtures and reconcile the current reactor`()

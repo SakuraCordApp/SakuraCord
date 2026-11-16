@@ -1,0 +1,109 @@
+{
+  "cleanup": [
+    "REST DELETE /api/v9/channels/{id}/messages/pins/{id}",
+    "GW MESSAGE_UPDATE",
+    "GW CHANNEL_PINS_UPDATE",
+    "REST DELETE /api/v9/channels/{id}/messages/{id}",
+    "GW MESSAGE_DELETE",
+    "REST DELETE /api/v9/channels/{id}/messages/{id}",
+    "GW MESSAGE_DELETE",
+    "REST DELETE /api/v9/channels/{id}/messages/{id}",
+    "GW MESSAGE_DELETE"
+  ],
+  "create-thread": [
+    "REST POST /api/v9/channels/{id}/messages/{id}/threads",
+    "GW MESSAGE_UPDATE",
+    "GW THREAD_CREATE",
+    "GW THREAD_MEMBER_UPDATE",
+    "GW MESSAGE_CREATE",
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE",
+    "REST POST /api/v9/channels/{id}/typing",
+    "GW TYPING_START",
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE"
+  ],
+  "delete-message": [
+    "REST DELETE /api/v9/channels/{id}/messages/{id}",
+    "GW MESSAGE_DELETE"
+  ],
+  "edit-message": [
+    "REST PATCH /api/v9/channels/{id}/messages/{id}",
+    "GW MESSAGE_UPDATE",
+    "REST PUT /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/@me",
+    "GW MESSAGE_REACTION_ADD"
+  ],
+  "embed-and-poll": [
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE",
+    "GW MESSAGE_UPDATE",
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE",
+    "REST PUT /api/v9/channels/{id}/polls/{id}/answers/@me",
+    "GW MESSAGE_POLL_VOTE_ADD",
+    "REST DELETE /api/v9/channels/{id}/messages/{id}",
+    "GW MESSAGE_DELETE",
+    "REST DELETE /api/v9/channels/{id}/messages/{id}",
+    "GW MESSAGE_DELETE",
+    "REST POST /api/v9/channels/{id}/messages/{id}/ack"
+  ],
+  "history-variants": [
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE",
+    "REST PUT /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/@me",
+    "GW MESSAGE_REACTION_ADD",
+    "REST PUT /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/@me",
+    "GW MESSAGE_REACTION_ADD",
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE",
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE",
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE",
+    "REST PUT /api/v9/channels/{id}/polls/{id}/answers/@me",
+    "GW MESSAGE_POLL_VOTE_ADD"
+  ],
+  "open-alpha": [
+    "REST POST /api/v9/channels/{id}/messages/{id}/ack",
+    "GW MESSAGE_ACK"
+  ],
+  "open-long-paginate": [
+    "REST POST /api/v9/channels/{id}/post-data",
+    "REST POST /api/v9/channels/{id}/messages/{id}/ack",
+    "GW MESSAGE_ACK",
+    "REST POST /api/v9/channels/{id}/messages/{id}/ack"
+  ],
+  "open-showcase-scroll": [
+    "REST POST /api/v9/channels/{id}/messages/{id}/ack",
+    "GW MESSAGE_ACK"
+  ],
+  "pin": [
+    "REST PUT /api/v9/channels/{id}/messages/pins/{id}",
+    "GW CHANNEL_PINS_UPDATE",
+    "GW MESSAGE_UPDATE",
+    "GW CHANNEL_PINS_ACK",
+    "GW MESSAGE_CREATE"
+  ],
+  "reply": [
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE"
+  ],
+  "send-message": [
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE"
+  ],
+  "startup": [
+    "GW op10",
+    "GW READY",
+    "GW READY_SUPPLEMENTAL"
+  ],
+  "unreact": [
+    "REST DELETE /api/v9/channels/{id}/messages/{id}/reactions/{emoji}/0/@me",
+    "GW MESSAGE_REACTION_REMOVE"
+  ],
+  "upload": [
+    "REST POST /api/v9/channels/{id}/attachments",
+    "REST POST /api/v9/channels/{id}/messages",
+    "GW MESSAGE_CREATE"
+  ]
+}

@@ -585,7 +585,7 @@ private struct SoundboardButtonLabel: View {
         if let emojiID = sound.emojiID,
            let url = DiscordCDN.emoji(emojiID, fileExtension: "webp", query: "size=48&quality=lossless")
         {
-            AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+            AsyncImage(url: DiscordNetworkRedirect.resolve(url), transaction: Transaction(animation: nil)) { phase in
                 switch phase {
                 case .empty:
                     label {

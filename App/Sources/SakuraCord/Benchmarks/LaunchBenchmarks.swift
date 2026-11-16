@@ -1,39 +1,46 @@
 import AppKit
-import DiscordProtocol
+import OSLog
 import SakuraCordModels
 
-/// Runs the benchmarks and opens the fixtures the launch arguments ask for,
-/// once the main window's session has started.
+/// Runs the benchmarks the launch arguments ask for once the main window's
+/// session has reached the workspace.
 @MainActor
 struct LaunchBenchmarks {
+    private static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "LaunchBenchmarks")
     let launch: AppLaunchConfiguration
-    let provider: MockChatProvider?
 
     func run(model: AppModel) async {
 #if DEBUG
-        await runAuthenticatedBenchmarks(model: model)
-#endif
-        if activatesOfflineBenchmark {
-            NSApp.activate(ignoringOtherApps: true)
+        guard !launch.benchmarks.isEmpty else { return }
+        // A simulator launch signs in after the session start returns.
+        guard await PerformanceBenchmarkHarness.waitUntil({ model.sessionState == .workspace }, seconds: 60) else {
+            Self.logger.error("Benchmarks need a signed-in workspace")
+            return
         }
-        if launch.includesForumPerformanceFixture {
-            model.selectedChannelID = MockChatProvider.feedbackForumID
-        } else if launch.includesChatPerformanceFixture, !launch.runsChannelOpenBenchmark {
-            model.selectedChannelID = MockChatProvider.generalChannelID
+        await runAccountBenchmarks(model: model)
+        // A display-link benchmark is only representative while AppKit is
+        // presenting this window normally. Background or occluded windows
+        // are throttled by WindowServer and would report machine scheduling
+        // as SakuraCord frame loss.
+        NSApp.activate(ignoringOtherApps: true)
+        if launch.runsChatPerformanceAutoScroll || launch.runsPinsPerformanceAutoScroll {
+            await model.prepareTimelineScrollPerformanceBenchmark()
         }
-#if DEBUG
+        if launch.runsMemberListPerformanceAutoScroll {
+            await model.prepareAuthenticatedMemberListScrollPerformanceBenchmark()
+        }
         if launch.runsForumPerformanceAutoScroll {
+            await openForum(model: model)
             await ForumBoardBenchmark.run(model: model, resizesGallery: launch.runsForumGalleryResize)
         }
-#endif
         if launch.runsFriendsPerformanceBenchmark {
-            await FriendsPerformanceBenchmark.run(model: model, provider: provider)
+            await FriendsPerformanceBenchmark.run(model: model)
         }
         if launch.runsServerRailPerformanceBenchmark {
             await ServerRailPerformanceBenchmark.run(model: model)
         }
         if launch.runsUnreadChurnBenchmark {
-            await UnreadChurnBenchmark.run(model: model, provider: provider)
+            await UnreadChurnBenchmark.run(model: model)
         }
         if launch.runsChannelOpenBenchmark {
             await ChannelOpenBenchmark.run(model: model)
@@ -43,110 +50,60 @@ struct LaunchBenchmarks {
             await SideChatMotionBenchmark.run(model: model, options: sideChatMotionOptions)
         }
 #endif
-        if launch.includesPinsPerformanceFixture {
-            await model.channelLoadTask?.value
-            model.presentPinnedMessages(channelID: MockChatProvider.generalChannelID)
+        if launch.runsPinsPerformanceAutoScroll, let channelID = model.selectedChannelID {
+            model.presentPinnedMessages(channelID: channelID)
             await model.pinnedMessages.loadTask?.value
             await model.preparePinnedMessagesPerformanceBenchmark()
         }
-        if launch.runsChatLiveArrivalStress {
-            await runLiveStress()
+        if launch.runsChatLiveStress {
+            await runLiveStress(model: model)
         }
-    }
-
-    /// An offline fixture or benchmark that needs the window frontmost.
-    private var activatesOfflineBenchmark: Bool {
-        var activates = launch.includesChatPerformanceFixture
-            || launch.runsFriendsPerformanceBenchmark
-            || launch.runsServerRailPerformanceBenchmark
-            || launch.runsUnreadChurnBenchmark
-            || launch.runsChannelOpenBenchmark
-#if DEBUG
-        activates = activates || launch.runsForumPerformanceAutoScroll
 #endif
-#if SAKURACORD_MOTION_BENCHMARK
-        activates = activates || launch.sideChatMotionOptions != nil
-#endif
-        return activates
     }
 
 #if DEBUG
-    private func runAuthenticatedBenchmarks(model: AppModel) async {
-        if launch.runsAuthenticatedNavigationBenchmark {
+    /// Benchmarks of the signed-in account's own scale and history.
+    private func runAccountBenchmarks(model: AppModel) async {
+        if launch.runsNavigationBenchmark {
             await model.runAuthenticatedNavigationPerformanceBenchmark()
         }
-        if launch.runsAuthenticatedAccountSwitchBenchmark {
+        if launch.runsAccountSwitchBenchmark {
             await model.runAuthenticatedAccountSwitchPerformanceBenchmark()
         }
         if launch.runsHistoryPaginationBenchmark {
             await model.runAuthenticatedHistoryPaginationPerformanceBenchmark()
         }
-        if launch.runsAuthenticatedGestureScrollBenchmark {
+        if launch.runsGestureScrollBenchmark {
             await model.runAuthenticatedGestureScrollPerformanceBenchmark()
         }
         if launch.runsLoadingScrollOverlapBenchmark {
             await model.runAuthenticatedLoadingScrollOverlapPerformanceBenchmark()
         }
-        if launch.activatesAuthenticatedScrollBenchmark {
-            // A display-link benchmark is only representative
-            // while AppKit is presenting this window normally.
-            // Background/occluded windows are intentionally
-            // throttled by WindowServer and would report machine
-            // scheduling as SakuraCord frame loss.
-            NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The forum-performance scenario's `#feedback` forum.
+    private func openForum(model: AppModel) async {
+        guard let forum = SimulatorBenchmarkControl.channel(named: "feedback", kind: .forum, in: model) else {
+            Self.logger.error("Forum benchmark could not find #feedback")
+            return
         }
-        if launch.preparesTimelineScrollBenchmark {
-            await model.prepareAuthenticatedTimelineScrollPerformanceBenchmark()
-        }
-        if launch.preparesMemberListScrollBenchmark {
-            await model.prepareAuthenticatedMemberListScrollPerformanceBenchmark()
-        }
+        _ = await SimulatorBenchmarkControl.open(forum, in: model)
+    }
+
+    /// Streams reactions, arrivals, edits and deletions into the scrolling
+    /// channel from the simulator once the scroll has started; a count of
+    /// zero leaves that kind of traffic out.
+    private func runLiveStress(model: AppModel) async {
+        await NativeTimelinePerformanceBenchmarkGate.shared.waitUntilStarted()
+        guard !Task.isCancelled, let channelID = model.selectedChannelID else { return }
+        await SimulatorBenchmarkControl.startScript("timeline-stress", params: [
+            "channel_id": channelID.description,
+            "reactions": launch.liveStressRunsReactions ? 800 : 0,
+            "arrivals": launch.liveStressRunsArrivals ? 2_400 : 0,
+            "mutations": launch.liveStressRunsMutations ? 1_200 : 0,
+            "burst": 4,
+            "interval_ms": 32,
+        ])
     }
 #endif
-
-    private func runLiveStress() async {
-        await NativeTimelinePerformanceBenchmarkGate.shared
-            .waitUntilStarted()
-        guard !Task.isCancelled,
-              let provider
-        else { return }
-        let runsReactions = launch.liveStressRunsReactions
-        let runsArrivals = launch.liveStressRunsArrivals
-        let runsMutations = launch.liveStressRunsMutations
-        await withTaskGroup(of: Void.self) { group in
-            if runsReactions {
-                group.addTask {
-                    await provider
-                        .emitTimelineReactionStress(
-                            in: MockChatProvider.generalChannelID,
-                            operationCount: 800
-                        )
-                }
-            }
-            if runsArrivals {
-                group.addTask {
-                    await provider
-                        .emitTimelineStressMessages(
-                            in: MockChatProvider.generalChannelID,
-                            count: 2_400,
-                            burstSize: 4,
-                            burstInterval: .milliseconds(32)
-                        )
-                }
-            }
-            if runsMutations {
-                group.addTask {
-                    await provider
-                        .emitTimelineMutationStress(
-                            in: MockChatProvider.generalChannelID,
-                            operationCount: 1_200,
-                            deleteEvery: 5,
-                            lookback: 600,
-                            initialDelay: .milliseconds(500),
-                            operationInterval: .milliseconds(32)
-                        )
-                }
-            }
-        }
-    }
 }

@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 @testable import SakuraCord
 import SakuraCordModels
 import Testing
@@ -5,7 +6,7 @@ import Testing
 @MainActor
 struct UserMenuActionTests {
     @Test func `mention actions retain their source conversation and never redirect a draft`() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let channel = try #require(model.snapshot?.channels.first { $0.kind == .directMessage })
         let user = try #require(channel.recipients.first)
@@ -24,7 +25,7 @@ struct UserMenuActionTests {
     }
 
     @Test func `stale relationship menus cannot cross accounts or replace a newer relationship`() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let user = User(id: .init(rawValue: 9991), username: "friend", displayName: "Friend")
         model.applyRelationships([Relationship(id: user.id, type: .friend, user: user)])
@@ -40,7 +41,7 @@ struct UserMenuActionTests {
     }
 
     @Test func `user actions respect identity eligibility and pending relationship mutations`() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let ownUser = try #require(model.currentUser)
         #expect(!model.userMenuActions(for: ownUser, context: .init()).contains { $0.group == .destructive || $0.group == .relationship })

@@ -70,6 +70,8 @@ run_package_tests() {
   run_tests "$ROOT_DIR/Packages/DaveKit"
   run_tests "$ROOT_DIR/Packages/MediaPipeline"
   run_tests "$ROOT_DIR/Packages/SakuraCordPluginSDK"
+  # Includes the parity suite: simulator responses against captured Discord shapes.
+  run_tests "$ROOT_DIR/Packages/DiscordSimulator"
 }
 
 case "$TARGET" in
@@ -85,6 +87,9 @@ case "$TARGET" in
   media)
     run_tests "$ROOT_DIR/Packages/MediaPipeline"
     ;;
+  simulator)
+    run_tests "$ROOT_DIR/Packages/DiscordSimulator"
+    ;;
   packages)
     run_package_tests
     ;;
@@ -93,13 +98,14 @@ case "$TARGET" in
     run_tests "$ROOT_DIR/Packages/SakuraCordPersistence"
     run_tests "$ROOT_DIR/Packages/MessageRendering"
     run_tests "$ROOT_DIR/Packages/SakuraCordPluginSDK"
+    run_tests "$ROOT_DIR/Packages/DiscordSimulator"
     ;;
   all)
     run_package_tests
     run_tests "$ROOT_DIR/App"
     ;;
   *)
-    echo "usage: $0 [app|protocol|dave|media|packages|packages-core|all]" >&2
+    echo "usage: $0 [app|protocol|dave|media|simulator|packages|packages-core|all]" >&2
     exit 2
     ;;
 esac

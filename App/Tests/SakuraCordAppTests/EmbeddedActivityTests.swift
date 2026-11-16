@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 @testable import SakuraCord
@@ -9,7 +10,7 @@ import Testing
 struct EmbeddedActivityTests {
     @Test
     func `an Activity this client's slash command started is hosted, not left`() async throws {
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let user = try #require(model.currentUser)
         let channel = try #require(model.snapshot?.channels.first { $0.kind == .text })
@@ -35,7 +36,7 @@ struct EmbeddedActivityTests {
     /// drop the person again once they rejoin that game.
     @Test
     func `rejoining an Activity whose leave failed hosts it instead of leaving it again`() async throws {
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let user = try #require(model.currentUser)
         let channel = try #require(model.snapshot?.channels.first { $0.kind == .text })
