@@ -100,7 +100,7 @@ extension AppModel {
             database = AppPerformanceSignposts.measureSync("AccountDatabaseOpen") {
                 AccountID(handle.accountID).flatMap(accountDatabaseFactory)
             }
-            resetForAccountConnection(handle)
+            resetAccountScopedState(for: handle)
             await refreshSupportedCapabilities(for: session)
             guard isCurrentAccountSession(session) else { return false }
             await applyLiveBootstrap(
@@ -133,24 +133,16 @@ extension AppModel {
         transitionGeneration: UInt64
     ) async -> AppModelAccountSession? {
         let previousAccount = accountSession(allowsTransition: true)
-        let previousProvider = previousAccount.provider
         let previousEventTask = eventTask
         await resetAccountScopedLoadsAndForumState()
-        await leaveVoice(account: previousAccount)
-        guard await pendingTransitionIsCurrent(transitionGeneration, provider: nextProvider)
-        else { return nil }
-        resetAppSounds()
-        await previousProvider.disconnect()
-        guard await pendingTransitionIsCurrent(transitionGeneration, provider: nextProvider)
-        else { return nil }
-        previousEventTask?.cancel()
-        await previousEventTask?.value
-        guard await pendingTransitionIsCurrent(transitionGeneration, provider: nextProvider)
-        else { return nil }
-        eventTask = nil
-        await drainAccountChildTasks()
-        guard await pendingTransitionIsCurrent(transitionGeneration, provider: nextProvider)
-        else { return nil }
+        guard await shutDownPreviousSession(
+            previousAccount,
+            eventTask: previousEventTask,
+            transitionGeneration: transitionGeneration
+        ) else {
+            await stopPendingProvider(nextProvider)
+            return nil
+        }
         resetPendingCreatedMessages()
         resetTimelineLiveScrolling()
         clearReactionMutationState()
@@ -175,17 +167,6 @@ extension AppModel {
         }
         installEventTask(stream, account: session)
         return session
-    }
-
-    private func pendingTransitionIsCurrent(
-        _ transitionGeneration: UInt64,
-        provider: any PendingCredentialChatProvider
-    ) async -> Bool {
-        guard accountSessionGeneration == transitionGeneration else {
-            await stopPendingProvider(provider)
-            return false
-        }
-        return true
     }
 
     private func failPendingAuthenticatedAccountConnection(

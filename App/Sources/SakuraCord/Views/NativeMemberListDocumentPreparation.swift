@@ -63,32 +63,13 @@ extension NativeMemberListCanvasView {
     }
 
     @discardableResult
-    func updateDocumentIfNeeded(
-        sections: [MemberSection],
-        previousItems: [Item]? = nil
-    ) -> Bool {
-        guard sections != presentedSections else { return false }
-        guard let document = Self.prepareDocument(
-            sections: sections,
-            presentation: presentation,
-            reusing: preparationSnapshot()
-        ) else {
-            return false
-        }
-        return applyPreparedDocument(document, previousItems: previousItems)
-    }
-
-    @discardableResult
-    func applyPreparedDocument(
-        _ document: PreparedDocument,
-        previousItems suppliedPreviousItems: [Item]? = nil
-    ) -> Bool {
+    func applyPreparedDocument(_ document: PreparedDocument) -> Bool {
         guard document.sections != presentedSections
             || document.presentation != presentation
             || document.stableLayoutChangedIndexes?.isEmpty == false
             || document.preparedText.contains(where: { preparedText[$0.key]?.nameFont != $0.value.nameFont })
         else { return false }
-        let previousItems = suppliedPreviousItems ?? items
+        let previousItems = items
         presentation = document.presentation
         presentedSections = document.sections
         items = document.items
@@ -621,13 +602,13 @@ extension NativeMemberListCanvasView {
             let nameFont = nameFont(for: member)
             let topRole = MessageAuthorPresentation.topRoleWithColor(in: member.roles)
             let nameColor = presentation.roleColorDisplay == .inNames
-                ? topRole?.colorHex.map(Self.color(hex:)) ?? labelColor
+                ? topRole?.colorHex.map { NSColor(hex: $0) } ?? labelColor
                 : labelColor
             let alpha = presentation.opacity(for: member)
             let gradientColors = topRole.flatMap { role -> [NSColor]? in
                 guard let primary = role.colorHex, let secondary = role.secondaryColorHex else { return nil }
                 return [primary, secondary, role.tertiaryColorHex].compactMap {
-                    $0.map { Self.color(hex: $0).withAlphaComponent(alpha) }
+                    $0.map { NSColor(hex: $0).withAlphaComponent(alpha) }
                 }
             }
             let activityColor = labelColor.withAlphaComponent(alpha * 0.5)

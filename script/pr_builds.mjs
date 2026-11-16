@@ -198,17 +198,21 @@ async function publicBytes(url) {
   return Buffer.from(await response.arrayBuffer());
 }
 
+function downloadAsset(asset, token) {
+  return fetch(asset.url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/octet-stream' } });
+}
+
 async function upload(release, name, bytes, token, replace = false) {
   const assets = await pages(DISTRIBUTION, `releases/${release.id}/assets`, null, { token });
   const existing = assets.find(asset => asset.name === name);
   if (existing) {
     if (!replace) {
-      const response = await fetch(existing.url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/octet-stream' } });
+      const response = await downloadAsset(existing, token);
       check(response.ok && digest(Buffer.from(await response.arrayBuffer())) === digest(bytes), `Refusing to replace immutable asset ${name}`);
       return;
     }
     if (existing.state === 'uploaded') {
-      const response = await fetch(existing.url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/octet-stream' } });
+      const response = await downloadAsset(existing, token);
       check(response.ok, `Could not read existing mutable asset ${name}`);
       if (digest(Buffer.from(await response.arrayBuffer())) === digest(bytes)) return;
     }
@@ -217,6 +221,18 @@ async function upload(release, name, bytes, token, replace = false) {
   const url = `${release.upload_url.replace(/\{.*$/, '')}?name=${encodeURIComponent(name)}`;
   const response = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' }, body: bytes });
   check(response.ok, `Asset upload failed: ${name} (${response.status})`);
+}
+
+async function publishDraft(release, token) {
+  if (release.draft) await api(DISTRIBUTION, `releases/${release.id}`, { token, method: 'PATCH', body: { draft: false, make_latest: 'false' } });
+}
+
+// Replaces a mutable asset, publishes its release, and checks the public download.
+async function uploadVerified(tag, name, bytes, token, failure) {
+  const release = await distributionRelease(tag, token);
+  await upload(release, name, bytes, token, true);
+  await publishDraft(release, token);
+  check(digest(await publicBytes(`https://github.com/${DISTRIBUTION}/releases/download/${tag}/${name}`)) === digest(bytes), failure);
 }
 
 export async function distributionRelease(tag, token, request = api) {
@@ -237,20 +253,20 @@ export async function distributionRelease(tag, token, request = api) {
   return release;
 }
 
+const newestRunFirst = (a, b) => b.runID - a.runID || b.runAttempt - a.runAttempt;
+
 export function mergeCatalog(catalog, build) {
   check(catalog.schemaVersion === 1 && Array.isArray(catalog.builds), 'Invalid existing catalog');
   const existing = catalog.builds.find(item => item.id === build.id);
   check(!existing || JSON.stringify(existing) === JSON.stringify(build), 'Conflicting immutable catalog entry');
-  return { schemaVersion: 1, builds: [...catalog.builds.filter(item => item.id !== build.id), build]
-    .sort((a, b) => b.runID - a.runID || b.runAttempt - a.runAttempt) };
+  return { schemaVersion: 1, builds: [...catalog.builds.filter(item => item.id !== build.id), build].sort(newestRunFirst) };
 }
 
 export function latestBuildsByPullRequest(catalog) {
   const latest = new Map();
   for (const build of catalog.builds) {
     const previous = latest.get(build.pullRequest);
-    if (!previous || build.runID > previous.runID ||
-      (build.runID === previous.runID && build.runAttempt > previous.runAttempt)) {
+    if (!previous || newestRunFirst(build, previous) < 0) {
       latest.set(build.pullRequest, build);
     }
   }
@@ -289,7 +305,7 @@ async function publish(directory) {
   const existingAssets = await pages(DISTRIBUTION, `releases/${release.id}/assets`, null, { token });
   const existingManifest = existingAssets.find(asset => asset.name === 'build.json');
   if (existingManifest) {
-    const response = await fetch(existingManifest.url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/octet-stream' } });
+    const response = await downloadAsset(existingManifest, token);
     check(response.ok, 'Could not read existing immutable manifest');
     const existing = await response.json();
     // A PR title can change between retries. Preserve its first published snapshot.
@@ -302,7 +318,7 @@ async function publish(directory) {
   for (const [name, bytes] of [['build.json', Buffer.from(json(build))], ['SakuraCord.app.zip', archive], ['SakuraCord.dSYM.zip', symbols], ['appcast.xml', feed]]) {
     await upload(release, name, bytes, token);
   }
-  if (release.draft) await api(DISTRIBUTION, `releases/${release.id}`, { token, method: 'PATCH', body: { draft: false, make_latest: 'false' } });
+  await publishDraft(release, token);
   // Verify availability before advertising a target in the catalog.
   for (const [url, bytes] of [[build.archiveURL, archive], [build.symbolsURL, symbols], [build.appcastURL, feed]]) {
     check(digest(await publicBytes(url)) === digest(bytes), 'Published bytes differ');
@@ -330,20 +346,12 @@ async function rebuildCatalog(token = process.env.PR_BUILDS_TOKEN) {
   for (const build of latestBuildsByPullRequest(catalog)) {
     const tag = `pr-${build.pullRequest}`;
     const feed = await publicBytes(`https://github.com/${DISTRIBUTION}/releases/download/${build.id}/appcast.xml`);
-    const track = await distributionRelease(tag, token);
-    await upload(track, 'appcast.xml', feed, token, true);
-    if (track.draft) await api(DISTRIBUTION, `releases/${track.id}`, { token, method: 'PATCH', body: { draft: false, make_latest: 'false' } });
-    check(digest(await publicBytes(`https://github.com/${DISTRIBUTION}/releases/download/${tag}/appcast.xml`)) === digest(feed),
-      'PR track verification failed');
+    await uploadVerified(tag, 'appcast.xml', feed, token, 'PR track verification failed');
   }
   // Discovery follows current PR state; immutable downloads and update tracks
   // remain available to people who already installed a closed PR's build.
   catalog = await openPullRequestCatalog(catalog);
-  const release = await distributionRelease('pr-builds', token);
-  await upload(release, 'catalog.json', Buffer.from(json(catalog)), token, true);
-  if (release.draft) await api(DISTRIBUTION, `releases/${release.id}`, { token, method: 'PATCH', body: { draft: false, make_latest: 'false' } });
-  const published = await publicBytes(`https://github.com/${DISTRIBUTION}/releases/download/pr-builds/catalog.json`);
-  check(digest(published) === digest(Buffer.from(json(catalog))), 'Catalog verification failed');
+  await uploadVerified('pr-builds', 'catalog.json', Buffer.from(json(catalog)), token, 'Catalog verification failed');
   console.log(`Published catalog with ${catalog.builds.length} builds from open pull requests.`);
 }
 

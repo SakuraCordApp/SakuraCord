@@ -40,6 +40,12 @@ extension AppModel {
         )
     }
 
+    /// Suspends the selected conversation once no column presents it.
+    func suspendSelectedConversationPresentationIfHidden() {
+        guard let selectedChannelID, !isConversationPresented(selectedChannelID) else { return }
+        suspendSelectedConversationPresentation()
+    }
+
     func reportTimelineLiveScrolling(
         _ isScrolling: Bool,
         conversationID: ChannelID
@@ -217,7 +223,7 @@ extension AppModel {
     }
 
     func reportConversationHistoryLoaded(channelID: ChannelID) {
-        guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        guard isSelectedOrOpenThread(channelID) else { return }
         AppPerformanceSignposts.reportConversationHistoryReady(
             channelID: channelID
         )

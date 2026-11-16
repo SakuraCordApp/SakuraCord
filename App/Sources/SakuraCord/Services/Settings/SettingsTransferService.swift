@@ -16,7 +16,7 @@ final class SettingsTransferService {
     func export(pages: Set<SettingsPageID>) -> SettingsArchive {
         var values: [String: SettingsPreferenceValue] = [:]
         for page in Self.pages where pages.contains(page) {
-            values.merge(preferences.export(scope: .appWide, page: page).values) { _, new in new }
+            values.merge(preferences.export(page: page)) { _, new in new }
         }
         return SettingsArchive(values: values)
     }
@@ -41,8 +41,7 @@ final class SettingsTransferService {
         for (key, value) in values.sorted(by: { $0.key < $1.key }) {
             let id = SettingsControlID(rawValue: key)
             guard let registration = preferences.registry.registration(id), registration.exports,
-                  case .appWide = registration.storage,
-                  SettingsImportValidation.accepts(value, registration: registration)
+                  registration.accepts(value)
             else {
                 report.unsupportedKeys.append(key)
                 continue

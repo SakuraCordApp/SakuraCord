@@ -81,7 +81,7 @@ struct VoiceVideoGrid: View {
                 .filter { $0.channelID == activeChannel.id }
                 .map { ($0.userID, $0) }
         )
-        if activeChannel.kind == .directMessage || activeChannel.kind == .groupDirectMessage {
+        if activeChannel.kind.isDirectMessage {
             for state in model.privateCall(in: activeChannel.id)?.voiceStates ?? [] {
                 statesByUserID[state.userID] = state
             }
@@ -115,9 +115,7 @@ struct VoiceVideoGrid: View {
 
         for participant in localParticipants where values[participant.userID] == nil {
             let numericID = UserID(participant.userID)
-            let user = numericID.flatMap { id in
-                id == currentUser?.id ? currentUser : model.membersByID[id]?.user
-            }
+            let user = numericID.flatMap { model.knownUser($0) }
             values[participant.userID] = VoiceTileParticipant(
                 id: participant.userID,
                 name: user?.displayName ?? "User \(participant.userID)",
@@ -516,7 +514,7 @@ private struct VoiceStreamTile: View {
                     if case .failed(let message) = state {
                         Text(message)
                             .font(metrics.font(12))
-                            .foregroundStyle(Color(hex: 0xF23F43))
+                            .foregroundStyle(MentionRed.color)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, metrics.value(16))
@@ -541,7 +539,7 @@ private struct VoiceStreamTile: View {
                     if case .failed(let message) = state {
                         Text(message)
                             .font(metrics.font(12))
-                            .foregroundStyle(Color(hex: 0xF23F43))
+                            .foregroundStyle(MentionRed.color)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, metrics.value(16))
@@ -803,7 +801,7 @@ private struct VoiceParticipantTile: View {
                 ConcentricRectangle(cornerRadius: metrics.value(16), style: .continuous)
                     .stroke(
                         participant.isSpeaking
-                            ? Color(hex: 0x23A55A) : Color.primary.opacity(0.08),
+                            ? Color.presenceOnline : Color.primary.opacity(0.08),
                         lineWidth: metrics.value(participant.isSpeaking ? 3 : 1)
                     )
             }
@@ -933,7 +931,7 @@ private struct RingingParticipantAvatar: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color(hex: 0x23A55A), lineWidth: max(2, size * 0.035))
+                .stroke(Color.presenceOnline, lineWidth: max(2, size * 0.035))
                 .frame(width: size * 1.18, height: size * 1.18)
                 .scaleEffect(isPulsing ? 1.12 : 0.92)
                 .opacity(isPulsing ? 0.12 : 0.68)
@@ -947,7 +945,7 @@ private struct RingingParticipantAvatar: View {
         }
         .frame(width: size * 1.36, height: size * 1.36)
         .shadow(
-            color: Color(hex: 0x23A55A).opacity(isPulsing ? 0.34 : 0.12),
+            color: Color.presenceOnline.opacity(isPulsing ? 0.34 : 0.12),
             radius: isPulsing ? 9 : 3
         )
         .onAppear { updateAnimation(reduceMotion: reduceMotion) }

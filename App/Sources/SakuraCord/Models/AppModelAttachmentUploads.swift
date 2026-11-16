@@ -334,15 +334,6 @@ extension AppModel {
         return message
     }
 
-    func attachmentFileSize(at url: URL) -> Int64? {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { url.stopAccessingSecurityScopedResource() }
-        }
-        let values = try? url.resourceValues(forKeys: [.fileSizeKey])
-        return values?.fileSize.map(Int64.init)
-    }
-
     private func enqueueOversizedAttachmentPrompt(_ prompt: OversizedAttachmentPrompt) {
         queuedOversizedAttachmentPrompts.append(prompt)
         presentNextOversizedAttachmentPrompt()
@@ -376,12 +367,13 @@ extension AppModel {
         _ link: URL,
         to destination: MessageComposerDestination
     ) {
-        let value = link.absoluteString
-        switch destination {
-        case .channel:
-            updateDraft(appending(value, to: draft))
-        case .thread:
-            threadDraft = appending(value, to: threadDraft)
+        let value = appending(link.absoluteString, to: draft(in: destination))
+        if destination == .thread, threadCreation?.isSubmitting == true {
+            // A submitting thread creation refuses typed edits, but a
+            // finished upload's link must still reach its draft.
+            threadDraft = value
+        } else {
+            updateDraft(value, in: destination)
         }
     }
 

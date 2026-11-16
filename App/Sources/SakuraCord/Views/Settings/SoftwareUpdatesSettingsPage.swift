@@ -94,13 +94,10 @@ struct SoftwareUpdatesSettingsPage: View {
                 }
             }
         }
-        .onChange(of: state.revealRequest?.id) {
-            guard state.revealRequest?.destination.page == .softwareUpdates else { return }
-            navigationPath.removeAll()
-        }
+        .settingsNavigationPathResetOnReveal($navigationPath, page: .softwareUpdates, state: state)
         .windowModal(isPresented: $presentsBuildBrowser, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             PullRequestBuildBrowser(
-                isPreview: ProcessInfo.processInfo.arguments.contains("--offline"),
+                isPreview: AppLaunchConfiguration.current.includesOfflineFlag,
                 installedBuildID: updateController.installedPullRequestBuildID,
                 updateController: updateController
             ) { build in
@@ -128,17 +125,6 @@ private struct CurrentPullRequestBuildRow: View {
     let buildID: String
     @ObservedObject var updateController: AppUpdateController
 
-    private struct BuildComponents {
-        let pullRequest: String
-        let run: String
-        let attempt: String
-    }
-
-    private var components: BuildComponents? {
-        guard let match = buildID.wholeMatch(of: /pr-(\d+)-run-(\d+)-attempt-(\d+)/) else { return nil }
-        return BuildComponents(pullRequest: String(match.1), run: String(match.2), attempt: String(match.3))
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
             HStack(spacing: InterfaceScale.metric(12)) {
@@ -149,7 +135,7 @@ private struct CurrentPullRequestBuildRow: View {
                     .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Circle())
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
-                    if let components {
+                    if let components = PullRequestBuild.idComponents(buildID) {
                         Text("Running PR #\(components.pullRequest)").font(.interface(.headline))
                         Text("Run \(components.run) · Attempt \(components.attempt)")
                             .font(.interface(.caption).monospacedDigit()).foregroundStyle(.secondary)
@@ -160,18 +146,12 @@ private struct CurrentPullRequestBuildRow: View {
                 }
                 .textSelection(.enabled)
                 Spacer(minLength: InterfaceScale.metric(8))
-                Button {
+                GlassCircleButton(
+                    symbol: "folder", help: "Show Recovery Copy in Finder",
+                    diameter: InterfaceScale.metric(32), font: .interface(.callout).weight(.medium)
+                ) {
                     Task { await updateController.revealRecoveryCopy() }
-                } label: {
-                    Image(systemName: "folder")
-                        .font(.interface(.callout).weight(.medium))
-                        .frame(width: InterfaceScale.metric(32), height: InterfaceScale.metric(32))
-                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: Circle())
-                .help("Show Recovery Copy in Finder")
-                .accessibilityLabel("Show Recovery Copy in Finder")
             }
             GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
                 HStack(spacing: InterfaceScale.metric(8)) {

@@ -47,8 +47,8 @@ struct GuildCustomizationTests {
         let configuration = await provider.configuration
         let guildID = configuration.guildID
         let guildIndex = try #require(model.snapshot?.guilds.firstIndex { $0.id == guildID })
-        model.snapshot?.guilds[guildIndex].features.insert("GUILD_ONBOARDING")
-        model.serverRailGuildsByID[guildID]?.features.insert("GUILD_ONBOARDING")
+        model.snapshot?.guilds[guildIndex].features.insert(GuildFeature.onboarding)
+        model.serverRailGuildsByID[guildID]?.features.insert(GuildFeature.onboarding)
         model.onboarding.members[guildID] = try await provider.refreshCurrentMember(in: guildID)
         model.onboarding.entries[guildID] = .init(configuration: configuration, responses: ["required"], promptID: "1", initial: true, refreshedAt: .now)
         await model.activateGuild(nil)
@@ -79,8 +79,8 @@ struct GuildCustomizationTests {
         let mention = Channel(id: .init(rawValue: 203), guildID: id, name: "mentioned", mentionCount: 1)
         let channels = [selected, omitted, resource, mention]
         model.snapshot?.channels = channels
-        model.snapshot?.guilds[0].features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
-        model.serverRailGuildsByID[id]?.features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
+        model.snapshot?.guilds[0].features = [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]
+        model.serverRailGuildsByID[id]?.features = [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]
         model.serverRailGuildsByID[id]?.currentUserPermissions = .max
         var member = Member(user: try #require(model.currentUser), roleName: "", isOnline: false)
         member.flags = 2
@@ -110,7 +110,7 @@ struct GuildCustomizationTests {
         model.setChannelSelected(false, channelID: selected.id, guildID: id)
         #expect(model.onboarding.channelSelections.isEmpty)
         #expect(model.presentedGuildChannelSettings(in: id) == savedSettings)
-        model.serverRailGuildsByID[id]?.features.insert("GUILD_ONBOARDING_HAS_PROMPTS")
+        model.serverRailGuildsByID[id]?.features.insert(GuildFeature.onboardingHasPrompts)
         #expect(model.hasChannelsAndRoles(in: id))
         #expect(model.customizationTitle(in: id) == "Roles")
         model.featuresSettings.channelManagement = true
@@ -167,17 +167,17 @@ struct GuildCustomizationTests {
         model.applyNotificationSettings(.init(guildID: guild.id))
         model.setGuildNotificationToggle(.hideMutedChannels, isEnabled: true, for: guild)
         #expect(await writes.next() == .notificationToggle(.hideMutedChannels, true))
-        let pending = model.guildNotificationMutationTasks[guild.id]
+        let pending = model.notificationMutationTasks[.guild(guild.id)]
         await model.consume(.notificationSettingsChanged(.init(guildID: guild.id, hideMutedChannels: true)))
         await model.consume(.notificationSettingsChanged(.init(guildID: guild.id, hideMutedChannels: false)))
         await provider.finish(success: true)
         await pending?.value
         #expect(!model.presentedGuildChannelSettings(in: guild.id).hideMutedChannels)
-        #expect(model.guildNotificationMutationTasks[guild.id] == nil)
+        #expect(model.notificationMutationTasks[.guild(guild.id)] == nil)
 
         model.setGuildNotificationToggle(.hideMutedChannels, isEnabled: true, for: guild)
         #expect(await writes.next() == .notificationToggle(.hideMutedChannels, true))
-        let reconnect = model.guildNotificationMutationTasks[guild.id]
+        let reconnect = model.notificationMutationTasks[.guild(guild.id)]
         var replacement = try #require(model.snapshot)
         replacement.notificationSettings.removeAll { $0.guildID == guild.id }
         replacement.notificationSettings.append(.init(guildID: guild.id, hideMutedChannels: false))
@@ -188,7 +188,7 @@ struct GuildCustomizationTests {
 
         model.setGuildNotificationToggle(.hideMutedChannels, isEnabled: true, for: guild)
         #expect(await writes.next() == .notificationToggle(.hideMutedChannels, true))
-        let fallback = model.guildNotificationMutationTasks[guild.id]
+        let fallback = model.notificationMutationTasks[.guild(guild.id)]
         model.updateLocalChannelNotificationOverride(channel: channel) { $0.isMuted = true }
         await provider.finish(success: true)
         await fallback?.value
@@ -196,7 +196,7 @@ struct GuildCustomizationTests {
         #expect(model.presentedGuildChannelSettings(in: guild.id).channelOverrides.first { $0.channelID == channel.id }?.isMuted == true)
         model.setGuildNotificationToggle(.hideMutedChannels, isEnabled: false, for: guild)
         #expect(await writes.next() == .notificationToggle(.hideMutedChannels, false))
-        let failed = model.guildNotificationMutationTasks[guild.id]
+        let failed = model.notificationMutationTasks[.guild(guild.id)]
         await provider.finish(success: false)
         await failed?.value
         #expect(model.presentedGuildChannelSettings(in: guild.id).hideMutedChannels)
@@ -313,7 +313,7 @@ private actor CustomizationGate {
     func release() { pending?.resume(); pending = nil }
 }
 
-private actor CustomizationProvider: ChatProvider {
+private actor CustomizationProvider: ChatProviderStub {
     enum Write: Equatable, Sendable {
         case answers(Set<String>)
         case channels(Bool?, [ChannelID: Bool])
@@ -382,12 +382,7 @@ private actor CustomizationProvider: ChatProvider {
     func members(in guildID: GuildID?) async throws -> [Member] { try await base.members(in: guildID) }
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile { try await base.profile(for: userID, in: guildID) }
     func currentStatus() async -> PresenceStatus { .offline }
-    func updateStatus(_ status: PresenceStatus) async throws {}
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage { try await base.messages(in: channelID, before: before, limit: limit) }
     func send(_ draft: SendMessageDraft) async throws -> Message { try await base.send(draft) }
     func edit(_ message: Message, content: String) async throws -> Message { try await base.edit(message, content: content) }
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-    func disconnect() async {}
 }

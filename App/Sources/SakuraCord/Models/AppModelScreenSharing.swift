@@ -3,6 +3,20 @@ import Foundation
 import MediaPipeline
 import SakuraCordModels
 
+enum ApplicationStreamPlaybackState: Equatable {
+    case available
+    case connecting
+    case watching
+    case broadcasting
+    case reconnecting
+    case failed(String)
+}
+
+struct ApplicationStreamDemandIntent: Equatable {
+    var isEnabled: Bool
+    var pixelCount: Int?
+}
+
 extension AppModel {
     func presentScreenSharePreview() async {
         guard activeVoiceChannel != nil, voiceSessionState == .connected else {
@@ -506,8 +520,7 @@ extension AppModel {
         applicationStreamFrames = [:]
         applicationStreamOperationGenerations = [:]
         applicationStreamDemandGenerations = [:]
-        for task in applicationStreamDemandUpdateTasks.values { task.cancel() }
-        applicationStreamDemandUpdateTasks = [:]
+        applicationStreamDemandUpdateTasks.cancelAll()
         applicationStreamDemandIntents = [:]
         manuallyStoppedApplicationStreamKeys = []
         localApplicationStreamKey = nil
@@ -791,10 +804,8 @@ extension AppModel {
     }
 
     private func announceLocalApplicationStreamStarted(_ key: ApplicationStreamKey) {
-        guard applicationStreamStates[key] == .broadcasting,
-              voiceVideoPreferences.playsFeedbackSounds
-        else { return }
-        soundPlayer.play(.streamStarted)
+        guard applicationStreamStates[key] == .broadcasting else { return }
+        playCallFeedback(.streamStarted)
     }
 
     private func announceLocalApplicationStreamEnded(_ key: ApplicationStreamKey) {
@@ -804,26 +815,23 @@ extension AppModel {
         case .available, .connecting, .watching, nil:
             return
         }
-        if voiceVideoPreferences.playsFeedbackSounds {
-            soundPlayer.play(.streamEnded)
-        }
+        playCallFeedback(.streamEnded)
     }
 
     private func playApplicationStreamViewerSound(
         previous: ApplicationStream?,
         current: ApplicationStream
     ) {
-        guard voiceVideoPreferences.playsFeedbackSounds,
-              let previous,
+        guard let previous,
               previous.viewerIDs.count <= 25,
               let channel = activeVoiceChannel,
               channel.id == current.key.channelID,
               applicationStreamKeys(in: channel) == [current.key]
         else { return }
         if current.viewerIDs.count > previous.viewerIDs.count {
-            soundPlayer.play(.streamUserJoined)
+            playCallFeedback(.streamUserJoined)
         } else if current.viewerIDs.count < previous.viewerIDs.count {
-            soundPlayer.play(.streamUserLeft)
+            playCallFeedback(.streamUserLeft)
         }
     }
 

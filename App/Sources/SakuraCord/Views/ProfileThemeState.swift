@@ -12,7 +12,7 @@ final class ProfileThemeState {
     private var palette: [UInt32] = []
 
     func source(for profile: UserProfile?, scale: CGFloat, allowsTheme: Bool? = nil) -> URL? {
-        guard let profile, allowsTheme ?? (profile.user.premiumType == 2),
+        guard let profile, allowsTheme ?? (profile.user.premiumType == DiscordPremiumType.nitro),
               profile.themeHexes.count < 2, let url = profile.avatarURL ?? profile.defaultAvatarURL else { return nil }
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               parts.host == "cdn.discordapp.com", parts.path.contains("/avatars/") else { return url }
@@ -26,7 +26,7 @@ final class ProfileThemeState {
     }
 
     func colors(for profile: UserProfile?, scale: CGFloat, allowsTheme: Bool? = nil) -> [UInt32] {
-        guard let profile, allowsTheme ?? (profile.user.premiumType == 2) else { return [] }
+        guard let profile, allowsTheme ?? (profile.user.premiumType == DiscordPremiumType.nitro) else { return [] }
         if profile.themeHexes.count >= 2 { return Array(profile.themeHexes.prefix(2)) }
         let url = source(for: profile, scale: scale, allowsTheme: allowsTheme)
         let values = url == loadedURL ? palette : url.flatMap { ProfileAvatarPaletteLoader.shared.cached($0) } ?? []

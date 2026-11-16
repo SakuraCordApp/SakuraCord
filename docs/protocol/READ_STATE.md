@@ -7,6 +7,7 @@
 [AccountReadStateModel](../../App/Sources/SakuraCord/Models/AccountReadStateModel.swift)
 owns acknowledgement state; [InboxState](../../App/Sources/SakuraCord/Models/InboxState.swift)
 owns Inbox presentation. Network operations live in
+[DiscordRESTReadState.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTReadState.swift),
 [DiscordRESTInbox.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTInbox.swift) and
 [DiscordRESTInboxEvents.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTInboxEvents.swift).
 Relevant checks are [AccountReadStateModelTests.swift](../../App/Tests/SakuraCordAppTests/AccountReadStateModelTests.swift),

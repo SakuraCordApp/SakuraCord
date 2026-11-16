@@ -42,6 +42,7 @@ enum ForumCardPainter {
         let scale = InterfaceScale.factor
         let regular = NSFont.interfaceSystemFont(ofSize: 12)
         let semibold = NSFont.interfaceSystemFont(ofSize: 12, weight: .semibold)
+        let retry = NSFont.interfaceSystemFont(ofSize: 13, weight: .medium)
         let badge: NSFont
         let newBadgeSize: CGSize
 
@@ -61,15 +62,8 @@ enum ForumCardPainter {
         return cachedFonts
     }
 
-    private static var tagFont: NSFont { fonts.semibold }
-    private static var footerFont: NSFont { fonts.regular }
-    private static var footerEmphasisFont: NSFont { fonts.semibold }
-    private static var captionFont: NSFont { fonts.regular }
-    private static var badgeFont: NSFont { fonts.badge }
     static var newBadgeSize: CGSize { fonts.newBadgeSize }
-    /// Matches the shared skeleton style's resting fill; the shimmer above
-    /// the bars uses it too.
-    static let skeletonFill = NSColor.labelColor.withAlphaComponent(0.09)
+    private static var newBadgeSpacing: CGFloat { InterfaceScale.metric(8) }
     private static let bullet = " • "
     static let newBadgeFill = NSColor(srgbRed: 0xC9 / 255, green: 0xD2 / 255, blue: 1, alpha: 1)
     static let newBadgeText = NSColor(srgbRed: 0x58 / 255, green: 0x65 / 255, blue: 0xF2 / 255, alpha: 1)
@@ -152,7 +146,7 @@ enum ForumCardPainter {
         reserved: Int,
         metrics: ForumBoardMetrics
     ) -> Int {
-        let badgeReserve = presentation.isNew ? newBadgeSize.width + InterfaceScale.metric(8) : 0
+        let badgeReserve = presentation.isNew ? newBadgeSize.width + newBadgeSpacing : 0
         let lines = ForumTitleLineCounter.count(
             presentation.title,
             width: max(1, width - badgeReserve),
@@ -214,17 +208,17 @@ enum ForumCardPainter {
             regions.reactionRegionFrame = CGRect(x: originX, y: footer.midY - size.height / 2, width: size.width, height: size.height)
             if !alignsReactionTrailing { cursorX += size.width + spacing }
         }
-        let countTextWidth = NativeTimelineRowLayout.measuredTextWidth(presentation.messageCount.formatted(), font: footerFont)
+        let countTextWidth = NativeTimelineRowLayout.measuredTextWidth(presentation.messageCount.formatted(), font: fonts.regular)
         let countWidth = countContentWidth(presentation, textWidth: countTextWidth)
         regions.countFrame = CGRect(x: cursorX, y: footer.minY, width: countWidth, height: footer.height)
         regions.countTextWidth = countTextWidth
         if !alignsReactionTrailing {
             cursorX += countWidth
-            let separatorWidth = ceil(NativeTimelineRowLayout.measuredTextWidth(bullet, font: footerFont))
+            let separatorWidth = ceil(NativeTimelineRowLayout.measuredTextWidth(bullet, font: fonts.regular))
             regions.footerSeparatorFrame = CGRect(x: cursorX, y: footer.minY, width: separatorWidth, height: footer.height)
             cursorX += separatorWidth
             let text = presentation.relativeTimeText(isGallery: false)
-            let width = ceil(NativeTimelineRowLayout.measuredTextWidth(text, font: footerFont)) + 2
+            let width = ceil(NativeTimelineRowLayout.measuredTextWidth(text, font: fonts.regular)) + 2
             regions.timestampFrame = CGRect(x: cursorX, y: footer.minY, width: width, height: footer.height)
             regions.exactDateFrame = regions.timestampFrame
         }
@@ -276,7 +270,7 @@ enum ForumCardPainter {
         var width = iconWidth + textWidth
         if let unreadCountText = presentation.unreadCountText {
             width += InterfaceScale.metric(4) + NativeTimelineRowLayout.measuredTextWidth(
-                "(\(unreadCountText) New)", font: footerEmphasisFont
+                "(\(unreadCountText) New)", font: fonts.semibold
             )
         }
         return ceil(width) + 1
@@ -295,7 +289,7 @@ enum ForumCardPainter {
         let metrics: ForumBoardMetrics
         /// Media whose download failed; a failed video poster falls back to
         /// the file tile.
-        let failedMedia: Set<NativeTimelineMediaKey>
+        let failedMedia: Set<MediaImageKey>
     }
 
     static func draw(_ input: DrawInput, on canvas: ForumCardCanvas) {
@@ -332,9 +326,15 @@ enum ForumCardPainter {
 
     /// Skeleton bars, drawn beneath the shimmer layer that animates over them.
     static func drawSkeleton(_ frames: [CGRect], on canvas: ForumCardCanvas) {
+        let fill = SkeletonShimmerStyle.baseColor()
         for frame in frames {
-            canvas.fill(frame, cornerRadius: min(InterfaceScale.metric(7), frame.height / 2), color: skeletonFill)
+            canvas.fill(frame, cornerRadius: skeletonCornerRadius(for: frame), color: fill)
         }
+    }
+
+    /// Shared by the bars and the shimmer mask over them.
+    static func skeletonCornerRadius(for frame: CGRect) -> CGFloat {
+        min(InterfaceScale.metric(7), frame.height / 2)
     }
 
     private static func drawStatusRow(_ presentation: ForumCardPresentation, in frame: CGRect, on canvas: ForumCardCanvas) {
@@ -417,7 +417,7 @@ enum ForumCardPainter {
     private static func chipWidth(text: String, hasEmoji: Bool) -> CGFloat {
         let padding = InterfaceScale.metric(9)
         let emoji = hasEmoji ? InterfaceScale.metric(14) + InterfaceScale.metric(4) : 0
-        let textWidth = min(NativeTimelineRowLayout.measuredTextWidth(text, font: tagFont), InterfaceScale.metric(160))
+        let textWidth = min(NativeTimelineRowLayout.measuredTextWidth(text, font: fonts.semibold), InterfaceScale.metric(160))
         return ceil(padding * 2 + emoji + textWidth)
     }
 
@@ -444,11 +444,11 @@ enum ForumCardPainter {
             cursorX += size + InterfaceScale.metric(4)
         }
         let color: NSColor = style == .overMedia ? .white : .labelColor
-        let lineHeight = ForumBoardMetrics.lineHeight(of: tagFont)
+        let lineHeight = fonts.semibold.lineHeight
         canvas.text(
             text,
             in: CGRect(x: cursorX, y: frame.midY - lineHeight / 2, width: max(0, frame.maxX - padding - cursorX), height: lineHeight),
-            font: tagFont,
+            font: fonts.semibold,
             color: color
         )
     }
@@ -458,7 +458,7 @@ enum ForumCardPainter {
         case let .unicode(value):
             canvas.image(ComponentUnicodeEmojiRenderer.image(for: value), in: frame, cornerRadius: 0, fillsFrame: false)
         case .custom:
-            if let key = emoji.mediaKey, let image = NativeTimelineRowPainter.mediaImage(for: key) {
+            if let key = emoji.mediaKey, let image = MediaImageStore.shared.stillImage(for: key) {
                 canvas.image(image, in: frame, cornerRadius: 0, fillsFrame: false)
             } else {
                 canvas.fillOval(frame.insetBy(dx: 1, dy: 1), color: NSColor.labelColor.withAlphaComponent(0.1))
@@ -476,7 +476,6 @@ enum ForumCardPainter {
         on canvas: ForumCardCanvas
     ) {
         let color: NSColor = presentation.isEmphasized ? .labelColor : .secondaryLabelColor
-        let spacing = InterfaceScale.metric(8)
         canvas.lines(
             presentation.title,
             font: metrics.titleFont,
@@ -484,14 +483,14 @@ enum ForumCardPainter {
             in: frame,
             lineHeight: metrics.titleLineHeight,
             maximumLines: max(1, maximumLines),
-            lastLineReserve: presentation.isNew ? newBadgeSize.width + spacing : 0,
+            lastLineReserve: presentation.isNew ? newBadgeSize.width + newBadgeSpacing : 0,
             badge: presentation.isNew
                 ? ForumCardCanvas.Badge(
                     size: newBadgeSize,
-                    spacing: spacing,
+                    spacing: newBadgeSpacing,
                     fill: newBadgeFill,
                     text: "NEW",
-                    font: badgeFont,
+                    font: fonts.badge,
                     textColor: newBadgeText
                 )
                 : nil
@@ -543,7 +542,7 @@ enum ForumCardPainter {
         _ presentation: ForumCardPresentation,
         in frame: CGRect,
         excerpt: ForumPostPreviewTextRenderer?,
-        failedMedia: Set<NativeTimelineMediaKey>,
+        failedMedia: Set<MediaImageKey>,
         on canvas: ForumCardCanvas
     ) {
         let radius = InterfaceScale.metric(12)
@@ -594,7 +593,7 @@ enum ForumCardPainter {
         _ media: ForumCardPresentation.Media,
         in frame: CGRect,
         style: MediaStyle,
-        failedMedia: Set<NativeTimelineMediaKey>,
+        failedMedia: Set<MediaImageKey>,
         on canvas: ForumCardCanvas
     ) {
         let cornerRadius = style.cornerRadius
@@ -602,8 +601,8 @@ enum ForumCardPainter {
         // Only a tile without its image gets a backing: one under an image
         // shows around its antialiased corners.
         let image: NSImage? = switch media {
-        case let .image(key): NativeTimelineRowPainter.mediaImage(for: key)
-        case let .video(poster?, _): NativeTimelineRowPainter.mediaImage(for: poster)
+        case let .image(key): MediaImageStore.shared.stillImage(for: key)
+        case let .video(poster?, _): MediaImageStore.shared.stillImage(for: poster)
         default: nil
         }
         if image == nil {
@@ -633,7 +632,7 @@ enum ForumCardPainter {
                 size: frame.size,
                 cornerRadius: cornerRadius
             ) {
-                if let image = hidden.mediaKey.flatMap(NativeTimelineRowPainter.mediaImage(for:)) {
+                if let image = hidden.mediaKey.flatMap(MediaImageStore.shared.stillImage(for:)) {
                     NativeTimelineRowPainter.drawImage(
                         image, in: CGRect(origin: .zero, size: frame.size), cornerRadius: cornerRadius, fillsFrame: true
                     )
@@ -653,7 +652,7 @@ enum ForumCardPainter {
         on canvas: ForumCardCanvas
     ) {
         let size = InterfaceScale.metric(isCompact ? 22 : 30)
-        let lineHeight = ForumBoardMetrics.lineHeight(of: captionFont)
+        let lineHeight = fonts.regular.lineHeight
         let total = size + InterfaceScale.metric(7) + lineHeight * 2
         let top = frame.midY - total / 2
         canvas.symbol(
@@ -665,7 +664,7 @@ enum ForumCardPainter {
         let inset = InterfaceScale.metric(8)
         canvas.lines(
             filename,
-            font: captionFont,
+            font: fonts.regular,
             color: .secondaryLabelColor,
             in: CGRect(x: frame.minX + inset, y: top + size + InterfaceScale.metric(7), width: frame.width - inset * 2, height: lineHeight * 2),
             lineHeight: lineHeight,
@@ -683,15 +682,15 @@ enum ForumCardPainter {
             drawStatusIcon(symbol, at: CGPoint(x: trailing, y: frame.midY), size: iconSize, on: canvas)
             trailing -= InterfaceScale.metric(6)
         }
-        let lineHeight = ForumBoardMetrics.lineHeight(of: captionFont)
+        let lineHeight = fonts.regular.lineHeight
         let textY = frame.midY - lineHeight / 2
         var cursorX = frame.minX
         let posted = presentation.relativeTimeText(isGallery: true)
-        let postedWidth = ceil(NativeTimelineRowLayout.measuredTextWidth(posted, font: captionFont)) + 1
+        let postedWidth = ceil(NativeTimelineRowLayout.measuredTextWidth(posted, font: fonts.regular)) + 1
         if let author = presentation.galleryAuthor {
-            let bulletWidth = ceil(NativeTimelineRowLayout.measuredTextWidth(bullet, font: captionFont))
+            let bulletWidth = ceil(NativeTimelineRowLayout.measuredTextWidth(bullet, font: fonts.regular))
             let available = max(0, trailing - InterfaceScale.metric(6) - cursorX - postedWidth - bulletWidth)
-            let font = ProfileNameFontCache.font(id: author.fontID, fallback: captionFont)
+            let font = ProfileNameFontCache.font(id: author.fontID, fallback: fonts.regular)
             ProfileNameFontLoader.shared.request(id: author.fontID)
             if let dot = author.roleDotColor {
                 let dotSize = InterfaceScale.metric(7)
@@ -699,7 +698,7 @@ enum ForumCardPainter {
                 cursorX += dotSize + InterfaceScale.metric(4)
             }
             let nameWidth = min(available, ceil(NativeTimelineRowLayout.measuredTextWidth(author.name, font: font)) + 1)
-            let nameHeight = ForumBoardMetrics.lineHeight(of: font)
+            let nameHeight = font.lineHeight
             canvas.text(
                 author.name,
                 in: CGRect(x: cursorX, y: frame.midY - nameHeight / 2, width: nameWidth, height: nameHeight),
@@ -707,13 +706,13 @@ enum ForumCardPainter {
                 color: author.color ?? .labelColor
             )
             cursorX += nameWidth
-            canvas.text(bullet, in: CGRect(x: cursorX, y: textY, width: bulletWidth, height: lineHeight), font: captionFont, color: .tertiaryLabelColor)
+            canvas.text(bullet, in: CGRect(x: cursorX, y: textY, width: bulletWidth, height: lineHeight), font: fonts.regular, color: .tertiaryLabelColor)
             cursorX += bulletWidth
         }
         canvas.text(
             posted,
             in: CGRect(x: cursorX, y: textY, width: max(0, min(postedWidth, trailing - cursorX)), height: lineHeight),
-            font: captionFont,
+            font: fonts.regular,
             color: .secondaryLabelColor
         )
     }
@@ -723,7 +722,7 @@ enum ForumCardPainter {
     /// emoji finishes loading.
     private struct ReactionPillKey: Hashable {
         let reaction: Reaction
-        let emojiURL: URL?
+        let emojiKey: MediaImageKey?
         let isEmojiLoaded: Bool
         let isHovered: Bool
         let isDisabled: Bool
@@ -736,11 +735,11 @@ enum ForumCardPainter {
         model: AppModel?
     ) -> ReactionPillKey {
         let reaction = summary.reaction
-        let emojiURL = MessageReactionPresentation.emojiURL(for: reaction, customEmojiURLsByID: model?.customEmojiURLsByID ?? [:])
+        let emojiKey = MessageReactionPresentation.emojiMediaKey(for: reaction, customEmojiURLsByID: model?.customEmojiURLsByID ?? [:])
         return ReactionPillKey(
             reaction: reaction,
-            emojiURL: emojiURL,
-            isEmojiLoaded: emojiURL.map { NativeTimelineRowPainter.mediaImage(for: .media($0, maximumPixelDimension: 64)) != nil } ?? false,
+            emojiKey: emojiKey,
+            isEmojiLoaded: emojiKey.map { MediaImageStore.shared.stillImage(for: $0) != nil } ?? false,
             isHovered: isHovered,
             isDisabled: summary.isDisabled,
             accent: NSColor.sakuraCordAccentColor.cgColor.components ?? []
@@ -771,7 +770,7 @@ enum ForumCardPainter {
             }
         }
         if let frame = regions.countFrame {
-            let lineHeight = ForumBoardMetrics.lineHeight(of: footerFont)
+            let lineHeight = fonts.regular.lineHeight
             let iconSize = InterfaceScale.metric(13)
             canvas.symbol(
                 "bubble.left.fill",
@@ -784,7 +783,7 @@ enum ForumCardPainter {
             canvas.text(
                 presentation.messageCount.formatted(),
                 in: CGRect(x: cursorX, y: frame.midY - lineHeight / 2, width: countWidth, height: lineHeight),
-                font: footerFont,
+                font: fonts.regular,
                 color: .secondaryLabelColor
             )
             cursorX += countWidth + InterfaceScale.metric(3)
@@ -792,28 +791,28 @@ enum ForumCardPainter {
                 canvas.text(
                     "(\(unreadCountText) New)",
                     in: CGRect(x: cursorX, y: frame.midY - lineHeight / 2, width: max(0, frame.maxX - cursorX), height: lineHeight),
-                    font: footerEmphasisFont,
+                    font: fonts.semibold,
                     color: .sakuraCordAccentColor
                 )
             }
         }
         if let frame = regions.footerSeparatorFrame {
-            let lineHeight = ForumBoardMetrics.lineHeight(of: footerFont)
+            let lineHeight = fonts.regular.lineHeight
             canvas.text(
                 bullet,
                 in: CGRect(x: frame.minX, y: frame.midY - lineHeight / 2, width: frame.width, height: lineHeight),
-                font: footerFont,
+                font: fonts.regular,
                 color: .tertiaryLabelColor,
                 alignment: .center,
                 lineBreakMode: .byClipping
             )
         }
         if let frame = regions.timestampFrame {
-            let lineHeight = ForumBoardMetrics.lineHeight(of: footerFont)
+            let lineHeight = fonts.regular.lineHeight
             canvas.text(
                 presentation.relativeTimeText(isGallery: false),
                 in: CGRect(x: frame.minX, y: frame.midY - lineHeight / 2, width: frame.width, height: lineHeight),
-                font: footerFont,
+                font: fonts.regular,
                 color: .secondaryLabelColor
             )
         }
@@ -823,7 +822,7 @@ enum ForumCardPainter {
 
     static func drawSectionHeader(_ title: String, in frame: CGRect, on canvas: ForumCardCanvas) {
         let font = NSFont.interfaceSystemFont(ofSize: 11, weight: .bold)
-        let lineHeight = ForumBoardMetrics.lineHeight(of: font)
+        let lineHeight = font.lineHeight
         canvas.text(
             title.uppercased(),
             in: CGRect(x: frame.minX + InterfaceScale.metric(2), y: frame.maxY - lineHeight - InterfaceScale.metric(4), width: frame.width, height: lineHeight),
@@ -834,8 +833,7 @@ enum ForumCardPainter {
 
     /// The failed-page notice; returns its retry button frame.
     static func paginationRetryFrame(in frame: CGRect) -> CGRect {
-        let font = NSFont.interfaceSystemFont(ofSize: 13, weight: .medium)
-        let width = ceil(NativeTimelineRowLayout.measuredTextWidth("Try Again", font: font)) + InterfaceScale.metric(24)
+        let width = ceil(NativeTimelineRowLayout.measuredTextWidth("Try Again", font: fonts.retry)) + InterfaceScale.metric(24)
         let height = InterfaceScale.metric(28)
         return CGRect(x: frame.maxX - InterfaceScale.metric(12) - width, y: frame.midY - height / 2, width: width, height: height)
     }
@@ -852,8 +850,8 @@ enum ForumCardPainter {
         let retry = paginationRetryFrame(in: frame)
         let textX = frame.minX + InterfaceScale.metric(12) + iconSize + InterfaceScale.metric(10)
         let titleFont = NSFont.interfaceSystemFont(ofSize: 13, weight: .semibold)
-        let titleHeight = ForumBoardMetrics.lineHeight(of: titleFont)
-        let detailHeight = ForumBoardMetrics.lineHeight(of: captionFont)
+        let titleHeight = titleFont.lineHeight
+        let detailHeight = fonts.regular.lineHeight
         let top = frame.midY - (titleHeight + detailHeight) / 2
         canvas.text(
             "Couldn’t load more posts",
@@ -864,16 +862,15 @@ enum ForumCardPainter {
         canvas.text(
             message,
             in: CGRect(x: textX, y: top + titleHeight, width: retry.minX - textX - 8, height: detailHeight),
-            font: captionFont,
+            font: fonts.regular,
             color: .secondaryLabelColor
         )
         canvas.fill(retry, cornerRadius: retry.height / 2, color: NSColor.labelColor.withAlphaComponent(isRetryHovered ? 0.16 : 0.1))
-        let font = NSFont.interfaceSystemFont(ofSize: 13, weight: .medium)
-        let lineHeight = ForumBoardMetrics.lineHeight(of: font)
+        let lineHeight = fonts.retry.lineHeight
         canvas.text(
             "Try Again",
             in: CGRect(x: retry.minX, y: retry.midY - lineHeight / 2, width: retry.width, height: lineHeight),
-            font: font,
+            font: fonts.retry,
             color: .labelColor,
             alignment: .center,
             lineBreakMode: .byClipping

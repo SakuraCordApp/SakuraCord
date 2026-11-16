@@ -850,18 +850,7 @@ final class OpusSampleBufferEncoder: NSObject,
     }
 
     func process(_ sampleBuffer: CMSampleBuffer) {
-        guard let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
-        guard let format = AVAudioFormat(formatDescription: description) else { return }
-        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
-        guard frameCount > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return }
-        buffer.frameLength = frameCount
-        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sampleBuffer,
-            at: 0,
-            frameCount: Int32(frameCount),
-            into: buffer.mutableAudioBufferList
-        ) == noErr else { return }
+        guard let buffer = AVAudioPCMBuffer(copying: sampleBuffer) else { return }
         process(buffer)
     }
 
@@ -906,27 +895,9 @@ final class OpusSampleBufferEncoder: NSObject,
     func process(_ input: AVAudioPCMBuffer) {
         do { try configure(inputFormat: input.format) } catch { return }
         let result: (frames: [CapturedOpusFrame], level: Float) = lock.withLock {
-            guard let converter else { return ([], 0) }
-            let ratio = OpusCodec.sampleRate / input.format.sampleRate
-            let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * ratio)) + 32
-            guard let converted = AVAudioPCMBuffer(
-                pcmFormat: OpusCodec.pcmFormat,
-                frameCapacity: capacity
-            ) else { return ([], 0) }
-            var supplied = false
-            var error: NSError?
-            _ = converter.convert(to: converted, error: &error) { _, status in
-                guard !supplied else {
-                    status.pointee = .noDataNow
-                    return nil
-                }
-                supplied = true
-                status.pointee = .haveData
-                return input
-            }
-            guard error == nil,
-                  let channels = converted.floatChannelData,
-                  converted.frameLength > 0 else { return ([], 0) }
+            guard let converted = converter?.convertOnce(input, to: OpusCodec.pcmFormat),
+                  let channels = converted.floatChannelData
+            else { return ([], 0) }
             left.append(contentsOf: UnsafeBufferPointer(start: channels[0], count: Int(converted.frameLength)))
             right.append(contentsOf: UnsafeBufferPointer(start: channels[1], count: Int(converted.frameLength)))
 
@@ -1014,5 +985,43 @@ extension VoiceAudioEngineError: LocalizedError {
         case .converterUnavailable:
             "The selected microphone uses an unsupported audio format."
         }
+    }
+}
+
+extension AVAudioPCMBuffer {
+    /// The sample buffer's audio, copied into a buffer of its own format; nil
+    /// when it holds none or cannot be read.
+    convenience init?(copying sampleBuffer: CMSampleBuffer) {
+        guard let description = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let format = AVAudioFormat(formatDescription: description)
+        else { return nil }
+        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard frameCount > 0 else { return nil }
+        self.init(pcmFormat: format, frameCapacity: frameCount)
+        frameLength = frameCount
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer, at: 0, frameCount: Int32(frameCount), into: mutableAudioBufferList
+        ) == noErr else { return nil }
+    }
+}
+
+extension AVAudioConverter {
+    /// Converts one whole buffer to `format`, which runs at Opus's sample
+    /// rate; nil when conversion fails or yields no frames.
+    func convertOnce(_ input: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * OpusCodec.sampleRate / input.format.sampleRate)) + 32
+        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
+        var supplied = false
+        var error: NSError?
+        _ = convert(to: output, error: &error) { _, status in
+            guard !supplied else {
+                status.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
+            status.pointee = .haveData
+            return input
+        }
+        return error == nil && output.frameLength > 0 ? output : nil
     }
 }

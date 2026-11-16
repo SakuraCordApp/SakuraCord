@@ -16,14 +16,7 @@ extension AppModel {
         let interval = max(0, thread?.rateLimitPerUser ?? channel.rateLimitPerUser)
         if currentUser?.isBot == true { return (interval, true) }
         guard let basis = conversationPermissionBasis(for: guildID) else { return (interval, false) }
-        let permissions = ConversationPermissionResolver.effectivePermissions(
-            guild: basis.guild,
-            channel: channel,
-            resolvedBasePermissions: basis.resolvedBasePermissions,
-            overwritePrincipals: basis.overwritePrincipals,
-            hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
-            communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
-        )
+        let permissions = basis.effectivePermissions(in: channel)
         return (interval, permissions.map { $0 & DiscordPermissionBits.bypassSlowmode != 0 } ?? false)
     }
 

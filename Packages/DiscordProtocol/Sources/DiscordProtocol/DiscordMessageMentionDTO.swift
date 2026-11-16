@@ -26,10 +26,7 @@ struct MessageMentionDTO: Decodable {
             value.displayName = nickname
         }
         if let guildID, let avatarHash = member?.avatar {
-            value.avatarURL = URL(
-                string:
-                "https://cdn.discordapp.com/guilds/\(guildID)/users/\(value.id)/avatars/\(avatarHash).webp?size=128&animated=\(avatarHash.hasPrefix("a_") ? "true" : "false")"
-            )
+            value.avatarURL = DiscordCDN.guildMemberAvatar(guildID, userID: value.id, hash: avatarHash)
         }
         return value
     }

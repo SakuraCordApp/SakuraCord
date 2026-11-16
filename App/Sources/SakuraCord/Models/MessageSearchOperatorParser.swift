@@ -181,8 +181,8 @@ nonisolated enum MessageSearchOperatorParser {
         filters: inout MessageSearchFilters
     ) -> Bool {
         guard let date = date(value, calendar: calendar) else { return false }
-        filters.maximumMessageID = .messageSearchBoundary(
-            at: calendar.startOfDay(for: date)
+        filters.maximumMessageID = MessageID(
+            timestamp: calendar.startOfDay(for: date)
         )
         return true
     }
@@ -199,7 +199,7 @@ nonisolated enum MessageSearchOperatorParser {
                   to: calendar.startOfDay(for: date)
               )
         else { return false }
-        filters.minimumMessageID = .messageSearchBoundary(at: nextDay)
+        filters.minimumMessageID = MessageID(timestamp: nextDay)
         return true
     }
 

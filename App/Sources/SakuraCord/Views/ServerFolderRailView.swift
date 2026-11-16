@@ -12,9 +12,7 @@ struct ServerFolderRailView: View {
     @State private var animationGeneration = 0
     @State private var pointerLocation: CGPoint?
     @State private var pointer = ServerRailPointer()
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
     @Environment(ServerRailDragController.self) private var drag
     @Environment(\.displayScale) private var displayScale
     @Environment(\.windowModalInputAllowed) private var inputAllowed
@@ -300,9 +298,7 @@ struct ServerFolderRailHeader: View {
     var isPointerOverHeader: Bool?
     let toggle: () -> Void
     var loadsImageWhenOffscreen = false
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
     @State private var isHovering = false
     @State private var iconIsVisible = false
     @Environment(ServerRailDragController.self) private var drag
@@ -342,11 +338,9 @@ struct ServerFolderRailHeader: View {
                         ConcentricRectangle(cornerRadius: InterfaceScale.metric(17), style: .continuous)
                             .fill(folderColor)
                             .overlay {
-                                if !isExpanded {
-                                    ConcentricRectangle(cornerRadius: InterfaceScale.metric(15), style: .continuous)
-                                        .stroke(folderColor, lineWidth: InterfaceScale.metric(4))
-                                        .padding(InterfaceScale.metric(2))
-                                }
+                                ConcentricRectangle(cornerRadius: InterfaceScale.metric(15), style: .continuous)
+                                    .stroke(folderColor, lineWidth: InterfaceScale.metric(4))
+                                    .padding(InterfaceScale.metric(2))
                             }
                             .compositingGroup()
                             .opacity(0.18)
@@ -373,11 +367,7 @@ struct ServerFolderRailHeader: View {
         }
         .buttonStyle(ServerRailButtonStyle())
         .overlay {
-            ServerFolderContextMenuBridge(
-                isUnread: entry.hasUnreadGuild || entry.mentionCount > 0,
-                markRead: { contextMenuActions.markFolderRead(entry.guildEntries.map(\.id)) },
-                openSettings: { contextMenuActions.openFolderSettings(entry.folder) }
-            )
+            ServerRailContextMenuBridge { contextMenuActions.folderMenu(for: entry) }
         }
         .accessibilityLabel(displayName)
         .accessibilityValue(
@@ -540,9 +530,7 @@ nonisolated private struct ServerFolderIndicatorMotion: GeometryEffect {
 /// edge, and they keep their layout while closed so the folder can grow around them.
 struct ServerFolderRowsReveal: ViewModifier {
     let isExpanded: Bool
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
     @State private var height: CGFloat = 0
 
     func body(content: Content) -> some View {

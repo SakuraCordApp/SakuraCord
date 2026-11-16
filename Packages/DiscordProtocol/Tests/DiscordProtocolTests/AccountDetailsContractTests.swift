@@ -1,7 +1,6 @@
 @testable import DiscordProtocol
 import Foundation
 import SakuraCordModels
-import Synchronization
 import Testing
 
 @Suite(.serialized)
@@ -27,13 +26,8 @@ struct AccountDetailsContractTests {
 
     @Test(arguments: [true, false])
     func `account reads reuse READY and follow observed device contract without mutations`(completeReady: Bool) async throws {
-        AccountReadURLProtocol.requests.withLock { $0 = [] }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [AccountReadURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: TestCredentialStore(), handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
+        let capture = RequestRecorder(AccountReadURLProtocol.captured)
+        let provider = stubbedProvider(AccountReadURLProtocol.self, token: capture.id)
         let privateFields = completeReady ? #","email":"nova@example.com","phone":null,"mfa_enabled":true"# : ""
         let ready = try JSONDecoder().decode(JSONValue.self, from: Data("""
         {"user":{"id":"1","username":"nova"\(privateFields)},
@@ -43,7 +37,7 @@ struct AccountDetailsContractTests {
         let details = try await provider.accountDetails()
         #expect(details.username == "nova" && details.isMFAEnabled)
         #expect(details.phoneNumber == nil)
-        #expect(AccountReadURLProtocol.requests.withLock { $0.count } == (completeReady ? 0 : 1))
+        #expect(capture.requests.count == (completeReady ? 0 : 1))
 
         let devices = try await provider.accountDevices()
         #expect(devices.map(\.id) == ["current", "older"])
@@ -51,11 +45,11 @@ struct AccountDetailsContractTests {
         #expect(devices.last?.isCurrentSession == false)
         #expect(devices.last?.location == "192.0.2.1")
         #expect(devices.first?.lastUsedAt != nil)
-        let requests = AccountReadURLProtocol.requests.withLock { $0 }
-        #expect(requests.map { $0.url?.path } == (completeReady
+        let requests = capture.requests
+        #expect(requests.map(\.path) == (completeReady
             ? ["/api/v9/auth/sessions"]
             : ["/api/v9/users/@me", "/api/v9/auth/sessions"]))
-        #expect(requests.allSatisfy { $0.httpMethod == "GET" && $0.url?.query == nil && $0.httpBody == nil })
+        #expect(requests.allSatisfy { $0.method == "GET" && $0.url?.query == nil && $0.httpBody == nil })
 
         await provider.receiveGatewayDispatchForTesting(name: "USER_UPDATE", data: .object([
             "id": .string("1"), "email": .null, "mfa_enabled": .bool(false),
@@ -69,12 +63,12 @@ struct AccountDetailsContractTests {
 }
 
 private final class AccountReadURLProtocol: URLProtocol, @unchecked Sendable {
-    static let requests = Mutex<[URLRequest]>([])
+    static let captured = Notification.Name("AccountReadContractCapturedRequest")
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        Self.requests.withLock { $0.append(request) }
+        NotificationCenter.default.post(name: Self.captured, object: request)
         let body = request.url?.path == "/api/v9/users/@me"
             ? #"{"id":"1","username":"nova","email":"nova@example.com","phone":null,"mfa_enabled":true}"#
             : #"""
@@ -83,10 +77,7 @@ private final class AccountReadURLProtocol: URLProtocol, @unchecked Sendable {
           {"id_hash":"current","approx_last_used_time":"2026-09-18T10:00:00.123456+00:00","client_info":{"os":"Mac OS X","platform":"Discord Client","location":"Example City"}}
         ]}
         """#
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: Data(body.utf8))
     }
 
     override func stopLoading() {}

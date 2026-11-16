@@ -1,6 +1,5 @@
 import AppKit
 import CoreServices
-import CoreText
 
 extension NativeTimelineCanvasView {
     override func pressureChange(with event: NSEvent) {
@@ -8,13 +7,13 @@ extension NativeTimelineCanvasView {
         // into the Quick Look event used by a three-finger tap for this view.
         guard event.stage == 2,
               !pointer.didForceClickLookup,
-              !didDragTextSelection,
-              textSelectionGesture != nil,
+              !pointer.didDragTextSelection,
+              pointer.textSelectionGesture != nil,
               UserDefaults.standard.object(forKey: "com.apple.trackpad.forceClick") as? Bool ?? true,
               let lookup = dictionaryLookupAction(at: convert(event.locationInWindow, from: nil))
         else { return }
         pointer.didForceClickLookup = true
-        textSelectionGesture = nil
+        pointer.textSelectionGesture = nil
         pressedActivationTarget = nil
         lookup()
     }
@@ -30,17 +29,14 @@ extension NativeTimelineCanvasView {
     func dictionaryLookupAction(at point: CGPoint, usesSelection: Bool = false) -> (() -> Void)? {
         guard !glideBlocksPointer,
               WindowModalCoordinator.allowsInput(for: self),
-              !overlayBlocksInteractions,
-              editingMessageID == nil
+              !pointer.overlayBlocksInteractions,
+              editing.messageID == nil
         else { return nil }
-        guard let index = rowIndex(at: point.y),
-              items.indices.contains(index),
-              layouts.indices.contains(index),
+        guard case let (index, local)? = rowHit(at: point),
               items[index].messageID != nil
         else {
             return nil
         }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         for text in selectableTextRegions(for: items[index], layout: layouts[index]) {
             guard let hit = NativeTimelineTextHitTester.hit(
                 value: text.value,
@@ -62,9 +58,8 @@ extension NativeTimelineCanvasView {
             var word = term.location == kCFNotFound
                 ? Self.wordRange(at: lookupIndex, in: lookupText.string)
                 : NSRange(location: term.location, length: term.length)
-            if usesSelection, let selection = textSelection,
-               selection.itemIdentifier == items[index].identifier,
-               selection.region == text.region,
+            if usesSelection,
+               let selection = pointer.textSelection.scoped(to: items[index].identifier, region: text.region),
                NSLocationInRange(hit.characterIndex, selection.range)
             {
                 let visibleSelection = NSIntersectionRange(selection.range, lookupRange)
@@ -93,8 +88,8 @@ extension NativeTimelineCanvasView {
                 guard let self,
                       !self.glideBlocksPointer,
                       WindowModalCoordinator.allowsInput(for: self),
-                      !self.overlayBlocksInteractions,
-                      self.editingMessageID == nil
+                      !self.pointer.overlayBlocksInteractions,
+                      self.editing.messageID == nil
                 else { return }
                 self.showDefinition(
                     for: lookupText,

@@ -1,47 +1,21 @@
+import Foundation
 import SakuraCordModels
 
 extension AppModel {
     func toggleDirectMessagePin(_ channelID: ChannelID) {
         guard let channel = snapshot?.channels.first(where: {
             $0.id == channelID
-                && ($0.kind == .directMessage || $0.kind == .groupDirectMessage)
-        }), channelNotificationMutationTasks[channelID] == nil else { return }
+                && $0.kind.isDirectMessage
+        }) else { return }
 
         let currentOverride = channelNotificationOverride(for: channel)
             ?? ChannelNotificationOverride(channelID: channelID)
         let isPinned = !currentOverride.isPinned
         let flags = currentOverride.flags(settingPinned: isPinned)
-        let generation = channelNotificationMutationGeneration
-        let session = accountSession()
-        let activeProvider = session.provider
-        channelNotificationMutationTasks[channelID] = Task { [weak self] in
-            do {
-                try await activeProvider.updateChannelPin(
-                    guildID: nil,
-                    channelID: channelID,
-                    flags: flags
-                )
-                guard let self,
-                      self.isCurrentAccountSession(session),
-                      generation == self.channelNotificationMutationGeneration
-                else { return }
-                self.updateLocalChannelNotificationOverride(channel: channel) {
-                    $0.flags = $0.flags(settingPinned: isPinned)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard let self,
-                      self.isCurrentAccountSession(session),
-                      generation == self.channelNotificationMutationGeneration
-                else { return }
-                self.errorMessage = "Discord did not accept the direct message pin."
-            }
-            guard let self,
-                  self.isCurrentAccountSession(session),
-                  generation == self.channelNotificationMutationGeneration
-            else { return }
-            self.channelNotificationMutationTasks[channelID] = nil
+        runNotificationMutation(.channel(channelID), failureMessage: "Discord did not accept the direct message pin.") {
+            try await $0.updateChannelPin(guildID: nil, channelID: channelID, flags: flags)
+        } apply: { model in
+            model.updateLocalChannelNotificationOverride(channel: channel) { $0.flags = $0.flags(settingPinned: isPinned) }
         }
     }
 }

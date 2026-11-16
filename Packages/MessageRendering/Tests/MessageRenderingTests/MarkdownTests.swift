@@ -34,11 +34,11 @@ import Testing
     // Composer nesting must not change the established message renderer.
     let message = "**bold *literal** then *italic*"
     _ = DiscordMarkdown.sourceFormats(message)
-    let rendered = DiscordMarkdown.appKitAttributed(message)
+    let rendered = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(message))
     #expect(rendered.string == "bold *literal then italic")
     let font = rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
     #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
-    #expect(DiscordMarkdown.appKitAttributed("**text [label*](https://example.com) end**").string == "text label* end")
+    #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("**text [label*](https://example.com) end**")).string == "text label* end")
 }
 
 @Test func `angle bracket masked links match discord rendering`() throws {
@@ -53,7 +53,7 @@ import Testing
     let swiftUIValue = DiscordMarkdown.attributed(source)
     #expect(String(swiftUIValue.characters) == expectedText)
 
-    let appKitValue = DiscordMarkdown.appKitAttributed(source)
+    let appKitValue = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
     #expect(appKitValue.string == expectedText)
     let string = appKitValue.string as NSString
     #expect(
@@ -80,7 +80,7 @@ import Testing
     let swiftUIValue = DiscordMarkdown.attributed(source)
     #expect(String(swiftUIValue.characters) == expectedText)
 
-    let appKitValue = DiscordMarkdown.appKitAttributed(source)
+    let appKitValue = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
     #expect(appKitValue.string == expectedText)
     let linkRange = (appKitValue.string as NSString).range(
         of: "https://exyron.dev/"
@@ -103,7 +103,7 @@ import Testing
     let swiftUIValue = DiscordMarkdown.attributed(source)
     #expect(String(swiftUIValue.characters) == source)
 
-    let appKitValue = DiscordMarkdown.appKitAttributed(source)
+    let appKitValue = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
     #expect(appKitValue.string == source)
     let linkRange = (appKitValue.string as NSString).range(of: urlText)
     #expect(linkRange.length == (urlText as NSString).length)
@@ -147,7 +147,7 @@ import Testing
     let first = "https://example.com/docs"
     let second = "https://en.wikipedia.org/wiki/Function_(mathematics)"
     let source = "Read \(first), then \(second)."
-    let value = DiscordMarkdown.appKitAttributed(source)
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
 
     #expect(value.string == source)
     let string = value.string as NSString
@@ -173,7 +173,7 @@ import Testing
 }
 
 @Test func `bare URL rendering rejects a scheme without a host`() {
-    let value = DiscordMarkdown.appKitAttributed("broken https:// remains plain")
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("broken https:// remains plain"))
 
     #expect(value.string == "broken https:// remains plain")
     #expect(value.attribute(.link, at: 7, effectiveRange: nil) == nil)
@@ -209,21 +209,21 @@ import Testing
     })
 
     let rendered = DiscordMarkdown.appKitAttributed(
-        "[safe-looking label](file:///Users/example/private.txt)"
+        DiscordMarkdown.appKitPlan("[safe-looking label](file:///Users/example/private.txt)")
     )
     #expect(
         rendered.attribute(.link, at: 0, effectiveRange: nil) == nil
     )
 
     let angleBracketRendered = DiscordMarkdown.appKitAttributed(
-        "[safe-looking label](<file:///Users/example/private.txt>)"
+        DiscordMarkdown.appKitPlan("[safe-looking label](<file:///Users/example/private.txt>)")
     )
     #expect(
         angleBracketRendered.attribute(.link, at: 0, effectiveRange: nil) == nil
     )
 
     let unsafeAutolink = DiscordMarkdown.appKitAttributed(
-        "<file:///Users/example/private.txt>"
+        DiscordMarkdown.appKitPlan("<file:///Users/example/private.txt>")
     )
     #expect(unsafeAutolink.string == "<file:///Users/example/private.txt>")
     #expect(
@@ -353,7 +353,7 @@ import Testing
     for label in ["</role add:1234>", "<@356875221078245376>", "@everyone", "<@$356875221078245376>"] {
         let source = "[\(label)](https://example.com)"
         #expect(MessageDocument(source: source).segments == [.markdown(source)])
-        let rendered = DiscordMarkdown.appKitAttributed(source)
+        let rendered = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
         #expect(rendered.string == source)
         #expect(rendered.attribute(.link, at: 1, effectiveRange: nil) == nil)
         #expect(rendered.attribute(.link, at: source.utf16.count - 2, effectiveRange: nil) == nil)
@@ -412,7 +412,7 @@ import Testing
 
 @Test func `discord markdown reproduces discord nested traits and marks spoilers`() {
     let value = DiscordMarkdown.appKitAttributed(
-        "**bold** _italic_ __underline__ ~~strike~~ ||secret|| ___triple___ __***all***__ ||[hidden](https://example.com)||"
+        DiscordMarkdown.appKitPlan("**bold** _italic_ __underline__ ~~strike~~ ||secret|| ___triple___ __***all***__ ||[hidden](https://example.com)||")
     )
     #expect(value.string == "bold italic underline strike secret triple all hidden")
     let string = value.string as NSString
@@ -524,7 +524,7 @@ import Testing
     \u{001B}[31mRed\u{001B}[0m
     ```
     """
-    let value = DiscordMarkdown.appKitAttributed(source)
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
     #expect(!value.string.contains("```"))
     #expect(!value.string.contains("\u{001B}"))
     #expect(value.string.contains("[31mRed[0m"))
@@ -611,7 +611,7 @@ import Testing
         "https://media-eu.discordapp.net/ephemeral-attachments/3/4/clip.mp4%20tail",
         "https://cdn.discordapp.com.example.com/attachments/1/2/file.pdf",
     ] {
-        let value = DiscordMarkdown.appKitAttributed(source)
+        let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
         #expect(value.string == source)
         var range = NSRange()
         #expect(value.attribute(.link, at: 0, effectiveRange: &range) as? URL == URL(string: source))
@@ -673,7 +673,7 @@ private func spoilerOutline(_ source: String) -> String {
 
     // Adjacent spoilers are separate attribute runs, and inline code keeps
     // its own styling inside a spoiler.
-    let adjacent = DiscordMarkdown.appKitAttributed("||one||||two||")
+    let adjacent = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("||one||||two||"))
     var ranges: [NSRange] = []
     adjacent.enumerateAttribute(
         .discordMarkdownSpoiler,
@@ -682,7 +682,7 @@ private func spoilerOutline(_ source: String) -> String {
         if value != nil { ranges.append(range) }
     }
     #expect(ranges == [NSRange(location: 0, length: 3), NSRange(location: 3, length: 3)])
-    let code = DiscordMarkdown.appKitAttributed("||`x`||")
+    let code = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("||`x`||"))
     #expect(code.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil)
     #expect(code.attribute(.discordMarkdownSpoiler, at: 0, effectiveRange: nil) != nil)
 }

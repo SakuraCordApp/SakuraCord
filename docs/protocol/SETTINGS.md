@@ -9,13 +9,12 @@
 | Profile reads | [DiscordRESTProviderProfiles.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProviderProfiles.swift) | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderBootstrapContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderBootstrapContractTests.swift) |
 | Profile saves and widgets | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordProfileWidgetEligibility.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileWidgetEligibility.swift) | [ProfileEditingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProfileEditingContractTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Nicknames | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordRESTRelationships.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTRelationships.swift); [AppModelNicknames.swift](../../App/Sources/SakuraCord/Models/AppModelNicknames.swift) | [NicknameCommandTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/NicknameCommandTests.swift) |
-| Group DM name, icon, leaving and 1:1 DM closing | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Status | [DiscordProfileSettingsProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileSettingsProto.swift); [DiscordRESTProfileCustomStatus.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileCustomStatus.swift) | [StatusPickContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/StatusPickContractTests.swift) |
 | Server folders | [DiscordSettingsProtoMerging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoMerging.swift) | [GuildFolderSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GuildFolderSettingsContractTests.swift) |
-| Channel pins | [DiscordRESTNotificationsAndMessaging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTNotificationsAndMessaging.swift); [AppModelChannelPins.swift](../../App/Sources/SakuraCord/Models/AppModelChannelPins.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [ChannelPinTests.swift](../../App/Tests/SakuraCordAppTests/ChannelPinTests.swift) |
+| Channel pins | [DiscordRESTNotificationSettings.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTNotificationSettings.swift); [AppModelChannelPins.swift](../../App/Sources/SakuraCord/Models/AppModelChannelPins.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [ChannelPinTests.swift](../../App/Tests/SakuraCordAppTests/ChannelPinTests.swift) |
 | Favorites server | [DiscordFavoritesProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordFavoritesProto.swift); [DiscordRESTFavorites.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTFavorites.swift); [FavoritesSettings.swift](../../Packages/SakuraCordModels/Sources/SakuraCordModels/FavoritesSettings.swift) | [FavoritesSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/FavoritesSettingsContractTests.swift) |
 | Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [QuickReactionPolicyTests.swift](../../App/Tests/SakuraCordAppTests/QuickReactionPolicyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
-| Favourites/frecency | [DiscordSettingsProtoStickers.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoStickers.swift); [DiscordSettingsProtoSoundboard.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoSoundboard.swift); [DiscordSettingsProtoCommandFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoCommandFrecency.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift); [ApplicationCommandFrecencyCodecTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ApplicationCommandFrecencyCodecTests.swift) |
+| Favourites/frecency | [DiscordSettingsProtoStickers.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoStickers.swift); [DiscordSettingsProtoSoundboard.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoSoundboard.swift); [DiscordSettingsProtoFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoFrecency.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift); [ApplicationCommandFrecencyCodecTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ApplicationCommandFrecencyCodecTests.swift) |
 
 ## Profile reads
 
@@ -46,7 +45,7 @@ showing controls. Profile saving is staged: keep failed or newer edits without
 repeating acknowledged writes. File selection/cropping does not save a profile.
 Widget assets use their allocated upload path before references enter the draft.
 
-Personal widgets require their entitlement and rollout assignment. **Game widgets
+Personal widgets require their entitlement and [rollout assignment](SESSION.md#experiments). **Game widgets
 do not inherit the personal-widget Nitro requirement.** Use the eligibility model
 and widget type; do not apply one blanket gate to all widgets. Owned collectibles,
 guild permissions and product-specific restrictions remain independent checks.
@@ -139,138 +138,6 @@ saved in SakuraCord produced `RELATIONSHIP_UPDATE` with `nickname: null` in the
 independent official session and restored its DM title without a reload. Native
 timeline presentation must also be invalidated when relationship nicknames
 change, so cached message author labels follow the live value.
-
-## Group DM name and icon
-
-Every group-DM member gets **Edit Group** in the group's context menu, after Pin.
-The dialog drafts the group's own name, with the member-list title (friend
-nicknames first) as the placeholder, or "{your name}'s Group" once nobody else
-remains. The icon is chosen from a file of at most 8 MiB and cropped to a circle
-by the profile avatar cropper (at most 1024 × 1024 PNG; animated GIF and WebP
-keep their format). Save sends one `PATCH /channels/{channel}` containing only
-the changed `name` and `icon`, with
-`X-Context-Properties` `{"location":"group dm context menu"}`. A cleared name
-is `""`, a removed icon `null`, and an unchanged dialog sends nothing. Names are
-trimmed and limited to 100 UTF-16 units. `name`/`icon` validation errors stay in
-the dialog rather than opening the session safety circuit, and `403` remains
-operation-scoped. The response updates the cached group only if no Gateway
-event or session reset has changed it meanwhile. In `CHANNEL_UPDATE`, an
-explicit `null` name or icon clears it; only an absent field keeps the cached
-value. Omitted account-scoped warning dismissal and latest-pin metadata also
-retain their cached values when an edit response is published.
-
-The request comes from static analysis of first-party web build `633029`
-(`web.ae482d0492df0fb9.js`, Edit Group modal and channel action creators) on
-9 October 2026, which also sets the menu placement, labels and placeholder. The
-first-party menu hides Edit Group for application-managed groups; SakuraCord does
-not yet decode that flag. The public
-[Modify Channel](https://docs.discord.com/developers/resources/channel#modify-channel)
-route corroborates the group-DM fields. Pinned Paicord declares an unused
-group-DM PATCH that cannot send `""` or `null`; Swiftcord v1 has no equivalent.
-
-A live official Fresh desktop capture on 12 October 2026 (host 0.0.411,
-web build `634304`) confirmed separate name-only and icon-only PATCHes,
-menu context `{"location":"group dm context menu"}`, and clearing with
-`{"name":"","icon":null}`. The cleared response retained `name: ""` and
-`icon: null`; it did not normalize the empty name to null. The unchanged
-field remained present in each successful response. The name update's
-`CHANNEL_UPDATE` and system `MESSAGE_CREATE` arrived before the REST response.
-Header-origin editing used context `{"location":"header bar"}` instead.
-
-## Leaving a group DM
-
-Every group-DM member gets **Leave Group** in its own destructive section after
-the mute and notification items; 1:1 DMs never show it. The built-in `/leave`
-opens the same confirmation, with its `silent` option as the checkbox's initial
-state. The confirmation is titled "Leave '{group}'", explains that you can't
-rejoin unless re-invited, and offers "Leave without notifying other members".
-Leave Group sends one `DELETE /channels/{channel}` with query `silent=true` or
-`silent=false`, no body and no context header, and is never replayed. A failure
-keeps the group and appears in the workspace error alert; `403` stays
-operation-scoped. After a successful response the provider removes the group
-from the DM list unless a Gateway event or session reset changed it during the
-request, so a re-add is not undone. A selection on the group moves to the next
-conversation, as for any removed DM. The matching `CHANNEL_DELETE` finds the
-group already gone and publishes nothing further.
-
-The request and copy come from static analysis of first-party web build `634304`
-(`web.843cc7edc28c426c.js` `closePrivateChannel`, the `gdm-context` menu, its
-`leave-channel` item and confirmation modal, and the `/leave` built-in) on
-10 October 2026. The first-party client removes the group optimistically and
-goes to Friends; SakuraCord waits for the response and follows its shared private-channel
-selection reconciliation. The first-party menu offers different copy for
-application-managed groups, which SakuraCord does not yet decode. The public
-[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
-route corroborates the request but does not document `silent`. Pinned Paicord
-declares the route without `silent` or any UI; Swiftcord v1 has no equivalent.
-
-The same live desktop capture confirmed one bodyless DELETE with `silent=true`,
-a `200` channel response, and a `CHANNEL_DELETE` arriving before that response.
-The group disappeared from the sidebar. Its remaining member could re-add the
-leaving account through the ordinary Invite to Group DM UI.
-
-## Closing a 1:1 DM
-
-A 1:1 DM's context menu has an untinted **Close DM** at the top of its last
-section, above Remove Friend; group DMs offer Leave Group instead. There is no confirmation. Close DM sends one bodyless
-`DELETE /channels/{channel}` without `silent`, shares Leave Group's provider
-path, and is never replayed. It hides the DM without deleting messages. After a
-successful response the provider removes the DM from the list unless a Gateway
-event or session reset changed it during the request, and a selection on it
-moves to the next conversation. The matching `CHANNEL_DELETE` finds the DM gone.
-A failure keeps the DM and appears in the workspace error alert. A new message
-makes Discord send `CHANNEL_CREATE`, which the ordinary private-channel handling
-adds back to the list.
-
-The request follows the public
-[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
-route and the first-party `closePrivateChannel` call analysed for Leave Group.
-The omitted `silent` is inferred from that analysis; the request was not
-captured from the first-party client. A live SakuraCord check on 25 October 2026
-closed the DM between the two saved test accounts, kept its history visible from
-the other account, and showed the DM back in the closer's list after the other
-account sent a message.
-
-## Message requests
-
-Researched on 2026-11-01 from the official production web bundle (web stable
-**657850**) plus a live capture of both authorized accounts' READY. Neither
-account held a request, and a DM between two accounts that already share a 1:1
-channel never becomes one, so accept and ignore were not observed live. Pinned
-Paicord and pinned Swiftcord v1 (with its DiscordKit) have no equivalent.
-
-READY `private_channels` and channel events carry `is_message_request`,
-`is_message_request_timestamp` and `is_spam`. Discord's stores file a channel
-under Spam when `is_spam` is set, otherwise under Requests when
-`is_message_request` is set; both leave the DM list. There is no dedicated
-Gateway dispatch. A `CHANNEL_UPDATE` changes only the flags it carries; an
-explicit `false` clears that flag alone.
-
-The Direct Messages home shows **Message Requests** under Friends only while a
-request or spam conversation exists. Its badge counts requests, not spam. The
-page has Requests and Spam (count when non-zero) tabs, newest activity first,
-with Discord's empty-state copy. **Accept DM** sends one
-`PUT /channels/{channel}/recipients/@me` with `{"consent_status":2}` (ACCEPTED)
-and moves the conversation into the list. **Ignore** sends one bodyless
-`DELETE /channels/{channel}/recipients/@me` and removes it without notifying
-the sender. Spam offers Accept DM only. Both share Close DM's provider path:
-never replayed, nothing applied after an account or session change, and a
-failure keeps the request and appears in the workspace error alert. Ignore
-removes the DM only if no Gateway event changed it meanwhile; Accept keeps
-unrelated updates but yields to a re-created or re-flagged DM.
-
-Until accepted, a request is read-only. The delivery boundary that enforces
-guild timeouts also refuses its messages, forwards, typing, reactions, edits,
-poll votes, interactions and call rings, and the app offers no composer,
-reactions, votes, components, pins, calls or profile quick message there. Opening a request shows
-its messages with Accept DM and Ignore in place of the composer.
-
-Not implemented: Report Spam and the not-spam report (their report endpoint was
-not traced), click-to-preview through
-`GET /users/@me/message-requests/supplemental-data`, the staff-only batch
-reject, and the GB-only "Are you sure you know this person?" confirmation. Not
-verified live: the Gateway events that follow a decision, whether Ignore also
-changes the relationship, and whether opening a request acknowledges it.
 
 ## Protobuf preservation
 
@@ -420,7 +287,7 @@ request. An added suggestion is filed under a category named Channels,
 created when missing.
 
 **Add to Favorites** is Discord's destination search (the Forward picker's,
-from `ForwardDestinationSearchPolicy`) without the account's favourites:
+from `ConversationDestinationSearchPolicy`) without the account's favourites:
 searchable conversations, people without a DM included (one is opened before
 favouriting), picks listed first as of the last query change, at most 20. The
 default order is the recent channels, then the frecency list; a client's

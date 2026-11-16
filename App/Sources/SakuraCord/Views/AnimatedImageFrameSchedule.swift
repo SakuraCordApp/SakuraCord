@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 
 /// The same source-frame and effect-layer timing used by compositor animations,
 /// expressed as a frame index for animations whose raster set exceeds the budget.
@@ -12,7 +13,7 @@ nonisolated struct AnimatedImageFrameSchedule {
             end += duration
             return end
         }
-        sourceDuration = max(end, 0.05)
+        sourceDuration = AnimatedImageKeyframeSchedule.duration(for: durations)
     }
 
     func frameIndex(
@@ -57,5 +58,34 @@ nonisolated struct AnimatedImageFrameSchedule {
             }
         }
         return min(lower, frameEnds.count - 1)
+    }
+}
+
+nonisolated enum AnimatedImageKeyframeSchedule {
+    static func duration(
+        for frameDurations: [TimeInterval]
+    ) -> TimeInterval {
+        max(frameDurations.reduce(0, +), 0.05)
+    }
+
+    static func keyTimes(
+        for frameDurations: [TimeInterval]
+    ) -> [NSNumber] {
+        let totalDuration = duration(for: frameDurations)
+        var elapsed: TimeInterval = 0
+        return frameDurations.map { duration -> NSNumber in
+            defer { elapsed += duration }
+            return NSNumber(value: elapsed / totalDuration)
+        }
+    }
+
+    /// Steps a layer's contents through the image's frames once.
+    static func contentsAnimation(for image: DecodedAnimatedImage) -> CAKeyframeAnimation {
+        let frames = CAKeyframeAnimation(keyPath: "contents")
+        frames.values = image.frames
+        frames.keyTimes = keyTimes(for: image.frameDurations) + [1]
+        frames.duration = duration(for: image.frameDurations)
+        frames.calculationMode = .discrete
+        return frames
     }
 }

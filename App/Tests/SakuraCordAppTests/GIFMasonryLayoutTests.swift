@@ -37,7 +37,7 @@ import Testing
     )
 
     #expect(
-        GIFPickerMediaPolicy.nativeAnimationURL(for: tenor)?.absoluteString
+        GIFPickerMediaPolicy.nativeAnimationURLs(for: tenor).first?.absoluteString
             == "https://media.tenor.com/abcAAAAM/favorite.gif?size=2"
     )
     #expect(
@@ -45,21 +45,8 @@ import Testing
             == "https://media.tenor.com/abcAAAPo/favorite.mp4?size=2"
     )
     #expect(GIFPickerMediaPolicy.nativeVideoURL(for: unsupported) == nil)
-    #expect(GIFPickerMediaPolicy.nativeAnimationURL(for: unsupported) == nil)
-    #expect(GIFPickerMediaPolicy.nativeAnimationURL(for: native) == gif)
-    let poster = try #require(URL(string: "https://media.tenor.com/abc/poster.png"))
-    let animation = try #require(URL(string: "https://media.tenor.com/abc/favorite.gif"))
-    let complete = GIFSearchResult(
-        id: "complete",
-        title: "Complete",
-        url: tenorWebM,
-        previewURL: animation,
-        thumbnailURL: poster,
-        mediaURL: tenorWebM,
-        mediaKind: .video
-    )
-    #expect(GIFPickerMediaPolicy.requestURLs(for: complete).count == 3)
-    #expect(GIFPickerMediaPolicy.maximumRequestCount == 3)
+    #expect(GIFPickerMediaPolicy.nativeAnimationURLs(for: unsupported).first == nil)
+    #expect(GIFPickerMediaPolicy.nativeAnimationURLs(for: native).first == gif)
 }
 
 @Test func `GIF media policy accepts Discord returned HTTPS origins safely`() throws {
@@ -101,8 +88,7 @@ import Testing
 
     #expect(GIFPickerMediaPolicy.nativeVideoURL(for: result) == nil)
     #expect(GIFPickerMediaPolicy.staticFallbackURL(for: result) == webP)
-    #expect(GIFPickerMediaPolicy.nativeAnimationURL(for: result) == webP)
-    #expect(GIFPickerMediaPolicy.requestURLs(for: result) == [webP])
+    #expect(GIFPickerMediaPolicy.nativeAnimationURLs(for: result).first == webP)
 }
 
 @Test func `GIF video staging uses one shared streamed request`() async throws {

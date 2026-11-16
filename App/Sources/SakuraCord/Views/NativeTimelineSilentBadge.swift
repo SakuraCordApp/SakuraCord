@@ -18,7 +18,7 @@ enum NativeTimelineSilentBadge {
         // A palette colour's alpha is applied twice, so the bell is rendered
         // opaque and given the muted colour's alpha as it is drawn.
         let color = NSColor.secondaryLabelColor
-        guard let image = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+        guard let image = SystemSymbolImageCache.rasterizedConfiguredImage(
             named: SakuraCordSystemSymbol.silentBell,
             pointSize: frame.height * 3 / 4,
             weight: .regular,

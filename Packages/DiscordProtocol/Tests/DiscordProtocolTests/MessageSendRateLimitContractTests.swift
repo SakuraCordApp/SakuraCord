@@ -135,9 +135,7 @@ private final class MessageSendRateLimitURLProtocol: URLProtocol, @unchecked Sen
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        guard let url = request.url else { return }
-        let json = Self.requestBody(request)
-            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let json = request.jsonBody ?? [:]
         let exchange = Exchange(
             fixtureID: request.value(forHTTPHeaderField: Self.fixtureHeader),
             body: .init(nonce: json["nonce"] as? String, enforcesNonce: json["enforce_nonce"] as? Bool == true)
@@ -155,29 +153,8 @@ private final class MessageSendRateLimitURLProtocol: URLProtocol, @unchecked Sen
             status = 400
             data = Data("{\"code\":\(code),\"message\":\"Synthetic rule explanation\"}".utf8)
         }
-        guard let response = HTTPURLResponse(
-            url: url, statusCode: status, httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
-        ) else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: data)
     }
 
     override func stopLoading() {}
-
-    private static func requestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody { return body }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4_096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            data.append(buffer, count: count)
-        }
-        return data
-    }
 }

@@ -1,90 +1,9 @@
-import CoreAudio
-import CoreText
 import DiscordProtocol
 import Foundation
-import ImageIO
-import MediaPipeline
-import MessageRendering
 import OSLog
-import Observation
 import SakuraCordModels
-import SakuraCordPersistence
-import UniformTypeIdentifiers
-import UserNotifications
 
 extension AppModel {
-    func logReadAcknowledgementSending(
-        channelID: ChannelID,
-        mutation: ReadStateMutation
-    ) {
-        let channel = channelID.rawValue
-        let message = mutation.messageID.rawValue
-        Self.unreadDiagnosticsLogger.info(
-            "Read ack send c=\(channel, privacy: .public) m=\(message, privacy: .public)"
-        )
-    }
-
-    func logReadAcknowledgementAccepted(
-        channelID: ChannelID,
-        mutation: ReadStateMutation
-    ) {
-        let channel = channelID.rawValue
-        let message = mutation.messageID.rawValue
-        Self.unreadDiagnosticsLogger.info(
-            "Read ack accepted c=\(channel, privacy: .public) m=\(message, privacy: .public)"
-        )
-    }
-
-    func logReadAcknowledgementFailed(
-        channelID: ChannelID,
-        mutation: ReadStateMutation
-    ) {
-        let channel = channelID.rawValue
-        let message = mutation.messageID.rawValue
-        Self.unreadDiagnosticsLogger.error(
-            "Read ack failed c=\(channel, privacy: .public) m=\(message, privacy: .public)"
-        )
-    }
-
-    func readStateMutation(channelID: ChannelID, messageID: MessageID) -> ReadStateMutation {
-        let metadata = readState.acknowledgementMetadata(channelID: channelID)
-        return ReadStateMutation(messageID: messageID, flags: metadata.flags, lastViewed: metadata.lastViewed)
-    }
-
-    func resetAcknowledgementWork() {
-        acknowledgementGeneration &+= 1
-        allServersReadTask?.cancel()
-        allServersReadTask = nil
-        isMarkingAllServersRead = false
-        acknowledgementTasks.values.forEach { $0.cancel() }
-        acknowledgementTasks.removeAll()
-        acknowledgementProcessorTask?.cancel()
-        acknowledgementProcessorTask = nil
-        guildAcknowledgementTasks.values.forEach { $0.cancel() }
-        guildAcknowledgementTasks.removeAll()
-        queuedAcknowledgements.removeAll()
-    }
-
-    func resetChannelNotificationMutations() {
-        channelNotificationMutationGeneration &+= 1
-        guildNotificationMutationTasks.values.forEach { $0.cancel() }
-        guildNotificationMutationTasks.removeAll()
-        guildNotificationSettingsRevisions.removeAll()
-        channelNotificationMutationTasks.values.forEach { $0.cancel() }
-        channelNotificationMutationTasks.removeAll()
-        categoryCollapseMutationTasks.values.forEach { $0.cancel() }
-        categoryCollapseMutationTasks.removeAll()
-        categoryCollapseMutationStates.removeAll()
-        optimisticCategoryCollapsedByID.removeAll()
-        channelPinMutationTasks.values.forEach { $0.cancel() }
-        channelPinMutationTasks.removeAll()
-        channelPinMutationStates.removeAll()
-        optimisticChannelPinnedByID.removeAll()
-        forumNotificationMutationGeneration &+= 1
-        forumNotificationMutationTasks.values.forEach { $0.cancel() }
-        forumNotificationMutationTasks.removeAll()
-    }
-
     func consume(_ event: ClientEvent) async {
         if case let .messageCreated(message) = event {
             let preparedTextPlan: NativeTimelineTextPlan? =
@@ -275,8 +194,6 @@ extension AppModel {
             removeInboxMessage(messageID, mentionsOnly: false)
         case .channelPinsInvalidated(let channelID):
             invalidatePinnedMessages(in: channelID)
-        case .readStateSnapshot(let states, _):
-            consumeReadStateSnapshot(states)
         case .readStateChanged(let state):
             consumeReadStateChange(state)
         default:
@@ -312,7 +229,7 @@ extension AppModel {
             applyDiscordEmojiSettings(settings)
             didAttemptDiscordEmojiSettings = true
             hasLoadedDiscordEmojiSettings = true
-            forwardSearchSourceRevision &+= 1
+            destinationSearchSourceRevision &+= 1
         case .stickerUserSettingsChanged, .stickersChanged:
             consumeStickerEvent(event)
         case let .applicationCommandFrecencyChanged(history):
@@ -322,7 +239,7 @@ extension AppModel {
              .voiceChannelEffect:
             consumeSoundboardEvent(event)
         case .typing(let channelID, let user):
-            guard !isUserIgnored(user.id), !ignoredUsers.blockedUserIDs.contains(user.id) else { return }
+            guard userSuppressionReason(user.id) == nil else { return }
             typingState.receive(
                 channelID: channelID,
                 user: user,
@@ -347,14 +264,16 @@ extension AppModel {
     }
 
     func consumePresenceAndCommandEvent(_ event: ClientEvent) {
-        if consumeForwardSearchPeopleEvent(event) { return }
+        if consumeSearchPeopleEvent(event) { return }
         if consumeFavoritesEvent(event) { return }
         if consumeApplicationStreamEvent(event) { return }
         if consumeProfileEvent(event) { return }
         if consumeVoiceEvent(event) { return }
         switch event {
-        case .currentUserRolesChanged, .currentUserRolesSnapshot:
-            consumeCurrentUserRoleEvent(event)
+        case .currentUserRolesChanged(let guildID, let roleIDs):
+            consumeCurrentUserRolesChanged(guildID: guildID, roleIDs: roleIDs)
+        case .currentUserRolesSnapshot(let roleIDsByGuild):
+            consumeCurrentUserRolesSnapshot(roleIDsByGuild)
         case .snapshotChanged(let value):
             consumeSnapshotChanged(value)
         case .guildChanged, .guildLayoutChanged, .guildLayoutSaveFailed, .guildRolesChanged,
@@ -412,17 +331,6 @@ extension AppModel {
         }
     }
 
-    func consumeCurrentUserRoleEvent(_ event: ClientEvent) {
-        switch event {
-        case .currentUserRolesChanged(let guildID, let roleIDs):
-            consumeCurrentUserRolesChanged(guildID: guildID, roleIDs: roleIDs)
-        case .currentUserRolesSnapshot(let roleIDsByGuild):
-            consumeCurrentUserRolesSnapshot(roleIDsByGuild)
-        default:
-            break
-        }
-    }
-
     func consumeCurrentUserRolesChanged(
         guildID: GuildID,
         roleIDs values: [RoleID]
@@ -445,10 +353,7 @@ extension AppModel {
         let replacement = roleIDsByGuild.mapValues(Set.init)
         guard currentUserRoleIDsByGuild != replacement else { return }
         let previous = currentUserRoleIDsByGuild
-        let affectedGuildIDs = Self.changedCurrentUserRoleGuildIDs(
-            from: previous,
-            to: replacement
-        )
+        let affectedGuildIDs = Self.changedKeys(from: previous, to: replacement, isEqual: ==)
         currentUserRoleIDsByGuild = replacement
         for guildID in affectedGuildIDs {
             readState.updateCurrentUserRoles(
@@ -465,14 +370,15 @@ extension AppModel {
         let previousState = connectionState
         connectionState = state
         handleApplicationStreamsForGatewayState(state)
-        if state == .ready, previousState != .ready {
+        let becameReady = state == .ready && previousState != .ready
+        if becameReady {
             refreshSelectedGuildOnboarding(force: true)
             scheduleCommandFrecencyFlushAfterConnecting()
         }
         // Discord saves pending command uses as soon as its connection closes.
         if state == .disconnected, previousState == .ready { flushCommandFrecencyNow() }
-        if state == .ready, previousState != .ready, inbox.isPresented { refreshInbox() }
-        if state == .ready, previousState != .ready { friendsConnectionChanged() }
+        if becameReady, inbox.isPresented { refreshInbox() }
+        if becameReady { friendsConnectionChanged() }
         if state != .ready {
             if previousState == .ready {
                 // A resumed session can reconcile missed messages through the
@@ -486,7 +392,7 @@ extension AppModel {
             stopLocalTyping(clearThrottle: true)
             typingState.clearAll()
         } else {
-            if previousState != .ready, activeVoiceChannel != nil {
+            if becameReady, activeVoiceChannel != nil {
                 let account = accountSession()
                 let generation = voiceMigrationGeneration
                 startAccountChildTask(account: account) { model, account in
@@ -496,24 +402,17 @@ extension AppModel {
                     )
                 }
             }
-            if previousState != .ready,
+            if becameReady,
                selectedChannelID != nil,
                hasCompletedInitialMessageLoad
             {
                 refreshSelectedChannelPreservingHistory()
             }
-            if previousState != .ready {
+            if becameReady {
                 revalidateOpenThreadAfterReconnect()
                 revalidateGuideResourceAfterReconnect()
             }
-            if let channel = selectedChannel,
-               channel.kind == .directMessage || channel.kind == .groupDirectMessage
-            {
-                let account = accountSession()
-                startAccountChildTask(account: account) { model, account in
-                    await model.observePrivateCall(in: channel, account: account)
-                }
-            }
+            observeSelectedPrivateCall()
         }
     }
 
@@ -529,12 +428,10 @@ extension AppModel {
             enrichInteractionResponse(&message)
             composer.outbox.noteConfirmation(nonce: nonce, channelID: message.channelID)
             // Discord has the upload; the recording is no longer needed.
-            if let outgoing = composer.outbox.draftsByNonce[nonce] { discardVoiceMessageFile(for: outgoing) }
-            composer.outbox.draftsByNonce[nonce] = nil
-            composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
+            forgetOutgoingDraft(nonce: nonce)
             pruneOwnedPromisedAttachmentFiles()
         }
-        recordAuthoritativeMessageUpsert(message)
+        journalAuthoritativeMessageUpsert(message)
         if message.channelID == openThread?.id {
             reconcileThread(message)
         }
@@ -595,14 +492,12 @@ extension AppModel {
         preparedTextPlanSource: Message? = nil,
         updatesPinnedMessages: Bool = true
     ) {
-        let message = pollVotePresentationPreserving(reactionPresentationPreserving(
-            outgoingMediaPresentationPreserving(incoming)
-        ))
+        let message = localPresentationPreserving(incoming, includingOutgoingMedia: true)
         // Sparse updates are merged again after asynchronous preparation. A
         // history refresh or local reconciliation may have changed the source.
         let matchingTextPlan = recordsRefreshMutation || preparedTextPlanSource == message
             ? preparedTextPlan : nil
-        if recordsRefreshMutation { recordAuthoritativeMessageUpsert(message) }
+        if recordsRefreshMutation { journalAuthoritativeMessageUpsert(message) }
         if message.channelID == openThread?.id {
             reconcileThreadUpdate(message)
         }
@@ -652,30 +547,6 @@ extension AppModel {
         }
     }
 
-    func consumeReadStateSnapshot(_ states: [ChannelReadState]) {
-        Self.unreadDiagnosticsLogger.info("Read-state snapshot received; states=\(states.count)")
-        for channelID in readState.replaceReadStates(states) { cancelNativeNotifications(channelID: channelID) }
-        if let selectedChannelID {
-            _ = readState.updatePresentation(
-                channelID: selectedChannelID,
-                isPresented: isConversationPresented(selectedChannelID),
-                initialHistoryLoaded: !isLoadingMessages && messageLoadError == nil,
-                windowIsActive: mainWindowIsActive
-            )
-        }
-        if let threadID = openThread?.id {
-            _ = readState.updatePresentation(
-                channelID: threadID,
-                isPresented: isConversationPresented(threadID),
-                initialHistoryLoaded: !isLoadingThread && threadErrorMessage == nil,
-                windowIsActive: mainWindowIsActive
-            )
-        }
-        refreshUnreadPresentation()
-        if let selectedChannelID { acknowledgeIfEligible(channelID: selectedChannelID) }
-        if let threadID = openThread?.id { acknowledgeIfEligible(channelID: threadID) }
-    }
-
     func consumeReadStateChange(_ state: ChannelReadState) {
         let channelID = state.channelID
         if state.isManual {
@@ -683,7 +554,7 @@ extension AppModel {
             // read and stops the selected conversation acknowledging
             // automatically until the selection changes.
             cancelDebouncedAcknowledgement(for: channelID)
-            if channelID == selectedChannelID || channelID == openThread?.id {
+            if isSelectedOrOpenThread(channelID) {
                 readState.holdUntilSelectionChange(channelID: channelID)
                 unreadDividerMessageIDs[channelID] = nil
             }
@@ -723,7 +594,7 @@ extension AppModel {
                 value.channels.append(contentsOf: channels)
             }
             snapshot = value
-            forwardSearchSourceRevision &+= 1
+            destinationSearchSourceRevision &+= 1
         }
         if guildID == selectedGuildID {
             visibleChannels = channels
@@ -752,85 +623,7 @@ extension AppModel {
         discardUnreachableKeptComposerDrafts()
     }
 
-    func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
-        threadBrowser.receive(parentID: channelID, records: posts)
-        reconcileInboxForumPosts(channelID: channelID, posts: posts, replacesAll: true)
-        let interval = AppPerformanceSignposts.signposter.beginInterval(
-            "ForumPostsChanged"
-        )
-        defer {
-            AppPerformanceSignposts.signposter.endInterval(
-                "ForumPostsChanged",
-                interval
-            )
-        }
-        let threads = AppPerformanceSignposts.measureSync(
-            "ForumThreadProjection"
-        ) {
-            posts.map(\.thread)
-        }
-        AppPerformanceSignposts.measureSync(
-            "ForumForwardDestinationReplacement"
-        ) {
-            replaceForwardDestinationThreads(
-                parentID: channelID,
-                with: threads
-            )
-        }
-        AppPerformanceSignposts.measureSync(
-            "ForumReadStateReplacement"
-        ) {
-            readState.replaceThreads(parentID: channelID, with: threads)
-        }
-        AppPerformanceSignposts.measureSync("ForumUnreadRefreshRequest") {
-            requestCoalescedUnreadPresentationRefresh()
-        }
-        refreshTimelineThreadCards(parentID: channelID, posts: posts)
-        guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
-        // Omission from the provider's catalogue is not deletion; the open post
-        // closes only through `.threadDeleted`, lost access or the user.
-        replaceForumCatalogue(with: posts)
-        applyForumPresentation()
-    }
-
-    func consumeForumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost]) {
-        refreshTimelineThreadCards(parentID: channelID, posts: posts, replacesAll: false)
-        reconcileInboxForumPosts(channelID: channelID, posts: posts, replacesAll: false)
-        mergeForwardDestinationThreads(posts.map(\.thread))
-        for post in posts { readState.merge(thread: post.thread) }
-        requestCoalescedUnreadPresentationRefresh()
-        guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
-        mergeForumCatalogue(posts)
-        applyForumPresentation()
-    }
-
-    func consumeForumPageLoaded(
-        channelID: ChannelID,
-        query: ForumPostQuery,
-        page: ForumPostPage
-    ) {
-        for post in page.posts { readState.merge(thread: post.thread) }
-        requestCoalescedUnreadPresentationRefresh()
-        guard channelID == selectedChannelID,
-              selectedChannel?.kind == .forum,
-              forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              query
-              == ForumPostQuery(
-                  scope: .active,
-                  sortOrder: forumSortOrder,
-                  selectedTagIDs: forumSelectedTagIDs,
-                  tagMatch: forumTagMatch,
-                  offset: 0,
-                  limit: 25
-              )
-        else { return }
-        replaceForumCatalogue(with: page.posts)
-        applyForumPresentation()
-        forumNextOffset = page.nextOffset
-        hasMoreForumPosts = page.hasMore
-    }
-
-    func replaceForwardDestinationThreads(
+    func replaceSnapshotThreads(
         parentID: ChannelID,
         with threads: [MessageThreadSummary]
     ) {
@@ -843,7 +636,7 @@ extension AppModel {
         snapshot = value
     }
 
-    func mergeForwardDestinationThreads(_ threads: [MessageThreadSummary]) {
+    func mergeSnapshotThreads(_ threads: [MessageThreadSummary]) {
         guard var value = snapshot, !threads.isEmpty else { return }
         var indicesByID = Dictionary(
             value.threads.enumerated().map { ($0.element.id, $0.offset) },
@@ -926,11 +719,13 @@ extension AppModel {
             receiveOnboardingMember(member, guildID: guildID)
         }
         reconcileGuildTimeoutExpiries()
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         // A replacement READY is authoritative even when its setting equals
         // the value from before an in-flight toggle started.
-        let pendingGuildIDs = Set(guildNotificationMutationTasks.keys)
-            .union(channelPinMutationStates.values.map(\.guildID))
+        let mutatingGuildIDs = notificationMutationTasks.keys.compactMap { slot -> GuildID? in
+            if case .guild(let id) = slot { id } else { nil }
+        }
+        let pendingGuildIDs = Set(mutatingGuildIDs).union(channelPinMutationStates.values.map(\.guildID))
         for guildID in pendingGuildIDs {
             guildNotificationSettingsRevisions[guildID, default: 0] &+= 1
         }
@@ -1027,7 +822,7 @@ extension AppModel {
         value.guilds[index] = projectedGuild
         snapshot = value
         updateServerRailGuild(projectedGuild)
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         readState.merge(guilds: [guild])
         // Gateway guild payloads do not carry SakuraCord's presentation-only
         // unread and mention counts. Re-project them after every metadata
@@ -1053,14 +848,12 @@ extension AppModel {
         }
         value.guildRailItems = railItems
         snapshot = value
-        forwardSearchSourceRevision &+= 1
+        destinationSearchSourceRevision &+= 1
         currentUserRoleIDsByGuild = currentUserRoleIDsByGuild.filter {
             retainedGuildIDs.contains($0.key)
         }
         for guildID in onboarding.members.keys where !retainedGuildIDs.contains(guildID) {
-            onboarding.members[guildID] = nil
-            onboarding.timeoutExpiryTasks.removeValue(forKey: guildID)?.cancel()
-            onboarding.timeoutRevisions[guildID] = nil
+            onboarding.removeMembership(in: guildID)
         }
         readState.retainGuilds(retainedGuildIDs)
         readState.merge(guilds: guilds)

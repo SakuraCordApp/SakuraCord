@@ -48,16 +48,13 @@ protocol AppSoundPlaying: Sendable {
     func stopPreview()
 }
 
-extension AppSoundPlaying {
-    func togglePreview(_ effect: AppSoundEffect) -> TimeInterval? { nil }
-    func stopPreview() {}
-}
-
 @MainActor
 final class NoopAppSoundPlayer: AppSoundPlaying {
     func play(_ effect: AppSoundEffect) {}
     func setLooping(_ effect: AppSoundEffect, active: Bool) {}
     func stopAll() {}
+    func togglePreview(_ effect: AppSoundEffect) -> TimeInterval? { nil }
+    func stopPreview() {}
 }
 
 @MainActor
@@ -167,15 +164,23 @@ final class MacAppSoundPlayer: AppSoundPlaying {
     /// Rebuilds the player only when the stored choice or its file changes.
     private func notificationPlayer(for effect: AppSoundEffect, kind: NotificationSoundKind) -> AVAudioPlayer? {
         var choice = notificationPreferences.soundChoice(for: kind)
+        // Resolved at most once, and only when a cached player needs checking or replacing.
+        var resolved: NotificationSoundLibrary.Resolution?
+        func resolveOnce() -> NotificationSoundLibrary.Resolution {
+            if let resolved { return resolved }
+            let value = NotificationSoundLibrary.resolve(choice, kind: kind)
+            resolved = value
+            return value
+        }
         if let slot = notificationSlots[effect], slot.choice == choice,
            slot.sourceStamp == NotificationSoundLibrary.FileStamp(slot.sourceURL),
-           !(slot.awaitsBookmark && NotificationSoundLibrary.resolve(choice, kind: kind).isSecurityScoped)
+           !(slot.awaitsBookmark && resolveOnce().isSecurityScoped)
         {
             return slot.player
         }
         releaseNotificationSlot(effect)
 
-        let resolution = NotificationSoundLibrary.resolve(choice, kind: kind)
+        let resolution = resolveOnce()
         var scopedURL: URL?
         if resolution.isSecurityScoped, resolution.url.startAccessingSecurityScopedResource() {
             scopedURL = resolution.url

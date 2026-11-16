@@ -3,30 +3,6 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ClosedColonAutocompleteContext {
-    private static let expression = RegularExpressionFactory.make(
-        #"(?:^|\s)(:([A-Za-z0-9_+\-]{2,}):)$"#
-    )
-
-    let query: String
-    let range: NSRange
-
-    init?(text: String, selection: NSRange?) {
-        let cursor = selection?.location ?? text.utf16.count
-        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
-        let prefix = (text as NSString).substring(to: cursor)
-        guard let match = Self.expression.firstMatch(
-            in: prefix,
-            range: NSRange(location: 0, length: (prefix as NSString).length)
-        ),
-            match.range(at: 1).location != NSNotFound,
-            match.range(at: 2).location != NSNotFound
-        else { return nil }
-        range = match.range(at: 1)
-        query = (prefix as NSString).substring(with: match.range(at: 2))
-    }
-}
-
 struct ColonAutocompleteSuggestion: Identifiable {
     let id: String
     let title: String

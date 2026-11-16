@@ -16,20 +16,14 @@ nonisolated extension SettingsCatalog {
             ),
             label: action.title,
             help: action.help,
-            keywords: action.keywords,
-            owner: .applicationPreferences,
-            scope: .appWideLocal,
-            persistence: .appPreferences,
-            resetCapability: .registeredLocalValue,
-            availability: .available
+            keywords: action.keywords
         )
     } + [
         control(
             .shortcutReset, page: .keyboardShortcuts,
             section: .shortcutLocalData, label: "Reset All Keyboard Shortcuts",
             help: "Restore every shortcut to SakuraCord's defaults.",
-            keywords: ["defaults", "restore", "clear shortcuts"], scope: .appWideLocal,
-            persistence: .appPreferences, reset: .categoryAction
+            keywords: ["defaults", "restore", "clear shortcuts"]
         ),
     ]
 }

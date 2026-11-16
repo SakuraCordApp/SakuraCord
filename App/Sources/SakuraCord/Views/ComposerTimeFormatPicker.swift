@@ -11,8 +11,8 @@ struct ComposerTimeFormatPicker: View {
         let startsGroup: Bool
     }
 
-    static func rows(_ suggestions: [DiscordTimeSuggestion]) -> [Row] {
-        suggestions.enumerated().flatMap { index, suggestion in
+    static func rows(for query: String, now: Date) -> [Row] {
+        DiscordNaturalLanguageTimeParser.suggestions(for: query, now: now).enumerated().flatMap { index, suggestion in
             suggestion.styles.enumerated().map { styleIndex, style in
                 Row(
                     id: "\(index)-\(style.rawValue)",

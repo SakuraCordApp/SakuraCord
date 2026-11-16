@@ -5,40 +5,6 @@ import Foundation
 import MessageRendering
 import SakuraCordModels
 
-nonisolated enum MemberStoreMerge {
-    static func merging(
-        existing: [UserID: Member],
-        updates: [Member]
-    ) -> [UserID: Member] {
-        var result = existing
-        for var member in updates {
-            if member.memberListIndex == nil {
-                member.memberListIndex = result[member.id]?.memberListIndex
-            }
-            result[member.id] = member
-        }
-        return result
-    }
-}
-
-actor OfflineCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        throw ChatProviderError.invalidRequest(
-            "Credential storage is unavailable in offline testing mode.")
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        throw ChatProviderError.invalidRequest(
-            "Credentials are unavailable in offline testing mode.")
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        []
-    }
-}
-
 nonisolated final class NativeTimelineAttributedTextBox: @unchecked Sendable {
     let value: NSAttributedString
     let framesetter: CTFramesetter
@@ -276,6 +242,21 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
             && lhs.searchContext == rhs.searchContext
             && lhs.pinnedAt == rhs.pinnedAt
             && lhs.isResource == rhs.isResource
+    }
+
+    /// Whether the two rows present the same message apart from its reactions.
+    nonisolated func differsOnlyInReactions(from other: MessageRowPresentation) -> Bool {
+        var message = other.message
+        message.reactions = self.message.reactions
+        return message == self.message
+            && startsGroup == other.startsGroup
+            && endsGroup == other.endsGroup
+            && startsDay == other.startsDay
+            && replyPreview == other.replyPreview
+            && isReplyAvailable == other.isReplyAvailable
+            && searchContext == other.searchContext
+            && pinnedAt == other.pinnedAt
+            && isResource == other.isResource
     }
 }
 
@@ -1229,5 +1210,10 @@ nonisolated extension Message {
     /// A forum or media post's original message, which shares its thread's ID.
     var isPostStarter: Bool {
         id.rawValue == channelID.rawValue
+    }
+
+    /// A voice message, or a forward of one, which plays like the original.
+    var isVoiceMessage: Bool {
+        (forwardedSnapshot?.flags ?? flags).contains(.voiceMessage)
     }
 }

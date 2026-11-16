@@ -30,7 +30,7 @@ struct GatewayLifecycleEventTests {
             )
         )
 
-        #expect(await provider.cachedChannelForTesting(channelID: threadID) == nil)
+        #expect(await provider.cachedChannel(threadID) == nil)
         #expect(
             await provider.cachedForumPostForTesting(threadID: threadID)?.thread.parentID
                 == forumChannelID
@@ -133,7 +133,7 @@ struct GatewayLifecycleEventTests {
             data: .object(["id": .string("100")])
         )
         #expect(await provider.cachedGuildForTesting(guildID: guildID) == nil)
-        #expect(await provider.cachedChannelForTesting(channelID: textChannelID) == nil)
+        #expect(await provider.cachedChannel(textChannelID) == nil)
     }
 
     @Test func `a server joined mid-session keeps the join time GUILD_CREATE carries`() async throws {
@@ -210,7 +210,7 @@ struct GatewayLifecycleEventTests {
             guildID: guildID, memberListID: memberListID
         ) == [UserID(rawValue: 1), UserID(rawValue: 2), UserID(rawValue: 3)])
 
-        var otherChannel = try #require(await provider.cachedChannelForTesting(channelID: forumChannelID))
+        var otherChannel = try #require(await provider.cachedChannel(forumChannelID))
         otherChannel.memberListID = "other-list"
         await provider.seedGuildChannelForTesting(otherChannel)
         try await provider.subscribeToMemberList(guildID: guildID, channelID: forumChannelID)
@@ -304,7 +304,7 @@ struct GatewayLifecycleEventTests {
     @Test func `member SYNC received before subscription completion is published after commit`() async throws {
         let fixture = try await makeMemberListProvider()
         let (provider, socket) = (fixture.provider, fixture.socket)
-        var channel = try #require(await provider.cachedChannelForTesting(channelID: forumChannelID))
+        var channel = try #require(await provider.cachedChannel(forumChannelID))
         channel.memberListID = "early-sync"
         await provider.seedGuildChannelForTesting(channel)
         let events = await provider.eventStream()
@@ -366,14 +366,14 @@ struct GatewayLifecycleEventTests {
                 name: "RATE_LIMITED",
                 data: .object(["opcode": .number(37), "retry_after": .number(60)])
             )
-            let refresh = try #require(await provider.memberListsNeedingRefresh[guildID]?[memberListID])
+            let refresh = try #require(await provider.memberListState.listsNeedingRefresh[guildID]?[memberListID])
             await socket.releaseHeldSend()
             try await first.value
-            #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] == refresh)
+            #expect(await provider.memberListState.listsNeedingRefresh[guildID]?[memberListID] == refresh)
             #expect(await provider.runScheduledMemberListRefreshForTesting(guildID: guildID))
         }
         #expect(await socket.sentPayloadCount(opcode: 37) == sends + 1)
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] == nil)
+        #expect(await provider.memberListState.listsNeedingRefresh[guildID]?[memberListID] == nil)
         #expect(await provider.orderedMemberListIDsForTesting(
             guildID: guildID, memberListID: memberListID
         ) == [UserID(rawValue: 2), UserID(rawValue: 3)])
@@ -389,7 +389,7 @@ struct GatewayLifecycleEventTests {
         )
         let (provider, socket) = (fixture.provider, fixture.socket)
         let memberListID = fixture.memberListID
-        var selectedChannel = try #require(await provider.cachedChannelForTesting(channelID: textChannelID))
+        var selectedChannel = try #require(await provider.cachedChannel(textChannelID))
         selectedChannel.permissionOverwrites = []
         selectedChannel.memberListID = memberListID
         await provider.seedGuildChannelForTesting(selectedChannel)
@@ -429,7 +429,7 @@ struct GatewayLifecycleEventTests {
         await #expect(throws: CancellationError.self) {
             try await earlierSubscription.value
         }
-        #expect(await provider.memberListSubscriptions[guildID]?[memberListID] == nil)
+        #expect(await provider.memberListState.subscriptions[guildID]?[memberListID] == nil)
         await provider.disconnect()
     }
 
@@ -468,14 +468,14 @@ struct GatewayLifecycleEventTests {
 
         #expect(await provider.cachedGuildForTesting(guildID: guildID)?.name == "Recovered Guild")
         #expect(await provider.cachedGuildForTesting(guildID: guildID)?.currentUserPermissions == 2_048)
-        #expect(await provider.cachedChannelForTesting(channelID: textChannelID) != nil)
+        #expect(await provider.cachedChannel(textChannelID) != nil)
     }
 
     private func makeProvider(
         session: URLSession = URLSession(configuration: .ephemeral)
     ) -> DiscordRESTProvider {
         DiscordRESTProvider(
-            credentials: GatewayLifecycleCredentialStore(),
+            credentials: TestCredentialStore(token: "unused", handles: []),
             handle: CredentialHandle(accountID: "1"),
             session: session
         )
@@ -522,7 +522,7 @@ struct GatewayLifecycleEventTests {
                 guildID: guildID, channelID: textChannelID, ranges: [0 ... 99]
             )
         }
-        let channel = try #require(await provider.cachedChannelForTesting(channelID: textChannelID))
+        let channel = try #require(await provider.cachedChannel(textChannelID))
         let roles = await provider.cachedGuildRoles[guildID] ?? []
         let memberListID = DiscordMemberListIdentity.id(for: channel, guildID: guildID, roles: roles)
         return MemberListFixture(provider: provider, socket: socket, memberListID: memberListID)
@@ -646,19 +646,6 @@ struct GatewayLifecycleEventTests {
             "global_name": .string(globalName),
         ])
     }
-}
-
-private actor GatewayLifecycleCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("unused".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private final class GatewayDispatchCountingURLProtocol: URLProtocol, @unchecked Sendable {
@@ -903,17 +890,17 @@ extension GatewayLifecycleEventTests {
             "meta": .object(["guild_id": .string("100")]),
         ])
         await provider.receiveGatewayDispatchForTesting(name: "RATE_LIMITED", data: rateLimit)
-        let refresh = try #require(await provider.memberListsNeedingRefresh[guildID]?[memberListID])
+        let refresh = try #require(await provider.memberListState.listsNeedingRefresh[guildID]?[memberListID])
         await socket.releaseHeldSend()
         try await first.value
         await invalidation.value
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] == refresh)
+        #expect(await provider.memberListState.listsNeedingRefresh[guildID]?[memberListID] == refresh)
         await #expect(throws: ChatProviderError.self) {
             try await provider.updateMemberListViewport(
                 in: guildID, channelID: textChannelID, visibleRange: 500 ... 510
             )
         }
-        #expect(await provider.memberListSubscriptions[guildID]?[memberListID]?.ranges == [0 ... 199])
+        #expect(await provider.memberListState.subscriptions[guildID]?[memberListID]?.ranges == [0 ... 199])
         let sends = await socket.sentPayloadCount(opcode: 37)
         // Advance the first cooldown, then block a normal send ahead of the
         // deferred refresh. A newer rejection arrives while it is queued.
@@ -935,16 +922,16 @@ extension GatewayLifecycleEventTests {
         #expect(await queuedRefresh.value)
         #expect(await socket.sentPayloadCount(opcode: 37) == sends + 1)
         #expect(await provider.memberListRefreshRetryAttempts[guildID]?.contains(memberListID) != true)
-        #expect(await provider.memberListRefreshRetryTasks[guildID] != nil)
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] != nil)
+        #expect(await provider.memberListState.refreshRetryTasks[guildID] != nil)
+        #expect(await provider.memberListState.listsNeedingRefresh[guildID]?[memberListID] != nil)
         #expect(await provider.runScheduledMemberListRefreshForTesting(guildID: guildID))
         #expect(await socket.sentPayloadCount(opcode: 37) == sends + 2)
-        #expect(await provider.memberListSubscriptions[guildID]?[memberListID]?.ranges
+        #expect(await provider.memberListState.subscriptions[guildID]?[memberListID]?.ranges
             == [0 ... 99, 400 ... 499, 500 ... 599])
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] == nil)
+        #expect(await provider.memberListState.listsNeedingRefresh[guildID]?[memberListID] == nil)
         await provider.receiveGatewayDispatchForTesting(name: "RATE_LIMITED", data: rateLimit)
-        #expect(await provider.memberListsNeedingRefresh[guildID]?[memberListID] != nil)
-        #expect(await provider.memberListRefreshRetryTasks[guildID] == nil)
+        #expect(await provider.memberListState.listsNeedingRefresh[guildID]?[memberListID] != nil)
+        #expect(await provider.memberListState.refreshRetryTasks[guildID] == nil)
         await provider.disconnect()
     }
 

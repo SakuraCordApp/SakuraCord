@@ -1,5 +1,22 @@
 import Foundation
 
+/// Discord guild feature names, as they appear in a guild's `features`.
+public enum GuildFeature {
+    public static let community = "COMMUNITY"
+    public static let discoverable = "DISCOVERABLE"
+    public static let forwardingDisabled = "FORWARDING_DISABLED"
+    public static let guildTags = "GUILD_TAGS"
+    public static let memberVerificationGateEnabled = "MEMBER_VERIFICATION_GATE_ENABLED"
+    public static let memberVerificationManualApproval = "MEMBER_VERIFICATION_MANUAL_APPROVAL"
+    public static let onboarding = "GUILD_ONBOARDING"
+    public static let onboardingHasPrompts = "GUILD_ONBOARDING_HAS_PROMPTS"
+    public static let partnered = "PARTNERED"
+    public static let roleSubscriptionsEnabled = "ROLE_SUBSCRIPTIONS_ENABLED"
+    public static let serverGuide = "GUILD_SERVER_GUIDE"
+    public static let staff = "STAFF"
+    public static let verified = "VERIFIED"
+}
+
 public struct Guild: Identifiable, Codable, Hashable, Sendable {
     public let id: GuildID
     public var name: String
@@ -18,6 +35,19 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
     public var isUnavailable: Bool
     public var joinedAt: Date?
     public var isAgeRestricted: Bool
+
+    public var hasOnboarding: Bool { features.contains(GuildFeature.onboarding) }
+
+    /// Whether `member` carries the flags that say if onboarding is complete;
+    /// only a guild with onboarding needs them.
+    public func isOnboardingStateKnown(for member: Member?) -> Bool {
+        !hasOnboarding || member?.flags != nil
+    }
+
+    /// Discord's `EXPLICIT` (1) and `AGE_RESTRICTED` (3) guild NSFW levels.
+    public static func isAgeRestricted(nsfwLevel: Int) -> Bool {
+        nsfwLevel == 1 || nsfwLevel == 3
+    }
 
     public init(
         id: GuildID, name: String, iconURL: URL? = nil, accentHex: UInt32 = 0x5865F2,

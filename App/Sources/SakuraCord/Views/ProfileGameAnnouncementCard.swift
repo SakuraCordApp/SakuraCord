@@ -100,13 +100,11 @@ struct ProfileGameAnnouncementCard: View {
     }
 
     private var imageURL: URL? {
-        guard let media = message.media, let url = media.proxyURL ?? media.url,
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        guard let media = message.media, let url = media.proxyURL ?? media.url else { return nil }
         let ratio = media.width.flatMap { width in media.height.flatMap { $0 > 0 && width > 0 ? Double(width) / Double($0) : nil } } ?? 16 / 9
-        let width = ProfileGameGallery.supportedSize(Self.width * displayScale)
-        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "format", value: "webp"),
-            URLQueryItem(name: "width", value: String(width)), URLQueryItem(name: "height", value: String(Int((Double(width) / ratio).rounded())))]
-        return components.url
+        let width = DiscordCDN.supportedSize(atLeast: Self.width * displayScale)
+        return DiscordCDN.editingQuery(of: url, removing: [], adding: [URLQueryItem(name: "format", value: "webp"),
+            URLQueryItem(name: "width", value: String(width)), URLQueryItem(name: "height", value: String(Int((Double(width) / ratio).rounded())))])
     }
 }
 

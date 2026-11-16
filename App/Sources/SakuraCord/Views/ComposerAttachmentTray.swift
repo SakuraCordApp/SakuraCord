@@ -2,6 +2,10 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct ComposerAttachmentEditorTarget: Identifiable {
+    let id: UUID
+}
+
 struct ComposerAttachmentTray: View {
     static var cornerRadius: CGFloat { InterfaceScale.metric(12) }
     static var tileSize: CGFloat { InterfaceScale.metric(132) }
@@ -11,24 +15,23 @@ struct ComposerAttachmentTray: View {
 
     @AppStorage(PrivacySafetySettingsStore.anonymiseFileNamesKey) private var anonymisesFileNames = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let attachments: [ForumPostAttachment]
+    let attachments: [StagedAttachment]
     /// Files still being checked; they show at once but cannot be sent yet.
     var checkingIDs: Set<UUID> = []
     let uploads: AttachmentUploadProgressStore
-    var sendTransitionAnchor: ComposerSendTransitionAnchor?
-    /// The tile the media viewer is zoomed out of, which hides meanwhile.
-    /// Read here rather than by the composer, which would otherwise redraw
-    /// as the viewer opens.
-    var mediaViewerSourceID: () -> String? = { nil }
-    var scrolled: () -> Void = {}
+    let sendTransitionAnchor: ComposerSendTransitionAnchor
+    /// Read for the media viewer, here rather than by the composer, which
+    /// would otherwise redraw as the viewer opens.
+    let model: AppModel
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
-    let update: (ForumPostAttachment) -> Void
+    let update: (StagedAttachment) -> Void
     let remove: (UUID) -> Void
     @State private var editingTarget: ComposerAttachmentEditorTarget?
 
     var body: some View {
-        let mediaViewerSourceID = mediaViewerSourceID()
+        // The tile the media viewer is zoomed out of, which hides meanwhile.
+        let mediaViewerSourceID = model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
         return ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: InterfaceScale.metric(9)) {
@@ -56,7 +59,10 @@ struct ComposerAttachmentTray: View {
                 .animation(reduceMotion ? .smooth(duration: 0.2) : ComposerResizeMotion.tile, value: attachments.map(\.id))
             }
             .scrollIndicators(.hidden)
-            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x }, action: { _, _ in scrolled() })
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x }, action: { _, _ in
+                guard let link = model.mediaViewerPresentation?.transitionLink else { return }
+                sendTransitionAnchor.followMediaViewerSources(in: link)
+            })
             .onChange(of: attachments.map(\.id)) { previous, current in
                 // Bring a newly added file into view as it arrives.
                 guard let added = current.last(where: { !previous.contains($0) }) else { return }
@@ -97,7 +103,7 @@ struct ComposerAttachmentTray: View {
         )
     }
 
-    private func toggleFilenamePrivacy(_ attachment: ForumPostAttachment) {
+    private func toggleFilenamePrivacy(_ attachment: StagedAttachment) {
         var updated = attachment
         updated.setFilenameAnonymised(!attachment.isFilenameAnonymised)
         update(updated)
@@ -105,7 +111,7 @@ struct ComposerAttachmentTray: View {
 }
 
 private struct ComposerAttachmentTile: View {
-    let attachment: ForumPostAttachment
+    let attachment: StagedAttachment
     let isChecking: Bool
     let uploads: AttachmentUploadProgressStore
     let anonymisesFileNames: Bool
@@ -113,7 +119,7 @@ private struct ComposerAttachmentTile: View {
     let isMediaViewerSource: Bool
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
-    let toggleFilenamePrivacy: (ForumPostAttachment) -> Void
+    let toggleFilenamePrivacy: (StagedAttachment) -> Void
     let edit: (UUID) -> Void
     let remove: (UUID) -> Void
     @State private var isHovered = false
@@ -179,7 +185,7 @@ private struct ComposerAttachmentTile: View {
             face
                 .spoilerCover(
                     attachment.isSpoiler,
-                    pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: tileSize),
+                    pillScale: SpoilerAppearance.pillScale(forTileWidth: tileSize),
                     isHovered: isHovered
                 )
             if isChecking || uploadFraction != nil {
@@ -385,7 +391,7 @@ struct ComposerAttachmentFileFace: View {
     }
 }
 
-extension ForumPostAttachment {
+extension StagedAttachment {
     /// Images and videos, which fill their tile and fly as their thumbnail.
     var isVisualMedia: Bool {
         let type = UTType(filenameExtension: url.pathExtension)

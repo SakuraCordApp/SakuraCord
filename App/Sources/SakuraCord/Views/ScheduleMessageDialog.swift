@@ -54,8 +54,11 @@ struct ScheduleMessageDialog: View {
                         if let issue {
                             Label(issue, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
                         } else {
-                            Label("Sends \(date.formatted(.dateTime.weekday(.wide).day().month(.wide))) at \(ScheduleTimeText.time(date, format: timeFormat))", systemImage: "paperplane")
-                                .foregroundStyle(.secondary)
+                            Label(
+                                "Sends \(ScheduleTimeText.dayAndTime(date, format: timeFormat, day: .dateTime.weekday(.wide).day().month(.wide)))",
+                                systemImage: "paperplane"
+                            )
+                            .foregroundStyle(.secondary)
                         }
                     }
                     .font(.callout)
@@ -123,7 +126,7 @@ struct ScheduleMessageDialog: View {
 
     private var timePicker: some View {
         HStack(spacing: 12) {
-            stepButton(systemImage: "chevron.left", help: "15 Minutes Earlier") { _ = step(by: -1) }
+            GlassCircleButton(symbol: "chevron.left", help: "15 Minutes Earlier", diameter: 40, font: .body.weight(.semibold)) { _ = step(by: -1) }
             Text(ScheduleTimeText.time(date, format: timeFormat))
                 .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
                 .contentTransition(.numericText())
@@ -144,23 +147,10 @@ struct ScheduleMessageDialog: View {
                         }
                         .onEnded { _ in draggedSteps = 0 }
                 )
-            stepButton(systemImage: "chevron.right", help: "15 Minutes Later") { _ = step(by: 1) }
+            GlassCircleButton(symbol: "chevron.right", help: "15 Minutes Later", diameter: 40, font: .body.weight(.semibold)) { _ = step(by: 1) }
         }
         .padding(6)
         .background(.primary.opacity(0.05), in: Capsule())
-    }
-
-    private func stepButton(systemImage: String, help: LocalizedStringResource, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
-                .frame(width: 40, height: 40)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
-        .help(String(localized: help))
-        .accessibilityLabel(Text(help))
     }
 
     private var day: Date { Calendar.current.startOfDay(for: date) }

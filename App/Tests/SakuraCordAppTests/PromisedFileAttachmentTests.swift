@@ -36,7 +36,7 @@ func composerAttachmentPermission(canAttach: Bool, destination: MessageComposerD
 
 @MainActor
 @Test func `failed promised file batch removes its receiving directory`() throws {
-    let directory = try ComposerFileDropView.makeReceivingDirectory()
+    let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
     let partialFile = directory.appendingPathComponent("partial.bin")
     try Data("partial".utf8).write(to: partialFile)
     var completedBatch: ComposerPromisedFileBatch?
@@ -61,7 +61,7 @@ func composerAttachmentPermission(canAttach: Bool, destination: MessageComposerD
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
-    let directory = try ComposerFileDropView.makeReceivingDirectory()
+    let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
     let promisedFile = directory.appendingPathComponent("promised.bin")
     try Data("promised".utf8).write(to: promisedFile)
     let batch = ComposerPromisedFileBatch(
@@ -99,7 +99,7 @@ func composerAttachmentPermission(canAttach: Bool, destination: MessageComposerD
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
-    let directory = try ComposerFileDropView.makeReceivingDirectory()
+    let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
     let outsideDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("sakuracord-promised-target-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: false)

@@ -20,9 +20,9 @@ struct ForwardMessageWindowOverlay: View {
             // Warm its revisioned index after workspace changes settle so the first
             // explicit Forward action normally attaches an immediately populated
             // picker instead of starting permission and fuzzy-index work on open.
-            .task(id: model.forwardSearchSourceRevision) {
+            .task(id: model.destinationSearchSourceRevision) {
                 guard model.snapshot != nil else { return }
-                ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
+                ConversationDestinationSearchIndexCache.shared.schedulePrewarm(
                     for: model
                 )
             }

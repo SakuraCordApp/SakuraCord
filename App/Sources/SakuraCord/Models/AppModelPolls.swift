@@ -60,12 +60,15 @@ private extension Message {
 
 extension AppModel {
     func canCreatePoll(in channelID: ChannelID) -> Bool {
-        let isThread = openThread?.id == channelID
-        guard let channel = isThread ? openThreadParentChannel : messagePresentationChannelsByID[channelID],
-              (isThread ? openThreadAccess : conversationAccess(for: channel)).canSend else { return false }
-        guard channel.guildID != nil else { return true }
-        guard let permissions = effectiveMessagePermissions(in: channel) else { return false }
-        return permissions & ((1 << 49) | DiscordPermissionBits.administrator) != 0
+        let permissions = if openThread?.id == channelID {
+            composerSendPermissions(in: .thread)
+        } else {
+            messagePresentationChannelsByID[channelID].flatMap { channel in
+                conversationAccess(for: channel).canSend ? effectiveMessagePermissions(in: channel) : nil
+            }
+        }
+        // Direct messages carry every permission.
+        return (permissions ?? 0) & DiscordPermissionBits.sendPolls != 0
     }
 
     func createPoll(_ poll: PollDraft, in channelID: ChannelID) async -> ComposerSubmissionResult {
@@ -146,7 +149,7 @@ extension AppModel {
             latest.isSending = false
             model.pollVoteMutations[messageID] = latest
             if let message = model.retainedMessage(channelID: channelID, messageID: messageID) {
-                model.recordAuthoritativeMessageUpsert(message)
+                model.journalAuthoritativeMessageUpsert(message)
                 model.reconcilePollSearchMessage(message)
                 model.reconcileInboxMessage(message)
             }
@@ -181,13 +184,25 @@ extension AppModel {
         return message.selectingCurrentUserPollAnswers(mutation.confirmed)
     }
 
+    /// Keeps pending local poll votes and reactions, and optionally an
+    /// outgoing send's local media, on an incoming copy of a message.
+    func localPresentationPreserving(_ incoming: Message, includingOutgoingMedia: Bool = false) -> Message {
+        let message = includingOutgoingMedia ? outgoingMediaPresentationPreserving(incoming) : incoming
+        return pollVotePresentationPreserving(reactionPresentationPreserving(message))
+    }
+
+    /// A message with only Discord-confirmed poll votes and reactions.
+    func localConfirmedSnapshot(_ message: Message) -> Message {
+        pollVoteConfirmedSnapshot(reactionConfirmedSnapshot(message))
+    }
+
     func endPoll(_ message: Message) async {
         let session = accountSession()
         do {
             let updated = try await session.provider.endPoll(messageID: message.id, channelID: message.channelID)
             guard isCurrentAccountSession(session) else { return }
             let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)
-            recordAuthoritativeMessageUpsert(reconciled)
+            journalAuthoritativeMessageUpsert(reconciled)
         } catch {
             guard isCurrentAccountSession(session) else { return }
             errorMessage = error.localizedDescription
@@ -197,7 +212,7 @@ extension AppModel {
 
 extension AppModel {
     func messageSearchPagePreservingPollVotes(_ incoming: MessageSearchPage, search: MessageSearchState? = nil) -> MessageSearchPage {
-        let mutations = (search ?? messageSearch).pollRefreshJournal?.mutationsByMessageID ?? [:]
+        let mutations = (search ?? messageSearch).pollRefreshJournal?.mutations.messages ?? [:]
         guard !pollVoteMutations.isEmpty || !mutations.isEmpty else { return incoming }
         var page = incoming
         for resultIndex in page.results.indices {
@@ -213,25 +228,12 @@ extension AppModel {
     }
 
     func reconcilePollSearchMessage(_ message: Message) {
-        for search in retainedMessageSearches {
-            guard message.poll != nil, var page = search.page else { continue }
-            var changed = false
-            for resultIndex in page.results.indices {
-                for index in page.results[resultIndex].messages.indices
-                where page.results[resultIndex].messages[index].id == message.id {
-                    guard page.results[resultIndex].messages[index].poll != message.poll else { continue }
-                    page.results[resultIndex].messages[index].poll = message.poll
-                    page.results[resultIndex].messages[index].hasPoll = true
-                    changed = true
-                }
-            }
-            guard changed else { continue }
-            let oldRows = search.rows
-            search.page = page
-            search.rows = MessageSearchPresentation.rows(for: page, channelsByID: messageSearchChannelsByID(additionalChannels: page.channels))
-            let revision = search.rowsRevision &+ 1
-            search.rowsUpdateJournal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: search.rows, revision: revision))
-            search.rowsRevision = revision
+        guard message.poll != nil else { return }
+        updateRetainedSearchMessages(id: message.id) {
+            guard $0.poll != message.poll else { return false }
+            $0.poll = message.poll
+            $0.hasPoll = true
+            return true
         }
     }
 
@@ -283,7 +285,7 @@ extension AppModel {
                 guard !Task.isCancelled, isCurrentAccountSession(session),
                       let journal = pollResultRefreshJournals[message.id], journal.revision == revision,
                       let fetched = page.messages.first(where: { $0.id == message.id }) else { return }
-                let mutations = ConversationRefreshMutations(journal)
+                let mutations = journal.mutations
                 guard let poll = Self.applyingConversationRefreshMutations(mutations, to: [fetched]).first?.poll else { return }
                 if poll.results == nil, fetched.poll?.results != nil {
                     guard attempt == 0 else {

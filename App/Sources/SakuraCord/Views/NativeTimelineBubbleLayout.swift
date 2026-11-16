@@ -63,12 +63,12 @@ enum NativeTimelineBubbleLayout {
         let minimumWidth: CGFloat = InterfaceScale.metric(28)
         let maximumWidth = maximumContentWidth(availableWidth: availableWidth)
         var preferredWidth = message.hasPoll ? min(InterfaceScale.metric(456), maximumWidth) : minimumWidth
-        if let attributedContent = content.attributedContent {
+        if let text = content.content {
             preferredWidth = max(
                 preferredWidth,
                 measuredTextWidth(
-                    content.framesetter,
-                    value: attributedContent,
+                    text.framesetter,
+                    value: text.value,
                     maximumWidth: maximumWidth
                 )
             )
@@ -269,12 +269,9 @@ enum NativeTimelineBubbleDrawing {
     }
 
     static let incomingFillColor = NSColor(name: nil) { appearance in
-        switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
-        case .darkAqua:
-            NSColor(srgbRed: 0.22, green: 0.22, blue: 0.23, alpha: 1)
-        default:
-            NSColor(srgbRed: 0.93, green: 0.93, blue: 0.94, alpha: 1)
-        }
+        appearance.isDark
+            ? NSColor(srgbRed: 0.22, green: 0.22, blue: 0.23, alpha: 1)
+            : NSColor(srgbRed: 0.93, green: 0.93, blue: 0.94, alpha: 1)
     }
 
     static func fillColor(for region: NativeTimelineBubbleRegion) -> NSColor {
@@ -350,5 +347,30 @@ enum NativeTimelineBubbleDrawing {
         )
         path.close()
         return path
+    }
+}
+
+extension AppModel {
+    func bubbleContext(for message: Message) -> NativeTimelineBubbleLayout.Context {
+        let isEnabled =
+            messageAppearance(for: message.channelID) == .bubbles
+                && !message.type.hasGeneratedContent
+                // An alert's card holds its member's avatar, which a bubble
+                // would move to its own bottom edge.
+                && message.type != .autoModerationAction
+        // Standard message layout never consumes bubble identity. Avoid an
+        // account-wide channel search for every newly paginated message.
+        guard isEnabled else {
+            return NativeTimelineBubbleLayout.Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
+        }
+        let selectedChannel = self.selectedChannel
+        let channel = selectedChannel?.id == message.channelID
+            ? selectedChannel
+            : messagePresentationChannelsByID[message.channelID]
+        return NativeTimelineBubbleLayout.Context(
+            isEnabled: isEnabled,
+            isOutgoing: message.author.id == currentUser?.id,
+            showsAvatar: NativeTimelineBubbleLayout.showsAvatar(in: channel)
+        )
     }
 }

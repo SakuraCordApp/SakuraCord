@@ -95,12 +95,12 @@ extension DiscordRESTProvider {
     /// the acknowledged edit, then expose the newest authoritative settings.
     func acceptSavedStatusSettings(_ saved: Data, root: Data, editID: UInt64?) -> Data {
         let version = DiscordSettingsProto.dataVersion(in: root)
-        let isStale = version.flatMap { incoming in profileStatusSettingsDataVersion.map { incoming < $0 } } ?? false
+        let isStale = DiscordSettingsProto.isStale(version, comparedWith: profileStatusSettingsDataVersion)
         let accepted = isStale ? profileStatusSettings ?? saved : saved
         endPendingStatusEdit(editID)
         if !isStale, let version {
             profileStatusSettingsDataVersion = version
-            settingsDataVersion = max(settingsDataVersion ?? version, version)
+            DiscordSettingsProto.advance(&settingsDataVersion, to: version)
         }
         adoptStatusSettings(accepted)
         return accepted

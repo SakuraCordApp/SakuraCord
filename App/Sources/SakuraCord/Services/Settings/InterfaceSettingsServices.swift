@@ -71,11 +71,19 @@ nonisolated enum InterfaceTimestampFormat: String, CaseIterable, Identifiable, S
 }
 
 nonisolated struct InterfaceSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self(timestampFormat: .system, includesTimestampSeconds: false)
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
     var timestampFormat: InterfaceTimestampFormat
     var includesTimestampSeconds: Bool
-    var alwaysShowsTimestamps = false
+    var alwaysShowsTimestamps: Bool
+}
+
+nonisolated extension InterfaceSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        timestampFormat = value(.timestampFormat).rawValue()
+        includesTimestampSeconds = value(.timestampSeconds).boolValue
+        alwaysShowsTimestamps = value(.alwaysShowTimestamps).boolValue
+    }
 }
 
 nonisolated enum InterfaceTimestampFormatter {
@@ -198,30 +206,13 @@ final class InterfaceSettingsStore {
     }
 
     func load() -> InterfaceSettingsSnapshot {
-        var value = InterfaceSettingsSnapshot.defaults
-        value.timestampFormat = enumValue(.timestampFormat) ?? value.timestampFormat
-        value.includesTimestampSeconds = boolValue(.timestampSeconds)
-            ?? value.includesTimestampSeconds
-        value.alwaysShowsTimestamps = boolValue(.alwaysShowTimestamps) ?? false
-        return value
+        InterfaceSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: InterfaceSettingsSnapshot) {
         preferences.set(.string(value.timestampFormat.rawValue), for: .timestampFormat)
         preferences.set(.bool(value.includesTimestampSeconds), for: .timestampSeconds)
         preferences.set(.bool(value.alwaysShowsTimestamps), for: .alwaysShowTimestamps)
-    }
-
-    private func boolValue(_ id: SettingsControlID) -> Bool? {
-        guard case let .bool(value) = preferences.value(for: id) else { return nil }
-        return value
-    }
-
-    private func enumValue<Value: RawRepresentable>(
-        _ id: SettingsControlID
-    ) -> Value? where Value.RawValue == String {
-        guard case let .string(value) = preferences.value(for: id) else { return nil }
-        return Value(rawValue: value)
     }
 }
 

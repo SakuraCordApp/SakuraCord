@@ -53,8 +53,7 @@ extension AppModel {
 
     private var navigationChannel: Channel? {
         if isThreadFullWidth, let openThread { return threadNavigationChannel(openThread) }
-        return snapshot?.channels.first { $0.id == selectedChannelID }
-            ?? visibleChannels.first { $0.id == selectedChannelID }
+        return selectedChannelID.flatMap(knownRootChannel)
     }
 
     // Sidebar choices supersede asynchronous navigation to another destination
@@ -157,150 +156,13 @@ extension AppModel {
         }
     }
 
-    func rebuildMemberSections() {
-        memberSections = AppPerformanceSignposts.measureSync(
-            "MemberSectionBuild"
-        ) {
-            MemberSection.make(
-                from: members,
-                groups: memberListGroups,
-                roles: guildRoles
-            )
-        }
-    }
-
-    func updateMemberListViewport(_ visibleRange: ClosedRange<Int>) {
-        guard !isThreadFullWidth || openThreadParentChannel?.kind == .announcement else { return }
-        guard let guildID = selectedGuildID,
-              let channelID = selectedChannelID
-        else { return }
-        lastMemberListVisibleRange = visibleRange
-        let session = accountSession()
-        let request = MemberListViewportRequest(
-            guildID: guildID,
-            channelID: channelID,
-            visibleRange: visibleRange
-        )
-        memberListViewportRequest = request
-        submitMemberListViewport(request, account: session)
-    }
-
-    func submitMemberListViewport(
-        _ request: MemberListViewportRequest,
-        account session: AppModelAccountSession
-    ) {
-        Task { [weak self] in
-            guard let self,
-                  isCurrentAccountSession(session),
-                  memberListViewportRequest == request,
-                  selectedGuildID == request.guildID,
-                  selectedChannelID == request.channelID
-            else { return }
-            do {
-                try await session.provider.updateMemberListViewport(
-                    in: request.guildID,
-                    channelID: request.channelID,
-                    visibleRange: request.visibleRange
-                )
-            } catch {
-                guard isCurrentAccountSession(session) else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                AppModel.memberListLogger.debug(
-                    "Member-list viewport subscription failed: \(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-    }
-
-    func replayMemberListViewportIfNeeded(
-        for guildID: GuildID,
-        account session: AppModelAccountSession
-    ) async {
-        guard let channelID = selectedChannelID,
-              isCurrentAccountSession(session)
-        else { return }
-        // An empty cold member list has no native row from which the canvas can
-        // derive a viewport. Seed the first Gateway block after members(in:)
-        // arms the subscription; subsequent reports replace this with the real
-        // visible range.
-        let visibleRange = lastMemberListVisibleRange ?? 0 ... 0
-        let request = MemberListViewportRequest(
-            guildID: guildID,
-            channelID: channelID,
-            visibleRange: visibleRange
-        )
-        memberListViewportRequest = request
-        do {
-            try await session.provider.updateMemberListViewport(
-                in: request.guildID,
-                channelID: request.channelID,
-                visibleRange: request.visibleRange
-            )
-        } catch {
-            guard isCurrentAccountSession(session) else { return }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            AppModel.memberListLogger.debug(
-                "Member-list viewport replay failed: \(error.localizedDescription, privacy: .public)"
-            )
-        }
-    }
-
-    func mergedMemberStore(with updates: [Member]) -> [UserID: Member] {
-        guard let guildID = selectedGuildID else {
-            return Dictionary(
-                updates.map { ($0.id, $0) },
-                uniquingKeysWith: { _, newer in newer }
-            )
-        }
-        let merged = MemberStoreMerge.merging(
-            existing: membersByGuildID[guildID] ?? [:],
-            updates: updates
-        )
-        membersByGuildID[guildID] = merged
-        return merged
-    }
-
-    func applyGuildRoles(_ roles: [GuildRole], to guildID: GuildID) {
-        // Every guild has at least @everyone. An empty result is incomplete
-        // state, so retain the last Gateway/REST catalog like Paicord's
-        // per-guild role store instead of blanking every message author.
-        guard !roles.isEmpty else { return }
-        guard guildRolesByGuildID[guildID] != roles else { return }
-        guildRolesByGuildID[guildID] = roles
-        for key in profileCache.keys where key.guildID == guildID {
-            profileCache[key]?.refreshRoles(from: roles)
-        }
-        for destination in [ProfilePresentationDestination.inspector, .contextual, .expanded] {
-            guard var presentation = profilePresentation(for: destination), presentation.guildID == guildID else { continue }
-            presentation.profile?.refreshRoles(from: roles)
-            setProfilePresentation(presentation, for: destination)
-        }
-        discardUnreachableKeptComposerDrafts()
-        guard selectedGuildID == guildID else { return }
-        guildRoles = roles
-        refreshUnreadPresentation(
-            appliesAccessImmediately: true,
-            accessAffectedGuildIDs: [guildID]
-        )
-    }
-
-    var directMessageInspectorSections: [MemberSection] {
-        guard let channel = selectedChannel, channel.guildID == nil else {
-            return memberSections
-        }
-        return MemberSection.make(
-            from: DirectMessageMemberResolver.members(
-                for: channel,
-                knownMembers: members,
-                currentUser: currentUser,
-                currentStatus: currentStatus
-            )
-        )
-    }
-
     func knownRootChannel(_ channelID: ChannelID) -> Channel? {
         snapshot?.channels.first(where: { $0.id == channelID })
             ?? visibleChannels.first(where: { $0.id == channelID })
+    }
+
+    func threadNavigationChannel(_ thread: MessageThreadSummary) -> Channel {
+        Channel(id: thread.id, guildID: thread.guildID ?? selectedGuildID, name: thread.name)
     }
 
     func navigate(
@@ -334,9 +196,48 @@ extension AppModel {
             guard !Task.isCancelled,
                   model.isCurrentAccountSession(account)
             else { return }
-            model.recordForwardDestinationVisit(channel.id)
+            model.recordConversationDestinationVisit(channel.id)
             model.closeThread()
             model.selectedChannelID = channel.id
+        }
+    }
+
+    func openSidebarThread(
+        _ thread: MessageThreadSummary,
+        historyDestination: ConversationNavigationHistory.Destination? = nil,
+        presentsFavorites: Bool? = nil
+    ) {
+        onboarding.presentedGuildID = nil
+        let target = ConversationNavigationTarget.thread(thread.id, fullWidth: true)
+        if historyDestination == nil, isNavigating(to: target, presentsFavorites: presentsFavorites) { return }
+        startConversationNavigation(target: target, to: historyDestination, presentsFavorites: presentsFavorites) { model, account in
+            let guildID = thread.guildID ?? model.selectedGuildID
+            if model.selectedGuildID != guildID {
+                await model.activateGuild(guildID, account: account)
+            }
+            guard !Task.isCancelled, model.isCurrentAccountSession(account) else { return }
+            guard let parentID = thread.parentID,
+                  let parent = model.knownRootChannel(parentID)
+            else {
+                model.errorMessage = "That thread's parent channel has not been discovered yet."
+                return
+            }
+            guard model.conversationAccess(for: parent) != .hidden else {
+                model.errorMessage = "You do not have permission to view that thread."
+                return
+            }
+            model.onboarding.presentedGuildID = nil
+            if model.selectedChannelID != parentID { model.selectedChannelID = parentID }
+            // Establish presentation before loading history so the hidden parent
+            // cannot acknowledge messages while the thread occupies the workspace.
+            if model.openThread?.id == thread.id {
+                model.presentOpenThreadFullWidth()
+            } else {
+                model.openThreadConversation(
+                    thread, starter: nil, startedAt: thread.createdAt,
+                    initialMessages: [], fullWidth: true
+                )
+            }
         }
     }
 
@@ -469,16 +370,8 @@ extension AppModel {
         // Search keeps the results beside the destination conversation, so
         // establish the thread's primary-pane presentation before loading it.
         if !initialMessages.isEmpty || openThread?.id != post.id {
-            readState.merge(forumPost: post)
-            openThreadConversation(
-                post.thread,
-                starter: post.owner ?? post.firstMessage?.author,
-                startedAt: post.firstMessage?.timestamp ?? post.createdAt,
-                starterMessageID: post.firstMessage?.id,
-                initialMessages: initialMessages.isEmpty
-                    ? post.firstMessage.map { [$0] } ?? [] : initialMessages,
-                fullWidth: fullWidth,
-                historyTarget: messageID
+            openForumPostConversation(
+                post, initialMessages: initialMessages, fullWidth: fullWidth, historyTarget: messageID
             )
         } else if fullWidth {
             presentOpenThreadFullWidth()
@@ -507,12 +400,20 @@ extension AppModel {
             errorMessage = "That message could not be found in the linked thread."
             return
         }
+        requestMessageNavigation(channelID: post.id, messageID: landingID, glides: wasShowingMessage)
+    }
+
+    /// Asks the timeline showing `channelID` to bring `messageID` into view.
+    func requestMessageNavigation(
+        channelID: ChannelID, messageID: MessageID, glides: Bool, isUnreadBoundary: Bool = false
+    ) {
         messageNavigationRequestID &+= 1
         messageNavigationRequest = MessageNavigationRequest(
             requestID: messageNavigationRequestID,
-            channelID: post.id,
-            messageID: landingID,
-            glides: wasShowingMessage
+            channelID: channelID,
+            messageID: messageID,
+            glides: glides,
+            isUnreadBoundary: isUnreadBoundary
         )
     }
 
@@ -587,61 +488,29 @@ extension AppModel {
                 errorMessage = "That message could not be found in the linked channel."
                 return
             }
-            messageNavigationRequestID &+= 1
-            messageNavigationRequest = MessageNavigationRequest(
-                requestID: messageNavigationRequestID,
-                channelID: channel.id,
-                messageID: landingID,
-                glides: wasShowingMessage
-            )
+            requestMessageNavigation(channelID: channel.id, messageID: landingID, glides: wasShowingMessage)
         }
     }
 
-    /// Replaces the selected channel's window with one `around` a message.
-    /// Returns false when the selection changed or the read failed.
-    func loadSelectedMessageWindow(
-        around messageID: MessageID,
-        channelID: ChannelID,
-        session: AppModelAccountSession
-    ) async -> Bool {
-        // Gateway edits and deletions that land while the read is in flight
-        // are replayed onto its older response.
-        let refreshRevision = beginScopedConversationRefresh(in: channelID)
-        defer { endScopedConversationRefresh(refreshRevision) }
-        do {
-            let page = try await session.provider.messages(
-                in: channelID,
-                anchoredAt: .around(messageID),
-                limit: DiscordHistoryFetchLimit.aroundLimit
-            )
-            guard !Task.isCancelled,
-                  isCurrentAccountSession(session),
-                  selectedChannelID == channelID
-            else { return false }
-            // Unconfirmed sends keep their rows, including failed ones
-            // awaiting Retry or Discard, whichever window is presented.
-            replaceSelectedMessages(with: Self.merging(
-                current: messages.filter { $0.outboxState != .confirmed },
-                fresh: Self.applyingConversationRefreshMutations(
-                    scopedConversationRefreshMutations(refreshRevision),
-                    to: page.messages,
-                    within: MessageHistorySpan(page: page)
-                )
-            ))
-            hasMoreMessages = page.hasMoreBefore
-            hasMoreLaterMessages = page.hasMoreAfter
-            hasMoreCache[channelID] = page.hasMoreBefore
-            contiguousHistoryBoundaries[channelID] = nil
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            guard isCurrentAccountSession(session),
-                  selectedChannelID == channelID
-            else { return false }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            errorMessage = error.localizedDescription
-            return false
+    /// Opens what a mention names. User and role mentions open popovers
+    /// their view anchors, so those callers handle them.
+    func openMention(_ target: MentionTarget, fromMessageIn channelID: ChannelID?) {
+        switch target {
+        case .unresolved, .user, .role:
+            return
+        case let .game(id):
+            presentedProfileGame = gameMentions.gamesByID[id]
+        case let .command(id, name):
+            guard let channelID = channelID ?? selectedChannelID else { return }
+            startCommandMention(id: id, name: name, in: channelID)
+        case let .guildNavigation(guildID, destination):
+            openGuildNavigationDestination(destination, in: guildID)
+        case let .channel(id):
+            navigate(to: id)
+        case let .linkedChannel(guildID, channelID):
+            navigate(to: guildID, linkedChannelID: channelID)
+        case let .message(guildID, channelID, messageID):
+            navigate(to: guildID, channelID: channelID, messageID: messageID)
         }
     }
 
@@ -812,31 +681,6 @@ extension AppModel {
         }
     }
 
-    func restoreMemberPresentation(for guildID: GuildID?) {
-        let restoredGroups = guildID.flatMap { memberListGroupsByGuildID[$0] } ?? []
-        let restoredRoles = guildID.flatMap { guildRolesByGuildID[$0] } ?? []
-        let restoredMembersByID = (guildID.flatMap { membersByGuildID[$0] } ?? [:]).mapValues(memberWithCurrentStatus)
-        let restoredMembers = membersWithCurrentStatus(guildID.flatMap { memberListsByGuildID[$0] } ?? [])
-        let presentationChanged =
-            memberListGroups != restoredGroups
-            || guildRoles != restoredRoles
-            || members != restoredMembers
-
-        defersMemberPresentationRebuild = true
-        memberListGroups = restoredGroups
-        guildRoles = restoredRoles
-        membersByID = restoredMembersByID
-        members = restoredMembers
-        defersMemberPresentationRebuild = false
-
-        guard presentationChanged else { return }
-        rebuildMemberSections()
-        AppPerformanceSignposts.signposter.emitEvent(
-            "TimelineInvalidationGuildPresentationRestore"
-        )
-        invalidateTimelinePresentation()
-    }
-
     /// Without a remembered channel a server opens on the first channel its
     /// sidebar lists, so channels the user hid stay out of view.
     func defaultChannelID(among channels: [Channel], guildID: GuildID?) -> ChannelID? {
@@ -861,101 +705,5 @@ extension AppModel {
             }
         }
         return textChannels.first?.id ?? channels.first?.id
-    }
-
-    func beginMemberLoad(for guildID: GuildID?) {
-        memberLoadTask?.cancel()
-        memberLoadGeneration &+= 1
-        let requestGeneration = memberLoadGeneration
-        let session = accountSession()
-        let requestProvider = session.provider
-        memberLoadTask = Task { [weak self] in
-            guard let self, !Task.isCancelled else { return }
-            defer {
-                if isCurrentAccountSession(session),
-                   memberLoadGeneration == requestGeneration
-                {
-                    memberLoadTask = nil
-                }
-            }
-            do {
-                let timeoutRevision = guildID.map { onboarding.timeoutRevisions[$0, default: 0] }
-                var value = try await AppPerformanceSignposts.measure(
-                    "MemberListInitialRequest"
-                ) {
-                    try await requestProvider.members(in: guildID)
-                }
-                guard !Task.isCancelled,
-                      isCurrentAccountSession(session),
-                      memberLoadGeneration == requestGeneration,
-                      selectedGuildID == guildID
-                else { return }
-                if let guildID,
-                   onboarding.timeoutRevisions[guildID, default: 0] != timeoutRevision,
-                   let index = value.firstIndex(where: { $0.id == currentUser?.id }) {
-                    // A live membership update can overtake this snapshot.
-                    // Preserve its timeout in both the self and list stores.
-                    value[index].communicationDisabledUntil = onboarding.members[guildID]?.communicationDisabledUntil
-                }
-                let processedMembers = membersWithCurrentStatus(value)
-                AppPerformanceSignposts.measureSync(
-                    "MemberListInitialPublication"
-                ) {
-                    if let guildID {
-                        memberListsByGuildID[guildID] = processedMembers
-                        if let loadedMember = processedMembers.first(where: { $0.id == currentUser?.id }) {
-                            // Initial list hydration supplies timeout evidence;
-                            // keep the existing onboarding/role state authoritative.
-                            var member = onboarding.members[guildID] ?? loadedMember
-                            member.communicationDisabledUntil = loadedMember.communicationDisabledUntil
-                            receiveOnboardingMember(member, guildID: guildID)
-                        }
-                    }
-                    members = processedMembers
-                    // Keep the pre-subscription GuildMemberStore snapshot for
-                    // composer search. Full member-list subscriptions feed the
-                    // inspector, but Discord does not use their visual list order
-                    // as autocomplete's candidate store.
-                    mentionAutocompleteMembers = processedMembers
-                }
-                if let guildID {
-                    await replayMemberListViewportIfNeeded(
-                        for: guildID,
-                        account: session
-                    )
-                }
-                if let guildID {
-                    let roles = try? await AppPerformanceSignposts.measure(
-                        "MemberListRoleRequest"
-                    ) {
-                        try await requestProvider.roles(in: guildID)
-                    }
-                    if let roles,
-                       !Task.isCancelled,
-                       isCurrentAccountSession(session),
-                       memberLoadGeneration == requestGeneration,
-                       selectedGuildID == guildID
-                    {
-                        applyGuildRoles(roles, to: guildID)
-                    }
-                } else {
-                    guildRoles = []
-                }
-            } catch {
-                guard !Task.isCancelled,
-                      isCurrentAccountSession(session),
-                      memberLoadGeneration == requestGeneration,
-                      selectedGuildID == guildID
-                else { return }
-                members =
-                    snapshot.map {
-                        [Member(user: $0.currentUser, roleName: "You", status: currentStatus)]
-                    }
-                    ?? []
-                if guildID == nil {
-                    guildRoles = []
-                }
-            }
-        }
     }
 }

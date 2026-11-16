@@ -227,7 +227,7 @@ public protocol ChatProvider: Sendable {
     /// Stores a staged file before its message is sent; returns whether
     /// storage accepted it. Its message then posts it as it is.
     func preuploadAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async -> Bool
@@ -881,7 +881,7 @@ public extension ChatProvider {
     func cancelAttachmentUpload(_ attachmentID: UUID) async -> Bool { false }
 
     func preuploadAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async -> Bool { false }
@@ -1377,5 +1377,27 @@ public extension ChatProvider {
     }
     func refreshAttachmentURL(_ url: URL) async throws -> URL? {
         throw ChatProviderError.invalidRequest("Opening attachment links is unavailable.")
+    }
+
+    func scheduledMessages() async throws -> [ScheduledMessage] { [] }
+
+    func scheduleMessage(_ draft: SendMessageDraft, at date: Date) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func rescheduleMessage(_ id: ScheduledMessageID, at date: Date) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func editScheduledMessage(_ id: ScheduledMessageID, content: String, flags: MessageFlags) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func sendScheduledMessageNow(_ id: ScheduledMessageID) async throws {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func cancelScheduledMessage(_ id: ScheduledMessageID) async throws {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
     }
 }

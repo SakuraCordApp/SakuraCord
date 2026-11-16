@@ -77,11 +77,7 @@ public extension DiscordRESTProvider {
             var body: [String: JSONValue] = ["session_id": .string(sessionID)]
             if let guildID { body["guild_id"] = .string(guildID.description) }
             try Task.checkCancellation()
-            let (data, response) = try await perform(
-                "/activities/\(channelID)/\(applicationID)", method: "POST", query: [], body: body,
-                maximumAttempts: 1
-            )
-            guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
+            try await requestEmpty("/activities/\(channelID)/\(applicationID)", method: "POST", body: body)
             return
         }
         let invocation = ApplicationCommandInvocation(command: command, channelID: channelID, guildID: guildID, values: [])
@@ -102,7 +98,7 @@ public extension DiscordRESTProvider {
         if let shelfSection { body["section_name"] = .string(shelfSection) }
         // A launch superseded while its command was looked up stops here.
         try Task.checkCancellation()
-        let (data, response) = try await perform("/interactions", method: "POST", query: [], body: body)
+        let (data, response) = try await perform("/interactions", method: "POST", body: body)
         guard response.statusCode == 204 else { throw interactionTransportError(data, response) }
     }
 
@@ -110,10 +106,7 @@ public extension DiscordRESTProvider {
         let sessionID = try await interactionSessionID()
         let path = "/applications/\(instance.applicationID)/activities/\(instance.location.id)"
             + "/instances/\(instance.instanceID)/leave"
-        let (data, response) = try await perform(
-            path, method: "POST", query: [], body: ["session_id": .string(sessionID)], maximumAttempts: 1
-        )
-        guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
+        try await requestEmpty(path, method: "POST", body: ["session_id": .string(sessionID)])
     }
 
     /// A short-lived ticket that authenticates the Activity to Discord's proxy.
@@ -133,7 +126,7 @@ public extension DiscordRESTProvider {
     ) async throws -> EmbeddedActivityAuthorizationPreview {
         // The official client reads the developer's disclosures first.
         let disclosures: ActivityDisclosuresDTO = try await request("/applications/\(authorization.applicationID)/disclosures")
-        let preview: ActivityAuthorizationPreviewDTO = try await request(
+        let preview: OAuth2AuthorizationPreviewDTO = try await request(
             "/oauth2/authorize",
             query: Self.authorizationQuery(authorization) + [URLQueryItem(name: "integration_type", value: "1")]
         )
@@ -152,11 +145,10 @@ public extension DiscordRESTProvider {
     func acknowledgeEmbeddedActivityDisclosures(
         _ disclosures: [EmbeddedActivityDisclosure], applicationID: ApplicationID
     ) async throws {
-        let (data, response) = try await perform(
-            "/applications/\(applicationID)/disclosures", method: "POST", query: [],
-            body: ["disclosures": .array(disclosures.map { .number(Double($0.rawValue)) })], maximumAttempts: 1
+        try await requestEmpty(
+            "/applications/\(applicationID)/disclosures", method: "POST",
+            body: ["disclosures": .array(disclosures.map { .number(Double($0.rawValue)) })]
         )
-        guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
     }
 
     /// Grants the Activity an authorization code, or records the person's
@@ -167,10 +159,8 @@ public extension DiscordRESTProvider {
         granted: Bool
     ) async throws -> String {
         let items = try await postAuthorization(authorization, granted: granted)
-        guard granted, items.first(where: { $0.name == "state" })?.value == authorization.state,
-              let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty
-        else { throw OAuth2AuthorizationError.unexpectedResponse }
-        return code
+        guard granted else { throw OAuth2AuthorizationError.unexpectedResponse }
+        return try Self.oauth2AuthorizationCode(in: items, state: authorization.state)
     }
 
     /// The scopes Discord asks a person to grant before it launches an
@@ -211,21 +201,14 @@ public extension DiscordRESTProvider {
             ]),
         ]
         if !granted { body["permissions"] = .string("0") }
-        let (data, response) = try await perform(
+        let authorized: OAuth2AuthorizationLocationDTO = try await request(
             "/oauth2/authorize",
             method: "POST",
             query: Self.authorizationQuery(authorization),
-            body: body,
-            maximumAttempts: 1
+            body: body
         )
-        let authorized: ActivityAuthorizationLocationDTO = try decodedResponse(
-            data, response, method: "POST", path: "/oauth2/authorize"
-        )
-        let items = URLComponents(string: authorized.location)?.queryItems ?? []
-        if let error = items.first(where: { $0.name == "error" })?.value {
-            throw OAuth2AuthorizationError.denied(items.first { $0.name == "error_description" }?.value ?? error)
-        }
-        return items
+        // Unlike app sign-in, Activities don't name a redirect to check the host against.
+        return try Self.oauth2RedirectItems(URLComponents(string: authorized.location))
     }
 
     /// Validates an Activity's OAuth access token for its own application and
@@ -235,7 +218,7 @@ public extension DiscordRESTProvider {
         accessToken: String
     ) async throws -> JSONValue {
         let (data, response) = try await perform(
-            "/oauth2/@me", method: "GET", query: [], body: nil,
+            "/oauth2/@me", method: "GET",
             headers: ["Authorization": "Bearer \(accessToken)"]
         )
         guard (200 ..< 300).contains(response.statusCode),
@@ -251,12 +234,10 @@ public extension DiscordRESTProvider {
     }
 
     private static func authorizationQuery(_ authorization: EmbeddedActivityAuthorizationRequest) -> [URLQueryItem] {
-        var query = [
-            URLQueryItem(name: "client_id", value: authorization.applicationID.description),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: authorization.scopes.joined(separator: " ")),
-        ]
-        if let state = authorization.state { query.append(URLQueryItem(name: "state", value: state)) }
+        var query = oauth2AuthorizeQuery(
+            clientID: authorization.applicationID.description, redirectURI: nil,
+            scopes: authorization.scopes, state: authorization.state
+        )
         if let challenge = authorization.codeChallenge {
             query.append(URLQueryItem(name: "code_challenge", value: challenge))
             query.append(URLQueryItem(name: "code_challenge_method", value: authorization.codeChallengeMethod ?? "S256"))
@@ -327,16 +308,6 @@ private struct ProxyTicketDTO: Decodable {
     let ticket: String
 }
 
-private struct ActivityAuthorizationPreviewDTO: Decodable {
-    struct Application: Decodable {
-        let id: String
-        let name: String
-    }
-
-    let application: Application
-    let authorized: Bool?
-}
-
 private struct ActivityDisclosuresDTO: Decodable {
     let disclosures: [Int]
     let ackedDisclosures: [Int]
@@ -345,10 +316,6 @@ private struct ActivityDisclosuresDTO: Decodable {
         case disclosures
         case ackedDisclosures = "acked_disclosures"
     }
-}
-
-private struct ActivityAuthorizationLocationDTO: Decodable {
-    let location: String
 }
 
 private struct ActivityShelfDTO: Decodable {
@@ -388,10 +355,14 @@ private struct ActivityShelfDTO: Decodable {
             case isMonetized = "is_monetized"
         }
 
+        /// The application CONTEXTLESS_ACTIVITY flag, in `flags_new`.
+        private static let contextlessActivityFlag: UInt64 = 1 << 9
+
         /// The client's test for a contextless Activity: the
         /// CONTEXTLESS_ACTIVITY flag and the main embedded surface.
         var isContextless: Bool {
-            extendedFlags.flatMap(UInt64.init).map { $0 & 1 << 9 != 0 } == true && embeddedSurfaces?.contains(0) == true
+            extendedFlags.flatMap(UInt64.init).map { $0 & Self.contextlessActivityFlag != 0 } == true
+                && embeddedSurfaces?.contains(0) == true
         }
     }
 
@@ -435,13 +406,13 @@ private struct ActivityShelfDTO: Decodable {
                       let id = ApplicationID(application.id) else { return nil }
                 // Discord keys assets by name, so the last of a repeated name wins.
                 let cover = assets?[application.id]?.elements.last { $0.name == "embedded_cover" }
-                    .flatMap { URL(string: "https://cdn.discordapp.com/app-assets/\(id)/\($0.id).png?size=512") }
-                    ?? application.coverImage.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=512") }
+                    .flatMap { DiscordCDN.applicationAsset(id.description, assetID: $0.id, fileExtension: "png", size: 512) }
+                    ?? application.coverImage.flatMap { DiscordCDN.applicationImage(id, image: $0, size: 512) }
                 return EmbeddedActivityApplication(
                     id: id,
                     name: application.name,
                     description: application.description ?? "",
-                    iconURL: application.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=128") },
+                    iconURL: application.icon.flatMap { DiscordCDN.applicationImage(id, image: $0, size: 128) },
                     coverURL: cover,
                     tags: application.tags ?? [],
                     maximumParticipants: application.maxParticipants.flatMap { $0 > 0 ? $0 : nil },

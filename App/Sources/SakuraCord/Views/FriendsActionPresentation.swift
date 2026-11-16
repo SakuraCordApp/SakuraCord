@@ -1,3 +1,4 @@
+import SakuraCordModels
 import SwiftUI
 
 /// Relationship dialogs belong to the workspace, regardless of the initiating surface.
@@ -28,19 +29,19 @@ struct FriendsActionPresentation: ViewModifier {
             cornerStyle: .circular
         ) { RelationshipConfirmationView(model: model, presentation: $0) }
         .alert(
-            confirmationTitle(alertConfirmation),
+            alertConfirmation?.alert.title ?? "",
             isPresented: Binding(
                 get: { alertConfirmation != nil },
                 set: { if !$0, alertConfirmation != nil { friends.confirmation = nil } }
             ),
             presenting: alertConfirmation
-        ) { confirmation in
-            Button(confirmationAction(confirmation), role: confirmationRole(confirmation)) {
-                model.confirmFriendsAction(confirmation)
+        ) { presented in
+            Button(presented.alert.action, role: presented.alert.role) {
+                model.confirmFriendsAction(presented.confirmation)
             }
             Button("Cancel", role: .cancel) { friends.confirmation = nil }
-        } message: { confirmation in
-            Text(confirmationMessage(confirmation))
+        } message: { presented in
+            Text(presented.alert.message)
         }
         .alert("An ignored account is in this call", isPresented: Binding(
             get: { model.ignoredUsers.voiceWarning != nil },
@@ -75,42 +76,38 @@ struct FriendsActionPresentation: ViewModifier {
         }
     }
 
-    /// Ignore and Block use the relationship modal; the remaining confirmations stay alerts.
-    private var alertConfirmation: FriendsConfirmation? {
-        RelationshipConfirmationPresentation(model.friends.confirmation) == nil ? model.friends.confirmation : nil
-    }
-
-    // Official stable633029 copy for removal.
-    private func confirmationTitle(_ confirmation: FriendsConfirmation?) -> String {
-        switch confirmation {
-        case .removeFriend(let user): "Remove ‘\(model.friendDisplayName(user))’"
-        case .acceptStranger: "Accept Friend Request?"
-        case .block, .ignore, nil: ""
+    private var alertConfirmation: (confirmation: FriendsConfirmation, alert: FriendsConfirmation.Alert)? {
+        model.friends.confirmation.flatMap { confirmation in
+            confirmation.alert(name: model.friendDisplayName).map { (confirmation, $0) }
         }
     }
+}
 
-    private func confirmationMessage(_ confirmation: FriendsConfirmation) -> String {
-        switch confirmation {
+private extension FriendsConfirmation {
+    struct Alert {
+        let title: String
+        let message: String
+        let action: String
+        let role: ButtonRole?
+    }
+
+    /// The confirmations that stay alerts; Ignore and Block use the
+    /// relationship modal. Official stable633029 copy for removal.
+    func alert(name: (User) -> String) -> Alert? {
+        switch self {
         case .removeFriend(let user):
-            "Are you sure you want to remove \(model.friendDisplayName(user)) from your friends?"
+            Alert(
+                title: "Remove ‘\(name(user))’",
+                message: "Are you sure you want to remove \(name(user)) from your friends?",
+                action: "Remove Friend", role: .destructive
+            )
         case .acceptStranger(let user):
-            "Discord wants you to confirm that you know \(model.friendDisplayName(user)) before accepting their request."
-        case .block, .ignore: ""
-        }
-    }
-
-    private func confirmationAction(_ confirmation: FriendsConfirmation) -> String {
-        switch confirmation {
-        case .removeFriend: "Remove Friend"
-        case .acceptStranger: "Accept"
-        case .block, .ignore: ""
-        }
-    }
-
-    private func confirmationRole(_ confirmation: FriendsConfirmation) -> ButtonRole? {
-        switch confirmation {
-        case .removeFriend: .destructive
-        case .acceptStranger, .block, .ignore: nil
+            Alert(
+                title: "Accept Friend Request?",
+                message: "Discord wants you to confirm that you know \(name(user)) before accepting their request.",
+                action: "Accept", role: nil
+            )
+        case .block, .ignore: nil
         }
     }
 }

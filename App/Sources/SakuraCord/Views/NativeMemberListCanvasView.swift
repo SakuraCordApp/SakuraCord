@@ -154,12 +154,6 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let opacity: CGFloat
     }
 
-    struct AvatarOverlayPresentation {
-        let id: ItemID
-        let member: Member
-        let index: Int
-    }
-
     struct AvatarOverlayConfiguration: Equatable {
         let member: Member
         let isHovered: Bool
@@ -167,9 +161,9 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let opacity: CGFloat
     }
 
-    struct ActivityEmojiOverlayPresentation {
-        let id: ActivityEmojiOverlayID
-        let configuration: ActivityEmojiOverlayConfiguration
+    struct OverlayHostPresentation<ID: Hashable, Configuration: Equatable> {
+        let id: ID
+        let configuration: Configuration
         let frame: CGRect
     }
 
@@ -177,7 +171,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let avatarURL = member.guildAvatarURL ?? member.user.avatarURL
         return member.user.avatarDecorationURL != nil
             || avatarURL.map(
-                NativeTimelineAvatarPresentation.shouldDecodeAnimation
+                UserAvatarPresentation.shouldDecodeAnimation
             ) == true
     }
 
@@ -245,7 +239,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     var rowOverlay: NSHostingView<AnyView>?
     var rowForegroundOverlay: NativeMemberForegroundOverlayView?
     var rowOverlayIndex: Int?
-    let memberHoverTicker = NativeTimelineDisplayLinkTicker()
+    let memberHoverTicker = DisplayLinkTicker()
     var profileAnchorIndex: Int?
     let profilePopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()

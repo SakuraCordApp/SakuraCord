@@ -223,8 +223,7 @@ extension AppModel {
         nonce: String, channelID: ChannelID, application: ApplicationCommandApplication,
         commandName: String?, message text: String, isFailure: Bool = true
     ) {
-        let guildID = visibleChannels.first { $0.id == channelID }?.guildID
-            ?? snapshot?.channels.first { $0.id == channelID }?.guildID
+        let guildID = knownRootChannel(channelID)?.guildID
         appendOutgoingMessage(interactionLocalMessage(
             InteractionRowOrigin(
                 nonce: nonce, channelID: channelID, guildID: guildID,
@@ -237,25 +236,14 @@ extension AppModel {
     private func mutateInteractionPlaceholder(
         nonce: String, channelID: ChannelID, _ change: (inout Message) -> Bool
     ) {
-        if openThread?.id == channelID,
-           let index = threadMessages.firstIndex(where: { $0.nonce == nonce })
-        {
-            var message = threadMessages[index]
-            if change(&message) { threadMessages[index] = message }
-            return
-        }
-        if selectedChannelID == channelID,
-           let index = messages.firstIndex(where: { $0.nonce == nonce })
-        {
-            var message = messages[index]
-            guard change(&message) else { return }
-            replaceSelectedMessage(message, at: index)
-            return
-        }
-        guard var cached = messageCache[channelID],
-              let index = cached.firstIndex(where: { $0.nonce == nonce })
+        guard var found = outgoingMessage(in: channelID, where: { $0.nonce == nonce }),
+              change(&found.message)
         else { return }
-        if change(&cached[index]) { messageCache[channelID] = cached }
+        switch found.slot {
+        case let .thread(index): threadMessages[index] = found.message
+        case let .selected(index): replaceSelectedMessage(found.message, at: index)
+        case let .cached(index): messageCache[channelID]?[index] = found.message
+        }
     }
 
     private func interactionLocalMessage(
@@ -317,35 +305,28 @@ extension AppModel {
         let fileURLs = form.fileURLs
         startAccountChildTask(account: session) { [weak self] _, session in
             guard let self else { return }
-            let uploadsFiles = !fileURLs.isEmpty
-            if uploadsFiles { activeAttachmentUploadCount += 1 }
-            defer { if uploadsFiles { activeAttachmentUploadCount -= 1 } }
-            beginUsingOwnedPromisedFiles(fileURLs)
-            let scoped = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
-            defer {
-                scoped.forEach { $0.stopAccessingSecurityScopedResource() }
-                endUsingOwnedPromisedFiles(fileURLs)
-            }
-            do {
-                try await session.provider.submitModal(submission)
-                guard isCurrentAccountSession(session) else { return }
-                startInteractionDeadline(nonce: submission.nonce)
-                form.finishSubmitting(rejection: nil)
-                // An accepted submission closes the form; the response follows separately.
-                if interactionModalForm === form { interactionModalForm = nil }
-            } catch let rejection as ModalSubmissionRejection {
-                guard isCurrentAccountSession(session) else { return }
-                _ = finishPendingInteraction(submission.nonce)
-                guard interactionModalForm === form else { return }
-                form.finishSubmitting(rejection: rejection)
-            } catch {
-                guard isCurrentAccountSession(session) else { return }
-                // Gateway failure can settle the record before transport throws.
-                // The still-present form must recover independently of that record.
-                _ = finishPendingInteraction(submission.nonce)
-                guard interactionModalForm === form else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                form.failSubmitting("Something went wrong. Try again.")
+            await withAttachmentFileAccess(fileURLs) {
+                do {
+                    try await session.provider.submitModal(submission)
+                    guard isCurrentAccountSession(session) else { return }
+                    startInteractionDeadline(nonce: submission.nonce)
+                    form.finishSubmitting(rejection: nil)
+                    // An accepted submission closes the form; the response follows separately.
+                    if interactionModalForm === form { interactionModalForm = nil }
+                } catch let rejection as ModalSubmissionRejection {
+                    guard isCurrentAccountSession(session) else { return }
+                    _ = finishPendingInteraction(submission.nonce)
+                    guard interactionModalForm === form else { return }
+                    form.finishSubmitting(rejection: rejection)
+                } catch {
+                    guard isCurrentAccountSession(session) else { return }
+                    // Gateway failure can settle the record before transport throws.
+                    // The still-present form must recover independently of that record.
+                    _ = finishPendingInteraction(submission.nonce)
+                    guard interactionModalForm === form else { return }
+                    DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+                    form.failSubmitting("Something went wrong. Try again.")
+                }
             }
         }
     }

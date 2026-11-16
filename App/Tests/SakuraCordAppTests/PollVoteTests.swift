@@ -319,7 +319,7 @@ func `poll result fetch preserves updates received while awaiting history`(scena
     #expect(await provider.pollResultRequests == (scenario.finalizes ? 1 : 2))
 }
 
-private actor PollVoteTestProvider: ChatProvider {
+private actor PollVoteTestProvider: ChatProviderStub {
     private let user = User(id: UserID(rawValue: 99_001), username: "poll-tester", displayName: "Poll Tester")
     private let channel = Channel(id: ChannelID(rawValue: 99_002), guildID: nil, name: "poll-tests")
     private var recordedRequests: [[Int]] = []
@@ -340,14 +340,6 @@ private actor PollVoteTestProvider: ChatProvider {
     }
 
     func channels(in guildID: GuildID?) async throws -> [Channel] { [channel] }
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
 
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
         let poll = MessagePoll(question: "Lunch?", answers: [.init(id: 1, text: "Pizza"), .init(id: 2, text: "Sushi")],
@@ -375,10 +367,6 @@ private actor PollVoteTestProvider: ChatProvider {
     func resumeHistory(_ page: MessagePage) {
         historyContinuation?.resume(returning: page)
         historyContinuation = nil
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
     func inboxMentions(_ query: InboxMentionQuery, before: MessageID?) async throws -> InboxMentionPage {
@@ -431,13 +419,6 @@ private actor PollVoteTestProvider: ChatProvider {
         let page = try await messages(in: channelID, before: nil, limit: limit)
         return PinnedMessagePage(items: page.messages.map { PinnedMessage(pinnedAt: .now, message: $0) }, hasMore: false)
     }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
 
     func setReaction(_ emoji: String, reacted: Bool, messageID: MessageID, channelID: ChannelID) async throws {
         recordedReactions.append(reacted)

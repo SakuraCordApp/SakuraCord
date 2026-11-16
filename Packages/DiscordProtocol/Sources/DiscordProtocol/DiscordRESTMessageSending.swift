@@ -64,7 +64,7 @@ extension DiscordRESTProvider {
             ])
         } else if !draft.attachmentURLs.isEmpty {
             body["attachments"] = try await .array(
-                uploadForumAttachments(
+                uploadStagedAttachments(
                     draft.attachments,
                     channelID: draft.channelID,
                     progress: progress
@@ -83,7 +83,6 @@ extension DiscordRESTProvider {
         let (data, response) = try await perform(
             path,
             method: "POST",
-            query: [],
             body: body,
             headers: ["X-Context-Properties": draft.contextHeader],
             maximumAttempts: Self.maximumMessageSendAttempts
@@ -111,7 +110,7 @@ extension DiscordRESTProvider {
     /// Discord's voice message: its recorder's numbered file, with duration
     /// and waveform on the shared attachment entry.
     func uploadVoiceMessage(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         metadata: VoiceMessageMetadata,
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void

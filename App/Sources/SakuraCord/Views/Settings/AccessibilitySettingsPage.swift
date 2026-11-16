@@ -153,7 +153,7 @@ struct AccessibilitySettingsPage: View {
     }
 
     private func resetPreferences() {
-        SettingsPreferenceStore.shared.reset(scope: .appWide, page: .accessibility)
+        SettingsPreferenceStore.shared.reset(page: .accessibility)
         value = AccessibilitySettingsStore.shared.load()
         model.applyAccessibilitySettings(value, persists: false)
     }

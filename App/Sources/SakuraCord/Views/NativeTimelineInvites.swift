@@ -4,33 +4,14 @@ import SakuraCordModels
 extension NativeMessageTimelineCoordinator {
     func refreshServerInvites(_ reference: ServerInviteReference?) {
         guard let canvas, let scrollView, layoutWidth > 0 else { return }
-        let matches: (NativeMessageTimelineItem) -> Bool = { item in
-            guard let row = item.messageRow, !row.serverInvites.isEmpty || row.message.hasActivityInstance else { return false }
-            return reference.map { row.serverInvites.contains($0) } ?? true
-        }
-        cachedItemLayouts = cachedItemLayouts.filter { !matches($0.value.item) }
-        let wasNearBottom = scrollState().isNearBottom
-        let anchor = visibleAnchor()
-        var changed = IndexSet()
-        var changesHeight = false
-        for index in items.indices where matches(items[index]) {
-            let newLayout = layout(for: items[index], width: layoutWidth)
-            changesHeight = changesHeight || abs(newLayout.height - rowHeights[index]) > 0.5
-            layouts[index] = newLayout
-            rowHeights[index] = newLayout.height
-            canvas.invalidateBitmap(items[index].identifier)
-            canvas.accessibilityProxies.remove(items[index].identifier)
-            changed.insert(index)
-        }
-        guard !changed.isEmpty else { return }
-        if changesHeight { rebuildOrigins() }
-        applySnapshot(to: canvas, in: scrollView)
-        if changesHeight {
-            canvas.invalidateVisibleContent()
-            if wasNearBottom { _ = scroll(to: .bottom, in: scrollView) } else if let anchor { restore(anchor) }
-        } else {
-            canvas.invalidateRows(changed)
-        }
+        relayRows(
+            where: { item in
+                guard let row = item.messageRow, !row.serverInvites.isEmpty || row.message.hasActivityInstance else { return false }
+                return reference.map { row.serverInvites.contains($0) } ?? true
+            },
+            on: canvas, in: scrollView,
+            layout: { layout(for: $0, width: layoutWidth) }
+        )
     }
 }
 

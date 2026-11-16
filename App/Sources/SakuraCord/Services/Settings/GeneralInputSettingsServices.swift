@@ -1,14 +1,25 @@
 import AppKit
 
 nonisolated struct GeneralInputSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self()
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
-    var sendsWithReturn = true
-    var checksSpelling = false
-    var correctsSpellingAutomatically = false
-    var usesSmartQuotes = false
-    var usesSmartDashes = false
-    var emojiSkinTone: NativeEmojiSkinTone = .standard
+    var sendsWithReturn: Bool
+    var checksSpelling: Bool
+    var correctsSpellingAutomatically: Bool
+    var usesSmartQuotes: Bool
+    var usesSmartDashes: Bool
+    var emojiSkinTone: NativeEmojiSkinTone
+}
+
+nonisolated extension GeneralInputSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        sendsWithReturn = value(.sendWithReturn).boolValue
+        checksSpelling = value(.spellCheck).boolValue
+        correctsSpellingAutomatically = value(.automaticCorrection).boolValue
+        usesSmartQuotes = value(.smartQuotes).boolValue
+        usesSmartDashes = value(.smartDashes).boolValue
+        emojiSkinTone = value(.emojiSkinTone).rawValue()
+    }
 }
 
 @MainActor
@@ -31,27 +42,7 @@ final class GeneralInputSettingsStore {
     }
 
     func load() -> GeneralInputSettingsSnapshot {
-        var value = GeneralInputSettingsSnapshot.defaults
-        if case let .bool(saved) = preferences.value(for: .sendWithReturn) {
-            value.sendsWithReturn = saved
-        }
-        if case let .bool(saved) = preferences.value(for: .spellCheck) {
-            value.checksSpelling = saved
-        }
-        if case let .bool(saved) = preferences.value(for: .automaticCorrection) {
-            value.correctsSpellingAutomatically = saved
-        }
-        if case let .bool(saved) = preferences.value(for: .smartQuotes) {
-            value.usesSmartQuotes = saved
-        }
-        if case let .bool(saved) = preferences.value(for: .smartDashes) {
-            value.usesSmartDashes = saved
-        }
-        if case let .string(saved) = preferences.value(for: .emojiSkinTone),
-           let tone = NativeEmojiSkinTone(rawValue: saved) {
-            value.emojiSkinTone = tone
-        }
-        return value
+        GeneralInputSettingsSnapshot { preferences.value(for: $0) }
     }
 
     func save(_ value: GeneralInputSettingsSnapshot) {

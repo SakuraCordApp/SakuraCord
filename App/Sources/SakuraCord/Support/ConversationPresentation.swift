@@ -17,82 +17,6 @@ nonisolated enum ConversationAccess: Equatable, Sendable {
     }
 }
 
-nonisolated enum ForwardDestinationPermissionPolicy {
-    static func canSearchChannel(
-        _ channel: Channel,
-        permissions: UInt64?
-    ) -> Bool {
-        guard AppModel.supportsForwardSearchCandidate(channel.kind) else {
-            return false
-        }
-        guard channel.kind != .groupDirectMessage else { return true }
-        guard let permissions else {
-            // Discord's queryChannels path requires the resolved vocal
-            // `accessPermissions` value to contain CONNECT before the row can
-            // enter either raw channel category. Do not turn missing guild
-            // role/member state into connect access.
-            if channel.kind == .voice { return false }
-            return channel.permissionOverwrites?.isEmpty != false
-        }
-        var required = DiscordPermissionBits.viewChannel
-        if channel.kind == .voice {
-            required |= DiscordPermissionBits.connect
-        }
-        return permissions & required == required
-    }
-
-    static func canUseChannel(
-        _ channel: Channel,
-        permissions: UInt64?
-    ) -> Bool {
-        guard AppModel.supportsForwardDestination(channel.kind) else {
-            return false
-        }
-        guard channel.kind != .groupDirectMessage else {
-            return !channel.isOfficialSystemDirectMessage
-        }
-        guard canSearchChannel(channel, permissions: permissions) else {
-            return false
-        }
-        guard let permissions else {
-            return channel.permissionOverwrites?.isEmpty != false
-        }
-        let required = DiscordPermissionBits.viewChannel
-            | DiscordPermissionBits.sendMessages
-        return permissions & required == required
-    }
-
-    static func canSearchThread(
-        parent: Channel,
-        permissions: UInt64?
-    ) -> Bool {
-        guard parent.kind == .text
-            || parent.kind == .announcement
-            || parent.kind == .forum
-        else { return false }
-        guard let permissions else {
-            return parent.permissionOverwrites?.isEmpty != false
-        }
-        return permissions & DiscordPermissionBits.viewChannel != 0
-    }
-
-    static func canUseThread(
-        parent: Channel,
-        permissions: UInt64?
-    ) -> Bool {
-        guard parent.kind == .text
-            || parent.kind == .announcement
-            || parent.kind == .forum
-        else { return false }
-        guard let permissions else {
-            return parent.permissionOverwrites?.isEmpty != false
-        }
-        let required = DiscordPermissionBits.viewChannel
-            | DiscordPermissionBits.sendMessages
-        return permissions & required == required
-    }
-}
-
 nonisolated struct PermissionOverwritePrincipals: Sendable {
     let guildID: String
     let currentUserID: String
@@ -110,6 +34,12 @@ nonisolated struct PermissionOverwritePrincipals: Sendable {
 }
 
 nonisolated enum ChannelIconPresentation {
+    /// A thread's title symbol; a forum post shows the forum's conversation
+    /// bubbles.
+    static func threadSystemImage(isForumPost: Bool) -> String {
+        isForumPost ? "bubble.left.and.bubble.right.fill" : SakuraCordSystemSymbol.thread
+    }
+
     static func systemImage(
         for channel: Channel,
         isHidden: Bool,
@@ -248,27 +178,6 @@ nonisolated enum ConversationPermissionResolver {
             ),
             hasCurrentRoleIdentity: hasCurrentRoleIdentity,
             communicationDisabledUntil: currentMember?.communicationDisabledUntil
-        )
-    }
-
-    static func effectivePermissions(
-        guild: Guild,
-        channel: Channel,
-        currentUserID: UserID,
-        resolvedBasePermissions: UInt64?,
-        roleIDs: Set<RoleID>,
-        hasCurrentRoleIdentity: Bool
-    ) -> UInt64? {
-        effectivePermissions(
-            guild: guild,
-            channel: channel,
-            resolvedBasePermissions: resolvedBasePermissions,
-            overwritePrincipals: PermissionOverwritePrincipals(
-                guildID: guild.id,
-                currentUserID: currentUserID,
-                roleIDs: roleIDs
-            ),
-            hasCurrentRoleIdentity: hasCurrentRoleIdentity
         )
     }
 
@@ -544,19 +453,9 @@ nonisolated enum MessageTimelineSkeletonLayout {
             Int(ceil((availableHeight + rowSpacing) / (rowHeight + rowSpacing)))
         )
     }
-
-    static func coveredHeight(rowCount: Int) -> CGFloat {
-        verticalPadding
-            + CGFloat(max(0, rowCount)) * rowHeight
-            + CGFloat(max(0, rowCount - 1)) * rowSpacing
-    }
 }
 
 nonisolated enum ThreadTimelineLayoutPolicy {
-    static func minimumContentHeight(viewportHeight: CGFloat) -> CGFloat {
-        max(0, viewportHeight)
-    }
-
     static func showsFirstReplyDateSeparator(
         showsBeginning: Bool,
         starterDate: Date?,
@@ -565,5 +464,54 @@ nonisolated enum ThreadTimelineLayoutPolicy {
     ) -> Bool {
         guard showsBeginning, let starterDate else { return true }
         return !calendar.isDate(firstReplyDate, inSameDayAs: starterDate)
+    }
+}
+
+nonisolated struct ConversationPermissionBasis: Sendable {
+    let guild: Guild
+    let resolvedBasePermissions: UInt64?
+    let overwritePrincipals: PermissionOverwritePrincipals
+    let hasCurrentRoleIdentity: Bool
+    let currentUserIsPending: Bool
+    var currentUserCommunicationDisabledUntil: Date?
+    var currentUserRequiresOnboarding: Bool = false
+    var currentUserOnboardingIsKnown: Bool = true
+
+    func effectivePermissions(in channel: Channel) -> UInt64? {
+        ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            resolvedBasePermissions: resolvedBasePermissions,
+            overwritePrincipals: overwritePrincipals,
+            hasCurrentRoleIdentity: hasCurrentRoleIdentity,
+            communicationDisabledUntil: currentUserCommunicationDisabledUntil
+        )
+    }
+}
+
+nonisolated extension ConversationPermissionBasis {
+    /// The basis for the current user, as `member` when known, in `guild`.
+    /// Stored role IDs win over the member's, which may be stale.
+    init(guild: Guild, currentUserID: UserID, member: Member?, roles: [GuildRole], storedRoleIDs: Set<RoleID>?) {
+        let roleIDs = storedRoleIDs ?? Set(member?.roles.map(\.id) ?? [])
+        self.init(
+            guild: guild,
+            resolvedBasePermissions: guild.currentUserPermissions
+                ?? ConversationPermissionResolver.basePermissions(
+                    guildID: guild.id,
+                    roleIDs: roleIDs,
+                    roles: roles
+                ),
+            overwritePrincipals: PermissionOverwritePrincipals(
+                guildID: guild.id,
+                currentUserID: currentUserID,
+                roleIDs: roleIDs
+            ),
+            hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
+            currentUserIsPending: member?.isPending == true,
+            currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
+            currentUserRequiresOnboarding: guild.hasOnboarding && member?.requiresOnboarding == true,
+            currentUserOnboardingIsKnown: guild.isOnboardingStateKnown(for: member)
+        )
     }
 }

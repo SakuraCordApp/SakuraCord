@@ -13,11 +13,6 @@ enum MediaViewerActionService {
     /// or saves it.
     @MainActor static var resolveRemoteURL: (@MainActor (URL) async -> URL)?
 
-    static func copyText(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-    }
-
     static func copyImage(from url: URL) async throws {
         let data = try await SharedMediaDataLoader.shared.data(for: url)
         guard let image = NSImage(data: data) else {
@@ -93,10 +88,7 @@ enum MediaViewerActionService {
         return nil
     }
 
-    private static func savePanelDestination(
-        for item: RichMediaItem,
-        directory: URL? = nil
-    ) async -> URL? {
+    private static func savePanelDestination(for item: RichMediaItem) async -> URL? {
         let panel = NSSavePanel()
         panel.title = "Save Media"
         panel.prompt = "Save"
@@ -107,7 +99,6 @@ enum MediaViewerActionService {
             sourceURL: item.url,
             contentType: item.contentType
         )
-        panel.directoryURL = directory
         if let type = MediaViewerFilePolicy.contentType(
             title: item.title,
             sourceURL: item.url
@@ -204,15 +195,6 @@ nonisolated enum MediaViewerFilePolicy {
 }
 
 nonisolated enum MediaViewerDetails {
-    static func dimensions(_ item: RichMediaItem) -> String? {
-        guard let width = item.width,
-              let height = item.height,
-              width > 0,
-              height > 0
-        else { return nil }
-        return "\(width) × \(height) pixels"
-    }
-
     static func fileSize(_ item: RichMediaItem) -> String? {
         guard item.size > 0 else { return nil }
         return item.size.formatted(.byteCount(style: .file))

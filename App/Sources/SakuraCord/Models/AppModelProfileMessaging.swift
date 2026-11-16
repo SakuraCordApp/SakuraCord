@@ -18,10 +18,7 @@ extension AppModel {
             releaseProfileMessage(nonce: nonce)
             return true
         }
-        guard let reservation = composer.outbox.reserveSubmission(nonce: nonce) else {
-            composer.isSendQueueFullAlertPresented = true
-            return false
-        }
+        guard let reservation = reserveOutgoingQueueSubmission(nonce: nonce) else { return false }
         defer { composer.outbox.releaseSubmission(reservation) }
         composer.outbox.retainReceipt(nonce: nonce)
         let session = accountSession()
@@ -33,10 +30,7 @@ extension AppModel {
                 channel = try await session.provider.ensurePrivateChannel(for: userID)
             }
             guard !Task.isCancelled, isCurrentAccountSession(session) else { return false }
-            if snapshot?.channels.contains(where: { $0.id == channel.id }) == false {
-                snapshot?.channels.append(channel)
-                forwardSearchSourceRevision &+= 1
-            }
+            mergeOpenedPrivateChannel(channel)
             if outgoingState(nonce: nonce, channelID: channel.id) == .confirmed {
                 releaseProfileMessage(nonce: nonce)
                 return true

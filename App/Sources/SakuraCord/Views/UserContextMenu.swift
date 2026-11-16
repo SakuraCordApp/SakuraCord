@@ -22,14 +22,11 @@ enum UserContextMenu {
 
     static func items(_ actions: [UserMenuAction]) -> [NSMenuItem] {
         actions.map { action in
-            let target = NativeTimelineMenuAction(action.perform)
-            let item = NSMenuItem(title: action.title, action: #selector(NativeTimelineMenuAction.performAction), keyEquivalent: "")
-            item.target = target
-            item.representedObject = target
-            item.isEnabled = action.isEnabled
+            let item = ContextMenuItemSupport.item(
+                action.title, systemImage: action.systemImage, isEnabled: action.isEnabled,
+                isDestructive: action.isDestructive, action: action.perform
+            )
             item.identifier = NSUserInterfaceItemIdentifier("user-\(action.group.rawValue)")
-            ContextMenuItemSupport.configure(item, title: action.title, systemImage: action.systemImage,
-                                             isDestructive: action.isDestructive)
             return item
         }
     }
@@ -108,7 +105,7 @@ final class UserContextMenuHitView: NSView {
     var makeMenu: (() -> NSMenu?)?
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let event = window?.currentEvent, bounds.contains(convert(point, from: superview)),
-              event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control)) else { return nil }
+              event.isContextClick else { return nil }
         return self
     }
     override func menu(for event: NSEvent) -> NSMenu? {

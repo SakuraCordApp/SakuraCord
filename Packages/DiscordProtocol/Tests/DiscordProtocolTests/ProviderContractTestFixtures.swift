@@ -1,10 +1,24 @@
 @testable import DiscordProtocol
 import Foundation
 import SakuraCordModels
+import Synchronization
 import Testing
 
+/// Serves one fixed session credential; suites give theirs a distinct value
+/// to tell their requests apart.
 actor TestCredentialStore: CredentialStore {
+    static let defaultToken = "test-session-credential-value"
+    private let token: String
+    private let storedHandles: [CredentialHandle]
     private(set) var credentialReadCount = 0
+
+    init(
+        token: String = defaultToken,
+        handles: [CredentialHandle] = [CredentialHandle(accountID: "1")]
+    ) {
+        self.token = token
+        storedHandles = handles
+    }
 
     func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
         CredentialHandle(accountID: accountID)
@@ -12,13 +26,25 @@ actor TestCredentialStore: CredentialStore {
 
     func credential(for handle: CredentialHandle) async throws -> Data {
         credentialReadCount += 1
-        return Data("test-session-credential-value".utf8)
+        return Data(token.utf8)
     }
 
     func remove(_ handle: CredentialHandle) async throws {}
     func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "1")]
+        storedHandles
     }
+}
+
+/// A provider whose REST requests are served by `protocolClass`.
+func stubbedProvider(
+    _ protocolClass: URLProtocol.Type, token: String = TestCredentialStore.defaultToken, accountID: String = "1"
+) -> DiscordRESTProvider {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [protocolClass]
+    return DiscordRESTProvider(
+        credentials: TestCredentialStore(token: token), handle: CredentialHandle(accountID: accountID),
+        session: URLSession(configuration: configuration)
+    )
 }
 
 struct UnavailableGatewayTransport: GatewayTransport {
@@ -216,6 +242,30 @@ actor RestrictionGatewaySocket: GatewaySocket {
     }
 }
 
+/// Collects the requests one test sends through a URL protocol that posts each
+/// materialized request as `notification`. A unique `id` in `header`, the
+/// session credential by default, tells concurrent tests apart.
+final class RequestRecorder {
+    let id: String
+    private final class Storage: Sendable { let requests = Mutex<[URLRequest]>([]) }
+    private let storage: Storage
+    private let observer: any NSObjectProtocol
+
+    init(_ notification: Notification.Name, header: String = "Authorization", id: String = UUID().uuidString) {
+        self.id = id
+        let storage = Storage()
+        self.storage = storage
+        observer = NotificationCenter.default.addObserver(forName: notification, object: nil, queue: nil) { note in
+            guard let request = note.object as? URLRequest, request.value(forHTTPHeaderField: header) == id else { return }
+            storage.requests.withLock { $0.append(request) }
+        }
+    }
+
+    deinit { NotificationCenter.default.removeObserver(observer) }
+
+    var requests: [URLRequest] { storage.requests.withLock { $0 } }
+}
+
 actor ReactionProjectionEventRecorder {
     private(set) var reactionUpdateCount = 0
     private(set) var forumCataloguePublishCount = 0
@@ -279,4 +329,48 @@ func statusEvents(_ events: AsyncStream<ClientEvent>) async -> [PresenceStatus] 
         if case let .currentUserStatusChanged(status) = event { received.append(status) }
     }
     return received
+}
+
+extension URLRequest {
+    /// The body a test URLProtocol receives, which URLSession usually hands
+    /// over as a stream.
+    var bodyData: Data? {
+        if let httpBody { return httpBody }
+        guard let stream = httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
+
+    var method: String { httpMethod ?? "" }
+    var path: String { url?.path ?? "" }
+    var queryItems: [URLQueryItem] {
+        url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
+    }
+
+    /// The body as a JSON object; nil when it is absent or not an object.
+    var jsonBody: [String: Any]? {
+        bodyData.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    }
+}
+
+extension URLProtocol {
+    /// Answers the request with `status` and `body`, then finishes loading.
+    func respond(status: Int, body: Data, headers: [String: String]? = ["Content-Type": "application/json"]) {
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    func respond(status: Int, body: String) {
+        respond(status: status, body: Data(body.utf8))
+    }
 }

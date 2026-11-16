@@ -237,8 +237,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         videoDepacketizers.removeAll()
         videoDecoders.removeAll()
         reorderBuffers.removeAll()
-        videoGapRecoveryTasks.values.forEach { $0.cancel() }
-        videoGapRecoveryTasks.removeAll()
+        videoGapRecoveryTasks.cancelAll()
         videoAwaitingKeyframe.removeAll()
         lastVideoKeyframeRequest.removeAll()
         videoRetransmissionCache.removeAll()

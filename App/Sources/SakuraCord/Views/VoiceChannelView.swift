@@ -41,7 +41,7 @@ struct VoiceChannelView: View {
                 VStack(spacing: InterfaceScale.metric(10)) {
                     Image(systemName: "wifi.exclamationmark")
                         .font(.interfaceSystem(size: 28, weight: .medium))
-                        .foregroundStyle(Color(hex: 0xDA373C))
+                        .foregroundStyle(Color.leaveCallRed)
                     Text("Voice disconnected")
                         .font(.interface(.headline))
                     Text("SakuraCord is no longer receiving call audio.")
@@ -50,7 +50,7 @@ struct VoiceChannelView: View {
                 }
                 .padding(InterfaceScale.metric(20))
                 .glassEffect(
-                    .regular.tint(Color(hex: 0xDA373C).opacity(0.16)),
+                    .regular.tint(Color.leaveCallRed.opacity(0.16)),
                     in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous)
                 )
             }
@@ -143,9 +143,7 @@ struct VoiceChannelView: View {
         return model.voiceStates.values
             .filter { $0.channelID == channel.id }
             .map { state in
-                let user = state.userID == currentUser?.id
-                    ? currentUser
-                    : model.membersByID[state.userID]?.user
+                let user = model.knownUser(state.userID)
                 return VoiceChannelPreviewParticipant(
                     id: state.userID,
                     name: user?.displayName ?? "User \(state.userID.rawValue)",
@@ -216,7 +214,7 @@ private struct VoiceChannelPreviewCard: View {
             HStack(spacing: InterfaceScale.metric(6)) {
                 if participant.isStreaming {
                     Image(systemName: "display")
-                        .foregroundStyle(Color(hex: 0x23A55A))
+                        .foregroundStyle(Color.presenceOnline)
                         .accessibilityLabel("Sharing screen")
                 }
                 if participant.isCameraEnabled {

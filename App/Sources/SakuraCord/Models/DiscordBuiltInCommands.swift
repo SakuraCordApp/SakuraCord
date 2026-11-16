@@ -37,16 +37,6 @@ enum DiscordBuiltInCommands {
         var allowsTTSCommand: Bool
     }
 
-    enum Permission {
-        static let kickMembers: UInt64 = 1 << 1
-        static let banMembers: UInt64 = 1 << 2
-        static let administrator: UInt64 = 1 << 3
-        static let sendTTSMessages: UInt64 = 1 << 12
-        static let changeNickname: UInt64 = 1 << 26
-        static let manageNicknames: UInt64 = 1 << 27
-        static let moderateMembers: UInt64 = 1 << 40
-    }
-
     /// Discord's built-in list order: integrations and conversation tools first.
     static let all: [ApplicationCommand] = [
         command("-16", "gif", "Search Animated GIFs on the Web", options: [
@@ -120,22 +110,22 @@ enum DiscordBuiltInCommands {
     static func isAvailable(_ command: ApplicationCommand, in context: Context) -> Bool {
         func can(_ permission: UInt64, _ permissions: UInt64?) -> Bool {
             guard let permissions else { return false }
-            return permissions & Permission.administrator != 0 || permissions & permission != 0
+            return permissions & DiscordPermissionBits.administrator != 0 || permissions & permission != 0
         }
         return switch command.name {
         case "leave": context.isGroupDirectMessage
-        // Discord gates /schedule behind an experiment this account is not in.
+        // Not run natively yet; scheduling uses the composer's + menu.
         case "schedule": false
         case "tts":
             !context.isPrivate && context.allowsTTSCommand
-                && can(Permission.sendTTSMessages, context.channelPermissions)
+                && can(DiscordPermissionBits.sendTTSMessages, context.channelPermissions)
         case "nick":
-            !context.isPrivate && (can(Permission.changeNickname, context.channelPermissions)
-                || can(Permission.manageNicknames, context.channelPermissions))
+            !context.isPrivate && (can(DiscordPermissionBits.changeNickname, context.channelPermissions)
+                || can(DiscordPermissionBits.manageNicknames, context.channelPermissions))
         case "thread": context.canCreatePublicThread
-        case "kick": can(Permission.kickMembers, context.guildPermissions)
-        case "ban": can(Permission.banMembers, context.guildPermissions)
-        case "timeout": can(Permission.moderateMembers, context.guildPermissions)
+        case "kick": can(DiscordPermissionBits.kickMembers, context.guildPermissions)
+        case "ban": can(DiscordPermissionBits.banMembers, context.guildPermissions)
+        case "timeout": can(DiscordPermissionBits.moderateMembers, context.guildPermissions)
         default: true
         }
     }

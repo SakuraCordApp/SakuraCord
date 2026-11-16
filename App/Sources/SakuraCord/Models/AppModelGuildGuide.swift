@@ -36,14 +36,6 @@ struct GuildResourceState {
     var nextAfter: MessageID?
     /// A reconnect found a read in flight; read forward again once it ends.
     var revalidationPending = false
-
-    /// Publishes rows with the journal record the native timeline applies.
-    mutating func publishRows(_ newRows: [MessageRowPresentation]) {
-        let oldRows = rows
-        rows = newRows
-        revision &+= 1
-        journal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: rows, revision: revision))
-    }
 }
 
 extension AppModel {
@@ -75,7 +67,7 @@ extension AppModel {
         // An empty Favorites server keeps the last server selected but shows none of it.
         guard !favorites.isPresented || selectedChannelID != nil,
               let guildID = selectedGuildID,
-              serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true else { return nil }
+              serverRailGuildsByID[guildID]?.hasOnboarding == true else { return nil }
         let member = onboardingMember(in: guildID)
         return member?.requiresOnboarding == true ? guildID : nil
     }
@@ -87,12 +79,12 @@ extension AppModel {
     }
 
     func hasChannelsAndRoles(in guildID: GuildID) -> Bool {
-        serverRailGuildsByID[guildID]?.features.contains("COMMUNITY") == true
+        serverRailGuildsByID[guildID]?.features.contains(GuildFeature.community) == true
             && (featuresSettings.channelManagement || hasCustomizationQuestions(in: guildID))
     }
 
     func hasCustomizationQuestions(in guildID: GuildID) -> Bool {
-        serverRailGuildsByID[guildID]?.features.isSuperset(of: ["COMMUNITY", "GUILD_ONBOARDING_HAS_PROMPTS"]) == true
+        serverRailGuildsByID[guildID]?.features.isSuperset(of: [GuildFeature.community, GuildFeature.onboardingHasPrompts]) == true
     }
 
     func customizationTitle(in guildID: GuildID?) -> String {
@@ -102,7 +94,7 @@ extension AppModel {
 
     func hasGuildGuide(in guildID: GuildID) -> Bool {
         guard let guild = serverRailGuildsByID[guildID],
-              guild.features.isSuperset(of: ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]) else { return false }
+              guild.features.isSuperset(of: [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]) else { return false }
         // Official navigation uses membership age/action flags and resource
         // channel flags, not GUILD_SERVER_GUIDE alone (READY carries both).
         return hasPendingGuildGuideActions(in: guildID)
@@ -129,7 +121,7 @@ extension AppModel {
 
     func refreshGuildGuide(in guildID: GuildID) {
         guard !accountTransitionIsActive,
-              serverRailGuildsByID[guildID]?.features.contains("GUILD_SERVER_GUIDE") == true,
+              serverRailGuildsByID[guildID]?.features.contains(GuildFeature.serverGuide) == true,
               onboarding.guides[guildID]?.isLoading != true else { return }
         var entry = onboarding.guides[guildID] ?? .init()
         entry.isLoading = true
@@ -153,7 +145,7 @@ extension AppModel {
                 }
                 model.onboarding.guides[guildID]?.progress = refreshed
                 if case .guideResource(guildID, let channelID)? = model.sideConversations.context,
-                   !guide.resourceChannels.contains(where: { $0.channelID == channelID }) {
+                   !guide.isResourceChannel(channelID) {
                     model.closeSideConversations()
                 }
             } catch {
@@ -166,7 +158,7 @@ extension AppModel {
     }
 
     func visitGuideTask(_ action: GuildGuideChannel, guildID: GuildID) {
-        guard let channel = snapshot?.channels.first(where: { $0.id == action.channelID }),
+        guard let channel = knownRootChannel(action.channelID),
               conversationAccess(for: channel).isReadable else {
             onboarding.guides[guildID]?.error = "This channel is no longer available to you. Refresh the guide."
             return
@@ -192,7 +184,7 @@ extension AppModel {
 
     func receiveGuideMessage(_ message: Message) {
         guard message.author.id == currentUser?.id,
-              let guildID = snapshot?.channels.first(where: { $0.id == message.channelID })?.guildID else { return }
+              let guildID = knownRootChannel(message.channelID)?.guildID else { return }
         completeGuideAction(message.channelID, guildID: guildID, type: 1)
     }
 
@@ -243,13 +235,17 @@ extension AppModel {
             resource.changedMessageIDs.insert(messageID)
         default: return
         }
-        resource.publishRows(MessageGrouping.resourceRows(for: resource.messages, reusing: resource.rows))
+        resource.journal.publish(
+            MessageGrouping.resourceRows(for: resource.messages, reusing: resource.rows),
+            into: &resource.rows,
+            revision: &resource.revision
+        )
         guideResource = resource
         NotificationCenter.default.post(name: .sakuracordMessageRowsDidChange, object: self)
     }
 
     func openGuideResource(_ channelID: ChannelID, guildID: GuildID) {
-        guard onboarding.guides[guildID]?.configuration?.resourceChannels.contains(where: { $0.channelID == channelID }) == true else { return }
+        guard onboarding.guides[guildID]?.configuration?.isResourceChannel(channelID) == true else { return }
         openSideConversation(.guideResource(guildID, channelID)) {
             guideResource = GuildResourceState(channelID: channelID)
         }
@@ -298,22 +294,19 @@ extension AppModel {
                 // A read from before a Gateway gap cannot reach the live tail.
                 let isStale = requestEpoch != model.historyEpoch
                 let hasMore = (page.hasMoreAfter && cursor > anchor) || isStale
-                let mutations = ConversationRefreshMutations(
-                    messages: current.refreshJournal?.mutationsByMessageID ?? [:],
-                    updatedUsers: current.refreshJournal?.updatedUsers ?? [:]
-                )
+                let mutations = current.refreshJournal?.mutations ?? ConversationRefreshMutations()
                 let refreshed = Self.applyingConversationRefreshMutations(mutations, to: preparedRows.map(\.message))
                 let preparedByID = Dictionary(uniqueKeysWithValues: preparedRows.map { ($0.id, $0) })
                 // Keep the loaded prefix contiguous until REST reaches the live tail.
                 let additions = refreshed.filter {
                     !retainedIDs.contains($0.id) && $0.id > anchor && (!hasMore || $0.id <= cursor)
                 }.sorted { $0.id < $1.id }.map { incoming in
-                    let message = model.pollVotePresentationPreserving(model.reactionPresentationPreserving(incoming))
+                    let message = model.localPresentationPreserving(incoming)
                     if let row = preparedByID[message.id], row.message == message { return row }
                     return MessageGrouping.resourceRow(for: message)
                 }
                 current.messages += additions.map(\.message)
-                current.publishRows(current.rows + additions)
+                current.journal.publish(current.rows + additions, into: &current.rows, revision: &current.revision)
                 current.hasMore = hasMore
                 current.nextAfter = cursor
                 current.refreshJournal = nil

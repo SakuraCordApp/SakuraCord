@@ -266,13 +266,13 @@ private struct PrivateCallActionDock: View {
                     PrivateCallGlassButton(
                         title: "Decline",
                         systemImage: "phone.down.fill",
-                        tint: Color(hex: 0xDA373C),
+                        tint: Color.leaveCallRed,
                         action: decline
                     )
                     PrivateCallGlassButton(
                         title: "Answer",
                         systemImage: "phone.fill",
-                        tint: Color(hex: 0x23A55A),
+                        tint: Color.presenceOnline,
                         action: accept
                     )
                 } else {
@@ -408,13 +408,13 @@ private struct IncomingPrivateCallCard: View {
                     IncomingCallActionButton(
                         title: "Decline",
                         systemImage: "xmark",
-                        tint: Color(hex: 0xDA373C),
+                        tint: Color.leaveCallRed,
                         action: decline
                     )
                     IncomingCallActionButton(
                         title: "Answer",
                         systemImage: "phone.fill",
-                        tint: Color(hex: 0x23A55A),
+                        tint: Color.presenceOnline,
                         action: accept
                     )
                 }

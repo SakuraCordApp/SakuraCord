@@ -34,6 +34,9 @@ public struct InboxMentionPage: Equatable, Sendable {
 }
 
 public struct InboxSettings: Equatable, Sendable {
+    /// The channel key Discord saves a server's Events group collapse under.
+    public static let eventsChannelID = ChannelID(rawValue: 1_539_033_557_786_173_450)
+
     public var tab: InboxTab
     public var collapsedChannelIDs: Set<ChannelID>
     public var collapsedEventGuildIDs: Set<GuildID>
@@ -44,5 +47,12 @@ public struct InboxSettings: Equatable, Sendable {
         self.tab = tab
         self.collapsedChannelIDs = collapsedChannelIDs
         self.favoriteChannelIDs = favoriteChannelIDs
+    }
+
+    /// Whether a group is saved collapsed; an Events group is saved per server.
+    public func isCollapsed(_ channelID: ChannelID, guildID: GuildID?, isEvents: Bool) -> Bool {
+        isEvents
+            ? guildID.map { collapsedEventGuildIDs.contains($0) } == true
+            : collapsedChannelIDs.contains(channelID)
     }
 }

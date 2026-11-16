@@ -35,7 +35,7 @@ nonisolated enum NativeAppBadgePresentation {
         let iconInset = isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0
         // Drawing the symbol image renders it again for every badge drawn;
         // the timeline's cache rasterizes it once per scale.
-        if isVerified, let checkmark = NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+        if isVerified, let checkmark = SystemSymbolImageCache.rasterizedConfiguredImage(
             named: "checkmark", pointSize: ServerTagAppearance.fontSize, weight: .bold, color: label,
             scale: abs(context.convertToDeviceSpace(CGSize(width: 1, height: 1)).width)
         ) {
@@ -44,7 +44,7 @@ nonisolated enum NativeAppBadgePresentation {
                 y: frame.midY - ServerTagAppearance.badgeSize / 2,
                 width: ServerTagAppearance.badgeSize, height: ServerTagAppearance.badgeSize
             )
-            let target = NativeTimelineSymbolGeometry.opticallyFitted(
+            let target = SymbolGeometry.opticallyFitted(
                 sourceSize: checkmark.size, alignmentRect: checkmark.alignmentRect, in: slot
             )
             checkmark.draw(in: target, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
@@ -169,10 +169,7 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         guard frame.width > 0, frame.height > 0 else { return }
         context.saveGState()
         context.clip(to: frame)
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        body(frame.height / 2 - glyphBounds.midY)
+        context.drawCoreText(in: frame) { _ in body(frame.height / 2 - glyphBounds.midY) }
         context.restoreGState()
     }
 }

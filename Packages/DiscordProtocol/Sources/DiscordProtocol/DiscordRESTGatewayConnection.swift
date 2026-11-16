@@ -196,15 +196,14 @@ extension DiscordRESTProvider {
         // Teardown flushes below, and saves already awaiting a sheet, must
         // fail rather than wait on a human.
         captchaHandler = nil
-        for presentation in captchaPresentations.values { presentation.cancel() }
-        captchaPresentations = [:]
+        captchaPresentations.cancelAll()
         resetMemberListSubscriptionWork()
         await finishGuildFoldersEdits()
         await finishFavoritesEdits()
         currentAccountDetails = nil
         currentAuthSessionIDHash = nil
         accountInformationRevision = UUID()
-        profileApexAssignments = nil
+        experiments = DiscordExperiments()
         pendingStatusEditConnectionClosed()
         resetProfileEditingState()
         derivedCacheGeneration &+= 1
@@ -216,29 +215,14 @@ extension DiscordRESTProvider {
         cancelStartupSearchCacheLoad()
         await flushForwardSearchPeopleCachePersistence()
         failInitialGatewaySnapshot(CancellationError())
-        for task in forumCatalogueTasks.values {
-            task.cancel()
-        }
-        forumCatalogueTasks = [:]
+        forumCatalogueTasks.cancelAll()
         forumCatalogueTaskIDs = [:]
-        for task in messageSendTasks.values {
-            task.cancel()
-        }
-        messageSendTasks = [:]
-        for task in attachmentPreuploads.values {
-            task.cancel()
-        }
-        attachmentPreuploads = [:]
-        for task in forumPreviewHydrationTasks.values {
-            task.cancel()
-        }
-        forumPreviewHydrationTasks = [:]
+        messageSendTasks.cancelAll()
+        attachmentPreuploads.cancelAll()
+        forumPreviewHydrationTasks.cancelAll()
         forumPreviewHydrationTaskIDs = [:]
         forumPreviewHydrationQueues = [:]
-        for task in applicationCommandCatalogTasks.values {
-            task.cancel()
-        }
-        applicationCommandCatalogTasks = [:]
+        applicationCommandCatalogTasks.cancelAll()
         cachedApplicationCommandCatalogs = [:]
         cancelPendingInteractionRequests()
         cancelPendingMemberRequests(error: CancellationError())
@@ -252,8 +236,7 @@ extension DiscordRESTProvider {
         }
         activeVoiceConnection = nil
         cancelApplicationStreamNegotiations(error: CancellationError())
-        applicationStreamNegotiationTimeoutTasks.values.forEach { $0.cancel() }
-        applicationStreamNegotiationTimeoutTasks = [:]
+        applicationStreamNegotiationTimeoutTasks.cancelAll()
         applicationStreamConnections = [:]
         applicationStreams = [:]
         gatewayEventTask?.cancel()
@@ -387,114 +370,6 @@ extension DiscordRESTProvider {
         case .dispatch(let name, let value):
             await handleGatewayDispatch(name: name, body: value)
         }
-    }
-
-    func subscribeToMemberList(
-        guildID: GuildID,
-        channelID requestedChannelID: ChannelID? = nil,
-        ranges: [ClosedRange<Int>] = [0 ... 99]
-    ) async throws {
-        let selectedChannel: Channel?
-        if let requestedChannelID {
-            selectedChannel = cachedChannels[guildID]?.first { $0.id == requestedChannelID }
-        } else {
-            selectedChannel = cachedChannels[guildID]?.first {
-                $0.kind != .voice
-                    && canViewMemberListChannel($0, guildID: guildID)
-            }
-        }
-        guard let selectedChannel,
-              canViewMemberListChannel(selectedChannel, guildID: guildID)
-        else { return }
-        let memberListID = DiscordMemberListIdentity.id(
-            for: selectedChannel, guildID: guildID,
-            roles: cachedGuildRoles[guildID] ?? []
-        )
-        if selectedMemberListID[guildID] != memberListID {
-            memberListRefreshRetryTasks.removeValue(forKey: guildID)?.cancel()
-            memberListViewportRestoreTasks.removeValue(forKey: guildID)?.cancel()
-        }
-        selectedMemberListID[guildID] = memberListID
-        memberListViewportRequests[guildID] = (
-            memberListID, DiscordMemberListSubscription(channelID: selectedChannel.id, ranges: ranges)
-        )
-        try await enqueueGuildSubscription(
-            guildID: guildID,
-            request: .members(channelID: selectedChannel.id, ranges: ranges)
-        )
-    }
-
-    func attemptMemberSubscription(guildID: GuildID, restoringViewport: Bool = false) async {
-        // RESUMED retains the selected channel and its latest requested ranges.
-        // A fresh READY clears the viewport and starts with the initial block.
-        let viewport = restoringViewport ? memberListViewportRequests[guildID]?.subscription : nil
-        do {
-            try await subscribeToMemberList(
-                guildID: guildID, channelID: viewport?.channelID,
-                ranges: viewport?.ranges ?? [DiscordMemberListRangePolicy.initialRange]
-            )
-        } catch {
-            gatewayLogger.error(
-                "Lazy member-list subscription failed: \(error.localizedDescription, privacy: .public)"
-            )
-        }
-    }
-
-    public func updateMemberListViewport(
-        in guildID: GuildID,
-        channelID: ChannelID,
-        visibleRange: ClosedRange<Int>
-    ) async throws {
-        guard pendingMemberGuildID == guildID else { return }
-        let ranges = DiscordMemberListRangePolicy.ranges(around: visibleRange)
-        guard let channel = cachedChannels[guildID]?.first(where: { $0.id == channelID })
-        else { return }
-        let memberListID = DiscordMemberListIdentity.id(
-            for: channel,
-            guildID: guildID,
-            roles: cachedGuildRoles[guildID] ?? []
-        )
-        let changedSelection = selectedMemberListID[guildID] != memberListID
-        selectedMemberListID[guildID] = memberListID
-        memberListViewportRequests[guildID] = (
-            memberListID, DiscordMemberListSubscription(channelID: channelID, ranges: ranges)
-        )
-        if changedSelection {
-            memberListRefreshRetryTasks.removeValue(forKey: guildID)?.cancel()
-            memberListViewportRestoreTasks.removeValue(forKey: guildID)?.cancel()
-        }
-        // An inaccessible viewport still supersedes the old selection. This
-        // cancels its recovery and lets returning to an accessible cached list
-        // publish rows even when its subscribed ranges have not changed.
-        guard canViewMemberListChannel(channel, guildID: guildID) else {
-            discardInaccessibleMemberLists(guildID: guildID)
-            publishMembers(guildID: guildID, members: [], groups: [])
-            return
-        }
-        if changedSelection {
-            publishMembers(
-                guildID: guildID,
-                members: orderedMemberListMembers(
-                    guildID: guildID, memberListID: memberListID
-                ) ?? [],
-                groups: cachedMemberListGroups[guildID]?[memberListID] ?? []
-            )
-        }
-        let needsRefresh = memberListsNeedingRefresh[guildID]?[memberListID] != nil
-        if !needsRefresh,
-           !DiscordMemberListRangePolicy.requiresSubscriptionUpdate(
-               memberListID: memberListID,
-               ranges: ranges,
-               currentSubscriptions: memberListSubscriptions[guildID] ?? [:]
-           )
-        {
-            return
-        }
-        try await subscribeToMemberList(
-            guildID: guildID,
-            channelID: channelID,
-            ranges: ranges
-        )
     }
 
     func sendGateway(_ payload: [String: Any]) async throws {
@@ -682,10 +557,7 @@ extension DiscordRESTProvider {
     }
 
     func cancelPendingInteractionRequests() {
-        for task in autocompleteTimeoutTasks.values {
-            task.cancel()
-        }
-        autocompleteTimeoutTasks = [:]
+        autocompleteTimeoutTasks.cancelAll()
         autocompleteOptionTypes = [:]
         autocompleteNonceOrder = []
         pendingInteractionContexts = [:]

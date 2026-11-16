@@ -6,7 +6,6 @@ import SakuraCordModels
 /// menu and adds the forum card's tag picker with its emoji.
 @MainActor
 final class ForumPostMenuBuilder: NSObject {
-    private let renderer = ThreadActionsMenuRenderer()
     private var customTagImages: [ForumTagID: NSImage] = [:]
     private var imageTasks: [ForumTagID: Task<Void, Never>] = [:]
     private var toggleTag: (ForumTagID) -> Void = { _ in }
@@ -16,27 +15,28 @@ final class ForumPostMenuBuilder: NSObject {
     }
 
     func makeMenu(
-        actionsMenu: ThreadActionsMenu,
+        sections: [[ActionMenuEntry]],
         tags: [ForumTag],
         appliedTagIDs: [ForumTagID],
         customEmojiURLsByID: CustomEmojiImageURLs,
-        requiresTag: Bool,
-        canManage: Bool,
+        canToggle: @escaping (ForumTag) -> Bool,
         toggleTag: @escaping (ForumTagID) -> Void
     ) -> NSMenu {
         self.toggleTag = toggleTag
-        return renderer.makeMenu(actionsMenu) { [self] entry in
+        return ActionMenuRenderer.makeMenu(sections) { [self] entry in
             guard entry.id == ThreadActionsMenu.tagsSlotID else { return nil }
             preloadCustomTagImages(for: tags, customEmojiURLsByID: customEmojiURLsByID)
-            return tagsMenuItem(tags: tags, appliedTagIDs: appliedTagIDs, requiresTag: requiresTag, canManage: canManage)
+            return tagsMenuItem(
+                tags: tags, appliedTagIDs: appliedTagIDs, customEmojiURLsByID: customEmojiURLsByID, canToggle: canToggle
+            )
         }
     }
 
     private func tagsMenuItem(
         tags: [ForumTag],
         appliedTagIDs: [ForumTagID],
-        requiresTag: Bool,
-        canManage: Bool
+        customEmojiURLsByID: CustomEmojiImageURLs,
+        canToggle: (ForumTag) -> Bool
     ) -> NSMenuItem {
         let tagsItem = NSMenuItem(title: "Tags", action: nil, keyEquivalent: "")
         ContextMenuItemSupport.configure(tagsItem, title: "Tags", systemImage: "tag.fill")
@@ -49,14 +49,10 @@ final class ForumPostMenuBuilder: NSObject {
                 keyEquivalent: ""
             )
             item.target = self
-            let isApplied = appliedTagIDs.contains(tag.id)
-            let wouldRemoveRequiredLastTag =
-                requiresTag && isApplied && appliedTagIDs.count == 1
-            item.isEnabled = (canManage || !tag.isModerated)
-                && !wouldRemoveRequiredLastTag
-            item.state = isApplied ? .on : .off
+            item.isEnabled = canToggle(tag)
+            item.state = appliedTagIDs.contains(tag.id) ? .on : .off
             item.representedObject = NSNumber(value: tag.id.rawValue)
-            item.image = menuImage(for: tag)
+            item.image = menuImage(for: tag, customEmojiURLsByID: customEmojiURLsByID)
             item.preferredImageVisibility = .visible
             tagsMenu.addItem(item)
         }
@@ -67,12 +63,7 @@ final class ForumPostMenuBuilder: NSObject {
     private func preloadCustomTagImages(for tags: [ForumTag], customEmojiURLsByID: CustomEmojiImageURLs) {
         for tag in tags {
             guard customTagImages[tag.id] == nil, imageTasks[tag.id] == nil,
-                  let emojiID = tag.emojiID,
-                  let url = customEmojiURLsByID[emojiID]
-                  ?? EmojiReference(
-                      id: emojiID,
-                      name: tag.emojiName ?? "emoji"
-                  ).imageURL(size: 64)
+                  let url = ForumTagEmojiPresentation.customEmojiURL(for: tag, customEmojiURLsByID: customEmojiURLsByID)
             else { continue }
             imageTasks[tag.id] = Task { [weak self] in
                 defer { self?.imageTasks[tag.id] = nil }
@@ -84,45 +75,30 @@ final class ForumPostMenuBuilder: NSObject {
         }
     }
 
-    private func menuImage(for tag: ForumTag) -> NSImage? {
-        if tag.emojiID != nil {
-            return customTagImages[tag.id]
-                ?? symbolImage("tag", accessibilityDescription: tag.name)
+    private func menuImage(for tag: ForumTag, customEmojiURLsByID: CustomEmojiImageURLs) -> NSImage? {
+        let symbol = { ContextMenuItemSupport.symbolImage("tag", accessibilityDescription: tag.name) }
+        return switch ForumTagEmojiPresentation(tag: tag, customEmojiURLsByID: customEmojiURLsByID) {
+        case .custom: customTagImages[tag.id] ?? symbol()
+        case let .unicode(name): nativeEmojiImage(name)
+        case nil: symbol()
         }
-        if let emoji = tag.emojiName, !emoji.isEmpty {
-            return nativeEmojiImage(emoji)
-        }
-        return symbolImage("tag", accessibilityDescription: tag.name)
-    }
-
-    private func symbolImage(
-        _ name: String,
-        accessibilityDescription: String
-    ) -> NSImage? {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-        let image = NSImage(
-            systemSymbolName: name,
-            accessibilityDescription: accessibilityDescription
-        )?.withSymbolConfiguration(configuration)
-        image?.isTemplate = true
-        return image
     }
 
     private func nativeEmojiImage(_ emoji: String) -> NSImage {
-        let image = NSImage(size: NSSize(width: 18, height: 18))
-        image.lockFocus()
-        let value = NSAttributedString(
-            string: emoji,
-            attributes: [.font: NSFont.systemFont(ofSize: 14)]
-        )
-        let size = value.size()
-        value.draw(
-            at: NSPoint(
-                x: (18 - size.width) / 2,
-                y: (18 - size.height) / 2
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            let value = NSAttributedString(
+                string: emoji,
+                attributes: [.font: NSFont.systemFont(ofSize: 14)]
             )
-        )
-        image.unlockFocus()
+            let size = value.size()
+            value.draw(
+                at: NSPoint(
+                    x: (18 - size.width) / 2,
+                    y: (18 - size.height) / 2
+                )
+            )
+            return true
+        }
         image.isTemplate = false
         return image
     }

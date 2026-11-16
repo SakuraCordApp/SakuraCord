@@ -142,7 +142,7 @@ struct GroupDirectMessageEditTests {
         ]))
         #expect(await provider.privateChannel(id: dmID)?.kind == .directMessage)
         let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" } == ["DELETE https://discord.com/api/v9/channels/402"])
+        #expect(requests.map { "\($0.method) \($0.url?.absoluteString ?? "")" } == ["DELETE https://discord.com/api/v9/channels/402"])
         #expect(requests.first?.httpBody == nil && requests.first?.httpBodyStream == nil)
         await provider.disconnect()
     }
@@ -238,17 +238,7 @@ private final class GroupEditURLProtocol: URLProtocol, @unchecked Sendable {
                 ? #"{"id":"401","type":3,"name":"Friend Group","owner_id":"2"}"#
                 : #"{"code":50013,"message":"Missing Permissions"}"#)
         }
-        var body = request.httpBody ?? Data()
-        if body.isEmpty, let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 1024)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(contentsOf: buffer.prefix(count))
-            }
-        }
+        let body = request.bodyData ?? Data()
         guard case let .object(fields)? = try? JSONDecoder().decode(JSONValue.self, from: body) else {
             return respond(status: 500, body: "{}")
         }
@@ -278,13 +268,6 @@ private final class GroupEditURLProtocol: URLProtocol, @unchecked Sendable {
             "icon": icon, "owner_id": .string("1"), "recipients": recipients,
         ])
         respond(status: 200, body: (try? JSONEncoder().encode(response)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}")
-    }
-
-    private func respond(status: Int, body: String) {
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
-                                                            httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}

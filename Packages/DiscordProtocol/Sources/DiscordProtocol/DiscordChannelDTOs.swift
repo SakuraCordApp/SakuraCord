@@ -179,17 +179,19 @@ struct ChannelDTO: Decodable {
     }
 
     var isThread: Bool {
-        switch type {
-        case 10, 11, 12: true
-        default: false
-        }
+        DiscordChannelType.threads.contains(type)
+    }
+
+    var isPrivate: Bool {
+        type == DiscordChannelType.directMessage || type == DiscordChannelType.groupDirectMessage
     }
 
     /// Channel types Discord shows in the guild channel list. Directories (14)
     /// and Server Hub spaces (20) are separate surfaces, and unknown types stay out.
     var isGuildChannelListEntry: Bool {
         switch type {
-        case 0, 2, 5, 6, 13, 15, 16, 21: true
+        case DiscordChannelType.text, DiscordChannelType.voice, DiscordChannelType.announcement, DiscordChannelType.store,
+             DiscordChannelType.stageVoice, DiscordChannelType.forum, DiscordChannelType.media, 21: true
         default: false
         }
     }
@@ -252,18 +254,10 @@ struct ChannelDTO: Decodable {
             channelType: type
         )
         let users = try recipientDTOs.map { try $0.domain() }
-        let kind: ChannelKindValue =
-            switch type {
-            case 1: .directMessage
-            case 3: .groupDirectMessage
-            case 2, 13: .voice
-            case 5: .announcement
-            // Media channels (16) share the forum-style surface locally. The
-            // distinction is not yet rendered separately, but retaining them
-            // as non-text destinations is required for forwarding eligibility.
-            case 15, 16: .forum
-            default: .text
-            }
+        // Media channels share the forum-style surface locally. The
+        // distinction is not yet rendered separately, but retaining them as
+        // non-text destinations is required for forwarding eligibility.
+        let kind = ChannelKindValue(discordChannelType: type)
         let explicitName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let recipientName = users.map(\.displayName).joined(separator: ", ")
         let ownerGroupName = ownerID
@@ -275,10 +269,10 @@ struct ChannelDTO: Decodable {
             resolvedName = explicitName
         } else if !recipientName.isEmpty {
             resolvedName = recipientName
-        } else if type == 3, let ownerGroupName {
+        } else if type == DiscordChannelType.groupDirectMessage, let ownerGroupName {
             resolvedName = ownerGroupName
         } else {
-            resolvedName = type == 3 ? "Group Direct Message" : "Direct Message"
+            resolvedName = type == DiscordChannelType.groupDirectMessage ? "Group Direct Message" : "Direct Message"
         }
         let iconURL = icon.flatMap { hash in
             URL(
@@ -358,7 +352,7 @@ struct ChannelDTO: Decodable {
                 notificationSettings: member?.domain,
                 rateLimitPerUser: rateLimitPerUser ?? 0,
                 lastNonMessageActivityAt: lastNonMessageActivityTimestamp.flatMap(DiscordDate.parse),
-                isPrivate: type == 12
+                isPrivate: type == DiscordChannelType.privateThread
             ),
             owner: ownerUser ?? firstMessage?.author,
             firstMessage: firstMessage,
@@ -378,7 +372,7 @@ enum DiscordPrivateRecipientOrdering {
         channelID: String,
         channelType: Int
     ) -> [UserDTO] {
-        guard channelType == 1 || channelType == 3 else { return users }
+        guard channelType == DiscordChannelType.directMessage || channelType == DiscordChannelType.groupDirectMessage else { return users }
         return stableSort(users, channelID: channelID, id: \UserDTO.id)
     }
 
@@ -387,7 +381,7 @@ enum DiscordPrivateRecipientOrdering {
         channelID: String,
         channelType: Int
     ) -> [String] {
-        guard channelType == 1 || channelType == 3 else { return ids }
+        guard channelType == DiscordChannelType.directMessage || channelType == DiscordChannelType.groupDirectMessage else { return ids }
         return stableSort(ids, channelID: channelID, id: { $0 })
     }
 
@@ -396,7 +390,7 @@ enum DiscordPrivateRecipientOrdering {
         channelID: String,
         channelType: Int
     ) -> [User] {
-        guard channelType == 1 || channelType == 3 else { return users }
+        guard channelType == DiscordChannelType.directMessage || channelType == DiscordChannelType.groupDirectMessage else { return users }
         return stableSort(users, channelID: channelID, id: { $0.id.description })
     }
 

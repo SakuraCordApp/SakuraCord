@@ -140,22 +140,13 @@ struct UserDTO: Decodable {
         guard let id = UserID(id) else {
             throw ChatProviderError.invalidRequest("Discord returned an invalid user identifier.")
         }
-        let avatarURL = avatar.flatMap { hash in
-            URL(
-                string:
-                "https://cdn.discordapp.com/avatars/\(id)/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-            )
-        }
-        let decorationURL = avatarDecorationData?.asset.flatMap {
-            URL(string: "https://cdn.discordapp.com/avatar-decoration-presets/\($0).png?size=160")
-        }
+        let avatarURL = avatar.flatMap { DiscordCDN.userAvatar(id, hash: $0, size: 128) }
+        let decorationURL = avatarDecorationData?.asset.flatMap(DiscordCDN.avatarDecorationPreset)
         let nameplate = collectibles?.nameplate.flatMap { value -> Nameplate? in
             let legacyPath = value.asset?.trimmingCharacters(
                 in: CharacterSet(charactersIn: "/")
             )
-            let officialBase = value.skuID.map {
-                "https://cdn.discordapp.com/media/v1/collectibles-shop/\($0)"
-            }
+            let officialBase = value.skuID.map(DiscordCDN.collectiblesShopBase)
             let staticURL = officialBase.flatMap { URL(string: "\($0)/static") }
                 ?? value.assets?.staticImageURL.flatMap(URL.init)
                 ?? legacyPath.flatMap {
@@ -485,12 +476,7 @@ struct UserProfileDTO: Decodable {
         let displayName =
             guildMember?.nick.flatMap { $0.isEmpty ? nil : $0 } ?? domainUser.displayName
         let guildAvatarURL = guildID.flatMap { guildID in
-            guildMember?.avatar.flatMap { hash in
-                URL(
-                    string:
-                    "https://cdn.discordapp.com/guilds/\(guildID)/users/\(domainUser.id)/avatars/\(hash).webp?size=256&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                )
-            }
+            guildMember?.avatar.flatMap { DiscordCDN.guildMemberAvatar(guildID, userID: domainUser.id, hash: $0, size: 256) }
         }
         let defaultAvatarURL = DiscordProfileImageAssets.defaultAvatarURL(userID: user.id, discriminator: user.discriminator)
         let avatarURL = guildAvatarURL ?? domainUser.avatarURL ?? defaultAvatarURL
@@ -515,15 +501,9 @@ struct UserProfileDTO: Decodable {
             guildID != nil && (guildMetadata?.banner != nil || guildMember?.banner != nil)
         let bannerURL: URL? = bannerHash.flatMap { hash in
             if usesGuildBanner, let guildID {
-                return URL(
-                    string:
-                    "https://cdn.discordapp.com/guilds/\(guildID)/users/\(domainUser.id)/banners/\(hash).webp?size=600&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                )
+                return DiscordCDN.guildMemberBanner(guildID, userID: domainUser.id, hash: hash)
             }
-            return URL(
-                string:
-                "https://cdn.discordapp.com/banners/\(domainUser.id)/\(hash).webp?size=600&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-            )
+            return DiscordCDN.userBanner(domainUser.id, hash: hash)
         }
 
         let roleIDs = Set(guildMember?.roles ?? [])

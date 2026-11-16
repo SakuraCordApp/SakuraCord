@@ -115,3 +115,104 @@ extension AppModel {
         channelPinMutationTasks[channelID] = nil
     }
 }
+
+nonisolated struct ChannelGroup: Identifiable, Equatable, Sendable {
+    let id: String
+    let categoryID: ChannelID?
+    let guildID: GuildID?
+    let name: String?
+    let position: Int
+    var channels: [Channel]
+
+    static func make(from channels: [Channel]) -> [ChannelGroup] {
+        var result: [ChannelGroup] = []
+        var indexByID: [String: Int] = [:]
+        result.reserveCapacity(min(channels.count, 32))
+        indexByID.reserveCapacity(min(channels.count, 32))
+        for channel in channels {
+            let groupID = channel.categoryID?.description ?? "uncategorized"
+            if let index = indexByID[groupID] {
+                result[index].channels.append(channel)
+            } else {
+                indexByID[groupID] = result.count
+                result.append(ChannelGroup(
+                    id: groupID,
+                    categoryID: channel.categoryID,
+                    guildID: channel.guildID,
+                    name: channel.category,
+                    position: channel.categoryPosition,
+                    channels: [channel]
+                ))
+            }
+        }
+        for index in result.indices {
+            result[index].channels.sort(by: channelOrder)
+        }
+        return result.sorted { lhs, rhs in
+            if lhs.name == nil, rhs.name != nil {
+                return true
+            }
+            if lhs.name != nil, rhs.name == nil {
+                return false
+            }
+            return lhs.position < rhs.position
+        }
+    }
+
+    static let pinnedSectionID = "pinned"
+
+    var isPinnedSection: Bool { id == Self.pinnedSectionID }
+
+    private static func channelOrder(_ lhs: Channel, _ rhs: Channel) -> Bool {
+        let lhsIsVoice = lhs.kind == .voice
+        let rhsIsVoice = rhs.kind == .voice
+        if lhsIsVoice != rhsIsVoice {
+            return !lhsIsVoice
+        }
+        if lhs.position != rhs.position {
+            return lhs.position < rhs.position
+        }
+        return lhs.id < rhs.id
+    }
+}
+
+nonisolated extension ChannelGroup {
+    /// Discord's Pinned Channels section leads the list and takes its channels
+    /// out of their categories. It orders them by their own position, voice
+    /// channels after the rest, with equal positions in `pinnedIDs` order.
+    static func pinning(
+        _ pinnedIDs: [ChannelID],
+        in groups: [ChannelGroup],
+        guildID: GuildID,
+        excluding hiddenIDs: Set<ChannelID>
+    ) -> [ChannelGroup] {
+        guard !pinnedIDs.isEmpty else { return groups }
+        let order = Dictionary(
+            pinnedIDs.enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var pinned: [(key: (Int, Int), channel: Channel)] = []
+        func isListedPin(_ channel: Channel) -> Bool {
+            order[channel.id] != nil && !hiddenIDs.contains(channel.id)
+        }
+        let remaining = groups.compactMap { group -> ChannelGroup? in
+            guard group.channels.contains(where: isListedPin) else { return group }
+            var group = group
+            group.channels.removeAll { channel in
+                guard isListedPin(channel), let rank = order[channel.id] else { return false }
+                pinned.append(((channel.position + (channel.kind == .voice ? 10_000 : 0), rank), channel))
+                return true
+            }
+            return group.channels.isEmpty ? nil : group
+        }
+        guard !pinned.isEmpty else { return groups }
+        return [ChannelGroup(
+            id: pinnedSectionID,
+            categoryID: nil,
+            guildID: guildID,
+            name: "Pinned Channels",
+            position: -1,
+            channels: pinned.sorted { $0.key < $1.key }.map(\.channel)
+        )] + remaining
+    }
+}

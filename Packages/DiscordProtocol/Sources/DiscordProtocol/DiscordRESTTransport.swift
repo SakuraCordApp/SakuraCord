@@ -25,272 +25,6 @@ private struct DiscordRESTPreparedRequest {
 }
 
 extension DiscordRESTProvider {
-    #if DEBUG
-        func orderedMemberListIDsForTesting(
-            guildID: GuildID, memberListID: String
-        ) -> [UserID] {
-            orderedMemberListMembers(
-                guildID: guildID, memberListID: memberListID
-            )?.map(\.id) ?? []
-        }
-
-        func memberListGroupsForTesting(
-            guildID: GuildID, memberListID: String
-        ) -> [GuildMemberListGroup] {
-            cachedMemberListGroups[guildID]?[memberListID] ?? []
-        }
-    #endif
-
-    func finishVoiceNegotiationIfReady() {
-        guard let pending = pendingVoiceNegotiation,
-              let sessionID = pending.sessionID,
-              let token = pending.token,
-              let endpoint = pending.endpoint
-        else { return }
-        voiceNegotiationTimeoutTask?.cancel()
-        pendingVoiceNegotiation = nil
-        let info = VoiceConnectionInfo(
-            serverID: pending.guildID?.description ?? pending.channelID.description,
-            channelID: pending.channelID,
-            guildID: pending.guildID,
-            userID: pending.userID,
-            sessionID: sessionID,
-            token: token,
-            endpoint: endpoint
-        )
-        activeVoiceConnection = info
-        pending.continuation.resume(returning: info)
-    }
-
-    func failVoiceNegotiation(id: UUID, error: any Error) {
-        guard let pending = pendingVoiceNegotiation, pending.id == id else { return }
-        voiceNegotiationTimeoutTask?.cancel()
-        pendingVoiceNegotiation = nil
-        pending.continuation.resume(throwing: error)
-    }
-
-    func decodedMemberListMembers(
-        guildID: GuildID,
-        memberListID: String,
-        restrictingTo changedUserIDs: Set<UserID>? = nil
-    ) -> [Member] {
-        if changedUserIDs?.isEmpty == true {
-            discordPerformanceSignposter.emitEvent(
-                "GatewayMemberListDomainDecodeSkipped"
-            )
-            return []
-        }
-        let roleCatalogBuild = discordPerformanceSignposter.beginInterval(
-            "GatewayMemberListRoleCatalogBuild",
-            id: discordPerformanceSignposter.makeSignpostID()
-        )
-        let guildRoles = cachedGuildRoles[guildID] ?? []
-        let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
-        discordPerformanceSignposter.endInterval(
-            "GatewayMemberListRoleCatalogBuild", roleCatalogBuild
-        )
-
-        let domainDecode = discordPerformanceSignposter.beginInterval(
-            "GatewayMemberListDomainDecode",
-            id: discordPerformanceSignposter.makeSignpostID()
-        )
-        defer {
-            discordPerformanceSignposter.endInterval(
-                "GatewayMemberListDomainDecode", domainDecode
-            )
-        }
-        var seen = Set<UserID>()
-        let previousMembers = cachedMemberIndex(guildID: guildID)
-        return (cachedMemberListItems[guildID]?[memberListID] ?? []).enumerated().compactMap { index, item -> Member? in
-            guard let memberDTO = item?.member,
-                  let userID = UserID(memberDTO.user.id),
-                  changedUserIDs?.contains(userID) != false,
-                  var member = try? memberDTO.domain(
-                      currentUserID: currentUser?.id,
-                      currentStatus: presenceStatus,
-                      presence: item?.presence,
-                      guildRoles: guildRoles,
-                      guildRoleCatalog: guildRoleCatalog,
-                      guildID: guildID,
-                      previousCommunicationDisabledUntil: previousMembers[userID]?.communicationDisabledUntil
-                  ),
-                  seen.insert(member.id).inserted
-            else { return nil }
-            member.memberListIndex = index
-            return member
-        }
-    }
-
-    func orderedMemberListMembers(
-        guildID: GuildID,
-        memberListID: String? = nil
-    ) -> [Member]? {
-        guard let memberListID = memberListID ?? selectedMemberListID[guildID],
-              let memberListItems = cachedMemberListItems[guildID]?[memberListID]
-        else { return nil }
-        let ordering = discordPerformanceSignposter.beginInterval(
-            "GatewayMemberListOrdering",
-            id: discordPerformanceSignposter.makeSignpostID()
-        )
-        defer {
-            discordPerformanceSignposter.endInterval(
-                "GatewayMemberListOrdering", ordering
-            )
-        }
-        var membersByID = Dictionary(
-            (cachedMembers[guildID] ?? []).map { ($0.id, $0) },
-            uniquingKeysWith: { _, newer in newer }
-        )
-        var seen = Set<UserID>()
-        let orderedIDs = memberListItems.enumerated().compactMap { index, item -> (UserID, Int)? in
-            guard let rawUserID = item?.member?.user.id,
-                  let userID = UserID(rawUserID),
-                  seen.insert(userID).inserted
-            else { return nil }
-            return (userID, index)
-        }
-        let missingUserIDs = Set(orderedIDs.lazy.map(\.0)).subtracting(
-            membersByID.keys
-        )
-        if !missingUserIDs.isEmpty {
-            for member in decodedMemberListMembers(
-                guildID: guildID,
-                memberListID: memberListID,
-                restrictingTo: missingUserIDs
-            ) {
-                membersByID[member.id] = member
-            }
-        }
-        return orderedIDs.compactMap { userID, index in
-            guard var member = membersByID[userID] else { return nil }
-            member.memberListIndex = index
-            return member
-        }
-    }
-
-    static func memberListChangedUserIDs(
-        in operations: [GuildMemberListUpdateDTO.Operation]
-    ) -> Set<UserID> {
-        var userIDs = Set<UserID>()
-        for operation in operations {
-            if let items = operation.items {
-                userIDs.formUnion(items.compactMap { item in
-                    item.member.flatMap { UserID($0.user.id) }
-                })
-            }
-            if let item = operation.item,
-               let userID = item.member.flatMap({ UserID($0.user.id) })
-            {
-                userIDs.insert(userID)
-            }
-        }
-        return userIDs
-    }
-
-    static func applyMemberListOperation(
-        _ operation: GuildMemberListUpdateDTO.Operation,
-        to items: inout [GuildMemberListUpdateDTO.Item?],
-        keepingInvalidatedRows: Bool = false
-    ) {
-        switch operation.op {
-        case "SYNC":
-            applyMemberListSync(operation, to: &items)
-        case "INSERT":
-            guard let index = operation.index, let item = operation.item else { return }
-            items.insert(item, at: min(max(0, index), items.count))
-        case "UPDATE":
-            guard let index = operation.index, index >= 0, let item = operation.item else { return }
-            if items.count <= index {
-                items.append(contentsOf: repeatElement(nil, count: index + 1 - items.count))
-            }
-            items[index] = item
-        case "DELETE":
-            guard let index = operation.index, items.indices.contains(index) else { return }
-            items.remove(at: index)
-        case "INVALIDATE":
-            // Rows stay only while a resubscribe will bring a fresh SYNC for a
-            // list that is still accessible; otherwise clearing them would
-            // leave permanent placeholders, but keeping them could leak members
-            // after a permission change.
-            guard !keepingInvalidatedRows,
-                  let range = operation.range, range.count == 2, !items.isEmpty
-            else { return }
-            let lower = max(0, range[0])
-            let upper = min(items.count - 1, range[1])
-            guard lower <= upper else { return }
-            for index in lower ... upper {
-                items[index] = nil
-            }
-        default:
-            return
-        }
-    }
-
-    private static func applyMemberListSync(
-        _ operation: GuildMemberListUpdateDTO.Operation,
-        to items: inout [GuildMemberListUpdateDTO.Item?]
-    ) {
-        guard let range = operation.range, range.count == 2,
-              let values = operation.items
-        else { return }
-        let lower = max(0, range[0])
-        let upper = max(lower, range[1])
-        if items.count <= upper {
-            items.append(contentsOf: repeatElement(nil, count: upper + 1 - items.count))
-        }
-        // SYNC replaces its declared interval. Discord can return fewer items
-        // than the range spans; retained INVALIDATE rows must not survive in
-        // that interval's unfilled tail. Other cached ranges remain intact.
-        for index in lower ... upper {
-            items[index] = nil
-        }
-        for (offset, value) in values.enumerated() where lower + offset <= upper {
-            items[lower + offset] = value
-        }
-    }
-
-    func applyMemberListOperations(
-        _ operations: [GuildMemberListUpdateDTO.Operation],
-        guildID: GuildID,
-        memberListID: String
-    ) {
-        var items = cachedMemberListItems[guildID]?[memberListID] ?? []
-        let keepInvalidatedRows = !memberListSubscriptionsForRefresh(
-            guildID: guildID, memberListID: memberListID
-        ).isEmpty
-        for operation in operations {
-            Self.applyMemberListOperation(
-                operation, to: &items, keepingInvalidatedRows: keepInvalidatedRows
-            )
-        }
-        cachedMemberListItems[guildID, default: [:]][memberListID] = items
-    }
-
-    /// A retained subscription is accessible while its channel is still
-    /// viewable by the current user and resolves to the same member list.
-    /// INVALIDATE rows are kept only then, while awaiting a replacement SYNC.
-    func isMemberListAccessible(
-        guildID: GuildID, memberListID: String,
-        subscription requestedSubscription: DiscordMemberListSubscription? = nil
-    ) -> Bool {
-        guard let subscription = requestedSubscription ?? memberListSubscriptions[guildID]?[memberListID],
-              let channel = cachedChannels[guildID]?.first(where: {
-                  $0.id == subscription.channelID
-              })
-        else { return false }
-        return canViewMemberListChannel(channel, guildID: guildID)
-            && DiscordMemberListIdentity.id(
-                for: channel,
-                guildID: guildID,
-                roles: cachedGuildRoles[guildID] ?? []
-            ) == memberListID
-    }
-
-    func selectedMemberListGroups(guildID: GuildID) -> [GuildMemberListGroup] {
-        guard let memberListID = selectedMemberListID[guildID] else { return [] }
-        return cachedMemberListGroups[guildID]?[memberListID] ?? []
-    }
-
     func request<Response: Decodable>(
         _ path: String,
         method: String = "GET",
@@ -313,19 +47,9 @@ extension DiscordRESTProvider {
         path: String,
         mapFailure: (_ status: Int, _ discordCode: Int?) -> (any Error)? = { _, _ in nil }
     ) throws -> Response {
-        let isMessageHistoryRequest = method == "GET"
-            && path.hasPrefix("/channels/")
-            && path.hasSuffix("/messages")
-        guard (200 ..< 300).contains(response.statusCode) else {
-            if let error = mapFailure(response.statusCode, Self.discordErrorCode(from: data)) { throw error }
-            if response.statusCode == 401 {
-                authorizationValue = nil
-                throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
-            }
-            throw unexplainedFailure(data, response)
-        }
+        try validateEmptyResponse(data, response, mapFailure: mapFailure)
         do {
-            let decodeName: StaticString = isMessageHistoryRequest
+            let decodeName: StaticString = Self.isMessageHistoryRequest(method: method, path: path)
                 ? "MessageHistoryResponseDecode"
                 : "RESTResponseDecode"
             let decode = discordPerformanceSignposter.beginInterval(
@@ -349,19 +73,27 @@ extension DiscordRESTProvider {
         }
     }
 
+    static func isMessageHistoryRequest(method: String, path: String) -> Bool {
+        method == "GET" && path.hasPrefix("/channels/") && path.hasSuffix("/messages")
+    }
+
     func requestEmpty(
         _ path: String,
         method: String,
         query: [URLQueryItem] = [],
         body: [String: JSONValue]? = nil
     ) async throws {
-        let (data, response) = try await perform(
-            path, method: method, query: query, body: body, headers: [:])
+        let (data, response) = try await perform(path, method: method, query: query, body: body)
         try validateEmptyResponse(data, response)
     }
 
-    func validateEmptyResponse(_ data: Data, _ response: HTTPURLResponse) throws {
+    func validateEmptyResponse(
+        _ data: Data,
+        _ response: HTTPURLResponse,
+        mapFailure: (_ status: Int, _ discordCode: Int?) -> (any Error)? = { _, _ in nil }
+    ) throws {
         guard (200 ..< 300).contains(response.statusCode) else {
+            if let error = mapFailure(response.statusCode, Self.discordErrorCode(from: data)) { throw error }
             if response.statusCode == 401 {
                 authorizationValue = nil
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
@@ -397,9 +129,7 @@ extension DiscordRESTProvider {
         let routeKey = Self.rateLimitRouteKey(method: method, path: path)
         let majorParameter = Self.rateLimitMajorParameter(path: path)
         let requestRateLimitKey = "\(routeKey) [\(majorParameter)]"
-        let isMessageHistoryRequest = method == "GET"
-            && path.hasPrefix("/channels/")
-            && path.hasSuffix("/messages")
+        let isMessageHistoryRequest = Self.isMessageHistoryRequest(method: method, path: path)
         let canRetryAsRead = Self.canRetryAsRead(method: method, path: path)
         let maximumAttempts = requestedMaximumAttempts ?? (canRetryAsRead ? 2 : 1)
         let context = DiscordRESTRequestContext(
@@ -703,8 +433,8 @@ extension DiscordRESTProvider {
     func perform(
         _ path: String,
         method: String,
-        query: [URLQueryItem],
-        body: [String: JSONValue]?,
+        query: [URLQueryItem] = [],
+        body: [String: JSONValue]? = nil,
         headers: [String: String] = [:],
         maximumAttempts requestedMaximumAttempts: Int? = nil,
         statusSave: StatusSettingsSaveContext? = nil

@@ -54,12 +54,9 @@ final class TypingBubble {
     private static let loopFrameRate = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
 
     private static let dotColor = NSColor(name: nil) { appearance in
-        switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
-        case .darkAqua:
-            NSColor(srgbRed: 0.68, green: 0.68, blue: 0.70, alpha: 1)
-        default:
-            NSColor(srgbRed: 0.56, green: 0.56, blue: 0.58, alpha: 1)
-        }
+        appearance.isDark
+            ? NSColor(srgbRed: 0.68, green: 0.68, blue: 0.70, alpha: 1)
+            : NSColor(srgbRed: 0.56, green: 0.56, blue: 0.58, alpha: 1)
     }
 
     /// The tail, body, and dots, laid out from the origin.
@@ -690,7 +687,7 @@ final class TypingIndicator: NSView {
         }
         // Share the timeline's decoded avatars, so anyone with a visible
         // message shows their picture straight away.
-        let dimension = NativeTimelineMediaKey.avatarPixelDimension
+        let dimension = MediaImageKey.avatarPixelDimension
         if let cached = SharedDecodedImageLoader.shared.cachedImage(
             for: url, maximumPixelDimension: dimension, preparesForTimeline: true
         ) {
@@ -741,7 +738,7 @@ final class TypingIndicator: NSView {
     private static var fallbackTheme: SakuraCordGradientTheme?
 
     private func fallbackImage(name: String) -> CGImage? {
-        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let isDark = effectiveAppearance.isDark
         return Self.fallbackImage(name: name, colorScheme: isDark ? .dark : .light, scale: window?.backingScaleFactor ?? 2)
     }
 

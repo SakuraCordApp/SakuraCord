@@ -89,8 +89,7 @@ public extension DiscordRESTProvider {
         if let profileStatusSettings {
             presentation.customStatus = DiscordSettingsProto.customStatus(in: profileStatusSettings)?.displayText
         }
-        var eligibility = profileApexAssignments?.widgetEligibility(for: user)
-            ?? ProfileWidgetEligibility(hasFullNitro: user.premiumType == 2, hasPersonalWidgetAccess: false)
+        var eligibility = experiments.widgetEligibility(for: user)
         eligibility.showsDeveloperWidgets = profileDeveloperMode
         var mainDTO = response.profile
         mainDTO.guildMember = nil
@@ -112,7 +111,7 @@ public extension DiscordRESTProvider {
             serverMetadata: response.serverMetadata?.fields,
             serverTag: response.identity.serverTag,
             serverTagGuilds: gatewayGuildIDs.compactMap { id in
-                guard let guild = cachedGuilds[id], guild.features.contains("GUILD_TAGS"), guild.profileTag?.tag != nil,
+                guard let guild = cachedGuilds[id], guild.features.contains(GuildFeature.guildTags), guild.profileTag?.tag != nil,
                       let member = cachedMembers[id]?.first(where: { $0.id == user.id }),
                       member.joinedAt != nil, member.isPending != true else { return nil }
                 return guild

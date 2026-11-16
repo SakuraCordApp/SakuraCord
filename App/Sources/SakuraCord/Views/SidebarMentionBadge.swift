@@ -16,11 +16,10 @@ extension View {
 
 private struct MentionBadgeAnimation: ViewModifier {
     let count: Int
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    @Environment(\.snapsSidebarMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        content.animation(systemReducesMotion || reducesSidebarMotion ? nil : MentionBadgeMotion.animation, value: count)
+        content.animation(reduceMotion ? nil : MentionBadgeMotion.animation, value: count)
     }
 }
 
@@ -35,7 +34,7 @@ struct SidebarMentionBadge: View {
             .contentTransition(.numericText(value: Double(count)))
             .padding(.horizontal, InterfaceScale.metric(6))
             .padding(.vertical, InterfaceScale.metric(2))
-            .background(Color(hex: MentionRed.hex), in: Capsule())
+            .background(MentionRed.color, in: Capsule())
             .transition(MentionBadgeMotion.transition)
     }
 }

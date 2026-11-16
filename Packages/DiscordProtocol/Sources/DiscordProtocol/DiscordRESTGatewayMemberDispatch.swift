@@ -47,7 +47,7 @@ extension DiscordRESTProvider {
             update.ops, guildID: guildID, memberListID: update.id
         )
         if let groups = update.groups {
-            cachedMemberListGroups[guildID, default: [:]][update.id] = groups.map {
+            memberListState.cachedGroups[guildID, default: [:]][update.id] = groups.map {
                 GuildMemberListGroup(id: $0.id, count: $0.count)
             }
         }
@@ -64,12 +64,12 @@ extension DiscordRESTProvider {
         cachedMembersByID.removeValue(forKey: guildID)
         publishUserSearchAliases()
         if guildID == pendingMemberGuildID,
-           update.id == selectedMemberListID[guildID]
+           update.id == memberListState.selectedIDs[guildID]
         {
             publishMembers(
                 guildID: guildID,
                 members: orderedMemberListMembers(guildID: guildID) ?? members,
-                groups: cachedMemberListGroups[guildID]?[update.id] ?? []
+                groups: memberListState.cachedGroups[guildID]?[update.id] ?? []
             )
         } else {
             publishCurrentMemberTimeoutChange(previousMembers: previousMembers, guildID: guildID)
@@ -101,7 +101,7 @@ extension DiscordRESTProvider {
         guard invalidatedOverlapsSubscription else { return }
         markMemberListForRefresh(guildID: guildID, memberListID: update.id)
         guard guildID == pendingMemberGuildID,
-              update.id == selectedMemberListID[guildID]
+              update.id == memberListState.selectedIDs[guildID]
         else { return }
         do {
             // The serialized send satisfies only the refresh generation it
@@ -333,15 +333,7 @@ extension DiscordRESTProvider {
         if let clientStatus = update.clientStatus {
             members[index].isMobileOnly = clientStatus.isMobileOnly
         }
-        if let activities = update.activities {
-            let primaryActivity = activities.memberListActivity
-            members[index].customStatus = activities.first(where: { $0.type == 4 })?.displayText
-            members[index].activityText =
-                primaryActivity?.displayText
-                    ?? members[index].customStatus
-            members[index].isListeningToMusic = primaryActivity?.type == 2
-            members[index].richActivity = primaryActivity?.asRichActivity
-        }
+        if let activities = update.activities { members[index].applyActivities(activities) }
         cachedMembers[guildID] = members
         cachedMembersByID.removeValue(forKey: guildID)
         if guildID == pendingMemberGuildID {

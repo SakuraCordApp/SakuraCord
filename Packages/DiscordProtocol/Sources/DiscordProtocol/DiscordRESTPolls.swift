@@ -70,7 +70,7 @@ public extension DiscordRESTProvider {
             update.apply(to: &message)
             cachedMessages[messageID] = message
             updateForumPostForMessage(message, publishesChange: false)
-        } else if let post = cachedForumPosts.values.lazy.compactMap({ $0[channelID] }).first,
+        } else if let post = cachedForumPost(threadID: channelID),
                   var message = [post.firstMessage, post.mostRecentMessage].compactMap({ $0 }).first(where: { $0.id == messageID }) {
             update.apply(to: &message)
             updateForumPostForMessage(message, publishesChange: false)

@@ -14,7 +14,7 @@ enum MediaSaveMenuBuilder {
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(
-            actionItem(
+            ContextMenuItemSupport.item(
                 String(localized: LocalizedStringResource("Save As…", bundle: #bundle)),
                 systemImage: "square.and.arrow.down",
                 action: actions.saveAs
@@ -32,7 +32,7 @@ enum MediaSaveMenuBuilder {
                 bundle: #bundle
             ))
         }
-        let folderItem = actionItem(
+        let folderItem = ContextMenuItemSupport.item(
             folderTitle,
             systemImage: "folder",
             action: actions.saveToDefaultFolder
@@ -71,25 +71,4 @@ enum MediaSaveMenuBuilder {
         )
     }
 
-    private static func actionItem(
-        _ title: String,
-        systemImage: String,
-        action: @escaping () -> Void
-    ) -> NSMenuItem {
-        let target = NativeTimelineMenuAction(action)
-        let item = NSMenuItem(
-            title: title,
-            action: #selector(NativeTimelineMenuAction.performAction),
-            keyEquivalent: ""
-        )
-        item.target = target
-        item.representedObject = target
-        item.isEnabled = true
-        ContextMenuItemSupport.configure(
-            item,
-            title: title,
-            systemImage: systemImage
-        )
-        return item
-    }
 }

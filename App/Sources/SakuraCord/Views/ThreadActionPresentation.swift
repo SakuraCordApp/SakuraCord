@@ -30,7 +30,7 @@ private struct ThreadRenameView: View {
 
     var body: some View {
         let store = model.threadActions
-        let noun = presentation.isForumPost ? "Post" : "Thread"
+        let noun = AppModel.threadNoun(isForumPost: presentation.isForumPost)
         VStack(alignment: .leading, spacing: InterfaceScale.metric(16)) {
             Text("Edit \(noun)")
                 .font(.interface(.title2).weight(.bold))
@@ -104,7 +104,7 @@ private struct ThreadDeletionConfirmationHost: View {
     @Bindable var store: ThreadActionStore
 
     var body: some View {
-        let noun = store.deletion?.isForumPost == true ? "Post" : "Thread"
+        let noun = AppModel.threadNoun(isForumPost: store.deletion?.isForumPost == true)
         Color.clear
             .alert(
                 "Delete ‘\(store.deletion?.thread.name ?? noun)’?",

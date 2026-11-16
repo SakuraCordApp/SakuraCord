@@ -61,23 +61,13 @@ extension NativeTimelineCanvasView {
         presentHoverLabel()
     }
 
-    func setHoveredSilentBadgeMessageID(_ value: MessageID?) {
-        guard hoveredSilentBadgeMessageID != value else { return }
-        hoveredSilentBadgeMessageID = value
-        presentHoverLabel()
-    }
-
     func silentBadgePointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y), layouts.indices.contains(index),
-              let frame = layouts[index].silentBadgeFrame,
-              frame.contains(CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index)))
-        else { return nil }
-        return items[index].messageID
+        messageID(at: point) { layouts[$0].silentBadgeFrame }
     }
 
     private var hoverLabelTarget: NativeTimelineHoverLabelTarget? {
-        if let messageID = hoveredSilentBadgeMessageID { return .silentBadge(messageID) }
-        return hoveredMention.map(NativeTimelineHoverLabelTarget.timestamp)
+        if let messageID = pointer.hoveredSilentBadgeMessageID { return .silentBadge(messageID) }
+        return pointer.hoveredMention.map(NativeTimelineHoverLabelTarget.timestamp)
     }
 
     private func hoverLabelTitle(for target: NativeTimelineHoverLabelTarget) -> String? {

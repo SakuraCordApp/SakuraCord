@@ -61,25 +61,12 @@ private final class UploadPrivacyURLProtocol: URLProtocol, @unchecked Sendable {
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        var body = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(buffer, count: count)
-            }
-        }
+        let body = request.bodyData ?? Data()
         Self.bodies.withLock { $0.append(body) }
         let data = request.httpMethod == "POST"
             ? Data(#"{"attachments":[{"id":0,"upload_url":"https://upload.example/test","upload_filename":"clean-upload"}]}"#.utf8)
             : Data()
-        guard let url = request.url, let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: data, headers: nil)
     }
     override func stopLoading() {}
 }

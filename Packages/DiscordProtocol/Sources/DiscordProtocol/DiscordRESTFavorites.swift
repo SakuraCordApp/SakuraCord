@@ -3,7 +3,7 @@ import SakuraCordModels
 
 extension DiscordRESTProvider {
     public func favoritesSettings() async -> FavoritesSettings? {
-        pendingFavorites ?? favoritesMessage.map(DiscordFavoritesProto.settings(from:))
+        favoritesSync.pendingFavorites ?? favoritesSync.favoritesMessage.map(DiscordFavoritesProto.settings(from:))
     }
 
     /// Applies edits optimistically and saves them at once, like the
@@ -12,10 +12,10 @@ extension DiscordRESTProvider {
     /// coalesced into one follow-up save of the newest state instead of being
     /// discarded with the response.
     public func updateFavorites(_ edits: [FavoritesSettings.Edit]) async throws {
-        guard let favoritesMessage else {
+        guard let favoritesMessage = favoritesSync.favoritesMessage else {
             throw ChatProviderError.invalidRequest("Wait for your account settings to finish loading.")
         }
-        var next = pendingFavorites ?? DiscordFavoritesProto.settings(from: favoritesMessage)
+        var next = favoritesSync.pendingFavorites ?? DiscordFavoritesProto.settings(from: favoritesMessage)
         for edit in edits {
             if case let .add(id, channelType, categoryID) = edit {
                 next.apply(.add(id, channelType: storedChannelType(id) ?? channelType, categoryID: categoryID))
@@ -23,14 +23,14 @@ extension DiscordRESTProvider {
                 next.apply(edit)
             }
         }
-        pendingFavorites = next
+        favoritesSync.pendingFavorites = next
         continuation?.yield(.favoritesChanged(next, isConfirmed: false))
         // Reset also restores Suggested Channels, in the same write.
-        if edits.contains(.reset), let content = userContentMessage,
+        if edits.contains(.reset), let content = favoritesSync.userContentMessage,
            DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: content) {
             let restored = DiscordUserContentProto.setting(DiscordUserContentProto.favoritesSuggestions, dismissed: false, in: content)
-            pendingUserContent = restored
-            userContentMessage = restored
+            favoritesSync.pendingUserContent = restored
+            favoritesSync.userContentMessage = restored
             continuation?.yield(.favoritesSuggestionsDismissed(false))
         }
         startFavoritesSave()
@@ -45,22 +45,18 @@ extension DiscordRESTProvider {
     }
 
     func applyFavoritesSettingsProto(_ encoded: String?, replacesAllSettings: Bool) {
-        guard let encoded, let data = Data(base64Encoded: encoded) else { return }
-        let message = DiscordFavoritesProto.message(inSettings: data)
-        guard message != nil || replacesAllSettings else { return }
-        let version = DiscordSettingsProto.dataVersion(in: data)
-        if let version, let current = favoritesDataVersion, version < current { return }
-        if let version { favoritesDataVersion = version }
-        let stored = message ?? Data()
-        guard stored != favoritesMessage else { return }
-        favoritesMessage = stored
+        guard let stored = DiscordSettingsProto.acceptedField(
+            in: encoded, replacesAllSettings: replacesAllSettings, dataVersion: &favoritesSync.favoritesDataVersion,
+            field: DiscordFavoritesProto.message(inSettings:)
+        ), stored != favoritesSync.favoritesMessage else { return }
+        favoritesSync.favoritesMessage = stored
         // A pending edit stays presented; its save reconciles with this copy.
-        guard pendingFavorites == nil else { return }
+        guard favoritesSync.pendingFavorites == nil else { return }
         publishStoredFavorites()
     }
 
     private func publishStoredFavorites() {
-        continuation?.yield(.favoritesChanged(DiscordFavoritesProto.settings(from: favoritesMessage ?? Data()), isConfirmed: true))
+        continuation?.yield(.favoritesChanged(DiscordFavoritesProto.settings(from: favoritesSync.favoritesMessage ?? Data()), isConfirmed: true))
     }
 
     /// The official client removes a deleted channel from Favorites itself.
@@ -72,26 +68,17 @@ extension DiscordRESTProvider {
     func finishFavoritesEdits() async {
         while let save = favoritesSaveTask { await save.value }
         favoritesGeneration &+= 1
-        favoritesMessage = nil
-        favoritesDataVersion = nil
-        pendingFavorites = nil
-        pendingUserContent = nil
-        userContentMessage = nil
-        confirmedUserContentMessage = nil
-        userContentDataVersion = nil
-        personalizationConsented = false
-        channelAffinities = nil
-        userAffinities = nil
+        favoritesSync = FavoritesSyncState()
     }
 
     private func saveFavorites(generation: UInt64) async {
         defer { if generation == favoritesGeneration { favoritesSaveTask = nil } }
-        while generation == favoritesGeneration, pendingFavorites != nil || pendingUserContent != nil {
-            let target = pendingFavorites
-            let userContent = pendingUserContent
-            pendingUserContent = nil
+        while generation == favoritesGeneration, favoritesSync.pendingFavorites != nil || favoritesSync.pendingUserContent != nil {
+            let target = favoritesSync.pendingFavorites
+            let userContent = favoritesSync.pendingUserContent
+            favoritesSync.pendingUserContent = nil
             var settings = userContent.map { DiscordSettingsProto.protoLengthDelimitedField(DiscordUserContentProto.settingsField, $0) } ?? Data()
-            if let target, let stored = favoritesMessage {
+            if let target, let stored = favoritesSync.favoritesMessage {
                 settings += DiscordSettingsProto.protoLengthDelimitedField(
                     DiscordFavoritesProto.settingsField, DiscordFavoritesProto.message(for: target, preserving: stored)
                 )
@@ -109,16 +96,16 @@ extension DiscordRESTProvider {
                 if error is UserSettingsRejection { await reloadUserSettings() }
                 gatewayLogger.error("Could not save Favorites: \(error.localizedDescription, privacy: .public)")
                 // Edits queued behind this save are dropped with it.
-                if pendingFavorites != nil {
-                    pendingFavorites = nil
+                if favoritesSync.pendingFavorites != nil {
+                    favoritesSync.pendingFavorites = nil
                     publishStoredFavorites()
                 }
                 // Suggested Channels queued behind this save are dropped with
                 // it and return to what Discord confirmed.
-                let unsavedContent = pendingUserContent ?? userContent
-                pendingUserContent = nil
-                if let unsavedContent, userContentMessage == unsavedContent, let confirmed = confirmedUserContentMessage {
-                    userContentMessage = confirmed
+                let unsavedContent = favoritesSync.pendingUserContent ?? userContent
+                favoritesSync.pendingUserContent = nil
+                if let unsavedContent, favoritesSync.userContentMessage == unsavedContent, let confirmed = favoritesSync.confirmedUserContentMessage {
+                    favoritesSync.userContentMessage = confirmed
                     continuation?.yield(.favoritesSuggestionsDismissed(
                         DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: confirmed)
                     ))
@@ -128,8 +115,8 @@ extension DiscordRESTProvider {
             }
             // A Reset made since may have returned the Favorites to this
             // target while its Suggested Channels still need saving.
-            guard let target, pendingFavorites == target, pendingUserContent == nil else { continue }
-            pendingFavorites = nil
+            guard let target, favoritesSync.pendingFavorites == target, favoritesSync.pendingUserContent == nil else { continue }
+            favoritesSync.pendingFavorites = nil
             publishStoredFavorites()
         }
     }
@@ -142,4 +129,29 @@ extension DiscordRESTProvider {
         }
         return nil
     }
+}
+
+/// The session's Favorites and Suggested Channels settings: what Discord
+/// confirmed, what a save still holds, and the affinities suggestions rank by.
+struct FavoritesSyncState {
+    /// The confirmed settings-proto/1 Favorites message; nil until settings load.
+    var favoritesMessage: Data?
+    var favoritesDataVersion: UInt32?
+    /// The settings data version of `userContentMessage`; older copies, such as
+    /// a late response to an earlier write, are ignored.
+    var userContentDataVersion: UInt32?
+    /// The optimistic Favorites state while a save is pending or in flight.
+    var pendingFavorites: FavoritesSettings?
+    /// The settings-proto/1 UserContentSettings message, with any write still
+    /// awaiting Discord's answer applied.
+    var userContentMessage: Data?
+    /// The UserContentSettings Discord last confirmed, which a failed write
+    /// rolls back to.
+    var confirmedUserContentMessage: Data?
+    /// UserContentSettings waiting in the Favorites save queue: a Suggested
+    /// Channels dismissal, or the restore Reset sends in its own write.
+    var pendingUserContent: Data?
+    var personalizationConsented = false
+    /// Each ranking is loaded once its fetch date is set.
+    var affinities = ConversationAffinities()
 }

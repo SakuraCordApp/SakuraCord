@@ -6,7 +6,7 @@ import SwiftUI
 struct MediaViewerWindowOverlay: View {
     @Environment(\.profileCosmeticPolicy) private var cosmeticPolicy
     @Environment(VoiceMessagePlaybackStore.self) private var playback
-    let presentation: NativeTimelineMediaViewerPresentation?
+    let presentation: MediaViewerPresentation?
     /// Read live by the hosted viewer, whose tree outlives this view's updates.
     let animatesOverlays: () -> Bool
     let dismiss: () -> Void
@@ -38,7 +38,7 @@ private final class MediaViewerWindowAnimationState {
     private let fileItemIDs: Set<String>
     private var selectedItemID: String
 
-    init(presentation: NativeTimelineMediaViewerPresentation, reducesMotion: Bool) {
+    init(presentation: MediaViewerPresentation, reducesMotion: Bool) {
         self.reducesMotion = reducesMotion
         sourceItemIDs = Set(presentation.transitionLink.sources.keys)
         fileItemIDs = Set(presentation.items.filter {
@@ -144,7 +144,7 @@ private final class MediaViewerWindowAnimationState {
 }
 
 private struct MediaViewerWindowAnimatedContent: View {
-    let presentation: NativeTimelineMediaViewerPresentation
+    let presentation: MediaViewerPresentation
     let context: WindowModalContext
     let selectionChanged: (String) -> Void
     @State private var animationState: MediaViewerWindowAnimationState
@@ -155,7 +155,7 @@ private struct MediaViewerWindowAnimatedContent: View {
     private var link: MediaViewerTransitionLink { presentation.transitionLink }
 
     init(
-        presentation: NativeTimelineMediaViewerPresentation,
+        presentation: MediaViewerPresentation,
         context: WindowModalContext,
         animatesOverlays: @escaping () -> Bool,
         selectionChanged: @escaping (String) -> Void

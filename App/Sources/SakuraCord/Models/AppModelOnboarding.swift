@@ -43,8 +43,7 @@ final class GuildOnboardingStore {
         entries = [:]
         members = [:]
         bootstrapMembers = [:]
-        for task in timeoutExpiryTasks.values { task.cancel() }
-        timeoutExpiryTasks = [:]
+        timeoutExpiryTasks.cancelAll()
         timeoutRevisions = [:]
         guides = [:]
         presentedGuildID = nil
@@ -54,26 +53,58 @@ final class GuildOnboardingStore {
         isChannelSearchFocused = false
         channelSelections = [:]
     }
+
+    /// Forgets the account's membership in a guild it no longer has, with
+    /// its timeout tracking.
+    func removeMembership(in guildID: GuildID) {
+        members[guildID] = nil
+        timeoutExpiryTasks.removeValue(forKey: guildID)?.cancel()
+        timeoutRevisions[guildID] = nil
+    }
+
+    /// Forgets everything kept for a guild the account no longer has.
+    func removeGuild(_ guildID: GuildID) {
+        entries[guildID] = nil
+        removeMembership(in: guildID)
+        guides[guildID] = nil
+        channelSelections[guildID] = nil
+        if presentedGuildID == guildID { presentedGuildID = nil }
+    }
 }
 
 extension AppModel {
+    func updateServerRailMembership(replacing previous: [GuildID: Guild]) {
+        serverRailPresentation.updateAvailableGuildIDs(serverRailGuildsByID.keys)
+        for guildID in previous.keys where serverRailGuildsByID[guildID] == nil {
+            onboarding.removeGuild(guildID)
+        }
+        if previous.mapValues(\.isUnavailable) != serverRailGuildsByID.mapValues(\.isUnavailable) {
+            serverInvites.changed()
+        }
+    }
+
+    func installBootstrapMembership(_ value: BootstrapSnapshot) {
+        onboarding.members = value.currentMembersByGuildID
+        let bootstrapMembers = onboarding.bootstrapMembers
+        onboarding.bootstrapMembers = [:]
+        for guild in value.guilds {
+            if let member = bootstrapMembers[guild.id]?[value.currentUser.id] {
+                receiveOnboardingMember(member, guildID: guild.id)
+            }
+        }
+        reconcileGuildTimeoutExpiries()
+    }
+
     nonisolated static func resolveConversationAccess(
         for channel: Channel,
         permissionBasis: ConversationPermissionBasis?
     ) -> ConversationAccess {
         guard channel.guildID != nil else {
             // A message request takes no replies until it is accepted.
-            return .readable(canSend: !channel.isOfficialSystemDirectMessage && channel.messageRequest == nil)
+            return .readable(canSend: channel.acceptsPrivateInteraction)
         }
         guard let permissionBasis, permissionBasis.currentUserOnboardingIsKnown else { return .checking }
-        let permissions = ConversationPermissionResolver.effectivePermissions(
-            guild: permissionBasis.guild,
-            channel: channel,
-            resolvedBasePermissions: permissionBasis.resolvedBasePermissions,
-            overwritePrincipals: permissionBasis.overwritePrincipals,
-            hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity,
-            communicationDisabledUntil: permissionBasis.currentUserCommunicationDisabledUntil
-        )
+        let permissions = permissionBasis.effectivePermissions(in: channel)
         if permissionBasis.currentUserIsPending || permissionBasis.currentUserRequiresOnboarding {
             let access = ConversationPermissionResolver.channelAccess(effectivePermissions: permissions)
             return access.isReadable ? .readable(canSend: false) : access
@@ -93,7 +124,7 @@ extension AppModel {
     }
 
     func requiresOnboarding(in guildID: GuildID) -> Bool {
-        serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true
+        serverRailGuildsByID[guildID]?.hasOnboarding == true
             && onboardingMember(in: guildID)?.requiresOnboarding == true
     }
 
@@ -111,7 +142,7 @@ extension AppModel {
 
     func refreshSelectedGuildOnboarding(force: Bool = false) {
         guard let guildID = selectedGuildID, let guild = serverRailGuildsByID[guildID] else { return }
-        if guild.features.contains("GUILD_ONBOARDING") || guild.features.contains("GUILD_ONBOARDING_HAS_PROMPTS") {
+        if guild.hasOnboarding || guild.features.contains(GuildFeature.onboardingHasPrompts) {
             let entry = onboarding.entries[guildID]
             if force || entry?.needsRefresh == true || entry?.refreshedAt.map({ Date.now.timeIntervalSince($0) >= 30 }) != false {
                 refreshOnboarding(in: guildID)
@@ -139,7 +170,7 @@ extension AppModel {
                 let (value, confirmedMember) = try await (configuration, member)
                 guard model.isCurrentAccountSession(account), !Task.isCancelled,
                       store.entries[guildID]?.revision == revision else { return }
-                let initial = confirmedMember.requiresOnboarding && guild.features.contains("GUILD_ONBOARDING")
+                let initial = confirmedMember.requiresOnboarding && guild.hasOnboarding
                 if !initial, let current = store.entries[guildID],
                    current.editRevision != entry.editRevision || current.isSaving {
                     store.entries[guildID]?.isLoading = false
@@ -195,7 +226,7 @@ extension AppModel {
         if old?.communicationDisabledUntil != member.communicationDisabledUntil {
             scheduleGuildTimeoutExpiry(in: guildID)
             timelinePresentationRevision &+= 1
-            forwardSearchSourceRevision &+= 1
+            destinationSearchSourceRevision &+= 1
         }
         // Flags can arrive without a role change. Rebuild the same projection
         // that owns sidebar locks and resumes an initial history load waiting
@@ -270,7 +301,7 @@ extension AppModel {
                     let timeoutRevision = store.timeoutRevisions[guildID, default: 0]
                     let member = try await account.provider.refreshCurrentMember(in: guildID)
                     guard model.isCurrentAccountSession(account), store.entries[guildID]?.revision == entry.revision else { return }
-                    guard member.flags.map({ $0 & 2 != 0 }) == true else {
+                    guard member.hasCompletedOnboarding else {
                         throw ChatProviderError.invalidRequest("Discord has not confirmed onboarding completion. Refresh to continue.")
                     }
                     model.receiveOnboardingMember(member, guildID: guildID, timeoutRevision: timeoutRevision)
@@ -298,10 +329,9 @@ extension AppModel {
             ?? snapshot?.activeJoinedThreads.first { $0.id == channelID }?.parentID
             ?? (openThread?.id == channelID ? openThread?.parentID : nil)
             ?? channelID
-        let channel = snapshot?.channels.first { $0.id == parentID }
-            ?? visibleChannels.first { $0.id == parentID }
+        let channel = knownRootChannel(parentID)
         guard let guildID = channel?.guildID else { return true }
-        if requiresOnboarding(in: guildID) || (serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true && onboardingMember(in: guildID)?.flags == nil) {
+        if requiresOnboarding(in: guildID) || serverRailGuildsByID[guildID]?.isOnboardingStateKnown(for: onboardingMember(in: guildID)) == false {
             openChannelsAndRoles(in: guildID)
             return false
         }
@@ -326,21 +356,13 @@ extension AppModel {
         guard let guildID, presentedGuildChannelSettings(in: guildID).hideMutedChannels else { return groups }
         let threads = threadsByParentID
             ?? sidebarThreadLayout(guildID: guildID, channelGroups: groups, now: .now).threadsByParentID
-        let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
-        return groups.compactMap { group -> ChannelGroup? in
-            // Discord lists pinned channels even when muted.
-            guard !group.isPinnedSection else { return group }
-            var group = group
-            group.channels.removeAll { channel in
-                let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
-                    || (isThreadFullWidth && openThread?.parentID == channel.id)
-                // Discord keeps focused channels, mentions and visible joined
-                // threads discoverable. A server/category mute is not a direct
-                // channel mute and must not hide all of its children here.
-                return readState.isChannelMuted(channel) && !isFocused && channel.mentionCount == 0
-                    && threads[channel.id, default: []].isEmpty
-            }
-            return group.channels.isEmpty ? nil : group
+        // Discord lists pinned channels even when muted.
+        return filteringSidebarChannels(groups) { _, channel, isFocused in
+            // Discord keeps focused channels, mentions and visible joined
+            // threads discoverable. A server/category mute is not a direct
+            // channel mute and must not hide all of its children here.
+            readState.isChannelMuted(channel) && !isFocused && channel.mentionCount == 0
+                && threads[channel.id, default: []].isEmpty
         }
     }
 
@@ -350,30 +372,41 @@ extension AppModel {
     ) -> [ChannelGroup] {
         guard let guildID else { return groups }
         let groups = pinnedChannelGroups(groups, guildID: guildID)
-        let guide = onboarding.guides[guildID]?.configuration
-        let resources = guide?.enabled == true ? Set(guide?.resourceChannels.map(\.channelID) ?? []) : []
+        let guide = onboarding.guides[guildID]?.configuration.flatMap { $0.enabled ? $0 : nil }
         let settings = presentedGuildChannelSettings(in: guildID)
         let filtersSelection = !showsAllChannels(in: guildID)
         let hasGuide = filtersSelection && hasGuildGuide(in: guildID)
         let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
+        // Pinning opts a channel in, and Discord lists pinned channels
+        // without the Browse Channels or Server Guide filters.
+        return filteringSidebarChannels(groups) { group, channel, isFocused in
+            if filtersSelection {
+                if hasGuide, guide?.isResourceChannel(channel.id) == true || channel.isGuildResource,
+                   channel.id != activeChannelID { return true }
+                if !GuildChannelSelection.isSelected(channel.id, settings: settings),
+                   !(group.categoryID.map { GuildChannelSelection.isSelected($0, settings: settings) } ?? false),
+                   !isFocused, channel.mentionCount == 0 { return true }
+            }
+            return false
+        }
+    }
+
+    /// `groups` without the channels `hides` drops, and without groups left
+    /// empty. Pinned sections stay whole.
+    private func filteringSidebarChannels(
+        _ groups: [ChannelGroup],
+        hiding hides: (_ group: ChannelGroup, _ channel: Channel, _ isFocused: Bool) -> Bool
+    ) -> [ChannelGroup] {
+        let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
         return groups.compactMap { group -> ChannelGroup? in
-            // Pinning opts a channel in, and Discord lists pinned channels
-            // without the Browse Channels or Server Guide filters.
             guard !group.isPinnedSection else { return group }
-            var group = group
-            group.channels.removeAll { channel in
+            var filtered = group
+            filtered.channels.removeAll { channel in
                 let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
                     || (isThreadFullWidth && openThread?.parentID == channel.id)
-                if filtersSelection {
-                    if hasGuide, resources.contains(channel.id) || channel.flags & (1 << 7) != 0,
-                       channel.id != activeChannelID { return true }
-                    if !GuildChannelSelection.isSelected(channel.id, settings: settings),
-                       !(group.categoryID.map { GuildChannelSelection.isSelected($0, settings: settings) } ?? false),
-                       !isFocused, channel.mentionCount == 0 { return true }
-                }
-                return false
+                return hides(group, channel, isFocused)
             }
-            return group.channels.isEmpty ? nil : group
+            return filtered.channels.isEmpty ? nil : filtered
         }
     }
 }

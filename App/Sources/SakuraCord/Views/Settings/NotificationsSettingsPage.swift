@@ -101,7 +101,7 @@ struct NotificationsSettingsPage: View {
     }
 
     private func resetPreferences() {
-        SettingsPreferenceStore.shared.reset(scope: .appWide, page: .notifications)
+        SettingsPreferenceStore.shared.reset(page: .notifications)
         model.notificationPreferences.reload()
         model.refreshDockBadge()
     }

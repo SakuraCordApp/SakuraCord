@@ -204,7 +204,7 @@ separate. Returning to Regular or Nightly reopens the original database. Invalid
 preview identity metadata still selects an isolated database. Keychain
 credentials, disposable media and derived caches remain shared.
 
-Before the first switch into a pull request build, `PRBuildRecovery` asks for a
+Before the first switch into a pull request build, `PullRequestBuildRecovery` asks for a
 folder and saves a signature-validated Regular or Nightly app there, outside the
 bundle Sparkle replaces. The retained app and Finder recovery instructions work
 without launching the experimental executable. Further switches from a preview

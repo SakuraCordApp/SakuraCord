@@ -2,6 +2,11 @@ import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
+    /// A channel any cached channel list holds.
+    func cachedChannel(_ id: ChannelID) -> Channel? {
+        cachedChannels.values.lazy.flatMap(\.self).first { $0.id == id }
+    }
+
     public func dismissIgnoredGroupWarning(in channelID: ChannelID) async throws {
         guard let account = currentUser?.id else { throw ChatProviderError.unauthenticated }
         try await requestEmpty("/channels/\(channelID)/blocked-user-warning-dismissal", method: "POST")
@@ -80,7 +85,7 @@ extension DiscordRESTProvider {
 
     func cachePrivateRecipientReferences(_ values: [ChannelDTO]) {
         for value in values {
-            guard let channelID = ChannelID(value.id), value.type == 1 || value.type == 3,
+            guard let channelID = ChannelID(value.id), value.isPrivate,
                   let recipientIDs = value.recipientIDs ?? value.recipients?.map(\.id)
             else { continue }
             cachedPrivateRecipientIDsByChannelID[channelID] =
@@ -105,7 +110,7 @@ extension DiscordRESTProvider {
     /// channels. Preserve their payload order independently of the deterministic
     /// recipient ordering used to render a group DM.
     func cacheLazyPrivateRecipientUsers(_ values: [ChannelDTO]) {
-        for value in values where value.type == 1 || value.type == 3 {
+        for value in values where value.isPrivate {
             if let recipients = value.recipients {
                 for recipient in recipients {
                     cacheGatewayUser(recipient)
@@ -213,13 +218,7 @@ extension DiscordRESTProvider {
             member.isMobileOnly = clientStatus.isMobileOnly
         }
         if let activities = update.activities {
-            let primaryActivity = activities.memberListActivity
-            member.customStatus = activities.first(where: { $0.type == 4 })?.displayText
-            member.activityText =
-                primaryActivity?.displayText
-                    ?? member.customStatus
-            member.isListeningToMusic = primaryActivity?.type == 2
-            member.richActivity = primaryActivity?.asRichActivity
+            member.applyActivities(activities)
         } else if status == .offline {
             member.customStatus = nil
             member.activityText = nil
@@ -263,7 +262,7 @@ extension DiscordRESTProvider {
             return
         }
         let category = dto.parentID.flatMap { cachedGuildChannelDTOs[guildID]?[$0] }
-            .flatMap { $0.type == 4 ? $0 : nil }
+            .flatMap { $0.type == DiscordChannelType.category ? $0 : nil }
         guard let channel = try? dto.domain(
             guildID: guildID, categoryName: category?.name,
             categoryPosition: category?.position ?? -1
@@ -288,7 +287,7 @@ extension DiscordRESTProvider {
 
     static func domainChannels(_ values: [ChannelDTO], guildID: GuildID) throws -> [Channel] {
         let categories = Dictionary(
-            uniqueKeysWithValues: values.filter { $0.type == 4 }.map { ($0.id, $0) }
+            uniqueKeysWithValues: values.filter { $0.type == DiscordChannelType.category }.map { ($0.id, $0) }
         )
         return try values.filter(\.isGuildChannelListEntry).map { dto in
             let category = dto.parentID.flatMap { categories[$0] }

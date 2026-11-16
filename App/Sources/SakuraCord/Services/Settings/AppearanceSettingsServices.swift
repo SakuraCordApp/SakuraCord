@@ -117,21 +117,16 @@ nonisolated struct AppearanceSettingsSnapshot: Equatable, Sendable {
     static let defaultMessageSpacing = 6.0
     static let messageSpacingRange = 0.0 ... 12.0
 
-    static let defaults = Self(
-        colorScheme: .system,
-        composerBarAppearance: .defaultStyle,
-        serverMessageAppearance: .defaultStyle,
-        messageSpacing: defaultMessageSpacing
-    )
+    static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
-    var composerIcons: ComposerIconLayout = .defaults
-    var interfaceSize: Double = InterfaceScale.defaultFactor
-    var messageTextSize: CGFloat = InterfaceTypographyMetrics.defaultMessageTextSize
-    var windowOpacity: Double = defaultWindowOpacity
+    var composerIcons: ComposerIconLayout
+    var interfaceSize: Double
+    var messageTextSize: CGFloat
+    var windowOpacity: Double
     var colorScheme: AppColorScheme
     var composerBarAppearance: ComposerBarAppearance
-    var directMessageAppearance: MessageAppearance = .defaultStyle
-    var groupMessageAppearance: MessageAppearance = .defaultStyle
+    var directMessageAppearance: MessageAppearance
+    var groupMessageAppearance: MessageAppearance
     var serverMessageAppearance: MessageAppearance
     var messageSpacing: Double
 
@@ -163,6 +158,21 @@ nonisolated struct AppearanceSettingsSnapshot: Equatable, Sendable {
     }
 }
 
+nonisolated extension AppearanceSettingsSnapshot {
+    init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
+        composerIcons = ComposerIconLayout(storageValue: value(.composerIcons).stringValue)
+        interfaceSize = value(.interfaceSize).doubleValue
+        messageTextSize = value(.messageFontSize).doubleValue
+        windowOpacity = value(.windowOpacity).doubleValue
+        colorScheme = value(.appColorScheme).rawValue()
+        composerBarAppearance = value(.composerBarAppearance).rawValue()
+        directMessageAppearance = value(.directMessageAppearance).rawValue()
+        groupMessageAppearance = value(.groupMessageAppearance).rawValue()
+        serverMessageAppearance = value(.messageAppearance).rawValue()
+        messageSpacing = value(.messageDensity).doubleValue
+    }
+}
+
 @MainActor
 final class AppearanceSettingsStore {
     static let shared = AppearanceSettingsStore()
@@ -174,48 +184,7 @@ final class AppearanceSettingsStore {
     }
 
     func load() -> AppearanceSettingsSnapshot {
-        let colorScheme: AppColorScheme
-        if case let .string(rawValue) = preferences.value(for: .appColorScheme) {
-            colorScheme = AppColorScheme(rawValue: rawValue) ?? .system
-        } else {
-            colorScheme = .system
-        }
-        let appearance: ComposerBarAppearance
-        if case let .string(rawValue) = preferences.value(for: .composerBarAppearance) {
-            appearance = ComposerBarAppearance(rawValue: rawValue) ?? .defaultStyle
-        } else {
-            appearance = .defaultStyle
-        }
-        func messageAppearance(_ id: SettingsControlID) -> MessageAppearance {
-            guard case let .string(rawValue) = preferences.value(for: id) else { return .defaultStyle }
-            return MessageAppearance(rawValue: rawValue) ?? .defaultStyle
-        }
-        let messageSpacing: Double
-        if case let .double(value) = preferences.value(for: .messageDensity) {
-            messageSpacing = value
-        } else {
-            messageSpacing = AppearanceSettingsSnapshot.defaults.messageSpacing
-        }
-        var value = AppearanceSettingsSnapshot(
-            colorScheme: colorScheme,
-            composerBarAppearance: appearance,
-            directMessageAppearance: messageAppearance(.directMessageAppearance),
-            groupMessageAppearance: messageAppearance(.groupMessageAppearance),
-            serverMessageAppearance: messageAppearance(.messageAppearance),
-            messageSpacing: messageSpacing
-        )
-        if case let .string(stored) = preferences.value(for: .composerIcons) {
-            value.composerIcons = ComposerIconLayout(storageValue: stored)
-        }
-        if case let .double(stored) = preferences.value(for: .windowOpacity) {
-            value.windowOpacity = stored
-        }
-        if case let .double(stored) = preferences.value(for: .interfaceSize) {
-            value.interfaceSize = stored
-        }
-        if case let .double(stored) = preferences.value(for: .messageFontSize) {
-            value.messageTextSize = stored
-        }
+        var value = AppearanceSettingsSnapshot { preferences.value(for: $0) }
         value.normalize()
         return value
     }

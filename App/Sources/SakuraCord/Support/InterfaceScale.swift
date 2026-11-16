@@ -215,11 +215,6 @@ extension View {
             if !isDefault { value = font }
         }
     }
-
-    /// A control size that shifts with the interface size.
-    func interfaceControlSize(_ size: ControlSize) -> some View {
-        controlSize(InterfaceScale.controlSize(size))
-    }
 }
 
 nonisolated extension NSAttributedString {

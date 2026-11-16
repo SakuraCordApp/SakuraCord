@@ -97,10 +97,10 @@ extension AppModel {
     /// until Discord accepts it, so a refusal loses nothing.
     func scheduleComposerMessage(
         in destination: MessageComposerDestination,
-        attachments: [ForumPostAttachment]
+        attachments: [StagedAttachment]
     ) async {
-        let content = (destination == .channel ? draft : threadDraft).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty || !attachments.isEmpty, validateAttachmentCount(attachments),
+        let content = draft(in: destination).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty || !attachments.isEmpty, attachmentBatchFits(attachments.count),
               let (outgoing, reply) = scheduledDraft(content: content, attachments: attachments, in: destination),
               await submitSchedule(outgoing)
         else { return }
@@ -115,7 +115,7 @@ extension AppModel {
         content: String,
         stickerIDs: [String] = [],
         in destination: MessageComposerDestination,
-        attachments: () async -> [ForumPostAttachment]? = { [] }
+        attachments: () async -> [StagedAttachment]? = { [] }
     ) async -> Bool {
         guard let (outgoing, reply) = scheduledDraft(content: content, stickerIDs: stickerIDs, in: destination),
               await submitSchedule(outgoing, attachments: attachments)
@@ -127,17 +127,17 @@ extension AppModel {
     /// The composer's reply goes with whatever it schedules.
     private func scheduledDraft(
         content: String,
-        attachments: [ForumPostAttachment] = [],
+        attachments: [StagedAttachment] = [],
         stickerIDs: [String] = [],
         in destination: MessageComposerDestination
     ) -> (SendMessageDraft, reply: Message?)? {
         guard let channelID = composerSendChannelID(in: destination) else { return nil }
-        let reply = destination == .channel ? replyingTo : threadReplyingTo
+        let reply = replyingTo(in: destination)
         let outgoing = SendMessageDraft(
             channelID: channelID,
             content: content,
             replyTo: reply?.id,
-            mentionsRepliedUser: destination == .channel ? replyMentionsAuthor : threadReplyMentionsAuthor,
+            mentionsRepliedUser: replyMentionsAuthor(in: destination),
             attachments: attachments,
             stickerIDs: stickerIDs
         )
@@ -146,10 +146,7 @@ extension AppModel {
 
     /// Clears the reply that was scheduled, unless another was chosen meanwhile.
     private func clearReply(_ reply: Message?, in destination: MessageComposerDestination) {
-        switch destination {
-        case .channel: if replyingTo?.id == reply?.id { replyingTo = nil }
-        case .thread: if threadReplyingTo?.id == reply?.id { threadReplyingTo = nil }
-        }
+        if replyingTo(in: destination)?.id == reply?.id { setReplyingTo(nil, in: destination) }
     }
 
     /// One create at a time per conversation; returns whether Discord accepted it.
@@ -157,7 +154,7 @@ extension AppModel {
     /// nothing else takes its send time meanwhile.
     private func submitSchedule(
         _ outgoing: SendMessageDraft,
-        attachments: () async -> [ForumPostAttachment]? = { [] }
+        attachments: () async -> [StagedAttachment]? = { [] }
     ) async -> Bool {
         var outgoing = outgoing
         let channelID = outgoing.channelID
@@ -203,10 +200,7 @@ extension AppModel {
         let channelID = outgoing.channelID
         let sent = Set(outgoing.attachments.map(\.id))
         guard composerSendChannelID(in: destination) == channelID else {
-            if var kept = composer.keptDrafts[channelID] {
-                kept.attachments.removeAll { sent.contains($0.id) }
-                composer.keptDrafts[channelID] = kept.isEmpty ? nil : kept
-            }
+            removeKeptAttachments(sent, in: channelID)
             if let database = session.database,
                (try? await composer.storedDraft(in: channelID, database: database))?
                .trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content
@@ -218,9 +212,8 @@ extension AppModel {
         setComposerAttachments(composerAttachments(for: destination).filter { !sent.contains($0.id) }, for: destination)
         clearReply(reply, in: destination)
         // Text typed meanwhile stays; a draft restored unchanged on return does not.
-        let text = destination == .channel ? draft : threadDraft
-        guard text.trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
-        if destination == .channel { updateDraft("") } else { updateThreadDraft("") }
+        guard draft(in: destination).trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
+        updateDraft("", in: destination)
         stopLocalTyping(clearThrottle: true)
         translation.resetDraft(destination)
     }

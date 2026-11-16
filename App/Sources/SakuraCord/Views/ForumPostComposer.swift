@@ -34,7 +34,7 @@ private enum ForumPostProblem: Equatable {
     var message: LocalizedStringResource {
         switch self {
         case .missingTitle: "Give your post a title."
-        case .titleTooLong: "Titles can be up to 100 characters."
+        case .titleTooLong: "Titles can be up to \(ThreadNamePolicy.maximumLength) characters."
         case .missingContent: "Write something or attach a file."
         case .contentTooLong: "Your post is too long."
         case .missingTag: "This forum needs a tag on every post."
@@ -46,9 +46,6 @@ private enum ForumPostProblem: Equatable {
 /// Rows sit inside the 32-point panel as the poll creator's do; the footer's
 /// 12-point inset keeps its capsules concentric with the panel.
 struct ForumPostComposer: View {
-    static let titleLimit = 100
-    static let tagLimit = 5
-
     let model: AppModel
     let channel: Channel
     @Environment(\.windowModalContext) private var modal
@@ -74,9 +71,9 @@ struct ForumPostComposer: View {
     /// every account.
     private static let limitPremiumType: Int? = nil
 
-    init(model: AppModel, channel: Channel) {
-        self.model = model
-        self.channel = channel
+    /// A field's shake count, held still while motion is reduced.
+    private func shakeTrigger(_ field: ForumPostField) -> Int {
+        ComposerResizeMotion.isReduced ? 0 : shakes[field, default: 0]
     }
 
     var body: some View {
@@ -144,10 +141,10 @@ struct ForumPostComposer: View {
                 receiveAttachments: receiveAttachments,
                 submit: { isContentFocused = true }
             )
-            if draft.title.count > Self.titleLimit - 20 {
-                Text("\(draft.title.count)/\(Self.titleLimit)")
+            if draft.title.count > ThreadNamePolicy.maximumLength - 20 {
+                Text("\(draft.title.count)/\(ThreadNamePolicy.maximumLength)")
                     .font(.interface(.caption)).monospacedDigit()
-                    .foregroundStyle(draft.title.count > Self.titleLimit ? .red : .secondary)
+                    .foregroundStyle(draft.title.count > ThreadNamePolicy.maximumLength ? .red : .secondary)
                     .transition(.opacity)
             }
         }
@@ -155,7 +152,7 @@ struct ForumPostComposer: View {
         .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(58), alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture { isTitleFocused = true }
-        .modifier(ForumPostRejectionShake(trigger: shakes[.title, default: 0]))
+        .modifier(RejectionShake(trigger: shakeTrigger(.title)))
     }
 
     private var bodyField: some View {
@@ -183,7 +180,7 @@ struct ForumPostComposer: View {
                     .transition(.opacity)
             }
         }
-        .modifier(ForumPostRejectionShake(trigger: shakes[.content, default: 0]))
+        .modifier(RejectionShake(trigger: shakeTrigger(.content)))
     }
 
     private var attachmentTray: some View {
@@ -192,13 +189,7 @@ struct ForumPostComposer: View {
             checkingIDs: draft.checkingAttachmentIDs,
             uploads: model.attachmentUploads,
             sendTransitionAnchor: sendTransitionAnchor,
-            mediaViewerSourceID: {
-                model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
-            },
-            scrolled: {
-                guard let link = model.mediaViewerPresentation?.transitionLink else { return }
-                sendTransitionAnchor.followMediaViewerSources(in: link)
-            },
+            model: model,
             open: openAttachment,
             toggleSpoiler: { id in updateAttachment(id) { $0.isSpoiler.toggle() } },
             update: { attachment in updateAttachment(attachment.id) { $0 = attachment } },
@@ -218,7 +209,7 @@ struct ForumPostComposer: View {
                         ForEach(channel.availableTags) { tag in
                             ForumTagButton(
                                 tag: tag,
-                                customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
+                                emoji: ForumTagEmojiPresentation(tag: tag, customEmojiURLsByID: model.customEmojiURLsByID),
                                 isSelected: draft.tagIDs.contains(tag.id)
                             ) { toggleTag(tag) }
                             .disabled(!draft.tagIDs.contains(tag.id) && !canAdd(tag))
@@ -238,7 +229,7 @@ struct ForumPostComposer: View {
         .padding(.vertical, InterfaceScale.metric(10))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tags")
-        .modifier(ForumPostRejectionShake(trigger: shakes[.tags, default: 0]))
+        .modifier(RejectionShake(trigger: shakeTrigger(.tags)))
     }
 
     // MARK: Status and footer
@@ -283,14 +274,14 @@ struct ForumPostComposer: View {
             ModalGlassButton(symbol: "paperplane", label: "Post", primary: true, isLoading: isSubmitting, action: submit)
                 .disabled(isSubmitting || draft.isEmpty || model.guildTimeoutUntil(in: channel.id) != nil)
                 .keyboardShortcut(.return, modifiers: .command)
-                .modifier(ForumPostRejectionShake(trigger: shakes[.post, default: 0]))
+                .modifier(RejectionShake(trigger: shakeTrigger(.post)))
                 .padding(.leading, InterfaceScale.metric(4))
         }
         .padding(InterfaceScale.metric(12))
     }
 
     private var emojiPicker: some View {
-        StableReactionPickerPresenter(
+        StablePickerPopoverPresenter(
             isPresented: $showsEmojiPicker,
             preferredEdge: .maxY,
             accessibilityIdentifier: "forum-post-emoji-picker"
@@ -358,7 +349,7 @@ private extension ForumPostComposer {
     var currentProblem: ForumPostProblem? {
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty { return .missingTitle }
-        if title.count > Self.titleLimit { return .titleTooLong }
+        if title.count > ThreadNamePolicy.maximumLength { return .titleTooLong }
         if draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, attachments.isEmpty { return .missingContent }
         if !ChatCharacterLimitPolicy.isWithinLimit(characterCount: draft.content.count, premiumType: Self.limitPremiumType) {
             return .contentTooLong
@@ -401,7 +392,7 @@ private extension ForumPostComposer {
                     content: draft.content,
                     attachments: attachments,
                     appliedTagIDs: appliedTagIDs,
-                    autoArchiveDuration: channel.defaultAutoArchiveDuration ?? 4_320
+                    autoArchiveDuration: channel.defaultAutoArchiveDuration ?? ThreadAutoArchive.defaultDuration
                 )
             )
             // Cleared even if the composer closed meanwhile.
@@ -416,7 +407,7 @@ private extension ForumPostComposer {
     /// Adding is gated; a selected tag can always be removed, even one made
     /// moderator-only since the draft was saved.
     func canAdd(_ tag: ForumTag) -> Bool {
-        (!tag.isModerated || model.canManageForumPosts) && appliedTagIDs.count < Self.tagLimit
+        (!tag.isModerated || model.canManageForumPosts) && appliedTagIDs.count < ForumTag.maximumAppliedCount
     }
 
     func toggleTag(_ tag: ForumTag) {
@@ -466,7 +457,7 @@ private extension ForumPostComposer {
         Binding { draft[keyPath: keyPath] } set: { draft[keyPath: keyPath] = $0 }
     }
 
-    var attachments: [ForumPostAttachment] { draft.attachments }
+    var attachments: [StagedAttachment] { draft.attachments }
 
     /// Pasted data is held by the model, which deletes it once no draft or
     /// post uses it.
@@ -487,7 +478,7 @@ private extension ForumPostComposer {
         }
         openSecurityScopes(urls)
         let staged = urls.map {
-            ForumPostAttachment(url: $0).applyingFilenamePrivacy(model.privacySafetySettings.anonymisesFileNames)
+            StagedAttachment(url: $0).applyingFilenamePrivacy(model.privacySafetySettings.anonymisesFileNames)
         }
         draft.attachments.append(contentsOf: staged)
         draft.checkingAttachmentIDs.formUnion(staged.map(\.id))
@@ -497,13 +488,13 @@ private extension ForumPostComposer {
     /// Removes any of `staged` over Discord's size limit. The check gives up
     /// if the selected conversation changes or the composer closes first;
     /// the files then stay pending and are checked when it next appears.
-    func checkAttachments(_ staged: [ForumPostAttachment]) async {
+    func checkAttachments(_ staged: [StagedAttachment]) async {
         guard let allowedURLs = await model.checkedAttachmentURLsWithinDiscordLimit(staged.map(\.url)).map(Set.init) else { return }
         draft.checkingAttachmentIDs.subtract(staged.map(\.id))
         removeAttachments(Set(staged.filter { !allowedURLs.contains($0.url) }.map(\.id)))
     }
 
-    func updateAttachment(_ id: UUID, _ change: (inout ForumPostAttachment) -> Void) {
+    func updateAttachment(_ id: UUID, _ change: (inout StagedAttachment) -> Void) {
         guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
         change(&draft.attachments[index])
     }
@@ -553,21 +544,3 @@ private extension ForumPostComposer {
 }
 
 private enum ForumPostField { case title, content, tags, post }
-
-/// Nudges a field side to side when Post is pressed while it's the reason
-/// the post can't be sent, as the composer does for slowmode.
-private struct ForumPostRejectionShake: ViewModifier {
-    let trigger: Int
-
-    func body(content: Content) -> some View {
-        content.keyframeAnimator(initialValue: CGFloat.zero, trigger: ComposerResizeMotion.isReduced ? 0 : trigger) { content, offset in
-            content.offset(x: offset)
-        } keyframes: { _ in
-            LinearKeyframe(-5, duration: 0.04)
-            LinearKeyframe(5, duration: 0.06)
-            LinearKeyframe(-3, duration: 0.06)
-            LinearKeyframe(3, duration: 0.06)
-            LinearKeyframe(0, duration: 0.04)
-        }
-    }
-}

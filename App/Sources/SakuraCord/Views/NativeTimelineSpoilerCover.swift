@@ -18,7 +18,7 @@ enum NativeTimelineSpoilerCover {
         return cache
     }()
     private static let backdropColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .black : .white
+        appearance.isDark ? .black : .white
     }
 
     /// Draws `content`, under the cover when `isCovered`, in the current
@@ -36,7 +36,7 @@ enum NativeTimelineSpoilerCover {
         else { return }
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).addClip()
-        NativeTimelineSpoilerAppearance.hiddenColor.setFill()
+        SpoilerAppearance.hiddenColor.setFill()
         frame.fill()
         // Unclamped, so the edges blur into the fill as Discord's do.
         if let blurred = blurredImage(of: frame, content: content) {
@@ -85,9 +85,9 @@ enum NativeTimelineSpoilerCover {
     /// The pill on a cover, sized to it; nil when the cover is too small to
     /// carry one.
     static func pill(in frame: CGRect, isHovered: Bool = false) -> (frame: CGRect, label: NSAttributedString)? {
-        guard let scale = NativeTimelineSpoilerAppearance.pillScale(forTileWidth: frame.width) else { return nil }
-        let label = NativeTimelineSpoilerAppearance.pillLabel(isHovered: isHovered, scale: scale)
-        let pill = NativeTimelineSpoilerAppearance.pillFrame(
+        guard let scale = SpoilerAppearance.pillScale(forTileWidth: frame.width) else { return nil }
+        let label = SpoilerAppearance.pillLabel(isHovered: isHovered, scale: scale)
+        let pill = SpoilerAppearance.pillFrame(
             in: frame, measuredLabelWidth: label.size().width, scale: scale
         )
         return (pill, label)
@@ -95,10 +95,10 @@ enum NativeTimelineSpoilerCover {
 
     private static func drawPill(in frame: CGRect) {
         guard let pill = Self.pill(in: frame) else { return }
-        NativeTimelineSpoilerAppearance.pillColor.setFill()
+        SpoilerAppearance.pillColor.setFill()
         NSBezierPath(roundedRect: pill.frame, xRadius: pill.frame.height / 2, yRadius: pill.frame.height / 2).fill()
         pill.label.draw(
-            in: NativeTimelineSpoilerAppearance.labelFrame(in: pill.frame, measuredLabelHeight: pill.label.size().height)
+            in: SpoilerAppearance.labelFrame(in: pill.frame, measuredLabelHeight: pill.label.size().height)
         )
     }
 
@@ -111,7 +111,7 @@ enum NativeTimelineSpoilerCover {
             height: height,
             bitsPerComponent: 8,
             bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            space: CGColorSpace.bitmapDefault,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
         bitmap.translateBy(x: 0, y: CGFloat(height))
@@ -134,7 +134,7 @@ enum NativeTimelineSpoilerCover {
         if let cached = blurs.object(forKey: key) { return cached }
         let extent = CGRect(x: 0, y: 0, width: width, height: height)
         let blurred = CIImage(cgImage: small)
-            .applyingGaussianBlur(sigma: NativeTimelineSpoilerAppearance.blurRadius * blurScale)
+            .applyingGaussianBlur(sigma: SpoilerAppearance.blurRadius * blurScale)
             .cropped(to: extent)
         guard let image = context.createCGImage(blurred, from: extent) else { return nil }
         blurs.setObject(image, forKey: key)
@@ -220,25 +220,25 @@ extension View {
     /// attachments: the view blurred over the spoiler fill, with the pill,
     /// tinted and its pill darkened while hovered as the timeline's are.
     func spoilerCover(_ isHidden: Bool, pillScale: CGFloat? = 1, isHovered: Bool = false) -> some View {
-        blur(radius: isHidden ? NativeTimelineSpoilerAppearance.blurRadius : 0)
+        blur(radius: isHidden ? SpoilerAppearance.blurRadius : 0)
             .background {
-                if isHidden { Color(nsColor: NativeTimelineSpoilerAppearance.hiddenColor) }
+                if isHidden { Color(nsColor: SpoilerAppearance.hiddenColor) }
             }
             .overlay {
                 if isHidden {
-                    Color(nsColor: NativeTimelineSpoilerAppearance.mediaHoverTintColor)
+                    Color(nsColor: SpoilerAppearance.mediaHoverTintColor)
                         .opacity(isHovered ? 1 : 0)
                         .allowsHitTesting(false)
                 }
             }
             .overlay {
                 if isHidden, let pillScale {
-                    Text(AttributedString(NativeTimelineSpoilerAppearance.pillLabel(isHovered: isHovered)))
-                        .padding(.horizontal, NativeTimelineSpoilerAppearance.pillHorizontalPadding)
-                        .frame(height: NativeTimelineSpoilerAppearance.pillHeight)
+                    Text(AttributedString(SpoilerAppearance.pillLabel(isHovered: isHovered)))
+                        .padding(.horizontal, SpoilerAppearance.pillHorizontalPadding)
+                        .frame(height: SpoilerAppearance.pillHeight)
                         .background {
-                            Capsule().fill(Color(nsColor: NativeTimelineSpoilerAppearance.pillColor))
-                            Capsule().fill(Color(nsColor: NativeTimelineSpoilerAppearance.hoveredPillOverlayColor))
+                            Capsule().fill(Color(nsColor: SpoilerAppearance.pillColor))
+                            Capsule().fill(Color(nsColor: SpoilerAppearance.hoveredPillOverlayColor))
                                 .opacity(isHovered ? 1 : 0)
                         }
                         .scaleEffect(pillScale)
@@ -247,7 +247,7 @@ extension View {
             }
             .animation(
                 AppMotionPolicy.animatesUncategorized
-                    ? .easeOut(duration: NativeTimelineSpoilerAppearance.mediaRevealDuration) : nil,
+                    ? .easeOut(duration: SpoilerAppearance.mediaRevealDuration) : nil,
                 value: isHidden
             )
     }

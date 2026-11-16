@@ -31,7 +31,7 @@ enum MediaImageContextMenuBuilder {
         includesLinkActions: Bool
     ) {
         menu.addItem(
-            actionItem(
+            ContextMenuItemSupport.item(
                 "Copy Image",
                 systemImage: "document.on.document.fill",
                 action: actions.copyImage
@@ -47,14 +47,14 @@ enum MediaImageContextMenuBuilder {
         guard includesLinkActions else { return }
         menu.addItem(.separator())
         menu.addItem(
-            actionItem(
+            ContextMenuItemSupport.item(
                 "Copy Image Link",
                 systemImage: "link",
                 action: actions.copyLink
             )
         )
         menu.addItem(
-            actionItem(
+            ContextMenuItemSupport.item(
                 "Open Image Link",
                 systemImage: "arrow.up.forward.app",
                 action: actions.openLink
@@ -62,27 +62,6 @@ enum MediaImageContextMenuBuilder {
         )
     }
 
-    private static func actionItem(
-        _ title: String,
-        systemImage: String,
-        action: @escaping () -> Void
-    ) -> NSMenuItem {
-        let target = NativeTimelineMenuAction(action)
-        let item = NSMenuItem(
-            title: title,
-            action: #selector(NativeTimelineMenuAction.performAction),
-            keyEquivalent: ""
-        )
-        item.target = target
-        item.representedObject = target
-        item.isEnabled = true
-        ContextMenuItemSupport.configure(
-            item,
-            title: title,
-            systemImage: systemImage
-        )
-        return item
-    }
 }
 
 /// A right-click-only AppKit surface. Primary clicks pass through to the
@@ -95,8 +74,8 @@ struct MediaImageContextMenuBridge: NSViewRepresentable {
         Coordinator(actions: actions)
     }
 
-    func makeNSView(context: Context) -> MediaImageContextMenuHitView {
-        let view = MediaImageContextMenuHitView()
+    func makeNSView(context: Context) -> ContextClickMenuHitView {
+        let view = ContextClickMenuHitView()
         view.menuProvider = { [weak coordinator = context.coordinator] in
             coordinator?.makeMenu()
         }
@@ -104,7 +83,7 @@ struct MediaImageContextMenuBridge: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ nsView: MediaImageContextMenuHitView,
+        _ nsView: ContextClickMenuHitView,
         context: Context
     ) {
         context.coordinator.actions = actions
@@ -121,29 +100,6 @@ struct MediaImageContextMenuBridge: NSViewRepresentable {
         func makeMenu() -> NSMenu {
             MediaImageContextMenuBuilder.make(actions: actions)
         }
-    }
-}
-
-@MainActor
-final class MediaImageContextMenuHitView: NSView {
-    var menuProvider: (() -> NSMenu?)?
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point), let event = NSApp.currentEvent else {
-            return nil
-        }
-        let isSecondaryClick = event.type == .rightMouseDown
-            || (event.type == .leftMouseDown
-                && event.modifierFlags.contains(.control))
-        return isSecondaryClick ? self : nil
-    }
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        menuProvider?()
-    }
-
-    override func isAccessibilityElement() -> Bool {
-        false
     }
 }
 
@@ -207,34 +163,27 @@ enum NativeTimelineImageContextMenuPlan {
             }) {
                 return nil
             }
-            if let region = component.images.first(where: {
-                $0.frame.contains(point)
-            }) {
+            for region in component.mediaRegions where region.frame.contains(point) {
+                let displayURL: URL
+                let description: String
+                switch region.kind {
+                case let .image(image):
+                    (displayURL, description) = (image.displayURL, image.description)
+                case let .media(media) where !media.isVideo:
+                    (displayURL, description) = (media.displayURL, media.description)
+                case .media, .file:
+                    continue
+                }
                 guard !region.isSpoiler || isRevealed(region.componentID) else {
                     return nil
                 }
                 return RichMediaItem(
                     imageID: region.componentID,
                     url: region.openURL,
-                    previewURL: region.displayURL == region.openURL
+                    previewURL: displayURL == region.openURL
                         ? nil
-                        : region.displayURL,
-                    title: region.description
-                )
-            }
-            if let region = component.media.first(where: {
-                $0.frame.contains(point) && !$0.isVideo
-            }) {
-                guard !region.isSpoiler || isRevealed(region.componentID) else {
-                    return nil
-                }
-                return RichMediaItem(
-                    imageID: region.componentID,
-                    url: region.openURL,
-                    previewURL: region.displayURL == region.openURL
-                        ? nil
-                        : region.displayURL,
-                    title: region.description
+                        : displayURL,
+                    title: description
                 )
             }
         }

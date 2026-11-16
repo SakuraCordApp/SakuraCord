@@ -272,13 +272,8 @@ final class NativeMessageTimelineCoordinator: NSObject {
         /// is 18 points above its oldest loaded message.
         static let unreadConversationPrefetchDistance: CGFloat = -18
         static let historyReserveChunk: CGFloat = 65_536
-        static let leadingHistoryReserveChunk = historyReserveChunk
         static let maximumCachedItemLayouts = 750
         static let cachedItemLayoutsPerConversation = 256
-        static let performanceSignposter = OSSignposter(
-            subsystem: "dev.sakuracord.SakuraCord",
-            category: "PointsOfInterest"
-        )
         static let performanceLogger = Logger(
             subsystem: "dev.sakuracord.SakuraCord",
             category: "TimelinePerformance"
@@ -399,7 +394,7 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var widthRelayoutGeneration: UInt64 = 0
         var performanceAutoScrollTask: Task<Void, Never>?
         var performanceDisplayLinkTicker:
-            NativeTimelineDisplayLinkTicker?
+            DisplayLinkTicker?
         var performanceBenchmarkFinish:
             ((NativeTimelineBenchmarkFinishOutcome) -> Void)?
         var didStartPerformanceAutoScroll = false
@@ -412,1126 +407,1058 @@ final class NativeMessageTimelineCoordinator: NSObject {
 }
 
 extension NativeMessageTimelineCoordinator {
-        func makeScrollView() -> NSScrollView {
-            let canvas = NativeTimelineCanvasView(frame: .zero)
-            canvas.usesViewportSizedBacking = true
-            canvas.setAccessibilityElement(true)
-            canvas.setAccessibilityRole(.group)
-            canvas.onWidthChange = { [weak self] width in
-                self?.relayoutForWidthChange(width)
-            }
-            canvas.onDocumentSizeChange = { [weak self] size in
-                self?.updateDocumentSize(size)
-            }
-            canvas.makeEditingLayout = { [weak self] item, editingTextHeight in
-                NativeTimelineRowLayout.make(
-                    item: item,
-                    width: self?.layoutWidth ?? 0,
-                    source: self?.parent.model,
-                    editingTextHeight: editingTextHeight
-                )
-            }
-            let documentView = NativeTimelineDocumentView(frame: .zero)
-            documentView.addSubview(canvas)
-
-            let scrollView = NativeTimelineInputShieldScrollView()
-            // The timeline only scrolls vertically, wherever it is placed.
-            scrollView.contentView = NativeTimelineClipView()
-            scrollView.inputPerformanceProbe.install(on: scrollView)
-#if SAKURACORD_MOTION_BENCHMARK
-            if WorkspaceMotionProbes.isEnabled {
-                WorkspaceMotionProbes.shared.registerTimeline(scrollView) { [weak self, weak canvas] in
-                    WorkspaceMotionProbes.TimelineCounts(
-                        rows: self?.items.count ?? 0,
-                        draws: canvas?.drawCount ?? 0,
-                        drawSeconds: canvas?.lifetimeDrawDuration ?? 0,
-                        layoutSeconds: self?.lifetimeLayoutDuration ?? 0,
-                        contentWidth: self.map { $0.previewLayoutWidth ?? $0.layoutWidth } ?? 0
-                    )
-                }
-            }
-#endif
-            scrollView.onUserScrollTowardNewest = { [weak self] in
-                self?.parent.onUserScrollTowardNewest()
-            }
-            // The reader's own scrolling always wins over a jump's glide.
-            scrollView.onScrollWheel = { [weak self] in
-                self?.cancelGlide()
-            }
-            scrollView.onToolbarObscuredHeightChange = { [weak self] in
-                self?.updateInsetsForToolbarObscuredHeightChange()
-            }
-            scrollView.documentView = documentView
-            scrollView.drawsBackground = false
-            scrollView.borderType = .noBorder
-            scrollView.hasVerticalScroller = false
-            scrollView.hasHorizontalScroller = false
-            // The timeline has no horizontal navigation. AppKit's automatic
-            // policy enables sideways rubber-banding whenever a relayout
-            // briefly leaves the document wider than the viewport.
-            scrollView.horizontalScrollElasticity = .none
-            scrollView.autohidesScrollers = true
-            scrollView.scrollerStyle = .overlay
-            scrollView.contentView.postsBoundsChangedNotifications = true
-            scrollView.contentView.postsFrameChangedNotifications = true
-            scrollView.automaticallyAdjustsContentInsets = false
-            // The shared canvas owns the footer spacer. Leaving the same
-            // value on NSScrollView creates an otherwise invisible scroll
-            // range below short conversations.
-            scrollView.contentInsets = NSEdgeInsets()
-
-            self.canvas = canvas
-            self.documentView = documentView
-            self.scrollView = scrollView
-            scrollView.onWindowChange = { [weak self] in self?.timestampWindowChanged() }
-            positionViewportCanvas()
-            beginObserving(scrollView)
-            update(parent: parent, scrollView: scrollView)
-            return scrollView
+    func makeScrollView() -> NSScrollView {
+        let canvas = NativeTimelineCanvasView(frame: .zero)
+        canvas.usesViewportSizedBacking = true
+        canvas.setAccessibilityElement(true)
+        canvas.setAccessibilityRole(.group)
+        canvas.onWidthChange = { [weak self] width in
+            self?.relayoutForWidthChange(width)
         }
-
-        func updateTimeline(
-            parent: NativeMessageTimelineView,
-            scrollView: NSScrollView
-        ) {
-            guard let canvas else { return }
-            let sendTransitionAnchor = sendTransitionTranscriptAnchor(for: parent)
-            let unreadDivider = unreadDividerChange(to: parent, canvas: canvas)
-            let (preparation, measurement) = prepareTimelineUpdate(
-                parent: parent,
-                scrollView: scrollView,
-                canvas: canvas
+        canvas.onDocumentSizeChange = { [weak self] size in
+            self?.updateDocumentSize(size)
+        }
+        canvas.makeEditingLayout = { [weak self] item, editingTextHeight in
+            NativeTimelineRowLayout.make(
+                item: item,
+                width: self?.layoutWidth ?? 0,
+                source: self?.parent.model,
+                editingTextHeight: editingTextHeight
             )
-            let conversationChanged = preparation.conversationChanged
-            let newRows = preparation.newRows
-            let hasUnpublishedRows = preparation.hasUnpublishedRows
-            let acceptsNewRows = preparation.acceptsNewRows
-            let reconcileStartUptime = ProcessInfo.processInfo.systemUptime
-            AppPerformanceSignposts.measureSync("TimelineReconcile") {
-                reconcileTimelineRows(
-                    parent: parent,
-                    canvas: canvas,
-                    preparation: preparation
+        }
+        let documentView = NativeTimelineDocumentView(frame: .zero)
+        documentView.addSubview(canvas)
+
+        let scrollView = NativeTimelineInputShieldScrollView()
+        // The timeline only scrolls vertically, wherever it is placed.
+        scrollView.contentView = NativeTimelineClipView()
+        scrollView.inputPerformanceProbe.install(on: scrollView)
+#if SAKURACORD_MOTION_BENCHMARK
+        if WorkspaceMotionProbes.isEnabled {
+            WorkspaceMotionProbes.shared.registerTimeline(scrollView) { [weak self, weak canvas] in
+                WorkspaceMotionProbes.TimelineCounts(
+                    rows: self?.items.count ?? 0,
+                    draws: canvas?.drawCount ?? 0,
+                    drawSeconds: canvas?.lifetimeDrawDuration ?? 0,
+                    layoutSeconds: self?.lifetimeLayoutDuration ?? 0,
+                    contentWidth: self.map { $0.previewLayoutWidth ?? $0.layoutWidth } ?? 0
                 )
             }
-            let reconcileEndUptime = ProcessInfo.processInfo.systemUptime
-            if acceptsNewRows, !hasUnpublishedRows {
-                rowCount = newRows.count
-                appliedSourceRows = newRows
-                firstRowID = newRows.first?.id
-                lastRowID = newRows.last?.id
-                rowsRevision = parent.rowsRevision
-            }
-            presentationRevision = parent.presentationRevision
-            let metadataEndUptime = ProcessInfo.processInfo.systemUptime
-            if didMutateItems {
-                if previewLayoutWidth != nil {
-                    rowsPreviewedAtCurrentWidth.removeAll()
-                }
-                let didAppendItems = updateTimelineOriginsAndReserves(
-                    parent: parent,
-                    preparation: preparation
-                )
-                let originsEndUptime = ProcessInfo.processInfo.systemUptime
-                AppPerformanceSignposts.measureSync("TimelineSnapshot") {
-                    applySnapshot(
-                        to: canvas,
-                        in: scrollView,
-                        redrawsMovedShortContentSynchronously:
-                            NativeTimelineShortContentRedrawPolicy
-                            .redrawsSynchronously(
-                                conversationChanged: conversationChanged,
-                                appendedAtTail: didAppendItems
-                            )
-                    )
-                }
-                let snapshotEndUptime = ProcessInfo.processInfo.systemUptime
-                if requiresVisibleRedraw {
-                    canvas.invalidateVisibleContent()
-                } else {
-                    canvas.invalidateRows(dirtyItemIndexes)
-                }
-                if parent.runsPerformanceAutoScroll {
-                    let updateMilliseconds =
-                        (snapshotEndUptime - measurement.startUptime) * 1_000
-                    if updateMilliseconds >= 4 {
-                        NSLog(
-                            "SakuraCord timeline phases: %@ (%@) reconcile %.2f ms; metadata %.2f ms; origins %.2f ms; snapshot %.2f ms",
-                            performanceUpdatePath,
-                            performanceFallbackReason,
-                            (reconcileEndUptime - reconcileStartUptime) * 1_000,
-                            (metadataEndUptime - reconcileEndUptime) * 1_000,
-                            (originsEndUptime - metadataEndUptime) * 1_000,
-                            (snapshotEndUptime - originsEndUptime) * 1_000
-                        )
-                    }
-                }
-            } else {
-                canvas.model = parent.model
-                canvas.messageInteractionContext =
-                    parent.conversation.messageInteractionContext
-                canvas.actions = actions
-            }
-            finalizeTimelineViewport(
+        }
+#endif
+        scrollView.onUserScrollTowardNewest = { [weak self] in
+            self?.parent.onUserScrollTowardNewest()
+        }
+        // The reader's own scrolling always wins over a jump's glide.
+        scrollView.onScrollWheel = { [weak self] in
+            self?.cancelGlide()
+        }
+        scrollView.onToolbarObscuredHeightChange = { [weak self] in
+            self?.updateInsetsForToolbarObscuredHeightChange()
+        }
+        scrollView.documentView = documentView
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        // The timeline has no horizontal navigation. AppKit's automatic
+        // policy enables sideways rubber-banding whenever a relayout
+        // briefly leaves the document wider than the viewport.
+        scrollView.horizontalScrollElasticity = .none
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        scrollView.contentView.postsFrameChangedNotifications = true
+        scrollView.automaticallyAdjustsContentInsets = false
+        // The shared canvas owns the footer spacer. Leaving the same
+        // value on NSScrollView creates an otherwise invisible scroll
+        // range below short conversations.
+        scrollView.contentInsets = NSEdgeInsets()
+
+        self.canvas = canvas
+        self.documentView = documentView
+        self.scrollView = scrollView
+        scrollView.onWindowChange = { [weak self] in self?.timestampWindowChanged() }
+        positionViewportCanvas()
+        beginObserving(scrollView)
+        update(parent: parent, scrollView: scrollView)
+        return scrollView
+    }
+
+    func updateTimeline(
+        parent: NativeMessageTimelineView,
+        scrollView: NSScrollView
+    ) {
+        guard let canvas else { return }
+        let sendTransitionAnchor = sendTransitionTranscriptAnchor(for: parent)
+        let unreadDivider = unreadDividerChange(to: parent, canvas: canvas)
+        let (preparation, measurement) = prepareTimelineUpdate(
+            parent: parent,
+            scrollView: scrollView,
+            canvas: canvas
+        )
+        let conversationChanged = preparation.conversationChanged
+        let newRows = preparation.newRows
+        let hasUnpublishedRows = preparation.hasUnpublishedRows
+        let acceptsNewRows = preparation.acceptsNewRows
+        let reconcileStartUptime = ProcessInfo.processInfo.systemUptime
+        AppPerformanceSignposts.measureSync("TimelineReconcile") {
+            reconcileTimelineRows(
                 parent: parent,
                 canvas: canvas,
-                scrollView: scrollView,
                 preparation: preparation
             )
-            updateSendTransition(
-                parent: parent,
-                preparation: preparation,
-                transcriptAnchor: sendTransitionAnchor
-            )
-            if let unreadDivider { canvas.transitionUnreadDivider(unreadDivider) }
-            Self.performanceSignposter.endInterval(
-                "MessageTimelineReload",
-                measurement.signpost
-            )
-            finishTimelineUpdate(
-                parent: parent,
-                scrollView: scrollView,
-                preparation: preparation,
-                startUptime: measurement.startUptime
-            )
         }
-
-        func prepareTimelineUpdate(
-            parent: NativeMessageTimelineView,
-            scrollView: NSScrollView,
-            canvas: NativeTimelineCanvasView
-        ) -> (TimelineUpdatePreparation, TimelineReloadMeasurement) {
-            let oldParent = self.parent
-            let conversationChanged = parent.conversation != oldParent.conversation
-            let currentTimestampDay = Calendar.autoupdatingCurrent.startOfDay(for: .now)
-            let timestampDayChanged = currentTimestampDay != timestampDay
-            let presentationChanged = parent.presentationRevision != presentationRevision
-                || timestampDayChanged
-            // The coordinator mutates the storage it shares with the canvas.
-            if parent.rowsRevision != rowsRevision, !conversationChanged {
-                canvas.captureReactionBaseline()
+        let reconcileEndUptime = ProcessInfo.processInfo.systemUptime
+        if acceptsNewRows, !hasUnpublishedRows {
+            rowCount = newRows.count
+            appliedSourceRows = newRows
+            firstRowID = newRows.first?.id
+            lastRowID = newRows.last?.id
+            rowsRevision = parent.rowsRevision
+        }
+        presentationRevision = parent.presentationRevision
+        let metadataEndUptime = ProcessInfo.processInfo.systemUptime
+        if didMutateItems {
+            if previewLayoutWidth != nil {
+                rowsPreviewedAtCurrentWidth.removeAll()
             }
-            let oldItemCount = items.count
-            let oldRowCount = rowCount
-            let oldContentHeight = contentHeight
-            if conversationChanged {
-                cacheBoundedCurrentItemLayouts()
-                resetConversationUpdateState()
-            }
-            if timestampDayChanged {
-                timestampDay = currentTimestampDay
-                cachedItemLayouts.removeAll(keepingCapacity: true)
-                cachedItemLayoutOrder.removeAll(keepingCapacity: true)
-                cachedItemLayoutEvictionIndex = 0
-            }
-            let wasNearBottom = scrollState().isNearBottom
-            let bottomInsetChanged = abs(
-                oldParent.bottomContentInset - parent.bottomContentInset
-            ) >= 0.5
-            self.parent = parent
-            updateHistoryLoadingState(from: oldParent, to: parent)
-            let newRows = parent.conversation.rows(in: parent.model)
-            let hasUnpublishedRows = (
-                parent.rowsUpdateJournal.latestRevision ?? parent.rowsRevision
-            ) > parent.rowsRevision
-            let acceptsNewRows = NativeMessageTimelineLayoutPolicy.acceptsRowSnapshot(
-                itemsAreEmpty: items.isEmpty,
-                conversationChanged: conversationChanged,
-                publishedRevision: parent.rowsRevision,
-                appliedRevision: rowsRevision
+            let didAppendItems = updateTimelineOriginsAndReserves(
+                parent: parent,
+                preparation: preparation
             )
-            actions = Self.makeActions(from: parent)
-            self.scrollView = scrollView
-            let measurement = TimelineReloadMeasurement(
-                startUptime: ProcessInfo.processInfo.systemUptime,
-                signpost: Self.performanceSignposter.beginInterval(
-                    "MessageTimelineReload"
+            let originsEndUptime = ProcessInfo.processInfo.systemUptime
+            AppPerformanceSignposts.measureSync("TimelineSnapshot") {
+                applySnapshot(
+                    to: canvas,
+                    in: scrollView,
+                    redrawsMovedShortContentSynchronously:
+                        NativeTimelineShortContentRedrawPolicy
+                        .redrawsSynchronously(
+                            conversationChanged: conversationChanged,
+                            appendedAtTail: didAppendItems
+                        )
                 )
-            )
-            isApplyingUpdate = true
-            let measuredWidth = max(220, scrollView.contentView.bounds.width.rounded())
-            if layoutWidth > 0 { scheduleRelayoutForWidthChange(measuredWidth) }
-            let width = pendingLayoutWidth == nil ? measuredWidth : max(220, layoutWidth)
-            let widthChanged = abs(width - layoutWidth) >= 1
-            let anchor = visibleAnchor()
-            let disclosureAnchor = resolvedDisclosureAnchor(canvas: canvas, scrollView: scrollView)
-            resetTimelineMutationState(
-                widthChanged: widthChanged,
-                presentationChanged: presentationChanged
-            )
-            let preparation = TimelineUpdatePreparation(
-                oldParent: oldParent,
-                oldItemCount: oldItemCount,
-                oldRowCount: oldRowCount,
-                oldContentHeight: oldContentHeight,
-                conversationChanged: conversationChanged,
-                presentationChanged: presentationChanged,
-                wasNearBottom: wasNearBottom,
-                bottomInsetChanged: bottomInsetChanged,
-                newRows: newRows,
-                hasUnpublishedRows: hasUnpublishedRows,
-                acceptsNewRows: acceptsNewRows,
-                width: width,
-                widthChanged: widthChanged,
-                restoreAnchor: anchor,
-                disclosureAnchor: disclosureAnchor
-            )
-            return (preparation, measurement)
-        }
-
-        func resetConversationUpdateState() {
-            liveScrollViewport = nil
-            widthRelayoutGeneration &+= 1
-            widthRelayoutTask?.cancel()
-            widthRelayoutTask = nil
-            pendingLayoutWidth = nil
-            previewLayoutWidth = nil
-            previewedRowIdentifiers.removeAll()
-            rowsPreviewedAtCurrentWidth.removeAll()
-            leadingHistoryReserve = 0
-            trailingHistoryReserve = 0
-            followsMaterializedHistoryBoundary = false
-            followsMaterializedLaterHistoryBoundary = false
-            isEarlierHistoryScrollGestureActive = false
-            hasEarlierHistoryScrollIntent = false
-            hasIssuedEarlierHistoryRequest = false
-            isLaterHistoryScrollGestureActive = false
-            hasLaterHistoryScrollIntent = false
-            hasIssuedLaterHistoryRequest = false
-            initialPositionConversation = nil
-            initialPositionCallbackGeneration &+= 1
-            scrollStateCallbackTask?.cancel()
-            scrollStateCallbackTask = nil
-            pendingScrollState = nil
-        }
-
-        func updateHistoryLoadingState(
-            from oldParent: NativeMessageTimelineView,
-            to parent: NativeMessageTimelineView
-        ) {
-            if parent.isLoadingEarlier {
-                hasIssuedEarlierHistoryRequest = true
-            } else if oldParent.isLoadingEarlier {
-                hasIssuedEarlierHistoryRequest = false
             }
-            if parent.isLoadingLater {
-                hasIssuedLaterHistoryRequest = true
-            } else if oldParent.isLoadingLater {
-                hasIssuedLaterHistoryRequest = false
+            let snapshotEndUptime = ProcessInfo.processInfo.systemUptime
+            if requiresVisibleRedraw {
+                canvas.invalidateVisibleContent()
+            } else {
+                canvas.invalidateRows(dirtyItemIndexes)
             }
-            // One page loads at a time, so a request the model refused while
-            // the other edge loaded is re-issued once loading goes idle.
-            if !parent.isLoadingEarlier, !parent.isLoadingLater,
-               oldParent.isLoadingEarlier || oldParent.isLoadingLater
-            {
-                hasIssuedEarlierHistoryRequest = false
-                hasIssuedLaterHistoryRequest = false
-            }
-        }
-
-        func resetTimelineMutationState(
-            widthChanged: Bool,
-            presentationChanged: Bool
-        ) {
-            didMutateItems = false
-            dirtyItemIndexes.removeAll()
-            requiresVisibleRedraw = widthChanged || presentationChanged || items.isEmpty
-            requiresAnchorRestore = widthChanged || presentationChanged
-            requiresFullOriginRebuild = widthChanged || presentationChanged
-            appendedLayoutCount = 0
-            didPrependItems = false
-            performanceUpdatePath = "none"
-            performanceFallbackReason = "none"
-            recentLayoutCacheHits = 0
-        }
-
-        func reconcileTimelineRows(
-            parent: NativeMessageTimelineView,
-            canvas: NativeTimelineCanvasView,
-            preparation: TimelineUpdatePreparation
-        ) {
-            if preparation.conversationChanged {
-                canvas.invalidateConversationTransientCaches()
-            } else if preparation.presentationChanged {
-                canvas.invalidatePresentationCaches()
-            }
-            if preparation.conversationChanged, preparation.presentationChanged {
-                canvas.invalidatePresentationCaches()
-            }
-            if preparation.oldParent.highlightedMessageID != parent.highlightedMessageID
-                || preparation.conversationChanged
-                || preparation.oldItemCount == 0,
-               let highlightedMessageID = parent.highlightedMessageID {
-                canvas.startMessageJumpHighlight(highlightedMessageID)
-            }
-            // Collapsing changes the item-to-message cardinality. Reconcile the
-            // affected conversation as a projection while retaining source rows;
-            // unchanged rows keep their layouts, so revealing a run lays out only it.
-            if !preparation.hasUnpublishedRows,
-               items.contains(where: { if case .suppressedMessages = $0 { true } else { false } })
-                || preparation.newRows.contains(where: { parent.model.isMessageSuppressed($0.message)
-                    || $0.replyPreview.map { parent.model.userSuppressionReason($0.author.id) != nil } == true }) {
-                layoutWidth = preparation.width
-                rebuildAll(from: parent, rows: preparation.newRows, width: preparation.width,
-                           force: preparation.widthChanged || preparation.presentationChanged)
-                return
-            }
-            if preparation.widthChanged || preparation.presentationChanged {
-                layoutWidth = preparation.width
-                if preparation.acceptsNewRows, !preparation.hasUnpublishedRows {
-                    rebuildAll(
-                        from: parent,
-                        rows: preparation.newRows,
-                        width: preparation.width,
-                        force: true
-                    )
-                } else {
-                    layouts = items.map { layout(for: $0, width: preparation.width) }
-                    rowHeights = layouts.map(\.height)
-                    didMutateItems = true
-                    performanceUpdatePath = preparation.presentationChanged
-                        ? "presentation-only" : "width-only"
-                }
-                return
-            }
-            if preparation.hasUnpublishedRows {
-                performanceUpdatePath = "awaiting-row-publication"
-                return
-            }
-            if parent.conversation != .inbox(.unread), applyFastUpdate(
-                from: preparation.oldParent,
-                to: parent,
-                rows: preparation.newRows,
-                width: preparation.width
-            ) { return }
-            if applyJournalUpdate(
-                from: preparation.oldParent,
-                to: parent,
-                rows: preparation.newRows,
-                width: preparation.width
-            ) { return }
-            let fallbackItemCount = items.count
-            let fallbackOldRowCount = rowCount
-            let fallbackOldLeadingCount = items.count - rowCount
-            rebuildAll(from: parent, rows: preparation.newRows, width: preparation.width)
-            logTimelineFallbackIfNeeded(
-                parent: parent,
-                rows: preparation.newRows,
-                itemCount: fallbackItemCount,
-                oldRowCount: fallbackOldRowCount,
-                oldLeadingCount: fallbackOldLeadingCount
-            )
-        }
-
-        func logTimelineFallbackIfNeeded(
-            parent: NativeMessageTimelineView,
-            rows: [MessageRowPresentation],
-            itemCount: Int,
-            oldRowCount: Int,
-            oldLeadingCount: Int
-        ) {
-            guard parent.runsPerformanceAutoScroll,
-                  lastLoggedPerformanceFallbackReason != performanceFallbackReason
-            else { return }
-            lastLoggedPerformanceFallbackReason = performanceFallbackReason
-            Self.performanceLogger.notice(
-                """
-                SakuraCord timeline fallback: \(self.performanceFallbackReason, privacy: .public); \
-                coordinator \(String(describing: ObjectIdentifier(self)), privacy: .public); \
-                items \(itemCount); old rows \(oldRowCount); new rows \(rows.count); \
-                old revision \(self.rowsRevision); new revision \(parent.rowsRevision); \
-                old leading \(oldLeadingCount); new leading \(self.makeLeadingItems(from: parent).count)
-                """
-            )
-        }
-
-        func updateTimelineOriginsAndReserves(
-            parent: NativeMessageTimelineView,
-            preparation: TimelineUpdatePreparation
-        ) -> Bool {
-            AppPerformanceSignposts.measureSync("TimelineOrigins") {
-                if requiresFullOriginRebuild {
-                    rebuildOrigins()
-                } else if appendedLayoutCount > 0 {
-                    appendOrigins(count: appendedLayoutCount)
-                }
-            }
-            updateLeadingHistoryReserve(parent: parent, preparation: preparation)
-            let didAppendItems = appendedLayoutCount > 0 && !didPrependItems
-            updateTrailingHistoryReserve(
-                parent: parent,
-                preparation: preparation,
-                didAppendItems: didAppendItems
-            )
-            return didAppendItems
-        }
-
-        func updateLeadingHistoryReserve(
-            parent: NativeMessageTimelineView,
-            preparation: TimelineUpdatePreparation
-        ) {
-            let establishesBoundary = preparation.oldItemCount == 0
-                || preparation.conversationChanged
-                || !preparation.oldParent.hasMoreMessages
-            if didPrependItems, parent.hasMoreMessages {
-                let update = NativeMessageTimelineLayoutPolicy.consumingHistoryReserve(
-                    leadingHistoryReserve,
-                    materializedHeight: max(0, contentHeight - preparation.oldContentHeight),
-                    chunk: Self.historyReserveChunk
-                )
-                leadingHistoryReserve = update.reserve
-                if !update.grew {
-                    requiresVisibleRedraw = false
-                    let leadingCount = items.count - rowCount
-                    let prependedCount = max(0, rowCount - preparation.oldRowCount)
-                    dirtyItemIndexes.insert(
-                        integersIn: leadingCount
-                            ..< min(items.count, leadingCount + prependedCount + 1)
-                    )
-                }
-            } else if establishesBoundary,
-                      parent.hasMoreMessages,
-                      leadingHistoryReserve == 0 {
-                leadingHistoryReserve = Self.historyReserveChunk
-            }
-        }
-
-        func updateTrailingHistoryReserve(
-            parent: NativeMessageTimelineView,
-            preparation: TimelineUpdatePreparation,
-            didAppendItems: Bool
-        ) {
-            if parent.conversation.isInbox {
-                trailingHistoryReserve = parent.hasMoreLaterMessages ? 160 : 0
-                return
-            }
-            let establishesBoundary = preparation.oldItemCount == 0
-                || preparation.conversationChanged
-                || !preparation.oldParent.hasMoreLaterMessages
-            if didAppendItems, parent.hasMoreLaterMessages {
-                let update = NativeMessageTimelineLayoutPolicy.consumingHistoryReserve(
-                    trailingHistoryReserve,
-                    materializedHeight: max(0, contentHeight - preparation.oldContentHeight),
-                    chunk: Self.historyReserveChunk
-                )
-                trailingHistoryReserve = update.reserve
-                if update.grew { requiresAnchorRestore = true }
-            } else if establishesBoundary,
-                      parent.hasMoreLaterMessages,
-                      trailingHistoryReserve == 0 {
-                trailingHistoryReserve = Self.historyReserveChunk
-            }
-        }
-
-        func finalizeTimelineViewport(
-            parent: NativeMessageTimelineView,
-            canvas: NativeTimelineCanvasView,
-            scrollView: NSScrollView,
-            preparation: TimelineUpdatePreparation
-        ) {
-            if canvas.accessibilitySettingsSnapshot != parent.model.accessibilitySettings {
-                canvas.accessibilitySettingsSnapshot = parent.model.accessibilitySettings
-                canvas.removeAccessibilityProxies()
-                canvas.reconcileAccessibilityProxiesIfActive()
-                canvas.reconcileAnimatedMedia(allowsScrolling: true)
-                canvas.reconcileHistorySkeletonShimmer()
-            }
-            if parent.hasMoreMessages,
-               leadingHistoryReserve == 0,
-               preparation.conversationChanged || !preparation.oldParent.hasMoreMessages {
-                leadingHistoryReserve = Self.historyReserveChunk
-            }
-            if parent.hasMoreLaterMessages,
-               trailingHistoryReserve == 0,
-               preparation.conversationChanged || !preparation.oldParent.hasMoreLaterMessages {
-                trailingHistoryReserve = parent.conversation.isInbox ? 160 : Self.historyReserveChunk
-            }
-            let collapsesReserve = (!parent.hasMoreMessages && leadingHistoryReserve > 0)
-                || (!parent.hasMoreLaterMessages && trailingHistoryReserve > 0)
-            let collapseAnchor = collapsesReserve ? visibleAnchor() : nil
-            if !parent.hasMoreMessages {
-                followsMaterializedHistoryBoundary = false
-                leadingHistoryReserve = 0
-            }
-            if !parent.hasMoreLaterMessages {
-                followsMaterializedLaterHistoryBoundary = false
-                trailingHistoryReserve = 0
-            }
-            updateInsets()
-            updateHistorySkeletonPresentation()
-            if let collapseAnchor { restore(collapseAnchor) }
-            if didMutateItems, let disclosureAnchor = preparation.disclosureAnchor {
-                // A blocked or ignored run opening or closing keeps its header in place where the
-                // document allows; its motion absorbs whatever the scroll position cannot.
-                if let index = canvas.disclosureHeaderIndex(for: disclosureAnchor.key) {
-                    restoreRow(at: index, offsetFromViewportTop: disclosureAnchor.offsetFromViewportTop)
-                }
-            } else if !parent.conversation.isInbox, preparation.wasNearBottom,
-               preparation.bottomInsetChanged || (didMutateItems && !didPrependItems) {
-                scroll(toDocumentY: .greatestFiniteMagnitude, scrollView: scrollView)
-            } else if didMutateItems,
-                      requiresAnchorRestore,
-                      let restoreAnchor = preparation.restoreAnchor {
-                restore(restoreAnchor)
-            }
-            // Send copies follow their rows before row motion starts, so a copy
-            // its confirmed row outgrew, as with a cached link preview, no
-            // longer holds that row's growth back.
-            canvas.reconcileSendTransitions()
-            // Reaction changes move rows from where the scroll position just settled.
-            canvas.beginReactionTransitions()
-        }
-
-        func finishTimelineUpdate(
-            parent: NativeMessageTimelineView,
-            scrollView: NSScrollView,
-            preparation: TimelineUpdatePreparation,
-            startUptime: TimeInterval
-        ) {
             if parent.runsPerformanceAutoScroll {
-                let milliseconds = (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000
-                lastPerformanceUpdateDuration = milliseconds
-                performanceUpdateCount += 1
-                performanceUpdateTotalDuration += milliseconds
-                if milliseconds >= 4 {
+                let updateMilliseconds =
+                    (snapshotEndUptime - measurement.startUptime) * 1_000
+                if updateMilliseconds >= 4 {
                     NSLog(
-                        "SakuraCord timeline reload: %.2f ms (%d -> %d items)",
-                        milliseconds,
-                        preparation.oldItemCount,
-                        items.count
+                        "SakuraCord timeline phases: %@ (%@) reconcile %.2f ms; metadata %.2f ms; origins %.2f ms; snapshot %.2f ms",
+                        performanceUpdatePath,
+                        performanceFallbackReason,
+                        (reconcileEndUptime - reconcileStartUptime) * 1_000,
+                        (metadataEndUptime - reconcileEndUptime) * 1_000,
+                        (originsEndUptime - metadataEndUptime) * 1_000,
+                        (snapshotEndUptime - originsEndUptime) * 1_000
                     )
                 }
             }
-            let establishedInitialPosition = applyInitialPositionIfNeeded()
-            if recentLayoutCacheHits > 0 {
-                Self.performanceSignposter.emitEvent("ConversationRowLayoutCacheUsed")
-            }
-            applyScrollRequestIfNeeded()
-            applyEditRequestIfNeeded()
-            if establishedInitialPosition { publishInitialPosition(scrollState()) }
-            reportScrollState(force: shouldReevaluateHistory(after: preparation, parent: parent))
-            startPerformanceAutoScrollIfNeeded()
-            isApplyingUpdate = false
-            lastViewportSize = scrollView.contentView.bounds.size
+        } else {
+            canvas.model = parent.model
+            canvas.messageInteractionContext =
+                parent.conversation.messageInteractionContext
+            canvas.actions = actions
         }
+        finalizeTimelineViewport(
+            parent: parent,
+            canvas: canvas,
+            scrollView: scrollView,
+            preparation: preparation
+        )
+        updateSendTransition(
+            parent: parent,
+            preparation: preparation,
+            transcriptAnchor: sendTransitionAnchor
+        )
+        if let unreadDivider { canvas.transitionUnreadDivider(unreadDivider) }
+        AppPerformanceSignposts.signposter.endInterval(
+            "MessageTimelineReload",
+            measurement.signpost
+        )
+        finishTimelineUpdate(
+            parent: parent,
+            scrollView: scrollView,
+            preparation: preparation,
+            startUptime: measurement.startUptime
+        )
+    }
 
-        func shouldReevaluateHistory(
-            after preparation: TimelineUpdatePreparation,
-            parent: NativeMessageTimelineView
-        ) -> Bool {
-            NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
-                wasLoading: preparation.oldParent.isLoadingEarlier,
-                isLoading: parent.isLoadingEarlier,
-                previousRowCount: preparation.oldRowCount,
-                currentRowCount: rowCount
-            ) || NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
-                wasLoading: preparation.oldParent.isLoadingLater,
-                isLoading: parent.isLoadingLater,
-                previousRowCount: preparation.oldRowCount,
-                currentRowCount: rowCount
+    func prepareTimelineUpdate(
+        parent: NativeMessageTimelineView,
+        scrollView: NSScrollView,
+        canvas: NativeTimelineCanvasView
+    ) -> (TimelineUpdatePreparation, TimelineReloadMeasurement) {
+        let oldParent = self.parent
+        let conversationChanged = parent.conversation != oldParent.conversation
+        let currentTimestampDay = Calendar.autoupdatingCurrent.startOfDay(for: .now)
+        let timestampDayChanged = currentTimestampDay != timestampDay
+        let presentationChanged = parent.presentationRevision != presentationRevision
+            || timestampDayChanged
+        // The coordinator mutates the storage it shares with the canvas.
+        if parent.rowsRevision != rowsRevision, !conversationChanged {
+            canvas.captureRowMotionBaseline()
+        }
+        let oldItemCount = items.count
+        let oldRowCount = rowCount
+        let oldContentHeight = contentHeight
+        if conversationChanged {
+            cacheBoundedCurrentItemLayouts()
+            resetConversationUpdateState()
+        }
+        if timestampDayChanged {
+            timestampDay = currentTimestampDay
+            cachedItemLayouts.removeAll(keepingCapacity: true)
+            cachedItemLayoutOrder.removeAll(keepingCapacity: true)
+            cachedItemLayoutEvictionIndex = 0
+        }
+        let wasNearBottom = scrollState().isNearBottom
+        let bottomInsetChanged = abs(
+            oldParent.bottomContentInset - parent.bottomContentInset
+        ) >= 0.5
+        self.parent = parent
+        updateHistoryLoadingState(from: oldParent, to: parent)
+        let newRows = parent.conversation.rows(in: parent.model)
+        let hasUnpublishedRows = (
+            parent.rowsUpdateJournal.latestRevision ?? parent.rowsRevision
+        ) > parent.rowsRevision
+        let acceptsNewRows = NativeMessageTimelineLayoutPolicy.acceptsRowSnapshot(
+            itemsAreEmpty: items.isEmpty,
+            conversationChanged: conversationChanged,
+            publishedRevision: parent.rowsRevision,
+            appliedRevision: rowsRevision
+        )
+        actions = Self.makeActions(from: parent)
+        self.scrollView = scrollView
+        let measurement = TimelineReloadMeasurement(
+            startUptime: ProcessInfo.processInfo.systemUptime,
+            signpost: AppPerformanceSignposts.signposter.beginInterval(
+                "MessageTimelineReload"
             )
-        }
+        )
+        isApplyingUpdate = true
+        let measuredWidth = max(220, scrollView.contentView.bounds.width.rounded())
+        if layoutWidth > 0 { scheduleRelayoutForWidthChange(measuredWidth) }
+        let width = pendingLayoutWidth == nil ? measuredWidth : max(220, layoutWidth)
+        let widthChanged = abs(width - layoutWidth) >= 1
+        let anchor = visibleAnchor()
+        let disclosureAnchor = resolvedDisclosureAnchor(canvas: canvas, scrollView: scrollView)
+        resetTimelineMutationState(
+            widthChanged: widthChanged,
+            presentationChanged: presentationChanged
+        )
+        let preparation = TimelineUpdatePreparation(
+            oldParent: oldParent,
+            oldItemCount: oldItemCount,
+            oldRowCount: oldRowCount,
+            oldContentHeight: oldContentHeight,
+            conversationChanged: conversationChanged,
+            presentationChanged: presentationChanged,
+            wasNearBottom: wasNearBottom,
+            bottomInsetChanged: bottomInsetChanged,
+            newRows: newRows,
+            hasUnpublishedRows: hasUnpublishedRows,
+            acceptsNewRows: acceptsNewRows,
+            width: width,
+            widthChanged: widthChanged,
+            restoreAnchor: anchor,
+            disclosureAnchor: disclosureAnchor
+        )
+        return (preparation, measurement)
+    }
 
-        func update(parent: NativeMessageTimelineView, scrollView: NSScrollView) {
-            pendingModelRowsUpdateTask?.cancel()
-            pendingModelRowsUpdateTask = nil
-            applyUpdate(parent: parent, scrollView: scrollView)
-        }
+    func resetConversationUpdateState() {
+        liveScrollViewport = nil
+        widthRelayoutGeneration &+= 1
+        widthRelayoutTask?.cancel()
+        widthRelayoutTask = nil
+        pendingLayoutWidth = nil
+        previewLayoutWidth = nil
+        previewedRowIdentifiers.removeAll()
+        rowsPreviewedAtCurrentWidth.removeAll()
+        leadingHistoryReserve = 0
+        trailingHistoryReserve = 0
+        followsMaterializedHistoryBoundary = false
+        followsMaterializedLaterHistoryBoundary = false
+        isEarlierHistoryScrollGestureActive = false
+        hasEarlierHistoryScrollIntent = false
+        hasIssuedEarlierHistoryRequest = false
+        isLaterHistoryScrollGestureActive = false
+        hasLaterHistoryScrollIntent = false
+        hasIssuedLaterHistoryRequest = false
+        initialPositionConversation = nil
+        initialPositionCallbackGeneration &+= 1
+        scrollStateCallbackTask?.cancel()
+        scrollStateCallbackTask = nil
+        pendingScrollState = nil
+    }
 
-        func applyUpdate(
-            parent: NativeMessageTimelineView,
-            scrollView: NSScrollView
-        ) {
-            canvas?.setOverlayInteractionBlocked(
-                !WindowModalCoordinator.allowsInput(for: scrollView),
-                mediaViewerHighlightedMessageID:
-                    parent.model.mediaViewerPresentation?.messageID
-            )
-            canvas?.mediaViewerPresentationDidChange(to: parent.model.mediaViewerPresentation?.id)
-            guard !prepareLayoutsIfNeeded(parent: parent, scrollView: scrollView) else {
-                return
-            }
-            updateTimeline(parent: parent, scrollView: scrollView)
-            layoutPreparation = nil
-            updateTimestampObservation()
-        }
-
-        func scheduleModelRowsUpdate() {
-            guard pendingModelRowsUpdateTask == nil else { return }
-            pendingModelRowsUpdateTask = Task { @MainActor [weak self] in
-                // NotificationCenter delivers model publications inline. A
-                // cold timeline can require tens of milliseconds of layout
-                // and raster work, so doing that work inside `post` couples
-                // network completion to an input-blocking render transaction.
-                // Give SwiftUI's observation transaction the first chance to
-                // publish an up-to-date parent and coalesce repeated model
-                // changes into one timeline reconciliation.
-                await Task.yield()
-                guard !Task.isCancelled, let self else { return }
-                self.pendingModelRowsUpdateTask = nil
-                guard !self.isLeavingWorkspace else { return }
-                guard !self.isApplyingUpdate,
-                      let scrollView = self.scrollView
-                else {
-                    self.scheduleModelRowsUpdate()
-                    return
-                }
-                self.applyUpdate(
-                    parent: self.parent,
-                    scrollView: scrollView
-                )
-            }
-        }
-
-        func stopObserving() {
-            RelativeTimestampClock.shared.remove(self)
-            liveScrollViewport = nil
-            cancelGlide()
-            cancelLayoutPreparation()
-            pendingModelRowsUpdateTask?.cancel()
-            pendingModelRowsUpdateTask = nil
-            scrollStateCallbackTask?.cancel()
-            scrollStateCallbackTask = nil
-            pendingScrollState = nil
-            isEarlierHistoryScrollGestureActive = false
-            hasEarlierHistoryScrollIntent = false
+    func updateHistoryLoadingState(
+        from oldParent: NativeMessageTimelineView,
+        to parent: NativeMessageTimelineView
+    ) {
+        if parent.isLoadingEarlier {
+            hasIssuedEarlierHistoryRequest = true
+        } else if oldParent.isLoadingEarlier {
             hasIssuedEarlierHistoryRequest = false
-            scrollIdleTask?.cancel()
-            scrollIdleTask = nil
-            widthRelayoutTask?.cancel()
-            widthRelayoutTask = nil
-            pendingLayoutWidth = nil
-            previewLayoutWidth = nil
-            previewedRowIdentifiers.removeAll()
-            rowsPreviewedAtCurrentWidth.removeAll()
-            widthRelayoutGeneration &+= 1
-            performanceAutoScrollTask?.cancel()
-            performanceAutoScrollTask = nil
-            performanceBenchmarkFinish?(.cancelled)
-            performanceBenchmarkFinish = nil
-            performanceDisplayLinkTicker?.stop()
-            performanceDisplayLinkTicker = nil
-            publishScrollActivity(false)
-            for observation in observations {
-                NotificationCenter.default.removeObserver(observation)
-            }
-            observations.removeAll()
         }
-
-#if DEBUG
-        var hasAppliedInitialPositionForTesting: Bool {
-            initialPositionConversation == parent.conversation
+        if parent.isLoadingLater {
+            hasIssuedLaterHistoryRequest = true
+        } else if oldParent.isLoadingLater {
+            hasIssuedLaterHistoryRequest = false
         }
-
-        var initialPositionConversationForTesting:
-            NativeTimelineConversation?
+        // One page loads at a time, so a request the model refused while
+        // the other edge loaded is re-issued once loading goes idle.
+        if !parent.isLoadingEarlier, !parent.isLoadingLater,
+           oldParent.isLoadingEarlier || oldParent.isLoadingLater
         {
-            initialPositionConversation
+            hasIssuedEarlierHistoryRequest = false
+            hasIssuedLaterHistoryRequest = false
         }
+    }
 
-        var scrollStateForTesting: TimelineScrollState {
-            scrollState()
+    func resetTimelineMutationState(
+        widthChanged: Bool,
+        presentationChanged: Bool
+    ) {
+        didMutateItems = false
+        dirtyItemIndexes.removeAll()
+        requiresVisibleRedraw = widthChanged || presentationChanged || items.isEmpty
+        requiresAnchorRestore = widthChanged || presentationChanged
+        requiresFullOriginRebuild = widthChanged || presentationChanged
+        appendedLayoutCount = 0
+        didPrependItems = false
+        performanceUpdatePath = "none"
+        performanceFallbackReason = "none"
+        recentLayoutCacheHits = 0
+    }
+
+    func reconcileTimelineRows(
+        parent: NativeMessageTimelineView,
+        canvas: NativeTimelineCanvasView,
+        preparation: TimelineUpdatePreparation
+    ) {
+        if preparation.conversationChanged {
+            canvas.invalidateConversationTransientCaches()
+        } else if preparation.presentationChanged {
+            canvas.invalidatePresentationCaches()
         }
-
-        var contentOriginYForTesting: CGFloat {
-            guard let scrollView else { return 0 }
-            return contentOriginY(
-                viewportHeight: scrollView.contentView.bounds.height
-            )
+        if preparation.conversationChanged, preparation.presentationChanged {
+            canvas.invalidatePresentationCaches()
         }
-
-        var contentHeightForTesting: CGFloat {
-            contentHeight
+        if preparation.oldParent.highlightedMessageID != parent.highlightedMessageID
+            || preparation.conversationChanged
+            || preparation.oldItemCount == 0,
+           let highlightedMessageID = parent.highlightedMessageID {
+            canvas.startMessageJumpHighlight(highlightedMessageID)
         }
-
-        var performanceUpdatePathForTesting: String {
-            performanceUpdatePath
+        // Collapsing changes the item-to-message cardinality. Reconcile the
+        // affected conversation as a projection while retaining source rows;
+        // unchanged rows keep their layouts, so revealing a run lays out only it.
+        if !preparation.hasUnpublishedRows,
+           items.contains(where: { if case .suppressedMessages = $0 { true } else { false } })
+            || preparation.newRows.contains(where: { parent.model.isMessageSuppressed($0.message)
+                || $0.replyPreview.map { parent.model.userSuppressionReason($0.author.id) != nil } == true }) {
+            layoutWidth = preparation.width
+            rebuildAll(from: parent, rows: preparation.newRows, width: preparation.width,
+                       force: preparation.widthChanged || preparation.presentationChanged)
+            return
         }
-
-        var pendingLayoutWidthForTesting: CGFloat? {
-            pendingLayoutWidth
-        }
-
-        var widthRelayoutGenerationForTesting: UInt64 {
-            widthRelayoutGeneration
-        }
-
-        var cachedItemLayoutCountForTesting: Int {
-            cachedItemLayouts.count
-        }
-
-        func applyPendingWidthRelayoutForTesting() {
-            applyPendingWidthRelayout()
-        }
-
-        func messageOffsetFromViewportTopForTesting(
-            _ messageID: MessageID
-        ) -> CGFloat? {
-            guard let scrollView,
-                  let index = items.firstIndex(where: {
-                      $0.messageID == messageID
-                  }),
-                  rowOrigins.indices.contains(index)
-            else {
-                return nil
-            }
-            return contentOriginY(
-                viewportHeight: scrollView.contentView.bounds.height
-            )
-                + rowOrigins[index]
-                - scrollView.contentView.bounds.minY
-        }
-
-        func messageHeightForTesting(
-            _ messageID: MessageID
-        ) -> CGFloat? {
-            guard let index = items.firstIndex(where: {
-                $0.messageID == messageID
-            }),
-                  layouts.indices.contains(index)
-            else {
-                return nil
-            }
-            return layouts[index].height
-        }
-
-        func reconcileViewportGeometryForTesting() {
-            _ = reconcileViewportGeometryIfNeeded()
-        }
-
-        func updateDocumentHeightForTesting(_ height: CGFloat) {
-            guard let scrollView else { return }
-            updateDocumentSize(
-                NSSize(
-                    width: scrollView.contentView.bounds.width,
-                    height: height
-                )
-            )
-        }
-#endif
-
-        func rebuildAll(
-            from parent: NativeMessageTimelineView,
-            rows: [MessageRowPresentation],
-            width: CGFloat,
-            force: Bool = false
-        ) {
-            let newItems = makeItems(from: parent, rows: rows)
-            if force
-                || items != newItems
-                || layouts.count != newItems.count
-                || messageIDs.count != rows.count
-            {
-                // Without a width or presentation change, an unchanged item's
-                // layout is still current wherever the item moved. Rows
-                // previewed at a transient width are laid out again.
-                var reusableLayouts: [NativeMessageTimelineItem.Identifier: Int] = [:]
-                if !force, items.count == layouts.count, previewedRowIdentifiers.isEmpty {
-                    reusableLayouts.reserveCapacity(items.count)
-                    for (index, item) in items.enumerated() { reusableLayouts[item.identifier] = index }
-                }
-                let oldItems = items
-                let oldLayouts = layouts
-                items = newItems
-                messageIDs = rows.map(\.id)
-                layouts = items.map { item in
-                    if let index = reusableLayouts[item.identifier],
-                       oldItems[index] == item,
-                       oldLayouts[index].fontRevision == ProfileNameFontCache.revision,
-                       oldLayouts[index].matchesAuthorPrimaryGuild(for: item, source: parent.model) {
-                        // Retained live rows are not reads from a layout cache.
-                        return oldLayouts[index]
-                    }
-                    return layoutUsingRecentConversationCache(
-                        for: item,
-                        width: width,
-                        presentationRevision: parent.presentationRevision
-                    )
-                }
-                rowHeights = layouts.map(\.height)
-                didMutateItems = true
-                requiresVisibleRedraw = true
-                requiresAnchorRestore = true
-                requiresFullOriginRebuild = true
-                performanceUpdatePath = "rebuild"
-            }
-        }
-
-        func cacheBoundedCurrentItemLayouts() {
-            guard !items.isEmpty, items.count == layouts.count else { return }
-            let count = min(
-                Self.cachedItemLayoutsPerConversation,
-                items.count
-            )
-            let centerIndex = canvas.flatMap {
-                $0.rowIndex(at: $0.visibleRect.midY)
-            } ?? (items.count - 1)
-            let lowerBound = min(
-                max(0, centerIndex - count / 2),
-                items.count - count
-            )
-            for index in lowerBound ..< lowerBound + count {
-                cacheItemLayout(items[index], layout: layouts[index])
-            }
-        }
-
-        func cacheItemLayout(
-            _ item: NativeMessageTimelineItem,
-            layout: NativeTimelineRowLayout
-        ) {
-            let key = CachedItemLayoutKey(
-                identifier: item.identifier,
-                roundedWidth: Int(layoutWidth.rounded()),
-                presentationRevision: presentationRevision
-            )
-            let inserted = cachedItemLayouts.updateValue(
-                CachedItemLayout(item: item, layout: layout),
-                forKey: key
-            ) == nil
-            if inserted {
-                cachedItemLayoutOrder.append(key)
-            }
-            while cachedItemLayouts.count > Self.maximumCachedItemLayouts,
-                  cachedItemLayoutEvictionIndex
-                    < cachedItemLayoutOrder.count
-            {
-                let evicted = cachedItemLayoutOrder[
-                    cachedItemLayoutEvictionIndex
-                ]
-                cachedItemLayoutEvictionIndex += 1
-                cachedItemLayouts[evicted] = nil
-            }
-            if cachedItemLayoutEvictionIndex > 1_024,
-               cachedItemLayoutEvictionIndex * 2
-                > cachedItemLayoutOrder.count
-            {
-                cachedItemLayoutOrder.removeFirst(
-                    cachedItemLayoutEvictionIndex
-                )
-                cachedItemLayoutEvictionIndex = 0
-            }
-        }
-
-        func layoutUsingRecentConversationCache(
-            for item: NativeMessageTimelineItem,
-            width: CGFloat,
-            presentationRevision: UInt64
-        ) -> NativeTimelineRowLayout {
-            if let cached = cachedItemLayout(
-                for: item, width: width, presentationRevision: presentationRevision
-            ) {
-                recentLayoutCacheHits += 1
-                return cached
-            }
-            return layout(for: item, width: width)
-        }
-
-        func cachedItemLayout(
-            for item: NativeMessageTimelineItem,
-            width: CGFloat,
-            presentationRevision: UInt64
-        ) -> NativeTimelineRowLayout? {
-            let key = CachedItemLayoutKey(
-                identifier: item.identifier,
-                roundedWidth: Int(width.rounded()),
-                presentationRevision: presentationRevision
-            )
-            guard let cached = cachedItemLayouts[key],
-                  cached.item == item,
-                  cached.layout.fontRevision == ProfileNameFontCache.revision,
-                  cached.layout.matchesAuthorPrimaryGuild(for: item, source: parent.model)
-            else { return nil }
-            return cached.layout
-        }
-
-        func applyFastUpdate(
-            from oldParent: NativeMessageTimelineView,
-            to newParent: NativeMessageTimelineView,
-            rows newRows: [MessageRowPresentation],
-            width: CGFloat
-        ) -> Bool {
-            guard oldParent.conversation == newParent.conversation else {
-                performanceFallbackReason = "conversation-changed"
-                return false
-            }
-            guard !NativeMessageTimelineLayoutPolicy
-                .requiresFirstMessageBoundaryRebuild(
-                    from: oldParent.firstMessageStartsDayOverride,
-                    to: newParent.firstMessageStartsDayOverride
-                )
-            else {
-                performanceFallbackReason = "first-message-boundary"
-                return false
-            }
-            if newParent.rowsRevision > rowsRevision &+ 1 {
-                if let coalescedRecords =
-                    newParent.rowsUpdateJournal.records(
-                        after: rowsRevision,
-                        through: newParent.rowsRevision
-                    ),
-                   coalescedRecords.contains(where: {
-                    !$0.changedMessageIDs.isEmpty
-                        || !$0.removedMessageIDs.isEmpty
-                   })
-                {
-                    performanceFallbackReason =
-                        "coalesced-structural-mutations"
-                    return false
-                }
-            }
-            guard !items.isEmpty, items.count >= rowCount else {
-                performanceFallbackReason = "empty-or-invalid-count"
-                return false
-            }
-            let oldLeadingCount = items.count - rowCount
-            let newLeading = makeLeadingItems(from: newParent)
-
-            if rowsRevision == newParent.rowsRevision {
-                return applyMetadataUpdate(
-                    from: oldParent,
-                    to: newParent,
-                    leadingItems: newLeading,
-                    oldLeadingCount: oldLeadingCount,
-                    width: width
-                )
-            }
-
-            guard oldLeadingCount == newLeading.count else {
-                performanceFallbackReason = "leading-count"
-                return false
-            }
-            for index in newLeading.indices where items[index] != newLeading[index] {
-                replaceItem(at: index, with: newLeading[index], width: width)
-            }
-
-            let delta = newRows.count - rowCount
-            let applied = if delta == 0 {
-                applySameCountUpdate(
-                    to: newParent,
-                    rows: newRows,
-                    oldLeadingCount: oldLeadingCount,
-                    width: width
-                )
-            } else if delta < 0 {
-                applyRemovalUpdate(
-                    to: newParent,
-                    rows: newRows,
-                    oldLeadingCount: oldLeadingCount,
-                    delta: delta,
-                    width: width
+        if preparation.widthChanged || preparation.presentationChanged {
+            layoutWidth = preparation.width
+            if preparation.acceptsNewRows, !preparation.hasUnpublishedRows {
+                rebuildAll(
+                    from: parent,
+                    rows: preparation.newRows,
+                    width: preparation.width,
+                    force: true
                 )
             } else {
-                applyInsertionUpdate(
-                    to: newParent,
-                    rows: newRows,
-                    oldLeadingCount: oldLeadingCount,
-                    delta: delta,
-                    width: width
+                layouts = items.map { layout(for: $0, width: preparation.width) }
+                rowHeights = layouts.map(\.height)
+                didMutateItems = true
+                performanceUpdatePath = preparation.presentationChanged
+                    ? "presentation-only" : "width-only"
+            }
+            return
+        }
+        if preparation.hasUnpublishedRows {
+            performanceUpdatePath = "awaiting-row-publication"
+            return
+        }
+        if parent.conversation != .inbox(.unread), applyFastUpdate(
+            from: preparation.oldParent,
+            to: parent,
+            rows: preparation.newRows,
+            width: preparation.width
+        ) { return }
+        if applyJournalUpdate(
+            from: preparation.oldParent,
+            to: parent,
+            rows: preparation.newRows,
+            width: preparation.width
+        ) { return }
+        let fallbackItemCount = items.count
+        let fallbackOldRowCount = rowCount
+        let fallbackOldLeadingCount = items.count - rowCount
+        rebuildAll(from: parent, rows: preparation.newRows, width: preparation.width)
+        logTimelineFallbackIfNeeded(
+            parent: parent,
+            rows: preparation.newRows,
+            itemCount: fallbackItemCount,
+            oldRowCount: fallbackOldRowCount,
+            oldLeadingCount: fallbackOldLeadingCount
+        )
+    }
+
+    func logTimelineFallbackIfNeeded(
+        parent: NativeMessageTimelineView,
+        rows: [MessageRowPresentation],
+        itemCount: Int,
+        oldRowCount: Int,
+        oldLeadingCount: Int
+    ) {
+        guard parent.runsPerformanceAutoScroll,
+              lastLoggedPerformanceFallbackReason != performanceFallbackReason
+        else { return }
+        lastLoggedPerformanceFallbackReason = performanceFallbackReason
+        Self.performanceLogger.notice(
+            """
+            SakuraCord timeline fallback: \(self.performanceFallbackReason, privacy: .public); \
+            coordinator \(String(describing: ObjectIdentifier(self)), privacy: .public); \
+            items \(itemCount); old rows \(oldRowCount); new rows \(rows.count); \
+            old revision \(self.rowsRevision); new revision \(parent.rowsRevision); \
+            old leading \(oldLeadingCount); new leading \(self.makeLeadingItems(from: parent).count)
+            """
+        )
+    }
+
+    func updateTimelineOriginsAndReserves(
+        parent: NativeMessageTimelineView,
+        preparation: TimelineUpdatePreparation
+    ) -> Bool {
+        AppPerformanceSignposts.measureSync("TimelineOrigins") {
+            if requiresFullOriginRebuild {
+                rebuildOrigins()
+            } else if appendedLayoutCount > 0 {
+                appendOrigins(count: appendedLayoutCount)
+            }
+        }
+        updateLeadingHistoryReserve(parent: parent, preparation: preparation)
+        let didAppendItems = appendedLayoutCount > 0 && !didPrependItems
+        updateTrailingHistoryReserve(
+            parent: parent,
+            preparation: preparation,
+            didAppendItems: didAppendItems
+        )
+        return didAppendItems
+    }
+
+    func updateLeadingHistoryReserve(
+        parent: NativeMessageTimelineView,
+        preparation: TimelineUpdatePreparation
+    ) {
+        let establishesBoundary = preparation.oldItemCount == 0
+            || preparation.conversationChanged
+            || !preparation.oldParent.hasMoreMessages
+        if didPrependItems, parent.hasMoreMessages {
+            let update = NativeMessageTimelineLayoutPolicy.consumingHistoryReserve(
+                leadingHistoryReserve,
+                materializedHeight: max(0, contentHeight - preparation.oldContentHeight),
+                chunk: Self.historyReserveChunk
+            )
+            leadingHistoryReserve = update.reserve
+            if !update.grew {
+                requiresVisibleRedraw = false
+                let leadingCount = items.count - rowCount
+                let prependedCount = max(0, rowCount - preparation.oldRowCount)
+                dirtyItemIndexes.insert(
+                    integersIn: leadingCount
+                        ..< min(items.count, leadingCount + prependedCount + 1)
                 )
             }
-            // Row updates redraw only the rows they touch. A boundary that
-            // moved in the same update must also leave its previous row, or
-            // that row keeps drawing a stale NEW divider.
-            if applied {
-                refreshRowMarkers(from: oldParent, to: newParent, width: width)
-            }
-            return applied
+        } else if establishesBoundary,
+                  parent.hasMoreMessages,
+                  leadingHistoryReserve == 0 {
+            leadingHistoryReserve = Self.historyReserveChunk
         }
+    }
 
-        func applyMetadataUpdate(
-            from oldParent: NativeMessageTimelineView,
-            to newParent: NativeMessageTimelineView,
-            leadingItems: [NativeMessageTimelineItem],
-            oldLeadingCount: Int,
-            width: CGFloat
-        ) -> Bool {
-            performanceUpdatePath = "metadata"
-            guard oldLeadingCount == leadingItems.count else {
-                performanceFallbackReason = "metadata-leading-count"
-                return false
-            }
-            for index in leadingItems.indices where items[index] != leadingItems[index] {
-                replaceItem(at: index, with: leadingItems[index], width: width)
-            }
-            refreshRowMarkers(from: oldParent, to: newParent, width: width)
-            return true
+    func updateTrailingHistoryReserve(
+        parent: NativeMessageTimelineView,
+        preparation: TimelineUpdatePreparation,
+        didAppendItems: Bool
+    ) {
+        if parent.conversation.isInbox {
+            trailingHistoryReserve = parent.hasMoreLaterMessages ? 160 : 0
+            return
         }
+        let establishesBoundary = preparation.oldItemCount == 0
+            || preparation.conversationChanged
+            || !preparation.oldParent.hasMoreLaterMessages
+        if didAppendItems, parent.hasMoreLaterMessages {
+            let update = NativeMessageTimelineLayoutPolicy.consumingHistoryReserve(
+                trailingHistoryReserve,
+                materializedHeight: max(0, contentHeight - preparation.oldContentHeight),
+                chunk: Self.historyReserveChunk
+            )
+            trailingHistoryReserve = update.reserve
+            if update.grew { requiresAnchorRestore = true }
+        } else if establishesBoundary,
+                  parent.hasMoreLaterMessages,
+                  trailingHistoryReserve == 0 {
+            trailingHistoryReserve = Self.historyReserveChunk
+        }
+    }
 
-        /// Redraws the rows that gain or lose the unread divider or the
-        /// selection highlight.
-        func refreshRowMarkers(
-            from oldParent: NativeMessageTimelineView,
-            to newParent: NativeMessageTimelineView,
-            width: CGFloat
-        ) {
-            var affectedIDs = Set<MessageID>()
-            if oldParent.unreadMessageID != newParent.unreadMessageID {
-                affectedIDs.formUnion([oldParent.unreadMessageID, newParent.unreadMessageID].compactMap { $0 })
+    func finalizeTimelineViewport(
+        parent: NativeMessageTimelineView,
+        canvas: NativeTimelineCanvasView,
+        scrollView: NSScrollView,
+        preparation: TimelineUpdatePreparation
+    ) {
+        if canvas.accessibilitySettingsSnapshot != parent.model.accessibilitySettings {
+            canvas.accessibilitySettingsSnapshot = parent.model.accessibilitySettings
+            canvas.removeAccessibilityProxies()
+            canvas.reconcileAccessibilityProxiesIfActive()
+            canvas.reconcileAnimatedMedia(allowsScrolling: true)
+            canvas.reconcileHistorySkeletonShimmer()
+        }
+        if parent.hasMoreMessages,
+           leadingHistoryReserve == 0,
+           preparation.conversationChanged || !preparation.oldParent.hasMoreMessages {
+            leadingHistoryReserve = Self.historyReserveChunk
+        }
+        if parent.hasMoreLaterMessages,
+           trailingHistoryReserve == 0,
+           preparation.conversationChanged || !preparation.oldParent.hasMoreLaterMessages {
+            trailingHistoryReserve = parent.conversation.isInbox ? 160 : Self.historyReserveChunk
+        }
+        let collapsesReserve = (!parent.hasMoreMessages && leadingHistoryReserve > 0)
+            || (!parent.hasMoreLaterMessages && trailingHistoryReserve > 0)
+        let collapseAnchor = collapsesReserve ? visibleAnchor() : nil
+        if !parent.hasMoreMessages {
+            followsMaterializedHistoryBoundary = false
+            leadingHistoryReserve = 0
+        }
+        if !parent.hasMoreLaterMessages {
+            followsMaterializedLaterHistoryBoundary = false
+            trailingHistoryReserve = 0
+        }
+        updateInsets()
+        updateHistorySkeletonPresentation()
+        if let collapseAnchor { restore(collapseAnchor) }
+        if didMutateItems, let disclosureAnchor = preparation.disclosureAnchor {
+            // A blocked or ignored run opening or closing keeps its header in place where the
+            // document allows; its motion absorbs whatever the scroll position cannot.
+            if let index = canvas.disclosureHeaderIndex(for: disclosureAnchor.key) {
+                restoreRow(at: index, offsetFromViewportTop: disclosureAnchor.offsetFromViewportTop)
             }
-            if oldParent.selectedMessageID != newParent.selectedMessageID {
-                affectedIDs.formUnion([oldParent.selectedMessageID, newParent.selectedMessageID].compactMap { $0 })
-            }
-            let conversationRows = affectedIDs.isEmpty ? [] : newParent.conversation.rows(in: newParent.model)
-            for id in affectedIDs {
-                guard let index = items.firstIndex(where: { $0.messageID == id }),
-                      let storedRow = items[index].messageRow
-                else { continue }
-                // Rebuild from the conversation's row: a stored row may carry
-                // the extra group start of a divider that has since moved.
-                let row = conversationRows.first(where: { $0.id == id }) ?? storedRow
-                let item = messageItem(row, from: newParent)
-                if items[index] != item {
-                    replaceItem(at: index, with: item, width: width)
-                }
+        } else if !parent.conversation.isInbox, preparation.wasNearBottom,
+           preparation.bottomInsetChanged || (didMutateItems && !didPrependItems) {
+            scroll(toDocumentY: .greatestFiniteMagnitude, scrollView: scrollView)
+        } else if didMutateItems,
+                  requiresAnchorRestore,
+                  let restoreAnchor = preparation.restoreAnchor {
+            restore(restoreAnchor)
+        }
+        // Send copies follow their rows before row motion starts, so a copy
+        // its confirmed row outgrew, as with a cached link preview, no
+        // longer holds that row's growth back.
+        canvas.reconcileSendTransitions()
+        // Reaction changes move rows from where the scroll position just settled.
+        canvas.beginRowMotions()
+    }
+
+    func finishTimelineUpdate(
+        parent: NativeMessageTimelineView,
+        scrollView: NSScrollView,
+        preparation: TimelineUpdatePreparation,
+        startUptime: TimeInterval
+    ) {
+        if parent.runsPerformanceAutoScroll {
+            let milliseconds = (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000
+            lastPerformanceUpdateDuration = milliseconds
+            performanceUpdateCount += 1
+            performanceUpdateTotalDuration += milliseconds
+            if milliseconds >= 4 {
+                NSLog(
+                    "SakuraCord timeline reload: %.2f ms (%d -> %d items)",
+                    milliseconds,
+                    preparation.oldItemCount,
+                    items.count
+                )
             }
         }
+        let establishedInitialPosition = applyInitialPositionIfNeeded()
+        if recentLayoutCacheHits > 0 {
+            AppPerformanceSignposts.signposter.emitEvent("ConversationRowLayoutCacheUsed")
+        }
+        applyScrollRequestIfNeeded()
+        applyEditRequestIfNeeded()
+        if establishedInitialPosition { publishInitialPosition(scrollState()) }
+        reportScrollState(force: shouldReevaluateHistory(after: preparation, parent: parent))
+        startPerformanceAutoScrollIfNeeded()
+        isApplyingUpdate = false
+        lastViewportSize = scrollView.contentView.bounds.size
+    }
 
-        func applySameCountUpdate(
-            to newParent: NativeMessageTimelineView,
-            rows newRows: [MessageRowPresentation],
-            oldLeadingCount: Int,
-            width: CGFloat
-        ) -> Bool {
-            if let records = newParent.rowsUpdateJournal.records(
-                after: rowsRevision,
-                through: newParent.rowsRevision
-            ), records.contains(where: { $0.change == nil && !$0.changedMessageIDs.isEmpty }) {
-                performanceFallbackReason = "journal-presentation-change"
-                return false
-            }
-            if case let .replace(changedIndexes)? = newParent.rowsUpdateHint?.change,
-               newParent.rowsUpdateHint?.revision == newParent.rowsRevision,
-               newParent.rowsRevision == rowsRevision &+ 1 {
-                guard changedIndexes.allSatisfy({
-                    newRows.indices.contains($0)
-                        && items.indices.contains(oldLeadingCount + $0)
-                        && items[oldLeadingCount + $0].identifier
-                            == messageItem(newRows[$0], from: newParent).identifier
-                }) else {
-                    performanceFallbackReason = "invalid-replace-hint"
-                    return false
-                }
-                for rowIndex in changedIndexes {
-                    replaceItem(
-                        at: oldLeadingCount + rowIndex,
-                        with: messageItem(newRows[rowIndex], from: newParent),
-                        width: width
-                    )
-                    messageIDs[rowIndex] = newRows[rowIndex].id
-                }
-                performanceUpdatePath = "replace-bounded"
-                return true
-            }
-            guard rowCount == newRows.count,
-                  newRows.indices.allSatisfy({
-                      items[oldLeadingCount + $0].identifier
-                          == messageItem(newRows[$0], from: newParent).identifier
-                  })
+    func shouldReevaluateHistory(
+        after preparation: TimelineUpdatePreparation,
+        parent: NativeMessageTimelineView
+    ) -> Bool {
+        NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
+            wasLoading: preparation.oldParent.isLoadingEarlier,
+            isLoading: parent.isLoadingEarlier,
+            previousRowCount: preparation.oldRowCount,
+            currentRowCount: rowCount
+        ) || NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
+            wasLoading: preparation.oldParent.isLoadingLater,
+            isLoading: parent.isLoadingLater,
+            previousRowCount: preparation.oldRowCount,
+            currentRowCount: rowCount
+        )
+    }
+
+    func update(parent: NativeMessageTimelineView, scrollView: NSScrollView) {
+        pendingModelRowsUpdateTask?.cancel()
+        pendingModelRowsUpdateTask = nil
+        applyUpdate(parent: parent, scrollView: scrollView)
+    }
+
+    func applyUpdate(
+        parent: NativeMessageTimelineView,
+        scrollView: NSScrollView
+    ) {
+        canvas?.setOverlayInteractionBlocked(
+            !WindowModalCoordinator.allowsInput(for: scrollView),
+            mediaViewerHighlightedMessageID:
+                parent.model.mediaViewerPresentation?.messageID
+        )
+        canvas?.mediaViewerPresentationDidChange(to: parent.model.mediaViewerPresentation?.id)
+        guard !prepareLayoutsIfNeeded(parent: parent, scrollView: scrollView) else {
+            return
+        }
+        updateTimeline(parent: parent, scrollView: scrollView)
+        layoutPreparation = nil
+        updateTimestampObservation()
+    }
+
+    func scheduleModelRowsUpdate() {
+        guard pendingModelRowsUpdateTask == nil else { return }
+        pendingModelRowsUpdateTask = Task { @MainActor [weak self] in
+            // NotificationCenter delivers model publications inline. A
+            // cold timeline can require tens of milliseconds of layout
+            // and raster work, so doing that work inside `post` couples
+            // network completion to an input-blocking render transaction.
+            // Give SwiftUI's observation transaction the first chance to
+            // publish an up-to-date parent and coalesce repeated model
+            // changes into one timeline reconciliation.
+            await Task.yield()
+            guard !Task.isCancelled, let self else { return }
+            self.pendingModelRowsUpdateTask = nil
+            guard !self.isLeavingWorkspace else { return }
+            guard !self.isApplyingUpdate,
+                  let scrollView = self.scrollView
             else {
-                performanceFallbackReason = "same-count-identity-change"
+                self.scheduleModelRowsUpdate()
+                return
+            }
+            self.applyUpdate(
+                parent: self.parent,
+                scrollView: scrollView
+            )
+        }
+    }
+
+    func stopObserving() {
+        RelativeTimestampClock.shared.remove(self)
+        liveScrollViewport = nil
+        cancelGlide()
+        cancelLayoutPreparation()
+        pendingModelRowsUpdateTask?.cancel()
+        pendingModelRowsUpdateTask = nil
+        scrollStateCallbackTask?.cancel()
+        scrollStateCallbackTask = nil
+        pendingScrollState = nil
+        isEarlierHistoryScrollGestureActive = false
+        hasEarlierHistoryScrollIntent = false
+        hasIssuedEarlierHistoryRequest = false
+        scrollIdleTask?.cancel()
+        scrollIdleTask = nil
+        widthRelayoutTask?.cancel()
+        widthRelayoutTask = nil
+        pendingLayoutWidth = nil
+        previewLayoutWidth = nil
+        previewedRowIdentifiers.removeAll()
+        rowsPreviewedAtCurrentWidth.removeAll()
+        widthRelayoutGeneration &+= 1
+        performanceAutoScrollTask?.cancel()
+        performanceAutoScrollTask = nil
+        performanceBenchmarkFinish?(.cancelled)
+        performanceBenchmarkFinish = nil
+        performanceDisplayLinkTicker?.stop()
+        performanceDisplayLinkTicker = nil
+        publishScrollActivity(false)
+        for observation in observations {
+            NotificationCenter.default.removeObserver(observation)
+        }
+        observations.removeAll()
+    }
+
+#if DEBUG
+    var hasAppliedInitialPositionForTesting: Bool {
+        initialPositionConversation == parent.conversation
+    }
+
+    func messageOffsetFromViewportTopForTesting(
+        _ messageID: MessageID
+    ) -> CGFloat? {
+        guard let scrollView,
+              let index = items.firstIndex(where: {
+                  $0.messageID == messageID
+              }),
+              rowOrigins.indices.contains(index)
+        else {
+            return nil
+        }
+        return documentY(ofRow: index, viewportHeight: scrollView.contentView.bounds.height)
+            - scrollView.contentView.bounds.minY
+    }
+
+    func messageHeightForTesting(
+        _ messageID: MessageID
+    ) -> CGFloat? {
+        guard let index = items.firstIndex(where: {
+            $0.messageID == messageID
+        }),
+              layouts.indices.contains(index)
+        else {
+            return nil
+        }
+        return layouts[index].height
+    }
+
+    func updateDocumentHeightForTesting(_ height: CGFloat) {
+        guard let scrollView else { return }
+        updateDocumentSize(
+            NSSize(
+                width: scrollView.contentView.bounds.width,
+                height: height
+            )
+        )
+    }
+#endif
+
+    func rebuildAll(
+        from parent: NativeMessageTimelineView,
+        rows: [MessageRowPresentation],
+        width: CGFloat,
+        force: Bool = false
+    ) {
+        let newItems = makeItems(from: parent, rows: rows)
+        if force
+            || items != newItems
+            || layouts.count != newItems.count
+            || messageIDs.count != rows.count
+        {
+            // Without a width or presentation change, an unchanged item's
+            // layout is still current wherever the item moved. Rows
+            // previewed at a transient width are laid out again.
+            var reusableLayouts: [NativeMessageTimelineItem.Identifier: Int] = [:]
+            if !force, items.count == layouts.count, previewedRowIdentifiers.isEmpty {
+                reusableLayouts.reserveCapacity(items.count)
+                for (index, item) in items.enumerated() { reusableLayouts[item.identifier] = index }
+            }
+            let oldItems = items
+            let oldLayouts = layouts
+            items = newItems
+            messageIDs = rows.map(\.id)
+            layouts = items.map { item in
+                if let index = reusableLayouts[item.identifier],
+                   oldItems[index] == item,
+                   oldLayouts[index].fontRevision == ProfileNameFontCache.revision,
+                   oldLayouts[index].matchesAuthorPrimaryGuild(for: item, source: parent.model) {
+                    // Retained live rows are not reads from a layout cache.
+                    return oldLayouts[index]
+                }
+                return layoutUsingRecentConversationCache(
+                    for: item,
+                    width: width,
+                    presentationRevision: parent.presentationRevision
+                )
+            }
+            rowHeights = layouts.map(\.height)
+            didMutateItems = true
+            requiresVisibleRedraw = true
+            requiresAnchorRestore = true
+            requiresFullOriginRebuild = true
+            performanceUpdatePath = "rebuild"
+        }
+    }
+
+    func cacheBoundedCurrentItemLayouts() {
+        guard !items.isEmpty, items.count == layouts.count else { return }
+        let count = min(
+            Self.cachedItemLayoutsPerConversation,
+            items.count
+        )
+        let centerIndex = canvas.flatMap {
+            $0.rowIndex(at: $0.visibleRect.midY)
+        } ?? (items.count - 1)
+        let lowerBound = min(
+            max(0, centerIndex - count / 2),
+            items.count - count
+        )
+        for index in lowerBound ..< lowerBound + count {
+            cacheItemLayout(items[index], layout: layouts[index])
+        }
+    }
+
+    func cacheItemLayout(
+        _ item: NativeMessageTimelineItem,
+        layout: NativeTimelineRowLayout
+    ) {
+        let key = CachedItemLayoutKey(
+            identifier: item.identifier,
+            roundedWidth: Int(layoutWidth.rounded()),
+            presentationRevision: presentationRevision
+        )
+        let inserted = cachedItemLayouts.updateValue(
+            CachedItemLayout(item: item, layout: layout),
+            forKey: key
+        ) == nil
+        if inserted {
+            cachedItemLayoutOrder.append(key)
+        }
+        while cachedItemLayouts.count > Self.maximumCachedItemLayouts,
+              cachedItemLayoutEvictionIndex
+                < cachedItemLayoutOrder.count
+        {
+            let evicted = cachedItemLayoutOrder[
+                cachedItemLayoutEvictionIndex
+            ]
+            cachedItemLayoutEvictionIndex += 1
+            cachedItemLayouts[evicted] = nil
+        }
+        if cachedItemLayoutEvictionIndex > 1_024,
+           cachedItemLayoutEvictionIndex * 2
+            > cachedItemLayoutOrder.count
+        {
+            cachedItemLayoutOrder.removeFirst(
+                cachedItemLayoutEvictionIndex
+            )
+            cachedItemLayoutEvictionIndex = 0
+        }
+    }
+
+    func layoutUsingRecentConversationCache(
+        for item: NativeMessageTimelineItem,
+        width: CGFloat,
+        presentationRevision: UInt64
+    ) -> NativeTimelineRowLayout {
+        if let cached = cachedItemLayout(
+            for: item, width: width, presentationRevision: presentationRevision
+        ) {
+            recentLayoutCacheHits += 1
+            return cached
+        }
+        return layout(for: item, width: width)
+    }
+
+    func cachedItemLayout(
+        for item: NativeMessageTimelineItem,
+        width: CGFloat,
+        presentationRevision: UInt64
+    ) -> NativeTimelineRowLayout? {
+        let key = CachedItemLayoutKey(
+            identifier: item.identifier,
+            roundedWidth: Int(width.rounded()),
+            presentationRevision: presentationRevision
+        )
+        guard let cached = cachedItemLayouts[key],
+              cached.item == item,
+              cached.layout.fontRevision == ProfileNameFontCache.revision,
+              cached.layout.matchesAuthorPrimaryGuild(for: item, source: parent.model)
+        else { return nil }
+        return cached.layout
+    }
+
+    func applyFastUpdate(
+        from oldParent: NativeMessageTimelineView,
+        to newParent: NativeMessageTimelineView,
+        rows newRows: [MessageRowPresentation],
+        width: CGFloat
+    ) -> Bool {
+        guard oldParent.conversation == newParent.conversation else {
+            performanceFallbackReason = "conversation-changed"
+            return false
+        }
+        guard !NativeMessageTimelineLayoutPolicy
+            .requiresFirstMessageBoundaryRebuild(
+                from: oldParent.firstMessageStartsDayOverride,
+                to: newParent.firstMessageStartsDayOverride
+            )
+        else {
+            performanceFallbackReason = "first-message-boundary"
+            return false
+        }
+        if newParent.rowsRevision > rowsRevision &+ 1 {
+            if let coalescedRecords =
+                newParent.rowsUpdateJournal.records(
+                    after: rowsRevision,
+                    through: newParent.rowsRevision
+                ),
+               coalescedRecords.contains(where: {
+                !$0.changedMessageIDs.isEmpty
+                    || !$0.removedMessageIDs.isEmpty
+               })
+            {
+                performanceFallbackReason =
+                    "coalesced-structural-mutations"
                 return false
             }
-            for rowIndex in newRows.indices {
+        }
+        guard !items.isEmpty, items.count >= rowCount else {
+            performanceFallbackReason = "empty-or-invalid-count"
+            return false
+        }
+        let oldLeadingCount = items.count - rowCount
+        let newLeading = makeLeadingItems(from: newParent)
+
+        if rowsRevision == newParent.rowsRevision {
+            return applyMetadataUpdate(
+                from: oldParent,
+                to: newParent,
+                leadingItems: newLeading,
+                oldLeadingCount: oldLeadingCount,
+                width: width
+            )
+        }
+
+        guard oldLeadingCount == newLeading.count else {
+            performanceFallbackReason = "leading-count"
+            return false
+        }
+        for index in newLeading.indices where items[index] != newLeading[index] {
+            replaceItem(at: index, with: newLeading[index], width: width)
+        }
+
+        let delta = newRows.count - rowCount
+        let applied = if delta == 0 {
+            applySameCountUpdate(
+                to: newParent,
+                rows: newRows,
+                oldLeadingCount: oldLeadingCount,
+                width: width
+            )
+        } else if delta < 0 {
+            applyRemovalUpdate(
+                to: newParent,
+                rows: newRows,
+                oldLeadingCount: oldLeadingCount,
+                delta: delta,
+                width: width
+            )
+        } else {
+            applyInsertionUpdate(
+                to: newParent,
+                rows: newRows,
+                oldLeadingCount: oldLeadingCount,
+                delta: delta,
+                width: width
+            )
+        }
+        // Row updates redraw only the rows they touch. A boundary that
+        // moved in the same update must also leave its previous row, or
+        // that row keeps drawing a stale NEW divider.
+        if applied {
+            refreshRowMarkers(from: oldParent, to: newParent, width: width)
+        }
+        return applied
+    }
+
+    func applyMetadataUpdate(
+        from oldParent: NativeMessageTimelineView,
+        to newParent: NativeMessageTimelineView,
+        leadingItems: [NativeMessageTimelineItem],
+        oldLeadingCount: Int,
+        width: CGFloat
+    ) -> Bool {
+        performanceUpdatePath = "metadata"
+        guard oldLeadingCount == leadingItems.count else {
+            performanceFallbackReason = "metadata-leading-count"
+            return false
+        }
+        for index in leadingItems.indices where items[index] != leadingItems[index] {
+            replaceItem(at: index, with: leadingItems[index], width: width)
+        }
+        refreshRowMarkers(from: oldParent, to: newParent, width: width)
+        return true
+    }
+
+    /// Redraws the rows that gain or lose the unread divider or the
+    /// selection highlight.
+    func refreshRowMarkers(
+        from oldParent: NativeMessageTimelineView,
+        to newParent: NativeMessageTimelineView,
+        width: CGFloat
+    ) {
+        var affectedIDs = Set<MessageID>()
+        if oldParent.unreadMessageID != newParent.unreadMessageID {
+            affectedIDs.formUnion([oldParent.unreadMessageID, newParent.unreadMessageID].compactMap { $0 })
+        }
+        if oldParent.selectedMessageID != newParent.selectedMessageID {
+            affectedIDs.formUnion([oldParent.selectedMessageID, newParent.selectedMessageID].compactMap { $0 })
+        }
+        let conversationRows = affectedIDs.isEmpty ? [] : newParent.conversation.rows(in: newParent.model)
+        for id in affectedIDs {
+            guard let index = items.firstIndex(where: { $0.messageID == id }),
+                  let storedRow = items[index].messageRow
+            else { continue }
+            // Rebuild from the conversation's row: a stored row may carry
+            // the extra group start of a divider that has since moved.
+            let row = conversationRows.first(where: { $0.id == id }) ?? storedRow
+            let item = messageItem(row, from: newParent)
+            if items[index] != item {
+                replaceItem(at: index, with: item, width: width)
+            }
+        }
+    }
+
+    func applySameCountUpdate(
+        to newParent: NativeMessageTimelineView,
+        rows newRows: [MessageRowPresentation],
+        oldLeadingCount: Int,
+        width: CGFloat
+    ) -> Bool {
+        if let records = newParent.rowsUpdateJournal.records(
+            after: rowsRevision,
+            through: newParent.rowsRevision
+        ), records.contains(where: { $0.change == nil && !$0.changedMessageIDs.isEmpty }) {
+            performanceFallbackReason = "journal-presentation-change"
+            return false
+        }
+        if case let .replace(changedIndexes)? = newParent.rowsUpdateHint?.change,
+           newParent.rowsUpdateHint?.revision == newParent.rowsRevision,
+           newParent.rowsRevision == rowsRevision &+ 1 {
+            guard changedIndexes.allSatisfy({
+                newRows.indices.contains($0)
+                    && items.indices.contains(oldLeadingCount + $0)
+                    && items[oldLeadingCount + $0].identifier
+                        == messageItem(newRows[$0], from: newParent).identifier
+            }) else {
+                performanceFallbackReason = "invalid-replace-hint"
+                return false
+            }
+            for rowIndex in changedIndexes {
                 replaceItem(
                     at: oldLeadingCount + rowIndex,
                     with: messageItem(newRows[rowIndex], from: newParent),
@@ -1539,216 +1466,236 @@ extension NativeMessageTimelineCoordinator {
                 )
                 messageIDs[rowIndex] = newRows[rowIndex].id
             }
-            performanceUpdatePath = "replace"
+            performanceUpdatePath = "replace-bounded"
             return true
         }
-
-        func applyRemovalUpdate(
-            to newParent: NativeMessageTimelineView,
-            rows newRows: [MessageRowPresentation],
-            oldLeadingCount: Int,
-            delta: Int,
-            width: CGFloat
-        ) -> Bool {
-            guard let plan = removalUpdatePlan(
-                for: newParent,
-                rows: newRows,
-                delta: delta
-            ) else { return false }
-            let itemIndexes = plan.removals.map { oldLeadingCount + $0 }
-            guard itemIndexes.allSatisfy({
-                items.indices.contains($0) && layouts.indices.contains($0)
-            }) else {
-                performanceFallbackReason = "invalid-removal-index"
-                return false
-            }
-            for index in itemIndexes.reversed() {
-                items.remove(at: index)
-                layouts.remove(at: index)
-                rowHeights.remove(at: index)
-            }
-            for index in plan.removals.reversed() { messageIDs.remove(at: index) }
-            didMutateItems = true
-            if itemIndexes.contains(where: { itemAffectsVisibleCoordinates(at: $0) }) {
-                requiresVisibleRedraw = true
-                requiresAnchorRestore = true
-            }
-            requiresFullOriginRebuild = true
-            for rowIndex in plan.changedIndexes ?? IndexSet(newRows.indices) {
-                guard newRows.indices.contains(rowIndex) else {
-                    performanceFallbackReason = "invalid-removal-change"
-                    return false
-                }
-                replaceItem(
-                    at: oldLeadingCount + rowIndex,
-                    with: messageItem(newRows[rowIndex], from: newParent),
-                    width: width
-                )
-            }
-            performanceUpdatePath = plan.changedIndexes == nil ? "remove" : "remove-bounded"
-            return true
+        guard rowCount == newRows.count,
+              newRows.indices.allSatisfy({
+                  items[oldLeadingCount + $0].identifier
+                      == messageItem(newRows[$0], from: newParent).identifier
+              })
+        else {
+            performanceFallbackReason = "same-count-identity-change"
+            return false
         }
-
-        func removalUpdatePlan(
-            for newParent: NativeMessageTimelineView,
-            rows newRows: [MessageRowPresentation],
-            delta: Int
-        ) -> (removals: IndexSet, changedIndexes: IndexSet?)? {
-            let removals: IndexSet
-            let changedIndexes: IndexSet?
-            if case let .remove(hintedRemovals, hintedChanges)? = newParent.rowsUpdateHint?.change,
-               newParent.rowsUpdateHint?.revision == newParent.rowsRevision,
-               newParent.rowsRevision == rowsRevision &+ 1 {
-                removals = hintedRemovals
-                changedIndexes = hintedChanges
-            } else {
-                let oldMessageIDs = items.dropFirst(items.count - rowCount).compactMap(\.messageID)
-                guard oldMessageIDs.count == rowCount else {
-                    performanceFallbackReason = "invalid-message-items"
-                    return nil
-                }
-                guard let inferred = NativeMessageTimelineLayoutPolicy.removalIndexes(
-                    preserving: newRows.map(\.id),
-                    in: oldMessageIDs
-                ), inferred.count == -delta else {
-                    performanceFallbackReason = "unsupported-removal"
-                    return nil
-                }
-                removals = inferred
-                changedIndexes = nil
-            }
-            guard removals.count == -delta else {
-                performanceFallbackReason = "invalid-removal-hint"
-                return nil
-            }
-            return (removals, changedIndexes)
+        for rowIndex in newRows.indices {
+            replaceItem(
+                at: oldLeadingCount + rowIndex,
+                with: messageItem(newRows[rowIndex], from: newParent),
+                width: width
+            )
+            messageIDs[rowIndex] = newRows[rowIndex].id
         }
+        performanceUpdatePath = "replace"
+        return true
+    }
 
-        func applyInsertionUpdate(
-            to newParent: NativeMessageTimelineView,
-            rows newRows: [MessageRowPresentation],
-            oldLeadingCount: Int,
-            delta: Int,
-            width: CGFloat
-        ) -> Bool {
-            guard rowCount > 0, let firstRowID, let lastRowID else {
-                performanceFallbackReason = "missing-old-boundaries"
-                return false
-            }
-            let maximumPrefixCount = min(delta, newRows.count)
-            guard let prefixCount = (0 ... maximumPrefixCount).first(where: {
-                newRows.indices.contains($0) && newRows[$0].id == firstRowID
-            }) else {
-                performanceFallbackReason = "missing-old-first"
-                return false
-            }
-            let oldLastIndex = prefixCount + rowCount - 1
-            guard newRows.indices.contains(oldLastIndex), newRows[oldLastIndex].id == lastRowID else {
-                performanceFallbackReason = "old-sequence-changed"
-                return false
-            }
-            let suffixCount = newRows.count - oldLastIndex - 1
-            guard prefixCount + suffixCount == delta else {
-                performanceFallbackReason = "invalid-two-ended-delta"
-                return false
-            }
-            // Each insertion refreshes only its adjacent old edge row. A newly
-            // loaded reply target can change any other retained row.
-            var refreshedBoundaryIDs = Set<MessageID>()
-            if prefixCount > 0 { refreshedBoundaryIDs.insert(firstRowID) }
-            if suffixCount > 0 { refreshedBoundaryIDs.insert(lastRowID) }
-            guard let records = newParent.rowsUpdateJournal.records(
-                after: rowsRevision,
-                through: newParent.rowsRevision
-            ), records.allSatisfy({
-                !$0.invalidatesAllRows
-                    && $0.changedMessageIDs.isSubset(of: refreshedBoundaryIDs)
-            }) else {
-                performanceFallbackReason = "insertion-journal-requires-redraw"
-                return false
-            }
-            if prefixCount > 0 {
-                prependRows(
-                    newRows.prefix(prefixCount),
-                    boundaryRow: newRows[prefixCount],
-                    to: newParent,
-                    oldLeadingCount: oldLeadingCount,
-                    width: width
-                )
-            }
-            if suffixCount > 0 {
-                guard appendRows(
-                    newRows.suffix(suffixCount),
-                    boundaryRow: newRows[oldLastIndex],
-                    to: newParent,
-                    boundaryItemIndex: oldLeadingCount + oldLastIndex,
-                    prefixCount: prefixCount,
-                    width: width
-                ) else { return false }
-            }
-            performanceUpdatePath = prefixCount > 0 && suffixCount > 0
-                ? "prepend+append" : prefixCount > 0 ? "prepend" : "append"
-            return true
+    func applyRemovalUpdate(
+        to newParent: NativeMessageTimelineView,
+        rows newRows: [MessageRowPresentation],
+        oldLeadingCount: Int,
+        delta: Int,
+        width: CGFloat
+    ) -> Bool {
+        guard let plan = removalUpdatePlan(
+            for: newParent,
+            rows: newRows,
+            delta: delta
+        ) else { return false }
+        let itemIndexes = plan.removals.map { oldLeadingCount + $0 }
+        guard itemIndexes.allSatisfy({
+            items.indices.contains($0) && layouts.indices.contains($0)
+        }) else {
+            performanceFallbackReason = "invalid-removal-index"
+            return false
         }
-
-        func prependRows(
-            _ rows: ArraySlice<MessageRowPresentation>,
-            boundaryRow: MessageRowPresentation,
-            to parent: NativeMessageTimelineView,
-            oldLeadingCount: Int,
-            width: CGFloat
-        ) {
-            didPrependItems = true
-            let insertedItems = rows.map { messageItem($0, from: parent) }
-            let insertedLayouts = insertedItems.map {
-                layoutUsingRecentConversationCache(
-                    for: $0, width: width,
-                    presentationRevision: parent.presentationRevision
-                )
-            }
-            items.insert(contentsOf: insertedItems, at: oldLeadingCount)
-            layouts.insert(contentsOf: insertedLayouts, at: oldLeadingCount)
-            rowHeights.insert(contentsOf: insertedLayouts.map(\.height), at: oldLeadingCount)
-            messageIDs.insert(contentsOf: rows.map(\.id), at: 0)
-            didMutateItems = true
+        for index in itemIndexes.reversed() {
+            items.remove(at: index)
+            layouts.remove(at: index)
+            rowHeights.remove(at: index)
+        }
+        for index in plan.removals.reversed() { messageIDs.remove(at: index) }
+        didMutateItems = true
+        if itemIndexes.contains(where: { itemAffectsVisibleCoordinates(at: $0) }) {
             requiresVisibleRedraw = true
             requiresAnchorRestore = true
-            requiresFullOriginRebuild = true
-            replaceItem(
-                at: oldLeadingCount + rows.count,
-                with: messageItem(boundaryRow, from: parent),
-                width: width
-            )
         }
-
-        func appendRows(
-            _ rows: ArraySlice<MessageRowPresentation>,
-            boundaryRow: MessageRowPresentation,
-            to parent: NativeMessageTimelineView,
-            boundaryItemIndex: Int,
-            prefixCount: Int,
-            width: CGFloat
-        ) -> Bool {
-            guard items.indices.contains(boundaryItemIndex) else {
-                performanceFallbackReason = "invalid-append-boundary"
+        requiresFullOriginRebuild = true
+        for rowIndex in plan.changedIndexes ?? IndexSet(newRows.indices) {
+            guard newRows.indices.contains(rowIndex) else {
+                performanceFallbackReason = "invalid-removal-change"
                 return false
             }
             replaceItem(
-                at: boundaryItemIndex,
-                with: messageItem(boundaryRow, from: parent),
+                at: oldLeadingCount + rowIndex,
+                with: messageItem(newRows[rowIndex], from: newParent),
                 width: width
             )
-            let firstInsertedIndex = items.count
-            let insertedItems = rows.map { messageItem($0, from: parent) }
-            let insertedLayouts = insertedItems.map { layout(for: $0, width: width) }
-            items.append(contentsOf: insertedItems)
-            layouts.append(contentsOf: insertedLayouts)
-            rowHeights.append(contentsOf: insertedLayouts.map(\.height))
-            messageIDs.append(contentsOf: rows.map(\.id))
-            didMutateItems = true
-            if prefixCount == 0, !requiresFullOriginRebuild { appendedLayoutCount = rows.count }
-            dirtyItemIndexes.insert(integersIn: firstInsertedIndex ..< items.count)
-            return true
         }
+        performanceUpdatePath = plan.changedIndexes == nil ? "remove" : "remove-bounded"
+        return true
+    }
+
+    func removalUpdatePlan(
+        for newParent: NativeMessageTimelineView,
+        rows newRows: [MessageRowPresentation],
+        delta: Int
+    ) -> (removals: IndexSet, changedIndexes: IndexSet?)? {
+        let removals: IndexSet
+        let changedIndexes: IndexSet?
+        if case let .remove(hintedRemovals, hintedChanges)? = newParent.rowsUpdateHint?.change,
+           newParent.rowsUpdateHint?.revision == newParent.rowsRevision,
+           newParent.rowsRevision == rowsRevision &+ 1 {
+            removals = hintedRemovals
+            changedIndexes = hintedChanges
+        } else {
+            let oldMessageIDs = items.dropFirst(items.count - rowCount).compactMap(\.messageID)
+            guard oldMessageIDs.count == rowCount else {
+                performanceFallbackReason = "invalid-message-items"
+                return nil
+            }
+            guard let inferred = NativeMessageTimelineLayoutPolicy.removalIndexes(
+                preserving: newRows.map(\.id),
+                in: oldMessageIDs
+            ), inferred.count == -delta else {
+                performanceFallbackReason = "unsupported-removal"
+                return nil
+            }
+            removals = inferred
+            changedIndexes = nil
+        }
+        guard removals.count == -delta else {
+            performanceFallbackReason = "invalid-removal-hint"
+            return nil
+        }
+        return (removals, changedIndexes)
+    }
+
+    func applyInsertionUpdate(
+        to newParent: NativeMessageTimelineView,
+        rows newRows: [MessageRowPresentation],
+        oldLeadingCount: Int,
+        delta: Int,
+        width: CGFloat
+    ) -> Bool {
+        guard rowCount > 0, let firstRowID, let lastRowID else {
+            performanceFallbackReason = "missing-old-boundaries"
+            return false
+        }
+        let maximumPrefixCount = min(delta, newRows.count)
+        guard let prefixCount = (0 ... maximumPrefixCount).first(where: {
+            newRows.indices.contains($0) && newRows[$0].id == firstRowID
+        }) else {
+            performanceFallbackReason = "missing-old-first"
+            return false
+        }
+        let oldLastIndex = prefixCount + rowCount - 1
+        guard newRows.indices.contains(oldLastIndex), newRows[oldLastIndex].id == lastRowID else {
+            performanceFallbackReason = "old-sequence-changed"
+            return false
+        }
+        let suffixCount = newRows.count - oldLastIndex - 1
+        guard prefixCount + suffixCount == delta else {
+            performanceFallbackReason = "invalid-two-ended-delta"
+            return false
+        }
+        // Each insertion refreshes only its adjacent old edge row. A newly
+        // loaded reply target can change any other retained row.
+        var refreshedBoundaryIDs = Set<MessageID>()
+        if prefixCount > 0 { refreshedBoundaryIDs.insert(firstRowID) }
+        if suffixCount > 0 { refreshedBoundaryIDs.insert(lastRowID) }
+        guard let records = newParent.rowsUpdateJournal.records(
+            after: rowsRevision,
+            through: newParent.rowsRevision
+        ), records.allSatisfy({
+            !$0.invalidatesAllRows
+                && $0.changedMessageIDs.isSubset(of: refreshedBoundaryIDs)
+        }) else {
+            performanceFallbackReason = "insertion-journal-requires-redraw"
+            return false
+        }
+        if prefixCount > 0 {
+            prependRows(
+                newRows.prefix(prefixCount),
+                boundaryRow: newRows[prefixCount],
+                to: newParent,
+                oldLeadingCount: oldLeadingCount,
+                width: width
+            )
+        }
+        if suffixCount > 0 {
+            guard appendRows(
+                newRows.suffix(suffixCount),
+                boundaryRow: newRows[oldLastIndex],
+                to: newParent,
+                boundaryItemIndex: oldLeadingCount + oldLastIndex,
+                prefixCount: prefixCount,
+                width: width
+            ) else { return false }
+        }
+        performanceUpdatePath = prefixCount > 0 && suffixCount > 0
+            ? "prepend+append" : prefixCount > 0 ? "prepend" : "append"
+        return true
+    }
+
+    func prependRows(
+        _ rows: ArraySlice<MessageRowPresentation>,
+        boundaryRow: MessageRowPresentation,
+        to parent: NativeMessageTimelineView,
+        oldLeadingCount: Int,
+        width: CGFloat
+    ) {
+        didPrependItems = true
+        let insertedItems = rows.map { messageItem($0, from: parent) }
+        let insertedLayouts = insertedItems.map {
+            layoutUsingRecentConversationCache(
+                for: $0, width: width,
+                presentationRevision: parent.presentationRevision
+            )
+        }
+        items.insert(contentsOf: insertedItems, at: oldLeadingCount)
+        layouts.insert(contentsOf: insertedLayouts, at: oldLeadingCount)
+        rowHeights.insert(contentsOf: insertedLayouts.map(\.height), at: oldLeadingCount)
+        messageIDs.insert(contentsOf: rows.map(\.id), at: 0)
+        didMutateItems = true
+        requiresVisibleRedraw = true
+        requiresAnchorRestore = true
+        requiresFullOriginRebuild = true
+        replaceItem(
+            at: oldLeadingCount + rows.count,
+            with: messageItem(boundaryRow, from: parent),
+            width: width
+        )
+    }
+
+    func appendRows(
+        _ rows: ArraySlice<MessageRowPresentation>,
+        boundaryRow: MessageRowPresentation,
+        to parent: NativeMessageTimelineView,
+        boundaryItemIndex: Int,
+        prefixCount: Int,
+        width: CGFloat
+    ) -> Bool {
+        guard items.indices.contains(boundaryItemIndex) else {
+            performanceFallbackReason = "invalid-append-boundary"
+            return false
+        }
+        replaceItem(
+            at: boundaryItemIndex,
+            with: messageItem(boundaryRow, from: parent),
+            width: width
+        )
+        let firstInsertedIndex = items.count
+        let insertedItems = rows.map { messageItem($0, from: parent) }
+        let insertedLayouts = insertedItems.map { layout(for: $0, width: width) }
+        items.append(contentsOf: insertedItems)
+        layouts.append(contentsOf: insertedLayouts)
+        rowHeights.append(contentsOf: insertedLayouts.map(\.height))
+        messageIDs.append(contentsOf: rows.map(\.id))
+        didMutateItems = true
+        if prefixCount == 0, !requiresFullOriginRebuild { appendedLayoutCount = rows.count }
+        dirtyItemIndexes.insert(integersIn: firstInsertedIndex ..< items.count)
+        return true
+    }
 
 }

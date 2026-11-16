@@ -32,8 +32,8 @@ struct ForumCardPresentation: Equatable {
     }
 
     enum Media: Equatable {
-        case image(NativeTimelineMediaKey)
-        case video(poster: NativeTimelineMediaKey?, filename: String)
+        case image(MediaImageKey)
+        case video(poster: MediaImageKey?, filename: String)
         case audio(filename: String)
         case file(filename: String)
         /// Drawn under the spoiler cover, like every hidden item.
@@ -121,10 +121,8 @@ enum ForumTagEmojiPresentation: Equatable {
     case custom(URL)
 
     init?(tag: ForumTag, customEmojiURLsByID: CustomEmojiImageURLs) {
-        if let id = tag.emojiID {
-            let url = customEmojiURLsByID[id]
-                ?? EmojiReference(id: id, name: tag.emojiName ?? "emoji").imageURL(size: 64)
-            guard let url else { return nil }
+        if tag.emojiID != nil {
+            guard let url = Self.customEmojiURL(for: tag, customEmojiURLsByID: customEmojiURLsByID) else { return nil }
             self = .custom(url)
         } else if let name = tag.emojiName, !name.isEmpty {
             self = .unicode(name)
@@ -133,9 +131,13 @@ enum ForumTagEmojiPresentation: Equatable {
         }
     }
 
-    var mediaKey: NativeTimelineMediaKey? {
+    var mediaKey: MediaImageKey? {
         guard case let .custom(url) = self else { return nil }
         return .media(url, maximumPixelDimension: 64)
+    }
+
+    static func customEmojiURL(for tag: ForumTag, customEmojiURLsByID: CustomEmojiImageURLs) -> URL? {
+        tag.emojiID.flatMap { EmojiReference(id: $0, name: tag.emojiName ?? "emoji").imageURL(in: customEmojiURLsByID) }
     }
 }
 
@@ -191,12 +193,170 @@ extension ForumCardPresentation.Media {
         }
     }
 
-    var mediaKey: NativeTimelineMediaKey? {
+    var mediaKey: MediaImageKey? {
         switch self {
         case let .image(key): key
         case let .video(poster, _): poster
         case let .spoiler(media): media.mediaKey
         case .audio, .file: nil
         }
+    }
+}
+
+nonisolated enum ForumTimestampPresentation {
+    static func roundedRelativeText(for date: Date, relativeTo now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        switch seconds {
+        case ..<60:
+            return "now"
+        case ..<3_600:
+            return "\(max(1, seconds / 60))m ago"
+        case ..<86_400:
+            return "\(seconds / 3_600)h ago"
+        case ..<604_800:
+            return "\(seconds / 86_400)d ago"
+        case ..<2_629_800:
+            return "\(seconds / 604_800)w ago"
+        case ..<31_557_600:
+            return "\(seconds / 2_629_800)mo ago"
+        default:
+            return "\(seconds / 31_557_600)y ago"
+        }
+    }
+}
+
+nonisolated enum ForumPostReactionPresentation {
+    static func displayedReaction(
+        reactions: [Reaction],
+        defaultReaction: ForumDefaultReaction?
+    ) -> Reaction? {
+        // `max(by:)` keeps the first of equally counted reactions.
+        if let highestCountReaction = MessageReactionPresentation.items(from: reactions)
+            .max(by: { $0.count < $1.count })
+        {
+            return highestCountReaction
+        }
+        guard let token = defaultReactionToken(defaultReaction) else { return nil }
+        return Reaction(emoji: token, count: 0)
+    }
+
+    static func defaultReactionToken(_ value: ForumDefaultReaction?) -> String? {
+        guard let value else { return nil }
+        if let id = value.emojiID {
+            return EmojiReference(id: id, name: value.emojiName ?? "emoji").rawToken
+        }
+        return value.emojiName
+    }
+}
+
+extension AppModel {
+    /// `tagsByID` is the channel's tags keyed by ID, built once by the caller
+    /// rather than per post.
+    func forumCardPresentation(
+        for post: ForumPost,
+        in channel: Channel,
+        tagsByID: [ForumTagID: ForumTag]
+    ) -> ForumCardPresentation {
+        let tags = post.thread.appliedTagIDs.compactMap { tagsByID[$0] }.map {
+            ForumCardPresentation.Tag(
+                id: $0.id,
+                name: $0.name,
+                emoji: ForumTagEmojiPresentation(tag: $0, customEmojiURLsByID: customEmojiURLsByID)
+            )
+        }
+        let starter = post.firstMessage
+        let galleryAuthor: ForumCardPresentation.Author? =
+            if let starter {
+                forumCardAuthor(for: starter)
+            } else if let owner = post.owner {
+                ForumCardPresentation.Author(
+                    name: owner.displayName,
+                    fontID: owner.displayNameStyle?.fontID,
+                    color: owner.isBot ? .sakuraCordAccentColor : nil,
+                    roleDotColor: nil
+                )
+            } else {
+                nil
+            }
+        let excerpt: ForumCardPresentation.Excerpt
+        if let starter {
+            let author = forumCardAuthor(for: starter)
+            excerpt = starter.content.isEmpty
+                ? .placeholder(ForumCardPresentation.Excerpt.placeholderText(for: starter), author: author)
+                : .message(starter, author: author)
+        } else {
+            excerpt = post.isFirstMessageLoaded ? .deleted(author: galleryAuthor) : .pending
+        }
+        let thumbnail = starter
+            .flatMap(ForumCardPresentation.thumbnailAttachment(of:))
+            .map(ForumCardPresentation.Media.init(attachment:))
+        let hero: ForumCardPresentation.Hero =
+            if let media = starter?.attachments.first.map(ForumCardPresentation.Media.init(attachment:)) {
+                .media(media)
+            } else if starter == nil, post.isFirstMessageLoaded {
+                .deleted
+            } else if let preview = post.mostRecentMessage ?? starter, !preview.content.isEmpty {
+                .text(preview)
+            } else if starter == nil {
+                .pending
+            } else {
+                .empty
+            }
+        let reaction = ForumPostReactionPresentation.displayedReaction(
+            reactions: starter?.reactions ?? [],
+            defaultReaction: channel.defaultReaction
+        ).flatMap { reaction in
+            starter.map {
+                // Cards show only the emoji and count, so reactor identities
+                // stay out of what the card compares, draws and announces.
+                var reaction = reaction
+                reaction.reactors = []
+                return ForumCardPresentation.ReactionSummary(
+                    reaction: reaction,
+                    message: $0,
+                    isDisabled: guildTimeoutUntil(in: post.id, guildID: post.thread.guildID) != nil
+                )
+            }
+        }
+        return ForumCardPresentation(
+            title: post.thread.name,
+            hasStatusRow: ForumCardGeometryInput(post: post).hasStatusRow,
+            isEmphasized: shouldEmphasizeForumPost(post),
+            isNew: readState.isNewForumPost(post),
+            isSelected: openThread?.id == post.id,
+            isPinned: post.thread.isPinned,
+            isLocked: post.thread.isLocked,
+            tags: tags,
+            excerpt: excerpt,
+            thumbnail: thumbnail,
+            hero: hero,
+            galleryAuthor: galleryAuthor,
+            reaction: reaction,
+            messageCount: max(0, post.thread.messageCount),
+            unreadCount: forumUnreadMessageCount(post),
+            createdAt: post.createdAt,
+            lastActivityAt: post.lastActivityAt,
+            underlinesLinks: accessibilitySettings.underlinesLinks
+        )
+    }
+
+    private func forumCardAuthor(for message: Message) -> ForumCardPresentation.Author {
+        let presentation = authorPresentation(for: message)
+        let roleColor = NSColor(discordColor: presentation.roleColorHex)
+        let display = accessibilitySettings.roleColorDisplay
+        let color: NSColor? =
+            if presentation.user.isBot {
+                .sakuraCordAccentColor
+            } else if display == .inNames {
+                roleColor
+            } else {
+                nil
+            }
+        return ForumCardPresentation.Author(
+            name: presentation.user.displayName,
+            fontID: presentation.user.displayNameStyle?.fontID,
+            color: color,
+            roleDotColor: display == .nextToNames ? roleColor : nil
+        )
     }
 }

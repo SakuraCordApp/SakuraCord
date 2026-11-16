@@ -202,7 +202,7 @@ private struct NativeInviteButtonSurface: NSViewRepresentable, Animatable {
         var isEnabled = true
         override var isFlipped: Bool { true }
         override func draw(_ dirtyRect: NSRect) {
-            NativeTimelineRowPainter.sakuraCordButton(title: title, frame: bounds, isHovered: isHovered,
+            NativeTimelineRowPainter.gradientButton(title: title, frame: bounds, isHovered: isHovered,
                 pressProgress: pressProgress, colors: [.sakuraCordAccentColor],
                 foreground: .sakuraCordLabelOnAccentColor, isEnabled: isEnabled)
         }

@@ -2,288 +2,108 @@ import AppKit
 import SakuraCordModels
 import SwiftUI
 
-struct ServerContextMenuBridge: NSViewRepresentable {
-    let isUnread: Bool
-    let isMutationPending: Bool
-    let notificationSettings: GuildNotificationSettings
-    let markRead: () -> Void
-    var canInvite: () -> Bool = { false }
-    var invite: () -> Void = {}
-    let mute: (ChannelMuteDuration) -> Void
-    let unmute: () -> Void
-    let setNotificationLevel: (MessageNotificationLevel) -> Void
-    let setNotificationToggle: (GuildNotificationToggle, Bool) -> Void
-    let copyServerID: () -> Void
-    var leaveServer: (() -> Void)?
-    var showsAllChannels: () -> Bool? = { nil }
-    var setShowsAllChannels: (Bool) -> Void = { _ in }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(from: self)
-    }
-
-    func makeNSView(context: Context) -> ServerContextMenuHitView {
-        let view = ServerContextMenuHitView()
-        view.menuProvider = { [weak coordinator = context.coordinator] in
-            coordinator?.makeMenu()
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: ServerContextMenuHitView, context: Context) {
-        context.coordinator.update(from: self)
-        nsView.menuProvider = { [weak coordinator = context.coordinator] in
-            coordinator?.makeMenu()
-        }
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        private var isUnread: Bool
-        private var isMutationPending: Bool
-        private var notificationSettings: GuildNotificationSettings
-        private var markRead: () -> Void
-        private var canInvite: () -> Bool
-        private var invite: () -> Void
-        private var mute: (ChannelMuteDuration) -> Void
-        private var unmute: () -> Void
-        private var setNotificationLevel: (MessageNotificationLevel) -> Void
-        private var setNotificationToggle: (GuildNotificationToggle, Bool) -> Void
-        private var copyServerID: () -> Void
-        private var leaveServer: (() -> Void)?
-        private var showsAllChannels: () -> Bool?
-        private var setShowsAllChannels: (Bool) -> Void
-
-        init(from bridge: ServerContextMenuBridge) {
-            isUnread = bridge.isUnread
-            isMutationPending = bridge.isMutationPending
-            notificationSettings = bridge.notificationSettings
-            markRead = bridge.markRead
-            canInvite = bridge.canInvite
-            invite = bridge.invite
-            mute = bridge.mute
-            unmute = bridge.unmute
-            setNotificationLevel = bridge.setNotificationLevel
-            setNotificationToggle = bridge.setNotificationToggle
-            copyServerID = bridge.copyServerID
-            leaveServer = bridge.leaveServer
-            showsAllChannels = bridge.showsAllChannels
-            setShowsAllChannels = bridge.setShowsAllChannels
-        }
-
-        func update(from bridge: ServerContextMenuBridge) {
-            isUnread = bridge.isUnread
-            isMutationPending = bridge.isMutationPending
-            notificationSettings = bridge.notificationSettings
-            markRead = bridge.markRead
-            canInvite = bridge.canInvite
-            invite = bridge.invite
-            mute = bridge.mute
-            unmute = bridge.unmute
-            setNotificationLevel = bridge.setNotificationLevel
-            setNotificationToggle = bridge.setNotificationToggle
-            copyServerID = bridge.copyServerID
-            leaveServer = bridge.leaveServer
-            showsAllChannels = bridge.showsAllChannels
-            setShowsAllChannels = bridge.setShowsAllChannels
-        }
-
-        func makeMenu() -> NSMenu {
-            let menu = NSMenu()
-            menu.autoenablesItems = false
-            menu.addItem(
-                menuItem(
-                    "Mark as Read",
-                    systemImage: "envelope.open.fill",
-                    action: #selector(markReadFromMenu),
-                    isEnabled: isUnread && !isMutationPending
-                )
-            )
-            menu.addItem(.separator())
-            menu.addItem(menuItem("Invite to Server", systemImage: "person.badge.plus.fill",
-                                  action: #selector(inviteFromMenu), isEnabled: canInvite()))
-            menu.addItem(.separator())
-
-            if isDirectlyMuted {
-                let item = menuItem(
-                    "Unmute Server",
-                    systemImage: "bell.fill",
-                    action: #selector(unmuteFromMenu),
-                    isEnabled: !isMutationPending
-                )
-                if let subtitle = ChannelContextMenuSubtitle.muteRemaining(
-                    until: notificationSettings.muteConfiguration?.endTime
-                ) {
-                    item.subtitle = subtitle
-                }
-                menu.addItem(item)
-            } else {
-                let item = menuItem(
-                    "Mute Server",
-                    systemImage: "bell.slash.fill",
-                    action: nil,
-                    isEnabled: !isMutationPending
-                )
-                let submenu = NSMenu(title: "Mute Server")
-                submenu.autoenablesItems = false
-                for (index, duration) in ChannelMuteDuration.allCases.enumerated() {
-                    let durationItem = menuItem(
-                        duration.title,
-                        action: #selector(muteFromMenu(_:)),
-                        isEnabled: !isMutationPending
-                    )
-                    durationItem.representedObject = NSNumber(value: index)
-                    submenu.addItem(durationItem)
-                }
-                item.submenu = submenu
-                menu.addItem(item)
+extension ServerRailContextMenuActions {
+    /// A server tile's menu.
+    func serverMenu(for guild: Guild, notificationSettings settings: GuildNotificationSettings, isMutationPending: Bool) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let canMutate = !isMutationPending
+        menu.addItem(
+            ContextMenuItemSupport.item("Mark as Read", systemImage: "envelope.open.fill", isEnabled: guild.unreadCount > 0 && canMutate) {
+                markRead(guild.id)
             }
+        )
+        menu.addItem(.separator())
+        menu.addItem(ContextMenuItemSupport.item("Invite to Server", systemImage: "person.badge.plus.fill", isEnabled: canInvite(guild)) { invite(guild) })
+        menu.addItem(.separator())
 
-            let notificationItem = menuItem(
-                "Notification Settings",
-                systemImage: "bell.badge.fill",
-                action: nil,
-                isEnabled: !isMutationPending
+        let muteEntry = if settings.isActivelyMuted() {
+            NotificationMenuItems.unmuteEntry(
+                "Unmute Server",
+                until: settings.muteConfiguration?.endTime,
+                isEnabled: canMutate,
+                content: .action { unmute(guild) }
             )
-            notificationItem.subtitle = notificationSettings.messageNotifications.menuTitle
-            notificationItem.submenu = notificationMenu()
-            menu.addItem(notificationItem)
-
-            let hideMutedItem = menuItem(
-                "Hide Muted Channels",
-                systemImage: "eye.slash.fill",
-                action: #selector(toggleHideMutedChannels),
-                isEnabled: !isMutationPending
-            )
-            hideMutedItem.state = notificationSettings.hideMutedChannels ? .on : .off
-            menu.addItem(hideMutedItem)
-
-            if let all = showsAllChannels() {
-                let item = menuItem("Show All Channels", systemImage: "list.bullet", action: #selector(toggleAllChannels))
-                item.state = all ? .on : .off
-                menu.addItem(item)
+        } else {
+            NotificationMenuItems.muteEntry("Mute Server", isEnabled: canMutate) { duration in
+                .action { mute(guild, duration) }
             }
+        }
+        menu.addItem(ActionMenuRenderer.item(muteEntry))
 
+        let notificationItem = ActionMenuRenderer.item(NotificationMenuItems.settingsEntry(
+            selection: settings.messageNotifications.menuTitle,
+            isEnabled: canMutate,
+            levels: [MessageNotificationLevel.allMessages, .onlyMentions, .nothing].map { level in
+                NotificationMenuItems.levelEntry(
+                    level, title: level.menuTitle, subtitle: nil, selected: settings.messageNotifications,
+                    content: .action { setNotificationLevel(guild, level) }
+                )
+            }
+        ))
+        if let submenu = notificationItem.submenu {
+            appendNotificationToggles(to: submenu, guild: guild, settings: settings, isEnabled: canMutate)
+        }
+        menu.addItem(notificationItem)
+
+        let hideMutedItem = ContextMenuItemSupport.item("Hide Muted Channels", systemImage: "eye.slash.fill", isEnabled: canMutate) {
+            setNotificationToggle(guild, .hideMutedChannels, !settings.hideMutedChannels)
+        }
+        hideMutedItem.state = settings.hideMutedChannels ? .on : .off
+        menu.addItem(hideMutedItem)
+
+        if let all = showsAllChannels(guild) {
+            let allItem = ContextMenuItemSupport.item("Show All Channels", systemImage: "list.bullet") {
+                guard let all = showsAllChannels(guild) else { return }
+                setShowsAllChannels(guild, !all)
+            }
+            allItem.state = all ? .on : .off
+            menu.addItem(allItem)
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(ContextMenuItemSupport.item("Copy Server ID", systemImage: "number.square.fill") { Pasteboard.copy(guild.id.description) })
+        if guild.isOwnedByCurrentUser == false, !guild.isUnavailable {
             menu.addItem(.separator())
             menu.addItem(
-                menuItem(
-                    "Copy Server ID",
-                    systemImage: "number.square.fill",
-                    action: #selector(copyServerIDFromMenu)
-                )
+                ContextMenuItemSupport.item("Leave Server", systemImage: "rectangle.portrait.and.arrow.right", isDestructive: true) {
+                    leaveServer(guild)
+                }
             )
-            if leaveServer != nil {
+        }
+        return menu
+    }
+
+    /// The server's suppression and push toggles, below the levels.
+    private func appendNotificationToggles(to menu: NSMenu, guild: Guild, settings: GuildNotificationSettings, isEnabled: Bool) {
+        menu.addItem(.separator())
+        for toggle in GuildNotificationToggle.allCases where toggle != .hideMutedChannels {
+            if toggle == .mobilePush {
                 menu.addItem(.separator())
-                menu.addItem(menuItem("Leave Server", systemImage: "rectangle.portrait.and.arrow.right",
-                                      action: #selector(leaveServerFromMenu), isDestructive: true))
             }
-            return menu
-        }
-
-        @objc private func toggleAllChannels() {
-            guard let all = showsAllChannels() else { return }
-            setShowsAllChannels(!all)
-        }
-
-        @objc private func toggleHideMutedChannels() {
-            setNotificationToggle(.hideMutedChannels, !notificationSettings.hideMutedChannels)
-        }
-
-        @objc private func leaveServerFromMenu() { leaveServer?() }
-
-        @objc private func inviteFromMenu() { invite() }
-
-        private var isDirectlyMuted: Bool {
-            notificationSettings.isMuted
-                && (notificationSettings.muteConfiguration?.isActive() ?? true)
-        }
-
-        private func notificationMenu() -> NSMenu {
-            let menu = NSMenu(title: "Notification Settings")
-            menu.autoenablesItems = false
-            let levels: [MessageNotificationLevel] = [
-                .allMessages, .onlyMentions, .nothing,
-            ]
-            for level in levels {
-                let item = menuItem(
-                    level.menuTitle,
-                    action: #selector(setNotificationFromMenu(_:)),
-                    isEnabled: !isMutationPending
-                )
-                item.state = notificationSettings.messageNotifications == level ? .on : .off
-                item.representedObject = NSNumber(value: level.rawValue)
-                menu.addItem(item)
+            let toggleItem = ContextMenuItemSupport.item(toggle.menuTitle, isEnabled: isEnabled) {
+                setNotificationToggle(guild, toggle, !settings.isEnabled(toggle))
             }
-            menu.addItem(.separator())
-            for toggle in GuildNotificationToggle.allCases where toggle != .hideMutedChannels {
-                if toggle == .mobilePush {
-                    menu.addItem(.separator())
-                }
-                let item = menuItem(
-                    toggle.menuTitle,
-                    action: #selector(setNotificationToggleFromMenu(_:)),
-                    isEnabled: !isMutationPending
-                )
-                item.state = notificationSettings.isEnabled(toggle) ? .on : .off
-                item.representedObject = NSNumber(value: toggle.rawValue)
-                menu.addItem(item)
-            }
-            return menu
+            toggleItem.state = settings.isEnabled(toggle) ? .on : .off
+            menu.addItem(toggleItem)
         }
+    }
 
-        private func menuItem(
-            _ title: String,
-            systemImage: String? = nil,
-            action: Selector?,
-            isEnabled: Bool = true,
-            isDestructive: Bool = false
-        ) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = action == nil ? nil : self
-            item.isEnabled = isEnabled
-            if let systemImage {
-                ContextMenuItemSupport.configure(
-                    item,
-                    title: title,
-                    systemImage: systemImage,
-                    isDestructive: isDestructive
-                )
-            }
-            return item
-        }
-
-        @objc private func markReadFromMenu() {
-            markRead()
-        }
-
-        @objc private func muteFromMenu(_ sender: NSMenuItem) {
-            guard let index = (sender.representedObject as? NSNumber)?.intValue,
-                  ChannelMuteDuration.allCases.indices.contains(index)
-            else { return }
-            mute(ChannelMuteDuration.allCases[index])
-        }
-
-        @objc private func unmuteFromMenu() {
-            unmute()
-        }
-
-        @objc private func setNotificationFromMenu(_ sender: NSMenuItem) {
-            guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
-                  let level = MessageNotificationLevel(rawValue: rawValue)
-            else { return }
-            setNotificationLevel(level)
-        }
-
-        @objc private func setNotificationToggleFromMenu(_ sender: NSMenuItem) {
-            guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
-                  let toggle = GuildNotificationToggle(rawValue: rawValue)
-            else { return }
-            setNotificationToggle(toggle, !notificationSettings.isEnabled(toggle))
-        }
-
-        @objc private func copyServerIDFromMenu() {
-            copyServerID()
-        }
+    /// A server folder's menu.
+    func folderMenu(for entry: ServerRailFolderEntry) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.addItem(ContextMenuItemSupport.item(
+            "Mark Folder as Read",
+            systemImage: "envelope.open.fill",
+            isEnabled: entry.hasUnreadGuild || entry.mentionCount > 0
+        ) { markFolderRead(entry.guildEntries.map(\.id)) })
+        menu.addItem(.separator())
+        menu.addItem(ContextMenuItemSupport.item(
+            "Folder Settings",
+            systemImage: "folder.fill.badge.gearshape"
+        ) { openFolderSettings(entry.folder) })
+        return menu
     }
 }
 
@@ -300,7 +120,8 @@ private extension GuildNotificationToggle {
     }
 }
 
-/// A rail tile's native context menu, built when it opens.
+/// A rail tile's native context menu, built when it opens, hosted so a left
+/// click still reaches the tile's button.
 struct ServerRailContextMenuBridge: NSViewRepresentable {
     let menu: () -> NSMenu
 
@@ -315,52 +136,6 @@ struct ServerRailContextMenuBridge: NSViewRepresentable {
     }
 }
 
-/// The native menu for secondary clicks on a SwiftUI List outside the rows
-/// that bring their own menu. SwiftUI's list table doesn't consult an
-/// AppKit menu itself, so this background watches the clicks within its
-/// bounds and defers to any view under the pointer that has a menu.
-struct ListBackgroundMenuBridge: NSViewRepresentable {
-    let menu: () -> NSMenu
-
-    func makeNSView(context: Context) -> ListBackgroundMenuView {
-        let view = ListBackgroundMenuView()
-        view.menuProvider = menu
-        return view
-    }
-
-    func updateNSView(_ nsView: ListBackgroundMenuView, context: Context) {
-        nsView.menuProvider = menu
-    }
-}
-
-final class ListBackgroundMenuView: NSView {
-    var menuProvider: (() -> NSMenu)?
-    private var monitor: Any?
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = window == nil ? nil : NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
-            self?.presentMenu(for: event) == true ? nil : event
-        }
-    }
-
-    private func presentMenu(for event: NSEvent) -> Bool {
-        guard event.type == .rightMouseDown || event.modifierFlags.contains(.control),
-              let window, event.window === window, let menuProvider,
-              WindowModalCoordinator.allowsInput(for: self),
-              bounds.contains(convert(event.locationInWindow, from: nil))
-        else { return false }
-        var view = window.contentView?.hitTest(event.locationInWindow)
-        while let current = view, current !== self {
-            if current.menu(for: event)?.items.isEmpty == false { return false }
-            view = current.superview
-        }
-        NSMenu.popUpContextMenu(menuProvider(), with: event, for: self)
-        return true
-    }
-}
-
 final class ServerContextMenuHitView: NSView {
     var menuProvider: (() -> NSMenu?)?
 
@@ -368,9 +143,7 @@ final class ServerContextMenuHitView: NSView {
         guard super.hitTest(point) != nil,
               let event = window?.currentEvent ?? NSApp.currentEvent
         else { return nil }
-        let isContextClick = event.type == .rightMouseDown
-            || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
-        return isContextClick ? self : nil
+        return event.isContextClick ? self : nil
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

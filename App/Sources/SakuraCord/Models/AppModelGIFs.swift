@@ -134,25 +134,26 @@ extension AppModel {
             return await schedulePickedMessage(content: gif.url.absoluteString, in: destination)
         }
         guard allowOutgoingQueueSubmission() else { return false }
+        // A picker submission owns its message value. It must never borrow or
+        // restore the mutable composer across the network suspension.
+        let reply = replyingTo(in: destination)
+        let replyTo = reply?.id
+        let mentionsRepliedUser = replyMentionsAuthor(in: destination)
+        let replyPreview = reply.map(MessageReplyPreview.init)
         if destination == .thread {
             guard let thread = openThread, openThreadAccess.canSend else { return false }
             return await sendThreadMessage(
                 content: gif.url.absoluteString,
-                replyTo: threadReplyingTo?.id,
-                mentionsRepliedUser: threadReplyMentionsAuthor,
-                replyPreview: threadReplyingTo.map(MessageReplyPreview.init),
+                replyTo: replyTo,
+                mentionsRepliedUser: mentionsRepliedUser,
+                replyPreview: replyPreview,
                 attachments: [], thread: thread, clearsComposer: false
             )
         }
         guard let channelID = selectedChannelID,
               selectedConversationAccess.canSend
         else { return false }
-        // A picker submission owns its message value. It must never borrow or
-        // restore the mutable composer across the network suspension.
         let session = accountSession()
-        let replyTo = replyingTo?.id
-        let mentionsRepliedUser = replyMentionsAuthor
-        let replyPreview = replyingTo.map { MessageReplyPreview(message: $0) }
         // History can load while the picker stays open; the outbox may have filled.
         guard await prepareChannelMessageSubmission(channelID: channelID, account: session),
               allowOutgoingQueueSubmission()

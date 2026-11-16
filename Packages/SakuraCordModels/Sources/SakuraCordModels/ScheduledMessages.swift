@@ -50,7 +50,7 @@ public enum ScheduledMessagePolicy {
 
     /// Every plan but full Nitro schedules one at a time.
     public static func limit(premiumType: Int) -> Int {
-        premiumType == 2 ? nitroLimit : 1
+        premiumType == DiscordPremiumType.nitro ? nitroLimit : 1
     }
 
     /// Discord refuses a time less than ten minutes away.

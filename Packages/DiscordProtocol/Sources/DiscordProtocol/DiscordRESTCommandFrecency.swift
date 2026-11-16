@@ -4,7 +4,7 @@ import SakuraCordModels
 public extension DiscordRESTProvider {
     func applicationCommandFrecency() async throws -> DiscordFrecencyHistory {
         let data = try await frecencySettingsProto()
-        return DiscordSettingsProto.applicationCommandFrecency(from: data) ?? DiscordFrecencyHistory()
+        return DiscordSettingsProto.frecencyHistory(from: data, field: DiscordSettingsProto.applicationCommandFrecencyField) ?? DiscordFrecencyHistory()
     }
 
     /// One PATCH carrying field 7 and any other pending usage, matching Discord's flush of
@@ -12,8 +12,12 @@ public extension DiscordRESTProvider {
     func saveApplicationCommandFrecency(_ history: DiscordFrecencyHistory) async throws
         -> DiscordFrecencyHistory
     {
-        let patch = DiscordSettingsProto.applicationCommandFrecencyPatch(history)
+        let patch = DiscordSettingsProto.frecencyPatch(
+            history,
+            field: DiscordSettingsProto.applicationCommandFrecencyField,
+            limit: DiscordSettingsProto.maximumApplicationCommandFrecencyEntries
+        )
         let stored = try await persistFrecencySettingsPatch(patch)
-        return DiscordSettingsProto.applicationCommandFrecency(from: stored) ?? history
+        return DiscordSettingsProto.frecencyHistory(from: stored, field: DiscordSettingsProto.applicationCommandFrecencyField) ?? history
     }
 }

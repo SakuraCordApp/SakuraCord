@@ -47,17 +47,17 @@ import Testing
     ))
 
     let store = SettingsPreferenceStore(defaults: defaults)
-    let export = store.export(scope: .appWide, page: .voiceVideo)
-    #expect(export.values.count == 15)
-    #expect(export.values[SettingsControlID.voiceInputDevice.rawValue] == .string("input"))
-    #expect(export.values[SettingsControlID.voiceJoinMuted.rawValue] == .bool(true))
+    let export = store.export(page: .voiceVideo)
+    #expect(export.count == 15)
+    #expect(export[SettingsControlID.voiceInputDevice.rawValue] == .string("input"))
+    #expect(export[SettingsControlID.voiceJoinMuted.rawValue] == .bool(true))
     #expect(
-        export.values[SettingsControlID.voiceScreenShareQuality.rawValue]
+        export[SettingsControlID.voiceScreenShareQuality.rawValue]
             == .string(ScreenShareQuality.source.rawValue)
     )
-    #expect(export.values[SettingsControlID.notificationEnabled.rawValue] == nil)
+    #expect(export[SettingsControlID.notificationEnabled.rawValue] == nil)
 
-    store.reset(scope: .appWide, page: .voiceVideo)
+    store.reset(page: .voiceVideo)
     restored.reload()
     #expect(restored.inputDeviceUID.isEmpty)
     #expect(restored.outputDeviceUID.isEmpty)
@@ -335,21 +335,6 @@ import Testing
     #expect(fake.inputLevelHandler == nil)
     #expect(!controller.isMicrophoneTestRunning)
     #expect(controller.errorMessage != nil)
-}
-
-@MainActor
-@Test func `Voice settings metadata describes system-owned permissions`() {
-    let catalog = SettingsCatalog.foundation
-    let permissions = [
-        SettingsControlID.voiceMicrophonePermission,
-        .voiceCameraPermission,
-    ]
-    for id in permissions {
-        let control = catalog.controls.first { $0.id == id }
-        #expect(control?.owner == .macOS)
-        #expect(control?.persistence == .systemManaged)
-        #expect(control?.resetCapability == .notApplicable)
-    }
 }
 
 @MainActor

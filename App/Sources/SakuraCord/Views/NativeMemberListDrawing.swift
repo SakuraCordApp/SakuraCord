@@ -129,14 +129,7 @@ extension NativeMemberListCanvasView {
         style: SkeletonDrawingStyle
     ) {
         let row = paintedRowRect(at: index)
-        let contentX = row.minX + 4
-        let container = CGRect(
-            x: contentX,
-            y: row.minY
-                + (row.height - NativeMemberListMetrics.avatarContainerSize) / 2,
-            width: NativeMemberListMetrics.avatarContainerSize,
-            height: NativeMemberListMetrics.avatarContainerSize
-        )
+        let container = avatarContainerRect(at: index, leadingInset: 4)
         let avatar = CGRect(
             x: container.midX - NativeMemberListMetrics.avatarSize / 2,
             y: container.midY - NativeMemberListMetrics.avatarSize / 2,
@@ -164,8 +157,7 @@ extension NativeMemberListCanvasView {
             style: style
         )
 
-        let textX = contentX
-            + NativeMemberListMetrics.avatarContainerSize + 8
+        let textX = textOriginX(at: index)
         drawSkeletonShape(
             in: CGRect(x: textX, y: row.minY + InterfaceScale.metric(6), width: InterfaceScale.metric(104), height: InterfaceScale.metric(10)),
             radius: InterfaceScale.metric(5),
@@ -248,8 +240,8 @@ extension NativeMemberListCanvasView {
             ))
             context.clip()
             if let colors = NameplatePresentationPolicy.colors(for: nameplate.palette) {
-                let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                let color = Self.color(hex: isDark ? colors.dark : colors.light)
+                let isDark = effectiveAppearance.isDark
+                let color = NSColor(hex: isDark ? colors.dark : colors.light)
                 let gradient = CGGradient(
                     colorsSpace: CGColorSpaceCreateDeviceRGB(),
                     colors: [
@@ -298,12 +290,12 @@ extension NativeMemberListCanvasView {
 
         drawMemberAvatar(member, at: index, context: context)
 
-        let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+        let textX = textOriginX(at: index)
         let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
         let botBadgeWidth = NativeAppBadgePresentation.width(isVerified: member.user.isVerifiedBot)
         let tagPresentation = prepared.serverTag
         let roleColor = presentation.roleColorDisplay == .nextToNames
-            ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Self.color(hex:)) : nil
+            ? MessageAuthorPresentation.topRoleColor(in: member.roles).map { NSColor(hex: $0) } : nil
         let geometry = memberNameGeometry(member, prepared: prepared, at: index)
         let nameX = geometry.nameX
         let nameLayout = geometry.layout
@@ -365,7 +357,7 @@ extension NativeMemberListCanvasView {
                 in: visibleActivity,
                 origin: origin
             ) {
-                guard let url = activityEmojiURL(for: region.reference) else { continue }
+                guard let url = region.reference.imageURL(in: customEmojiURLsByID) else { continue }
                 if let image = images[url] {
                     Self.draw(
                         image: image,
@@ -389,14 +381,7 @@ extension NativeMemberListCanvasView {
         at index: Int,
         context: CGContext
     ) {
-        let container = CGRect(
-            x: NativeMemberListMetrics.horizontalInset + InterfaceScale.metric(4),
-            y: origins[index] + 1
-                + (NativeMemberListMetrics.paintedRowHeight
-                    - NativeMemberListMetrics.avatarContainerSize) / 2,
-            width: NativeMemberListMetrics.avatarContainerSize,
-            height: NativeMemberListMetrics.avatarContainerSize
-        )
+        let container = avatarContainerRect(at: index, leadingInset: InterfaceScale.metric(4))
         let avatar = CGRect(
             x: container.midX - NativeMemberListMetrics.avatarSize / 2,
             y: container.midY - NativeMemberListMetrics.avatarSize / 2,
@@ -550,9 +535,7 @@ extension NativeMemberListCanvasView {
             PresenceIndicatorPresentation.path(for: status, isMobile: isMobile, in: rect).cgPath
         )
         context.setFillColor(
-            Self.color(
-                hex: PresenceIndicatorPresentation.colorHex(for: status)
-            ).cgColor
+            NSColor(hex: PresenceIndicatorPresentation.colorHex(for: status)).cgColor
         )
         context.drawPath(using: .eoFill)
         context.restoreGState()

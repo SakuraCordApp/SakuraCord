@@ -11,7 +11,7 @@ extension NativeTimelineCanvasView {
         guard let window, !anchor.isNull, !anchor.isEmpty else { return nil }
         // Freeze the anchor independently of later reaction layout changes.
         // Reaction popovers keep that snapshot inside the scrolling document.
-        let source = StableReactionPickerSourceView(frame: anchor)
+        let source = StablePickerPopoverSourceView(frame: anchor)
         source.followsScrolling = followsTimelineScroll
         addSubview(source)
         let snapshotAnchor = source.installSnapshotAnchor(in: window)

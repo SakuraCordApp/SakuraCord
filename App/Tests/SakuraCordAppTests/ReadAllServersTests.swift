@@ -19,9 +19,12 @@ struct ReadAllServersTests {
             Channel(id: ChannelID(rawValue: 204), guildID: nil, name: "DM", kind: .directMessage, lastMessageID: MessageID(rawValue: 400)),
             Channel(id: ChannelID(rawValue: 205), guildID: GuildID(rawValue: 999), name: "Unavailable server", lastMessageID: MessageID(rawValue: 400)),
         ]
-        readState.configure(accountID: "fixture", guilds: [], channels: channels,
-                            readStates: channels.map { ChannelReadState(channelID: $0.id, lastAcknowledgedMessageID: MessageID(rawValue: 300)) },
-                            notificationSettings: [GuildNotificationSettings(guildID: guildID, isMuted: true, hideMutedChannels: true)])
+        readState.applyInitialState(AccountReadStateModel.makeInitialState(.init(
+            accountID: "fixture", guilds: [], channels: channels, threads: [],
+            readStates: channels.map { ChannelReadState(channelID: $0.id, lastAcknowledgedMessageID: MessageID(rawValue: 300)) },
+            notificationSettings: [GuildNotificationSettings(guildID: guildID, isMuted: true, hideMutedChannels: true)],
+            usesNewNotifications: true, currentUserID: UserID(rawValue: 1)
+        )))
         readState.applyAccessibility([ChannelID(rawValue: 202): false])
         let active = MessageThreadSummary(id: ChannelID(rawValue: 210), guildID: guildID, parentID: parentID,
                                           name: "Joined", lastMessageID: MessageID(rawValue: 400))

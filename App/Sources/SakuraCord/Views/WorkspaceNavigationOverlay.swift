@@ -1,5 +1,4 @@
 import AppKit
-import OSLog
 import SakuraCordModels
 import SwiftUI
 
@@ -25,57 +24,6 @@ struct WorkspaceNavigationOverlayView: View {
     }
 }
 
-private nonisolated struct QuickSwitcherSearchInput: Sendable {
-    let index: ForwardDestinationSearchPolicy.Index
-    let userIndex: ForwardDestinationSearchPolicy.Index
-    let guilds: [Guild]
-    let usageScores: [String: Int]
-    let history: [ChannelID]
-    let currentChannelID: ChannelID?
-    let currentGuildID: GuildID?
-    let currentUserID: UserID?
-    let searchableUserIDs: Set<UserID>
-    let friendUserIDs: Set<UserID>
-    let currentGuildMemberIDs: Set<UserID>
-    let currentGuildLiveMemberIDs: Set<UserID>
-    let unreadChannelIDs: Set<ChannelID>
-    let mutedChannelIDs: Set<ChannelID>
-    let mentionedChannelIDs: [ChannelID]
-    let draftChannelIDs: [ChannelID]
-    let recentlyTalkedUserIDs: [UserID]
-
-    func results(query: String) -> [QuickSwitcherResult] {
-        let signposter = OSSignposter(
-            subsystem: "dev.sakuracord.SakuraCord",
-            category: "PointsOfInterest"
-        )
-        let interval = signposter.beginInterval("QuickSwitcherRanking")
-        defer { signposter.endInterval("QuickSwitcherRanking", interval) }
-        return QuickSwitcherSearchPolicy.results(
-            query: query,
-            context: QuickSwitcherSearchContext(
-                index: index,
-                userIndex: userIndex,
-                guilds: guilds,
-                usageScores: usageScores,
-                history: history,
-                currentChannelID: currentChannelID,
-                currentGuildID: currentGuildID,
-                currentUserID: currentUserID,
-                searchableUserIDs: searchableUserIDs,
-                friendUserIDs: friendUserIDs,
-                currentGuildMemberIDs: currentGuildMemberIDs,
-                currentGuildLiveMemberIDs: currentGuildLiveMemberIDs,
-                unreadChannelIDs: unreadChannelIDs,
-                mutedChannelIDs: mutedChannelIDs,
-                mentionedChannelIDs: mentionedChannelIDs,
-                draftChannelIDs: draftChannelIDs,
-                recentlyTalkedUserIDs: recentlyTalkedUserIDs
-            )
-        )
-    }
-}
-
 private nonisolated struct QuickSwitcherSearchRequest: Hashable, Sendable {
     let query: String
     let indexRevision: UInt64
@@ -96,8 +44,8 @@ private struct QuickSwitcherView: View {
     let animationState: WindowModalContext
     @Environment(\.openSettings) private var openSettings
     @State private var query = ""
-    @State private var searchIndex: ForwardDestinationSearchPolicy.Index?
-    @State private var searchInput: QuickSwitcherSearchInput?
+    @State private var searchIndex: ConversationDestinationSearchPolicy.Index?
+    @State private var searchContext: QuickSwitcherSearchContext?
     @State private var searchIndexRevision: UInt64 = 0
     @State private var contextRevision: UInt64 = 0
     @State private var displayedResults: [QuickSwitcherResult] = []
@@ -180,15 +128,15 @@ private struct QuickSwitcherView: View {
             .onChange(of: animationState.isVisible) { _, isVisible in
                 if isVisible {
                     let currentUserID = model.currentUser?.id
-                    let sourceRevision = model.forwardSearchSourceRevision
-                    if let exact = ForwardDestinationSearchIndexCache.shared.value(
+                    let sourceRevision = model.destinationSearchSourceRevision
+                    if let exact = ConversationDestinationSearchIndexCache.shared.value(
                         for: model,
                         userID: currentUserID,
                         revision: sourceRevision
                     ) {
                         applySearchIndex(exact)
                     } else if let searchIndex {
-                        searchInput = makeSearchInput(searchIndex: searchIndex)
+                        searchContext = makeSearchContext(searchIndex: searchIndex)
                     }
                     contextRevision &+= 1
                     framePresentationID &+= 1
@@ -207,7 +155,7 @@ private struct QuickSwitcherView: View {
                 // the live member store instead of freezing that early,
                 // incomplete eligibility snapshot for the whole session.
                 if animationState.isVisible, let searchIndex {
-                    searchInput = makeSearchInput(searchIndex: searchIndex)
+                    searchContext = makeSearchContext(searchIndex: searchIndex)
                     contextRevision &+= 1
                 }
             }
@@ -217,14 +165,14 @@ private struct QuickSwitcherView: View {
                     // retained, invisible view observe every source revision.
                     // The cache owns and coalesces this background work.
                     if model.snapshot != nil {
-                        ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
+                        ConversationDestinationSearchIndexCache.shared.schedulePrewarm(
                             for: model
                         )
                     }
                     return
                 }
                 if activeMemberSearchRequest != nil {
-                    ForwardDestinationSearchIndexCache.shared.invalidate(for: model)
+                    ConversationDestinationSearchIndexCache.shared.invalidate(for: model)
                 }
                 if !model.hasLoadedDiscordEmojiSettings {
                     Task { @MainActor in
@@ -233,12 +181,12 @@ private struct QuickSwitcherView: View {
                 }
                 let userID = model.currentUser?.id
                 let revision = activeIndexRequest.revision
-                let exact = ForwardDestinationSearchIndexCache.shared.value(
+                let exact = ConversationDestinationSearchIndexCache.shared.value(
                     for: model,
                     userID: userID,
                     revision: revision
                 )
-                let latest = ForwardDestinationSearchIndexCache.shared.latestValue(
+                let latest = ConversationDestinationSearchIndexCache.shared.latestValue(
                     for: model,
                     userID: userID
                 )
@@ -248,11 +196,11 @@ private struct QuickSwitcherView: View {
                 {
                     applySearchIndex(immediatelyAvailable)
                 }
-                let prepared: ForwardDestinationSearchPolicy.Index?
+                let prepared: ConversationDestinationSearchPolicy.Index?
                 if let exact {
                     prepared = exact
                 } else {
-                    prepared = await ForwardDestinationSearchIndexCache.shared.prepare(
+                    prepared = await ConversationDestinationSearchIndexCache.shared.prepare(
                         for: model,
                         priority: .userInitiated
                     )
@@ -262,7 +210,7 @@ private struct QuickSwitcherView: View {
                     // Membership/read-state projections are small live inputs
                     // to the retained index. Refresh those without rebuilding
                     // or swapping the expensive immutable search corpus.
-                    searchInput = makeSearchInput(searchIndex: searchIndex)
+                    searchContext = makeSearchContext(searchIndex: searchIndex)
                     contextRevision &+= 1
                 }
                 // Show the retained index immediately, then adopt the exact
@@ -297,7 +245,7 @@ private struct QuickSwitcherView: View {
     private var activeIndexRequest: QuickSwitcherIndexRequest? {
         guard animationState.isVisible else { return nil }
         return QuickSwitcherIndexRequest(
-            revision: model.forwardSearchSourceRevision
+            revision: model.destinationSearchSourceRevision
         )
     }
 
@@ -319,16 +267,16 @@ private struct QuickSwitcherView: View {
     }
 
     private func applySearchIndex(
-        _ index: ForwardDestinationSearchPolicy.Index
+        _ index: ConversationDestinationSearchPolicy.Index
     ) {
         searchIndex = index
-        searchInput = makeSearchInput(searchIndex: index)
+        searchContext = makeSearchContext(searchIndex: index)
         searchIndexRevision &+= 1
     }
 
-    private func makeSearchInput(
-        searchIndex: ForwardDestinationSearchPolicy.Index
-    ) -> QuickSwitcherSearchInput? {
+    private func makeSearchContext(
+        searchIndex: ConversationDestinationSearchPolicy.Index
+    ) -> QuickSwitcherSearchContext? {
         guard let snapshot = model.snapshot else { return nil }
         let guildsByID = Dictionary(
             snapshot.guilds.map { ($0.id, $0) },
@@ -365,7 +313,7 @@ private struct QuickSwitcherView: View {
                 ? message.author.id : nil
         }
         mentionCountsByChannelID = projection.mentionsByChannelID
-        return QuickSwitcherSearchInput(
+        return QuickSwitcherSearchContext(
             index: searchIndex,
             userIndex: searchIndex.quickSwitcherUserIndex(
                 // SearchContextManager seeds every live nickname held by
@@ -378,7 +326,7 @@ private struct QuickSwitcherView: View {
             ),
             guilds: guildsInStoreOrder,
             usageScores: model.discordGuildAndChannelUsageScores,
-            history: model.forwardDestinationHistory,
+            history: model.conversationDestinationHistory,
             currentChannelID: model.selectedChannelID,
             currentGuildID: model.selectedGuildID,
             currentUserID: snapshot.currentUser.id,
@@ -418,7 +366,7 @@ private struct QuickSwitcherView: View {
     private func refreshDisplayedResults(
         for request: QuickSwitcherSearchRequest
     ) async {
-        guard let input = searchInput else {
+        guard let context = searchContext else {
             displayedResults = []
             selectableResults = []
             selectedResultID = nil
@@ -427,7 +375,9 @@ private struct QuickSwitcherView: View {
         // Ranking is a bounded, local index operation. Keeping it in this
         // presentation task avoids a detached-task hop plus a second main-actor
         // hop before rows can be committed to the native viewport.
-        let results = input.results(query: request.query)
+        let results = AppPerformanceSignposts.measureSync("QuickSwitcherRanking") {
+            QuickSwitcherSearchPolicy.results(query: request.query, context: context)
+        }
         guard !Task.isCancelled, activeSearchRequest == request else { return }
         let selectable = results.filter(\.isSelectable)
         let preservesSelection = completedQuery == request.query
@@ -591,7 +541,7 @@ private struct QuickSwitcherView: View {
     }
 
     private func destinationMetadata(
-        _ destination: ForwardDestination
+        _ destination: ConversationDestination
     ) -> (inlineDetail: String?, trailingDetail: String?) {
         switch destination.kind {
         case .user(let user, _):
@@ -599,26 +549,25 @@ private struct QuickSwitcherView: View {
         case .thread(_, let parent):
             return (parent?.name, destination.guild?.name)
         case .channel(let channel):
-            if channel.kind == .directMessage || channel.kind == .groupDirectMessage {
+            if channel.kind.isDirectMessage {
                 return (destination.detail.isEmpty ? nil : destination.detail, nil)
             }
             return (channel.category, destination.guild?.name)
         }
     }
 
-    private func destinationImageURL(_ destination: ForwardDestination) -> URL? {
+    private func destinationImageURL(_ destination: ConversationDestination) -> URL? {
         switch destination.kind {
         case .user:
             destination.avatarURL
-        case .channel(let channel) where channel.kind == .directMessage
-            || channel.kind == .groupDirectMessage:
+        case .channel(let channel) where channel.kind.isDirectMessage:
             destination.avatarURL
         case .channel, .thread:
             nil
         }
     }
 
-    private func destinationSystemImage(_ destination: ForwardDestination) -> String {
+    private func destinationSystemImage(_ destination: ConversationDestination) -> String {
         switch destination.kind {
         case .user: "person.crop.circle"
         case .thread: "number"
@@ -732,20 +681,7 @@ nonisolated enum QuickSwitcherIconGeometry {
               bounds.width > 0,
               bounds.height > 0
         else { return bounds }
-        let scale = max(
-            bounds.width / imageSize.width,
-            bounds.height / imageSize.height
-        )
-        let size = CGSize(
-            width: imageSize.width * scale,
-            height: imageSize.height * scale
-        )
-        return CGRect(
-            x: bounds.midX - size.width / 2,
-            y: bounds.midY - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
+        return aspectRect(for: imageSize, in: bounds, fillsFrame: true)
     }
 }
 
@@ -863,7 +799,7 @@ private struct QuickSwitcherResultRow: View, Equatable {
                             .foregroundStyle(.white)
                             .padding(.horizontal, InterfaceScale.metric(6))
                             .frame(minWidth: InterfaceScale.metric(20), minHeight: InterfaceScale.metric(20))
-                            .background(Color(hex: MentionRed.hex), in: .rect(cornerRadius: InterfaceScale.metric(5)))
+                            .background(MentionRed.color, in: .rect(cornerRadius: InterfaceScale.metric(5)))
                             .layoutPriority(2)
                     }
                 }
@@ -1027,17 +963,4 @@ private final class KeyHandlingTextField: NSTextField {
         guard handleKeyDown?(event) != true else { return }
         super.keyDown(with: event)
     }
-}
-
-private func overlayHeader(title: String, subtitle: String) -> some View {
-    HStack {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(3)) {
-            Text(title).font(.interface(.title2).weight(.semibold))
-            Text(subtitle).font(.interface(.callout)).foregroundStyle(.secondary)
-        }
-        Spacer()
-    }
-    .padding(.horizontal, InterfaceScale.metric(20))
-    .padding(.top, InterfaceScale.metric(18))
-    .padding(.bottom, InterfaceScale.metric(14))
 }

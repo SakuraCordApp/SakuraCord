@@ -185,14 +185,3 @@ public struct MessageSearchPage: Equatable, Sendable {
         min(400, max(1, Int(ceil(Double(totalResults) / 25))))
     }
 }
-
-public extension Snowflake {
-    static func messageSearchBoundary(at date: Date) -> Self {
-        let discordEpochMilliseconds: UInt64 = 1_420_070_400_000
-        let milliseconds = UInt64(max(0, date.timeIntervalSince1970 * 1_000))
-        guard milliseconds >= discordEpochMilliseconds else {
-            return Self(rawValue: 0)
-        }
-        return Self(rawValue: (milliseconds - discordEpochMilliseconds) << 22)
-    }
-}

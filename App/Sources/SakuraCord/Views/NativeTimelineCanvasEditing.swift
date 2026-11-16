@@ -1,1045 +1,14 @@
 import AppKit
-import AVFoundation
-import Combine
-import CoreText
-import ImageIO
-import Lottie
-import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineCanvasView {
-    func setHoveredCompactTimestampRow(_ value: Int?) {
-        guard hoveredCompactTimestampRow != value else { return }
-        let old = hoveredCompactTimestampRow
-        hoveredCompactTimestampRow = value
-        if let old {
-            setNeedsDisplay(rowFrame(at: old))
-        }
-        if let value {
-            setNeedsDisplay(rowFrame(at: value))
-        }
-    }
-
-    func setHoveredAuthorMessageID(_ value: MessageID?) {
-        guard hoveredAuthorMessageID != value else { return }
-        let old = hoveredAuthorMessageID
-        hoveredAuthorMessageID = value
-        if let index = value.flatMap(visibleMessageRowIndex(for:)), scrollsAuthorGradient(at: index) {
-            authorHoverTicker.start(on: self, frameRate: RoleGradientPaint.scrollFrameRate) { [weak self] in
-                self?.stepAuthorHover()
-            }
-        } else {
-            authorHoverTicker.stop()
-        }
-        updateAvatarPlayback()
-        for messageID in [old, value].compactMap({ $0 }) {
-            guard let index = items.firstIndex(where: {
-                $0.messageID == messageID
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
-    }
-
-    /// A hovered gradient name scrolls, as Discord's does; solid names stay still.
-    private func scrollsAuthorGradient(at index: Int) -> Bool {
-        guard AppMotionPolicy.animatesUncategorized, model?.accessibilitySettings.roleColorDisplay == .inNames,
-              case let .message(row, _, _) = items[index]
-        else { return false }
-        let author = model?.authorPresentation(for: row.message)
-        return author?.user.isBot == false && NativeTimelineRowPainter.roleGradientColors(author) != nil
-    }
-
-    private func stepAuthorHover() {
-        guard let index = hoveredAuthorMessageID.flatMap(visibleMessageRowIndex(for:)),
-              let authorFrame = layouts[index].authorFrame
-        else {
-            authorHoverTicker.stop()
-            return
-        }
-        // The glow reaches a few points past the name.
-        setNeedsDisplay(authorFrame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index)).insetBy(dx: -6, dy: -6))
-    }
-
-    func setHoveredMention(
-        _ value: NativeTimelineMentionHover?
-    ) {
-        guard hoveredMention != value else { return }
-        let oldIdentifier = hoveredMention?.itemIdentifier
-        hoveredMention = value
-        presentHoverLabel()
-        for identifier
-            in [oldIdentifier, value?.itemIdentifier].compactMap({ $0 })
-        {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == identifier
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
-    }
-
-    func setHoveredTextLink(
-        _ value: NativeTimelineTextLinkHover?
-    ) {
-        guard hoveredTextLink != value else { return }
-        let oldIdentifier = hoveredTextLink?.itemIdentifier
-        hoveredTextLink = value
-        for identifier
-            in [oldIdentifier, value?.itemIdentifier].compactMap({ $0 })
-        {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == identifier
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
-    }
-
-    func setHoveredTextSpoiler(
-        _ value: NativeTimelineTextSpoilerHover?
-    ) {
-        guard hoveredTextSpoiler != value else { return }
-        let old = hoveredTextSpoiler
-        hoveredTextSpoiler = value
-        for identifier
-            in [old?.itemIdentifier, value?.itemIdentifier].compactMap({ $0 })
-        {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == identifier
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
-        let now = ProcessInfo.processInfo.systemUptime
-        for (spoiler, isHovered) in [(old, false), (value, true)] {
-            guard let spoiler else { continue }
-            textSpoilerHoverFades[spoiler] = Self.hoverFade(
-                from: textSpoilerHoverFades[spoiler]?.progress(at: now) ?? 0, isHovered: isHovered, at: now
-            )
-        }
-        animateHoverFades()
-    }
-
-    /// How far each text spoiler in a row is hovered at this moment.
-    func textSpoilerHoverProgress(
-        in itemIdentifier: NativeMessageTimelineItem.Identifier
-    ) -> [NativeTimelineTextSpoilerHover: CGFloat] {
-        let now = ProcessInfo.processInfo.systemUptime
-        return textSpoilerHoverFades.filter { $0.key.itemIdentifier == itemIdentifier }.mapValues { $0.progress(at: now) }
-    }
-
-    /// A hover easing in or out from wherever it is; Reduce Motion lands at once.
-    private static func hoverFade(from current: CGFloat, isHovered: Bool, at now: TimeInterval) -> NativeTimelineHoverFade {
-        let start = AppMotionPolicy.animatesUncategorized
-            ? now : now - NativeTimelineComponentButtonVisualState.hoverAnimationDuration
-        return .init(from: current, to: isHovered ? 1 : 0, start: start)
-    }
-
-    func setHoveredCodeBlock(
-        _ value: NativeTimelineCodeBlockPointerTarget?
-    ) {
-        hoveredCodeBlock = value
-        updateCodeCopyControl()
-    }
-
-    /// Shows the hovered code block's copy button with its hover and press,
-    /// which follow the pointer within the block.
-    func updateCodeCopyControl() {
-        guard hoveredCodeBlock != nil || codeCopyControl != nil else { return }
-        let control = codeCopyControl ?? {
-            let created = NativeTimelineCodeCopyControl()
-            // Under every overlay, as the row's own drawing is, so a spoiler
-            // cover hides a concealed block's button.
-            addSubview(created, positioned: .below, relativeTo: nil)
-            codeCopyControl = created
-            return created
-        }()
-        let isPressed = pressedCodeBlockCopyButton != nil && pressedCodeBlockCopyButton == hoveredCodeBlock
-        control.update(
-            target: hoveredCodeBlock,
-            isHovered: isPressed || hoveredCodeBlock?.copyButtonFrame.contains(currentMouseLocationInCanvas()) == true,
-            isPressed: isPressed
-        )
-    }
-
-    func setHoveredComponentButton(
-        _ value: NativeTimelineComponentButtonTarget?
-    ) {
-        guard hoveredComponentButton != value else { return }
-        let old = hoveredComponentButton
-        hoveredComponentButton = value
-        for target in [old, value].compactMap({ $0 }) {
-            invalidateComponentButton(target)
-        }
-        if let old { fadeFileCardHover(old, isHovered: false) }
-        if let value { fadeFileCardHover(value, isHovered: true) }
-    }
-
-    /// Eases a file card part's hover in or out from wherever it is, so the
-    /// pointer moving between parts or leaving the card never snaps.
-    private func fadeFileCardHover(_ target: NativeTimelineComponentButtonTarget, isHovered: Bool) {
-        guard target.componentID.hasPrefix("file:") else { return }
-        let now = ProcessInfo.processInfo.systemUptime
-        componentButtonHoverFades[target] = Self.hoverFade(
-            from: componentButtonHoverFades[target]?.progress(at: now) ?? 0, isHovered: isHovered, at: now
-        )
-        animateHoverFades()
-    }
-
-    /// Crossfades a download's button from its full ring to its next step.
-    func fadeFileCardFinish(_ target: NativeTimelineComponentButtonTarget) {
-        guard AppMotionPolicy.animatesUncategorized else { return }
-        fileCardFinishFades[target] = .init(from: 0, to: 1, start: ProcessInfo.processInfo.systemUptime)
-        animateHoverFades()
-    }
-
-    private func animateHoverFades() {
-        guard componentButtonHoverAnimationTask == nil else { return }
-        var previous = ProcessInfo.processInfo.systemUptime
-        componentButtonHoverAnimationTask = Task { @MainActor [weak self] in
-            while let self, !Task.isCancelled {
-                let now = ProcessInfo.processInfo.systemUptime
-                // Work that holds the main thread, such as saving a finished
-                // download, pauses the fades still running instead of skipping
-                // them, each from the later of the stall's start and its own.
-                // Under Reduce Motion every fade lands at once.
-                let stallStart = previous + 1.0 / 30
-                previous = now
-                if now > stallStart, AppMotionPolicy.animatesUncategorized {
-                    let resume = { (fade: NativeTimelineHoverFade) in
-                        fade.isSettled(at: stallStart) ? fade : fade.delayed(by: now - max(stallStart, fade.start))
-                    }
-                    componentButtonHoverFades = componentButtonHoverFades.mapValues(resume)
-                    textSpoilerHoverFades = textSpoilerHoverFades.mapValues(resume)
-                    fileCardFinishFades = fileCardFinishFades.mapValues(resume)
-                }
-                redrawFadingHovers()
-                // A faded-out part is forgotten; a hovered one holds.
-                componentButtonHoverFades = componentButtonHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
-                textSpoilerHoverFades = textSpoilerHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
-                fileCardFinishFades = fileCardFinishFades.filter { !$0.value.isSettled(at: now) }
-                guard componentButtonHoverFades.values.contains(where: { !$0.isSettled(at: now) })
-                    || textSpoilerHoverFades.values.contains(where: { !$0.isSettled(at: now) })
-                    || !fileCardFinishFades.isEmpty
-                else {
-                    componentButtonHoverAnimationTask = nil
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(8))
-            }
-        }
-    }
-
-    /// Redraws the file card parts and text spoilers still easing their
-    /// hover, so dropping their fades leaves none on its last frame.
-    func redrawFadingHovers() {
-        for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
-        for target in fileCardFinishFades.keys { invalidateComponentButton(target) }
-        for identifier in Set(textSpoilerHoverFades.keys.map(\.itemIdentifier)) {
-            guard let index = items.firstIndex(where: { $0.identifier == identifier }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
-    }
-
-    /// How far each download finishing in a message has crossfaded.
-    func fileCardFinishProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
-        let now = ProcessInfo.processInfo.systemUptime
-        return fileCardFinishFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
-    }
-
-    /// The file card parts' hover in a message at this moment.
-    func fileCardHoverProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
-        let now = ProcessInfo.processInfo.systemUptime
-        return componentButtonHoverFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
-    }
-
-    func setHoveredForwardedSourceMessageID(_ value: MessageID?) {
-        guard hoveredForwardedSourceMessageID != value else { return }
-        let old = hoveredForwardedSourceMessageID
-        hoveredForwardedSourceMessageID = value
-        for messageID in [old, value].compactMap({ $0 }) {
-            guard let index = items.firstIndex(where: {
-                $0.messageID == messageID
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
-    }
-    func setHoveredFooterAction(_ value: NativeTimelineFooterActionTarget?) {
-        guard hoveredFooterAction != value else { return }
-        let old = hoveredFooterAction
-        hoveredFooterAction = value
-        for target in [old, value].compactMap({ $0 }) {
-            // A revealed run's header shares its first row's message ID.
-            let header = NativeMessageTimelineItem.Identifier.suppressedMessages(target.messageID)
-            guard let index = items.firstIndex(where: {
-                target.kind == .suppressedToggle ? $0.identifier == header : $0.messageID == target.messageID
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
-    }
-
-    func animateComponentButtonPress(
-        _ target: NativeTimelineComponentButtonTarget,
-        to destination: CGFloat
-    ) {
-        let destination = min(max(destination, 0), 1)
-        if visualPressedComponentButton != target {
-            let old = visualPressedComponentButton
-            componentButtonPressAnimationTask?.cancel()
-            componentButtonPressProgress = 0
-            visualPressedComponentButton = target
-            if let old {
-                invalidateComponentButton(old)
-                positionComponentButtonEmoji(old)
-            }
-        }
-        if abs(componentButtonPressProgress - destination) < 0.001 {
-            componentButtonPressAnimationDestination = nil
-            if destination == 0 {
-                visualPressedComponentButton = nil
-            }
-            invalidateComponentButton(target)
-            positionComponentButtonEmoji(target)
-            return
-        }
-        guard componentButtonPressAnimationDestination != destination else {
-            return
-        }
-        componentButtonPressAnimationTask?.cancel()
-        componentButtonPressAnimationDestination = destination
-        let start = componentButtonPressProgress
-        let startTime = ProcessInfo.processInfo.systemUptime
-        componentButtonPressAnimationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                let elapsed =
-                    ProcessInfo.processInfo.systemUptime - startTime
-                let linear = min(
-                    1,
-                    elapsed
-                        / NativeTimelineComponentButtonVisualState
-                            .pressAnimationDuration
-                )
-                let progress =
-                    NativeTimelineComponentButtonVisualState
-                        .easeOut(linear)
-                self.componentButtonPressProgress =
-                    start + (destination - start) * progress
-                self.invalidateComponentButton(target)
-                self.positionComponentButtonEmoji(target)
-                if linear >= 1 {
-                    self.componentButtonPressProgress = destination
-                    self.componentButtonPressAnimationDestination = nil
-                    self.componentButtonPressAnimationTask = nil
-                    if destination == 0,
-                       self.visualPressedComponentButton == target
-                    {
-                        self.visualPressedComponentButton = nil
-                    }
-                    self.invalidateComponentButton(target)
-                    self.positionComponentButtonEmoji(target)
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(8))
-            }
-        }
-    }
-
-    /// Clears hover and press state; a cancelled press also returns its
-    /// button's live emoji to rest.
-    @discardableResult
-    func clearPointerTargets() -> NativeTimelinePointerState.ClearedTargets {
-        hoveredReaction = nil
-        let cleared = pointer.clearHoverAndPressTargets()
-        if let button = cleared.componentButton { positionComponentButtonEmoji(button) }
-        return cleared
-    }
-
-    /// A live button emoji follows its button's dip; other overlays stay put.
-    private func positionComponentButtonEmoji(_ target: NativeTimelineComponentButtonTarget) {
-        guard let item = items.first(where: { $0.messageID == target.messageID }),
-              animatedOverlayRoles(for: item.identifier).contains(where: { role in
-                  if case .componentButton(_, target.componentID) = role { true } else { false }
-              })
-        else { return }
-        positionAnimatedMediaOverlays()
-    }
-
-    func invalidateComponentButton(
-        _ target: NativeTimelineComponentButtonTarget
-    ) {
-        guard let index = items.firstIndex(where: {
-            $0.messageID == target.messageID
-        }) else { return }
-        setNeedsDisplay(fileCardDisplayFrame(target, at: index) ?? rowFrame(at: index))
-    }
-
-    func reconcileActionCapsule() {
-        guard !glideBlocksPointer,
-              model?.featuresSettings.messageHoverActions == true
-        else {
-            removeActionCapsule()
-            return
-        }
-        if let state = actionCapsuleState,
-           let model,
-           state.isGuildTimedOut != (model.guildTimeoutUntil(
-               in: state.message.channelID,
-               guildID: state.message.guildID
-           ) != nil) {
-            // Keep a presented picker across ordinary row updates, but dismiss
-            // it when a timeout changes which actions this capsule can offer.
-            removeActionCapsule()
-        }
-        if actionCapsuleState?.isPresentationActive == true {
-            // An edited row shows Cancel and Save where its actions would be.
-            guard let messageID = actionCapsuleMessageID,
-                  messageID != editingMessageID,
-                  let index = items.firstIndex(where: {
-                      $0.messageID == messageID
-                  }),
-                  case let .message(row, _, _) = items[index],
-                  MessageOutboxPresentation.interactionMode(
-                    for: row.message
-                  ).allowsHoverActions
-            else {
-                removeActionCapsule()
-                return
-            }
-            refreshActionCapsuleMessage(row.message)
-            positionActionCapsule(at: index)
-            return
-        }
-        guard let index = hoveredRow
-                ?? mediaViewerHighlightedMessageID.flatMap({ messageID in
-                    items.firstIndex(where: {
-                        $0.messageID == messageID
-                    })
-                }),
-              items.indices.contains(index),
-              case let .message(row, _, _) = items[index],
-              row.message.id != editingMessageID,
-              MessageOutboxPresentation.interactionMode(
-                for: row.message
-              ).allowsHoverActions,
-              let model,
-              let actions
-        else {
-            if actionCapsuleState?.isPresentationActive != true {
-                removeActionCapsule()
-            }
-            return
-        }
-
-        if actionCapsuleMessageID == row.id,
-           actionCapsuleState?.message.canRetrySending == row.message.canRetrySending {
-            refreshActionCapsuleMessage(row.message)
-            positionActionCapsule(at: index)
-            return
-        }
-        removeActionCapsule()
-
-        installActionCapsule(
-            for: row,
-            at: index,
-            model: model,
-            actions: actions
-        )
-    }
-
-    private func installActionCapsule(
-        for row: MessageRowPresentation,
-        at index: Int,
-        model: AppModel,
-        actions: NativeTimelineRowActions
-    ) {
-        let canEdit = row.message.author.id == model.currentUser?.id
-            && !row.message.hasPoll
-            && !row.message.flags.contains(.voiceMessage)
-            && model.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil
-            && MessageReplyPresentationPolicy.allowsReplyAction(for: row.message)
-        let canDelete = model.canDeleteMessage(row.message)
-        let jumpToMessage = actions.openMessage.map { openMessage in
-            { openMessage(row.message) }
-        }
-        let isFailed = row.message.outboxState == .failed
-        let offersShiftActions = jumpToMessage == nil && !isFailed
-        let canPin = (offersShiftActions || messageInteractionContext == .pinnedResult)
-            && model.canManagePins(for: row.message)
-        let unpinMessage: (() -> Void)? = messageInteractionContext == .pinnedResult && canPin
-            ? messageMenuHandler(action: .unpinMessage, row: row, index: index, actions: actions)
-            : nil
-        let retry = row.message.canRetrySending
-            ? { actions.retry(row.message) }
-            : nil
-        let isGuildTimedOut = model.guildTimeoutUntil(
-            in: row.message.channelID,
-            guildID: row.message.guildID
-        ) != nil
-        let canReact = model.canCreateReactions(on: row.message)
-        let reply = MessageReplyPresentationPolicy.allowsReplyAction(
-            for: row.message
-        ) && !isGuildTimedOut ? actions.reply.map { reply in
-            { reply(row.message) }
-        } : nil
-        let forward = model.canForward(row.message)
-            ? actions.forward.map { forward in
-                { forward(row.message) }
-            }
-            : nil
-        let togglePin: (() -> Void)? = offersShiftActions && canPin
-            ? messageMenuHandler(action: .pinMessage, row: row, index: index, actions: actions)
-            : nil
-        // Copy Message ID, Copy Link and Mark Unread, plus Pin when allowed.
-        let shiftActionCount = offersShiftActions ? 3 + (togglePin == nil ? 0 : 1) : 0
-        let controlCount = jumpToMessage == nil
-            ? (isFailed ? 1 + (retry == nil ? 0 : 1) : 1 + (canReact ? 1 : 0) + (reply == nil ? 0 : 1) + (forward == nil ? 0 : 1) + (canEdit ? 1 : 0))
-            : 1 + (unpinMessage == nil ? 0 : 1) + (messageInteractionContext == .inboxMention ? 1 : 0)
-        let state = NativeTimelineActionCapsuleState(
-            message: row.message,
-            controlCount: controlCount,
-            shiftActionCount: shiftActionCount,
-            allowsQuickReactions: jumpToMessage == nil && canReact,
-            isGuildTimedOut: isGuildTimedOut
-        )
-        // A capsule that appears while Shift is already held starts in the
-        // Shift variant without animating.
-        state.isShiftHeld = MessageActionShiftPolicy.isActive(NSEvent.modifierFlags)
-        state.updateAvailableWidth(bounds.width)
-        if shiftActionCount > 0 {
-            installActionCapsuleModifierMonitor()
-        }
-        state.presentationDidChange = { [weak self, weak state] isPresented in
-            Task { @MainActor [weak self, weak state] in
-                await Task.yield()
-                guard let self,
-                      let state,
-                      self.actionCapsuleState === state
-                else { return }
-                if isPresented {
-                    self.positionActionCapsule()
-                } else {
-                    self.reconcileActionCapsule()
-                }
-            }
-        }
-        let root = NativeTimelineActionCapsuleOverlay(
-            model: model,
-            canEdit: canEdit,
-            canDelete: canDelete,
-            state: state,
-            jumpToMessage: jumpToMessage,
-            unpinMessage: unpinMessage,
-            dismissInboxMention: messageInteractionContext == .inboxMention ? { model.dismissInboxMention(row.message) } : nil,
-            retry: retry,
-            edit: { [weak self] in
-                self?.beginEditing(row: row, at: index)
-            },
-            reply: reply,
-            forward: forward,
-            react: { emoji in actions.react(emoji, row.message) },
-            copy: { Self.copyText(row.message.content) },
-            copyLink: { [weak self] in
-                guard let self else { return }
-                Self.copyText(self.messageLink(for: row.message))
-            },
-            copyMessageID: messageMenuHandler(action: .copyMessageID, row: row, index: index, actions: actions),
-            markUnread: messageMenuHandler(action: .markUnread, row: row, index: index, actions: actions),
-            togglePin: togglePin,
-            showMoreActions: { [weak self] in
-                self?.presentActionCapsuleMenu(forMessageID: row.id)
-            },
-            delete: messageMenuHandler(action: .deleteMessage, row: row, index: index, actions: actions)
-        )
-        actionCapsuleState = state
-        actionCapsuleHost = addActionCapsuleHost(root, identifier: "message-action-capsule-\(row.id)")
-        actionCapsuleMessageID = row.id
-        positionActionCapsule(at: index)
-    }
-
-    private func addActionCapsuleHost(_ root: some View, identifier: String) -> NativeTimelineActionCapsuleHost {
-        // The canvas owns the capsule's exact document-coordinate frame.
-        // Nested thread timelines extend beneath their top toolbar, so this
-        // host must not inherit that container's safe-area displacement.
-        let host = NativeTimelineActionCapsuleHost(rootView: AnyView(root))
-        host.setContentHuggingPriority(.required, for: .horizontal)
-        host.setContentHuggingPriority(.required, for: .vertical)
-        host.setContentCompressionResistancePriority(.required, for: .horizontal)
-        host.setContentCompressionResistancePriority(.required, for: .vertical)
-        host.setAccessibilityIdentifier(identifier)
-        addSubview(host, positioned: .above, relativeTo: nil)
-        return host
-    }
-
-    func positionActionCapsule(at knownIndex: Int? = nil) {
-        guard let state = actionCapsuleState,
-              let host = actionCapsuleHost,
-              let messageID = actionCapsuleMessageID,
-              let index =
-                knownIndex.flatMap({ candidate in
-                    guard items.indices.contains(candidate),
-                          items[candidate].messageID == messageID
-                    else { return nil }
-                    return candidate
-                })
-                ?? items.firstIndex(where: { $0.messageID == messageID })
-        else { return }
-        state.updateAvailableWidth(bounds.width)
-        let size = state.hostSize
-        host.frame = rowActionsFrame(size: size, at: index)
-        // A capsule clamped against the leading side grows away from it.
-        let pinsLeadingEdge = host.frame.minX > rowActionsAnchorMaxX(at: index) - size.width
-        if state.pinsLeadingEdge != pinsLeadingEdge {
-            state.pinsLeadingEdge = pinsLeadingEdge
-        }
-        updateActionCapsuleInteractiveFrame()
-    }
-
-    private func rowActionsAnchorMaxX(at index: Int) -> CGFloat {
-        if let bubble = layouts[index].bubbleRegion {
-            return min(bubble.frame.maxX, bounds.width - InterfaceScale.metric(8))
-        }
-        return bounds.width - InterfaceScale.metric(14)
-    }
-
-    /// Where a row's hover actions, or an edit's Cancel and Save, sit: over
-    /// the row's top trailing corner, below the window toolbar.
-    func rowActionsFrame(size: CGSize, at index: Int) -> CGRect {
-        let layout = layouts[index]
-        let origin = displayedRowOrigin(at: index)
-        let minX: CGFloat
-        let originY: CGFloat
-        if let bubble = layout.bubbleRegion {
-            minX = InterfaceScale.metric(8)
-            originY = max(0, origin + bubble.frame.minY - size.height + InterfaceScale.metric(7))
-        } else {
-            minX = 0
-            originY = origin + (layout.highlightFrame?.minY ?? 0) - InterfaceScale.metric(13)
-        }
-        let originX = max(minX, rowActionsAnchorMaxX(at: index) - size.width)
-        // Keep the capsule below the window toolbar when the row reaches it.
-        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
-        let clampedOriginY = visibleRect.isEmpty ? originY : max(originY, unobscuredMinY + InterfaceScale.metric(4))
-        return CGRect(x: originX, y: clampedOriginY, width: size.width, height: size.height)
-    }
-
-    /// Only the visible pill takes pointer input; the rest of the host is
-    /// room for the other variant.
-    private func updateActionCapsuleInteractiveFrame() {
-        guard let state = actionCapsuleState, let host = actionCapsuleHost else { return }
-        let pillWidth = state.actionSize.width
-        host.interactiveFrame = CGRect(
-            x: state.pinsLeadingEdge ? host.frame.minX : host.frame.maxX - pillWidth,
-            y: host.frame.minY,
-            width: pillWidth,
-            height: host.frame.height
-        )
-    }
-
-    /// Lives as long as the canvas once installed; without a capsule it
-    /// does nothing.
-    func installActionCapsuleModifierMonitor() {
-        guard actionCapsuleModifierMonitor == nil else { return }
-        actionCapsuleModifierMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: .flagsChanged
-        ) { [weak self] event in
-            self?.setActionCapsuleShiftHeld(
-                MessageActionShiftPolicy.isActive(event.modifierFlags)
-            )
-            return event
-        }
-    }
-
-    func setActionCapsuleShiftHeld(_ isHeld: Bool) {
-        guard let state = actionCapsuleState, state.isShiftHeld != isHeld else { return }
-        state.isShiftHeld = isHeld
-        updateActionCapsuleInteractiveFrame()
-    }
-
-    /// Modifier changes are not delivered while another app is active or a
-    /// menu is tracking, so re-read Shift when either ends.
-    @objc func synchronizeActionCapsuleShiftState() {
-        setActionCapsuleShiftHeld(MessageActionShiftPolicy.isActive(NSEvent.modifierFlags))
-    }
-
-    /// The capsule's More button opens the same menu as a right click.
-    func presentActionCapsuleMenu(forMessageID messageID: MessageID) {
-        guard let host = actionCapsuleHost,
-              let actions,
-              let index = items.firstIndex(where: { $0.messageID == messageID }),
-              case let .message(row, _, _) = items[index],
-              let menu = messageContextMenu(
-                for: row,
-                at: index,
-                targetsAuthor: false,
-                actions: actions,
-                failedMediaActions: nil
-              )
-        else { return }
-        let pillFrame = host.interactiveFrame ?? host.frame
-        menu.popUp(
-            positioning: nil,
-            at: NSPoint(
-                x: pillFrame.maxX - HoverActionPillMetrics.padding - HoverActionPillMetrics.controlDiameter,
-                y: pillFrame.maxY + InterfaceScale.metric(4)
-            ),
-            in: self
-        )
-    }
-
-    /// Keeps a shown capsule on the row's current message, such as after a
-    /// reaction toggles, without reinstalling it.
-    private func refreshActionCapsuleMessage(_ message: Message) {
-        guard let state = actionCapsuleState, state.message != message else { return }
-        state.message = message
-    }
-
-    func removeActionCapsule() {
-        actionCapsuleState?.presentationDidChange = nil
-        actionCapsuleHost?.removeFromSuperview()
-        actionCapsuleHost = nil
-        actionCapsuleState = nil
-        actionCapsuleMessageID = nil
-    }
-
-    func timelineTextCaret(
-        at point: CGPoint,
-        itemIdentifier: NativeMessageTimelineItem.Identifier?,
-        region requestedRegion: NativeTimelineTextRegion?,
-        clampsToText: Bool,
-        requiresPointInTextContainer: Bool
-    ) -> TextCaretCandidate? {
-        let index: Int?
-        if let itemIdentifier {
-            index = items.firstIndex {
-                $0.identifier == itemIdentifier
-            }
-        } else {
-            index = rowIndex(at: point.y)
-        }
-        guard let index,
-              items.indices.contains(index),
-              layouts.indices.contains(index),
-              itemIdentifier == nil
-                  || items[index].identifier == itemIdentifier
-        else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
-        for selectable in selectableTextRegions(
-            for: items[index],
-            layout: layouts[index]
-        )
-        where requestedRegion == nil || selectable.region == requestedRegion {
-            if requiresPointInTextContainer {
-                let interactionFrame = textSelectionInteractionFrame(
-                    region: selectable.region,
-                    frame: selectable.interactionFrame,
-                    rowIndex: index
-                )
-                guard interactionFrame.contains(point) else { continue }
-            }
-            guard let caret = NativeTimelineTextHitTester.caretIndex(
-                value: selectable.value,
-                framesetter: selectable.framesetter,
-                frame: selectable.frame,
-                point: local,
-                clampsToText: clampsToText
-            ) else { continue }
-            return TextCaretCandidate(
-                itemIdentifier: items[index].identifier,
-                region: selectable.region,
-                rowIndex: index,
-                caret: caret,
-                value: selectable.value
-            )
-        }
-        return nil
-    }
-
-    func textSelectionInteractionFrame(
-        region: NativeTimelineTextRegion,
-        frame: CGRect,
-        rowIndex: Int
-    ) -> CGRect {
-        guard region == .content else {
-            return frame.offsetBy(
-                dx: 0,
-                dy: displayedRowOrigin(at: rowIndex)
-            )
-        }
-        return NativeTimelineTextSelectionGeometry.interactionFrame(
-            contentFrame: frame,
-            rowOrigin: displayedRowOrigin(at: rowIndex),
-            canvasWidth: bounds.width
-        )
-    }
-
-    func selectableTextRegions(
-        for item: NativeMessageTimelineItem,
-        layout: NativeTimelineRowLayout
-    ) -> [SelectableTextRegion] {
-        textRegions(
-            for: item,
-            layout: layout,
-            includesNonSelectable: false
-        )
-    }
-
-    func linkPointerTextRegions(
-        for item: NativeMessageTimelineItem,
-        layout: NativeTimelineRowLayout
-    ) -> [SelectableTextRegion] {
-        textRegions(
-            for: item,
-            layout: layout,
-            includesNonSelectable: true
-        )
-    }
-
-    private func textRegions(
-        for item: NativeMessageTimelineItem,
-        layout: NativeTimelineRowLayout,
-        includesNonSelectable: Bool
-    ) -> [SelectableTextRegion] {
-        var result: [SelectableTextRegion] = []
-        if case let .beginning(beginning) = item,
-           let beginningLayout = layout.beginningLayout
-        {
-            let title = NativeTimelineBeginningText.title(beginning)
-            result.append(SelectableTextRegion(
-                region: .beginningTitle,
-                frame: beginningLayout.titleFrame,
-                interactionFrame: beginningLayout.titleFrame,
-                value: title.value,
-                framesetter: title.framesetter
-            ))
-            if beginning.isDescriptionSelectable || includesNonSelectable {
-                let description = beginningLayout.descriptionBox
-                result.append(SelectableTextRegion(
-                    region: .beginningDescription,
-                    frame: beginningLayout.descriptionFrame,
-                    interactionFrame: beginningLayout.descriptionFrame,
-                    value: description.value,
-                    framesetter: description.framesetter
-                ))
-            }
-            return result
-        }
-        if let frame = layout.contentFrame,
-           let value = layout.attributedContent,
-           let framesetter = layout.contentFramesetter
-        {
-            result.append(SelectableTextRegion(
-                region: .content,
-                frame: NativeTimelineTextGeometry
-                    .messageContentDrawingFrame(frame),
-                interactionFrame: frame,
-                value: value,
-                framesetter: framesetter
-            ))
-        }
-        if let translation = layout.translationRegion,
-           let frame = translation.textFrame, let value = translation.attributedText,
-           let framesetter = translation.framesetter {
-            result.append(SelectableTextRegion(
-                region: translation.regionID,
-                frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame),
-                interactionFrame: frame, value: value, framesetter: framesetter
-            ))
-        }
-        for embed in layout.embedRegions {
-            for (textIndex, textRegion) in
-                embed.textRegions.enumerated()
-            where includesNonSelectable || textRegion.isSelectable {
-                var frame = textRegion.frame
-                frame.size.height +=
-                    textRegion.text.layoutHeightAdjustment
-                result.append(SelectableTextRegion(
-                    region: .embed(
-                        embedID: embed.embedID,
-                        textIndex: textIndex
-                    ),
-                    frame: frame,
-                    interactionFrame: textRegion.frame,
-                    value: textRegion.text.value,
-                    framesetter: textRegion.text.framesetter
-                ))
-            }
-        }
-        for (layoutIndex, component) in
-            layout.componentLayouts.enumerated()
-        {
-            for (textIndex, textRegion) in
-                component.textRegions.enumerated()
-            where includesNonSelectable || textRegion.isSelectable {
-                var frame = textRegion.frame
-                frame.size.height +=
-                    textRegion.text.layoutHeightAdjustment
-                result.append(SelectableTextRegion(
-                    region: .component(
-                        layoutIndex: layoutIndex,
-                        textIndex: textIndex
-                    ),
-                    frame: frame,
-                    interactionFrame: textRegion.frame,
-                    value: textRegion.text.value,
-                    framesetter: textRegion.text.framesetter
-                ))
-            }
-        }
-        return result
-    }
-
-    func setTextSelection(
-        _ selection: NativeTimelineTextSelection?
-    ) {
-        guard textSelection != selection else { return }
-        let oldIdentifier = textSelection?.itemIdentifier
-        textSelection = selection
-        positionAnimatedMediaOverlays()
-        reconcileBeginningSelectionOverlay()
-        for identifier
-            in [oldIdentifier, selection?.itemIdentifier].compactMap({
-            $0
-        }) {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == identifier
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
-    }
-
-    func reconcileBeginningSelectionOverlay() {
-        guard let selection = textSelection,
-              let index = items.firstIndex(where: {
-                  $0.identifier == selection.itemIdentifier
-              }),
-              layouts.indices.contains(index),
-              case let .beginning(beginning) = items[index],
-              let layout = layouts[index].beginningLayout
-        else {
-            beginningSelectionOverlay.image = nil
-            beginningSelectionOverlay.isHidden = true
-            return
-        }
-
-        let box: NativeTimelineAttributedTextBox
-        let localFrame: CGRect
-        let revealedLocations: Set<Int>
-        switch selection.region {
-        case .beginningTitle:
-            box = NativeTimelineBeginningText.title(beginning)
-            localFrame = layout.titleFrame
-            revealedLocations = []
-        case .beginningDescription:
-            box = layout.descriptionBox
-            localFrame = layout.descriptionFrame
-            revealedLocations = textSpoilerRevealState(at: index).locations(in: .beginningDescription)
-        default:
-            beginningSelectionOverlay.image = nil
-            beginningSelectionOverlay.isHidden = true
-            return
-        }
-
-        var overlayFrame = localFrame.offsetBy(
-            dx: 0,
-            dy: displayedRowOrigin(at: index)
-        )
-        overlayFrame.size.height += box.layoutHeightAdjustment
-        beginningSelectionOverlay.frame = overlayFrame
-        beginningSelectionOverlay.image =
-            NativeTimelineRowPainter.selectionOverlayImage(
-                box,
-                size: overlayFrame.size,
-                selectionRange: selection.range,
-                revealedSpoilerLocations: revealedLocations
-            )
-        beginningSelectionOverlay.isHidden = false
-    }
-
-    func selectedTextValue() -> String? {
-        guard let selection = textSelection,
-              selection.range.length > 0,
-              let index = items.firstIndex(where: {
-                  $0.identifier == selection.itemIdentifier
-              }),
-              layouts.indices.contains(index),
-              let value = selectableTextRegions(
-                  for: items[index],
-                  layout: layouts[index]
-              )
-                  .first(where: {
-                      $0.region == selection.region
-                  })?.value,
-              selection.range.location >= 0,
-              NSMaxRange(selection.range) <= value.length
-        else { return nil }
-        return RichMessageCopySerializer.string(
-            from: value,
-            range: selection.range
-        )
-    }
-
-    static func wordRange(
-        at caret: Int,
-        in string: String
-    ) -> NSRange {
-        let value = string as NSString
-        guard value.length > 0 else { return NSRange(location: 0, length: 0) }
-        var index = min(max(0, caret), value.length - 1)
-        if value.character(at: index) == 0xFFFC {
-            return NSRange(location: index, length: 1)
-        }
-        let wordCharacters = CharacterSet.alphanumerics.union(
-            CharacterSet(charactersIn: "_")
-        )
-        func isWordCharacter(at location: Int) -> Bool {
-            let range = value.rangeOfComposedCharacterSequence(
-                at: location
-            )
-            return value.substring(with: range).rangeOfCharacter(
-                from: wordCharacters
-            ) != nil
-        }
-        guard isWordCharacter(at: index) else {
-            return value.rangeOfComposedCharacterSequence(at: index)
-        }
-        var start = index
-        while start > 0 {
-            let previous = value.rangeOfComposedCharacterSequence(
-                at: start - 1
-            )
-            guard isWordCharacter(at: previous.location) else { break }
-            start = previous.location
-        }
-        var end = NSMaxRange(
-            value.rangeOfComposedCharacterSequence(at: index)
-        )
-        while end < value.length, isWordCharacter(at: end) {
-            end = NSMaxRange(
-                value.rangeOfComposedCharacterSequence(at: end)
-            )
-        }
-        index = start
-        return NSRange(location: index, length: end - index)
-    }
-
-    static func copyText(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-    }
-
-    func messageLink(for message: Message) -> String {
-        let guild = (message.guildID ?? model?.selectedGuildID)?.description ?? "@me"
-        return "https://discord.com/channels/\(guild)/\(message.channelID)/\(message.id)"
-    }
-
     func beginEditing(
         row: MessageRowPresentation,
         at index: Int
     ) {
         guard !sendTransitionBlocksInteractions,
-              !row.message.hasPoll, !row.message.flags.contains(.voiceMessage), editingMessageID != row.id,
+              row.message.hasEditableContent, editing.messageID != row.id,
               items.indices.contains(index),
               items[index].messageID == row.id,
               let model,
@@ -1048,41 +17,41 @@ extension NativeTimelineCanvasView {
         else { return }
         // Editing another message discards that edit, as Cancel does; one
         // still saving keeps its editor.
-        if editingMessageID != nil {
+        if editing.messageID != nil {
             endEditing(commit: nil)
-            guard editingMessageID == nil else { return }
+            guard editing.messageID == nil else { return }
         }
-        finishReactionTransitions()
+        finishRowMotions()
         removeActionCapsule()
         setTextSelection(nil)
-        textSelectionGesture = nil
-        hoveredRow = nil
-        hoveredCompactTimestampRow = nil
+        pointer.textSelectionGesture = nil
+        pointer.hoveredRow = nil
+        pointer.hoveredCompactTimestampRow = nil
         setHoveredMention(nil)
         setHoveredTextLink(nil)
         setHoveredTextSpoiler(nil)
         setHoveredCodeBlock(nil)
         setHoveredComponentButton(nil)
-        pressedCodeBlockCopyButton = nil
-        pressedComponentButton = nil
+        pointer.pressedCodeBlockCopyButton = nil
+        pointer.pressedComponentButton = nil
         pressedActivationTarget = nil
-        visualPressedComponentButton = nil
-        componentButtonPressProgress = 0
-        componentButtonPressAnimationDestination = nil
-        componentButtonPressAnimationTask?.cancel()
-        componentButtonPressAnimationTask = nil
+        pointer.visualPressedComponentButton = nil
+        pointer.componentButtonPressProgress = 0
+        pointer.componentButtonPressAnimationDestination = nil
+        pointer.componentButtonPressAnimationTask?.cancel()
+        pointer.componentButtonPressAnimationTask = nil
 
-        editingMessageID = row.id
-        editingRowIndexCache = index
+        editing.messageID = row.id
+        editing.rowIndex = index
         editing.item = items[index]
-        editingRowScrollSnapshot = nil
+        editing.scrollSnapshot = nil
         let draft = NativeTimelineInlineEditDraft(text: row.message.content)
         editing.draft = draft
         let host = makeEditingHost(
             for: row, model: model, draft: draft,
             isOnOutgoingBubble: editingLayout.bubbleRegion?.isOutgoing == true
         )
-        editingRowHost = host
+        editing.host = host
         addSubview(host, positioned: .above, relativeTo: nil)
         let controls = NativeTimelineActionCapsuleHost(rootView: AnyView(
             NativeTimelineInlineEditControls(
@@ -1103,7 +72,7 @@ extension NativeTimelineCanvasView {
         focusEditingTextView(in: host)
         DispatchQueue.main.async { [weak self, weak host] in
             guard let self, let host,
-                  self.editingRowHost === host
+                  self.editing.host === host
             else { return }
             self.focusEditingTextView(in: host)
         }
@@ -1127,12 +96,12 @@ extension NativeTimelineCanvasView {
                 self?.endEditing(commit: nil)
             },
             editorHeightDidChange: { [weak self] height in
-                guard let self, self.editingMessageID == row.id else { return }
+                guard let self, self.editing.messageID == row.id else { return }
                 self.editing.editorHeight = ceil(height)
                 self.relayoutEditingRow()
             },
             draftDidChange: { [weak self] in
-                guard let self, self.editingMessageID == row.id,
+                guard let self, self.editing.messageID == row.id,
                       self.editing.keepsRenderedHeight != self.editing.draftMatches(row.message)
                 else { return }
                 self.relayoutEditingRow()
@@ -1141,7 +110,7 @@ extension NativeTimelineCanvasView {
         let editingHost = NativeTimelineEditingHost(rootView: AnyView(root))
         editingHost.setAccessibilityIdentifier("message-editing-row-\(row.id)")
         editingHost.fittingHeightDidChange = { [weak self, weak editingHost] _ in
-            guard let self, self.editingRowHost === editingHost else { return }
+            guard let self, self.editing.host === editingHost else { return }
             self.positionEditingRow()
         }
         return editingHost
@@ -1150,26 +119,24 @@ extension NativeTimelineCanvasView {
     @discardableResult
     func beginEditingCurrentUserMessage(_ messageID: MessageID) -> Bool {
         guard let currentUserID = model?.currentUser?.id,
-              let index = items.firstIndex(where: {
-                  $0.messageID == messageID
-              }),
+              let index = rowIndex(forMessageID: messageID),
               case let .message(row, _, _) = items[index],
               row.message.author.id == currentUserID
         else { return false }
         beginEditing(row: row, at: index)
-        return editingMessageID == messageID
+        return editing.messageID == messageID
     }
 
     /// Follows the edited row through storage updates; an update to its
     /// message lays the row out again around the editor.
     func reconcileEditingRow() {
-        guard let messageID = editingMessageID else { return }
+        guard let messageID = editing.messageID else { return }
         if editingRowIndex == nil {
             // A message deleted mid-edit, or mid-save, takes its editor with it.
-            guard let index = items.firstIndex(where: { $0.messageID == messageID }) else {
+            guard let index = rowIndex(forMessageID: messageID) else {
                 return finishEditing(at: nil)
             }
-            editingRowIndexCache = index
+            editing.rowIndex = index
         }
         guard let index = editingRowIndex else { return }
         // A saved edit has arrived; the row now draws what the editor showed.
@@ -1206,11 +173,10 @@ extension NativeTimelineCanvasView {
 
     private func applyEditingLayout(_ layout: NativeTimelineRowLayout) {
         guard let index = editingRowIndex else { return }
-        let previousHeight = editingRowHeight ?? storage.layouts[index].height
+        let previousHeight = editing.layout?.height ?? storage.layouts[index].height
         editing.layout = layout
         invalidateBitmap(items[index].identifier)
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         resizeForEditingChange(by: layout.height - previousHeight)
         positionEditingRow()
         rebuildAccessibilityProxy(for: items[index].identifier)
@@ -1221,7 +187,7 @@ extension NativeTimelineCanvasView {
     /// The editor sits on the text it replaces; emoji suggestions open
     /// above it, over the rows before.
     func positionEditingRow() {
-        guard let host = editingRowHost,
+        guard let host = editing.host,
               let index = editingRowIndex,
               let content = editing.layout?.contentFrame
         else { return }
@@ -1229,7 +195,6 @@ extension NativeTimelineCanvasView {
         let height = host.lastReportedFittingHeight > 0 ? host.lastReportedFittingHeight : content.height
         let suggestionsHeight = editing.editorHeight > 0 ? max(0, height - editing.editorHeight) : 0
         // Near the top of the timeline there is no room above; they open below.
-        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
         let opensBelow = suggestionsHeight > 0
             && displayedRowOrigin(at: index) + content.minY - suggestionsHeight < unobscuredMinY
         if let draft = editing.draft, suggestionsHeight > 0, draft.showsSuggestionsBelow != opensBelow {
@@ -1241,7 +206,7 @@ extension NativeTimelineCanvasView {
             width: content.width,
             height: height
         )
-        editingOverlayLocalFrame = localFrame
+        editing.overlayLocalFrame = localFrame
         let frame = localFrame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
         if host.frame != frame {
             host.frame = frame
@@ -1253,8 +218,8 @@ extension NativeTimelineCanvasView {
     }
 
     func endEditing(commit value: String?) {
-        guard let messageID = editingMessageID, editing.committedContent == nil else { return }
-        let index = editingRowIndex ?? items.firstIndex(where: { $0.messageID == messageID })
+        guard let messageID = editing.messageID, editing.committedContent == nil else { return }
+        let index = editingRowIndex ?? rowIndex(forMessageID: messageID)
         let message: Message?
         if let index,
            case let .message(row, _, _) = items[index]
@@ -1297,9 +262,9 @@ extension NativeTimelineCanvasView {
             self.editing.savedEditTimestamp = saved.editedTimestamp ?? .distantPast
             // Outside a timeline update, the hand-off from the editor to the
             // row eases here, as the update's would.
-            self.captureReactionBaseline()
+            self.captureRowMotionBaseline()
             self.reconcileEditingRow()
-            self.beginReactionTransitions()
+            self.beginRowMotions()
         }
     }
 
@@ -1308,8 +273,7 @@ extension NativeTimelineCanvasView {
         let identifier = editing.item?.identifier
         editing.clear()
         if let identifier { invalidateBitmap(identifier) }
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         resizeForEditingChange(by: -delta)
         window?.invalidateCursorRects(for: self)
         if let index {
@@ -1323,111 +287,13 @@ extension NativeTimelineCanvasView {
     }
 
     var editingRowIndex: Int? {
-        guard let index = editingRowIndexCache,
+        guard let index = editing.rowIndex,
               items.indices.contains(index),
               layouts.indices.contains(index),
               rowOrigins.indices.contains(index),
-              items[index].messageID == editingMessageID
+              items[index].messageID == editing.messageID
         else { return nil }
         return index
-    }
-
-#if DEBUG
-    func reconcileVisibleReactionPreviewLoadsForTesting() {
-        reconcileVisibleReactionPreviewLoads()
-    }
-
-    func hasVisibleReactionPreviewLoadForTesting(
-        messageID: MessageID,
-        reactionID: String
-    ) -> Bool {
-        visibleReactionPreviewLoadKeys.contains {
-            $0.messageID == messageID && $0.reactionID == reactionID
-        }
-    }
-
-    var spoilerOverlayFramesForTesting:
-        [NativeTimelineComponentRevealKey: CGRect]
-    {
-        spoilerOverlays.mapValues(\.frame)
-    }
-
-    var spoilerOverlayPillKeysForTesting:
-        Set<NativeTimelineComponentRevealKey>
-    {
-        Set(
-            spoilerOverlays.compactMap { key, overlay in
-                overlay.hasPersistentPillForTesting ? key : nil
-            }
-        )
-    }
-
-    func reconcileSpoilerOverlaysForTesting() {
-        reconcileSpoilerOverlays()
-    }
-
-    func animatedMediaKeysForTesting(
-        row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout
-    ) -> Set<NativeTimelineMediaKey> {
-        animatedMediaKeys(for: row, layout: layout)
-    }
-
-#endif
-
-    var editingHeightDelta: CGFloat {
-        guard let index = editingRowIndex,
-              let editingRowHeight
-        else { return 0 }
-        return editingRowHeight - storage.layouts[index].height
-    }
-
-    var transientContentOriginY: CGFloat {
-        NativeTimelineTransientRowGeometry.contentOriginY(
-            base: baseContentOriginY,
-            heightDelta: editingHeightDelta,
-            minimum: ChatDetailLayoutPolicy.timelineTopPadding
-        )
-    }
-
-    var displayedContentHeight: CGFloat {
-        contentOriginY
-            + NativeTimelineTransientRowGeometry.contentHeight(
-                base: contentHeight,
-                replacementHeight: editingRowHeight,
-                baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
-            )
-            + bottomSpacerHeight
-    }
-
-    func displayedRowOrigin(at index: Int) -> CGFloat {
-        contentOriginY
-            + (index >= disclosureRange.upperBound ? disclosureShiftAfter
-                : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
-            + unreadDividerGapShift(at: index)
-            + reactionMotionOffset(at: index)
-            + transientRowOrigin(at: index)
-    }
-
-    /// A row's top within the content with the edited row at its editing
-    /// height, before any motion.
-    func transientRowOrigin(at index: Int) -> CGFloat {
-        NativeTimelineTransientRowGeometry.rowOrigin(
-            base: rowOrigins[index],
-            rowIndex: index,
-            replacementIndex: editingRowIndex,
-            replacementHeight: editingRowHeight,
-            baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
-        )
-    }
-
-    func displayedRowHeight(at index: Int) -> CGFloat {
-        NativeTimelineTransientRowGeometry.rowHeight(
-            base: layouts[index].height,
-            rowIndex: index,
-            replacementIndex: editingRowIndex,
-            replacementHeight: editingRowHeight
-        ) - reactionMotionRemainingHeight(at: index)
     }
 
     /// Rows after the edited one move with it even when the content origin
@@ -1441,22 +307,18 @@ extension NativeTimelineCanvasView {
         )
         applyDocumentSize(size)
         enclosingScrollView?.tile()
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        clearPointerRegionCaches()
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
         reconcileAccessibilityProxies()
         positionAnimatedMediaOverlays()
         reconcileBeginningSelectionOverlay()
-        positionInlineVideoOverlays()
-        reconcileVoiceMessageOverlay()
-        reconcileActivityIndicators()
-        positionSpoilerOverlays()
+        positionRowOverlays()
         needsDisplay = true
     }
 
     func editingOverlayFrame(at index: Int) -> CGRect {
-        guard let localFrame = editingOverlayLocalFrame else {
+        guard let localFrame = editing.overlayLocalFrame else {
             return .zero
         }
         return localFrame.offsetBy(
@@ -1467,7 +329,7 @@ extension NativeTimelineCanvasView {
 
     /// A picture of the inline editor as it shows now.
     func editingHostSnapshot() -> NSImage? {
-        guard let host = editingRowHost,
+        guard let host = editing.host,
               host.alphaValue > 0.5,
               host.bounds.width > 0,
               host.bounds.height > 0,
@@ -1481,30 +343,30 @@ extension NativeTimelineCanvasView {
     }
 
     func freezeEditingRowForScroll() {
-        guard editingRowScrollSnapshot == nil,
-              let host = editingRowHost,
+        guard editing.scrollSnapshot == nil,
+              let host = editing.host,
               let image = editingHostSnapshot()
         else { return }
-        editingRowScrollSnapshot = image
+        editing.scrollSnapshot = image
         host.alphaValue = 0
-        if let index = editingRowIndexCache, items.indices.contains(index) {
+        if let index = editing.rowIndex, items.indices.contains(index) {
             setNeedsDisplay(rowFrame(at: index))
         }
     }
 
     func restoreEditingRowAfterScroll() {
-        guard let host = editingRowHost, host.alphaValue < 0.5 else {
+        guard let host = editing.host, host.alphaValue < 0.5 else {
             return
         }
         host.alphaValue = 1
-        editingRowScrollSnapshot = nil
+        editing.scrollSnapshot = nil
         if window?.isKeyWindow == true,
-           let editingTextView,
+           let editingTextView = editing.textView,
            window?.firstResponder !== editingTextView
         {
             window?.makeFirstResponder(editingTextView)
         }
-        if let index = editingRowIndexCache, items.indices.contains(index) {
+        if let index = editing.rowIndex, items.indices.contains(index) {
             setNeedsDisplay(rowFrame(at: index))
         }
     }
@@ -1512,109 +374,13 @@ extension NativeTimelineCanvasView {
     func focusEditingTextView(
         in host: NSView
     ) {
-        guard let textView = firstDescendant(
-            of: ComposerNSTextView.self,
-            in: host
-        ) else { return }
-        editingTextView = textView
+        guard let textView = host.firstDescendant(of: ComposerNSTextView.self) else { return }
+        editing.textView = textView
         guard let window = textView.window ?? self.window else { return }
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(textView)
     }
 
-    func firstDescendant<View: NSView>(
-        of type: View.Type,
-        in root: NSView
-    ) -> View? {
-        if let match = root as? View {
-            return match
-        }
-        for child in root.subviews {
-            if let match = firstDescendant(of: type, in: child) {
-                return match
-            }
-        }
-        return nil
-    }
-
-    func actionItem(
-        _ title: String,
-        systemImage: String,
-        isDestructive: Bool = false,
-        action: @escaping () -> Void
-    ) -> NSMenuItem {
-        let target = NativeTimelineMenuAction { [weak self] in
-            guard let self, !self.sendTransitionBlocksInteractions else { return }
-            action()
-        }
-        let item = NSMenuItem(
-            title: title,
-            action: #selector(NativeTimelineMenuAction.performAction),
-            keyEquivalent: ""
-        )
-        item.target = target
-        item.representedObject = target
-        item.isEnabled = true
-        ContextMenuItemSupport.configure(
-            item,
-            title: title,
-            systemImage: systemImage,
-            isDestructive: isDestructive
-        )
-        return item
-    }
-
-    func requestDelete(_ message: Message) {
-        guard let window, let actions else { return }
-        requestDelete(
-            message,
-            in: window,
-            perform: actions.delete
-        )
-    }
-
-    func requestDiscardFailed(_ message: Message) {
-        guard let window, let actions else { return }
-        requestDelete(
-            message,
-            in: window,
-            perform: actions.discardFailed
-        )
-    }
-
-    private func requestDelete(
-        _ message: Message,
-        in window: NSWindow,
-        perform delete: @escaping (Message) -> Void
-    ) {
-        removeActionCapsule()
-        if MessageDeleteConfirmationPolicy.isBypassed(
-            by: NSEvent.modifierFlags
-        ) {
-            delete(message)
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = "Delete this message?"
-        alert.informativeText = "This action cannot be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete Message")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons.first?.hasDestructiveAction = true
-        // Do not order a sheet synchronously from a SwiftUI-hosted button
-        // transaction. AppKit can throw while remote media views are being
-        // reconciled during that same update group.
-        Task { @MainActor [weak self, weak window] in
-            await Task.yield()
-            guard let self, let window, self.window === window,
-                  window.attachedSheet == nil
-            else { return }
-            alert.beginSheetModal(for: window) { response in
-                guard response == .alertFirstButtonReturn else { return }
-                delete(message)
-            }
-        }
-    }
 }
 
 extension NativeMessageTimelineCoordinator {

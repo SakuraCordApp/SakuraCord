@@ -16,15 +16,14 @@ extension NativeMessageTimelineCoordinator {
             return
         }
         let wasAtTop = scrollView.contentView.bounds.minY <= clampedDocumentY(-.greatestFiniteMagnitude, scrollView: scrollView) + 0.5
-        let wasNearBottom = lastReportedState?.isNearBottom ?? scrollState().isNearBottom
-        let anchor = wasAtTop || wasNearBottom ? nil : visibleAnchor()
         isApplyingUpdate = true
-        updateInsets()
-        if wasAtTop || wasNearBottom {
-            let keepsTop = wasAtTop && (!wasNearBottom || parent.conversation.alignsUnderfilledContentToTop)
+        if wasAtTop {
+            let wasNearBottom = lastReportedState?.isNearBottom ?? scrollState().isNearBottom
+            let keepsTop = !wasNearBottom || parent.conversation.alignsUnderfilledContentToTop
+            updateInsets()
             scroll(toDocumentY: keepsTop ? -.greatestFiniteMagnitude : .greatestFiniteMagnitude, scrollView: scrollView)
-        } else if let anchor {
-            restore(anchor)
+        } else {
+            preservingReadingPosition { updateInsets() }
         }
         positionViewportCanvas()
         isApplyingUpdate = false
@@ -40,6 +39,7 @@ extension NativeMessageTimelineCoordinator {
             bottomSpacerHeight:
                 bottomInset + trailingHistoryReserve
         )
+        canvas.bottomObscuredHeight = parent.bottomContentInset
         let contentInsets = scrollView.contentInsets
         if contentInsets.top != 0
             || contentInsets.left != 0
@@ -48,8 +48,12 @@ extension NativeMessageTimelineCoordinator {
         {
             scrollView.contentInsets = NSEdgeInsets()
         }
-        let showsVerticalScroller =
-            scrollableDocumentHeight > viewportHeight + 0.5
+        updateVerticalScroller(of: scrollView, documentHeight: scrollableDocumentHeight, viewportHeight: viewportHeight)
+    }
+
+    /// Shows the scroller only while the document is taller than the viewport.
+    func updateVerticalScroller(of scrollView: NSScrollView, documentHeight: CGFloat, viewportHeight: CGFloat) {
+        let showsVerticalScroller = documentHeight > viewportHeight + 0.5
         if scrollView.hasVerticalScroller != showsVerticalScroller {
             scrollView.hasVerticalScroller = showsVerticalScroller
         }

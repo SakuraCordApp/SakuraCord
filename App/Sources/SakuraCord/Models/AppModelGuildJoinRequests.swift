@@ -171,6 +171,15 @@ extension AppModel {
         if guildJoinRequests.selectedGuildID != nil { selectGuildJoinRequest(nil) }
     }
 
+    /// After joining, a screened member answers the join form; otherwise a server with onboarding opens it.
+    func presentPostJoinFlow(guild: Guild, screening: Bool, inviteCode: String? = nil) {
+        if screening {
+            openGuildJoinApplication(guild.id, inviteCode: inviteCode)
+        } else if guild.hasOnboarding {
+            openChannelsAndRoles(in: guild.id)
+        }
+    }
+
     /// Opens the application for a server; an invite code is required when the account has no other access to it.
     /// `guild` is the server as the caller already shows it, so the form's header is right before the form loads.
     func openGuildJoinApplication(_ guildID: GuildID, inviteCode: String? = nil, guild: GuildJoinRequestGuild? = nil) {
@@ -317,7 +326,7 @@ extension AppModel {
         startAccountChildTask(account: accountSession()) { model, account in
             guard let guild = try? await model.awaitJoinedGuild(guildID, account: account) else { return }
             model.selectGuild(guildID)
-            if guild.features.contains("GUILD_ONBOARDING") { model.openChannelsAndRoles(in: guildID) }
+            model.presentPostJoinFlow(guild: guild, screening: false)
         }
     }
 

@@ -33,15 +33,13 @@ nonisolated enum StickerSendPolicy {
 extension MessageSticker {
     var pickerMediaURL: URL? {
         if format == .lottie {
-            return URL(string: "https://discord.com/stickers/\(id).json")
+            return DiscordCDN.sticker(id, fileExtension: "json", host: "discord.com")
         }
-        return URL(
-            string: "https://media.discordapp.net/stickers/\(id).webp?size=240&quality=lossless"
-        )
+        return DiscordCDN.sticker(id, fileExtension: "webp", host: "media.discordapp.net", query: "size=240&quality=lossless")
     }
 
     var pickerImageLink: URL? {
-        URL(string: "https://media.discordapp.net/stickers/\(id).webp?size=320&quality=lossless")
+        DiscordCDN.sticker(id, fileExtension: "webp", host: "media.discordapp.net", query: "size=320&quality=lossless")
     }
 }
 
@@ -197,8 +195,7 @@ extension AppModel {
             )
             optimistic.outboxState = .uploading
             optimistic.attachments[0].proxyURL = sticker.pickerMediaURL ?? remoteURL
-            appendOutgoingMessage(optimistic)
-            composer.outbox.draftsByNonce[outgoing.nonce] = outgoing
+            admitToOutbox(optimistic, draft: outgoing)
             composer.outbox.stickerUploadSourceURLByNonce[outgoing.nonce] = remoteURL
             return await performStickerUpload(
                 outgoing,
@@ -219,7 +216,7 @@ extension AppModel {
     ) async -> Bool {
         let session = accountSession()
         guard let remoteURL = sticker.pickerImageLink else { return false }
-        var attachment: ForumPostAttachment?
+        var attachment: StagedAttachment?
         // Held until it is stored, so no other composer's cleanup removes it.
         defer { attachment.map { endUsingOwnedPromisedFiles([$0.url]) } }
         return await schedulePickedMessage(content: "", in: destination) {
@@ -239,12 +236,12 @@ extension AppModel {
     /// The sticker's promised file; a send leaves it empty until its turn in the queue.
     private func makeStickerUploadAttachment(
         for sticker: MessageSticker, contents: Data = Data()
-    ) throws -> ForumPostAttachment {
+    ) throws -> StagedAttachment {
         let filename = "sticker-\(sticker.id).webp"
         guard let batch = ComposerPromisedFileStorage.makeBatch(writing: contents, named: filename),
               let url = adoptPromisedFileBatch(batch).first
         else { throw CocoaError(.fileWriteUnknown) }
-        return ForumPostAttachment(url: url, filename: filename)
+        return StagedAttachment(url: url, filename: filename)
     }
 
     private func stickerImage(from sourceURL: URL) async throws -> Data {
@@ -290,40 +287,6 @@ extension AppModel {
         }
     }
 
-    func loadStickersIfNeeded(in guildID: GuildID) {
-        guard stickersByGuild[guildID] == nil, stickerLoadTasks[guildID] == nil else { return }
-        let session = accountSession()
-        let generation = stickerLoadGeneration
-        stickerLoadTasks[guildID] = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                if self.isCurrentAccountSession(session),
-                   self.stickerLoadGeneration == generation
-                {
-                    self.stickerLoadTasks[guildID] = nil
-                }
-            }
-            guard await session.provider.supports(.stickers),
-                  self.isCurrentAccountSession(session),
-                  self.stickerLoadGeneration == generation,
-                  !Task.isCancelled
-            else {
-                guard self.isCurrentAccountSession(session),
-                      self.stickerLoadGeneration == generation,
-                      !Task.isCancelled
-                else { return }
-                stickersByGuild[guildID] = []
-                return
-            }
-            let stickers = await (try? session.provider.stickers(in: guildID)) ?? []
-            guard self.isCurrentAccountSession(session),
-                  self.stickerLoadGeneration == generation,
-                  !Task.isCancelled
-            else { return }
-            stickersByGuild[guildID] = stickers
-        }
-    }
-
     @discardableResult
     func sendSticker(
         _ sticker: MessageSticker, in destination: MessageComposerDestination = .channel
@@ -344,14 +307,8 @@ extension AppModel {
             replyPreview: nil,
             stickers: [presentedSticker]
         )
-        appendOutgoingMessage(optimistic)
-        let advancedLocally = advanceTimelineForLocalSend(channelID: channelID)
-        composer.outbox.draftsByNonce[draft.nonce] = draft
-        let didSend = await performOutgoingSend(draft, isRetry: false)
-        if didSend {
-            completeConfirmedSend(channelID: channelID, advancedLocally: advancedLocally)
-        }
-        return didSend
+        admitToOutbox(optimistic, draft: draft)
+        return await enqueueOutgoingSend(draft, isRetry: false, completesReading: true).value
     }
 
 }

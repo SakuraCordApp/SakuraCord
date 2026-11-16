@@ -6,7 +6,7 @@ public extension DiscordRESTProvider {
     func guildJoinApplicationForm(_ guildID: GuildID, inviteCode: String?) async throws -> GuildJoinApplicationForm {
         var query = [URLQueryItem(name: "with_guild", value: "true")]
         if let inviteCode { query.append(URLQueryItem(name: "invite_code", value: inviteCode)) }
-        let (data, response) = try await perform("/guilds/\(guildID)/member-verification", method: "GET", query: query, body: nil)
+        let (data, response) = try await perform("/guilds/\(guildID)/member-verification", method: "GET", query: query)
         try checkJoinRequestResponse(data, response)
         let form = try JSONDecoder().decode(MemberVerificationFormDTO.self, from: data)
         guard form.guild.map({ $0.id == guildID.description }) ?? true else {
@@ -36,8 +36,8 @@ public extension DiscordRESTProvider {
         }
         let startedFrom = cachedGuildJoinRequests[guildID]?.id
         let (data, response) = try await perform(
-            "/guilds/\(guildID)/requests/@me", method: "PUT", query: [],
-            body: ["version": .string(cached.version), "form_fields": .array(answered)], maximumAttempts: 1
+            "/guilds/\(guildID)/requests/@me", method: "PUT",
+            body: ["version": .string(cached.version), "form_fields": .array(answered)]
         )
         try checkJoinRequestResponse(data, response)
         try applyJoinRequestResponse(data, startedFrom: startedFrom)
@@ -46,16 +46,14 @@ public extension DiscordRESTProvider {
     /// Starts a new application after a rejection.
     func reapplyToGuild(_ guildID: GuildID) async throws {
         let startedFrom = cachedGuildJoinRequests[guildID]?.id
-        let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "POST", query: [], body: nil,
-                                                 maximumAttempts: 1)
+        let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "POST")
         try checkJoinRequestResponse(data, response)
         try applyJoinRequestResponse(data, startedFrom: startedFrom)
     }
 
     func withdrawGuildJoinRequest(_ guildID: GuildID) async throws {
         let startedFrom = cachedGuildJoinRequests[guildID]?.id
-        let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "DELETE", query: [], body: nil,
-                                                 maximumAttempts: 1)
+        let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "DELETE")
         try checkJoinRequestResponse(data, response)
         // GUILD_JOIN_REQUEST_DELETE normally arrives first; a lost event must not leave the request shown.
         // A newer application made elsewhere meanwhile is not the one withdrawn.
@@ -66,8 +64,7 @@ public extension DiscordRESTProvider {
 
     /// Records that the applicant saw an approval, so Discord stops reporting it.
     func acknowledgeGuildJoinRequest(_ request: GuildJoinRequest) async throws {
-        let (data, response) = try await perform("/guilds/\(request.guildID)/requests/\(request.id)/ack", method: "POST",
-                                                 query: [], body: nil, maximumAttempts: 1)
+        let (data, response) = try await perform("/guilds/\(request.guildID)/requests/\(request.id)/ack", method: "POST")
         try checkJoinRequestResponse(data, response)
         if cachedGuildJoinRequests[request.guildID]?.id == request.id {
             cachedGuildJoinRequests[request.guildID]?.isAcknowledged = true
@@ -77,14 +74,14 @@ public extension DiscordRESTProvider {
 
     /// Name and icon of the servers the account has applied to, which are not in its guild list.
     func guildJoinRequestGuilds() async throws -> [GuildJoinRequestGuild] {
-        let (data, response) = try await perform("/users/@me/join-request-guilds", method: "GET", query: [], body: nil)
+        let (data, response) = try await perform("/users/@me/join-request-guilds", method: "GET")
         try checkJoinRequestResponse(data, response)
         return try JSONDecoder().decode([PartialGuildDTO].self, from: data).compactMap { $0.domain() }
     }
 
     /// The submitted answers of one of the account's applications.
     func guildJoinRequestAnswers(_ requestID: JoinRequestID) async throws -> [GuildJoinApplicationField] {
-        let (data, response) = try await perform("/join-requests/\(requestID)", method: "GET", query: [], body: nil)
+        let (data, response) = try await perform("/join-requests/\(requestID)", method: "GET")
         try checkJoinRequestResponse(data, response)
         struct Request: Decodable {
             var formResponses: [MemberVerificationFieldDTO]?
@@ -177,7 +174,7 @@ private struct MemberVerificationFormDTO: Decodable {
         let icon = profile?.iconHash ?? guild?.icon
         return GuildJoinApplicationForm(
             guildID: guildID, guildName: profile?.name ?? guild?.name,
-            iconURL: icon.flatMap { URL(string: "https://cdn.discordapp.com/icons/\(guildID)/\($0).webp?size=128") },
+            iconURL: icon.flatMap { DiscordCDN.guildIcon(guildID, hash: $0, marksAnimation: false) },
             description: profile?.description ?? guild?.description,
             memberCount: guild?.approximateMemberCount, onlineCount: guild?.approximatePresenceCount, fields: fields
         )
@@ -268,7 +265,7 @@ private struct PartialGuildDTO: Decodable {
     func domain() -> GuildJoinRequestGuild? {
         guard let guildID = GuildID(id) else { return nil }
         return GuildJoinRequestGuild(id: guildID, name: name,
-            iconURL: icon.flatMap { URL(string: "https://cdn.discordapp.com/icons/\(guildID)/\($0).webp?size=128") })
+            iconURL: icon.flatMap { DiscordCDN.guildIcon(guildID, hash: $0, marksAnimation: false) })
     }
 }
 

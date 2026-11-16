@@ -9,7 +9,7 @@ func `timeline replaces cached avatar placeholders without hover`(
     detachesConversation: Bool, finishesBeforeEnqueue: Bool
 ) async throws {
     let url = URL(fileURLWithPath: "/tmp/avatar-cache-\(UUID()).png")
-    let key = NativeTimelineMediaKey.avatar(url)
+    let key = MediaImageKey.avatar(url)
     let message = Message(
         id: MessageID(rawValue: 8_900),
         channelID: ChannelID(rawValue: 8_901),
@@ -43,7 +43,7 @@ func `timeline replaces cached avatar placeholders without hover`(
     let scrollView = NSScrollView(frame: canvas.frame)
     scrollView.documentView = canvas
     #expect(canvas.rowFrame(at: 0).intersects(scrollView.documentVisibleRect))
-    let store = NativeTimelineMediaStore.shared
+    let store = MediaImageStore.shared
     defer {
         scrollView.documentView = nil
         canvas.clearBitmapCache(keepingCapacity: false)

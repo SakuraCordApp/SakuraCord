@@ -35,7 +35,7 @@ nonisolated final class LottieStickerFrameRenderer {
             bitsPerComponent: 8,
             bytesPerRow: 0,
             // A profiled space lets the frames enter the on-disk frame cache.
-            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            space: CGColorSpace.bitmapDefault,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
         self.context = context

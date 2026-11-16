@@ -6,8 +6,9 @@ import Testing
 @Suite(.serialized)
 struct GuildFolderSettingsContractTests {
     @Test func `server rail edits save one guild folders subtree and roll back a rejected save`() async throws {
-        GuildFolderURLProtocol.reset()
-        let provider = makeProvider()
+        GuildFolderURLProtocol.settingsStatus = 200
+        let capture = RequestRecorder(GuildFolderURLProtocol.captured)
+        let provider = stubbedProvider(GuildFolderURLProtocol.self, token: capture.id)
         func field(_ number: Int, _ payload: [UInt8], wireType: Int = 2) -> [UInt8] {
             encodeProtoVarint(UInt64(number << 3 | wireType))
                 + (wireType == 2 ? encodeProtoVarint(UInt64(payload.count)) : []) + payload
@@ -41,18 +42,18 @@ struct GuildFolderSettingsContractTests {
         moved = moved.moving([.guild(GuildID(rawValue: 300))], to: .init(container: .root))
         try await provider.updateGuildRailLayout(moved)
         #expect(await provider.cachedGuildRailItemsForTesting() == moved)
-        #expect(GuildFolderURLProtocol.requests.isEmpty)
+        #expect(capture.requests.isEmpty)
         await provider.flushGuildFoldersIfNeeded()
         await provider.flushGuildFoldersIfNeeded()
 
-        #expect(GuildFolderURLProtocol.requests.count == 1)
-        let request = try #require(GuildFolderURLProtocol.requests.first)
+        #expect(capture.requests.count == 1)
+        let request = try #require(capture.requests.first)
         #expect(request.method == "PATCH")
         #expect(request.path == "/api/v9/users/@me/settings-proto/1")
-        #expect(request.query.isEmpty)
-        #expect(request.hadAuthorization)
-        #expect(request.body?.keys.sorted() == ["settings"])
-        let saved = try #require((request.body?["settings"] as? String).flatMap { Data(base64Encoded: $0) })
+        #expect(request.queryItems.isEmpty)
+        #expect(request.value(forHTTPHeaderField: "Authorization") != nil)
+        #expect(request.jsonBody?.keys.sorted() == ["settings"])
+        let saved = try #require((request.jsonBody?["settings"] as? String).flatMap { Data(base64Encoded: $0) })
         #expect(Array(saved) == field(14, entry([200, 100, 900], metadata: metadata) + entry([300]) + positions + unknown))
         #expect(await provider.cachedGuildRailItemsForTesting() == moved)
 
@@ -62,9 +63,9 @@ struct GuildFolderSettingsContractTests {
             .updatingFolder(42, name: "Art", colorHex: nil)
         try await provider.updateGuildRailLayout(moved)
         await provider.flushGuildFoldersIfNeeded()
-        #expect(GuildFolderURLProtocol.requests.count == 2)
+        #expect(capture.requests.count == 2)
         let edited = try #require(
-            (GuildFolderURLProtocol.requests.last?.body?["settings"] as? String).flatMap { Data(base64Encoded: $0) }
+            (capture.requests.last?.jsonBody?["settings"] as? String).flatMap { Data(base64Encoded: $0) }
         )
         let editedMetadata = field(2, field(1, [42], wireType: 0)) + field(3, field(1, Array("Art".utf8))) + field(9, [1])
         #expect(Array(edited) == field(14, entry([200, 900], metadata: editedMetadata)
@@ -75,10 +76,10 @@ struct GuildFolderSettingsContractTests {
         GuildFolderURLProtocol.settingsStatus = 400
         try await provider.updateGuildRailLayout(initial)
         await provider.flushGuildFoldersIfNeeded()
-        #expect(GuildFolderURLProtocol.requests.count == 3)
+        #expect(capture.requests.count == 3)
         #expect(await provider.cachedGuildRailItemsForTesting() == moved)
         await provider.disconnect()
-        #expect(GuildFolderURLProtocol.requests.count == 3)
+        #expect(capture.requests.count == 3)
         var received: [[GuildRailItem]?] = []
         for await event in events {
             if case let .guildLayoutChanged(_, railItems) = event { received.append(railItems) }
@@ -86,72 +87,23 @@ struct GuildFolderSettingsContractTests {
         }
         #expect(received == [moved, nil])
     }
-
-    private func makeProvider() -> DiscordRESTProvider {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [GuildFolderURLProtocol.self]
-        return DiscordRESTProvider(
-            credentials: TestCredentialStore(),
-            handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: configuration)
-        )
-    }
-}
-
-private struct CapturedGuildFolderRequest: @unchecked Sendable {
-    var method: String
-    var path: String
-    var query: [URLQueryItem]
-    var hadAuthorization: Bool
-    var body: [String: Any]?
 }
 
 /// Records every request and echoes a settings save back, as Discord does.
 private final class GuildFolderURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var requests: [CapturedGuildFolderRequest] = []
+    static let captured = Notification.Name("GuildFolderContractCapturedRequest")
     nonisolated(unsafe) static var settingsStatus = 200
-
-    static func reset() {
-        requests = []
-        settingsStatus = 200
-    }
 
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func stopLoading() {}
 
     override func startLoading() {
-        let body = Self.requestBody(request).flatMap {
-            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-        }
-        Self.requests.append(CapturedGuildFolderRequest(
-            method: request.httpMethod ?? "",
-            path: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? "",
-            query: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? [],
-            hadAuthorization: request.value(forHTTPHeaderField: "Authorization") != nil,
-            body: body
-        ))
-        let response = HTTPURLResponse(
-            url: request.url!, statusCode: Self.settingsStatus, httpVersion: "HTTP/1.1", headerFields: nil
-        )!
+        var captured = request
+        captured.httpBody = request.bodyData
+        NotificationCenter.default.post(name: Self.captured, object: captured)
+        let body = captured.jsonBody
         let payload = try? JSONSerialization.data(withJSONObject: ["settings": body?["settings"] as? String ?? ""])
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: payload ?? Data())
-        client?.urlProtocolDidFinishLoading(self)
-    }
-
-    private static func requestBody(_ request: URLRequest) -> Data? {
-        if let data = request.httpBody { return data }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            data.append(buffer, count: count)
-        }
-        return data
+        respond(status: Self.settingsStatus, body: payload ?? Data(), headers: nil)
     }
 }

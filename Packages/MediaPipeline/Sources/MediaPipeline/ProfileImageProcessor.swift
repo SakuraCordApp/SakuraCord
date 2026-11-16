@@ -74,8 +74,7 @@ public enum ProfileImageProcessor {
     private static func render(_ image: CGImage, geometry: ProfileImageCropGeometry, animated: Bool) throws -> CGImage {
         let region = geometry.animatedRegion
         let source = animated ? CGRect(x: region.originX, y: region.originY, width: region.width, height: region.height) : geometry.sourceRect
-        let sideways = geometry.quarterTurns % 2 != 0
-        let size = animated ? CGSize(width: sideways ? region.height : region.width, height: sideways ? region.width : region.height) : geometry.outputSize
+        let size = animated ? CGSize(width: region.width, height: region.height) : geometry.outputSize
         let width = Int(size.width), height = Int(size.height)
         guard width > 0, height > 0, source.width > 0, source.height > 0,
               let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -84,19 +83,10 @@ public enum ProfileImageProcessor {
         context.interpolationQuality = .low
         context.translateBy(x: 0, y: Double(height))
         context.scaleBy(x: 1, y: -1)
-        context.rotate(by: Double(geometry.quarterTurns) * .pi / 2)
-        let origin: CGPoint
-        switch geometry.quarterTurns {
-        case 1: origin = CGPoint(x: 0, y: -size.width)
-        case 2: origin = CGPoint(x: -size.width, y: -size.height)
-        case 3: origin = CGPoint(x: -size.height, y: 0)
-        default: origin = .zero
-        }
-        let destinationSize = sideways ? CGSize(width: size.height, height: size.width) : size
-        context.clip(to: CGRect(origin: origin, size: destinationSize))
-        let scaleX = destinationSize.width / source.width
-        let scaleY = destinationSize.height / source.height
-        context.translateBy(x: origin.x - source.minX * scaleX, y: origin.y + (Double(image.height) - source.minY) * scaleY)
+        context.clip(to: CGRect(origin: .zero, size: size))
+        let scaleX = size.width / source.width
+        let scaleY = size.height / source.height
+        context.translateBy(x: -source.minX * scaleX, y: (Double(image.height) - source.minY) * scaleY)
         context.scaleBy(x: scaleX, y: -scaleY)
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         guard let result = context.makeImage() else { throw ProfileImageProcessingError.encodingFailed }

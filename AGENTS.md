@@ -19,7 +19,7 @@ manifests.
 
 ## Layout
 
-App code lives in `App/Sources/SakuraCord/` (`App`, `Models`, `Services`,
+App code lives in `App/Sources/SakuraCord/` (`App`, `Benchmarks`, `Models`, `Services`,
 `Support`, `Views`), app tests in `App/Tests/`, and shared modules in
 `Packages/<Name>/Sources/`. There is no top-level `Sources/`. Find files with
 `rg --files | rg <Name>` instead of guessing paths.

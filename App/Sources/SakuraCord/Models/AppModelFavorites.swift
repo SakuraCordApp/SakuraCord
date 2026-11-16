@@ -17,7 +17,7 @@ final class FavoritesStore {
     /// nil until the account's settings load.
     var suggestionsDismissed: Bool?
     /// Suggested Channels, most suggested first.
-    var suggestions: [ForwardDestination] = []
+    var suggestions: [ConversationDestination] = []
     @ObservationIgnored var suggestionPool = FavoriteSuggestionPool()
     /// The stored affinities, once read this session.
     @ObservationIgnored var affinities: ConversationAffinities?
@@ -170,14 +170,14 @@ extension AppModel {
         displayedFavorites?.sections.flatMap(\.entries).compactMap(favoriteConversation) ?? []
     }
 
-    /// Unknown or hidden channels stay stored but unlisted, like Discord's
-    /// list; a favourited thread shows once the account knows it and can
-    /// view its parent.
     /// A favourited thread as the sidebar or Favorites' own fetch knows it.
     func favoriteThread(_ id: ChannelID) -> MessageThreadSummary? {
         sidebarThread(id) ?? favorites.threads[id]
     }
 
+    /// Unknown or hidden channels stay stored but unlisted, like Discord's
+    /// list; a favourited thread shows once the account knows it and can
+    /// view its parent.
     func favoriteConversation(_ entry: FavoritesSettings.Entry) -> FavoriteConversation? {
         if let channel = knownRootChannel(entry.id) {
             guard conversationAccess(for: channel) != .hidden else { return nil }
@@ -213,16 +213,16 @@ extension AppModel {
     /// carries; a thread that can't be read stays stored but unlisted.
     func loadFavoriteThreads() {
         let missing = (displayedFavorites?.entries ?? []).filter {
-            (10 ... 12).contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
+            DiscordChannelType.threads.contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
                 && sidebarThread($0.id) == nil && favorites.requestedThreadIDs.insert($0.id).inserted
         }
         // Discord loads favourited threads before its daily prune of read ones.
         guard !missing.isEmpty else { return pruneReadFavoriteThreads() }
         startAccountChildTask(account: accountSession()) { model, account in
             for entry in missing {
-                // A private thread (type 12) always asks Discord, whose answer
-                // states the current membership; others may come from cache.
-                let post = try? await (entry.channelType == 12
+                // A private thread always asks Discord, whose answer states
+                // the current membership; others may come from cache.
+                let post = try? await (entry.channelType == DiscordChannelType.privateThread
                     ? account.provider.resolveThreadAccess(threadID: entry.id)
                     : account.provider.forumPost(threadID: entry.id))
                 guard model.isCurrentAccountSession(account) else { return }
@@ -231,7 +231,7 @@ extension AppModel {
                     model.favorites.requestedThreadIDs.remove(entry.id)
                     // A private thread Discord no longer confirms stops listing,
                     // and an open one is withheld until Discord confirms it again.
-                    if entry.channelType == 12 {
+                    if entry.channelType == DiscordChannelType.privateThread {
                         model.favorites.threads[entry.id] = nil
                         if model.openThread?.id == entry.id { model.beginOpenThreadResolution() }
                     }
@@ -309,7 +309,7 @@ extension AppModel {
             // Discord prunes favourites the account can no longer see before it
             // counts, so a deleted or hidden channel never blocks an addition.
             var counted = settings
-            counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
+            counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !DiscordChannelType.threads.contains($0.channelType ?? 0) }
             let category = resolvesCategory ? categoryName.flatMap(settings.category(named:)) : nil
             let newCategoryName = resolvesCategory && category == nil ? categoryName : nil
             // Discord's list takes the favourite only with room for it and any new category.
@@ -430,14 +430,26 @@ extension AppModel {
         }
         return result
     }
+
+    /// Reset Favorites: Discord's first-run state, Suggested Channels back
+    /// included (the provider saves both together), and the device's
+    /// Unlimited favorites cleared. Like Discord, it asks nothing and leaves
+    /// for Friends.
+    func resetFavorites() {
+        let wasPresented = favorites.isPresented
+        updateFavorites(.reset)
+        if !favorites.localEntries.isEmpty { clearLocalFavorites() }
+        // After the reset, whose fallback to an empty Favorites would cancel this.
+        if wasPresented { openFriends() }
+    }
 }
 
 extension AppModel {
-    /// The Discord channel type a favourited thread records: 10 under an
-    /// announcement channel, 12 when private, otherwise 11.
+    /// The Discord channel type a favourited thread records.
     func favoriteChannelType(for thread: MessageThreadSummary) -> Int {
-        if thread.isPrivate { return 12 }
-        return thread.parentID.flatMap(knownRootChannel)?.kind == .announcement ? 10 : 11
+        if thread.isPrivate { return DiscordChannelType.privateThread }
+        return thread.parentID.flatMap(knownRootChannel)?.kind == .announcement
+            ? DiscordChannelType.announcementThread : DiscordChannelType.publicThread
     }
 }
 
@@ -445,13 +457,6 @@ extension Channel {
     /// The Discord channel type a new favourite records when the provider
     /// has not cached the server's own value.
     var favoriteChannelType: Int {
-        switch kind {
-        case .directMessage: 1
-        case .groupDirectMessage: 3
-        case .voice: 2
-        case .announcement: 5
-        case .forum: 15
-        case .text, .unknown: 0
-        }
+        discordChannelType ?? 0
     }
 }

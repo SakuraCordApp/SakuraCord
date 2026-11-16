@@ -107,7 +107,7 @@ struct VoiceVideoSettingsPage: View {
 
     private func resetPreferences() {
         tests.stopAll()
-        SettingsPreferenceStore.shared.reset(scope: .appWide, page: .voiceVideo)
+        SettingsPreferenceStore.shared.reset(page: .voiceVideo)
         model.voiceVideoPreferences.reload()
         Task {
             _ = await model.selectInputDevice(nil)
@@ -149,7 +149,7 @@ private struct VoiceCameraSettingsSection: View {
         @Bindable var preferences = model.voiceVideoPreferences
         Section {
             Picker("Camera", selection: cameraSelection) {
-                Text(systemDefaultCameraLabel(model.mediaDevices.cameras)).tag("")
+                Text(model.mediaDevices.cameras.systemDefaultLabel).tag("")
                 ForEach(model.mediaDevices.cameras) { camera in
                     Text(camera.name).tag(camera.uniqueID)
                 }
@@ -307,11 +307,6 @@ private struct VoicePermissionsSettingsSection: View {
             Text("Permissions", bundle: #bundle)
         }
     }
-}
-
-private func systemDefaultCameraLabel(_ cameras: [CameraDeviceInfo]) -> String {
-    cameras.first(where: \.isDefault)
-        .map { "System Default (\($0.name))" } ?? "System Default"
 }
 
 private func permissionTitle(_ authorization: VoiceMediaAuthorization) -> String {

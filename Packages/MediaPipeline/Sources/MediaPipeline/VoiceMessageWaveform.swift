@@ -9,18 +9,18 @@ public enum VoiceMessageWaveform {
 
     /// Collects signal energy in short chunks so a long recording never has to
     /// retain its samples to compute the waveform afterwards.
-    public struct Accumulator: Sendable {
+    struct Accumulator: Sendable {
         /// 10 ms at 48 kHz; finer than the densest waveform bin.
-        public static let chunkSamples = 480
+        static let chunkSamples = 480
 
-        public private(set) var chunkEnergies: [Float] = []
-        public private(set) var sampleCount = 0
+        private(set) var chunkEnergies: [Float] = []
+        private(set) var sampleCount = 0
         private var currentEnergy: Float = 0
         private var currentSamples = 0
 
-        public init() {}
+        init() {}
 
-        public mutating func append(_ samples: UnsafeBufferPointer<Float>) {
+        mutating func append(_ samples: UnsafeBufferPointer<Float>) {
             for sample in samples {
                 currentEnergy += sample * sample
                 currentSamples += 1
@@ -48,7 +48,7 @@ public enum VoiceMessageWaveform {
 
     /// RMS bins scaled to 0–255, then eased towards full scale the way
     /// Vencord's VoiceMessages plugin normalizes quiet recordings.
-    public static func bins(from accumulator: Accumulator, sampleRate: Double = 48_000) -> [UInt8] {
+    static func bins(from accumulator: Accumulator, sampleRate: Double = 48_000) -> [UInt8] {
         let chunks = accumulator.chunks
         guard !chunks.isEmpty else { return [UInt8](repeating: 0, count: minimumBinCount) }
         let count = min(binCount(duration: Double(accumulator.sampleCount) / sampleRate), chunks.count)

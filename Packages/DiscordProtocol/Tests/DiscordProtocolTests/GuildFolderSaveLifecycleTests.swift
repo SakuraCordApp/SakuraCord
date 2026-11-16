@@ -159,10 +159,7 @@ private func guildFolderSaveResponse(_ ids: [UInt64], version: UInt64) -> String
 }
 
 private func guildFolderSaveProvider() async -> DiscordRESTProvider {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [DirectMessageURLProtocol.self]
-    let provider = DiscordRESTProvider(credentials: TestCredentialStore(), handle: CredentialHandle(accountID: "guild-folder-save"),
-                                       session: URLSession(configuration: configuration))
+    let provider = stubbedProvider(DirectMessageURLProtocol.self, accountID: "guild-folder-save")
     await provider.receiveGatewayDispatchForTesting(name: "READY", data: .object([
         "user": .object(["id": .string("2"), "username": .string("fixture")]),
         "guilds": .array(["100", "200", "300"].map { .object(["id": .string($0), "name": .string("Server \($0)")]) }),

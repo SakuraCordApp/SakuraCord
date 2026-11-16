@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class EmojiPickerContextMenu: NSObject {
+final class EmojiPickerContextMenu {
     private var item: EmojiPickerItem
     private var skinTone: NativeEmojiSkinTone
     private var isFavorite: Bool
@@ -24,83 +24,30 @@ final class EmojiPickerContextMenu: NSObject {
     func makeMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(menuItem(
+        menu.addItem(ContextMenuItemSupport.item(
             isFavorite ? "Remove from Favorites" : "Add to Favorites",
             systemImage: isFavorite ? "star" : "star.fill",
-            action: #selector(toggleFavoriteFromMenu)
+            action: { [self] in toggleFavorite() }
         ))
         menu.addItem(.separator())
 
         switch item {
         case let .native(emoji):
-            menu.addItem(menuItem(
-                "Copy Emoji",
-                systemImage: "document.on.document.fill",
-                action: #selector(copyEmojiFromMenu),
-                representedObject: emoji.value(for: skinTone)
-            ))
+            let value = emoji.value(for: skinTone)
+            menu.addItem(ContextMenuItemSupport.item("Copy Emoji", systemImage: "document.on.document.fill") {
+                Pasteboard.copy(value)
+            })
         case let .custom(emoji):
-            menu.addItem(menuItem(
-                "Copy Emoji ID",
-                systemImage: "number.square.fill",
-                action: #selector(copyEmojiIDFromMenu),
-                representedObject: emoji.id
-            ))
+            menu.addItem(ContextMenuItemSupport.item("Copy Emoji ID", systemImage: "number.square.fill") {
+                Pasteboard.copy(emoji.id)
+            })
             if let imageURL = emoji.imageURL {
-                menu.addItem(menuItem(
-                    "Copy Emoji Image Link",
-                    systemImage: "link",
-                    action: #selector(copyEmojiImageLinkFromMenu),
-                    representedObject: imageURL.absoluteString
-                ))
+                menu.addItem(ContextMenuItemSupport.item("Copy Emoji Image Link", systemImage: "link") {
+                    Pasteboard.copy(imageURL.absoluteString)
+                })
             }
         }
 
         return menu
-    }
-
-    private func menuItem(
-        _ title: String,
-        systemImage: String,
-        action: Selector,
-        representedObject: Any? = nil
-    ) -> NSMenuItem {
-        let item = NSMenuItem(
-            title: title,
-            action: action,
-            keyEquivalent: ""
-        )
-        item.target = self
-        item.representedObject = representedObject
-        item.isEnabled = true
-        ContextMenuItemSupport.configure(
-            item,
-            title: title,
-            systemImage: systemImage
-        )
-        return item
-    }
-
-    @objc private func toggleFavoriteFromMenu() {
-        toggleFavorite()
-    }
-
-    @objc private func copyEmojiFromMenu(_ sender: NSMenuItem) {
-        copy(sender.representedObject as? String)
-    }
-
-    @objc private func copyEmojiIDFromMenu(_ sender: NSMenuItem) {
-        copy(sender.representedObject as? String)
-    }
-
-    @objc private func copyEmojiImageLinkFromMenu(_ sender: NSMenuItem) {
-        copy(sender.representedObject as? String)
-    }
-
-    private func copy(_ value: String?) {
-        guard let value else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(value, forType: .string)
     }
 }

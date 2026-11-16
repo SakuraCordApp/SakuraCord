@@ -50,6 +50,22 @@ extension NativeMemberListCanvasView {
         )
     }
 
+    /// The avatar's square container, centred vertically in the painted row.
+    func avatarContainerRect(at index: Int, leadingInset: CGFloat) -> CGRect {
+        let row = paintedRowRect(at: index)
+        return CGRect(
+            x: row.minX + leadingInset,
+            y: row.minY + (row.height - NativeMemberListMetrics.avatarContainerSize) / 2,
+            width: NativeMemberListMetrics.avatarContainerSize,
+            height: NativeMemberListMetrics.avatarContainerSize
+        )
+    }
+
+    /// Where a member row's name and activity text start.
+    func textOriginX(at index: Int) -> CGFloat {
+        paintedRowRect(at: index).minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+    }
+
     func gatewayRange(intersecting visibleRect: CGRect) -> ClosedRange<Int>? {
         let indexes = itemRange(intersecting: visibleRect)
         let values = indexes.compactMap { items[$0].gatewayIndex }

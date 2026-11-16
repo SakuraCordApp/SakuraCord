@@ -101,17 +101,17 @@ struct MediaViewerTests {
         let secondID = UUID()
         let textID = UUID()
         let attachments = [
-            ForumPostAttachment(
+            StagedAttachment(
                 id: firstID,
                 url: URL(fileURLWithPath: "/tmp/first.png"),
                 filename: "first.png"
             ),
-            ForumPostAttachment(
+            StagedAttachment(
                 id: textID,
                 url: URL(fileURLWithPath: "/tmp/readme.txt"),
                 filename: "readme.txt"
             ),
-            ForumPostAttachment(
+            StagedAttachment(
                 id: secondID,
                 url: URL(fileURLWithPath: "/tmp/second.gif"),
                 filename: "second.gif"
@@ -124,7 +124,7 @@ struct MediaViewerTests {
         )
 
         let presentation = try #require(
-            NativeTimelineMediaViewerPlan.composerAttachments(
+            MediaViewerPlan.composerAttachments(
                 attachments,
                 selectedAttachmentID: secondID,
                 author: author
@@ -296,7 +296,7 @@ struct MediaViewerTests {
         )
 
         let presentation = try #require(
-            NativeTimelineMediaViewerPlan.linkedImages(
+            MediaViewerPlan.linkedImages(
                 in: message,
                 selectedReferenceID: second.id
             )
@@ -388,7 +388,7 @@ struct MediaViewerTests {
         )
 
         let presentation = try #require(
-            NativeTimelineMediaViewerPlan.components(
+            MediaViewerPlan.components(
                 in: message,
                 layouts: layout.componentLayouts,
                 selectedComponentID: "image-file",
@@ -400,7 +400,7 @@ struct MediaViewerTests {
         #expect(presentation.items[1].kind == .image(animated: false))
         #expect(presentation.selection == 1)
         #expect(
-            NativeTimelineMediaViewerPlan.components(
+            MediaViewerPlan.components(
                 in: message,
                 layouts: layout.componentLayouts,
                 selectedComponentID: "hidden",
@@ -408,7 +408,7 @@ struct MediaViewerTests {
             ) == nil
         )
         #expect(
-            NativeTimelineMediaViewerPlan.components(
+            MediaViewerPlan.components(
                 in: message,
                 layouts: layout.componentLayouts,
                 selectedComponentID: "document",
@@ -559,7 +559,7 @@ struct MediaViewerTests {
     @Test func `escape prioritizer dismisses media before reaching the timeline`() throws {
         let model = AppModel(launchMode: .offlineTesting)
         let mediaURL = try #require(URL(string: "https://cdn.example/image.png"))
-        model.mediaViewerPresentation = NativeTimelineMediaViewerPresentation(
+        model.mediaViewerPresentation = MediaViewerPresentation(
             items: [
                 RichMediaItem(
                     Attachment(

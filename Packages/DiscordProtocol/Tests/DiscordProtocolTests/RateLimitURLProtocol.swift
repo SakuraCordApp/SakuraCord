@@ -211,7 +211,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         let request: URLRequest
 
         var response: StubResponse {
-        let path = request.url?.path ?? ""
+        let path = request.path
         let status: Int
         let json: String
         switch path {
@@ -362,9 +362,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             json = RateLimitURLProtocol.commandIndexJSON(guildID: nil)
         case "/api/v9/interactions":
             RateLimitURLProtocol.interactionRequestCount += 1
-            if let body = RateLimitURLProtocol.requestBody(request),
-               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
-            {
+            if let object = request.jsonBody {
                 RateLimitURLProtocol.interactionBodies.append(object)
             }
             status = 204
@@ -375,7 +373,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/v9/channels/200/typing":
             RateLimitURLProtocol.typingRequestCount += 1
             RateLimitURLProtocol.typingMethod = request.httpMethod
-            RateLimitURLProtocol.typingHadBody = RateLimitURLProtocol.requestBody(request)?.isEmpty == false
+            RateLimitURLProtocol.typingHadBody = request.bodyData?.isEmpty == false
             RateLimitURLProtocol.typingSuperProperties = request.value(forHTTPHeaderField: "X-Super-Properties")
             status = 204
             json = ""
@@ -386,9 +384,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             RateLimitURLProtocol.ackRequestCount += 1
             RateLimitURLProtocol.ackMethod = request.httpMethod
             RateLimitURLProtocol.ackPath = path
-            RateLimitURLProtocol.ackBody = RateLimitURLProtocol.requestBody(request).flatMap {
-                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-            }
+            RateLimitURLProtocol.ackBody = request.jsonBody
             status = RateLimitURLProtocol.ackStatus
             json =
                 status == 200
@@ -397,11 +393,9 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/v9/read-states/ack-bulk":
             RateLimitURLProtocol.bulkAckRequestCount += 1
             RateLimitURLProtocol.bulkAckRequests.withLock {
-                $0.append((request.httpMethod ?? "", .now))
+                $0.append((request.method, .now))
             }
-            if let body = RateLimitURLProtocol.requestBody(request),
-               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
-            {
+            if let object = request.jsonBody {
                 RateLimitURLProtocol.bulkAckBodies.append(object)
             }
             let requestIndex = RateLimitURLProtocol.bulkAckRequestCount - 1
@@ -411,10 +405,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/v9/users/@me/guilds/settings":
             RateLimitURLProtocol.guildNotificationRequestCount += 1
             RateLimitURLProtocol.guildNotificationMethod = request.httpMethod
-            RateLimitURLProtocol.guildNotificationBody =
-                RateLimitURLProtocol.requestBody(request).flatMap {
-                    try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-                }
+            RateLimitURLProtocol.guildNotificationBody = request.jsonBody
             status = RateLimitURLProtocol.guildNotificationStatus
             json =
                 status == 200
@@ -425,9 +416,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             RateLimitURLProtocol.channelNotificationRequestCount += 1
             RateLimitURLProtocol.channelNotificationMethod = request.httpMethod
             RateLimitURLProtocol.channelNotificationPath = path
-            RateLimitURLProtocol.channelNotificationBody = RateLimitURLProtocol.requestBody(request).flatMap {
-                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-            }
+            RateLimitURLProtocol.channelNotificationBody = request.jsonBody
             status = RateLimitURLProtocol.channelNotificationStatus
             json =
                 status == 200
@@ -436,12 +425,9 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/v9/channels/500/thread-members/@me/settings",
              "/api/v9/channels/501/thread-members/@me",
              "/api/v9/channels/501/thread-members/@me/settings":
-            RateLimitURLProtocol.threadMemberMethods.append(request.httpMethod ?? "")
+            RateLimitURLProtocol.threadMemberMethods.append(request.method)
             RateLimitURLProtocol.threadMemberPaths.append(path)
-            if let body = RateLimitURLProtocol.requestBody(request),
-               let object =
-               try? JSONSerialization.jsonObject(with: body) as? [String: Any]
-            {
+            if let object = request.jsonBody {
                 RateLimitURLProtocol.threadMemberBodies.append(object)
             } else {
                 RateLimitURLProtocol.threadMemberBodies.append([:])
@@ -463,7 +449,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             where (path.hasPrefix("/api/v9/channels/200/messages/300/reactions/")
                 || path.hasPrefix("/api/v9/channels/200/messages/350/reactions/"))
                 && path.hasSuffix("/@me"):
-            RateLimitURLProtocol.reactionMethods.append(request.httpMethod ?? "")
+            RateLimitURLProtocol.reactionMethods.append(request.method)
             status = 204
             json = ""
         case "/test":
@@ -471,8 +457,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             status = 200
             json = "{}"
         case "/api/v9/channels/200/messages/301" where request.httpMethod == "PATCH":
-            RateLimitURLProtocol.sentMessageBody = RateLimitURLProtocol.requestBody(request)
-                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            RateLimitURLProtocol.sentMessageBody = request.jsonBody
             status = 200
             json = #"""
             {"id":"301","channel_id":"200",
@@ -516,7 +501,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                 break
             }
             RateLimitURLProtocol.messageRequestCount += 1
-            let body = RateLimitURLProtocol.requestBody(request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let body = request.jsonBody
             RateLimitURLProtocol.sentMessageBody = body
             RateLimitURLProtocol.sentNonce = body?["nonce"] as? String
             RateLimitURLProtocol.sentEnforceNonce = body?["enforce_nonce"] as? Bool == true
@@ -573,11 +558,9 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             RateLimitURLProtocol.messageSearchQueryItems.append(
                 queryItems.map { "\($0.name)=\($0.value ?? "")" }
             )
-            RateLimitURLProtocol.messageSearchMethods.append(request.httpMethod ?? "")
+            RateLimitURLProtocol.messageSearchMethods.append(request.method)
             RateLimitURLProtocol.messageSearchPaths.append(path)
-            if let body = RateLimitURLProtocol.requestBody(request),
-               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
-            {
+            if let object = request.jsonBody {
                 RateLimitURLProtocol.messageSearchBodies.append(object)
             }
             let index = RateLimitURLProtocol.messageSearchRequestCount - 1
@@ -649,12 +632,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         let stub = StubResponseBuilder(request: request).response
         let status = stub.status
         let json = stub.json
-        let response = HTTPURLResponse(
-            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(json.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: Data(json.utf8), headers: nil)
     }
 
     override func stopLoading() {}
@@ -682,22 +660,5 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             + "\"version\":\"902\",\"type\":1,\"name\":\"search\",\"description\":\"Search\","
             + "\"contexts\":[0,1,2],\"options\":[{\"type\":3,\"name\":\"query\","
             + "\"description\":\"Query\",\"required\":true,\"autocomplete\":true}]}]}"
-    }
-
-    private static func requestBody(_ request: URLRequest) -> Data? {
-        if let data = request.httpBody {
-            return data
-        }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            data.append(buffer, count: count)
-        }
-        return data
     }
 }

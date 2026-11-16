@@ -70,9 +70,9 @@ extension AppModel {
                 add("call", "Start a Call", "phone", .communication) { $0.callUserFromMenu(user) }
             }
             for nickname in nicknameMenuActions(for: user, in: context.guildID) {
-                add("nickname-\(nickname.title)", nickname.title, nickname.systemImage, .personal, enabled: !pending) { model in
+                add(nickname.id, nickname.title, nickname.systemImage, nickname.group, enabled: !pending) { model in
                     model.nicknameMenuActions(for: user, in: context.guildID)
-                        .first { $0.title == nickname.title }?.perform()
+                        .first { $0.id == nickname.id }?.perform()
                 }
             }
         }
@@ -87,15 +87,15 @@ extension AppModel {
                 }
             } else {
                 add("ignore", "Ignore…", "eye.slash", .destructive, enabled: !pending) { model in
-                    guard !model.isUserIgnored(user.id), model.relationships.first(where: { $0.id == user.id })?.type != .blocked else { return }
+                    guard !model.isUserIgnored(user.id), model.relationshipType(with: user.id) != .blocked else { return }
                     model.friends.confirmation = .ignore(user, location)
                 }
             }
         }
         if !user.username.isEmpty {
-            add("copy-username", "Copy Username", "doc.on.doc", .copy) { _ in ChannelContextMenuValue.copy(user.tag) }
+            add("copy-username", "Copy Username", "doc.on.doc", .copy) { _ in Pasteboard.copy(user.tag) }
         }
-        add("copy-user-id", "Copy User ID", "number", .copy) { _ in ChannelContextMenuValue.copy(user.id.description) }
+        add("copy-user-id", "Copy User ID", "number", .copy) { _ in Pasteboard.copy(user.id.description) }
         return UserMenuAction.Group.allCases.flatMap { group in
             let grouped = actions.filter { $0.group == group }
             guard group == .destructive else { return grouped }
@@ -112,7 +112,7 @@ extension AppModel {
         case .none, .implicit:
             guard !user.username.isEmpty else { break }
             add("add-friend", "Add Friend", "person.badge.plus", .relationship, !pending) { model in
-                let type = model.relationships.first { $0.id == user.id }?.type ?? .none
+                let type = model.relationshipType(with: user.id) ?? .none
                 guard type == .none || type == .implicit else { return }
                 model.sendFriendRequest(to: user, location: location)
             }
@@ -125,16 +125,16 @@ extension AppModel {
                 }
             }
             add("accept", "Accept Friend Request", "checkmark", .relationship, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type == .incomingRequest else { return }
+                guard model.relationshipType(with: user.id) == .incomingRequest else { return }
                 model.acceptFriendRequest(from: user)
             }
             add("decline", "Decline Request", "xmark", .destructive, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type == .incomingRequest else { return }
+                guard model.relationshipType(with: user.id) == .incomingRequest else { return }
                 model.removeRelationship(with: user.id, as: .declineIncomingRequest)
             }
         case .outgoingRequest:
             add("cancel-request", "Cancel Request", "xmark", .destructive, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type == .outgoingRequest else { return }
+                guard model.relationshipType(with: user.id) == .outgoingRequest else { return }
                 model.removeRelationship(with: user.id, as: .cancelOutgoingRequest)
             }
         case .friend:
@@ -147,12 +147,12 @@ extension AppModel {
         }
         if relationship?.type == .blocked {
             add("unblock", "Unblock", "hand.raised.slash", .destructive, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type == .blocked else { return }
+                guard model.relationshipType(with: user.id) == .blocked else { return }
                 model.removeRelationship(with: user.id, as: .unblock)
             }
         } else {
             add("block", "Block…", "hand.raised", .destructive, !pending) { model in
-                guard model.relationships.first(where: { $0.id == user.id })?.type != .blocked else { return }
+                guard model.relationshipType(with: user.id) != .blocked else { return }
                 model.friends.confirmation = .block(user)
             }
         }
@@ -168,28 +168,22 @@ extension AppModel {
     }
 
     private func userMenuMember(_ user: User, context: UserMenuContext) -> Member {
-        if let member = profileMember(user.id, in: context.guildID) { return member }
-        var member = Member(user: user, roleName: "", status: .offline)
-        if let row = friends.row(for: user.id) {
-            member.status = row.presence.status
-            member.customStatus = row.presence.customStatus
-        }
-        return member
+        profileMember(user.id, in: context.guildID) ?? .friend(user, presence: friends.row(for: user.id)?.presence)
     }
 
     private func mentionUserFromMenu(_ user: User, context: UserMenuContext) {
         guard let destination = userMenuMentionDestination(in: context) else { return }
         rememberMentionMember(userMenuMember(user, context: context))
-        let current = destination == .thread ? threadDraft : draft
+        let current = draft(in: destination)
         let value = current + (current.isEmpty || current.last?.isWhitespace == true ? "" : " ") + "<@\(user.id)> "
-        if destination == .thread { updateThreadDraft(value) } else { updateDraft(value) }
+        updateDraft(value, in: destination)
         NotificationCenter.default.post(name: .sakuracordFocusComposer, object: destination,
                                         userInfo: ["selection": NSRange(location: value.utf16.count, length: 0)])
     }
 
     private func callUserFromMenu(_ user: User) {
         guard user.id != currentUser?.id, !user.isBot,
-              relationships.first(where: { $0.id == user.id })?.type != .blocked else { return }
+              relationshipType(with: user.id) != .blocked else { return }
         startAccountChildTask(account: accountSession()) { model, session in
             do {
                 let channel = try await session.provider.ensurePrivateChannel(for: user.id)

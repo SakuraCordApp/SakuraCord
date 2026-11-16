@@ -65,10 +65,8 @@ struct DiscordWebCaptchaView: NSViewRepresentable {
                 stop()
                 parent.onCancel()
             case "bounds":
-                guard let values = payload["bounds"] as? [Double], values.count == 4,
-                      values.allSatisfy(\.isFinite), values[2] > 0, values[3] > 0,
-                      values[2] <= 4096, values[3] <= 4096 else { return }
-                parent.onWidgetBoundsChanged(CGRect(x: values[0], y: values[1], width: values[2], height: values[3]))
+                guard let bounds = CGRect(captchaWidgetBounds: payload["bounds"]) else { return }
+                parent.onWidgetBoundsChanged(bounds)
             default:
                 break
             }

@@ -83,10 +83,7 @@ struct MyAccountSettingsPage: View {
         .onChange(of: model.profileInvalidationRevision) {
             Task { await accountState.loadDetails() }
         }
-        .onChange(of: state.revealRequest?.id) {
-            guard state.revealRequest?.destination.page == .myAccount else { return }
-            navigationPath.removeAll()
-        }
+        .settingsNavigationPathResetOnReveal($navigationPath, page: .myAccount, state: state)
     }
 }
 

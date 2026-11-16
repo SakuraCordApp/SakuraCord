@@ -212,125 +212,6 @@ extension AppModel {
         commandComposer.memberResults = []
     }
 
-    func requestMentionMemberSearch(query: String) {
-        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let guildID = selectedGuildID, !normalized.isEmpty else {
-            mentionMemberSearchTask?.cancel()
-            mentionMemberSearchTask = nil
-            mentionMemberSearchQuery = nil
-            mentionMemberResults = []
-            return
-        }
-        let key = CommandMemberQuery(guildID: guildID, query: normalized.lowercased())
-        if let cached = mentionMemberSearchCache[key],
-           Date().timeIntervalSince(cached.storedAt) < 60
-        {
-            mentionMemberSearchTask?.cancel()
-            mentionMemberSearchTask = nil
-            mentionMemberSearchQuery = nil
-            mentionMemberResults = cached.members
-            return
-        }
-        mentionMemberSearchCache[key] = nil
-        guard mentionMemberSearchQuery != key else { return }
-        mentionMemberSearchTask?.cancel()
-        mentionMemberSearchQuery = key
-        mentionMemberResults = []
-        let session = accountSession()
-        mentionMemberSearchTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await Task.sleep(for: .milliseconds(200))
-                try Task.checkCancellation()
-                let results = try await session.provider.searchMembers(
-                    in: guildID, query: key.query, limit: 10
-                )
-                let roles = try? await session.provider.roles(in: guildID)
-                guard !Task.isCancelled,
-                      isCurrentAccountSession(session),
-                      mentionMemberSearchQuery == key,
-                      selectedGuildID == guildID
-                else { return }
-                if let roles { applyGuildRoles(roles, to: guildID) }
-                mentionMemberSearchCache[key] = MentionMemberSearchCacheEntry(
-                    members: results,
-                    storedAt: Date()
-                )
-                mentionMemberResults = results
-                mergeMentionAutocompleteMembers(results)
-                for member in results { knownMentionMembers[member.id] = member }
-                mentionMemberSearchQuery = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                guard isCurrentAccountSession(session),
-                      mentionMemberSearchQuery == key
-                else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                mentionMemberSearchQuery = nil
-                mentionMemberResults = []
-            }
-        }
-    }
-
-    func rememberMentionMember(_ member: Member) {
-        knownMentionMembers[member.id] = member
-    }
-
-    func mergeMentionAutocompleteMembers(_ updates: [Member]) {
-        var positions = Dictionary(
-            uniqueKeysWithValues: mentionAutocompleteMembers.indices.map {
-                (mentionAutocompleteMembers[$0].id, $0)
-            }
-        )
-        for member in updates {
-            if let index = positions[member.id] {
-                mentionAutocompleteMembers[index] = member
-            } else {
-                positions[member.id] = mentionAutocompleteMembers.count
-                mentionAutocompleteMembers.append(member)
-            }
-        }
-    }
-
-    func showMembers(withRole roleID: RoleID, in guildID: GuildID?) {
-        roleMemberTask?.cancel()
-        roleMemberResult = nil
-        roleMemberErrorMessage = nil
-        isLoadingRoleMembers = false
-        guard let guildID else {
-            roleMemberErrorMessage = "Role members are only available inside a server."
-            return
-        }
-        isLoadingRoleMembers = true
-        let session = accountSession()
-        roleMemberTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let result = try await session.provider.members(withRole: roleID, in: guildID)
-                guard !Task.isCancelled,
-                      isCurrentAccountSession(session)
-                else { return }
-                roleMemberResult = result
-                for member in result.members {
-                    membersByGuildID[guildID, default: [:]][member.id] = member
-                    if selectedGuildID == guildID { knownMentionMembers[member.id] = member }
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled,
-                      isCurrentAccountSession(session)
-                else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                roleMemberErrorMessage = error.localizedDescription
-            }
-            if isCurrentAccountSession(session) {
-                isLoadingRoleMembers = false
-            }
-        }
-    }
-
     /// Sends the composed command. Like Discord, the composer clears at once
     /// and a private placeholder row tracks the app's answer.
     func executeApplicationCommand(in destination: MessageComposerDestination = .channel) {
@@ -355,14 +236,10 @@ extension AppModel {
         cancelApplicationCommandAutocompleteTask(in: destination)
         let submittedDraft = commandComposer.draft
         stopLocalTyping(clearThrottle: true)
-        commandComposer.recordUse(of: invocation.command, guildID: invocation.guildID)
-        for composer in commandComposers where composer !== commandComposer { composer.refreshFrecency() }
+        recordUse(of: invocation.command, guildID: invocation.guildID, in: commandComposer)
         commandComposer.cancelActiveCommand()
-        switch destination {
-        case .channel: updateDraft("")
-        case .thread: updateThreadDraft("")
-        }
-        if DiscordBuiltInCommands.isBuiltIn(invocation.command) {
+        updateDraft("", in: destination)
+        if isBuiltIn {
             runBuiltInCommand(invocation)
         } else {
             runApplicationCommand(invocation, restoringDraftOnFailure: submittedDraft, in: destination)
@@ -374,14 +251,22 @@ extension AppModel {
         guard supportedCapabilities.contains(.slashCommands) else { return }
         let destination = commandDestination(in: channelID)
         let guildID = (openThread?.id == channelID ? openThread?.guildID ?? openThreadParentChannel?.guildID : nil)
-            ?? visibleChannels.first { $0.id == channelID }?.guildID
-            ?? snapshot?.channels.first { $0.id == channelID }?.guildID
-        let commandComposer = commandComposer(for: destination)
-        commandComposer.recordUse(of: command, guildID: guildID)
-        for composer in commandComposers where composer !== commandComposer { composer.refreshFrecency() }
+            ?? knownRootChannel(channelID)?.guildID
+        recordUse(of: command, guildID: guildID, in: commandComposer(for: destination))
         runApplicationCommand(ApplicationCommandInvocation(
             command: command, channelID: channelID, guildID: guildID, values: [], targetID: targetID
         ), in: destination)
+    }
+
+    /// Records the use in `commandComposer`, then refreshes the other
+    /// composers so their pickers rank the command the same way.
+    private func recordUse(
+        of command: ApplicationCommand,
+        guildID: GuildID?,
+        in commandComposer: ApplicationCommandComposerModel
+    ) {
+        commandComposer.recordUse(of: command, guildID: guildID)
+        for composer in commandComposers where composer !== commandComposer { composer.refreshFrecency() }
     }
 
     private func runApplicationCommand(
@@ -447,7 +332,7 @@ extension AppModel {
                 // newer draft or automatically repeating the account action.
                 if let submittedDraft, commandContext(for: destination)?.channelID == channelID,
                    commandComposer.conversationGeneration == generation,
-                   (destination == .thread ? threadDraft : draft).isEmpty, commandComposer.draft == nil {
+                   draft(in: destination).isEmpty, commandComposer.draft == nil {
                     commandComposer.activate(submittedDraft.command)
                     commandComposer.applyEditorDraft(submittedDraft, caret: nil)
                 }
@@ -469,10 +354,9 @@ extension AppModel {
             guard let basis = conversationPermissionBasis(for: guildID) else { return nil }
             return basis.guild.isOwnedByCurrentUser == true ? .max : basis.resolvedBasePermissions
         }
-        let createPublicThreads: UInt64 = 1 << 35
         let threadable = channel.kind == .text || channel.kind == .announcement
         let canCreateThread = threadable && channel.guildID != nil
-            && (channelPermissions.map { $0 & (createPublicThreads | DiscordBuiltInCommands.Permission.administrator) != 0 } ?? false)
+            && (channelPermissions.map { $0 & DiscordPermissionBits.createPublicThreads != 0 } ?? false)
         return DiscordBuiltInCommands.Context(
             isPrivate: channel.guildID == nil,
             isGroupDirectMessage: channel.kind == .groupDirectMessage,

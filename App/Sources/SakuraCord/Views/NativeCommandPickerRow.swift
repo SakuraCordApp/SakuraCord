@@ -143,7 +143,7 @@ final class NativeCommandPickerRow: NSView, NativePickerReusableRow {
     private func symbolImage(_ name: String, size: CGFloat, scale: CGFloat, colorScheme: ColorScheme) -> NSImage? {
         // Use resolved bitmap artwork, as for downloaded icons. Template symbols
         // otherwise join the glass foreground's separate compositing treatment.
-        NativeTimelineSystemSymbolCache.rasterizedConfiguredImage(
+        SystemSymbolImageCache.rasterizedConfiguredImage(
             named: name, pointSize: size, weight: .regular,
             color: (colorScheme == .dark ? NSColor.white : .black).withAlphaComponent(0.65),
             scale: scale

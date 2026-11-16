@@ -2,241 +2,6 @@ import Foundation
 import MediaPipeline
 import SwiftUI
 
-struct VoiceControlBar<SettingsControl: View>: View {
-    let model: AppModel
-    let settingsControl: SettingsControl
-    @Environment(\.openSettings) private var openSettings
-    @State private var showConnectionDetails = false
-    @State private var showInputControls = false
-    @State private var showOutputControls = false
-    @State private var showCameraControls = false
-    @State private var showSoundboard = false
-
-    init(model: AppModel, @ViewBuilder settingsControl: () -> SettingsControl) {
-        self.model = model
-        self.settingsControl = settingsControl()
-    }
-
-    var body: some View {
-        VStack(spacing: InterfaceScale.metric(9)) {
-            connectionRow
-            controlRow
-        }
-        .padding(.horizontal, InterfaceScale.metric(9))
-        .padding(.top, InterfaceScale.metric(9))
-        .padding(.bottom, InterfaceScale.metric(10))
-        .task { await model.refreshMediaDevices() }
-        .onReceive(NotificationCenter.default.publisher(for: .sakuracordToggleSoundboard)) { _ in
-            guard model.selectedChannelID != model.activeVoiceChannel?.id else { return }
-            showSoundboard.toggle()
-        }
-    }
-
-    private var connectionRow: some View {
-        HStack(spacing: InterfaceScale.metric(7)) {
-            Image(systemName: connectionSymbol)
-                .font(.interfaceSystem(size: 14, weight: .semibold))
-                .foregroundStyle(statusColor)
-                .frame(width: InterfaceScale.metric(18))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(statusLabel)
-                    .font(.interfaceSystem(size: 11, weight: .bold))
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
-                Text(connectionSubtitle)
-                    .font(.interface(.caption2))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: InterfaceScale.metric(3))
-
-            Button {
-                showConnectionDetails.toggle()
-            } label: {
-                Image(systemName: "cellularbars")
-                    .font(.interface(.callout).weight(.medium))
-                    .frame(width: InterfaceScale.metric(25), height: InterfaceScale.metric(25))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(statusColor)
-            .help("Voice Details")
-            .escapeDismissiblePopover(
-                isPresented: $showConnectionDetails,
-                arrowEdge: .trailing
-            ) {
-                VoiceConnectionDetails(model: model, statusLabel: statusLabel, statusColor: statusColor)
-            }
-
-            Button(role: .destructive) {
-                Task { await model.leaveVoice() }
-            } label: {
-                Image(systemName: "phone.down.fill")
-                    .font(.interface(.callout).weight(.semibold))
-                    .frame(width: InterfaceScale.metric(25), height: InterfaceScale.metric(25))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: 0xDA373C))
-            .help("Disconnect")
-        }
-    }
-
-    private var controlRow: some View {
-        HStack(spacing: InterfaceScale.metric(7)) {
-            VoiceSquareButton(
-                systemImage: model.localApplicationStreamKey == nil
-                    ? "rectangle.on.rectangle" : "rectangle.on.rectangle.slash",
-                isAlert: model.localApplicationStreamKey != nil,
-                isDisabled: model.voiceSessionState != .connected
-                    && model.localApplicationStreamKey == nil,
-                help: model.localApplicationStreamKey == nil
-                    ? "Share Screen" : "Screen Share Options"
-            ) {
-                Task { await model.presentScreenSharePreview() }
-            }
-
-            VoiceSplitButton(
-                systemImage: model.isCameraEnabled ? "video.fill" : "video.slash.fill",
-                isAlert: !model.isCameraEnabled,
-                isDisabled: model.voiceSessionState != .connected
-                    && !model.isCameraEnabled,
-                primaryHelp: model.isCameraEnabled ? "Turn Off Camera" : "Turn On Camera",
-                secondaryHelp: "Camera Device",
-                primaryAction: { Task { await model.toggleCamera() } },
-                secondaryAction: { showCameraControls.toggle() }
-            )
-            .escapeDismissiblePopover(
-                isPresented: $showCameraControls,
-                arrowEdge: .trailing
-            ) {
-                VoiceCameraControls(model: model)
-            }
-            .contextMenu { cameraMenu }
-
-            VoiceSplitButton(
-                systemImage: model.isVoiceMuted ? "mic.slash.fill" : "mic.fill",
-                isAlert: model.isVoiceMuted,
-                primaryHelp: model.isVoiceMuted ? "Unmute" : "Mute",
-                secondaryHelp: "Input Device and Volume",
-                primaryAction: { Task { await model.toggleVoiceMute() } },
-                secondaryAction: { showInputControls.toggle() }
-            )
-            .escapeDismissiblePopover(
-                isPresented: $showInputControls,
-                arrowEdge: .trailing
-            ) {
-                VoiceInputControls(model: model)
-            }
-
-            VoiceSplitButton(
-                systemImage: model.isVoiceDeafened ? "headphones.slash" : "headphones",
-                isAlert: model.isVoiceDeafened,
-                primaryHelp: model.isVoiceDeafened ? "Undeafen" : "Deafen",
-                secondaryHelp: "Output Device and Volume",
-                primaryAction: { Task { await model.toggleVoiceDeafen() } },
-                secondaryAction: { showOutputControls.toggle() }
-            )
-            .escapeDismissiblePopover(
-                isPresented: $showOutputControls,
-                arrowEdge: .trailing
-            ) {
-                VoiceOutputControls(model: model)
-            }
-
-            VoiceSquareButton(
-                systemImage: "waveform",
-                isAlert: false,
-                isDisabled: model.voiceSessionState != .connected
-                    || model.isVoiceDeafened,
-                help: "Open Soundboard"
-            ) { showSoundboard.toggle() }
-            .background {
-                StableReactionPickerPresenter(
-                    isPresented: $showSoundboard,
-                    preferredEdge: .maxX,
-                    accessibilityIdentifier: "voice-sidebar-soundboard-picker"
-                ) {
-                    SoundboardPickerView(model: model)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-
-            settingsControl
-                .frame(width: InterfaceScale.metric(34), height: InterfaceScale.metric(34))
-                .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous))
-                .background(Color.primary.opacity(0.045), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous))
-        }
-        .frame(maxWidth: .infinity)
-        .onChange(of: model.isVoiceDeafened) { _, isDeafened in
-            if isDeafened { showSoundboard = false }
-        }
-    }
-
-    @ViewBuilder private var cameraMenu: some View {
-        Button("System Default") { Task { _ = await model.selectCamera(nil) } }
-        Divider()
-        ForEach(model.mediaDevices.cameras) { camera in
-            Button {
-                Task { _ = await model.selectCamera(camera) }
-            } label: {
-                if camera.uniqueID == model.selectedCameraUID {
-                    Label(camera.name, systemImage: "checkmark")
-                } else {
-                    Text(camera.name)
-                }
-            }
-        }
-        Divider()
-        Button {
-            SettingsNavigationRouter.shared.open(page: .voiceVideo)
-            openSettings()
-        } label: {
-            Label("Voice & Video Settings…", systemImage: "gearshape")
-        }
-    }
-
-    private var connectionSubtitle: String {
-        let channel = model.activeVoiceChannel?.name ?? "Voice"
-        guard let guildID = model.activeVoiceChannel?.guildID,
-              let guild = model.serverRailGuildsByID[guildID]
-        else {
-            return channel
-        }
-        return "\(channel) / \(guild.name)"
-    }
-
-    private var connectionSymbol: String {
-        switch model.voiceSessionState {
-        case .connected: "wave.3.right.circle.fill"
-        case .connecting, .reconnecting: "arrow.triangle.2.circlepath.circle.fill"
-        case .failed: "exclamationmark.triangle.fill"
-        default: "wave.3.right.circle"
-        }
-    }
-
-    private var statusLabel: String {
-        switch model.voiceSessionState {
-        case .idle: "Voice Disconnected"
-        case .connecting: "Connecting…"
-        case .connected: "Voice Connected"
-        case .reconnecting: "Reconnecting…"
-        case .disconnecting: "Disconnecting…"
-        case .disconnected: "Disconnected"
-        case .failed: "Connection Failed"
-        }
-    }
-
-    private var statusColor: Color {
-        switch model.voiceSessionState {
-        case .connected: Color(hex: 0x23A55A)
-        case .connecting, .reconnecting: Color(hex: 0xF0B232)
-        case .failed: Color(hex: 0xDA373C)
-        default: .secondary
-        }
-    }
-}
-
 struct VoiceSidebarControlPanel: View {
     let model: AppModel
     let navigateToChannel: () -> Void
@@ -309,7 +74,7 @@ struct VoiceSidebarControlPanel: View {
                             ? "Turn Off Camera" : "Turn On Camera",
                         diameter: diameter,
                         tintColor: model.isCameraEnabled
-                            ? Color(hex: 0x23A55A) : nil,
+                            ? Color.presenceOnline : nil,
                         isDisabled: model.voiceSessionState != .connected
                             && !model.isCameraEnabled
                     ) {
@@ -394,8 +159,8 @@ struct VoiceSidebarControlPanel: View {
     private var statusColor: Color {
         switch model.voiceSessionState {
         case .connecting, .reconnecting: Color(hex: 0xF0B232)
-        case .failed, .disconnected: Color(hex: 0xDA373C)
-        default: Color(hex: 0x23A55A)
+        case .failed, .disconnected: Color.leaveCallRed
+        default: Color.presenceOnline
         }
     }
 
@@ -483,7 +248,7 @@ struct SidebarVoiceGlassButton: View {
     }
 
     private var effectiveTint: Color? {
-        tintColor ?? (isAlert ? Color(hex: 0xF23F43) : nil)
+        tintColor ?? (isAlert ? MentionRed.color : nil)
     }
 
     private var foregroundColor: Color {
@@ -492,7 +257,7 @@ struct SidebarVoiceGlassButton: View {
 
     private var glass: Glass {
         if role == .destructive {
-            return .regular.tint(Color(hex: 0xDA373C)).interactive()
+            return .regular.tint(Color.leaveCallRed).interactive()
         }
         if let effectiveTint {
             return .regular.tint(effectiveTint.opacity(0.18)).interactive()
@@ -563,7 +328,7 @@ struct VoiceCallControlDock: View {
                     title: model.isCameraEnabled ? "Stop Video" : "Start Video",
                     systemImage: model.isCameraEnabled ? "video.slash.fill" : "video.fill",
                     isAlert: false,
-                    tintColor: model.isCameraEnabled ? Color(hex: 0x23A55A) : nil,
+                    tintColor: model.isCameraEnabled ? Color.presenceOnline : nil,
                     isDisabled: model.voiceSessionState != .connected
                         && !model.isCameraEnabled,
                     showsTitle: showsTitles,
@@ -591,7 +356,7 @@ struct VoiceCallControlDock: View {
                     isPresented: $showInputControls,
                     arrowEdge: .bottom
                 ) {
-                    VoiceInputControls(model: model)
+                    VoiceAudioControls(model: model, direction: .input)
                 }
 
                 CallDockSplitButton(
@@ -607,7 +372,7 @@ struct VoiceCallControlDock: View {
                     isPresented: $showOutputControls,
                     arrowEdge: .bottom
                 ) {
-                    VoiceOutputControls(model: model)
+                    VoiceAudioControls(model: model, direction: .output)
                 }
 
                 CallDockButton(
@@ -619,7 +384,7 @@ struct VoiceCallControlDock: View {
                 }
                 .disabled(model.voiceSessionState != .connected || model.isVoiceDeafened)
                 .background {
-                    StableReactionPickerPresenter(
+                    StablePickerPopoverPresenter(
                         isPresented: $showSoundboard,
                         preferredEdge: .maxY,
                         accessibilityIdentifier: "voice-call-soundboard-picker"
@@ -644,7 +409,7 @@ struct VoiceCallControlDock: View {
             }
             .disabled(model.voiceSessionState != .connected || !model.canStartActivity(in: channel))
             .background {
-                StableReactionPickerPresenter(
+                StablePickerPopoverPresenter(
                     isPresented: $showActivities,
                     preferredEdge: .maxY,
                     accessibilityIdentifier: "voice-call-activity-shelf"
@@ -691,7 +456,7 @@ private struct ScreenShareControlsPopover: View {
             actionRow(
                 title: "Stop Sharing",
                 systemImage: "rectangle.on.rectangle.slash",
-                color: Color(hex: 0xF23F43)
+                color: MentionRed.color
             ) {
                 dismiss()
                 Task { await model.stopScreenSharing() }
@@ -706,45 +471,35 @@ private struct ScreenShareControlsPopover: View {
             }
 
             Button { showFrameRateControls.toggle() } label: {
-                HStack(spacing: InterfaceScale.metric(10)) {
+                PopoverDisclosureRowLabel(height: InterfaceScale.metric(34)) {
                     Label("Frame Rate", systemImage: "gauge.with.dots.needle.67percent")
-                    Spacer(minLength: InterfaceScale.metric(24))
-                    Image(systemName: "chevron.right")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .frame(maxWidth: .infinity)
-                .frame(height: InterfaceScale.metric(34))
-                .contentShape(Rectangle())
             }
             .buttonStyle(PopoverRowButtonStyle())
             .escapeDismissiblePopover(
                 isPresented: $showFrameRateControls,
                 arrowEdge: .trailing
             ) {
-                ScreenShareFrameRatePopover(model: model)
+                ScreenShareOptionPopover(
+                    model: model, title: "Frame Rate", options: \.availableScreenShareFrameRates,
+                    setting: \.frameRate, optionTitle: \.title
+                )
             }
 
             Button { showQualityControls.toggle() } label: {
-                HStack(spacing: InterfaceScale.metric(10)) {
+                PopoverDisclosureRowLabel(height: InterfaceScale.metric(34)) {
                     Label("Stream Quality", systemImage: "sparkles.tv")
-                    Spacer(minLength: InterfaceScale.metric(24))
-                    Image(systemName: "chevron.right")
-                        .font(.interface(.caption).weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .frame(maxWidth: .infinity)
-                .frame(height: InterfaceScale.metric(34))
-                .contentShape(Rectangle())
             }
             .buttonStyle(PopoverRowButtonStyle())
             .escapeDismissiblePopover(
                 isPresented: $showQualityControls,
                 arrowEdge: .trailing
             ) {
-                ScreenShareQualityPopover(model: model)
+                ScreenShareOptionPopover(
+                    model: model, title: "Stream Quality", options: \.availableScreenShareQualities,
+                    setting: \.quality, optionTitle: \.title
+                )
             }
 
             Button {
@@ -792,27 +547,32 @@ private struct ScreenShareControlsPopover: View {
     }
 }
 
-struct ScreenShareQualityPopover: View {
+/// One screen-share setting's choices, checking the current one.
+struct ScreenShareOptionPopover<Option: Hashable>: View {
     let model: AppModel
+    let title: LocalizedStringKey
+    let options: KeyPath<AppModel, [Option]>
+    let setting: WritableKeyPath<ScreenShareSettings, Option>
+    let optionTitle: KeyPath<Option, String>
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
-            Text("Stream Quality")
+            Text(title)
                 .font(.interface(.headline))
                 .padding(.horizontal, InterfaceScale.metric(4))
                 .padding(.bottom, InterfaceScale.metric(4))
-            ForEach(model.availableScreenShareQualities, id: \.self) { quality in
+            ForEach(model[keyPath: options], id: \.self) { option in
                 Button {
                     Task {
                         var settings = model.screenShareSettings
-                        settings.quality = quality
+                        settings[keyPath: setting] = option
                         await model.updateScreenShareSettings(settings)
                     }
                 } label: {
                     HStack {
-                        Text(quality.title)
+                        Text(option[keyPath: optionTitle])
                         Spacer()
-                        if model.screenShareSettings.quality == quality {
+                        if model.screenShareSettings[keyPath: setting] == option {
                             Image(systemName: "checkmark")
                                 .foregroundStyle(SakuraCordAccentColor.color)
                         }
@@ -910,7 +670,7 @@ private struct CallDockSplitButton: View {
     }
 
     private var effectiveTint: Color? {
-        tintColor ?? (isAlert ? Color(hex: 0xF23F43) : nil)
+        tintColor ?? (isAlert ? MentionRed.color : nil)
     }
 }
 
@@ -936,175 +696,47 @@ private struct CallDockLeaveButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(.white)
         .glassEffect(
-            .regular.tint(Color(hex: 0xDA373C)).interactive(),
+            .regular.tint(Color.leaveCallRed).interactive(),
             in: Capsule()
         )
         .help("Disconnect")
     }
 }
 
-private struct VoiceSquareButton: View {
-    let systemImage: String
-    let isAlert: Bool
-    var isDisabled = false
-    let help: String
-    let action: () -> Void
+/// A call's input or output device and volume.
+private struct VoiceAudioControls: View {
+    enum Direction { case input, output }
 
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.interfaceSystem(size: 15, weight: .semibold))
-                .frame(width: InterfaceScale.metric(34), height: InterfaceScale.metric(34))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(isAlert ? Color(hex: 0xF23F43) : Color.primary)
-        .background(buttonBackground, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous))
-        .disabled(isDisabled)
-        .opacity(isDisabled ? 0.42 : 1)
-        .help(help)
-    }
-
-    private var buttonBackground: Color {
-        isAlert ? Color(hex: 0xF23F43).opacity(0.14) : Color.primary.opacity(0.045)
-    }
-}
-
-private struct VoiceSplitButton: View {
-    let systemImage: String
-    let isAlert: Bool
-    var isDisabled = false
-    let primaryHelp: String
-    let secondaryHelp: String
-    let primaryAction: () -> Void
-    let secondaryAction: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Button(action: primaryAction) {
-                Image(systemName: systemImage)
-                    .font(.interfaceSystem(size: 15, weight: .semibold))
-                    .frame(width: InterfaceScale.metric(35), height: InterfaceScale.metric(34))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(primaryHelp)
-
-            Rectangle()
-                .fill(isAlert ? Color(hex: 0xF23F43).opacity(0.25) : Color.primary.opacity(0.12))
-                .frame(width: 1, height: InterfaceScale.metric(20))
-
-            Button(action: secondaryAction) {
-                Image(systemName: "chevron.down")
-                    .font(.interfaceSystem(size: 9, weight: .bold))
-                    .frame(width: InterfaceScale.metric(22), height: InterfaceScale.metric(34))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(secondaryHelp)
-        }
-        .foregroundStyle(isAlert ? Color(hex: 0xF23F43) : Color.primary)
-        .background(buttonBackground, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous))
-        .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous))
-        .disabled(isDisabled)
-        .opacity(isDisabled ? 0.42 : 1)
-    }
-
-    private var buttonBackground: Color {
-        isAlert ? Color(hex: 0xF23F43).opacity(0.14) : Color.primary.opacity(0.045)
-    }
-}
-
-private struct VoiceConnectionDetails: View {
     let model: AppModel
-    let statusLabel: String
-    let statusColor: Color
+    let direction: Direction
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
-            HStack(spacing: InterfaceScale.metric(8)) {
-                Circle().fill(statusColor).frame(width: InterfaceScale.metric(8), height: InterfaceScale.metric(8))
-                Text(statusLabel).font(.interface(.headline))
-            }
-            Divider()
-            LabeledContent("Channel", value: model.activeVoiceChannel?.name ?? "Voice")
-            LabeledContent("Encryption", value: encryptionLabel)
-            LabeledContent("Latency", value: latencyLabel)
-            LabeledContent("Participants", value: "\(max(1, model.voiceParticipants.count + 1))")
-            if let error = model.voiceErrorMessage {
-                Text(error)
-                    .font(.interface(.caption))
-                    .foregroundStyle(Color(hex: 0xDA373C))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .font(.interface(.caption))
-        .padding(InterfaceScale.metric(16))
-        .frame(width: InterfaceScale.metric(260))
-    }
-
-    private var encryptionLabel: String {
-        model.voiceEncryptionVersion.map { "DAVE v\($0)" } ?? "Negotiating"
-    }
-
-    private var latencyLabel: String {
-        model.voiceLatencyMilliseconds.map { "\($0) ms" } ?? "Measuring"
-    }
-}
-
-private struct VoiceInputControls: View {
-    let model: AppModel
-
-    var body: some View {
+        let isInput = direction == .input
         VStack(alignment: .leading, spacing: InterfaceScale.metric(14)) {
-            Text("Input").font(.interface(.headline))
+            Text(isInput ? "Input" : "Output").font(.interface(.headline))
             VoiceDevicePicker(
-                title: "Input Device",
-                systemImage: "mic",
-                devices: model.mediaDevices.audioInputs,
-                selectedUID: model.voiceVideoPreferences.inputDeviceUID,
-                select: { device in await model.selectInputDevice(device) }
+                title: isInput ? "Input Device" : "Output Device",
+                systemImage: isInput ? "mic" : "speaker.wave.2",
+                devices: isInput ? model.mediaDevices.audioInputs : model.mediaDevices.audioOutputs,
+                selectedUID: isInput ? model.voiceVideoPreferences.inputDeviceUID : model.voiceVideoPreferences.outputDeviceUID,
+                select: { device in
+                    isInput ? await model.selectInputDevice(device) : await model.selectOutputDevice(device)
+                }
             )
             VolumeControl(
-                title: "Input Volume",
-                systemImage: "mic.fill",
+                title: isInput ? "Input Volume" : "Output Volume",
+                systemImage: isInput ? "mic.fill" : "speaker.wave.2.fill",
                 value: Binding(
-                    get: { Double(model.inputVolume) },
-                    set: { value in Task { await model.updateInputVolume(Float(value)) } }
-                )
-            )
-            if let status = model.voiceDeviceStatusMessage {
-                Text(status)
-                    .font(.interface(.caption))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(InterfaceScale.metric(16))
-        .frame(width: InterfaceScale.metric(300))
-        .task { await model.refreshMediaDevices() }
-    }
-}
-
-private struct VoiceOutputControls: View {
-    let model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(14)) {
-            Text("Output").font(.interface(.headline))
-            VoiceDevicePicker(
-                title: "Output Device",
-                systemImage: "speaker.wave.2",
-                devices: model.mediaDevices.audioOutputs,
-                selectedUID: model.voiceVideoPreferences.outputDeviceUID,
-                select: { device in await model.selectOutputDevice(device) }
-            )
-            VolumeControl(
-                title: "Output Volume",
-                systemImage: "speaker.wave.2.fill",
-                value: Binding(
-                    get: { Double(model.outputVolume) },
-                    set: { value in Task { await model.updateOutputVolume(Float(value)) } }
+                    get: { Double(isInput ? model.inputVolume : model.outputVolume) },
+                    set: { value in
+                        Task {
+                            if isInput {
+                                await model.updateInputVolume(Float(value))
+                            } else {
+                                await model.updateOutputVolume(Float(value))
+                            }
+                        }
+                    }
                 )
             )
             if let status = model.voiceDeviceStatusMessage {
@@ -1184,7 +816,7 @@ private struct VoiceDevicePicker: View {
     var body: some View {
         LabeledContent {
             Picker(title, selection: $selectionUID) {
-                Text(systemDefaultAudioDeviceLabel(devices)).tag("")
+                Text(devices.systemDefaultLabel).tag("")
                 ForEach(devices) { device in
                     Text(device.name).tag(device.uid)
                 }
@@ -1209,11 +841,6 @@ private struct VoiceDevicePicker: View {
                 .font(.interface(.callout))
         }
     }
-}
-
-private func systemDefaultAudioDeviceLabel(_ devices: [AudioDeviceInfo]) -> String {
-    guard let device = devices.first(where: \.isDefault) else { return "System Default" }
-    return "System Default (\(device.name))"
 }
 
 private struct CameraDevicePicker: View {

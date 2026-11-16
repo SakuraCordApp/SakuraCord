@@ -783,18 +783,13 @@ private struct StickerPickerButton: View {
             toggleFavorite
         )
         .accessibilityAction(named: Text("Copy Sticker ID")) {
-            copy(item.sticker.id)
+            Pasteboard.copy(item.sticker.id)
         }
         .accessibilityAction(named: Text("Copy Sticker Image Link")) {
             if let link = item.sticker.pickerImageLink?.absoluteString {
-                copy(link)
+                Pasteboard.copy(link)
             }
         }
-    }
-
-    private func copy(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
     }
 }
 
@@ -831,11 +826,11 @@ struct StickerPreview: View {
                   maximumPixelDimension: 240
               )
         else { return }
-        NativeTimelineMediaStore.shared.cacheDecodedImage(
+        MediaImageStore.shared.cacheDecodedImage(
             decoded,
             for: .media(url, maximumPixelDimension: 384)
         )
-        NativeTimelineMediaStore.shared.cacheDecodedImage(
+        MediaImageStore.shared.cacheDecodedImage(
             decoded,
             for: .media(url)
         )

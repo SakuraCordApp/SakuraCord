@@ -57,7 +57,7 @@ extension AppModel {
         else { return nil }
         let channel = context.channel
         guard let guildID = channel.guildID else {
-            return channel.isOfficialSystemDirectMessage || channel.messageRequest != nil ? nil : (channel, permissions)
+            return channel.acceptsPrivateInteraction ? (channel, permissions) : nil
         }
         guard !requiresOnboarding(in: guildID), onboardingMember(in: guildID)?.isPending != true,
               permissions & DiscordPermissionBits.viewChannel != 0,

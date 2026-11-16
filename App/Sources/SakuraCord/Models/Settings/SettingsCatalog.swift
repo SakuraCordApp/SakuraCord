@@ -62,78 +62,6 @@ nonisolated struct SettingsDestination: Hashable, Codable, Sendable {
     }
 }
 
-nonisolated enum SettingsValueScope: String, Codable, Sendable {
-    case appWideLocal
-    case accountLocal
-    case accountAndAppWideLocal
-    case discordSynchronized
-    case mixed
-
-    var title: LocalizedStringResource {
-        switch self {
-        case .appWideLocal:
-            LocalizedStringResource(
-                "App-wide on this Mac",
-                bundle: #bundle,
-                comment: "Settings scope label for a preference shared by all accounts on this Mac."
-            )
-        case .accountLocal:
-            LocalizedStringResource(
-                "Selected account on this Mac",
-                bundle: #bundle,
-                comment: "Settings scope label for a local preference belonging to one account."
-            )
-        case .accountAndAppWideLocal:
-            LocalizedStringResource(
-                "Selected account and app-wide on this Mac",
-                bundle: #bundle,
-                comment: "Settings scope label for an action affecting both the selected account and app-wide local data."
-            )
-        case .discordSynchronized:
-            LocalizedStringResource(
-                "Synchronized by Discord",
-                bundle: #bundle,
-                comment: "Settings scope label for a preference stored by Discord."
-            )
-        case .mixed:
-            LocalizedStringResource(
-                "Local and Discord-controlled",
-                bundle: #bundle,
-                comment: "Settings scope label for a page containing both local and Discord-controlled values."
-            )
-        }
-    }
-}
-
-nonisolated enum SettingsResetCapability: String, Codable, Sendable {
-    case registeredLocalValue
-    case categoryAction
-    case notApplicable
-}
-
-nonisolated enum SettingsValueOwner: String, Codable, Sendable {
-    case applicationPreferences
-    case accountPreferences
-    case appModel
-    case macOS
-    case sparkle
-    case discord
-}
-
-nonisolated enum SettingsPersistence: String, Codable, Sendable {
-    case appPreferences
-    case accountPreferences
-    case sessionOnly
-    case systemManaged
-    case discordManaged
-    case notApplicable
-}
-
-nonisolated enum SettingsAvailability: Equatable, Sendable {
-    case available
-    case unavailable(LocalizedStringResource)
-}
-
 nonisolated struct SettingsPageMetadata: Identifiable, Sendable {
     let id: SettingsPageID
     let group: SettingsSidebarGroupID
@@ -150,11 +78,6 @@ nonisolated struct SettingsControlMetadata: Identifiable, Sendable {
     let label: LocalizedStringResource
     let help: LocalizedStringResource
     let keywords: [LocalizedStringResource]
-    let owner: SettingsValueOwner
-    let scope: SettingsValueScope
-    let persistence: SettingsPersistence
-    let resetCapability: SettingsResetCapability
-    let availability: SettingsAvailability
 }
 
 nonisolated struct SettingsCatalog: Sendable {
@@ -177,7 +100,6 @@ nonisolated struct SettingsCatalog: Sendable {
 
 nonisolated extension SettingsSectionID {
     static let accountIdentity = Self(rawValue: "account-identity")
-    static let accountLaunch = Self(rawValue: "account-launch")
     static let startupRestoration = Self(rawValue: "startup-restoration")
     static let confirmations = Self(rawValue: "confirmations")
     static let appearanceTheme = Self(rawValue: "appearance-theme")
@@ -241,10 +163,7 @@ nonisolated extension SettingsControlID {
     static let accountPhone = Self(rawValue: "my-account.phone")
     static let accountMFA = Self(rawValue: "my-account.mfa")
     static let accountDevices = Self(rawValue: "my-account.devices")
-    static let selectedAccount = Self(rawValue: "my-account.selected-account")
     static let switchAccount = Self(rawValue: "my-account.switch-account")
-    static let addAccount = Self(rawValue: "my-account.add-account")
-    static let removeSavedSession = Self(rawValue: "my-account.remove-saved-session")
     static let launchAtLogin = Self(rawValue: "general.launch-at-login")
     static let launchDestination = Self(rawValue: "general.launch-destination")
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
@@ -472,24 +391,14 @@ nonisolated extension SettingsCatalog {
         section: SettingsSectionID,
         label: String.LocalizationValue,
         help: String.LocalizationValue,
-        keywords: [String.LocalizationValue],
-        owner: SettingsValueOwner = .applicationPreferences,
-        scope: SettingsValueScope,
-        persistence: SettingsPersistence = .appPreferences,
-        reset: SettingsResetCapability = .registeredLocalValue,
-        availability: SettingsAvailability = .available
+        keywords: [String.LocalizationValue]
     ) -> SettingsControlMetadata {
         SettingsControlMetadata(
             id: id,
             destination: SettingsDestination(page: page, section: section),
             label: LocalizedStringResource(label, bundle: #bundle),
             help: LocalizedStringResource(help, bundle: #bundle),
-            keywords: keywords.map { LocalizedStringResource($0, bundle: #bundle) },
-            owner: owner,
-            scope: scope,
-            persistence: persistence,
-            resetCapability: reset,
-            availability: availability
+            keywords: keywords.map { LocalizedStringResource($0, bundle: #bundle) }
         )
     }
 }

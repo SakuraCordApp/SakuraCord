@@ -16,26 +16,27 @@ nonisolated extension SettingsSectionID {
 }
 
 nonisolated extension SettingsCatalog {
+    static let importExportPage = page(
+        .importExport, group: .sakuraCord, title: "Import & Export", image: "arrow.up.arrow.down",
+        help: "Save your local SakuraCord settings or restore them from a settings file.",
+        keywords: ["backup", "restore", "transfer", "import", "export", "sakurasettings"]
+    )
+
     static let transferControls: [SettingsControlMetadata] = [
         control(.settingsExport, page: .importExport, section: .settingsTransfer,
-                label: "Export Settings", help: "Save selected local settings to a file.", keywords: [],
-                owner: .applicationPreferences, scope: .appWideLocal, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Export Settings", help: "Save selected local settings to a file.", keywords: []),
         control(.settingsImport, page: .importExport, section: .settingsTransfer,
-                label: "Import Settings", help: "Restore local settings from a file.", keywords: [],
-                owner: .applicationPreferences, scope: .appWideLocal, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Import Settings", help: "Restore local settings from a file.", keywords: []),
         control(.exportSelectAll, page: .importExport, section: .settingsTransfer,
-                label: "Select All Export Categories", help: "Include every category in the export.", keywords: [],
-                owner: .applicationPreferences, scope: .appWideLocal, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Select All Export Categories", help: "Include every category in the export.", keywords: []),
         control(.exportDeselectAll, page: .importExport, section: .settingsTransfer,
-                label: "Deselect All Export Categories", help: "Clear the export category selection.", keywords: [],
-                owner: .applicationPreferences, scope: .appWideLocal, persistence: .sessionOnly, reset: .notApplicable),
+                label: "Deselect All Export Categories", help: "Clear the export category selection.", keywords: []),
     ] + SettingsTransferService.pages.map { page in
         let metadata = foundationPages.first { $0.id == page }!
         return SettingsControlMetadata(
             id: .exportCategory(page), destination: .init(page: .importExport, section: .settingsTransfer),
             label: metadata.title, help: LocalizedStringResource("Include this category in exported settings.", bundle: #bundle),
-            keywords: metadata.keywords, owner: .applicationPreferences, scope: .appWideLocal,
-            persistence: .sessionOnly, resetCapability: .notApplicable, availability: .available
+            keywords: metadata.keywords
         )
     }
 }

@@ -49,22 +49,6 @@ final class ServerInvitePresentationStore {
 }
 
 extension AppModel {
-    func updateServerRailMembership(replacing previous: [GuildID: Guild]) {
-        serverRailPresentation.updateAvailableGuildIDs(serverRailGuildsByID.keys)
-        for guildID in previous.keys where serverRailGuildsByID[guildID] == nil {
-            onboarding.entries[guildID] = nil
-            onboarding.members[guildID] = nil
-            onboarding.timeoutExpiryTasks.removeValue(forKey: guildID)?.cancel()
-            onboarding.timeoutRevisions[guildID] = nil
-            onboarding.guides[guildID] = nil
-            onboarding.channelSelections[guildID] = nil
-            if onboarding.presentedGuildID == guildID { onboarding.presentedGuildID = nil }
-        }
-        if previous.mapValues(\.isUnavailable) != serverRailGuildsByID.mapValues(\.isUnavailable) {
-            serverInvites.changed()
-        }
-    }
-
     func loadServerInvite(_ reference: ServerInviteReference, refresh: Bool = false) {
         let store = serverInvites
         guard !accountTransitionIsActive, store.queue.count < 64 else { return }
@@ -186,26 +170,37 @@ extension AppModel {
         // host. Close its shared state before that host is recreated.
         serverInvites.showsJoinDialog = false
         navigateToInvite(invite)
-        if screening {
-            openGuildJoinApplication(guild.id, inviteCode: invite.reference.code)
-        } else if guild.features.contains("GUILD_ONBOARDING") {
-            openChannelsAndRoles(in: guild.id)
-        }
+        presentPostJoinFlow(guild: guild, screening: screening, inviteCode: invite.reference.code)
         loadServerInvite(invite.reference, refresh: true)
         return true
     }
 
     /// Returns `nil` when the account session ended while waiting.
     func awaitJoinedGuild(_ guildID: GuildID, account session: AppModelAccountSession) async throws -> Guild? {
+        // A joined server can legitimately have no channels visible to this member.
+        // A screened member stays pending until it answers the form; the conversation offers it.
+        guard try await awaitServerRail(
+            account: session,
+            timeoutMessage: "Discord accepted the join, but server details have not arrived yet. Reconnect and check your server list before trying again.",
+            until: { serverRailGuildsByID[guildID]?.isUnavailable == false }
+        ) else { return nil }
+        return serverRailGuildsByID[guildID]
+    }
+
+    /// Waits for the server rail to reflect a membership write, returning `false`
+    /// when the account session ended or the task was cancelled while waiting.
+    private func awaitServerRail(
+        account session: AppModelAccountSession,
+        timeoutMessage: String,
+        until isReconciled: () -> Bool
+    ) async throws -> Bool {
         // Gateway may arrive before or after REST. Wait only for local reconciliation; never repeat the write.
         for _ in 0 ..< 80 {
-            guard isCurrentAccountSession(session), !Task.isCancelled else { return nil }
-            // A joined server can legitimately have no channels visible to this member.
-            // A screened member stays pending until it answers the form; the conversation offers it.
-            if let guild = serverRailGuildsByID[guildID], !guild.isUnavailable { return guild }
+            guard isCurrentAccountSession(session), !Task.isCancelled else { return false }
+            if isReconciled() { return true }
             try await Task.sleep(for: .milliseconds(250))
         }
-        throw ServerInviteError.failed("Discord accepted the join, but server details have not arrived yet. Reconnect and check your server list before trying again.")
+        throw ServerInviteError.failed(timeoutMessage)
     }
 
     private func navigateToInvite(_ invite: ServerInvite) {
@@ -231,15 +226,11 @@ extension AppModel {
         }
         do {
             try await session.provider.leaveGuild(guild.id)
-            for _ in 0 ..< 80 {
-                guard isCurrentAccountSession(session), !Task.isCancelled else { return false }
-                if serverRailGuildsByID[guild.id] == nil {
-                    onboarding.entries[guild.id] = nil
-                    return true
-                }
-                try await Task.sleep(for: .milliseconds(250))
-            }
-            throw ServerInviteError.failed("Discord accepted the leave request, but membership has not updated yet. Reconnect before trying again.")
+            return try await awaitServerRail(
+                account: session,
+                timeoutMessage: "Discord accepted the leave request, but membership has not updated yet. Reconnect before trying again.",
+                until: { serverRailGuildsByID[guild.id] == nil }
+            )
         } catch {
             guard isCurrentAccountSession(session) else { return false }
             store.leaveError = error.localizedDescription

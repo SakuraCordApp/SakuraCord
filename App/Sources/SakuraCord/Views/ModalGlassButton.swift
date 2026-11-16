@@ -43,3 +43,25 @@ struct ModalGlassButton: View {
         .accessibilityLabel(label)
     }
 }
+
+/// An icon-only glass circle; callers keep their own size and weight.
+struct GlassCircleButton: View {
+    let symbol: String
+    let help: LocalizedStringResource
+    let diameter: CGFloat
+    let font: Font
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(font)
+                .frame(width: diameter, height: diameter)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}

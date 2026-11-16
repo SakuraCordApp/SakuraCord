@@ -5,7 +5,6 @@ import MediaPipeline
 nonisolated enum SharedMediaDataMemoryPolicy {
     static let remoteBytes = 24 * 1_024 * 1_024
     static let localBytes = 32 * 1_024 * 1_024
-    static let retainedBytes = remoteBytes + localBytes
 }
 
 nonisolated struct SharedMediaDownloadedFile: Sendable {
@@ -698,5 +697,45 @@ actor SharedMediaDataLoader {
         }
         startEligibleRemoteLoads()
         return true
+    }
+}
+
+nonisolated enum MediaLoadPriority: Int, Sendable {
+    case prefetch
+    case visible
+}
+
+nonisolated enum SharedMediaRequestSchedulingPolicy {
+    static let maximumConcurrentRemoteLoads = 8
+    static let maximumConcurrentPrefetchLoads = 2
+    static let maximumPendingRemoteLoads = 64
+    static let maximumPendingPrefetchLoads = 24
+
+    static func acceptsRemoteLoad(pendingRemoteCount: Int) -> Bool {
+        pendingRemoteCount < maximumPendingRemoteLoads
+    }
+
+    static func acceptsPrefetch(pendingPrefetchCount: Int) -> Bool {
+        pendingPrefetchCount < maximumPendingPrefetchLoads
+    }
+
+    static func nextURL(
+        in order: [URL],
+        priorities: [URL: MediaLoadPriority],
+        activeCount: Int,
+        activePrefetchCount: Int
+    ) -> URL? {
+        guard activeCount < maximumConcurrentRemoteLoads else { return nil }
+        if let visible = order.first(where: {
+            priorities[$0] == .visible
+        }) {
+            return visible
+        }
+        guard activePrefetchCount < maximumConcurrentPrefetchLoads else {
+            return nil
+        }
+        return order.first(where: {
+            priorities[$0] == .prefetch
+        })
     }
 }

@@ -44,3 +44,11 @@ nonisolated struct CustomEmojiImageURLs: Equatable, Sendable, ExpressibleByDicti
         return cancellationCheck() ? nil : false
     }
 }
+
+nonisolated extension EmojiReference {
+    /// A custom emoji's image: the account's own link when it has one, else
+    /// Discord's CDN.
+    func imageURL(in customURLs: CustomEmojiImageURLs?) -> URL? {
+        id.flatMap { customURLs?[$0] } ?? imageURL(size: 64)
+    }
+}

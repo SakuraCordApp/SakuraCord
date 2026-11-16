@@ -166,6 +166,8 @@ nonisolated struct FriendRow: Identifiable, Hashable, Sendable {
 }
 
 nonisolated struct FriendsListGroup: Identifiable, Hashable, Sendable {
+    /// Pending shows it above each group; other sections show their one
+    /// group's title as the list header.
     let title: String
     let rows: [FriendRow]
     var id: String { title }
@@ -222,16 +224,16 @@ nonisolated enum FriendsListPolicy {
         switch section {
         case .online:
             let online = matching.filter(isOnline)
-            return [FriendsListGroup(title: "Online — \(online.count)", rows: online)]
+            return [FriendsListGroup(title: "Online", rows: online)]
         case .all:
             let friends = matching.filter { $0.relationship.type == .friend }
-            return [FriendsListGroup(title: "All Friends — \(friends.count)", rows: friends)]
+            return [FriendsListGroup(title: "All Friends", rows: friends)]
         case .pending:
             let received = matching.filter { isVisibleIncomingRequest($0.relationship) }
             let sent = matching.filter { $0.relationship.type == .outgoingRequest }
             return [
-                FriendsListGroup(title: "Received — \(received.count)", rows: received),
-                FriendsListGroup(title: "Sent — \(sent.count)", rows: sent),
+                FriendsListGroup(title: "Received", rows: received),
+                FriendsListGroup(title: "Sent", rows: sent),
             ].filter { !$0.rows.isEmpty }
         case .addFriend:
             return []
@@ -284,5 +286,14 @@ nonisolated enum FriendsListPolicy {
         // JavaScript `parseInt` reads leading digits; anything else is NaN and serializes as null.
         let discriminator = parts.count > 1 ? Int(String(parts[1].prefix { $0.isASCII && $0.isNumber })) : nil
         return .valid(tag: tag, username: String(parts[0]), discriminator: discriminator)
+    }
+}
+
+extension Member {
+    /// A user outside any server, with their Friends list presence if known.
+    static func friend(_ user: User, presence: UserPresence?) -> Member {
+        var member = Member(user: user, roleName: "", status: presence?.status ?? .offline)
+        member.customStatus = presence?.customStatus
+        return member
     }
 }

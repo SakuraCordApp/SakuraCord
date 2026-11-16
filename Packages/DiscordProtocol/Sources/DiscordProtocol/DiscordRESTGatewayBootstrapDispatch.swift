@@ -127,13 +127,7 @@ extension DiscordRESTProvider {
         }
         quickSwitcherGuildMemberUserIDsByGuildID = [:]
         quickSwitcherJoinedMemberIDsByGuildID = [:]
-        cachedMemberListItems = [:]
-        cachedMemberListGroups = [:]
-        selectedMemberListID = [:]
-        memberListSubscriptions = [:]
-        memberListsNeedingRefresh = [:]
-        memberListSubscriptionOrder = [:]
-        memberListViewportRequests = [:]
+        memberListState = MemberListSubscriptionState()
         cachedGuildChannelDTOs = [:]
         cachedGuildRoles = [:]
         cachedStickersByGuild = [:]
@@ -157,7 +151,7 @@ extension DiscordRESTProvider {
         await loadStartupSearchCaches()
         cachedBlockedOrIgnoredUserIDs = ready.blockedOrIgnoredUserIDs
         adoptReadyRelationships(ready.relationships)
-        profileApexAssignments = ready.apexExperiments
+        experiments = ready.experiments
         resetProfileEditingState()
     }
 
@@ -212,23 +206,23 @@ extension DiscordRESTProvider {
             return settings
         }
         let guildAllUnreadSettingCount = readyNotificationSettings.count {
-            $0.flags & (1 << 11) != 0
+            $0.flags & GuildNotificationSettings.unreadAllMessagesFlag != 0
         }
         let guildMentionOnlyUnreadSettingCount = readyNotificationSettings.count {
-            $0.flags & (1 << 12) != 0
+            $0.flags & GuildNotificationSettings.unreadOnlyMentionsFlag != 0
         }
         let guildOptInCount = readyNotificationSettings.count {
-            $0.flags & (1 << 14) != 0
+            $0.flags & GuildNotificationSettings.optInChannelsFlag != 0
         }
         let channelOverrides = readyNotificationSettings.flatMap(\.channelOverrides)
         let channelAllUnreadSettingCount = channelOverrides.count {
-            $0.flags & (1 << 10) != 0
+            $0.flags & ChannelNotificationOverride.unreadAllMessagesFlag != 0
         }
         let channelMentionOnlyUnreadSettingCount = channelOverrides.count {
-            $0.flags & (1 << 9) != 0
+            $0.flags & ChannelNotificationOverride.unreadOnlyMentionsFlag != 0
         }
         let channelOptInCount = channelOverrides.count {
-            $0.flags & (1 << 12) != 0
+            $0.flags & ChannelNotificationOverride.optInFlag != 0
         }
         gatewayLogger.info(
             """
@@ -412,7 +406,7 @@ extension DiscordRESTProvider {
         applyGuildSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
         applyFavoritesSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
         applyUserContentSettingsProto(ready.userSettingsProto, replacesAllSettings: true)
-        personalizationConsented = ready.personalizationConsented ?? false
+        favoritesSync.personalizationConsented = ready.personalizationConsented ?? false
         publishProfileCustomStatus()
         applyInboxSettingsProto(ready.userSettingsProto, isPartial: false)
         finishInitialGatewaySnapshot(

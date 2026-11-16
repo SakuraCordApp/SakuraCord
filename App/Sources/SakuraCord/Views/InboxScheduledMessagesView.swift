@@ -246,18 +246,19 @@ private struct ScheduledMessageCard: View {
                 StickerPreview(sticker: sticker)
                     .frame(width: InterfaceScale.metric(160), height: InterfaceScale.metric(160))
             }
-            if let media = ForwardMessagePreviewPlan.make(message: preview).media, let url = media.url {
+            if let media = CompactMessagePreviewPlan.make(message: preview).media, let url = media.url {
                 // A GIF link's embed plays its looping video over the still, as in the timeline.
-                let video = media.isSpoiler ? nil : preview.embeds.first { $0.type?.lowercased() == "gifv" }?.video
+                let video = media.isSpoiler ? nil : preview.embeds.first(where: \.isGIFV)?.video
                 ZStack {
                     AnimatedRemoteImage(url: url, animates: !media.isSpoiler, maximumPixelDimension: 400, contentMode: .fit)
                     if let videoURL = video.flatMap({ $0.proxyURL ?? $0.url }) {
                         ScheduledGIFVideo(url: videoURL)
                     }
                 }
-                .aspectRatio(video.flatMap { video in
-                    video.width.flatMap { width in video.height.flatMap { $0 > 0 ? CGFloat(width) / CGFloat($0) : nil } }
-                }, contentMode: .fit)
+                .aspectRatio(
+                    video.flatMap { RichMediaItem.knownSize(width: $0.width, height: $0.height) }.map { $0.width / $0.height },
+                    contentMode: .fit
+                )
                 .frame(maxWidth: InterfaceScale.metric(240), maxHeight: InterfaceScale.metric(180), alignment: .leading)
                 .blur(radius: media.isSpoiler ? 24 : 0)
                 .overlay {
@@ -345,8 +346,13 @@ private struct ScheduledReplyContext: View {
         )
         let text = NSMutableAttributedString(string: prepared.text)
         for range in prepared.spoilerRanges {
-            text.addAttribute(.backgroundColor, value: NativeTimelineSpoilerAppearance.textBackgroundColor(hover: 0), range: range)
-            NativeTimelineSpoilerAppearance.concealText(in: text, range: range)
+            text.addAttribute(.backgroundColor, value: SpoilerAppearance.textBackgroundColor(hover: 0), range: range)
+            SpoilerAppearance.concealText(in: text, range: range)
+        }
+        // Custom emoji images are drawn only in the timeline; here each
+        // reads as its name, as it did before the summary held images.
+        for emoji in prepared.emojis.reversed() {
+            text.replaceCharacters(in: emoji.range, with: ":\(emoji.emoji.name):")
         }
         return AttributedString(text)
     }

@@ -255,18 +255,18 @@ private struct ServerTagStatusBadge: View {
 
     private var status: Status? {
         let features = profile.features
-        if features.contains("STAFF") {
+        if features.contains(GuildFeature.staff) {
             return Status(symbol: "wrench.and.screwdriver.fill", label: "Staff Server", color: .green)
         }
-        if features.contains("VERIFIED") {
-            return Status(symbol: "checkmark", label: features.contains("PARTNERED") ? "Verified and Partnered Server" : "Verified Server", color: .green)
+        if features.contains(GuildFeature.verified) {
+            return Status(symbol: "checkmark", label: features.contains(GuildFeature.partnered) ? "Verified and Partnered Server" : "Verified Server", color: .green)
         }
-        if features.contains("PARTNERED") {
+        if features.contains(GuildFeature.partnered) {
             return Status(symbol: "link", label: "Partnered Server", color: .indigo)
         }
-        guard features.contains("COMMUNITY") else { return nil }
+        guard features.contains(GuildFeature.community) else { return nil }
         let boosted = profile.premiumSubscriptionCount > 0 || profile.premiumTier > 0
-        return features.contains("DISCOVERABLE")
+        return features.contains(GuildFeature.discoverable)
             ? Status(symbol: "globe", label: boosted ? "Boosted Discoverable Server" : "Discoverable Server", color: boosted ? .pink : .secondary)
             : Status(symbol: "house.fill", label: boosted ? "Boosted Community Server" : "Community Server", color: boosted ? .pink : .secondary)
     }

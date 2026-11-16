@@ -214,28 +214,15 @@ import Testing
     )
 }
 
-@Test func `earlier history intent survives an active gesture or requested skeleton viewport`() {
-    #expect(
-        TimelineHistoryScrollIntentPolicy.shouldRetain(
-            hasIntent: true,
-            isGestureActive: true,
-            isInProvisionalHistory: false
-        )
-    )
-    #expect(
-        TimelineHistoryScrollIntentPolicy.shouldRetain(
-            hasIntent: true,
-            isGestureActive: false,
-            isInProvisionalHistory: true
-        )
-    )
-    #expect(
-        !TimelineHistoryScrollIntentPolicy.shouldRetain(
-            hasIntent: true,
-            isGestureActive: false,
-            isInProvisionalHistory: false
-        )
-    )
+@MainActor @Test func `earlier history intent survives an active gesture or requested skeleton viewport`() {
+    var intent = TimelineHistoryScrollIntent()
+    intent.gestureBegan(grantsIntent: true)
+    #expect(intent.retained(isInProvisionalHistory: false).hasIntent)
+    var ended = intent
+    ended.gestureEnded(isInProvisionalHistory: true)
+    #expect(ended.hasIntent)
+    ended.gestureEnded(isInProvisionalHistory: false)
+    #expect(!ended.hasIntent)
 }
 
 @Test func `later history loads only at the loaded window boundary`() {
@@ -271,22 +258,6 @@ import Testing
             requiresUserScrollIntent: false,
             hasUserScrollIntent: false
         )
-    )
-}
-
-@Test func `unresolved unread boundaries do not draw a misleading divider`() {
-    let unreadID = MessageID(rawValue: 42)
-    #expect(
-        TimelineUnreadBoundaryPolicy.displayedMessageID(
-            firstUnreadMessageID: unreadID,
-            isLowerBound: false
-        ) == unreadID
-    )
-    #expect(
-        TimelineUnreadBoundaryPolicy.displayedMessageID(
-            firstUnreadMessageID: unreadID,
-            isLowerBound: true
-        ) == nil
     )
 }
 

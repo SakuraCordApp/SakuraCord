@@ -168,7 +168,6 @@ extension AppModel {
         transitionGeneration: UInt64
     ) async -> Bool {
         let previousAccount = accountSession(allowsTransition: true)
-        let previousProvider = previousAccount.provider
         let previousEventTask = eventTask
         await resetAccountScopedLoadsAndForumState()
         let preparationSignpost = AppPerformanceSignposts.signposter.beginInterval(
@@ -183,19 +182,11 @@ extension AppModel {
                 )
             }
         }
-        await AppPerformanceSignposts.measure("PreviousSessionShutdown") {
-            await leaveVoice(account: previousAccount)
-            guard accountSessionGeneration == transitionGeneration else { return }
-            resetAppSounds()
-            await previousProvider.disconnect()
-        }
-        guard accountSessionGeneration == transitionGeneration else { return false }
-        previousEventTask?.cancel()
-        await previousEventTask?.value
-        guard accountSessionGeneration == transitionGeneration else { return false }
-        eventTask = nil
-        await drainAccountChildTasks()
-        guard accountSessionGeneration == transitionGeneration else { return false }
+        guard await shutDownPreviousSession(
+            previousAccount,
+            eventTask: previousEventTask,
+            transitionGeneration: transitionGeneration
+        ) else { return false }
         if !preservesInteractivePresentation {
             sessionState = .connecting
         }
@@ -206,7 +197,7 @@ extension AppModel {
         }
         installAccountSession(provider: nextProvider, database: nextDatabase)
         accountTransitionIsActive = false
-        resetForAccountConnection(handle)
+        resetAccountScopedState(for: handle)
         resetAccountPresentationState()
         AppPerformanceSignposts.signposter.endInterval(
             "AccountConnectionPreparation",
@@ -226,23 +217,48 @@ extension AppModel {
         return isAuthenticated
     }
 
-    func resetForAccountConnection(_ handle: CredentialHandle) {
+    /// Stops the previous account's voice, sounds, provider, event consumer
+    /// and child tasks; false once a newer transition superseded this one.
+    func shutDownPreviousSession(
+        _ previousAccount: AppModelAccountSession,
+        eventTask previousEventTask: Task<Void, Never>?,
+        transitionGeneration: UInt64
+    ) async -> Bool {
+        await AppPerformanceSignposts.measure("PreviousSessionShutdown") {
+            await leaveVoice(account: previousAccount)
+            guard accountSessionGeneration == transitionGeneration else { return }
+            resetAppSounds()
+            await previousAccount.provider.disconnect()
+        }
+        guard accountSessionGeneration == transitionGeneration else { return false }
+        previousEventTask?.cancel()
+        await previousEventTask?.value
+        guard accountSessionGeneration == transitionGeneration else { return false }
+        eventTask = nil
+        await drainAccountChildTasks()
+        return accountSessionGeneration == transitionGeneration
+    }
+
+    /// Points account-owned stores at `handle`'s account, or at the signed-out scope when it is `nil`.
+    func resetAccountScopedState(for handle: CredentialHandle?) {
+        let isOffline = launchMode == .offlineTesting
+        let frecencyScope = handle?.accountID ?? (isOffline ? "offline" : "signed-out")
         hasPendingLaunchWelcome = false
+        credentialHandle = handle
+        activeAccountID = handle?.accountID
         resetAcknowledgementWork()
         resetChannelNotificationMutations()
-        readState.reset(accountID: handle.accountID)
+        readState.reset(accountID: handle?.accountID ?? (isOffline ? "offline" : nil))
         currentUserRoleIDsByGuild = [:]
+        commandComposer.configureFrecencyScope(frecencyScope)
+        configureEmojiFrecency(scope: frecencyScope)
+        configureLocalFavorites(accountID: handle?.accountID)
         supportedCapabilities = []
         componentInteractionPresentation = .init()
         pendingInteractions = [:]
         pendingInteractionOrder = []
         interactionModalForm = nil
-        credentialHandle = handle
-        activeAccountID = handle.accountID
         didAttemptSessionRestore = true
-        commandComposer.configureFrecencyScope(handle.accountID)
-        configureEmojiFrecency(scope: handle.accountID)
-        configureLocalFavorites(accountID: handle.accountID)
     }
 
     func resetAccountPresentationState() {
@@ -262,7 +278,7 @@ extension AppModel {
         forwardingMessage = nil
         forwardingErrorMessage = nil
         isForwardingMessages = false
-        forwardDestinationHistory = []
+        conversationDestinationHistory = []
         quickSwitcherDraftChannelIDs = []
         snapshot = nil
         replaceServerRailGuilds([:])
@@ -411,27 +427,11 @@ extension AppModel {
     }
 
     func installSignedOutAccountState() {
-        hasPendingLaunchWelcome = false
         bootstrapHistoryPrefetch?.task.cancel()
         bootstrapHistoryPrefetch = nil
-        credentialHandle = nil
-        activeAccountID = nil
-        resetAcknowledgementWork()
-        resetChannelNotificationMutations()
-        readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
-        currentUserRoleIDsByGuild = [:]
-        commandComposer.configureFrecencyScope(
-            launchMode == .offlineTesting ? "offline" : "signed-out"
-        )
-        configureEmojiFrecency(scope: launchMode == .offlineTesting ? "offline" : "signed-out")
-        configureLocalFavorites(accountID: nil)
+        resetAccountScopedState(for: nil)
         let signedOutProvider: any ChatProvider =
             launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider()
-        supportedCapabilities = []
-        componentInteractionPresentation = .init()
-        pendingInteractions = [:]
-        pendingInteractionOrder = []
-        interactionModalForm = nil
         let signedOutDatabase = launchMode == .offlineTesting
             ? try? SakuraCordDatabase(inMemory: true)
             : nil
@@ -440,7 +440,6 @@ extension AppModel {
         resetAccountPresentationState()
         connectionState = .disconnected
         isAuthenticated = false
-        didAttemptSessionRestore = true
         sessionState = launchMode == .offlineTesting ? .connecting : .signedOut
     }
 
@@ -509,8 +508,7 @@ extension AppModel {
         releaseAllOwnedPromisedFiles()
         oversizedAttachmentPrompt = nil
         queuedOversizedAttachmentPrompts.removeAll()
-        for task in interactionDeadlineTasks.values { task.cancel() }
-        interactionDeadlineTasks = [:]
+        interactionDeadlineTasks.cancelAll()
         for commandComposer in commandComposers {
             commandComposer.resetForChannelChange()
             commandComposer.memberSearchCache = [:]
@@ -541,15 +539,6 @@ extension AppModel {
         roleMemberResult = nil
         roleMemberErrorMessage = nil
         isLoadingRoleMembers = false
-        inspectorProfileTask?.cancel()
-        inspectorProfileTask = nil
-        contextualProfileTask?.cancel()
-        contextualProfileTask = nil
-        for task in stickerLoadTasks.values {
-            task.cancel()
-        }
-        stickerLoadTasks = [:]
-        stickerLoadGeneration &+= 1
         stickersByGuild = [:]
         standardStickerPacks = []
         stickerUserSettings = StickerUserSettings()

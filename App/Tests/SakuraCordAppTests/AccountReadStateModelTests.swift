@@ -89,19 +89,20 @@ struct AccountReadStateModelTests {
         ]
 
         let incremental = AccountReadStateModel()
-        incremental.reset(accountID: "account")
-        incremental.configure(
+        incremental.applyInitialState(AccountReadStateModel.makeInitialState(.init(
             accountID: "account",
             guilds: guilds,
             channels: channels,
+            threads: [],
             readStates: readStates,
-            notificationSettings: settings
-        )
+            notificationSettings: settings,
+            usesNewNotifications: true,
+            currentUserID: currentUser.id
+        )))
         for thread in threads {
             incremental.merge(thread: thread)
         }
         incremental.replaceActiveJoinedThreads(threads)
-        incremental.setCurrentUserID(currentUser.id)
 
         let batched = AccountReadStateModel()
         batched.applyInitialState(AccountReadStateModel.makeInitialState(.init(
@@ -144,7 +145,7 @@ struct AccountReadStateModelTests {
         )
         func model(acknowledging boundary: MessageID?, joinedAt: Date?) -> AccountReadStateModel {
             let model = AccountReadStateModel()
-            model.configure(
+            model.applyInitialState(AccountReadStateModel.makeInitialState(.init(
                 accountID: "account",
                 guilds: [
                     Guild(id: guildID, name: "Guild", defaultMessageNotifications: .allMessages, joinedAt: joinedAt)
@@ -158,10 +159,13 @@ struct AccountReadStateModelTests {
                         lastMessageID: MessageID(rawValue: newPostID.rawValue)
                     )
                 ],
+                threads: [],
                 // READY omits a never-acknowledged forum's read state.
                 readStates: boundary.map { [ChannelReadState(channelID: channelID, lastAcknowledgedMessageID: $0)] } ?? [],
-                notificationSettings: []
-            )
+                notificationSettings: [],
+                usesNewNotifications: true,
+                currentUserID: currentUser.id
+            )))
             model.merge(forumPost: newPost)
             return model
         }
@@ -234,9 +238,7 @@ struct AccountReadStateModelTests {
         let threadID = ChannelID(rawValue: 1 << 22)
         let latestMessageID = MessageID(rawValue: 2 << 22)
         let model = AccountReadStateModel()
-        model.reset(accountID: "account")
-        model.setCurrentUserID(currentUser.id)
-        model.configure(
+        model.applyInitialState(AccountReadStateModel.makeInitialState(.init(
             accountID: "account",
             guilds: [
                 Guild(
@@ -253,9 +255,12 @@ struct AccountReadStateModelTests {
                     kind: .forum
                 )
             ],
+            threads: [],
             readStates: [],
-            notificationSettings: []
-        )
+            notificationSettings: [],
+            usesNewNotifications: true,
+            currentUserID: currentUser.id
+        )))
         model.merge(
             forumPost: ForumPost(
                 thread: MessageThreadSummary(
@@ -362,7 +367,7 @@ struct AccountReadStateModelTests {
             )
         )
 
-        model.setAccessible(false, channelID: channelID)
+        model.applyAccessibility([channelID: false])
 
         #expect(!model.unread(channelID: channelID))
         #expect(!model.unread(channelID: threadID))
@@ -979,9 +984,7 @@ struct AccountReadStateModelTests {
         settings: GuildNotificationSettings? = nil
     ) -> AccountReadStateModel {
         let model = AccountReadStateModel()
-        model.reset(accountID: "account")
-        model.setCurrentUserID(currentUser.id)
-        model.configure(
+        model.applyInitialState(AccountReadStateModel.makeInitialState(.init(
             accountID: "account",
             guilds: [
                 Guild(
@@ -999,6 +1002,7 @@ struct AccountReadStateModelTests {
                     lastMessageID: MessageID(rawValue: latest)
                 )
             ],
+            threads: [],
             readStates: [
                 ChannelReadState(
                     channelID: channelID,
@@ -1006,8 +1010,10 @@ struct AccountReadStateModelTests {
                     mentionCount: mentions
                 ),
             ],
-            notificationSettings: settings.map { [$0] } ?? []
-        )
+            notificationSettings: settings.map { [$0] } ?? [],
+            usesNewNotifications: true,
+            currentUserID: currentUser.id
+        )))
         return model
     }
 
@@ -1150,8 +1156,8 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
     await model.channelLoadTask?.value
     let guildIndex = try #require(model.snapshot?.guilds.firstIndex { $0.id == guildID })
     let resourceIndex = try #require(model.snapshot?.channels.firstIndex { $0.id == ChannelID(rawValue: 200) })
-    model.snapshot?.guilds[guildIndex].features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
-    model.serverRailGuildsByID[guildID]?.features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
+    model.snapshot?.guilds[guildIndex].features = [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]
+    model.serverRailGuildsByID[guildID]?.features = [GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide]
     model.snapshot?.channels[resourceIndex].flags = 128
     var member = Member(user: try #require(model.currentUser), roleName: "", isOnline: true)
     member.flags = 98
@@ -1162,7 +1168,6 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
     await model.acknowledgementTasks[channelID]?.value
     await model.acknowledgementProcessorTask?.value
     let previousRequests = await provider.acknowledgementRequests.count
-    let acknowledged = model.readState.entries[channelID]?.lastAcknowledgedMessageID
 
     if page == .guide { model.openGuildGuide(in: guildID) }
     else { model.openChannelsAndRoles(in: guildID) }
@@ -1172,12 +1177,10 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
         author: User(id: UserID(rawValue: 2), username: "sender", displayName: "Sender"),
         content: "Arrived behind the guild page", guildID: guildID)
     model.consumeImmediately(.messageCreated(incoming))
-    // A late load, old viewport callback, reconnect, or window activation must
+    // A late load, old viewport callback, or window activation must
     // not restore the presentation of a conversation hidden by a guild page.
     model.reportConversationHistoryLoaded(channelID: channelID)
     model.reportTimelineInitialPosition(channelID: channelID, hasReachedReadBoundary: true)
-    model.consumeReadStateSnapshot([ChannelReadState(channelID: channelID,
-        lastAcknowledgedMessageID: acknowledged)])
     model.reportMainWindowActive(false)
     model.reportMainWindowActive(true)
     await model.acknowledgementTasks[channelID]?.value
@@ -1294,49 +1297,6 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
     guard chainedRequests.count == 2 else { return }
     #expect(chainedRequests[1].channelID == nextChannelID)
     #expect(chainedRequests[1].token == "mock-ack-token")
-}
-
-@MainActor
-@Test func `ready read state arriving after timeline setup still permits automatic acknowledgement`() async
-    throws
-{
-    let provider = MockChatProvider()
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: provider,
-        readAcknowledgementTiming: .init(debounce: .milliseconds(10))
-    )
-    await model.start()
-    let channelID = ChannelID(rawValue: 212)
-    model.selectedChannelID = channelID
-    #expect(await until { !model.isLoadingMessages && model.selectedChannelID == channelID })
-    let previousAcknowledgement = model.readState.entries[channelID]?.lastAcknowledgedMessageID
-    model.reportMainWindowActive(true)
-    model.reportTimelineInitialPosition(
-        channelID: channelID,
-        hasReachedReadBoundary: true
-    )
-
-    let newest = Message(
-        id: MessageID(rawValue: UInt64.max - 2),
-        channelID: channelID,
-        author: User(id: UserID(rawValue: 2), username: "sender", displayName: "Sender"),
-        content: "new",
-        guildID: GuildID(rawValue: 100)
-    )
-    await provider.emit(.messageCreated(newest))
-    await provider.emit(.readStateSnapshot([
-        ChannelReadState(
-            channelID: channelID,
-            lastAcknowledgedMessageID: previousAcknowledgement
-        )
-    ]))
-
-    #expect(await eventually { await provider.acknowledgementRequests.count == 1 })
-    let request = try #require(await provider.acknowledgementRequests.first)
-    #expect(request.channelID == channelID)
-    #expect(request.messageID == newest.id)
-    #expect(!request.manual)
 }
 
 @MainActor
@@ -1710,7 +1670,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
     #expect(await eventually {
         model.readState.entries[channelID]?.lastAcknowledgedMessageID == request.messageID
     })
-    #expect(model.channelMentionCount(channelID) == expectedMentions)
+    #expect(model.readState.mentions(channelID: channelID) == expectedMentions)
     #expect(model.readState.holdsAutomaticAcknowledgement(channelID))
     #expect(model.unreadDividerMessageID(channelID: channelID) == selectedMessage.id)
     // As in Discord, only a selection change or a read ends the hold.
@@ -1743,7 +1703,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
     await unsent.value
 
     #expect(model.readState.entries[channelID]?.lastAcknowledgedMessageID == boundary)
-    #expect(model.channelMentionCount(channelID) == 1)
+    #expect(model.readState.mentions(channelID: channelID) == 1)
     #expect(model.readState.holdsAutomaticAcknowledgement(channelID))
     #expect(await provider.acknowledgementRequests.isEmpty)
 }
@@ -1779,11 +1739,11 @@ private final class RecordingNotificationService: NativeNotificationService {
 
     func requestAuthorization() async throws -> Bool { true }
     func authorizationStatus() async -> UNAuthorizationStatus { .authorized }
-    func deliver(
+    func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
+        presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
     ) async {}
     func cancel(accountID: String, channelID: ChannelID) async {

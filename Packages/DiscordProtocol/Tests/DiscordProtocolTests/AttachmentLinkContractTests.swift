@@ -53,23 +53,12 @@ struct AttachmentLinkContractTests {
         let handle = CredentialHandle(accountID: "attachment-link-contract")
         if let diagnostics {
             return DiscordRESTProvider(
-                credentials: AttachmentRefreshCredentialStore(), handle: handle, session: session,
+                credentials: TestCredentialStore(token: "attachment-link-contract-session", handles: []), handle: handle, session: session,
                 apiDiagnostics: diagnostics
             )
         }
-        return DiscordRESTProvider(credentials: AttachmentRefreshCredentialStore(), handle: handle, session: session)
+        return DiscordRESTProvider(credentials: TestCredentialStore(token: "attachment-link-contract-session", handles: []), handle: handle, session: session)
     }
-}
-
-private actor AttachmentRefreshCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("attachment-link-contract-session".utf8)
-    }
-    func remove(_ handle: CredentialHandle) async throws {}
-    func handles() async throws -> [CredentialHandle] { [] }
 }
 
 private struct CapturedAttachmentRefreshRequest: @unchecked Sendable {
@@ -99,33 +88,17 @@ private final class AttachmentRefreshURLProtocol: URLProtocol, @unchecked Sendab
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        var data = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let data = request.bodyData ?? Data()
         let captured = CapturedAttachmentRefreshRequest(
-            method: request.httpMethod ?? "",
-            path: request.url?.path ?? "",
+            method: request.method,
+            path: request.path,
             body: (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         )
         let (status, responseBody) = Self.state.withLock {
             $0.requests.append(captured)
             return ($0.status, $0.responseBody)
         }
-        let response = HTTPURLResponse(
-            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(responseBody.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: Data(responseBody.utf8))
     }
 
     override func stopLoading() {}

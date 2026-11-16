@@ -11,23 +11,14 @@ extension AppModel {
         var groups = inbox.groups.filter { $0.guildID == guildID }
         if !groups.contains(where: \.isEvents), let state = inbox.scheduledEvents.readStates[guildID],
            let newest = state.latestID, newest != state.lastAcknowledgedID {
-            groups.append(InboxUnreadGroup(
-                channelID: ChannelID(rawValue: guildID.rawValue), guildID: guildID,
-                title: "Events", subtitle: nil,
-                oldestReadMessageID: state.lastAcknowledgedID.map { MessageID(rawValue: $0.rawValue) },
-                newestUnreadMessageID: MessageID(rawValue: newest.rawValue), mentionCount: state.mentionCount,
-                isEvents: true
+            groups.append(.events(
+                guildID: guildID, subtitle: nil, oldestRead: state.lastAcknowledgedID, newest: newest,
+                mentionCount: state.mentionCount
             ))
         }
         let channelIDs = Set((snapshot?.channels.filter { $0.guildID == guildID }.map(\.id) ?? [])
             + (snapshot?.activeJoinedThreads.filter { $0.guildID == guildID }.map(\.id) ?? []))
-        let now = Date.now
-        let targets = readState.entries.values.compactMap { entry -> BulkReadStateAcknowledgement? in
-            guard channelIDs.contains(entry.channelID), entry.isAccessible, entry.latestKnownMessageID != nil,
-                  let target = AccountReadStateModel.acknowledgementTarget(for: entry, now: now) else { return nil }
-            return BulkReadStateAcknowledgement(channelID: entry.channelID, messageID: target)
-        }.sorted { $0.channelID < $1.channelID }
-        markInboxGroupsRead(groups, additionalTargets: targets)
+        markInboxGroupsRead(groups, additionalTargets: readState.inboxGuildAcknowledgements(in: channelIDs))
     }
 
     private func markInboxGroupsRead(_ groups: [InboxUnreadGroup], additionalTargets: [BulkReadStateAcknowledgement] = []) {
@@ -89,9 +80,7 @@ extension AppModel {
 
     private func prepareInboxBulkChannels(_ targets: [BulkReadStateAcknowledgement]) {
         for target in targets where target.readStateType == 0 {
-            discardPendingAcknowledgement(for: target.channelID)
-            readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
-            readState.acknowledge(channelID: target.channelID, messageID: target.messageID)
+            acknowledgeExplicitly(channelID: target.channelID, through: target.messageID)
         }
     }
 

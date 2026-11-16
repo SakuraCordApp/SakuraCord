@@ -6,8 +6,9 @@ struct AddServerRailButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
+            ServerRailTileLabel(alignment: .leading) {
                 ServerRailSelectionIndicator(isSelected: false, isHovering: isHovering, hasNotification: false)
+            } icon: {
                 Image(systemName: "plus")
                     .font(.interfaceSystem(size: 22, weight: .medium))
                     .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
@@ -15,8 +16,6 @@ struct AddServerRailButton: View {
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: InterfaceScale.metric(13)))
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
             }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .leading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in

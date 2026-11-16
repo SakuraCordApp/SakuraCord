@@ -36,7 +36,7 @@ final class ComposerSendTransitionAnchor {
     func source(
         channelID: ChannelID,
         content: String,
-        attachments: [ForumPostAttachment],
+        attachments: [StagedAttachment],
         uploads: AttachmentUploadProgressStore
     ) -> NativeTimelineSendTransitionSource? {
         fieldSource(
@@ -48,7 +48,7 @@ final class ComposerSendTransitionAnchor {
     }
 
     /// Lets the media viewer zoom a staged file out of its tile and back.
-    func mediaViewerSource(for attachment: ForumPostAttachment) -> MediaViewerTransitionSource? {
+    func mediaViewerSource(for attachment: StagedAttachment) -> MediaViewerTransitionSource? {
         guard let view = attachmentPreviews[attachment.id]?.view,
               let image = tileImage(for: attachment)
         else { return nil }
@@ -141,7 +141,7 @@ final class ComposerSendTransitionAnchor {
     /// icon flies on its own, except under a spoiler, which flies covered
     /// as its tile shows it.
     private func attachmentSnapshot(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         uploadFraction: Double?
     ) -> NativeTimelineSendTransitionSource.Attachment? {
         let flysIcon = !attachment.isVisualMedia && !attachment.isSpoiler
@@ -175,7 +175,7 @@ final class ComposerSendTransitionAnchor {
 
     /// What a staged attachment's tile shows: an image or video thumbnail,
     /// or another file's icon and type, under its spoiler cover if it has one.
-    private func tileImage(for attachment: ForumPostAttachment, isLabelOnly: Bool = false) -> NSImage? {
+    private func tileImage(for attachment: StagedAttachment, isLabelOnly: Bool = false) -> NSImage? {
         guard let preview = attachmentPreviews[attachment.id],
               let view = preview.view,
               let window = view.window
@@ -200,11 +200,11 @@ final class ComposerSendTransitionAnchor {
                 .clipped()
                 .spoilerCover(
                     attachment.isSpoiler,
-                    pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: size.width)
+                    pillScale: SpoilerAppearance.pillScale(forTileWidth: size.width)
                 )
                 .environment(
                     \.colorScheme,
-                    view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+                    view.effectiveAppearance.isDark ? .dark : .light
                 )
             )
             renderer.scale = window.backingScaleFactor
@@ -243,7 +243,7 @@ final class ComposerSendTransitionAnchor {
             x: origin.x + firstLine.minX + glyphLocation.x,
             y: origin.y + firstLine.minY + glyphLocation.y
         )
-        guard let image = NativeTimelineSendTransitionSnapshot.render(
+        guard let image = NativeTimelineSnapshotRenderer.render(
             size: drawRect.size,
             scale: window.backingScaleFactor,
             draw: {
@@ -296,27 +296,5 @@ struct ComposerSendTransitionAttachmentReader: NSViewRepresentable {
         var id: UUID?
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    }
-}
-
-extension AppModel {
-    /// Opens a staged file in the media viewer, which zooms it out of its
-    /// tile and back into it.
-    func openComposerAttachment(_ id: UUID, in attachments: [ForumPostAttachment], from anchor: ComposerSendTransitionAnchor) {
-        guard let currentUser,
-              let presentation = NativeTimelineMediaViewerPlan.composerAttachments(
-                  attachments,
-                  selectedAttachmentID: id,
-                  author: currentUser
-              )
-        else { return }
-        // Every staged file zooms back into its own tile, whichever the
-        // viewer shows when it closes.
-        let sources = attachments.compactMap(anchor.mediaViewerSource)
-        mediaViewerSelectedItemID = id.uuidString
-        mediaViewerPresentation = presentation.withTimelineMedia(
-            previewImages: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0.image) }),
-            transitionSources: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0) })
-        )
     }
 }

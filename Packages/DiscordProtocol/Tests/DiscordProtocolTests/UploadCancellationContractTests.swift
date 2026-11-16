@@ -84,7 +84,7 @@ struct UploadCancellationContractTests {
         let directory = try fixture.directory(containing: ["first.bin", "second.bin"])
         defer { try? FileManager.default.removeItem(at: directory) }
         let attachments = ["first.bin", "second.bin"].map {
-            ForumPostAttachment(url: directory.appending(path: $0), filename: $0)
+            StagedAttachment(url: directory.appending(path: $0), filename: $0)
         }
         let provider = fixture.provider(holdsEveryUpload: false)
         let send = Task {
@@ -103,7 +103,7 @@ struct UploadCancellationContractTests {
         let fixture = HeldStorageFixture()
         let directory = try fixture.directory(containing: ["kept.bin"])
         defer { try? FileManager.default.removeItem(at: directory) }
-        let attachment = ForumPostAttachment(url: directory.appending(path: "kept.bin"), filename: "kept.bin")
+        let attachment = StagedAttachment(url: directory.appending(path: "kept.bin"), filename: "kept.bin")
         let provider = fixture.provider(holdsEveryUpload: false)
         let channelID = ChannelID(rawValue: 200)
         #expect(await provider.preuploadAttachment(attachment, channelID: channelID, progress: { _ in }))
@@ -127,7 +127,7 @@ struct UploadCancellationContractTests {
         let directory = try fixture.directory(containing: ["kept.bin", "removed.bin"])
         defer { try? FileManager.default.removeItem(at: directory) }
         let attachments = ["kept.bin", "removed.bin"].map {
-            ForumPostAttachment(url: directory.appending(path: $0), filename: $0)
+            StagedAttachment(url: directory.appending(path: $0), filename: $0)
         }
         let provider = fixture.provider(holdsEveryUpload: false)
         let channelID = ChannelID(rawValue: 200)
@@ -137,7 +137,7 @@ struct UploadCancellationContractTests {
         await provider.discardPreuploadedAttachment(attachments[1].id)
         #expect(fixture.events.requests.last == "DELETE /api/v9/attachments/removed-upload")
         let requestCount = fixture.events.requests.count
-        let uploaded = try await provider.uploadForumAttachments([attachments[0]], channelID: channelID, progress: { _ in })
+        let uploaded = try await provider.uploadStagedAttachments([attachments[0]], channelID: channelID, progress: { _ in })
         #expect(fixture.events.requests.count == requestCount)
         guard case let .object(payload) = uploaded.first, uploaded.count == 1 else { Issue.record("Missing kept attachment"); return }
         #expect(payload["uploaded_filename"] == .string("kept-upload"))
@@ -246,7 +246,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
         }
         var data = Data()
         if request.httpMethod == "POST" {
-            let body = Self.requestBody(request)
+            let body = request.jsonBody
             if url.path.hasSuffix("/messages") || url.path.hasSuffix("/scheduled-messages") {
                 let attachments = body?["attachments"] as? [[String: Any]]
                 report(.posted(attachments?.compactMap { $0["filename"] as? String } ?? []))
@@ -261,10 +261,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
             }
             data = (try? JSONSerialization.data(withJSONObject: ["attachments": slots])) ?? Data()
         }
-        guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 200, body: data, headers: nil)
     }
 
     override func stopLoading() {
@@ -281,20 +278,5 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
             name: Self.received,
             object: Exchange(fixtureID: request.value(forHTTPHeaderField: Self.fixtureHeader), event: event)
         )
-    }
-
-    private static func requestBody(_ request: URLRequest) -> [String: Any]? {
-        var body = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            defer { stream.close() }
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(buffer, count: count)
-            }
-        }
-        return try? JSONSerialization.jsonObject(with: body) as? [String: Any]
     }
 }

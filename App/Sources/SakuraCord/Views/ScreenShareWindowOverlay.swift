@@ -216,7 +216,10 @@ private struct ScreenSharePreviewFooter: View {
                     isPresented: $showFrameRateControls,
                     arrowEdge: .bottom
                 ) {
-                    ScreenShareFrameRatePopover(model: model)
+                    ScreenShareOptionPopover(
+                        model: model, title: "Frame Rate", options: \.availableScreenShareFrameRates,
+                        setting: \.frameRate, optionTitle: \.title
+                    )
                 }
 
                 settingsButton(
@@ -227,7 +230,10 @@ private struct ScreenSharePreviewFooter: View {
                     isPresented: $showQualityControls,
                     arrowEdge: .bottom
                 ) {
-                    ScreenShareQualityPopover(model: model)
+                    ScreenShareOptionPopover(
+                        model: model, title: "Stream Quality", options: \.availableScreenShareQualities,
+                        setting: \.quality, optionTitle: \.title
+                    )
                 }
 
                 audioButton
@@ -278,11 +284,11 @@ private struct ScreenSharePreviewFooter: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(includesAudio ? Color.primary : Color(hex: 0xF23F43))
+        .foregroundStyle(includesAudio ? Color.primary : MentionRed.color)
         .glassEffect(
             includesAudio
                 ? .regular.interactive()
-                : .regular.tint(Color(hex: 0xF23F43).opacity(0.18)).interactive(),
+                : .regular.tint(MentionRed.color.opacity(0.18)).interactive(),
             in: Capsule()
         )
         .disabled(model.isStartingScreenShare)
@@ -302,7 +308,7 @@ private struct ScreenSharePreviewFooter: View {
             .buttonStyle(.plain)
             .foregroundStyle(.white)
             .glassEffect(
-                .regular.tint(Color(hex: 0xDA373C)).interactive(),
+                .regular.tint(Color.leaveCallRed).interactive(),
                 in: Capsule()
             )
         } else {
@@ -344,44 +350,5 @@ private struct ScreenSharePreviewFooter: View {
         model.isScreenShareCaptureAvailable
             && model.screenShareErrorMessage == nil
             && !model.isStartingScreenShare
-    }
-}
-
-struct ScreenShareFrameRatePopover: View {
-    let model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
-            Text("Frame Rate")
-                .font(.interface(.headline))
-                .padding(.horizontal, InterfaceScale.metric(4))
-                .padding(.bottom, InterfaceScale.metric(4))
-            ForEach(model.availableScreenShareFrameRates, id: \.self) { frameRate in
-                Button {
-                    Task {
-                        var settings = model.screenShareSettings
-                        settings.frameRate = frameRate
-                        await model.updateScreenShareSettings(settings)
-                    }
-                } label: {
-                    HStack {
-                        Text(frameRate.title)
-                        Spacer()
-                        if model.screenShareSettings.frameRate == frameRate {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(SakuraCordAccentColor.color)
-                        }
-                    }
-                    .padding(.horizontal, InterfaceScale.metric(8))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: InterfaceScale.metric(30))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(PopoverRowButtonStyle())
-            }
-        }
-        .font(.interface(.callout))
-        .padding(InterfaceScale.metric(12))
-        .frame(width: InterfaceScale.metric(190))
     }
 }

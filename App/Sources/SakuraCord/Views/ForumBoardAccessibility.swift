@@ -80,27 +80,16 @@ extension ForumBoardView {
 
 /// One post as VoiceOver sees it: a button with its unread state, excerpt,
 /// counts and actions, laid over the painted card. It never takes clicks.
-final class ForumBoardAccessibilityProxyView: NSView {
-    nonisolated let press: @MainActor @Sendable () -> Bool
+final class ForumBoardAccessibilityProxyView: AccessibilityProxyView {
     nonisolated let showMenu: @MainActor @Sendable () -> Bool
 
-    override var isFlipped: Bool { true }
-    override var isOpaque: Bool { false }
-
     init(press: @escaping @MainActor @Sendable () -> Bool, showMenu: @escaping @MainActor @Sendable () -> Bool) {
-        self.press = press
         self.showMenu = showMenu
-        super.init(frame: .zero)
+        super.init(press: press)
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { nil }
-
-    override func isAccessibilityElement() -> Bool { true }
-
-    override func hitTest(_: NSPoint) -> NSView? { nil }
-
-    override func draw(_: NSRect) {}
 
     func update(
         presentation: ForumCardPresentation,
@@ -144,11 +133,6 @@ final class ForumBoardAccessibilityProxyView: NSView {
         setAccessibilityValue(message)
         setAccessibilityHelp("Loads the next page of posts again")
         setAccessibilityCustomActions([])
-    }
-
-    nonisolated override func accessibilityPerformPress() -> Bool {
-        let action = press
-        return MainActor.assumeIsolated { action() }
     }
 
     nonisolated override func accessibilityPerformShowMenu() -> Bool {

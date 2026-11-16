@@ -155,7 +155,7 @@ extension NativeTimelineRowPainter {
             }
             NSColor.black.withAlphaComponent(0.2).setFill()
             card.bannerFrame.fill()
-            if let image = mediaImage(for: .media(url, maximumPixelDimension: 640)) {
+            if let image = MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 640)) {
                 drawImage(image, in: card.bannerFrame, cornerRadius: 0, fillsFrame: true)
             }
             NSGraphicsContext.restoreGraphicsState()
@@ -164,7 +164,7 @@ extension NativeTimelineRowPainter {
             let iconShape = NSBezierPath(concentricRoundedRect: card.iconFrame, cornerRadius: InterfaceScale.metric(14))
             NSColor.black.withAlphaComponent(0.64).setFill()
             iconShape.fill()
-            if let url = content.iconURL, let image = mediaImage(for: .media(url, maximumPixelDimension: 128)) {
+            if let url = content.iconURL, let image = MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 128)) {
                 NSGraphicsContext.saveGraphicsState()
                 iconShape.addClip()
                 drawImage(image, in: card.iconFrame, cornerRadius: 0, fillsFrame: true)
@@ -178,7 +178,7 @@ extension NativeTimelineRowPainter {
             systemSymbol("speaker.wave.2.fill", in: symbolFrame, color: secondary, inset: 0)
         }
         for label in card.labels {
-            attributedText(label.attributedText(color: label.secondary ? secondary : foreground), in: label.frame, model: nil)
+            attributedText(NativeTimelineAttributedTextBox(label.attributedText(color: label.secondary ? secondary : foreground)), in: label.frame, model: nil)
         }
         for avatar in card.playerAvatars.reversed() {
             // Each face is cut out of the card so the stack reads as separate circles.
@@ -189,14 +189,14 @@ extension NativeTimelineRowPainter {
             NSBezierPath(ovalIn: avatar.frame).addClip()
             NSColor.gray.setFill()
             avatar.frame.fill()
-            if let url = avatar.url, let image = mediaImage(for: .media(url, maximumPixelDimension: 32)) {
+            if let url = avatar.url, let image = MediaImageStore.shared.stillImage(for: .media(url, maximumPixelDimension: 32)) {
                 drawImage(image, in: avatar.frame, cornerRadius: 0, fillsFrame: true)
             }
             NSGraphicsContext.restoreGraphicsState()
         }
         if card.buttonFrame.height > 0 {
             // Discord's white button with a dark label reads on any cover tint and bubble colour.
-            sakuraCordButton(
+            gradientButton(
                 title: card.buttonTitle, frame: card.buttonFrame, isHovered: isHovered && !card.isDisabled,
                 pressProgress: card.isDisabled ? 0 : pressProgress, colors: [.white], foreground: .black,
                 isEnabled: !card.isDisabled
@@ -213,8 +213,7 @@ extension NativeTimelineRowPainter {
     /// Discord tints the card with a 45° gradient from the cover's colour,
     /// darkened so white text stays legible on any art.
     private static func activityGradient(_ hex: UInt32, in frame: CGRect) {
-        let base = NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255, green: CGFloat((hex >> 8) & 255) / 255,
-                           blue: CGFloat(hex & 255) / 255, alpha: 1)
+        let base = NSColor(hex: hex)
         func scaled(_ factor: CGFloat) -> NSColor {
             NSColor(srgbRed: base.redComponent * factor, green: base.greenComponent * factor,
                     blue: base.blueComponent * factor, alpha: 1)

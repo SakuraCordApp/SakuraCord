@@ -1,115 +1,89 @@
 import AppKit
+import Observation
+
+struct MediaViewerTransitionSource {
+    let itemID: String
+    let image: NSImage
+    let frameInWindow: CGRect
+    var visibleFrameInWindow: CGRect
+    let cornerRadius: CGFloat
+    let fillsFrame: Bool
+    /// Whether the timeline leaves the source out while the viewer shows
+    /// it, through the transition link. A source elsewhere, like a
+    /// composer tile, hides itself.
+    var coversSource = true
+}
+
+/// What the timeline shares with the viewer it opens: the timeline keeps the
+/// zoom's sources on its cards' live frames as it scrolls, and leaves out the
+/// card the viewer stands in for.
+@Observable
+final class MediaViewerTransitionLink {
+    var sources: [String: MediaViewerTransitionSource]
+    /// Takes the card the viewer stands in for, if any.
+    @ObservationIgnored var cover: (String?) -> Void = { _ in }
+    /// Runs in the transaction that removes the viewer.
+    @ObservationIgnored var release: () -> Void = {}
+
+    init(sources: [String: MediaViewerTransitionSource]) {
+        self.sources = sources
+    }
+}
 
 /// A viewer this canvas opened with a zoom: the canvas keeps the zoom's
 /// sources on its cards' live frames and leaves out the card the viewer
 /// stands in for.
 struct NativeTimelineMediaViewerTransition {
-    let presentation: NativeTimelineMediaViewerPresentation
+    let presentation: MediaViewerPresentation
     let row: NativeMessageTimelineItem.Identifier
     var coveredItemID: String?
 }
 
 extension NativeTimelineCanvasView {
+    /// Opens a viewer that zooms from its item's card in this row, and back
+    /// to whichever card it shows when it closes.
     func mediaViewerPresentation(
-        _ presentation: NativeTimelineMediaViewerPresentation,
-        sourceFrame: CGRect,
-        rowIndex: Int,
-        mediaKey: NativeTimelineMediaKey?,
-        cornerRadius: CGFloat,
-        fillsFrame: Bool
-    ) -> NativeTimelineMediaViewerPresentation {
-        linking(
-            sourcedPresentation(
-                presentation, sourceFrame: sourceFrame, rowIndex: rowIndex,
-                mediaKey: mediaKey, cornerRadius: cornerRadius, fillsFrame: fillsFrame
-            ),
-            rowIndex: rowIndex
-        )
+        _ presentation: MediaViewerPresentation,
+        rowIndex: Int
+    ) -> MediaViewerPresentation {
+        linking(sourcedPresentation(presentation, rowIndex: rowIndex), rowIndex: rowIndex)
     }
 
     private func sourcedPresentation(
-        _ presentation: NativeTimelineMediaViewerPresentation,
-        sourceFrame: CGRect,
-        rowIndex: Int,
-        mediaKey: NativeTimelineMediaKey?,
-        cornerRadius: CGFloat,
-        fillsFrame: Bool
-    ) -> NativeTimelineMediaViewerPresentation {
+        _ presentation: MediaViewerPresentation,
+        rowIndex: Int
+    ) -> MediaViewerPresentation {
         let media = timelineMedia(for: presentation, rowIndex: rowIndex)
         let presentation = presentation.withTimelineMedia(
             previewImages: media.previewImages,
             transitionSources: media.transitionSources
         )
         guard presentation.items.indices.contains(presentation.selection) else { return presentation }
-        guard case .image = presentation.items[presentation.selection].kind else {
-            return fileCardTransitionSource(for: presentation.items[presentation.selection], rowIndex: rowIndex)
+        let item = presentation.items[presentation.selection]
+        guard case .image = item.kind else {
+            return fileCardTransitionSource(for: item, rowIndex: rowIndex)
                 .map(presentation.withTransitionSource) ?? presentation
         }
 
-        let item = presentation.items[presentation.selection]
-        let performanceProbe =
-            MediaViewerPresentationPerformanceProbe.shared
-        performanceProbe.begin(
-            mediaWidth: item.width,
-            mediaHeight: item.height
-        )
-
-        guard let mediaKey,
-              let image = NativeTimelineRowPainter.mediaImage(for: mediaKey),
-              window != nil
-        else {
-            performanceProbe.reportSourcePrepared(
-                imageSize: nil,
-                visibleSourceRatio: 0,
-                hasTransitionSource: false
-            )
-            return presentation
-        }
-
-        let frameInCanvas = sourceFrame.offsetBy(
-            dx: 0,
-            dy: displayedRowOrigin(at: rowIndex)
-        )
-        let visibleFrameInCanvas = frameInCanvas.intersection(visibleRect)
-        guard !visibleFrameInCanvas.isNull,
-              visibleFrameInCanvas.width > 0,
-              visibleFrameInCanvas.height > 0
-        else {
-            performanceProbe.reportSourcePrepared(
-                imageSize: image.size,
-                visibleSourceRatio: 0,
-                hasTransitionSource: false
-            )
-            return presentation
-        }
-
+        let performanceProbe = MediaViewerPresentationPerformanceProbe.shared
+        performanceProbe.begin(mediaWidth: item.width, mediaHeight: item.height)
+        let source = media.transitionSources[item.id]
+        let frame = source?.frameInWindow ?? .zero
+        let visibleFrame = source?.visibleFrameInWindow ?? .zero
         performanceProbe.reportSourcePrepared(
-            imageSize: image.size,
-            visibleSourceRatio:
-                visibleFrameInCanvas.width * visibleFrameInCanvas.height
-                / (frameInCanvas.width * frameInCanvas.height),
-            hasTransitionSource: true
+            imageSize: source?.image.size,
+            visibleSourceRatio: visibleFrame.isEmpty
+                ? 0 : visibleFrame.width * visibleFrame.height / (frame.width * frame.height),
+            hasTransitionSource: !visibleFrame.isEmpty
         )
-        return presentation.withTransitionSource(
-            MediaViewerTransitionSource(
-                itemID: item.id,
-                image: image,
-                frameInWindow: convert(frameInCanvas, to: nil),
-                visibleFrameInWindow: convert(
-                    visibleFrameInCanvas,
-                    to: nil
-                ),
-                cornerRadius: cornerRadius,
-                fillsFrame: fillsFrame
-            )
-        )
+        return presentation
     }
 
     /// Given the sources a viewer opened with, only those come back, at
     /// their cards' current frames and with their images if the cache let
     /// them go.
     private func timelineMedia(
-        for presentation: NativeTimelineMediaViewerPresentation,
+        for presentation: MediaViewerPresentation,
         rowIndex: Int,
         refreshing previousSources: [String: MediaViewerTransitionSource]? = nil
     ) -> (
@@ -127,14 +101,14 @@ extension NativeTimelineCanvasView {
 
         func insert(
             _ itemID: String,
-            key: NativeTimelineMediaKey,
+            key: MediaImageKey,
             frame: CGRect?,
             cornerRadius: CGFloat,
             fillsFrame: Bool
         ) {
             guard imageItemIDs.contains(itemID),
                   previousSources.map({ $0[itemID] != nil }) ?? true,
-                  let image = NativeTimelineRowPainter.mediaImage(for: key) ?? previousSources?[itemID]?.image
+                  let image = MediaImageStore.shared.stillImage(for: key) ?? previousSources?[itemID]?.image
             else { return }
             images[itemID] = image
             guard sources[itemID] == nil else { return }
@@ -149,14 +123,14 @@ extension NativeTimelineCanvasView {
         }
 
         for region in layout.attachmentRegions {
-            guard let key = NativeTimelineMediaKey.attachment(
+            guard let key = MediaImageKey.attachment(
                 region.attachment
             ) else { continue }
             insert(
                 region.attachment.id,
                 key: key,
                 frame: region.frame,
-                cornerRadius: 8,
+                cornerRadius: NativeTimelineRowPainter.attachmentCornerRadius,
                 fillsFrame: MediaGalleryImagePresentation.fillsFrame(
                     itemCount: layout.mediaGalleryItemCount
                 )
@@ -165,39 +139,35 @@ extension NativeTimelineCanvasView {
         for region in layout.linkedImageRegions {
             insert(
                 region.reference.id,
-                key: .media(
-                    region.reference.displayURL,
-                    maximumPixelDimension:
-                        region.reference.isEmoji ? 96 : 720
-                ),
+                key: region.mediaKey,
                 frame: region.frame,
-                cornerRadius: region.reference.isEmoji ? 7 : 10,
-                fillsFrame: !region.reference.isEmoji
-                    && !region.reference.isSticker
+                cornerRadius: region.cornerRadius,
+                fillsFrame: region.fillsFrame
             )
         }
         for component in layout.componentLayouts {
-            for region in component.images {
-                insert(
-                    region.componentID,
-                    key: .media(
-                        region.displayURL,
-                        maximumPixelDimension: region.maximumPixelDimension
-                    ),
-                    frame: region.frame,
-                    cornerRadius: region.cornerRadius,
-                    // The row crops a thumbnail to fill its square.
-                    fillsFrame: true
-                )
-            }
-            for region in component.media where !region.isVideo {
-                insert(
-                    region.componentID,
-                    key: .media(region.displayURL),
-                    frame: region.frame,
-                    cornerRadius: 8,
-                    fillsFrame: true
-                )
+            for region in component.mediaRegions {
+                switch region.kind {
+                case let .image(image):
+                    insert(
+                        region.componentID,
+                        key: image.mediaKey,
+                        frame: region.frame,
+                        cornerRadius: image.cornerRadius,
+                        // The row crops a thumbnail to fill its square.
+                        fillsFrame: true
+                    )
+                case let .media(media) where !media.isVideo:
+                    insert(
+                        region.componentID,
+                        key: .media(media.displayURL),
+                        frame: region.frame,
+                        cornerRadius: DiscordRichMessageMetrics.px(8),
+                        fillsFrame: true
+                    )
+                case .media, .file:
+                    break
+                }
             }
         }
         for region in layout.embedRegions {
@@ -210,7 +180,7 @@ extension NativeTimelineCanvasView {
                     item.id,
                     key: .media(url),
                     frame: region.mediaFrame,
-                    cornerRadius: 8,
+                    cornerRadius: InterfaceScale.metric(8),
                     fillsFrame: region.mediaFillsFrame
                 )
             }
@@ -266,7 +236,9 @@ extension NativeTimelineCanvasView {
         guard window != nil, layouts.indices.contains(rowIndex) else { return nil }
         let layout = layouts[rowIndex]
         guard let card = layout.fileCards.first(where: { $0.attachment.id == itemID })
-            ?? layout.componentLayouts.lazy.flatMap(\.files).first(where: { $0.componentID == itemID })?.card
+            ?? layout.componentLayouts.lazy.flatMap(\.mediaRegions).first(where: {
+                $0.fileCard != nil && $0.componentID == itemID
+            })?.fileCard
         else { return nil }
         let frameInCanvas = card.frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
         let visibleFrame = visiblePart(of: frameInCanvas)
@@ -296,8 +268,8 @@ extension NativeTimelineCanvasView {
         displayIfNeeded()
         let scale = window.backingScaleFactor
         let width = Int((rect.width * scale).rounded(.up)), height = Int((rect.height * scale).rounded(.up))
-        guard width > 0, height > 0, let context = ForumCardRasterizer.makeContext(
-            width: width, height: height, colorSpace: ForumCardRasterizer.defaultColorSpace
+        guard width > 0, height > 0, let context = CGContext.premultipliedBitmap(
+            width: width, height: height, colorSpace: CGColorSpace.bitmapDefault
         ) else { return nil }
         let layerRect = convertToLayer(rect)
         // The context's origin is at its bottom; the canvas's at its top.
@@ -313,61 +285,14 @@ extension NativeTimelineCanvasView {
         guard let image = context.makeImage() else { return nil }
         return NSImage(cgImage: image, size: rect.size)
     }
-
-    func mediaViewerPresentation(
-        _ presentation: NativeTimelineMediaViewerPresentation,
-        componentID: String,
-        rowIndex: Int
-    ) -> NativeTimelineMediaViewerPresentation {
-        guard layouts.indices.contains(rowIndex) else { return presentation }
-        if presentation.items.indices.contains(presentation.selection),
-           presentation.items[presentation.selection].id == componentID,
-           layouts[rowIndex].componentLayouts.contains(where: { $0.files.contains { $0.componentID == componentID } }) {
-            return linking(
-                fileCardTransitionSource(for: presentation.items[presentation.selection], rowIndex: rowIndex)
-                    .map(presentation.withTransitionSource) ?? presentation,
-                rowIndex: rowIndex
-            )
-        }
-        for layout in layouts[rowIndex].componentLayouts {
-            if let region = layout.images.first(where: {
-                $0.componentID == componentID
-            }) {
-                return mediaViewerPresentation(
-                    presentation,
-                    sourceFrame: region.frame,
-                    rowIndex: rowIndex,
-                    mediaKey: .media(
-                        region.displayURL,
-                        maximumPixelDimension: region.maximumPixelDimension
-                    ),
-                    cornerRadius: region.cornerRadius,
-                    fillsFrame: true
-                )
-            }
-            if let region = layout.media.first(where: {
-                $0.componentID == componentID
-            }) {
-                return mediaViewerPresentation(
-                    presentation,
-                    sourceFrame: region.frame,
-                    rowIndex: rowIndex,
-                    mediaKey: .media(region.displayURL),
-                    cornerRadius: 8,
-                    fillsFrame: true
-                )
-            }
-        }
-        return presentation
-    }
 }
 
 extension NativeTimelineCanvasView {
     /// Keeps a viewer that zooms from this canvas's cards on their live frames.
     private func linking(
-        _ presentation: NativeTimelineMediaViewerPresentation,
+        _ presentation: MediaViewerPresentation,
         rowIndex: Int
-    ) -> NativeTimelineMediaViewerPresentation {
+    ) -> MediaViewerPresentation {
         let link = presentation.transitionLink
         guard !link.sources.isEmpty, items.indices.contains(rowIndex) else { return presentation }
         mediaViewerTransition = NativeTimelineMediaViewerTransition(

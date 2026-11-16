@@ -124,8 +124,7 @@ extension AppModel {
         case .thread(let thread, _):
             SideConversationLabel(
                 title: thread.name,
-                systemImage: openThreadParentChannel?.kind == .forum
-                    ? "bubble.left.and.bubble.right.fill" : SakuraCordSystemSymbol.thread
+                systemImage: ChannelIconPresentation.threadSystemImage(isForumPost: isOpenThreadForumPost)
             )
         case .threadCreation:
             SideConversationLabel(title: "New Thread", systemImage: SakuraCordSystemSymbol.thread)
@@ -294,9 +293,7 @@ extension AppModel {
                 isRestoringPreviewSelection = false
             }
             sideConversations.context = nil
-            if let selectedChannelID, !isConversationPresented(selectedChannelID) {
-                suspendSelectedConversationPresentation()
-            }
+            suspendSelectedConversationPresentationIfHidden()
         case .thread, .threadCreation:
             sideConversations.context = nil
         }
@@ -362,5 +359,22 @@ extension AppModel {
         if let conversationID {
             completeConversationReadingAndAdvance(channelID: conversationID)
         }
+    }
+
+    /// Selecting a voice channel opens its chat; this reopens a closed one.
+    func openVoiceChat(for channel: Channel) {
+        guard channel.kind == .voice else { return }
+        if selectedChannelID != channel.id {
+            selectedChannelID = channel.id
+        }
+        // Guild pages cannot show the chat.
+        guard selectedChannelID == channel.id, guildWorkspacePage == nil, !isVoiceChatOpen else { return }
+        openSideConversation(.voiceChat(channel.id))
+        beginSelectedChannelLoad()
+    }
+
+    func closeVoiceChat() {
+        guard isVoiceChatOpen else { return }
+        WorkspaceLayoutMotion.perform(in: self, closeSideConversations)
     }
 }

@@ -16,17 +16,12 @@ func `thread decoding preserves slowmode and resets an omitted setting`(_ field:
 
 @Test func `slowmode rejection surfaces its retry interval without replaying the message`() async throws {
     SlowmodeURLProtocol.requestCount.withLock { $0 = 0 }
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [SlowmodeURLProtocol.self]
-    let provider = DiscordRESTProvider(
-        credentials: TestCredentialStore(), handle: CredentialHandle(accountID: "1"),
-        session: URLSession(configuration: configuration)
-    )
+    let provider = stubbedProvider(SlowmodeURLProtocol.self)
     do {
         // Exercise the same central transport as send, with retries explicitly
         // available so a generic 429 replay cannot accidentally pass this test.
         _ = try await provider.perform(
-            "/channels/200/messages", method: "POST", query: [], body: ["content": .string("test")],
+            "/channels/200/messages", method: "POST", body: ["content": .string("test")],
             maximumAttempts: 2
         )
         Issue.record("Slowmode must be returned to the local composer")
@@ -44,15 +39,7 @@ private final class SlowmodeURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         Self.requestCount.withLock { $0 += 1 }
-        guard let url = request.url,
-              let response = HTTPURLResponse(
-                  url: url, statusCode: 429, httpVersion: nil,
-                  headerFields: ["Content-Type": "application/json"]
-              )
-        else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(#"{"code":20016,"retry_after":0.125}"#.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: 429, body: #"{"code":20016,"retry_after":0.125}"#)
     }
 
     override func stopLoading() {}

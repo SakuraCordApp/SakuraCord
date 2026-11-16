@@ -34,10 +34,7 @@ nonisolated enum SidebarThreadPolicy {
     }
 
     static func isMuted(_ thread: MessageThreadSummary, now: Date) -> Bool {
-        guard let settings = thread.notificationSettings, settings.isMuted else {
-            return false
-        }
-        return settings.muteConfiguration?.isActive(at: now) ?? true
+        thread.notificationSettings?.isActivelyMuted(at: now) == true
     }
 
     /// A thread stays relevant until its auto-archive window has elapsed since
@@ -149,7 +146,7 @@ extension AppModel {
                     for: candidates,
                     openThread: openCandidate,
                     unreadOnly: !isFocused && (isCollapsed || isChannelMuted(channel)),
-                    hideMuted: !isFocused && readState.notificationSettings(guildID: guildID)?.hideMutedChannels == true,
+                    hideMuted: !isFocused && settings?.hideMutedChannels == true,
                     now: now
                 )
                 if !rows.isEmpty {
@@ -185,48 +182,5 @@ extension AppModel {
         if let openThread, openThread.id == id { return openThread }
         return activeJoinedThreads.first { $0.id == id }
             ?? threads.first { $0.id == id }
-    }
-
-    func threadNavigationChannel(_ thread: MessageThreadSummary) -> Channel {
-        Channel(id: thread.id, guildID: thread.guildID ?? selectedGuildID, name: thread.name)
-    }
-
-    func openSidebarThread(
-        _ thread: MessageThreadSummary,
-        historyDestination: ConversationNavigationHistory.Destination? = nil,
-        presentsFavorites: Bool? = nil
-    ) {
-        onboarding.presentedGuildID = nil
-        let target = ConversationNavigationTarget.thread(thread.id, fullWidth: true)
-        if historyDestination == nil, isNavigating(to: target, presentsFavorites: presentsFavorites) { return }
-        startConversationNavigation(target: target, to: historyDestination, presentsFavorites: presentsFavorites) { model, account in
-            let guildID = thread.guildID ?? model.selectedGuildID
-            if model.selectedGuildID != guildID {
-                await model.activateGuild(guildID, account: account)
-            }
-            guard !Task.isCancelled, model.isCurrentAccountSession(account) else { return }
-            guard let parentID = thread.parentID,
-                  let parent = model.knownRootChannel(parentID)
-            else {
-                model.errorMessage = "That thread's parent channel has not been discovered yet."
-                return
-            }
-            guard model.conversationAccess(for: parent) != .hidden else {
-                model.errorMessage = "You do not have permission to view that thread."
-                return
-            }
-            model.onboarding.presentedGuildID = nil
-            if model.selectedChannelID != parentID { model.selectedChannelID = parentID }
-            // Establish presentation before loading history so the hidden parent
-            // cannot acknowledge messages while the thread occupies the workspace.
-            if model.openThread?.id == thread.id {
-                model.presentOpenThreadFullWidth()
-            } else {
-                model.openThreadConversation(
-                    thread, starter: nil, startedAt: thread.createdAt,
-                    initialMessages: [], fullWidth: true
-                )
-            }
-        }
     }
 }

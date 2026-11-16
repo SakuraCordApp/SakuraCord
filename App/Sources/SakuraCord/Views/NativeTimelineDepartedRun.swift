@@ -13,7 +13,7 @@ struct NativeTimelineDepartedRun {
         /// The motion whose step closes this piece's height.
         let motionID: Int
         var startUptime: TimeInterval?
-        var timing = NativeTimelineRowMotionTiming.chips
+        var timing = NativeTimelineRowMotionTiming.quart
         /// How far through the motion the piece is fully faded, which a
         /// header taking its place in the next row waits for.
         var fadeEnd: CGFloat = 1
@@ -62,20 +62,20 @@ struct NativeTimelineDepartedRun {
 extension NativeTimelineCanvasView {
     /// A row's picture as it was, for a fade that outlives its layout: the
     /// cached bitmap when it had one, otherwise a fresh raster.
-    func rowFadeImage(_ row: NativeTimelineReactionBaseline.Row, width: CGFloat) -> NSImage? {
-        if let cached = row.bitmap, cached.item == row.item, abs(cached.width - width) < 0.5,
-           cached.appearanceName == effectiveAppearance.name, let picture = cached.images[-1] {
+    func rowFadeImage(_ row: NativeTimelineRowMotionBaseline.Row, width: CGFloat) -> NSImage? {
+        if let cached = row.bitmap, cached.matches(row.item, width: width, appearanceName: effectiveAppearance.name),
+           let picture = cached.images[-1] {
             return picture
         }
         let item = row.item
         let layout = row.layout
         let size = NSSize(width: width, height: layout.height)
         guard let scale = fadePictureScale(for: size) else { return nil }
-        return NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
+        return NativeTimelineSnapshotRenderer.render(size: size, scale: scale) {
             effectiveAppearance.performAsCurrentDrawingAppearance {
                 NativeTimelineRowPainter.draw(
                     item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
-                    isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
+                    revealedTextSpoilerState: row.revealedTextSpoilerState,
                     spoilerRevealStore: spoilerRevealStore, pollPresentation: row.pollPresentation
                 )
             }
@@ -97,14 +97,14 @@ extension NativeTimelineCanvasView {
     /// How much of a row's displayed height is the gap of the deleted run
     /// below it.
     func departedGapHeight(below identifier: NativeMessageTimelineItem.Identifier) -> CGFloat {
-        departedRuns[identifier]?.gap(at: rowMotionUptime) ?? 0
+        rowMotion.departedRuns[identifier]?.gap(at: rowMotionUptime) ?? 0
     }
 
     /// Draws deleted rows in the gaps closing after the rows they followed.
     func drawDepartedRows(in dirtyRect: CGRect) {
-        guard !departedRuns.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
+        guard !rowMotion.departedRuns.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
         let now = rowMotionUptime
-        for (anchor, run) in departedRuns {
+        for (anchor, run) in rowMotion.departedRuns {
             guard let index = rowIndex(forIdentifier: anchor, hint: run.anchorIndex) else { continue }
             // The gap is the end of the row's displayed height, which may
             // also be easing from a change of the row's own.
@@ -128,7 +128,7 @@ extension NativeTimelineCanvasView {
     /// Finds the rows the deleted rows fade after again, from where they
     /// were, and drops the runs of rows that are gone.
     func refreshDepartedRunIndices() {
-        departedRuns = departedRuns.reduce(into: [:]) { runs, entry in
+        rowMotion.departedRuns = rowMotion.departedRuns.reduce(into: [:]) { runs, entry in
             var run = entry.value
             run.anchorIndex = rowIndex(forIdentifier: entry.key, hint: run.anchorIndex)
             if run.anchorIndex != nil { runs[entry.key] = run }
@@ -138,7 +138,7 @@ extension NativeTimelineCanvasView {
     /// The region the deleted rows fade in, for the next frame.
     var departedRunFrame: CGRect {
         let now = rowMotionUptime
-        return departedRuns.reduce(CGRect.null) { frame, entry in
+        return rowMotion.departedRuns.reduce(CGRect.null) { frame, entry in
             guard let index = rowIndex(forIdentifier: entry.key, hint: entry.value.anchorIndex) else { return frame }
             return frame.union(CGRect(
                 x: 0, y: displayedRowOrigin(at: index), width: bounds.width,

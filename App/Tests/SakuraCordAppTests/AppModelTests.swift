@@ -416,7 +416,7 @@ import UserNotifications
     #expect(model.supportsCapability(.components))
     let before = model.messages.count
     model.updateDraft("hello from test")
-    await model.send()
+    _ = await model.submitComposerMessage(attachments: []).serverConfirmation()
     #expect(model.messages.count == before + 1)
     #expect(model.messages.last?.content == "hello from test")
 }
@@ -508,7 +508,7 @@ import UserNotifications
     #expect(privateChannel.map(model.conversationAccess(for:)) == .hidden)
     #expect(model.hiddenChannelIDs.contains(privateChannelID))
     #expect(!model.isChannelUnread(privateChannelID))
-    #expect(model.channelMentionCount(privateChannelID) == 0)
+    #expect(model.readState.mentions(channelID: privateChannelID) == 0)
 
     model.selectedChannelID = privateChannelID
     #expect(await until {
@@ -602,7 +602,7 @@ import UserNotifications
     let model = AppModel(launchMode: .offlineTesting)
     var snapshot = try await MockChatProvider().bootstrap()
     let guildID = try #require(snapshot.guilds.first?.id)
-    snapshot.guilds[0].features.formUnion(["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"])
+    snapshot.guilds[0].features.formUnion([GuildFeature.community, GuildFeature.onboarding, GuildFeature.serverGuide])
     var member = Member(user: snapshot.currentUser, roleName: "", isOnline: false)
     member.flags = 98
     member.joinedAt = .now.addingTimeInterval(-10 * 24 * 60 * 60)
@@ -638,7 +638,7 @@ import UserNotifications
     await model.start()
     var snapshot = try #require(model.snapshot)
     var guild = try #require(snapshot.guilds.first)
-    guild.features.insert("GUILD_ONBOARDING")
+    guild.features.insert(GuildFeature.onboarding)
     guild.currentUserPermissions = .max
     let guildIndex = try #require(snapshot.guilds.firstIndex { $0.id == guild.id })
     snapshot.guilds[guildIndex] = guild
@@ -2003,7 +2003,7 @@ func `authoritative thread deletion removes open cached and resource conversatio
     let previousRevision = model.threadMessageRowsRevision
     model.threadDraft = "one thread timeline mutation"
 
-    #expect(await model.sendThreadComposerMessage(attachments: []))
+    #expect(await model.submitThreadComposerMessage(attachments: []).serverConfirmation())
     #expect(
         await until {
             model.threadMessages.count == previousCount + 1
@@ -2126,7 +2126,7 @@ func `authoritative thread deletion removes open cached and resource conversatio
     model.open(post)
     #expect(model.openThread?.id == post.id)
 
-    model.deleteSidebarThread(post.thread)
+    model.deleteThread(post.thread)
 
     #expect(await until { !model.forumPosts.contains { $0.id == post.id } && model.openThread == nil })
     #expect(model.errorMessage == nil)
@@ -2200,7 +2200,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
     #expect(pinsAutoScroll.mode == .offlineTesting)
     #expect(pinsAutoScroll.includesPinsPerformanceFixture)
     #expect(pinsAutoScroll.includesChatPerformanceFixture)
-    #expect(pinsAutoScroll.runsPinsPerformanceAutoScroll)
     let authenticatedAutoScroll = AppLaunchConfiguration(
         arguments: [
             "SakuraCord",
@@ -2977,7 +2976,7 @@ func `removing a saved account without a credential still clears derived caches`
     _ = await iterator.next()
     model.installAccountSession(provider: MockChatProvider(), database: nil)
     model.draft = "new account draft"
-    model.forwardDestinationHistory = [ChannelID(rawValue: 200)]
+    model.conversationDestinationHistory = [ChannelID(rawValue: 200)]
     release.continuation.yield(())
     do {
         try await clearing.value
@@ -2988,7 +2987,7 @@ func `removing a saved account without a credential still clears derived caches`
         #expect(!error.localizedDescription.contains("draft"))
     }
     #expect(model.draft == "new account draft")
-    #expect(model.forwardDestinationHistory == [ChannelID(rawValue: 200)])
+    #expect(model.conversationDestinationHistory == [ChannelID(rawValue: 200)])
     await provider.disconnect()
 }
 
@@ -3271,7 +3270,7 @@ private extension DiscordRESTProvider {
     #expect(model.messages.first?.content == "replacement account value")
     #expect(
         model.conversationRefreshJournals.values.allSatisfy {
-            $0.mutationsByMessageID.isEmpty
+            $0.mutations.messages.isEmpty
         }
     )
 }
@@ -3409,7 +3408,7 @@ func `quit warning tracks Discord attachment sends until success or failure`(fai
     let draft = SendMessageDraft(
         channelID: provider.channelID,
         content: "attachment",
-        attachments: [ForumPostAttachment(url: URL(filePath: "/tmp/quit-warning-fixture.txt"))]
+        attachments: [StagedAttachment(url: URL(filePath: "/tmp/quit-warning-fixture.txt"))]
     )
     #expect(!model.generalQuitActivities.contains(.upload))
     let send = Task { await model.performOutgoingSend(draft, isRetry: false) }
@@ -3733,7 +3732,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     #expect(model.replyingTo?.id == target.id)
 
     model.updateDraft("reply from test")
-    await model.send()
+    _ = await model.submitComposerMessage(attachments: []).serverConfirmation()
 
     #expect(model.messages.last?.replyTo == target.id)
     #expect(model.messageRows.last?.replyPreview?.messageID == target.id)
@@ -3791,7 +3790,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
     model.setReplyMentionsAuthor(false, in: .thread)
     model.updateDraft("unpinged reply")
-    try #require(await model.send())
+    try #require(await model.submitComposerMessage(attachments: []).serverConfirmation())
     #expect(model.replyingTo == nil)
     #expect(model.messages.last?.mentionedUsers.contains(where: { $0.id == target.author.id }) == false)
     #expect(!model.threadReplyMentionsAuthor)
@@ -3908,7 +3907,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     #expect(model.replyingTo == nil)
 
     model.threadDraft = "forum reply from test"
-    #expect(await model.sendThreadComposerMessage(attachments: []))
+    #expect(await model.submitThreadComposerMessage(attachments: []).serverConfirmation())
     #expect(
         await until {
             model.threadMessages.last?.replyTo == target.id
@@ -4298,8 +4297,6 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 
     #expect(model.messages == loadedMessages)
     #expect(!model.isLoadingMessages)
-    model.consumeReadStateSnapshot([])
-    #expect(model.readState.presentations[channelID]?.initialHistoryLoaded == true)
 
     await model.channelLoadTask?.value
     #expect(await provider.requestCount(for: channelID) == 2)
@@ -4364,28 +4361,6 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     #expect(model.voiceSessionState == .idle)
     #expect(model.voiceStates[snapshot.currentUser.id] == replacementState)
     #expect(await provider.voiceStateUpdateRequestCount == 0)
-}
-
-@MainActor
-@Test func `unchanged unread projection does not republish the account snapshot`() async throws {
-    let snapshot = try await MockChatProvider().bootstrap()
-    #expect(
-        !UnreadPresentationPublicationPolicy.shouldPublish(
-            snapshot: snapshot,
-            channels: snapshot.channels,
-            guilds: snapshot.guilds
-        )
-    )
-
-    var changedChannels = snapshot.channels
-    changedChannels[0].unreadCount += 1
-    #expect(
-        UnreadPresentationPublicationPolicy.shouldPublish(
-            snapshot: snapshot,
-            channels: changedChannels,
-            guilds: snapshot.guilds
-        )
-    )
 }
 
 @MainActor
@@ -6013,8 +5988,8 @@ func `revisited messages restore reactor identities without another request`(isS
     replaceHistory(with: [])
     replaceHistory(with: [message])
     #expect(retainedMessage()?.reactions.first?.reactors.isEmpty == true)
-    #expect(model.retainedReactionReactors(for: message.reactions[0], on: message) == fetched)
-    #expect(model.retainedReactionReactors(for: Reaction(emoji: "👍", count: 5), on: message).isEmpty)
+    #expect(model.loadedReactionReactorPreviews.values.map { $0.reactors } == [fetched])
+    #expect(model.loadedReactionReactorPreviews.values.map { $0.count } == [4])
     #expect(await provider.reactorRequestCount() == 1)
     await model.loadReactionReactors(message.reactions[0], on: message)
     #expect(retainedMessage()?.reactions.first?.reactors == fetched)
@@ -6085,7 +6060,6 @@ func `reaction changes discard pending preview identities even if the count retu
     let expectedIDs = restoresCount ? [remaining.id, newcomer.id] : [remaining.id]
     #expect(reaction.count == expectedIDs.count)
     #expect(reaction.reactors.map(\.id) == expectedIDs)
-    #expect(model.retainedReactionReactors(for: reaction, on: current).map(\.id) == expectedIDs)
     #expect(model.loadedReactionReactorPreviews.isEmpty)
     #expect(model.reactionReactorLoadTasks.isEmpty)
     #expect(model.reactionReactorLoadIDs.isEmpty)
@@ -6113,7 +6087,7 @@ func `reaction changes preserve unrelated pending and saved previews`(clearsAll:
     await load.value
 
     let current = try #require(model.messages.first)
-    let reactors = model.retainedReactionReactors(for: message.reactions[0], on: current)
+    let reactors = current.reactions.first { $0.id == message.reactions[0].id }?.reactors ?? []
     #expect(reactors.count == (clearsAll ? 0 : 2))
     #expect(model.loadedReactionReactorPreviews.count == (clearsAll ? 0 : 1))
     if !clearsAll {
@@ -6379,7 +6353,7 @@ private struct ReactionMutationRequest: Equatable, Sendable {
     var reacted: Bool
 }
 
-private actor ReactionMutationTestProvider: ChatProvider {
+private actor ReactionMutationTestProvider: ChatProviderStub {
     private let user = User(
         id: UserID(rawValue: 98_001),
         username: "reaction-tester",
@@ -6419,20 +6393,6 @@ private actor ReactionMutationTestProvider: ChatProvider {
         [channel]
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -6455,18 +6415,6 @@ private actor ReactionMutationTestProvider: ChatProvider {
             hasMoreBefore: false
         )
     }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
 
     func setReaction(
         _ emoji: String,
@@ -6534,7 +6482,7 @@ private struct ChannelLoadMessageRequest: Equatable, Sendable {
     let limit: Int
 }
 
-private actor SuspendedVoiceReplacementProvider: ChatProvider {
+private actor SuspendedVoiceReplacementProvider: ChatProviderStub {
     let currentUser = User(
         id: UserID(rawValue: 90_000),
         username: "voice-user",
@@ -6575,37 +6523,6 @@ private actor SuspendedVoiceReplacementProvider: ChatProvider {
     }
 
     func channels(in guildID: GuildID?) async throws -> [Channel] { testChannels }
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(
-        in channelID: ChannelID,
-        before: MessageID?,
-        limit: Int
-    ) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
 
     func joinVoice(
         channelID: ChannelID,
@@ -6651,15 +6568,9 @@ private actor SuspendedVoiceReplacementProvider: ChatProvider {
     func releaseLeave(call: Int) {
         leaveContinuations.removeValue(forKey: call)?.resume()
     }
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 }
 
-private actor InaccessibleChannelRequestCountingProvider: ChatProvider {
+private actor InaccessibleChannelRequestCountingProvider: ChatProviderStub {
     private let base = MockChatProvider()
     private var messageRequests: [ChannelID: Int] = [:]
     private var forumRequests: [ChannelID: Int] = [:]
@@ -6713,21 +6624,6 @@ private actor InaccessibleChannelRequestCountingProvider: ChatProvider {
         return try await base.forumPosts(in: channelID, query: query)
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
     func joinVoice(
         channelID: ChannelID,
         guildID: GuildID?,
@@ -6761,7 +6657,7 @@ private actor InaccessibleChannelRequestCountingProvider: ChatProvider {
     }
 }
 
-private actor ChannelLoadTestProvider: ChatProvider {
+private actor ChannelLoadTestProvider: ChatProviderStub {
     private let user = User(id: UserID(rawValue: 91000), username: "tester", displayName: "Tester")
     private let testChannels = [
         Channel(id: ChannelID(rawValue: 91001), guildID: nil, name: "general"),
@@ -6822,20 +6718,6 @@ private actor ChannelLoadTestProvider: ChatProvider {
     func channels(in guildID: GuildID?) async throws -> [Channel] {
         testChannels
     }
-
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
 
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
@@ -7002,10 +6884,6 @@ private actor ChannelLoadTestProvider: ChatProvider {
         blockedPaginatedRequest = nil
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
     func edit(_ message: Message, content: String) async throws -> Message {
         guard blocksNextEdit else {
             throw ChatProviderError.invalidRequest("Editing is not part of this test.")
@@ -7030,8 +6908,6 @@ private actor ChannelLoadTestProvider: ChatProvider {
         blockedEdit = nil
     }
 
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
     func reactionReactors(
         for emoji: String,
         messageID: MessageID,
@@ -7062,11 +6938,6 @@ private actor ChannelLoadTestProvider: ChatProvider {
             )
         }
     }
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 
     func requestCount(for channelID: ChannelID) -> Int {
         messageRequests[channelID, default: 0]
@@ -7115,7 +6986,7 @@ private actor ChannelLoadTestProvider: ChatProvider {
     }
 }
 
-private actor LocalHistoryMemberTestProvider: ChatProvider {
+private actor LocalHistoryMemberTestProvider: ChatProviderStub {
     private let guild = Guild(
         id: GuildID(rawValue: 76_000),
         name: "History Guild",
@@ -7152,8 +7023,6 @@ private actor LocalHistoryMemberTestProvider: ChatProvider {
         guildID == guild.id ? [channel] : []
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
         requests.append(userIDs)
         guard guildID == guild.id, userIDs.contains(author.id) else { return [] }
@@ -7175,13 +7044,6 @@ private actor LocalHistoryMemberTestProvider: ChatProvider {
         guildID == guild.id ? [role] : []
     }
 
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -7199,23 +7061,10 @@ private actor LocalHistoryMemberTestProvider: ChatProvider {
         )
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-    func disconnect() async {}
-
     func resolutionRequests() -> [[UserID]] { requests }
 }
 
-private actor MemberRoleRevocationTestProvider: ChatProvider {
+private actor MemberRoleRevocationTestProvider: ChatProviderStub {
     private let guildID = GuildID(rawValue: 76_700)
     private let user = User(
         id: UserID(rawValue: 76_701),
@@ -7300,45 +7149,6 @@ private actor MemberRoleRevocationTestProvider: ChatProvider {
         ])
         memberContinuation = nil
     }
-
-    func profile(
-        for userID: UserID,
-        in guildID: GuildID?
-    ) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(
-        in channelID: ChannelID,
-        before: MessageID?,
-        limit: Int
-    ) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 }
 
 @MainActor
@@ -7365,7 +7175,7 @@ func `delayed DM creation respects newer navigation`(subsequentChoice: Int) asyn
     }
 }
 
-private actor SuspendedAccountOperationTestProvider: ChatProvider {
+private actor SuspendedAccountOperationTestProvider: ChatProviderStub {
     nonisolated let channelID = ChannelID(rawValue: 96_001)
     nonisolated let threadID = ChannelID(rawValue: 96_002)
     nonisolated let thread: MessageThreadSummary
@@ -7458,18 +7268,6 @@ private actor SuspendedAccountOperationTestProvider: ChatProvider {
         return [Channel(id: channelID, guildID: nil, name: "shared")]
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
-    func profile(
-        for userID: UserID,
-        in guildID: GuildID?
-    ) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(
         in requestedChannelID: ChannelID,
         before: MessageID?,
@@ -7521,14 +7319,6 @@ private actor SuspendedAccountOperationTestProvider: ChatProvider {
         return edited
     }
 
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
     func applicationCommandCatalog(
         for target: ApplicationCommandIndexTarget
     ) async throws -> ApplicationCommandCatalog {
@@ -7549,12 +7339,6 @@ private actor SuspendedAccountOperationTestProvider: ChatProvider {
     ) async throws {
         voiceStateUpdateRequestCount += 1
     }
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 
     func waitUntilMutationRequestsStart() async -> Bool {
         guard await waitUntilSendRequestStarts() else { return false }
@@ -7605,7 +7389,7 @@ private actor SuspendedAccountOperationTestProvider: ChatProvider {
     }
 }
 
-private actor SuspendedAccountLoadTestProvider: ChatProvider {
+private actor SuspendedAccountLoadTestProvider: ChatProviderStub {
     nonisolated let guildID = GuildID(rawValue: 91_000)
     nonisolated let forumID = ChannelID(rawValue: 91_001)
     nonisolated let post: ForumPost
@@ -7721,48 +7505,9 @@ private actor SuspendedAccountLoadTestProvider: ChatProvider {
     func waitUntilLoadsReturn() async -> Bool {
         await eventually { memberLoadReturned && forumLoadReturned }
     }
-
-    func profile(
-        for userID: UserID,
-        in guildID: GuildID?
-    ) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(
-        in channelID: ChannelID,
-        before: MessageID?,
-        limit: Int
-    ) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 }
 
-private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
+private actor FirstGuildVisitPermissionTestProvider: ChatProviderStub {
     nonisolated let guildID = GuildID(rawValue: 77_200)
     nonisolated let channelID = ChannelID(rawValue: 77_202)
 
@@ -7826,13 +7571,6 @@ private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
         roleContinuation = nil
     }
 
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(
         in channelID: ChannelID,
         before: MessageID?,
@@ -7853,25 +7591,6 @@ private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
         )
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
     func disconnect() async {
         releaseRoles()
     }
@@ -7881,7 +7600,7 @@ private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
     }
 }
 
-private actor StartupUnreadTestProvider: ChatProvider {
+private actor StartupUnreadTestProvider: ChatProviderStub {
     private let guild = Guild(
         id: GuildID(rawValue: 77_000),
         name: "Startup Guild",
@@ -7924,32 +7643,10 @@ private actor StartupUnreadTestProvider: ChatProvider {
         guildID == guild.id ? [channel] : []
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
         MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
     func delete(messageID: MessageID, channelID: ChannelID) async throws {
@@ -7959,15 +7656,9 @@ private actor StartupUnreadTestProvider: ChatProvider {
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {
         throw ChatProviderError.invalidRequest("Reactions are not part of this test.")
     }
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 }
 
-private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
+private actor ForumVisitAcknowledgementTestProvider: ChatProviderStub {
     struct Acknowledgement: Sendable {
         var channelID: ChannelID
         var messageID: MessageID
@@ -8047,20 +7738,6 @@ private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
         guildID == guild.id ? [forum] : []
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -8085,34 +7762,12 @@ private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
         return ReadAcknowledgementResponse(token: token)
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
-
     func acknowledgements() -> [Acknowledgement] {
         recordedAcknowledgements
     }
 }
 
-private actor ForumPaginationTestProvider: ChatProvider {
+private actor ForumPaginationTestProvider: ChatProviderStub {
     private let guild = Guild(
         id: GuildID(rawValue: 95_000),
         name: "Forum Test",
@@ -8143,20 +7798,6 @@ private actor ForumPaginationTestProvider: ChatProvider {
     func channels(in guildID: GuildID?) async throws -> [Channel] {
         guildID == guild.id ? [channel] : []
     }
-
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
 
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
@@ -8209,28 +7850,6 @@ private actor ForumPaginationTestProvider: ChatProvider {
         )
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
-
     func paginationRequestCount() -> Int {
         paginationRequests
     }
@@ -8238,7 +7857,7 @@ private actor ForumPaginationTestProvider: ChatProvider {
 
 /// Holds a private thread's member-less record; access resolution fails once
 /// and then reports the current user's membership.
-private actor ThreadAccessRecoveryTestProvider: ChatProvider {
+private actor ThreadAccessRecoveryTestProvider: ChatProviderStub {
     private let guild = Guild(id: GuildID(rawValue: 95_000), name: "Threads")
     private let user = User(id: UserID(rawValue: 95_200), username: "member", displayName: "Member")
     private let channel = Channel(
@@ -8258,20 +7877,6 @@ private actor ThreadAccessRecoveryTestProvider: ChatProvider {
         guildID == guild.id ? [channel] : []
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] { [] }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus { .online }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
     func forumPost(threadID: ChannelID) async throws -> ForumPost {
         ForumPost(thread: memberlessThread)
     }
@@ -8285,25 +7890,9 @@ private actor ThreadAccessRecoveryTestProvider: ChatProvider {
     }
 
     func accessResolutionCount() -> Int { accessResolutions }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
-
-    func disconnect() async {}
 }
 
-private actor LinkedChannelNavigationTestProvider: ChatProvider {
+private actor LinkedChannelNavigationTestProvider: ChatProviderStub {
     private let firstGuild = Guild(id: GuildID(rawValue: 94_000), name: "First")
     private let secondGuild = Guild(id: GuildID(rawValue: 94_100), name: "Second")
     private let user = User(
@@ -8340,20 +7929,6 @@ private actor LinkedChannelNavigationTestProvider: ChatProvider {
         }
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
@@ -8364,27 +7939,6 @@ private actor LinkedChannelNavigationTestProvider: ChatProvider {
         forumPostRequests += 1
         throw ChatProviderError.invalidRequest("Ordinary channels are not forum posts.")
     }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
-
-    func eventStream() async -> AsyncStream<ClientEvent> {
-        AsyncStream { $0.finish() }
-    }
-
-    func disconnect() async {}
 
     func forumPostRequestCount() -> Int {
         forumPostRequests
@@ -8619,11 +8173,11 @@ private final class PermissionRecordingNotificationService: NativeNotificationSe
         status
     }
 
-    func deliver(
+    func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
+        presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
     ) async {}
 
@@ -8642,11 +8196,11 @@ private final class SuspendedAccountNotificationService: NativeNotificationServi
     func requestAuthorization() async throws -> Bool { true }
     func authorizationStatus() async -> UNAuthorizationStatus { .authorized }
 
-    func deliver(
+    func deliverMessage(
         message: Message,
         channel: Channel?,
-        guild: Guild?,
         accountID: String,
+        presentation _: NotificationContentPresentation,
         preferences: NotificationPreferences
     ) async {
         deliveryStarted = true
@@ -8677,7 +8231,7 @@ private final class SuspendedAccountNotificationService: NativeNotificationServi
     }
 }
 
-private actor VoiceMigrationTestProvider: ChatProvider {
+private actor VoiceMigrationTestProvider: ChatProviderStub {
     private let guild = Guild(
         id: GuildID(rawValue: 92000),
         name: "Voice Test",
@@ -8700,35 +8254,12 @@ private actor VoiceMigrationTestProvider: ChatProvider {
         [channel]
     }
 
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
         MessagePage(messages: [], hasMoreBefore: false)
     }
 
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
     func joinVoice(
         channelID: ChannelID,
         guildID: GuildID?,
@@ -8779,7 +8310,7 @@ private struct PrivateCallActionRequestCounts: Equatable, Sendable {
     var declines = 0
 }
 
-private actor PrivateCallActionTestProvider: ChatProvider {
+private actor PrivateCallActionTestProvider: ChatProviderStub {
     private let currentUser = User(
         id: UserID(rawValue: 88_810),
         username: "call-tester",
@@ -8816,53 +8347,6 @@ private actor PrivateCallActionTestProvider: ChatProvider {
     func channels(in guildID: GuildID?) async throws -> [Channel] {
         [channel]
     }
-
-    func members(in guildID: GuildID?) async throws -> [Member] {
-        []
-    }
-
-    func profile(
-        for userID: UserID,
-        in guildID: GuildID?
-    ) async throws -> UserProfile {
-        throw ChatProviderError.invalidRequest(
-            "Profiles are not part of this test."
-        )
-    }
-
-    func currentStatus() async -> PresenceStatus {
-        .online
-    }
-
-    func updateStatus(_ status: PresenceStatus) async throws {}
-
-    func messages(
-        in channelID: ChannelID,
-        before: MessageID?,
-        limit: Int
-    ) async throws -> MessagePage {
-        MessagePage(messages: [], hasMoreBefore: false)
-    }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest(
-            "Sending is not part of this test."
-        )
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest(
-            "Editing is not part of this test."
-        )
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
 
     func subscribeToPrivateCall(channelID: ChannelID) async throws {
         requestCounts.subscriptions += 1
@@ -8933,8 +8417,6 @@ private actor PrivateCallActionTestProvider: ChatProvider {
         AsyncStream { _ in }
     }
 
-    func disconnect() async {}
-
     func counts() -> PrivateCallActionRequestCounts {
         requestCounts
     }
@@ -8958,7 +8440,7 @@ private actor PrivateCallActionTestProvider: ChatProvider {
     }
 }
 
-private actor DelayedMemberViewportTestProvider: ChatProvider {
+private actor DelayedMemberViewportTestProvider: ChatProviderStub {
     struct ViewportRequest: Equatable, Sendable {
         let guildID: GuildID
         let channelID: ChannelID
@@ -9030,22 +8512,6 @@ private actor DelayedMemberViewportTestProvider: ChatProvider {
     ) async throws -> MessagePage {
         try await base.messages(in: channelID, before: before, limit: limit)
     }
-
-    func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
-    }
-
-    func edit(_ message: Message, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
-    }
-
-    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-
-    func toggleReaction(
-        _ emoji: String,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) async throws {}
 
     func eventStream() async -> AsyncStream<ClientEvent> {
         await base.eventStream()

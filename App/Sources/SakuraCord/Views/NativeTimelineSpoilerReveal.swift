@@ -118,11 +118,32 @@ final class NativeTimelineSpoilerRevealStore {
         isRevealed(.media(componentID: key.componentID), in: key.messageID)
     }
 
+    /// Whether each of a message's media, by reveal component ID, is revealed.
+    func isMediaRevealed(in messageID: MessageID) -> (String) -> Bool {
+        { [self] componentID in
+            isMediaRevealed(NativeTimelineComponentRevealKey(messageID: messageID, componentID: componentID))
+        }
+    }
+
     @discardableResult
     func revealMedia(
         _ key: NativeTimelineComponentRevealKey
     ) -> Bool {
         reveal(.media(componentID: key.componentID), in: key.messageID)
+    }
+
+    /// Whether a spoilered item still hides behind its cover.
+    func isConcealed(messageID: MessageID, contentID: String, isSpoiler: Bool) -> Bool {
+        isSpoiler && !isMediaRevealed(NativeTimelineComponentRevealKey(messageID: messageID, componentID: contentID))
+    }
+
+    /// Whether an attachment still hides behind its spoiler cover.
+    func isConcealed(_ attachment: Attachment, in messageID: MessageID) -> Bool {
+        isConcealed(
+            messageID: messageID,
+            contentID: NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id),
+            isSpoiler: attachment.isSpoiler
+        )
     }
 
     func isTextRevealed(
@@ -208,21 +229,6 @@ final class NativeTimelineSpoilerRevealStore {
 
 @MainActor
 enum NativeTimelineSpoilerConcealmentPolicy {
-    static func isConcealed(
-        messageID: MessageID,
-        contentID: String,
-        isSpoiler: Bool,
-        store: NativeTimelineSpoilerRevealStore
-    ) -> Bool {
-        isSpoiler
-            && !store.isMediaRevealed(
-                NativeTimelineComponentRevealKey(
-                    messageID: messageID,
-                    componentID: contentID
-                )
-            )
-    }
-
     /// The embeds still hidden because the message links them inside a
     /// spoiler, as Discord hides them, by embed ID with their reveal keys.
     static func concealedEmbeds(
@@ -300,11 +306,10 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         store: NativeTimelineSpoilerRevealStore
     ) -> [CGRect] {
         let frames = layout.containers.compactMap { container in
-            isConcealed(
+            store.isConcealed(
                 messageID: messageID,
                 contentID: container.componentID,
-                isSpoiler: container.isSpoiler,
-                store: store
+                isSpoiler: container.isSpoiler
             ) ? container.frame : nil
         }
         return frames.filter { candidate in
@@ -330,18 +335,90 @@ enum NativeTimelineSpoilerConcealmentPolicy {
             $0.contains(CGPoint(x: frame.midX, y: frame.midY))
         }
     }
+}
 
-    static func shouldAnimate(
+extension NativeTimelineCanvasView {
+    func reveal(
+        _ key: NativeTimelineComponentRevealKey
+    ) {
+        guard let rowIndex = rowIndex(forMessageID: key.messageID) else { return }
+        reveal(key, rowIndex: rowIndex)
+    }
+
+    func reveal(
+        _ key: NativeTimelineComponentRevealKey,
+        rowIndex: Int
+    ) {
+        guard items.indices.contains(rowIndex),
+              items[rowIndex].messageID == key.messageID,
+              !spoilerRevealStore.isMediaRevealed(key)
+        else { return }
+        if let cover = spoilerOverlays[key] {
+            fadeOutSpoilerCover(
+                [cover.frame],
+                cornerRadius: cover.cornerRadius,
+                duration: SpoilerAppearance.mediaRevealDuration,
+                dropsPill: true
+            )
+        }
+        spoilerRevealStore.revealMedia(key)
+    }
+
+    func installSpoilerRevealStore(
+        _ store: NativeTimelineSpoilerRevealStore
+    ) {
+        guard spoilerRevealStore !== store else { return }
+        if let spoilerRevealObserverID {
+            spoilerRevealStore.removeObserver(spoilerRevealObserverID)
+        }
+        spoilerRevealStore = store
+        spoilerRevealObserverID = store.observe { [weak self] messageID in
+            self?.spoilerRevealStateDidChange(messageID: messageID)
+        }
+    }
+
+    func spoilerRevealStateDidChange(messageID: MessageID) {
+        // A forum post's starter message shares the post's ID with the
+        // beginning row above it, so a message row takes precedence.
+        guard let rowIndex = rowIndex(forMessageID: messageID)
+            ?? items.firstIndex(where: { $0.beginning?.id.rawValue == messageID.rawValue })
+        else { return }
+        let identifier = items[rowIndex].identifier
+        visibleMediaProjection = nil
+        mediaKeysByIdentifier[identifier] = nil
+        invalidateBitmap(identifier)
+        requestMedia(for: items[rowIndex], at: rowIndex)
+        setNeedsDisplay(rowFrame(at: rowIndex))
+        window?.invalidateCursorRects(for: self)
+        reconcileAnimatedMedia()
+        reconcileSpoilerOverlays()
+        // A reset reveal store hides a video playing in place again.
+        reconcileInlinePlayers()
+        rebuildAccessibilityProxy(for: identifier)
+    }
+}
+
+struct NativeTimelineComponentRevealKey: Hashable {
+    let messageID: MessageID
+    let componentID: String
+
+    /// Keyed by the link, as embed IDs are only positions: an edit that
+    /// replaces the link must not inherit the old one's reveal.
+    static func embed(messageID: MessageID, url: URL, occurrence: Int) -> Self {
+        Self(messageID: messageID, componentID: "embed:\(occurrence):\(url.absoluteString)")
+    }
+
+    static func attachmentComponentID(_ attachmentID: String) -> String {
+        "attachment:\(attachmentID)"
+    }
+
+    static func attachment(
         messageID: MessageID,
-        contentID: String,
-        isSpoiler: Bool,
-        store: NativeTimelineSpoilerRevealStore
-    ) -> Bool {
-        !isConcealed(
+        attachmentID: String
+    ) -> Self {
+        Self(
             messageID: messageID,
-            contentID: contentID,
-            isSpoiler: isSpoiler,
-            store: store
+            componentID: attachmentComponentID(attachmentID)
         )
     }
 }

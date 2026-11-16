@@ -7,8 +7,8 @@ extension AppModel {
         var posts: [ChannelID: ForumPost] = [:]
         while true {
             let page = try await session.provider.forumPosts(in: group.channelID, query: query)
-            guard !Task.isCancelled, isCurrentAccountSession(session), inbox.generation == generation else { return }
-            for post in page.posts where !post.thread.isArchived && post.id.rawValue > (group.oldestReadMessageID?.rawValue ?? 0) {
+            guard !Task.isCancelled, isCurrentInboxLoad(session, generation: generation) else { return }
+            for post in page.posts where inboxLists(post, in: group) {
                 posts[post.id] = post
             }
             guard page.hasMore, let offset = page.nextOffset, offset > query.offset else { break }
@@ -21,32 +21,31 @@ extension AppModel {
         inbox.groups[index].isLoaded = true
         inbox.groups[index].needsRevalidation = false
     }
-}
 
-extension AppModel {
     func openInboxForumPost(_ post: ForumPost) {
         dismissInbox()
         navigate(to: post.thread.guildID, linkedChannelID: post.id)
     }
-}
 
-extension AppModel {
     func reconcileInboxForumPosts(channelID: ChannelID, posts: [ForumPost], replacesAll: Bool) {
         guard inbox.isPresented,
               let index = inbox.groups.firstIndex(where: { $0.id == channelID && $0.isForum && $0.isLoaded }) else { return }
-        let boundary = inbox.groups[index].oldestReadMessageID?.rawValue ?? 0
-        var values = replacesAll ? [:] : Dictionary(uniqueKeysWithValues: inbox.groups[index].forumPosts.map { ($0.id, $0) })
+        let group = inbox.groups[index]
+        var values = replacesAll ? [:] : Dictionary(uniqueKeysWithValues: group.forumPosts.map { ($0.id, $0) })
         for post in posts {
-            values[post.id] = !post.thread.isArchived && post.id.rawValue > boundary ? post : nil
+            values[post.id] = inboxLists(post, in: group) ? post : nil
             inbox.threads[post.id] = post.thread
         }
         inbox.groups[index].forumPosts = values.values.sorted { $0.id < $1.id }
         publishInbox()
         dismissEmptyInboxGroups()
     }
-}
 
-extension AppModel {
+    /// The inbox lists a forum's open posts created after its read boundary.
+    private func inboxLists(_ post: ForumPost, in group: InboxUnreadGroup) -> Bool {
+        !post.thread.isArchived && post.id.rawValue > (group.oldestReadMessageID?.rawValue ?? 0)
+    }
+
     func resolveInboxThreadContext(for message: Message) {
         let channelID = message.channelID
         guard message.guildID != nil, inbox.threads[channelID] == nil,

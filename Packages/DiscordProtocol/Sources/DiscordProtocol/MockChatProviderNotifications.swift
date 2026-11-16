@@ -192,24 +192,6 @@ public extension MockChatProvider {
                 isCollapsed: isCollapsed
             )
         )
-        if categoryCollapsedUpdatesAreSuspended {
-            await withCheckedContinuation { continuation in
-                categoryCollapsedUpdateWaiters.append(continuation)
-            }
-        }
-    }
-
-    func suspendCategoryCollapsedUpdates() {
-        categoryCollapsedUpdatesAreSuspended = true
-    }
-
-    func resumeCategoryCollapsedUpdates() {
-        categoryCollapsedUpdatesAreSuspended = false
-        let waiters = categoryCollapsedUpdateWaiters
-        categoryCollapsedUpdateWaiters.removeAll()
-        for waiter in waiters {
-            waiter.resume()
-        }
     }
 
     func inboxMentions(_ query: InboxMentionQuery, before: MessageID?) async throws -> InboxMentionPage {

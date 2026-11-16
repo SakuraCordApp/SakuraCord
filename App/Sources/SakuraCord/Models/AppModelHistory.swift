@@ -3,76 +3,6 @@ import Foundation
 import SakuraCordModels
 import SakuraCordPersistence
 
-enum ConversationRefreshMutation {
-    case upsert(Message)
-    case patch(MessageUpdate)
-    case delete
-}
-
-struct ConversationRefreshMutations {
-    var messages: [MessageID: ConversationRefreshMutation] = [:]
-    var updatedUsers: [UserID: User] = [:]
-}
-
-extension ConversationRefreshMutations {
-    init(_ journal: ConversationRefreshJournal) {
-        self.init(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
-    }
-}
-
-struct ConversationRefreshJournal {
-    let revision: UInt64
-    var mutationsByMessageID: [MessageID: ConversationRefreshMutation] = [:]
-    var updatedUsers: [UserID: User] = [:]
-
-    mutating func record(_ mutation: ConversationRefreshMutation, messageID: MessageID) {
-        if case .patch(let update) = mutation {
-            switch mutationsByMessageID[messageID] {
-            case .upsert(var message):
-                update.apply(to: &message)
-                mutationsByMessageID[messageID] = .upsert(message)
-            case .patch(var previous):
-                previous.merge(update)
-                mutationsByMessageID[messageID] = .patch(previous)
-            case .delete:
-                break
-            case nil:
-                mutationsByMessageID[messageID] = mutation
-            }
-        } else {
-            mutationsByMessageID[messageID] = mutation
-        }
-    }
-
-    mutating func recordIdentityUpdate(_ user: User) {
-        updatedUsers[user.id] = user
-        // Fold the event into earlier mutations, including messages whose
-        // history page has not been published in any retained projection yet.
-        for (messageID, mutation) in mutationsByMessageID {
-            switch mutation {
-            case .upsert(var message):
-                message.applyIdentityUpdate(user)
-                mutationsByMessageID[messageID] = .upsert(message)
-            case .patch(var patch):
-                var identity = MessageUpdate(messageID: messageID, channelID: patch.channelID)
-                identity.updatedUsers[user.id] = user
-                patch.merge(identity)
-                mutationsByMessageID[messageID] = .patch(patch)
-            case .delete:
-                break
-            }
-        }
-    }
-}
-
-/// A journal for one in-flight history request, so overlapping requests in
-/// the same conversation each reconcile the mutations made during their own
-/// flight.
-struct ScopedConversationRefreshJournal {
-    let channelID: ChannelID
-    var journal: ConversationRefreshJournal
-}
-
 /// The message IDs a fetched page vouches for. A message journaled outside
 /// them belongs to history the page does not cover, such as a live reply
 /// beyond an older window; inserting it would join the page to it across
@@ -219,8 +149,9 @@ extension AppModel {
         hasCompletedInitialMessageLoad = false
         stopLocalTyping(clearThrottle: true)
         replyingTo = nil
-        // A cached conversation still needs its own draft restored.
-        draft = ""
+        // A draft this session wrote shows at once; a cached conversation
+        // without one still needs its stored draft restored.
+        draft = selectedChannelID.flatMap(composer.sessionDraft(in:)) ?? ""
 
         guard let channelID = selectedChannelID,
               selectedChannel?.kind != .voice || isVoiceChatOpen,
@@ -304,7 +235,7 @@ extension AppModel {
             guard model.isCurrentAccountSession(account),
                   model.isCurrentLoad(channelID, generation: generation)
             else { return }
-            model.composer.restoreDraft(savedDraft, ifUnchangedSince: draftRevision)
+            model.composer.restoreDraft(savedDraft, in: .channel, ifUnchangedSince: draftRevision)
         }
     }
 
@@ -392,7 +323,7 @@ extension AppModel {
         guard isCurrentAccountSession(account),
               isCurrentLoad(channelID, generation: generation)
         else { return }
-        composer.restoreDraft(savedDraft, ifUnchangedSince: draftRevision)
+        composer.restoreDraft(savedDraft, in: .channel, ifUnchangedSince: draftRevision)
 
         do {
             let page = try await freshPageTask.value
@@ -752,31 +683,54 @@ extension AppModel {
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
         messageLoadErrorIsLaterPage = false
+        guard await fetchSelectedMessageWindow(
+            in: channelID,
+            anchoredAt: .newest,
+            limit: initialHistoryFetchLimit,
+            session: session,
+            errorTarget: \.messageLoadError
+        ) else { return false }
+        requestNewestMessagePresentation(channelID: channelID)
+        return true
+    }
+
+    /// Replaces the selected channel's window with one `around` a message.
+    /// Returns false when the selection changed or the read failed.
+    func loadSelectedMessageWindow(
+        around messageID: MessageID,
+        channelID: ChannelID,
+        session: AppModelAccountSession
+    ) async -> Bool {
+        await fetchSelectedMessageWindow(
+            in: channelID,
+            anchoredAt: .around(messageID),
+            limit: DiscordHistoryFetchLimit.aroundLimit,
+            session: session,
+            errorTarget: \.errorMessage
+        )
+    }
+
+    /// Replaces the selected channel's window with the page read at `anchor`.
+    /// Returns false when the selection changed or the read failed; a failure
+    /// is shown through `errorTarget`.
+    private func fetchSelectedMessageWindow(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int,
+        session: AppModelAccountSession,
+        errorTarget: ReferenceWritableKeyPath<AppModel, String?>
+    ) async -> Bool {
+        // Gateway edits and deletions that land while the read is in flight
+        // are replayed onto its older response.
         let refreshRevision = beginScopedConversationRefresh(in: channelID)
         defer { endScopedConversationRefresh(refreshRevision) }
         do {
-            let page = try await session.provider.messages(
-                in: channelID,
-                anchoredAt: .newest,
-                limit: initialHistoryFetchLimit
-            )
+            let page = try await session.provider.messages(in: channelID, anchoredAt: anchor, limit: limit)
             guard !Task.isCancelled,
                   isCurrentAccountSession(session),
                   selectedChannelID == channelID
             else { return false }
-            replaceSelectedMessages(with: Self.merging(
-                current: messages.filter { $0.outboxState != .confirmed },
-                fresh: Self.applyingConversationRefreshMutations(
-                    scopedConversationRefreshMutations(refreshRevision),
-                    to: page.messages,
-                    within: MessageHistorySpan(page: page)
-                )
-            ))
-            hasMoreMessages = page.hasMoreBefore
-            hasMoreLaterMessages = false
-            hasMoreCache[channelID] = page.hasMoreBefore
-            contiguousHistoryBoundaries[channelID] = nil
-            requestNewestMessagePresentation(channelID: channelID)
+            replaceSelectedMessageWindow(with: page, refreshRevision: refreshRevision, in: channelID)
             return true
         } catch is CancellationError {
             return false
@@ -785,9 +739,32 @@ extension AppModel {
                   selectedChannelID == channelID
             else { return false }
             DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            messageLoadError = error.localizedDescription
+            self[keyPath: errorTarget] = error.localizedDescription
             return false
         }
+    }
+
+    /// Replaces the selected channel's window with `page`, replaying the
+    /// Gateway edits and deletions journaled since `refreshRevision`.
+    private func replaceSelectedMessageWindow(
+        with page: MessagePage,
+        refreshRevision: UInt64,
+        in channelID: ChannelID
+    ) {
+        // Unconfirmed sends keep their rows, including failed ones
+        // awaiting Retry or Discard, whichever window is presented.
+        replaceSelectedMessages(with: Self.merging(
+            current: messages.filter { $0.outboxState != .confirmed },
+            fresh: Self.applyingConversationRefreshMutations(
+                scopedConversationRefreshMutations(refreshRevision),
+                to: page.messages,
+                within: MessageHistorySpan(page: page)
+            )
+        ))
+        hasMoreMessages = page.hasMoreBefore
+        hasMoreLaterMessages = page.hasMoreAfter
+        hasMoreCache[channelID] = page.hasMoreBefore
+        contiguousHistoryBoundaries[channelID] = nil
     }
 
     func requestNewestMessagePresentation(channelID: ChannelID) {
@@ -800,132 +777,17 @@ extension AppModel {
 
     func retryMessageLoad() {
         guard selectedChannelID != nil else { return }
-        if messageLoadErrorIsLaterPage {
-            messageLoadError = nil
-            messageLoadErrorIsLaterPage = false
-            let account = accountSession()
-            startAccountChildTask(account: account) { model, account in
-                await model.loadLater(account: account)
-            }
+        guard messageLoadErrorIsLaterPage || messageLoadErrorIsEarlierPage else {
+            beginSelectedChannelLoad()
             return
         }
-        if messageLoadErrorIsEarlierPage {
-            messageLoadError = nil
-            messageLoadErrorIsEarlierPage = false
-            let account = accountSession()
-            startAccountChildTask(account: account) { model, account in
-                await model.loadEarlier(account: account)
-            }
-            return
+        let retriesLaterPage = messageLoadErrorIsLaterPage
+        messageLoadError = nil
+        if retriesLaterPage { messageLoadErrorIsLaterPage = false } else { messageLoadErrorIsEarlierPage = false }
+        let account = accountSession()
+        startAccountChildTask(account: account) { model, account in
+            if retriesLaterPage { await model.loadLater(account: account) } else { await model.loadEarlier(account: account) }
         }
-        beginSelectedChannelLoad()
-    }
-
-    func beginConversationRefresh(in channelID: ChannelID) -> UInt64 {
-        conversationRefreshJournalRevision &+= 1
-        let revision = conversationRefreshJournalRevision
-        conversationRefreshJournals[channelID] = ConversationRefreshJournal(
-            revision: revision
-        )
-        return revision
-    }
-
-    func recordConversationRefreshMutation(
-        _ mutation: ConversationRefreshMutation,
-        messageID: MessageID,
-        channelID: ChannelID
-    ) {
-        var mutation = mutation
-        if case .patch(var update) = mutation, !update.pollUpdates.isEmpty,
-           var message = retainedMessage(channelID: channelID, messageID: messageID), message.poll?.results != nil {
-            // Preserve an established local tally instead of adding the same
-            // vote again if a fetched page already includes it.
-            update.apply(to: &message)
-            if let poll = pollVoteConfirmedSnapshot(message).poll {
-                update.pollUpdates = [.snapshot(poll, preservingSelection: false)]
-                mutation = .patch(update)
-            }
-        }
-        conversationRefreshJournals[channelID]?.record(mutation, messageID: messageID)
-        for revision in scopedRefreshJournals.keys where scopedRefreshJournals[revision]?.channelID == channelID {
-            scopedRefreshJournals[revision]?.journal.record(mutation, messageID: messageID)
-        }
-        inbox.refreshJournal?.record(mutation, messageID: messageID)
-        recordPollRefreshMutation(mutation, messageID: messageID, channelID: channelID)
-        if guideResource?.channelID == channelID {
-            guideResource?.refreshJournal?.record(mutation, messageID: messageID)
-        }
-    }
-
-    func conversationRefreshMutations(
-        in channelID: ChannelID,
-        revision: UInt64
-    ) -> ConversationRefreshMutations {
-        guard let journal = conversationRefreshJournals[channelID],
-              journal.revision == revision
-        else { return .init() }
-        return ConversationRefreshMutations(journal)
-    }
-
-    func endConversationRefresh(
-        in channelID: ChannelID,
-        revision: UInt64
-    ) {
-        guard conversationRefreshJournals[channelID]?.revision == revision else {
-            return
-        }
-        conversationRefreshJournals[channelID] = nil
-    }
-
-    func cancelConversationRefresh(in channelID: ChannelID) {
-        conversationRefreshJournals[channelID] = nil
-        scopedRefreshJournals = scopedRefreshJournals.filter { $0.value.channelID != channelID }
-    }
-
-    func beginScopedConversationRefresh(in channelID: ChannelID) -> UInt64 {
-        conversationRefreshJournalRevision &+= 1
-        let revision = conversationRefreshJournalRevision
-        scopedRefreshJournals[revision] = ScopedConversationRefreshJournal(
-            channelID: channelID,
-            journal: ConversationRefreshJournal(revision: revision)
-        )
-        return revision
-    }
-
-    func scopedConversationRefreshMutations(_ revision: UInt64) -> ConversationRefreshMutations {
-        guard let journal = scopedRefreshJournals[revision]?.journal else { return .init() }
-        return ConversationRefreshMutations(journal)
-    }
-
-    func endScopedConversationRefresh(_ revision: UInt64) {
-        scopedRefreshJournals[revision] = nil
-    }
-
-    @discardableResult
-    func journalAuthoritativeMessageUpsert(_ message: Message) -> Message {
-        let persistedMessage = pollVoteConfirmedSnapshot(reactionConfirmedSnapshot(message))
-        recordConversationRefreshMutation(
-            .upsert(persistedMessage),
-            messageID: persistedMessage.id,
-            channelID: persistedMessage.channelID
-        )
-        return persistedMessage
-    }
-
-    func recordAuthoritativeMessageUpsert(_ message: Message) {
-        journalAuthoritativeMessageUpsert(message)
-    }
-
-    func dismissError() {
-        errorMessage = nil
-    }
-
-    func storedDraft(
-        in channelID: ChannelID,
-        account: AppModelAccountSession
-    ) async -> String {
-        guard isCurrentAccountSession(account), let database = account.database else { return "" }
-        return (try? await composer.storedDraft(in: channelID, database: database)) ?? ""
     }
 
     /// Records that messages retained for `channelID` after this point may
@@ -1016,36 +878,4 @@ extension AppModel {
         }
         return merging(current: retainedCurrent, fresh: fresh)
     }
-
-    /// - Parameter span: Journaled messages missing from `messages` are
-    ///   added only inside it.
-    static func applyingConversationRefreshMutations(
-        _ mutations: ConversationRefreshMutations,
-        to messages: [Message],
-        within span: MessageHistorySpan = .unbounded
-    ) -> [Message] {
-        var byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
-        // Message mutations already contain identity events that followed them.
-        // Apply the conversation-wide fallback first so it cannot overwrite
-        // explicit message identity fields received later.
-        for messageID in byID.keys {
-            for user in mutations.updatedUsers.values { byID[messageID]?.applyIdentityUpdate(user) }
-        }
-        for (messageID, mutation) in mutations.messages {
-            switch mutation {
-            case .upsert(let message):
-                guard byID[messageID] != nil || span.contains(messageID) else { continue }
-                byID[messageID] = message
-            case .patch(let update):
-                if var message = byID[messageID] {
-                    update.applyForRefresh(to: &message)
-                    byID[messageID] = message
-                }
-            case .delete:
-                byID[messageID] = nil
-            }
-        }
-        return byID.values.sorted(by: messagePrecedes)
-    }
-
 }

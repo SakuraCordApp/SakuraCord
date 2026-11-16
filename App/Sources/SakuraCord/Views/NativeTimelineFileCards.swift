@@ -2,40 +2,38 @@ import AppKit
 import SakuraCordModels
 
 extension NativeTimelineCanvasView {
-    /// Whether an attachment still hides behind its spoiler cover.
-    func isConcealedSpoiler(_ attachment: Attachment, in messageID: MessageID) -> Bool {
-        attachment.isSpoiler && !spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: attachment.id))
-    }
-
     /// Whether a spoiler hides an upload's ring: it still hides its file
     /// card's button, but not the cover over an image.
     func hidesUploadRing(_ ring: NativeTimelineRowLayout.UploadRing, of message: Message) -> Bool {
         guard ring.mediaFrame == nil,
               let attachment = message.attachments.first(where: { $0.id == ring.attachmentID })
         else { return false }
-        return isConcealedSpoiler(attachment, in: message.id)
+        return spoilerRevealStore.isConcealed(attachment, in: message.id)
     }
 
     /// The visible file cards in a message row, attachment cards first. A
     /// message still being sent has only local files, which act through
     /// their upload rings, if any, rather than as downloads.
-    private func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
+    func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
         let layout = layouts[index]
         let isLocalSend = items[index].messageRow?.message.isUnconfirmedLocalSend == true
-        let attachments = isLocalSend ? [] : layout.fileCards.filter { !isConcealedSpoiler($0.attachment, in: messageID) }
+        let attachments = isLocalSend ? [] : layout.fileCards.filter {
+            !spoilerRevealStore.isConcealed($0.attachment, in: messageID)
+        }
         let components = layout.componentLayouts.flatMap { component -> [NativeTimelineFileCard] in
-            guard !component.files.isEmpty else { return [] }
+            let files = component.mediaRegions.filter { $0.fileCard != nil }
+            guard !files.isEmpty else { return [] }
             let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
                 in: component, messageID: messageID, store: spoilerRevealStore
             )
-            return component.files.filter { region in
+            return files.filter { region in
                 !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                     region.frame, hiddenContainerFrames: hiddenContainers
-                ) && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                ) && !spoilerRevealStore.isConcealed(
                     messageID: messageID, contentID: region.componentID,
-                    isSpoiler: region.isSpoiler, store: spoilerRevealStore
+                    isSpoiler: region.isSpoiler
                 )
-            }.map(\.card)
+            }.compactMap(\.fileCard)
         }
         return attachments + components
     }
@@ -130,65 +128,22 @@ extension NativeTimelineCanvasView {
     /// A file card's body: previews the file in the media viewer.
     func previewFileCard(_ card: NativeTimelineFileCard, message: Message, rowIndex: Int) {
         let layout = layouts[rowIndex]
-        if let region = layout.componentLayouts.lazy.flatMap(\.files).first(where: { $0.frame == card.frame }) {
-            _ = activateComponentMedia(
-                id: region.componentID, openURL: region.openURL, isSpoiler: region.isSpoiler,
-                layout: layout, message: message, rowIndex: rowIndex
-            )
+        if let region = layout.componentLayouts.lazy.flatMap(\.mediaRegions).first(where: {
+            $0.fileCard != nil && $0.frame == card.frame
+        }) {
+            _ = activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex)
         } else {
             _ = activateAttachment(card.attachment, in: message, rowIndex: rowIndex)
         }
     }
 
-    /// The tooltip of the timeline's buttons that have no label.
-    func view(_: NSView, stringForToolTip _: NSView.ToolTipTag, point: NSPoint, userData _: UnsafeMutableRawPointer?) -> String {
-        if codeBlockCopyButtonHit(at: point) != nil { return "Copy Code" }
-        guard let index = rowIndex(at: point.y), items.indices.contains(index) else { return "" }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        if layouts.indices.contains(index), let roleRegion = layouts[index].roleIconRegion,
-           roleRegion.frame.contains(local) {
-            return roleRegion.role.name
-        }
-        guard let messageID = items[index].messageID else { return "" }
-        guard let card = fileCards(at: index, messageID: messageID).first(where: { $0.buttonFrame.contains(local) }) else { return "" }
-        return switch model?.attachmentDownloads.states[card.attachment.id] {
-        case .downloading: "Cancel Download"
-        case .finished: "Show in Finder"
-        case .failed: "Retry Download"
-        case nil: "Download"
-        }
-    }
-
     /// What activating a file card does in its current download state.
-    func fileCardActionDescription(_ attachment: Attachment, name: String) -> String {
+    func fileCardAction(_ attachment: Attachment, name: String) -> (title: String, description: String) {
         switch model?.attachmentDownloads.states[attachment.id] {
-        case .downloading: "Cancel downloading \(name)"
-        case .finished: "Show \(name) in Finder"
-        case .failed: "Retry downloading \(name)"
-        case nil: "Download \(name)"
+        case .downloading: ("Cancel Download", "Cancel downloading \(name)")
+        case .finished: ("Show in Finder", "Show \(name) in Finder")
+        case .failed: ("Retry Download", "Retry downloading \(name)")
+        case nil: ("Download", "Download \(name)")
         }
-    }
-}
-
-extension DangerousDownloadPolicy {
-    /// Asks with Discord's warning before a potentially dangerous download,
-    /// as a sheet on `window` or, over the media viewer, which sits above
-    /// sheets, as its own panel; true to download.
-    @MainActor static func confirm(in window: NSWindow?) async -> Bool {
-        guard window?.attachedSheet == nil else { return false }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Potentially Dangerous Download"
-        alert.informativeText = """
-            Whoa there! While programs downloaded from the internet may be beneficial, this type of file can damage \
-            your device or steal your personal data. Make sure to only run executables from developers that you trust!
-            """
-        alert.addButton(withTitle: "Close")
-        alert.addButton(withTitle: "Continue to Download").hasDestructiveAction = true
-        guard let window else {
-            await Task.yield()
-            return alert.runModal() == .alertSecondButtonReturn
-        }
-        return await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
     }
 }

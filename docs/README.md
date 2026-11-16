@@ -129,8 +129,8 @@ maintain a second backlog there or in a repository `ROADMAP.md`.
 - The agent rates each status finding on its own, apart from its overall
   confidence. The hub verifies and applies only findings rated high, and only
   to New or Needs Info reports or forward from Confirmed or Planned: a fix on
-  nightly is recorded as Mark as fixed records it (In Nightly, then Shipped
-  once a release contains it), an open PR into nightly from this repository
+  nightly is recorded with Mark as fixed (In Nightly, then Shipped once a
+  release contains it), an open PR into nightly from this repository
   gets a `Fixes #N` line so PR tracking moves the report, a regression of a
   known fix moves to Confirmed, a duplicate is closed into the original, a
   wrong category is corrected, and a suggestion that already exists gets a

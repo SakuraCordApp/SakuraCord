@@ -35,7 +35,7 @@ struct FavoritesSidebarView: View {
             .padding(.top, ChatChromeMetrics.channelListTopPadding)
             .clipped()
             // Discord recomputes suggestions whenever a source they read changes.
-            .onChange(of: model.forwardSearchSourceRevision) { model.refreshFavoriteSuggestions() }
+            .onChange(of: model.destinationSearchSourceRevision) { model.refreshFavoriteSuggestions() }
         }
     }
 
@@ -117,20 +117,10 @@ private struct FavoriteRow: View {
             )
         } else {
             ChannelContextMenuBridge(
+                channel: channel,
+                model: model,
                 isSelected: isSelected,
                 isUnread: isUnread,
-                isMutationPending: model.isChannelNotificationMutationPending(channel.id),
-                directOverride: model.channelNotificationOverride(for: channel),
-                inheritedLevel: model.inheritedChannelNotificationLevel(for: channel),
-                inheritanceSource: channel.guildID == nil ? .directMessages : channel.categoryID == nil ? .server : .category,
-                markRead: { model.markConversationRead(channelID: channel.id) },
-                mute: { model.setChannelMute(true, until: $0.endDate(), for: channel) },
-                unmute: { model.setChannelMute(false, until: nil, for: channel) },
-                setNotificationLevel: { model.setChannelNotificationLevel($0, for: channel) },
-                copyChannelID: { ChannelContextMenuValue.copy(channel.id.description) },
-                copyLink: {
-                    ChannelContextMenuValue.copy(ChannelContextMenuValue.link(guildID: channel.guildID, channelID: channel.id))
-                },
                 favoriteItems: { FavoritesMenu.manageItems(for: favorite, model: model) }
             )
         }
@@ -142,7 +132,7 @@ private struct FavoriteRow: View {
             DirectMessageAvatar(channel: channel, size: InterfaceScale.metric(20), status: nil, animates: false)
         } else {
             Image(systemName: favorite.thread != nil ? "text.bubble.fill"
-                : favorite.entry.channelType == 13 ? "person.wave.2.fill"
+                : favorite.entry.channelType == DiscordChannelType.stageVoice ? "person.wave.2.fill"
                 : ChannelIconPresentation.systemImage(
                     for: channel, isHidden: false,
                     rulesChannelID: channel.guildID.flatMap { model.serverRailGuildsByID[$0]?.rulesChannelID }

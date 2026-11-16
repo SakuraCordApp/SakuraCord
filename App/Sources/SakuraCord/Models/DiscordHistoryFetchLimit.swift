@@ -13,8 +13,6 @@ nonisolated enum DiscordHistoryFetchLimit {
     private static let chromeHeight: Double = 145
     private static let minimumViewportHeight: Double = 400
     private static let cozyMessageHeight: Double = 91
-    private static let compactMessageHeight: Double = 65
-    private static let defaultFontSize: Double = 16
     private static let maximumLimit = 30
 
     /// A cold open, a stale refetch and Jump to Present.
@@ -23,31 +21,14 @@ nonisolated enum DiscordHistoryFetchLimit {
     ///   - windowHeight: The hosting window's content height in points.
     ///   - zoom: The whole-UI scale; Discord's window height is in CSS pixels,
     ///     which are points divided by the zoom.
-    static func initial(
-        windowHeight: CGFloat,
-        zoom: CGFloat = 1,
-        isCompact: Bool = false,
-        fontSize: CGFloat = 16
-    ) -> Int {
+    static func initial(windowHeight: CGFloat, zoom: CGFloat = 1) -> Int {
         let height = max(Double(windowHeight / zoom) - chromeHeight, minimumViewportHeight)
-        let messageHeight = (isCompact ? compactMessageHeight : cozyMessageHeight)
-            * (Double(fontSize) / defaultFontSize)
-        return max(10, min(maximumLimit, Int((1.05 * (height / messageHeight).rounded(.up)).rounded(.up))))
+        return max(10, min(maximumLimit, Int((1.05 * (height / cozyMessageHeight).rounded(.up)).rounded(.up))))
     }
 
     /// An older or newer page while scrolling.
-    static func page(
-        windowHeight: CGFloat,
-        zoom: CGFloat = 1,
-        isCompact: Bool = false,
-        fontSize: CGFloat = 16
-    ) -> Int {
-        min(maximumLimit, 2 * initial(
-            windowHeight: windowHeight,
-            zoom: zoom,
-            isCompact: isCompact,
-            fontSize: fontSize
-        ))
+    static func page(windowHeight: CGFloat, zoom: CGFloat = 1) -> Int {
+        min(maximumLimit, 2 * initial(windowHeight: windowHeight, zoom: zoom))
     }
 }
 

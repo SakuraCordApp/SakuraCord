@@ -4,31 +4,18 @@ import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineCanvasView {
-    func setHoveredCommandPillMessageID(_ value: MessageID?) {
-        guard hoveredCommandPillMessageID != value else { return }
-        let old = hoveredCommandPillMessageID
-        hoveredCommandPillMessageID = value
-        for messageID in [old, value].compactMap({ $0 }) { invalidateVisibleMessageRow(messageID: messageID) }
-    }
-
     func commandPillPointerHit(at point: CGPoint) -> MessageID? {
-        guard let index = rowIndex(at: point.y), items.indices.contains(index), layouts.indices.contains(index),
-              let pill = layouts[index].commandInvocationRegion?.pillFrame
-        else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        return pill.contains(local) ? items[index].messageID : nil
+        messageID(at: point) { layouts[$0].commandInvocationRegion?.pillFrame }
     }
 
     /// Clicking the pill again closes its popover, as in Discord.
     func showCommandInvocation(for message: Message) {
         guard let model else { return }
         let identity = AnyHashable(message.id)
-        if mentionPopoverCoordinator.isPresenting(identity: identity) {
-            closeMentionPopover()
+        if inlinePopoverCoordinator.isPresenting(identity: identity) {
+            closeInlinePopover()
             return
         }
-        closeMessageProfilePopover()
-        closeServerTagPopover()
         model.loadMessageInteractionData(for: message)
         let messageID = message.id
         let anchor = StablePopoverAnchor(sourceView: self) { [weak self] in
@@ -37,7 +24,7 @@ extension NativeTimelineCanvasView {
             else { return nil }
             return pill.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
         }
-        showMentionPopover(
+        showInlinePopover(
             AnyView(CommandInvocationPopover(model: model, message: message)),
             anchor: anchor,
             configuration: .commandInvocation,
@@ -170,7 +157,7 @@ struct CommandInvocationPopover: View {
         case .role: "<@&\(value)>"
         // Like Discord, a mentionable is a role when one is known by that ID, otherwise a user.
         case .mentionable:
-            RoleID(value).flatMap { model.mentionRole($0, in: message) } != nil ? "<@&\(value)>" : "<@\(value)>"
+            RoleID(value).flatMap { MessageMentionResolver(model: model, message: message).role($0) } != nil ? "<@&\(value)>" : "<@\(value)>"
         default: DiscordMarkdown.escaped(value)
         }
     }

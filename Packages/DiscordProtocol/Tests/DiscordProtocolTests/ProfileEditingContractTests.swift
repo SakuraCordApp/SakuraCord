@@ -368,24 +368,30 @@ import Testing
 }
 
 @Test func `personal widget editing requires matching rollout and full Nitro`() throws {
-    let data = Data(#"""
-    {"assignments":{"1":{
-      "42":{"assignments":[[2369760879,1,2,1,null,null]]},
-      "43":{"assignments":[[2369760879,2,8,1,null,null]]},
-      "44":{"assignments":[[2369760879,9,2,1,null,null]]}
-    }}}
-    """#.utf8)
-    let rollout = try JSONDecoder().decode(ProfileApexAssignmentsDTO.self, from: data)
+    func rollout(userID: String, _ assignment: String) throws -> DiscordExperiments {
+        let apex = try JSONDecoder().decode(JSONValue.self, from: Data(
+            #"{"assignments":{"1":{"\#(userID)":{"assignments":[\#(assignment)]}}}}"#.utf8
+        ))
+        return DiscordExperiments(user: nil, guild: nil, apex: apex, userID: userID)
+    }
     var user = User(id: UserID(rawValue: 42), username: "member", displayName: "Member", premiumType: 2)
-    #expect(rollout.widgetEligibility(for: user).canEditPersonalWidget)
-    #expect(!rollout.widgetEligibility(for: user).showsPersonalWidgetCreateEntrypoint)
+    let enabled = try rollout(userID: "42", "[2369760879,1,2,1,null,null]")
+    #expect(enabled.widgetEligibility(for: user).canEditPersonalWidget)
+    #expect(!enabled.widgetEligibility(for: user).showsPersonalWidgetCreateEntrypoint)
 
     for premiumType in [0, 1, 3] {
         user.premiumType = premiumType
-        #expect(!rollout.widgetEligibility(for: user).canEditPersonalWidget)
+        #expect(!enabled.widgetEligibility(for: user).canEditPersonalWidget)
     }
-    for userID in [UInt64(43), 44, 45] {
-        let other = User(id: UserID(rawValue: userID), username: "other", displayName: "Other", premiumType: 2)
-        #expect(!rollout.widgetEligibility(for: other).canEditPersonalWidget)
+    user.premiumType = 2
+    // An eligibility-only assignment, an unknown variant, and another user's unit.
+    for experiments in try [
+        rollout(userID: "42", "[2369760879,2,8,1,null,null]"),
+        rollout(userID: "42", "[2369760879,9,2,1,null,null]"),
+        DiscordExperiments(user: nil, guild: nil, apex: JSONDecoder().decode(
+            JSONValue.self, from: Data(#"{"assignments":{"1":{"43":{"assignments":[[2369760879,1,2,1]]}}}}"#.utf8)
+        ), userID: "42"),
+    ] {
+        #expect(!experiments.widgetEligibility(for: user).canEditPersonalWidget)
     }
 }

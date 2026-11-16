@@ -206,7 +206,7 @@ private struct PollCreationAnswerRow: View {
         .help(answer.emoji == nil ? "Add Emoji" : "Change Emoji")
         .accessibilityLabel(answer.emoji == nil ? "Add Emoji" : "Change Emoji")
         .background {
-            StableReactionPickerPresenter(isPresented: $showsEmojiPicker, preferredEdge: .maxX,
+            StablePickerPopoverPresenter(isPresented: $showsEmojiPicker, preferredEdge: .maxX,
                                           accessibilityIdentifier: "poll-answer-emoji-picker") {
                 EmojiPickerView(model: model, useCase: .reaction(guildID: model.selectedGuildID),
                                 dismiss: { showsEmojiPicker = false }, select: { activation in

@@ -7,13 +7,7 @@ import Testing
 struct MessageForwardingContractTests {
     @Test func `forward uses one exact message mutation and decodes its immutable snapshot`() async throws {
         ForwardingURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ForwardingURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: ForwardingCredentialStore(),
-            handle: CredentialHandle(accountID: "forwarding"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ForwardingURLProtocol.self, token: "forwarding-contract-session", accountID: "forwarding")
         await provider.seedPrivateChannelsForTesting([
             Channel(
                 id: ChannelID(rawValue: 41),
@@ -64,13 +58,7 @@ struct MessageForwardingContractTests {
 
     @Test func `forward mutation never retries a server rate limit`() async throws {
         ForwardingURLProtocol.reset(status: 429)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ForwardingURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: ForwardingCredentialStore(),
-            handle: CredentialHandle(accountID: "forwarding"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ForwardingURLProtocol.self, token: "forwarding-contract-session", accountID: "forwarding")
         await provider.seedPrivateChannelsForTesting([
             Channel(
                 id: ChannelID(rawValue: 41),
@@ -95,13 +83,7 @@ struct MessageForwardingContractTests {
 
     @Test func `missing user destination creates one coalesced private channel`() async throws {
         ForwardingURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ForwardingURLProtocol.self]
-        let provider = DiscordRESTProvider(
-            credentials: ForwardingCredentialStore(),
-            handle: CredentialHandle(accountID: "forwarding"),
-            session: URLSession(configuration: configuration)
-        )
+        let provider = stubbedProvider(ForwardingURLProtocol.self, token: "forwarding-contract-session", accountID: "forwarding")
         let userID = UserID(rawValue: 2)
 
         async let first = provider.ensurePrivateChannel(for: userID)
@@ -117,22 +99,6 @@ struct MessageForwardingContractTests {
         #expect(Set(body.keys) == ["recipients"])
         #expect(body["recipients"] as? [String] == ["2"])
         await provider.disconnect()
-    }
-}
-
-private actor ForwardingCredentialStore: CredentialStore {
-    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        CredentialHandle(accountID: accountID)
-    }
-
-    func credential(for handle: CredentialHandle) async throws -> Data {
-        Data("forwarding-contract-session".utf8)
-    }
-
-    func remove(_ handle: CredentialHandle) async throws {}
-
-    func handles() async throws -> [CredentialHandle] {
-        [CredentialHandle(accountID: "forwarding")]
     }
 }
 
@@ -159,44 +125,19 @@ private final class ForwardingURLProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         Self.requestCount += 1
         Self.method = request.httpMethod
-        Self.path = request.url?.path ?? ""
+        Self.path = request.path
         Self.context = request.value(forHTTPHeaderField: "X-Context-Properties")
-        Self.body = requestBody().flatMap {
-            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-        }
+        Self.body = request.jsonBody
         let successBody = Self.path.hasSuffix("/users/@me/channels")
             ? Self.privateChannelResponse
             : Self.successResponse
         let responseBody = Self.status == 200
             ? successBody
             : #"{"retry_after":0.01,"global":false}"#
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: Self.status,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(responseBody.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: Self.status, body: Data(responseBody.utf8))
     }
 
     override func stopLoading() {}
-
-    private func requestBody() -> Data? {
-        if let data = request.httpBody { return data }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 4_096)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            data.append(buffer, count: count)
-        }
-        return data
-    }
 
     private static let successResponse = #"""
     {

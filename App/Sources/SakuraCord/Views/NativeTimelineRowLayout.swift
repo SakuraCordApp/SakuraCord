@@ -20,7 +20,7 @@ struct NativeTimelineRowLayout {
         let attachment: Attachment
         /// The still image drawn in the region: the image itself, or a
         /// video's poster frame.
-        let previewKey: NativeTimelineMediaKey?
+        let previewKey: MediaImageKey?
 
         var placeholder: NativeTimelineMediaPlaceholder? { .init(attachment) }
     }
@@ -42,6 +42,14 @@ struct NativeTimelineRowLayout {
     struct LinkedImageRegion {
         let frame: CGRect
         let reference: LinkedImageReference
+
+        var mediaKey: MediaImageKey {
+            .media(reference.displayURL, maximumPixelDimension: reference.isEmoji ? 96 : 720)
+        }
+
+        var cornerRadius: CGFloat { reference.isEmoji ? 7 : 10 }
+
+        var fillsFrame: Bool { !reference.isEmoji && !reference.isSticker }
     }
 
     struct EmbedRegion {
@@ -66,6 +74,8 @@ struct NativeTimelineRowLayout {
             let fallbackSystemImage: String
             let maximumPixelDimension: Int
             let placeholder: NativeTimelineMediaPlaceholder?
+
+            var mediaKey: MediaImageKey { .media(url, maximumPixelDimension: maximumPixelDimension) }
         }
 
         let embedID: String
@@ -84,6 +94,9 @@ struct NativeTimelineRowLayout {
         let accentColor: UInt32?
         let drawsTopSeparator: Bool
 
+        /// A video that plays in place, as a GIF does, rather than on opening.
+        var inlineVideoURL: URL? { mediaIsVideo && mediaAutoplaysInline ? mediaURL : nil }
+
         /// Discord rounds a card tighter than the media it otherwise covers.
         var cornerRadius: CGFloat {
             kind == .card ? DiscordRichMessageMetrics.embedCornerRadius : DiscordRichMessageMetrics.cardCornerRadius
@@ -100,6 +113,7 @@ struct NativeTimelineRowLayout {
         let titleFrame: CGRect
         let paletteFrames: [CGRect]
         let buttonFrame: CGRect
+        var drawsTopSeparator = false
     }
 
     struct SearchSectionRegion {
@@ -111,11 +125,13 @@ struct NativeTimelineRowLayout {
     struct ForwardedSourceRegion {
         let frame: CGRect
         let label: String
+        /// The label with the message's date, as measured for `frame`.
+        let text: String
+        let font: NSFont
         let iconURL: URL?
         let channelID: ChannelID
         let guildID: GuildID?
         let messageID: MessageID?
-        let timestamp: Date
     }
 
     /// An animated progress mark hosted as a layer-backed canvas overlay, so
@@ -203,8 +219,7 @@ struct NativeTimelineRowLayout {
     var systemIconFrame: CGRect?
     var suppressedHeader: NativeTimelineSuppressedHeaderLayout?
     var contentFrame: CGRect?
-    var attributedContent: NSAttributedString?
-    var contentFramesetter: CTFramesetter?
+    var contentText: NativeTimelineAttributedTextBox?
     var forwardedHeaderFrame: CGRect?
     var forwardedBarFrame: CGRect?
     var forwardedSourceRegion: ForwardedSourceRegion?
@@ -241,13 +256,12 @@ struct NativeTimelineRowLayout {
     var audioPlayers: [NativeTimelineVoiceMessageRegion] {
         (voiceMessageRegion.map { [$0] } ?? []) + audioFilePlayers
     }
-    var embedFrames: [CGRect] = []
     var embedRegions: [EmbedRegion] = []
     var sakuraCordDeepLinkRegions: [SakuraCordDeepLinkRegion] = []
-    var componentFrames: [CGRect] = []
     var componentLayouts: [NativeTimelineComponentLayout] = []
     var stickerFrames: [CGRect] = []
     var threadFrame: CGRect?
+    var threadDrawsTopSeparator = false
     var reactionRegions: [ReactionRegion] = []
     var addReactionFrame: CGRect?
     var ephemeralRegion: EphemeralRegion?
@@ -362,7 +376,7 @@ struct NativeTimelineBeginningLayout {
             ofSize: NSFont.preferredFont(forTextStyle: .largeTitle).pointSize,
             weight: .bold
         )
-        let titleHeight = legacyLargeTitleHeight(
+        let titleHeight = largeTitleHeight(
             beginning.title,
             font: titleFont,
             width: contentWidth
@@ -419,7 +433,7 @@ struct NativeTimelineBeginningLayout {
         )
     }
 
-    private static func legacyLargeTitleHeight(
+    private static func largeTitleHeight(
         _ value: String,
         font: NSFont,
         width: CGFloat
@@ -429,21 +443,16 @@ struct NativeTimelineBeginningLayout {
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: font]
         )
-        let intrinsicLineHeight = ceil(
-            font.ascender - font.descender + font.leading
-        )
-        let measuredLineHeight = max(
-            1,
-            font.ascender - font.descender + font.leading
-        )
+        let intrinsicLineHeight = ceil(font.lineHeight)
+        let measuredLineHeight = max(1, font.lineHeight)
         let lineCount = max(
             1,
             Int(ceil(bounds.height / measuredLineHeight))
         )
 
-        // SwiftUI's large-title Text uses the intrinsic height for its first
-        // line and one additional point of leading for each following line.
-        // Core Text's bounding rect omits that inter-line leading.
+        // A large title takes the intrinsic height for its first line and one
+        // more point of leading for each following line; Core Text's
+        // bounding rect omits that inter-line leading.
         return intrinsicLineHeight
             + CGFloat(lineCount - 1) * (intrinsicLineHeight + 1)
     }

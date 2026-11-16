@@ -108,9 +108,7 @@ public extension MockChatProvider {
     ) async throws -> VoiceConnectionInfo {
         guard snapshot.channels.contains(where: {
             $0.id == channelID
-                && ($0.kind == .voice
-                    || $0.kind == .directMessage
-                    || $0.kind == .groupDirectMessage)
+                && ($0.kind == .voice || $0.kind.isDirectMessage)
         }) else {
             throw ChatProviderError.invalidRequest("That demo voice channel is unavailable.")
         }
@@ -218,7 +216,7 @@ public extension MockChatProvider {
 
     func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws {
         guard let channel = snapshot.channels.first(where: { $0.id == channelID }),
-              channel.kind == .directMessage || channel.kind == .groupDirectMessage
+              channel.kind.isDirectMessage
         else {
             throw ChatProviderError.channelNotFound
         }

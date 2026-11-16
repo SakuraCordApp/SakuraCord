@@ -48,7 +48,7 @@ public final class VoiceMessagePlayer {
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private let timePitch = AVAudioUnitTimePitch()
-    private var file: AVAudioFile?
+    private let file: AVAudioFile
     private var usesTimePitch = false
     private var idleTask: Task<Void, Never>?
     private var positionTask: Task<Void, Never>?
@@ -103,7 +103,6 @@ public final class VoiceMessagePlayer {
 
     public var currentTime: TimeInterval {
         guard isPlaying,
-              let file,
               let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime)
         else { return pausedTime }
@@ -161,7 +160,7 @@ public final class VoiceMessagePlayer {
     /// Moves the player between the direct path and the time-pitch unit,
     /// carrying on from the same position.
     private func routeThroughTimePitch(_ enabled: Bool) {
-        guard enabled != usesTimePitch, let file else { return }
+        guard enabled != usesTimePitch else { return }
         let resumeAt = isPlaying ? currentTime : nil
         if resumeAt != nil {
             scheduleGeneration += 1
@@ -233,7 +232,6 @@ public final class VoiceMessagePlayer {
     }
 
     private func schedule(from time: TimeInterval) {
-        guard let file else { return }
         let sampleRate = file.processingFormat.sampleRate
         let start = min(AVAudioFramePosition(time * sampleRate), max(0, file.length - 1))
         segmentStartFrame = start

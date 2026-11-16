@@ -51,7 +51,7 @@ struct UploadPrivacyPreparationTests {
         #expect(await model.addComposerAttachments([source], to: .channel))
         #expect(model.channelComposerAttachments.map(\.url) == [source])
         #expect(model.oversizedAttachmentPrompt == nil)
-        #expect(model.attachmentFileSize(at: source) == model.discordAttachmentLimit + 1)
+        #expect(try source.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) == model.discordAttachmentLimit + 1)
     }
 
     @MainActor

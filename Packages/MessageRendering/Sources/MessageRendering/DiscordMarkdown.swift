@@ -184,8 +184,6 @@ public enum DiscordMarkdown {
         Delimiter(marker: "_", traits: .italic),
     ]
 
-    private static let appKitCache = AppKitMarkdownRenderCache()
-
     public static func attributed(_ source: String) -> AttributedString {
         let plan = appKitPlan(source)
         var output = AttributedString()
@@ -234,21 +232,6 @@ public enum DiscordMarkdown {
             output.append(value)
         }
         return output
-    }
-
-    public static func appKitAttributed(
-        _ source: String,
-        baseFontSize: CGFloat = 15
-    ) -> NSAttributedString {
-        if let cached = appKitCache.value(for: source, baseFontSize: baseFontSize) {
-            return cached
-        }
-        let result = appKitAttributed(
-            appKitPlan(source),
-            baseFontSize: baseFontSize
-        )
-        appKitCache.insert(result, for: source, baseFontSize: baseFontSize)
-        return result
     }
 
     /// A text file planned as one fenced block in `language`, so its lines are
@@ -1693,63 +1676,6 @@ private extension DiscordMarkdown {
             guard lower < indices.count, indices[lower] < end else { return nil }
             return indices[lower]
         }
-    }
-}
-
-private final class AppKitMarkdownRenderCache: @unchecked Sendable {
-    private let values = NSCache<AppKitMarkdownCacheKey, NSAttributedString>()
-
-    init() {
-        values.countLimit = 2_000
-        values.totalCostLimit = 12 * 1024 * 1024
-    }
-
-    func value(for source: String, baseFontSize: CGFloat) -> NSAttributedString? {
-        values.object(
-            forKey: AppKitMarkdownCacheKey(
-                source: source,
-                baseFontSize: baseFontSize
-            )
-        )
-    }
-
-    func insert(
-        _ value: NSAttributedString,
-        for source: String,
-        baseFontSize: CGFloat
-    ) {
-        values.setObject(
-            value,
-            forKey: AppKitMarkdownCacheKey(
-                source: source,
-                baseFontSize: baseFontSize
-            ),
-            cost: max(source.utf8.count, value.length * 2)
-        )
-    }
-}
-
-private final class AppKitMarkdownCacheKey: NSObject {
-    let source: String
-    let baseFontSize: CGFloat
-
-    init(source: String, baseFontSize: CGFloat) {
-        self.source = source
-        self.baseFontSize = baseFontSize
-    }
-
-    override var hash: Int {
-        var hasher = Hasher()
-        hasher.combine(source)
-        hasher.combine(baseFontSize)
-        return hasher.finalize()
-    }
-
-    override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? AppKitMarkdownCacheKey else {
-            return false
-        }
-        return source == other.source && baseFontSize == other.baseFontSize
     }
 }
 

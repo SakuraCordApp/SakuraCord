@@ -119,6 +119,7 @@ struct NativeTimelineInviteLayout {
     let isUnavailable: Bool
     let error: String?
     let integratesWithBubble: Bool
+    var drawsTopSeparator = false
     /// The speaker before an Activity card's channel line.
     var symbolFrame: CGRect?
     /// Faces of the people in the Activity, as Discord stacks them.
@@ -274,7 +275,7 @@ struct NativeTimelineInviteLayout {
         cursor += InterfaceScale.metric(20)
     }
 
-    static func action(for invite: ServerInvite?, entry: NativeTimelineInviteEntry?,
+    static func action(for invite: ServerInvite?, entry: ServerInvitePresentationStore.Entry?,
                        content: NativeServerCardContent? = nil, source: AppModel?) -> (String, Bool) {
         if let instanceID = content?.activityInstanceID { return source?.activityInstanceAction(instanceID) ?? ("Join", true) }
         if let invite, invite.activity != nil, let source, source.presentationGuild(invite.guildID) != nil {

@@ -207,19 +207,8 @@ extension AppModel {
                 return false
             }
             let preferredPerformanceAccountID =
-                runsChatPerformanceBenchmark
-                    ? ProcessInfo.processInfo.environment[
-                        "SAKURACORD_PERFORMANCE_ACCOUNT_ID"
-                    ]
-                    : nil
-            let launchDestination: SettingsLaunchDestination = if case let .string(value) =
-                SettingsPreferenceStore.shared.value(for: .launchDestination)
-            {
-                SettingsLaunchDestination(rawValue: value)
-                    ?? .lastVisitedConversation
-            } else {
-                .lastVisitedConversation
-            }
+                runsChatPerformanceBenchmark ? PerformanceBenchmarkHarness.accountID : nil
+            let launchDestination: SettingsLaunchDestination = SettingsPreferenceStore.shared.rawValue(.launchDestination)
             if SettingsLaunchAccountPolicy.presentsAccountPicker(
                 destination: launchDestination,
                 performanceAccountID: preferredPerformanceAccountID
@@ -285,7 +274,7 @@ extension AppModel {
             friends.replaceRelationships(value.relationships)
             ignoredUsers.replaceRelationships(value.relationships)
             installBootstrapMembership(value)
-            configureForwardDestinationHistoryScope(
+            configureConversationDestinationHistoryScope(
                 credentialHandle?.accountID
                     ?? (launchMode == .offlineTesting ? "offline" : "signed-out")
             )
@@ -543,9 +532,7 @@ extension AppModel {
     ) -> GuildID? {
         let runsLoadingOverlapBenchmark =
             runsChatPerformanceBenchmark
-            && ProcessInfo.processInfo.arguments.contains(
-                "--debug-authenticated-loading-scroll-overlap-performance"
-            )
+            && AppLaunchConfiguration.current.requestsLoadingScrollOverlapBenchmark
         // Benchmark setup must not pre-open the measured guild. This is
         // evaluated before history prefetch and initial guild activation,
         // so each process launch retains a genuinely cold Google Labs
@@ -554,7 +541,7 @@ extension AppModel {
             guilds: value.guilds,
             retainedChannel: retainedChannel,
             avoidingGuildNamed:
-                runsLoadingOverlapBenchmark ? "Google Labs" : nil
+                runsLoadingOverlapBenchmark ? Self.benchmarkGuildName : nil
         )
     }
 
@@ -593,12 +580,10 @@ extension AppModel {
             value.notificationSettings.last { $0.guildID == guild.id }
         }
         let firstGuildMuteIsActive =
-            firstGuildSettings?.isMuted == true
-            && (firstGuildSettings?.muteConfiguration?.isActive() ?? true)
+            firstGuildSettings?.isActivelyMuted() == true
         let firstGuildMutedOverrideCount =
             firstGuildSettings?.channelOverrides.count { override in
-                override.isMuted
-                    && (override.muteConfiguration?.isActive() ?? true)
+                override.isActivelyMuted()
             } ?? 0
         Self.unreadDiagnosticsLogger.info(
             """

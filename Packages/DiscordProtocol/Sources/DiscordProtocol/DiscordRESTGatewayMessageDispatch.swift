@@ -96,8 +96,7 @@ extension DiscordRESTProvider {
             // still identifies the guild that later component actions need.
             if message.guildID == nil {
                 message.guildID = cachedJoinedThreads[message.channelID]?.guildID
-                    ?? cachedChannels.values.lazy.flatMap(\.self)
-                    .first { $0.id == message.channelID }?.guildID
+                    ?? cachedChannel(message.channelID)?.guildID
             }
             attachKnownThread(to: &message)
             attachKnownStarterPreview(to: &message)
@@ -137,19 +136,19 @@ extension DiscordRESTProvider {
                 )
             )
         )
-        for (parentID, posts) in cachedForumPosts where posts[channelID] != nil {
-            if let lastMessageID = posts[channelID]?.thread.lastMessageID {
-                cachedForumPosts[parentID]?[channelID]?.isUnread =
+        let parentID = updateCachedForumPost(threadID: channelID) { post in
+            if let lastMessageID = post.thread.lastMessageID {
+                post.isUnread =
                     (ack.mentionCount ?? 0) > 0
                     || (ack.messageID.flatMap(MessageID.init).map {
                         lastMessageID > $0
                     } ?? true)
             } else {
-                cachedForumPosts[parentID]?[channelID]?.isUnread =
-                    (ack.mentionCount ?? 0) > 0
+                post.isUnread = (ack.mentionCount ?? 0) > 0
             }
+        }
+        if let parentID {
             publishForumPosts(parentID: parentID)
-            break
         }
     }
 
@@ -205,8 +204,8 @@ extension DiscordRESTProvider {
         if let mentions = dto.mentions?.elements { cacheMessageSearchUsers(mentions.map(\.searchIndexUser)) }
         let guildID = cachedMessages[messageID]?.guildID
             ?? cachedJoinedThreads[channelID]?.guildID
-            ?? cachedForumPosts.values.lazy.compactMap { $0[channelID]?.thread.guildID }.first
-            ?? cachedChannels.values.lazy.flatMap(\.self).first { $0.id == channelID }?.guildID
+            ?? cachedForumPost(threadID: channelID)?.thread.guildID
+            ?? cachedChannel(channelID)?.guildID
         guard var update = dto.domain(guildID: guildID) else { return }
         attachKnownStartedThread(to: &update)
         if var message = cachedMessages[messageID] {
@@ -216,7 +215,7 @@ extension DiscordRESTProvider {
             updateForumPostForMessage(message)
         } else {
             continuation?.yield(.messagePatched(update))
-            if let post = cachedForumPosts.values.lazy.compactMap({ $0[channelID] }).first,
+            if let post = cachedForumPost(threadID: channelID),
                var message = [post.firstMessage, post.mostRecentMessage].compactMap({ $0 }).first(where: { $0.id == messageID }) {
                 update.apply(to: &message)
                 updateForumPostForMessage(message)
@@ -227,9 +226,8 @@ extension DiscordRESTProvider {
     /// Preview caches outlive the message working set. Remove deleted content
     /// there too so a later catalogue publication cannot resurrect it.
     func removeDeletedForumPreview(channelID: ChannelID, messageID: MessageID) {
-        for (parentID, posts) in cachedForumPosts {
-            guard var post = posts[channelID] else { continue }
-            var changed = false
+        var changed = false
+        guard let parentID = updateCachedForumPost(threadID: channelID, { post in
             // A forum starter shares its post's ID.
             if messageID.rawValue == channelID.rawValue || post.firstMessage?.id == messageID {
                 post.firstMessage = nil
@@ -237,10 +235,8 @@ extension DiscordRESTProvider {
                 changed = true
             }
             if post.mostRecentMessage?.id == messageID { post.mostRecentMessage = nil; changed = true }
-            guard changed else { continue }
-            cachedForumPosts[parentID]?[channelID] = post
-            publishForumPosts(parentID: parentID)
-        }
+        }), changed else { return }
+        publishForumPosts(parentID: parentID)
     }
 
     func handleMessageDeleteDispatch(

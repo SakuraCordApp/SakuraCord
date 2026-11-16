@@ -87,6 +87,18 @@ struct SettingsPageNavigation: ViewModifier {
 }
 
 extension View {
+    /// Returns a page's navigation stack to its root when a search result reveals a control on `page`.
+    func settingsNavigationPathResetOnReveal<Destination>(
+        _ path: Binding<[Destination]>,
+        page: SettingsPageID,
+        state: SettingsViewState
+    ) -> some View {
+        onChange(of: state.revealRequest?.id) {
+            guard state.revealRequest?.destination.page == page else { return }
+            path.wrappedValue.removeAll()
+        }
+    }
+
     func settingsResetConfirmation(
         _ title: LocalizedStringKey,
         isPresented: Binding<Bool>,

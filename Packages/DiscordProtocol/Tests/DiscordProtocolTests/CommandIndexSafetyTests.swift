@@ -82,11 +82,7 @@ struct CommandIndexSafetyTests {
     private func makeProvider() -> DiscordRESTProvider {
         CommandIndexSafetyURLProtocol.paths.withLock { $0.removeAll() }
         CommandIndexSafetyURLProtocol.rejection.withLock { $0 = nil }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [CommandIndexSafetyURLProtocol.self]
-        return DiscordRESTProvider(credentials: TestCredentialStore(),
-                                   handle: CredentialHandle(accountID: "command-index-safety"),
-                                   session: URLSession(configuration: configuration))
+        return stubbedProvider(CommandIndexSafetyURLProtocol.self, accountID: "command-index-safety")
     }
 }
 
@@ -109,10 +105,7 @@ private final class CommandIndexSafetyURLProtocol: URLProtocol, @unchecked Senda
             status = 404
             body = #"{"code":10003,"message":"Unknown Channel"}"#
         }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status,
-                                                            httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: status, body: body)
     }
 
     override func stopLoading() {}

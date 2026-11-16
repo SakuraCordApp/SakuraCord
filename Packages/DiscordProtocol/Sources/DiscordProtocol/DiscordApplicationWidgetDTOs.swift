@@ -66,12 +66,10 @@ struct ProfileApplicationWidgetDTO: Decodable {
 
         func image(applicationID: String) -> ProfileWidgetValue? {
             guard UInt64(applicationID) != nil, UInt64(assetID) != nil, metadata.width > 0, metadata.height > 0 else { return nil }
-            // Official module776231 chooses the first supported size >= asset width.
-            let sizes = [16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128,
-                         160, 240, 256, 300, 320, 480, 512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096]
-            let size = sizes.first { Double($0) >= metadata.width } ?? 4096
-            let animated = metadata.isAnimated ? "&animated=true" : ""
-            guard let url = URL(string: "https://cdn.discordapp.com/app-assets/\(applicationID)/\(assetID).webp?size=\(size)\(animated)") else { return nil }
+            guard let url = DiscordCDN.applicationAsset(
+                applicationID, assetID: assetID, fileExtension: "webp",
+                size: DiscordCDN.supportedSize(atLeast: metadata.width), animated: metadata.isAnimated
+            ) else { return nil }
             return .image(url: url, width: metadata.width, height: metadata.height)
         }
     }
@@ -90,7 +88,9 @@ struct ProfileApplicationWidgetDTO: Decodable {
 
     func domain(application metadata: ProfileWidgetApplicationDTO? = nil) -> ProfileApplicationWidget {
         let metadata = metadata ?? application
-        let iconURL = metadata?.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(applicationID)/\($0).png?size=32&keep_aspect_ratio=false") }
+        let iconURL = metadata?.icon.flatMap {
+            DiscordCDN.applicationIcon(applicationID, hash: $0, fileExtension: "png", size: 32, keepAspectRatio: false)
+        }
         let mappedSurfaces = surfaces.filter { $0.key != "activity_accessory" }.mapValues { surface in
             ProfileWidgetSurface(layout: surface.layout, components: surface.components.mapValues { component in
                 component.fields.mapValues { $0.domain(applicationID: applicationID, assets: resolvedAssets ?? []) }

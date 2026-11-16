@@ -10,56 +10,6 @@ extension AppModel {
         }
     }
 
-    /// The message as saved, or nil when the edit failed.
-    @discardableResult
-    func edit(_ message: Message, content: String) async -> Message? {
-        guard !message.hasPoll, !message.flags.contains(.voiceMessage),
-              guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
-        else { return nil }
-        let session = accountSession()
-        do {
-            let updated = try await session.provider.edit(message, content: content)
-            guard isCurrentAccountSession(session) else { return nil }
-            invalidateMessageTranslation(updated.id, content: updated.content)
-            let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)
-            recordAuthoritativeMessageUpsert(reconciled)
-            return reconciled
-        } catch {
-            guard isCurrentAccountSession(session) else { return nil }
-            errorMessage = error.localizedDescription
-            return nil
-        }
-    }
-
-    func delete(_ message: Message) async {
-        let session = accountSession()
-        do {
-            try await session.provider.delete(
-                messageID: message.id,
-                channelID: message.channelID
-            )
-            guard isCurrentAccountSession(session) else { return }
-            consumeMessageDeleted(
-                channelID: message.channelID,
-                messageID: message.id
-            )
-        } catch {
-            guard isCurrentAccountSession(session) else { return }
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func dismissEphemeralMessage(_ message: Message) {
-        guard message.flags.contains(.ephemeral) else { return }
-        invalidateMessageTranslation(message.id)
-        if message.channelID == selectedChannelID {
-            mutateSelectedMessages {
-                $0.removeAll { $0.id == message.id }
-            }
-        }
-        messageCache[message.channelID]?.removeAll { $0.id == message.id }
-    }
-
     func toggleReaction(_ emoji: String, on message: Message) async {
         guard canUpdateReactions(on: message) else { return }
         let guildID = message.guildID ?? selectedGuildID
@@ -80,7 +30,7 @@ extension AppModel {
             return
         }
 
-        let key = ReactionMutationKey(
+        let key = ReactionKey(
             channelID: message.channelID,
             messageID: message.id,
             reactionID: Reaction(emoji: emoji, count: 0).id
@@ -110,7 +60,7 @@ extension AppModel {
         }
     }
 
-    func scheduleReactionMutation(for key: ReactionMutationKey) {
+    func scheduleReactionMutation(for key: ReactionKey) {
         guard let state = reactionMutations[key], !state.isSending else { return }
         let generation = state.generation
         let debounce = reactionMutationTiming.debounce
@@ -129,7 +79,7 @@ extension AppModel {
     }
 
     func sendReactionMutation(
-        for key: ReactionMutationKey,
+        for key: ReactionKey,
         generation: UInt64
     ) async {
         let session = accountSession()
@@ -214,18 +164,18 @@ extension AppModel {
             reactionMutations[key] = nil
             reactionMutationTasks[key] = nil
             if let message = reactionMessage(for: key) {
-                recordAuthoritativeMessageUpsert(message)
+                journalAuthoritativeMessageUpsert(message)
             }
         } else {
             reactionMutations[key] = latest
             if let message = reactionMessage(for: key) {
-                recordAuthoritativeMessageUpsert(message)
+                journalAuthoritativeMessageUpsert(message)
             }
             scheduleReactionMutation(for: key)
         }
     }
 
-    func reactionMessage(for key: ReactionMutationKey) -> Message? {
+    func reactionMessage(for key: ReactionKey) -> Message? {
         messageInWorkspace(channelID: key.channelID, messageID: key.messageID)
             ?? presentedGuideResource?.messages.first { $0.id == key.messageID && $0.channelID == key.channelID }
             ?? inbox.retainedMessages.first { $0.id == key.messageID }
@@ -247,27 +197,77 @@ extension AppModel {
 
     func applyCurrentUserReactionState(
         _ reacted: Bool,
-        for key: ReactionMutationKey,
+        for key: ReactionKey,
         emoji: String
     ) {
         guard let currentUserID = snapshot?.currentUser.id else { return }
-        let update: MessageReactionUpdate =
-            reacted
+        applyReactionUpdate(
+            currentUserReactionUpdate(reacted, for: key, emoji: emoji, userID: currentUserID),
+            persistsResult: false
+        )
+    }
+
+    func reactionPresentationPreserving(_ incoming: Message) -> Message {
+        var result = incoming
+        let lookupKey = ReactionKey(
+            channelID: incoming.channelID,
+            messageID: incoming.id,
+            reactionID: ""
+        )
+        if let existing = reactionMessage(for: lookupKey) {
+            result = result.preservingReactionReactors(from: existing)
+        }
+        return applyingReactionMutations(to: result, using: \.desiredReacted)
+    }
+
+    func reactionConfirmedSnapshot(_ message: Message) -> Message {
+        applyingReactionMutations(to: message, using: \.confirmedReacted)
+    }
+
+    private func applyingReactionMutations(
+        to message: Message,
+        using reactedState: KeyPath<ReactionMutationState, Bool>
+    ) -> Message {
+        guard let currentUserID = snapshot?.currentUser.id else { return message }
+        var result = message
+        let currentUserReactor = knownReactionReactor(for: currentUserID)
+        for (key, mutation) in reactionMutations
+        where key.channelID == result.channelID && key.messageID == result.id {
+            let reacted = mutation[keyPath: reactedState]
+            let currentlyReacted =
+                result.reactions.first(where: { $0.id == key.reactionID })?
+                    .didCurrentUserReact ?? false
+            guard currentlyReacted != reacted else { continue }
+            _ = result.applyReactionUpdate(
+                currentUserReactionUpdate(reacted, for: key, emoji: mutation.emoji, userID: currentUserID),
+                currentUserID: currentUserID,
+                reactor: currentUserReactor
+            )
+        }
+        return result
+    }
+
+    private func currentUserReactionUpdate(
+        _ reacted: Bool,
+        for key: ReactionKey,
+        emoji: String,
+        userID: UserID
+    ) -> MessageReactionUpdate {
+        reacted
             ? .add(
                 channelID: key.channelID,
                 messageID: key.messageID,
-                userID: currentUserID,
+                userID: userID,
                 emoji: emoji,
                 kind: .normal
             )
             : .remove(
                 channelID: key.channelID,
                 messageID: key.messageID,
-                userID: currentUserID,
+                userID: userID,
                 emoji: emoji,
                 kind: .normal
             )
-        applyReactionUpdate(update, persistsResult: false)
     }
 
     func loadReactionReactors(_ requestedReaction: Reaction, on message: Message) async {
@@ -280,10 +280,10 @@ extension AppModel {
             reaction = requestedReaction
         }
         guard reaction.count > 0,
-              Set(reaction.reactors.map(\.id)).count < min(reaction.count, 5)
+              Set(reaction.reactors.map(\.id)).count < min(reaction.count, ReactionReactor.previewLimit)
         else { return }
         let session = accountSession()
-        let key = ReactionReactorLoadKey(
+        let key = ReactionKey(
             channelID: message.channelID,
             messageID: message.id,
             reactionID: reaction.id
@@ -352,36 +352,21 @@ extension AppModel {
         await task.value
     }
 
-    private func storeReactionReactorPreview(_ reactors: [ReactionReactor], count: Int, for key: ReactionReactorLoadKey) {
+    private func storeReactionReactorPreview(_ reactors: [ReactionReactor], count: Int, for key: ReactionKey) {
         if loadedReactionReactorPreviews[key] == nil, loadedReactionReactorPreviews.count >= 256,
            let evictedKey = loadedReactionReactorPreviews.keys.first {
             loadedReactionReactorPreviews[evictedKey] = nil
         }
-        var seen: Set<UserID> = []
-        let previews = Array(reactors.filter { seen.insert($0.id).inserted }.prefix(5))
+        let previews = reactors.uniqueReactors(limit: ReactionReactor.previewLimit)
         loadedReactionReactorPreviews[key] = (count, previews)
         applyReactionReactors(previews, for: key)
     }
 
-    /// Returns only identities already held locally; never starts a load.
-    func retainedReactionReactors(for reaction: Reaction, on message: Message) -> [ReactionReactor] {
-        let key = ReactionReactorLoadKey(
-            channelID: message.channelID, messageID: message.id, reactionID: reaction.id
-        )
-        let cached = loadedReactionReactorPreviews[key]
-        let saved = cached?.count == reaction.count ? cached?.reactors ?? [] : []
-        var seen: Set<UserID> = []
-        return Array((reaction.reactors + saved)
-            .filter { seen.insert($0.id).inserted }
-            .prefix(min(5, max(0, reaction.count))))
-    }
-
     func applyReactionReactors(
         _ reactors: [ReactionReactor],
-        for key: ReactionReactorLoadKey
+        for key: ReactionKey
     ) {
-        var seen: Set<UserID> = []
-        let normalized = reactors.filter { seen.insert($0.id).inserted }.prefix(5)
+        let normalized = reactors.uniqueReactors(limit: ReactionReactor.previewLimit)
 
         func updating(_ values: [Message]) -> [Message] {
             guard let messageIndex = values.firstIndex(where: { $0.id == key.messageID }) else {
@@ -399,14 +384,8 @@ extension AppModel {
                 })
             else { return message }
             var result = message
-            var seen = Set<UserID>()
-            let merged =
-                normalized + result.reactions[reactionIndex].reactors
-            result.reactions[reactionIndex].reactors = Array(
-                merged
-                    .filter { seen.insert($0.id).inserted }
-                    .prefix(min(5, max(0, result.reactions[reactionIndex].count)))
-            )
+            result.reactions[reactionIndex].reactors = (normalized + result.reactions[reactionIndex].reactors)
+                .uniqueReactors(limit: min(ReactionReactor.previewLimit, result.reactions[reactionIndex].count))
             return result
         }
 
@@ -430,8 +409,7 @@ extension AppModel {
     }
 
     func resetReactionReactorLoads() {
-        for task in reactionReactorLoadTasks.values { task.cancel() }
-        reactionReactorLoadTasks = [:]
+        reactionReactorLoadTasks.cancelAll()
         reactionReactorLoadIDs = [:]
         loadedReactionReactorPreviews = [:]
         failedReactionReactorLoads = [:]
@@ -445,7 +423,7 @@ extension AppModel {
     }
 
     private func invalidateReactionReactorPreviews(channelID: ChannelID, messageID: MessageID, reactionID: String? = nil) {
-        func matches(_ key: ReactionReactorLoadKey) -> Bool {
+        func matches(_ key: ReactionKey) -> Bool {
             key.channelID == channelID && key.messageID == messageID
                 && (reactionID == nil || key.reactionID == reactionID)
         }
@@ -581,7 +559,7 @@ extension AppModel {
                     emoji: mutation.emoji
                 )
             }
-            let lookupKey = ReactionMutationKey(
+            let lookupKey = ReactionKey(
                 channelID: update.channelID,
                 messageID: update.messageID,
                 reactionID: ""
@@ -590,9 +568,28 @@ extension AppModel {
         }
 
         if persistsResult, let messageToPersist {
-            recordAuthoritativeMessageUpsert(messageToPersist)
+            journalAuthoritativeMessageUpsert(messageToPersist)
         }
         NotificationCenter.default.post(name: .sakuracordMessageReactionDidChange, object: self, userInfo: ["update": update])
     }
 
+}
+
+nonisolated extension ReactionReactor {
+    /// Reactors a reaction keeps and shows in its tooltip.
+    static let previewLimit = 5
+}
+
+nonisolated extension [ReactionReactor] {
+    /// The first `limit` distinct reactors, in order.
+    func uniqueReactors(limit: Int) -> [ReactionReactor] {
+        guard limit > 0 else { return [] }
+        var seen: Set<UserID> = []
+        var result: [ReactionReactor] = []
+        for reactor in self where seen.insert(reactor.id).inserted {
+            result.append(reactor)
+            if result.count == limit { break }
+        }
+        return result
+    }
 }

@@ -3,15 +3,6 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
-    func updateServerRail(from snapshot: BootstrapSnapshot) {
-        replaceServerRailGuilds(
-            Dictionary(
-                uniqueKeysWithValues: snapshot.guilds.map { ($0.id, $0) }
-            )
-        )
-        serverRailItems = snapshot.guildRailItems
-    }
-
     func reconcile(
         _ message: Message,
         preparedTextPlan: NativeTimelineTextPlan? = nil
@@ -187,8 +178,7 @@ extension AppModel {
         removedMessageIDs: Set<MessageID> = [],
         invalidatesAllRows: Bool = false
     ) {
-        let nextRevision = latestMessageRowsRevision &+ 1
-        latestMessageRowsRevision = nextRevision
+        let nextRevision = messageRowsRevision &+ 1
         messageRowsUpdateHint = change.map {
             MessageRowsUpdateHint(revision: nextRevision, change: $0)
         }
@@ -754,9 +744,7 @@ extension AppModel {
     ///   window and join it to unrelated history.
     @discardableResult
     func reconcileVisibleOrCached(_ incoming: Message, updatesOnly: Bool = false) -> Message {
-        let message = pollVotePresentationPreserving(reactionPresentationPreserving(
-            outgoingMediaPresentationPreserving(incoming)
-        ))
+        let message = localPresentationPreserving(incoming, includingOutgoingMedia: true)
         reconcileInboxMessage(message)
         receiveGuideResourceEvent(.messageUpdated(message))
         if message.channelID == openThread?.id {
@@ -770,144 +758,6 @@ extension AppModel {
             cache(message)
         }
         return message
-    }
-
-    func reactionPresentationPreserving(_ incoming: Message) -> Message {
-        var result = incoming
-        let lookupKey = ReactionMutationKey(
-            channelID: incoming.channelID,
-            messageID: incoming.id,
-            reactionID: ""
-        )
-        if let existing = reactionMessage(for: lookupKey) {
-            result = result.preservingReactionReactors(from: existing)
-        }
-
-        guard let currentUserID = snapshot?.currentUser.id else { return result }
-        let currentUserReactor = knownReactionReactor(for: currentUserID)
-        for (key, mutation) in reactionMutations
-        where key.channelID == result.channelID && key.messageID == result.id {
-            let currentlyReacted =
-                result.reactions.first(where: { $0.id == key.reactionID })?
-                    .didCurrentUserReact ?? false
-            guard currentlyReacted != mutation.desiredReacted else { continue }
-            let update: MessageReactionUpdate =
-                mutation.desiredReacted
-                ? .add(
-                    channelID: key.channelID,
-                    messageID: key.messageID,
-                    userID: currentUserID,
-                    emoji: mutation.emoji,
-                    kind: .normal
-                )
-                : .remove(
-                    channelID: key.channelID,
-                    messageID: key.messageID,
-                    userID: currentUserID,
-                    emoji: mutation.emoji,
-                    kind: .normal
-                )
-            _ = result.applyReactionUpdate(
-                update,
-                currentUserID: currentUserID,
-                reactor: currentUserReactor
-            )
-        }
-        return result
-    }
-
-    func reactionConfirmedSnapshot(_ message: Message) -> Message {
-        guard let currentUserID = snapshot?.currentUser.id else { return message }
-        var result = message
-        let currentUserReactor = knownReactionReactor(for: currentUserID)
-        for (key, mutation) in reactionMutations
-        where key.channelID == result.channelID && key.messageID == result.id {
-            let currentlyReacted =
-                result.reactions.first(where: { $0.id == key.reactionID })?
-                    .didCurrentUserReact ?? false
-            guard currentlyReacted != mutation.confirmedReacted else { continue }
-            let update: MessageReactionUpdate =
-                mutation.confirmedReacted
-                ? .add(
-                    channelID: key.channelID,
-                    messageID: key.messageID,
-                    userID: currentUserID,
-                    emoji: mutation.emoji,
-                    kind: .normal
-                )
-                : .remove(
-                    channelID: key.channelID,
-                    messageID: key.messageID,
-                    userID: currentUserID,
-                    emoji: mutation.emoji,
-                    kind: .normal
-                )
-            _ = result.applyReactionUpdate(
-                update,
-                currentUserID: currentUserID,
-                reactor: currentUserReactor
-            )
-        }
-        return result
-    }
-
-    func updateOutgoingState(_ state: OutboxState, nonce: String, channelID: ChannelID, failure: MessageSendFailure? = nil) {
-        composer.outbox.updateState(state, nonce: nonce, channelID: channelID)
-        mutateOutgoingMessage(nonce: nonce, channelID: channelID) {
-            $0.outboxState = state
-            $0.sendFailure = failure
-        }
-    }
-
-    func mutateOutgoingMessage(nonce: String, channelID: ChannelID, _ body: (inout Message) -> Void) {
-        if openThread?.id == channelID,
-           let index = threadMessages.firstIndex(where: { $0.nonce == nonce })
-        {
-            body(&threadMessages[index])
-            return
-        }
-        if selectedChannelID == channelID,
-           let index = messages.firstIndex(where: { $0.nonce == nonce })
-        {
-            mutateSelectedMessages { body(&$0[index]) }
-            return
-        }
-        guard var cached = messageCache[channelID],
-              let index = cached.firstIndex(where: { $0.nonce == nonce })
-        else { return }
-        body(&cached[index])
-        messageCache[channelID] = cached
-    }
-
-    func removeOutgoingMessage(nonce: String, channelID: ChannelID) {
-        if openThread?.id == channelID {
-            threadMessages.removeAll { $0.nonce == nonce }
-            return
-        }
-        if selectedChannelID == channelID {
-            mutateSelectedMessages {
-                $0.removeAll { $0.nonce == nonce }
-            }
-            return
-        }
-        guard var cached = messageCache[channelID] else { return }
-        cached.removeAll { $0.nonce == nonce }
-        messageCache[channelID] = cached
-    }
-
-    func outgoingState(nonce: String, channelID: ChannelID) -> OutboxState? {
-        let visibleState: OutboxState?
-        if openThread?.id == channelID {
-            visibleState = threadMessages.first { $0.nonce == nonce }?.outboxState
-        } else if selectedChannelID == channelID {
-            visibleState = messages.first { $0.nonce == nonce }?.outboxState
-        } else {
-            visibleState = messageCache[channelID]?.first { $0.nonce == nonce }?.outboxState
-        }
-        // Fresh authoritative history can settle a failed send even when its
-        // Gateway event was missed. An old optimistic row cannot downgrade it.
-        if visibleState == .confirmed { return .confirmed }
-        return composer.outbox.state(nonce: nonce, channelID: channelID) ?? visibleState
     }
 
     func reconcileThread(_ message: Message) {
@@ -1040,8 +890,7 @@ extension AppModel {
         if let cachedRows = messageRowCache[channelID],
            !Self.rows(cachedRows, match: retained)
         {
-            messageRowCache[channelID] = nil
-            messageRowCacheOrder.removeAll { $0 == channelID }
+            takeCachedMessageRows(for: channelID)
         }
         messageCacheOrder.removeAll { $0 == channelID }
         messageCacheOrder.append(channelID)
@@ -1053,8 +902,7 @@ extension AppModel {
         {
             let evicted = messageCacheOrder.removeFirst()
             messageCache[evicted] = nil
-            messageRowCache[evicted] = nil
-            messageRowCacheOrder.removeAll { $0 == evicted }
+            takeCachedMessageRows(for: evicted)
             hasMoreCache[evicted] = nil
             detachedMessageWindows[evicted] = nil
             if evicted != selectedChannelID, evicted != openThread?.id {
@@ -1070,14 +918,12 @@ extension AppModel {
     ) {
         guard let cachedMessages = messageCache[channelID]
         else {
-            messageRowCache[channelID] = nil
-            messageRowCacheOrder.removeAll { $0 == channelID }
+            takeCachedMessageRows(for: channelID)
             return
         }
         let retainedRows = Array(rows.suffix(cachedMessages.count))
         guard Self.rows(retainedRows, match: cachedMessages) else {
-            messageRowCache[channelID] = nil
-            messageRowCacheOrder.removeAll { $0 == channelID }
+            takeCachedMessageRows(for: channelID)
             return
         }
         messageRowCache[channelID] = retainedRows
@@ -1096,6 +942,7 @@ extension AppModel {
         return messageCache.removeValue(forKey: channelID) ?? []
     }
 
+    @discardableResult
     func takeCachedMessageRows(
         for channelID: ChannelID
     ) -> [MessageRowPresentation]? {

@@ -269,11 +269,7 @@ final class GIFPickerNativeGridCoordinator: NSObject,
             toggleFavorite: { [weak self] in
                 self?.parent.toggleFavorite(gif)
             },
-            copyMediaLink: {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(gif.url.absoluteString, forType: .string)
-            }
+            copyMediaLink: { Pasteboard.copy(gif.url.absoluteString) }
         ))
     }
 }

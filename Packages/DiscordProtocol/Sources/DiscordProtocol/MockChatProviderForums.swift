@@ -10,7 +10,6 @@ public extension MockChatProvider {
     }
 
     private func forumPage(in channelID: ChannelID, query: ForumPostQuery) throws -> ForumPostPage {
-        forumQueriesByChannel[channelID, default: []].append(query)
         guard snapshot.channels.contains(where: { $0.id == channelID && $0.kind == .forum }) else {
             throw ChatProviderError.channelNotFound
         }
@@ -56,7 +55,7 @@ public extension MockChatProvider {
             // Like a live catalogue entry, the stripped post keeps its
             // activity order through its last message ID.
             if let latest = stripped.posts[index].mostRecentMessage {
-                stripped.posts[index].thread.lastMessageID = .messageSearchBoundary(at: latest.timestamp)
+                stripped.posts[index].thread.lastMessageID = MessageID(timestamp: latest.timestamp)
             }
             stripped.posts[index].firstMessage = nil
             stripped.posts[index].mostRecentMessage = nil
@@ -75,10 +74,6 @@ public extension MockChatProvider {
             continuation?.yield(.forumPostPreviewsChanged(channelID: channelID, posts: current))
         }
         return stripped
-    }
-
-    func forumQueries(in channelID: ChannelID) -> [ForumPostQuery] {
-        forumQueriesByChannel[channelID] ?? []
     }
 
     func forumPost(threadID: ChannelID) async throws -> ForumPost {
@@ -110,7 +105,7 @@ public extension MockChatProvider {
                 $0.id == draft.channelID && $0.kind == .forum
             })
         else { throw ChatProviderError.channelNotFound }
-        let selectedTags = DiscordRESTProvider.orderedUniqueForumTagIDs(
+        let selectedTags = ForumTag.orderedUniqueIDs(
             draft.appliedTagIDs,
             availableTags: channel.availableTags
         )
@@ -121,7 +116,7 @@ public extension MockChatProvider {
               selectedTags.count <= 5,
               Set(selectedTags) == Set(draft.appliedTagIDs),
               draft.attachments.count <= 10,
-              DiscordRESTProvider.validForumAutoArchiveDurations.contains(
+              ThreadAutoArchive.validDurations.contains(
                   draft.autoArchiveDuration
               )
         else {
@@ -140,8 +135,8 @@ public extension MockChatProvider {
             value.filename = item.filename
             value.description = item.description.isEmpty ? nil : item.description
             value.isSpoiler = item.isSpoiler
-            if item.isSpoiler, !value.filename.hasPrefix("SPOILER_") {
-                value.filename = "SPOILER_\(value.filename)"
+            if item.isSpoiler, !value.filename.hasPrefix(UploadFilename.spoilerPrefix) {
+                value.filename = UploadFilename.spoilerPrefix + value.filename
             }
             return value
         }
@@ -174,7 +169,7 @@ public extension MockChatProvider {
               let channel = snapshot.channels.first(where: { $0.id == draft.channelID }),
               channel.kind == .text || (channel.kind == .announcement && !draft.isPrivate),
               draft.starterMessageID == nil || !draft.isPrivate,
-              DiscordRESTProvider.validForumAutoArchiveDurations.contains(draft.autoArchiveDuration)
+              ThreadAutoArchive.validDurations.contains(draft.autoArchiveDuration)
         else { throw ChatProviderError.invalidRequest("The thread does not meet this channel's requirements.") }
         let threadID: ChannelID
         var starterIndex: Int?
@@ -285,7 +280,7 @@ public extension MockChatProvider {
             guard let channel = snapshot.channels.first(where: { $0.id == parentID }) else {
                 throw ChatProviderError.channelNotFound
             }
-            let selectedTags = DiscordRESTProvider.orderedUniqueForumTagIDs(
+            let selectedTags = ForumTag.orderedUniqueIDs(
                 tags,
                 availableTags: channel.availableTags
             )
@@ -301,7 +296,7 @@ public extension MockChatProvider {
         case .archived(let value): updated.thread.isArchived = value
         case .locked(let value): updated.thread.isLocked = value
         case .pinned(let value):
-            if value { updated.thread.flags |= 1 << 1 } else { updated.thread.flags &= ~(1 << 1) }
+            updated.thread.flags = updated.thread.flags(settingPinned: value)
         }
         posts[index] = updated
         forumPostsByChannel[parentID] = posts
@@ -345,11 +340,7 @@ public extension MockChatProvider {
                 muteEndTime: until
             )
         )
-        try updateForumPostNotificationSettings(post) {
-            $0.isMuted = isMuted
-            $0.muteConfiguration =
-                isMuted ? DiscordMuteConfiguration(endTime: until) : nil
-        }
+        try updateForumPostNotificationSettings(post) { $0.setMuted(isMuted, until: until) }
     }
 
     private func updateForumPostNotificationSettings(
@@ -389,7 +380,7 @@ public extension MockChatProvider {
             id: ChannelID(rawValue: 903), guildID: channels.first { $0.id == parentID }?.guildID,
             parentID: parentID, name: "Archived showcase notes", messageCount: 1, memberCount: 1,
             isArchived: true, ownerID: owner.id, archiveTimestamp: .now.addingTimeInterval(-3 * 86_400),
-            createdAt: .now.addingTimeInterval(-10 * 86_400), autoArchiveDuration: 4_320
+            createdAt: .now.addingTimeInterval(-10 * 86_400), autoArchiveDuration: ThreadAutoArchive.defaultDuration
         )
         forumPosts[parentID, default: []].append(ForumPost(thread: archived, owner: owner))
         messages[archived.id] = [
@@ -478,7 +469,7 @@ public extension MockChatProvider {
                     lastMessageID: message.id, isArchived: index >= count / 2,
                     isLocked: index.isMultiple(of: 17),
                     ownerID: author.id, appliedTagIDs: tagSets[templateIndex],
-                    flags: index == 0 ? 1 << 1 : 0,
+                    flags: index == 0 ? MessageThreadSummary.pinnedFlag : 0,
                     archiveTimestamp: index >= count / 2 ? timestamp : nil,
                     createdAt: timestamp.addingTimeInterval(-1_800), totalMessageSent: index + 2
                 ),

@@ -36,7 +36,7 @@ extension NativeMessageTimelineItem {
     }
 }
 
-extension NativeTimelineReactionBaseline {
+extension NativeTimelineRowMotionBaseline {
     /// The rows that stood between two followed rows, when every one of them
     /// has left the timeline; nil when any is missing or merely moved.
     func departedRows(after oldIndex: Int, before nextOldIndex: Int, in departed: Set<Int>) -> [Row]? {
@@ -73,9 +73,9 @@ struct NativeTimelineRowMotionPlan {
     private(set) var describesUpdate = true
     private var shift: CGFloat?
     private var expectedShift: CGFloat?
-    private var steps: [NativeTimelineReactionRowMotion.Step] = []
+    private var steps: [NativeTimelineRowMotion.Step] = []
 
-    var motion: NativeTimelineReactionRowMotion? {
+    var motion: NativeTimelineRowMotion? {
         guard describesUpdate, let shift, !steps.isEmpty else { return nil }
         return .init(shift: shift, steps: steps)
     }
@@ -117,7 +117,7 @@ struct NativeTimelineUpdateMotion {
     let departedOldIndices: Set<Int>
     /// What rows this update deleted were still showing, now handed to the
     /// row before each of them.
-    var handOvers: [Identifier: NativeTimelineCanvasView.HandOver]
+    var handOvers: [Identifier: NativeTimelineRowMotionState.HandOver]
     /// The motion this update starts, for the pieces that belong to it.
     let motionID: Int
     var plan = NativeTimelineRowMotionPlan()

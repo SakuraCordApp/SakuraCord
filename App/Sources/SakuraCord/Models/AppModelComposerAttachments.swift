@@ -4,33 +4,37 @@ import SakuraCordModels
 extension AppModel {
     func composerAttachments(
         for destination: MessageComposerDestination
-    ) -> [ForumPostAttachment] {
+    ) -> [StagedAttachment] {
         switch destination {
         case .channel: channelComposerAttachments
         case .thread: threadComposerAttachments
         }
     }
 
-    func isComposerDropEligible(_ destination: MessageComposerDestination) -> Bool {
-        let channel = switch destination {
-        case .channel: selectedChannel
-        case .thread: threadCreation == nil ? openThreadParentChannel : selectedChannel
-        }
-        guard let channel, let permissions = effectiveMessagePermissions(in: channel),
-              permissions & DiscordPermissionBits.attachFiles != 0
-        else { return false }
-        guard commandComposer(for: destination).activeCommand == nil else { return false }
+    /// The effective permissions where a composer destination posts, once it
+    /// can send there: the selected channel, or the open thread's parent. A
+    /// thread being created has no destination yet, so callers decide for it.
+    func composerSendPermissions(in destination: MessageComposerDestination) -> UInt64? {
         switch destination {
         case .channel:
-            guard
-                  selectedConversationAccess.canSend,
-                  let kind = selectedChannel?.kind
-            else { return false }
-            return Self.supportsTyping(kind)
+            guard let channel = selectedChannel, selectedConversationAccess.canSend,
+                  Self.supportsTyping(channel.kind)
+            else { return nil }
+            return effectiveMessagePermissions(in: channel)
         case .thread:
-            if let threadCreation { return !threadCreation.isSubmitting }
-            return openThread != nil && openThreadAccess.canSend
+            guard openThread != nil, openThreadAccess.canSend, let parent = openThreadParentChannel else { return nil }
+            return effectiveMessagePermissions(in: parent)
         }
+    }
+
+    func isComposerDropEligible(_ destination: MessageComposerDestination) -> Bool {
+        guard commandComposer(for: destination).activeCommand == nil else { return false }
+        let permissions = if destination == .thread, let threadCreation {
+            threadCreation.isSubmitting ? nil : selectedChannel.flatMap { effectiveMessagePermissions(in: $0) }
+        } else {
+            composerSendPermissions(in: destination)
+        }
+        return (permissions ?? 0) & DiscordPermissionBits.attachFiles != 0
     }
 
     /// Stages dropped or pasted files, or sends them at once for an instant drop.
@@ -55,12 +59,12 @@ extension AppModel {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
-            await sendAttachmentsImmediately(acceptedURLs.map { ForumPostAttachment(url: $0) }, to: destination)
+            await sendAttachmentsImmediately(acceptedURLs.map { StagedAttachment(url: $0) }, to: destination)
         case let (.owned(batch), true):
             let acceptedURLs = await preparePromisedAttachmentsForImmediateSend(batch, to: destination)
             guard !acceptedURLs.isEmpty else { return }
             defer { endUsingOwnedPromisedFiles(acceptedURLs) }
-            await sendAttachmentsImmediately(acceptedURLs.map { ForumPostAttachment(url: $0) }, to: destination)
+            await sendAttachmentsImmediately(acceptedURLs.map { StagedAttachment(url: $0) }, to: destination)
         }
     }
 
@@ -101,11 +105,7 @@ extension AppModel {
         to destination: MessageComposerDestination
     ) async -> [URL] {
         let adoptedURLs = adoptPromisedFileBatch(batch)
-        guard isComposerDropEligible(destination) else {
-            pruneOwnedPromisedAttachmentFiles()
-            return []
-        }
-        guard attachmentBatchFits(adoptedURLs.count) else {
+        guard isComposerDropEligible(destination), attachmentBatchFits(adoptedURLs.count) else {
             pruneOwnedPromisedAttachmentFiles()
             return []
         }
@@ -133,7 +133,7 @@ extension AppModel {
         // can take a while, so it finishes behind the tiles, and anything it
         // rejects leaves again. Uploading prepares each file afresh; until
         // the check ends, the tiles only hold sending back.
-        let staged = urls.map { ForumPostAttachment(url: $0) }
+        let staged = urls.map { StagedAttachment(url: $0) }
         let stagedIDs = Set(staged.map(\.id))
         let context = attachmentComposerContext(for: destination)
         setComposerAttachments(composerAttachments(for: destination) + staged, for: destination)
@@ -152,10 +152,8 @@ extension AppModel {
         // Files the user left while they were checked stay with that conversation.
         if attachmentComposerContext(for: destination) != context,
            case let .conversation(conversationID)? = context,
-           var kept = composer.keptDrafts[conversationID]
+           let kept = removeKeptAttachments(rejectedIDs, in: conversationID)
         {
-            kept.attachments.removeAll { rejectedIDs.contains($0.id) }
-            composer.keptDrafts[conversationID] = kept.isEmpty ? nil : kept
             pruneOwnedPromisedAttachmentFiles()
             preuploadComposerAttachments(kept.attachments.filter { stagedIDs.contains($0.id) }, in: context)
             return true
@@ -176,7 +174,7 @@ extension AppModel {
         guard isComposerDropEligible(destination), !Task.isCancelled else { return false }
         var attachments = composerAttachments(for: destination)
         if attachmentBatchFits(urls.count, besides: attachments.count) {
-            let added = urls.map { ForumPostAttachment(url: $0) }
+            let added = urls.map { StagedAttachment(url: $0) }
             attachments.append(contentsOf: added)
             setComposerAttachments(attachments, for: destination)
             let addedIDs = Set(added.map(\.id))
@@ -213,7 +211,7 @@ extension AppModel {
     }
 
     func updateComposerAttachment(
-        _ attachment: ForumPostAttachment,
+        _ attachment: StagedAttachment,
         in destination: MessageComposerDestination
     ) {
         var attachments = composerAttachments(for: destination)
@@ -247,7 +245,7 @@ extension AppModel {
     /// removal off, files wait for Send: turning it on before then must still
     /// strip them, and a stored file cannot be prepared again.
     func preuploadComposerAttachments(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         in context: AttachmentComposerContext?
     ) {
         guard privacySafetySettingsStore.load().removesMediaMetadata,
@@ -285,7 +283,7 @@ extension AppModel {
     }
 
     func restoreComposerAttachments(
-        _ restoredAttachments: [ForumPostAttachment],
+        _ restoredAttachments: [StagedAttachment],
         to destination: MessageComposerDestination
     ) {
         let current = composerAttachments(for: destination)
@@ -301,7 +299,7 @@ extension AppModel {
     /// Puts back the files of a send that did not take them, unless their
     /// conversation was left meanwhile, which drops their early uploads.
     func returnUnsentComposerAttachments(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         to destination: MessageComposerDestination,
         from conversationID: ChannelID?
     ) {
@@ -314,11 +312,11 @@ extension AppModel {
 
     @discardableResult
     func sendAttachmentsImmediately(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         to destination: MessageComposerDestination
     ) async -> Bool {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
-              validateAttachmentCount(attachments), allowOutgoingQueueSubmission()
+              attachmentBatchFits(attachments.count), allowOutgoingQueueSubmission()
         else { return false }
         // A thread still being created has no upload destination yet.
         if destination == .thread, openThread == nil {
@@ -329,10 +327,7 @@ extension AppModel {
         let session = accountSession()
         let channelID = selectedChannelID
         let thread = openThread
-        guard let reservation = composer.outbox.reserveSubmission() else {
-            composer.isSendQueueFullAlertPresented = true
-            return false
-        }
+        guard let reservation = reserveOutgoingQueueSubmission() else { return false }
         // The message shows at once, so its videos are read first.
         await LocalVideo.prepare(attachments.map(\.url))
         composer.outbox.releaseSubmission(reservation)
@@ -360,7 +355,7 @@ extension AppModel {
     }
 
     func setComposerAttachments(
-        _ attachments: [ForumPostAttachment],
+        _ attachments: [StagedAttachment],
         for destination: MessageComposerDestination
     ) {
         let attachments = attachments.map {
@@ -375,6 +370,16 @@ extension AppModel {
         pruneOwnedPromisedAttachmentFiles()
     }
 
+    /// Takes attachments out of a conversation's kept draft, forgetting a draft
+    /// left empty. Returns the remaining draft when one was kept.
+    @discardableResult
+    func removeKeptAttachments(_ ids: Set<UUID>, in channelID: ChannelID) -> KeptComposerDraft? {
+        guard var kept = composer.keptDrafts[channelID] else { return nil }
+        kept.attachments.removeAll { ids.contains($0.id) }
+        composer.keptDrafts[channelID] = kept.isEmpty ? nil : kept
+        return kept
+    }
+
     /// Like Discord, rejects the whole batch rather than keeping the files that fit.
     func attachmentBatchFits(_ count: Int, besides existingCount: Int = 0) -> Bool {
         guard existingCount + count <= SendMessageDraft.maximumAttachmentCount else {
@@ -384,13 +389,26 @@ extension AppModel {
         }
         return true
     }
+}
 
-    func validateAttachmentCount(_ attachments: [ForumPostAttachment]) -> Bool {
-        guard attachments.count <= SendMessageDraft.maximumAttachmentCount else {
-            errorMessage =
-                "You can attach up to \(SendMessageDraft.maximumAttachmentCount) files to one message."
-            return false
-        }
-        return true
+extension AppModel {
+    /// Opens a staged file in the media viewer, which zooms it out of its
+    /// tile and back into it.
+    func openComposerAttachment(_ id: UUID, in attachments: [StagedAttachment], from anchor: ComposerSendTransitionAnchor) {
+        guard let currentUser,
+              let presentation = MediaViewerPlan.composerAttachments(
+                  attachments,
+                  selectedAttachmentID: id,
+                  author: currentUser
+              )
+        else { return }
+        // Every staged file zooms back into its own tile, whichever the
+        // viewer shows when it closes.
+        let sources = attachments.compactMap(anchor.mediaViewerSource)
+        mediaViewerSelectedItemID = id.uuidString
+        mediaViewerPresentation = presentation.withTimelineMedia(
+            previewImages: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0.image) }),
+            transitionSources: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0) })
+        )
     }
 }

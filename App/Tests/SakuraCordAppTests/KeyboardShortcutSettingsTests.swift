@@ -252,10 +252,7 @@ private final class ShortcutRecorderTestState {
     let registeredActionIDs = Set(controls.map(\.id)).intersection(actionIDs)
     #expect(registeredActionIDs == actionIDs)
     #expect(
-        SettingsPreferenceRegistry.foundation.registrations(
-            page: .keyboardShortcuts,
-            storageScope: .appWide
-        ).count == KeyboardShortcutAction.allCases.count
+        SettingsPreferenceRegistry.foundation.registrations(page: .keyboardShortcuts).count == KeyboardShortcutAction.allCases.count
     )
 }
 

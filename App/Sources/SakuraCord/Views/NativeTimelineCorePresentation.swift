@@ -2,12 +2,6 @@ import AppKit
 import CoreText
 import SakuraCordModels
 
-nonisolated func coreTextLine(_ value: Any) -> CTLine {
-    let object = value as AnyObject
-    precondition(CFGetTypeID(object) == CTLineGetTypeID())
-    return unsafeDowncast(object, to: CTLine.self)
-}
-
 enum NativeTimelineSemanticColor {
     static func opacity(
         _ color: NSColor,
@@ -17,15 +11,6 @@ enum NativeTimelineSemanticColor {
         return resolved.withAlphaComponent(
             resolved.alphaComponent * min(max(multiplier, 0), 1)
         )
-    }
-}
-
-nonisolated enum TimelineInlineVideoPolicy {
-    static func canvasOwnsLoadingSurface(
-        mediaIsVideo: Bool,
-        autoplaysInline: Bool
-    ) -> Bool {
-        !mediaIsVideo || !autoplaysInline
     }
 }
 
@@ -73,51 +58,10 @@ enum NativeTimelineUnreadSeparatorMetrics {
     static var capsuleHeight: CGFloat { InterfaceScale.metric(19) }
 }
 
-/// Text rules for the timeline thread card, matching Discord's client.
-nonisolated enum NativeTimelineThreadCard {
-    static var height: CGFloat { InterfaceScale.metric(54) }
-    /// Discord capped message counts at 50 for threads created before July 2022.
-    private static let cappedCountCutoff = Date(timeIntervalSince1970: 1_656_712_657)
-
-    static func countText(_ thread: MessageThreadSummary) -> String {
-        let count = thread.messageCount
-        guard count > 0 else { return "See Thread" }
-        guard count > 1 else { return "1 Message" }
-        return "\(shownCount(thread)) Messages"
-    }
-
-    /// The count alone, for cards too narrow for the full label.
-    static func compactCountText(_ thread: MessageThreadSummary) -> String? {
-        thread.messageCount > 0 ? shownCount(thread) : nil
-    }
-
-    private static func shownCount(_ thread: MessageThreadSummary) -> String {
-        let count = thread.messageCount
-        return if count >= 100_000 {
-            "100k+"
-        } else if count >= 50, thread.id.createdAt <= cappedCountCutoff {
-            "50+"
-        } else {
-            "\(count)"
-        }
-    }
-
-    static func activityText(_ date: Date, now: Date = .now) -> String {
-        let seconds = max(0, now.timeIntervalSince(date))
-        let day: TimeInterval = 86_400
-        return switch seconds {
-        case ..<3_600: "\(max(1, Int(seconds / 60)))m ago"
-        case ..<day: "\(Int(seconds / 3_600))h ago"
-        case ..<(30 * day): "\(Int(seconds / day))d ago"
-        case ..<(360 * day): ">30d ago"
-        default: date.formatted(date: .long, time: .omitted)
-        }
-    }
-}
-
 enum NativeTimelineReplyMetrics {
     nonisolated static var lineHeight: CGFloat { InterfaceScale.metric(24) }
     static var horizontalSpacing: CGFloat { InterfaceScale.metric(5) }
+    static var emojiSize: CGFloat { InterfaceScale.metric(16) }
 
     static var authorFont: NSFont {
         .messageSystemFont(
@@ -133,6 +77,15 @@ enum NativeTimelineReplyMetrics {
     }
 
     nonisolated static var avatarDiameter: CGFloat { InterfaceScale.metric(15) }
+
+    nonisolated static func avatarFrame(in replyContentFrame: CGRect) -> CGRect {
+        CGRect(
+            x: replyContentFrame.minX,
+            y: replyContentFrame.minY + (lineHeight - avatarDiameter) / 2,
+            width: avatarDiameter,
+            height: avatarDiameter
+        )
+    }
 
     /// The media symbol's width and its gap from the summary.
     static var mediaSymbolReserve: CGFloat { InterfaceScale.metric(26) }
@@ -167,13 +120,7 @@ enum NativeTimelineReplyMetrics {
         }
     }
 
-    static var unavailableFont: NSFont {
-        let baseFont = summaryFont
-        return NSFont(
-            descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic),
-            size: baseFont.pointSize
-        ) ?? baseFont
-    }
+    static var unavailableFont: NSFont { summaryFont.italic }
 
     static let unavailableText = "Message could not be loaded"
 
@@ -192,13 +139,13 @@ enum NativeTimelineReplyMetrics {
         let authorFont = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: authorFont)
         let showsIndicator = source?.roleColorDisplay == .nextToNames
             && presentation?.roleColorHex != nil
-        let summary = summary(for: preview, in: message, model: source).text
+        let summary = summary(for: preview, in: message, model: source)
         return avatarDiameter
             + horizontalSpacing
             + (showsIndicator ? InterfaceScale.metric(16) : 0)
             + textWidth(authorDisplayName(author, in: message), font: authorFont)
             + horizontalSpacing
-            + textWidth(summary, font: summaryFont)
+            + summaryWidth(summary, font: summaryFont)
             + (mediaSymbol(for: preview) == nil ? 0 : mediaSymbolReserve)
     }
 
@@ -214,5 +161,53 @@ enum NativeTimelineReplyMetrics {
         return ceil(
             CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         )
+    }
+
+    static func summaryWidth(
+        _ prepared: MessageReplySummary.Prepared,
+        font: NSFont = summaryFont
+    ) -> CGFloat {
+        if prepared.emojis.isEmpty {
+            return textWidth(prepared.text, font: font)
+        }
+        let attributed = coreTextSummary(prepared, font: font, color: .black)
+        let line = CTLineCreateWithAttributedString(attributed)
+        return ceil(
+            CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        )
+    }
+
+    static func coreTextSummary(
+        _ prepared: MessageReplySummary.Prepared,
+        font: NSFont,
+        color: NSColor
+    ) -> CFAttributedString {
+        let attributed = NSMutableAttributedString(
+            attributedString: NativeTimelineRowPainter.coreTextValue(
+                prepared.text,
+                font: font,
+                color: color,
+                alignment: .left,
+                lineBreakMode: .byTruncatingTail,
+                isInteractiveHovered: false
+            ) as NSAttributedString
+        )
+        let baselineOffset = ComposerEmojiAttributedText.attachmentOriginY(font: font, size: emojiSize)
+        for emoji in prepared.emojis {
+            guard emoji.range.location + emoji.range.length <= attributed.length else { continue }
+            attributed.addAttributes([
+                .discordEmojiToken: emoji.emoji.rawToken,
+                NSAttributedString.Key(kCTRunDelegateAttributeName as String): NativeTimelineRunDelegate.make(
+                    width: emojiSize,
+                    height: emojiSize,
+                    baselineOffset: baselineOffset
+                ),
+            ], range: emoji.range)
+        }
+        for range in prepared.spoilerRanges {
+            guard range.location + range.length <= attributed.length else { continue }
+            SpoilerAppearance.concealText(in: attributed, range: range)
+        }
+        return attributed as CFAttributedString
     }
 }

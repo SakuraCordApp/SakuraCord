@@ -66,7 +66,7 @@ struct ForumChannelView: View {
                   !model.isSearchingForumPosts, !model.isLoadingForumPosts
         {
             let isFiltering =
-                !model.forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                !model.trimmedForumSearchText.isEmpty
                     || !model.forumSelectedTagIDs.isEmpty
             ForumEmptyState(
                 title: isFiltering ? "No matching posts" : "No posts yet",
@@ -90,7 +90,7 @@ struct ForumChannelView: View {
         ForumBoardSnapshot(
             query: ForumBoardSnapshot.Query(
                 channelID: channel.id,
-                searchText: model.forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
+                searchText: model.trimmedForumSearchText,
                 tagIDs: model.forumSelectedTagIDs,
                 tagMatch: model.forumTagMatch,
                 sortOrder: model.forumSortOrder
@@ -167,7 +167,7 @@ private struct ForumTagStrip: View {
                     ForEach(channel.availableTags) { tag in
                         ForumTagButton(
                             tag: tag,
-                            customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
+                            emoji: ForumTagEmojiPresentation(tag: tag, customEmojiURLsByID: model.customEmojiURLsByID),
                             isSelected: model.forumSelectedTagIDs.contains(tag.id)
                         ) {
                             model.toggleForumFilterTag(tag.id)
@@ -289,15 +289,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
     let onHover: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(
-            sortOrder: sortOrder,
-            layout: layout,
-            tagMatch: tagMatch,
-            selectSortOrder: selectSortOrder,
-            selectLayout: selectLayout,
-            selectTagMatch: selectTagMatch,
-            reset: reset
-        )
+        Coordinator(parent: self)
     }
 
     func makeNSView(context: Context) -> ForumSortMenuNSButton {
@@ -319,61 +311,15 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
 
     func updateNSView(_ nsView: ForumSortMenuNSButton, context: Context) {
         nsView.onHover = onHover
-        context.coordinator.update(
-            sortOrder: sortOrder,
-            layout: layout,
-            tagMatch: tagMatch,
-            selectSortOrder: selectSortOrder,
-            selectLayout: selectLayout,
-            selectTagMatch: selectTagMatch,
-            reset: reset
-        )
+        context.coordinator.parent = self
     }
 
     @MainActor
     final class Coordinator: NSObject {
-        private var sortOrder: ForumSortOrder
-        private var layout: ForumLayout
-        private var tagMatch: ForumTagMatch
-        private var selectSortOrder: (ForumSortOrder) -> Void
-        private var selectLayout: (ForumLayout) -> Void
-        private var selectTagMatch: (ForumTagMatch) -> Void
-        private var reset: () -> Void
+        var parent: NativeForumSortMenuButton
 
-        init(
-            sortOrder: ForumSortOrder,
-            layout: ForumLayout,
-            tagMatch: ForumTagMatch,
-            selectSortOrder: @escaping (ForumSortOrder) -> Void,
-            selectLayout: @escaping (ForumLayout) -> Void,
-            selectTagMatch: @escaping (ForumTagMatch) -> Void,
-            reset: @escaping () -> Void
-        ) {
-            self.sortOrder = sortOrder
-            self.layout = layout
-            self.tagMatch = tagMatch
-            self.selectSortOrder = selectSortOrder
-            self.selectLayout = selectLayout
-            self.selectTagMatch = selectTagMatch
-            self.reset = reset
-        }
-
-        func update(
-            sortOrder: ForumSortOrder,
-            layout: ForumLayout,
-            tagMatch: ForumTagMatch,
-            selectSortOrder: @escaping (ForumSortOrder) -> Void,
-            selectLayout: @escaping (ForumLayout) -> Void,
-            selectTagMatch: @escaping (ForumTagMatch) -> Void,
-            reset: @escaping () -> Void
-        ) {
-            self.sortOrder = sortOrder
-            self.layout = layout
-            self.tagMatch = tagMatch
-            self.selectSortOrder = selectSortOrder
-            self.selectLayout = selectLayout
-            self.selectTagMatch = selectTagMatch
-            self.reset = reset
+        init(parent: NativeForumSortMenuButton) {
+            self.parent = parent
         }
 
         @objc func showMenu(_ sender: NSButton) {
@@ -392,7 +338,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Recently active",
-                    selected: sortOrder == .latestActivity,
+                    selected: parent.sortOrder == .latestActivity,
                     action: #selector(selectSort(_:)),
                     representedValue: ForumSortOrder.latestActivity.rawValue
                 )
@@ -400,7 +346,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Date posted",
-                    selected: sortOrder == .creationDate,
+                    selected: parent.sortOrder == .creationDate,
                     action: #selector(selectSort(_:)),
                     representedValue: ForumSortOrder.creationDate.rawValue
                 )
@@ -410,7 +356,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "List",
-                    selected: layout == .list,
+                    selected: parent.layout == .list,
                     action: #selector(selectForumLayout(_:)),
                     representedValue: ForumLayout.list.rawValue
                 )
@@ -418,7 +364,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Gallery",
-                    selected: layout == .gallery,
+                    selected: parent.layout == .gallery,
                     action: #selector(selectForumLayout(_:)),
                     representedValue: ForumLayout.gallery.rawValue
                 )
@@ -428,7 +374,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Match Some",
-                    selected: tagMatch == .matchSome,
+                    selected: parent.tagMatch == .matchSome,
                     action: #selector(selectTagMatching(_:)),
                     representedValue: ForumTagMatch.matchSome.rawValue
                 )
@@ -436,7 +382,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             menu.addItem(
                 option(
                     "Match All",
-                    selected: tagMatch == .matchAll,
+                    selected: parent.tagMatch == .matchAll,
                     action: #selector(selectTagMatching(_:)),
                     representedValue: ForumTagMatch.matchAll.rawValue
                 )
@@ -500,25 +446,25 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
             guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
                   let value = ForumSortOrder(rawValue: rawValue)
             else { return }
-            selectSortOrder(value)
+            parent.selectSortOrder(value)
         }
 
         @objc private func selectForumLayout(_ sender: NSMenuItem) {
             guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
                   let value = ForumLayout(rawValue: rawValue)
             else { return }
-            selectLayout(value)
+            parent.selectLayout(value)
         }
 
         @objc private func selectTagMatching(_ sender: NSMenuItem) {
             guard let rawValue = sender.representedObject as? String,
                   let value = ForumTagMatch(rawValue: rawValue)
             else { return }
-            selectTagMatch(value)
+            parent.selectTagMatch(value)
         }
 
         @objc private func resetOptions() {
-            reset()
+            parent.reset()
         }
     }
 }
@@ -559,7 +505,7 @@ final class ForumSortMenuNSButton: NSButton {
 
 struct ForumTagButton: View {
     let tag: ForumTag
-    let customEmojiURL: URL?
+    let emoji: ForumTagEmojiPresentation?
     let isSelected: Bool
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
@@ -567,7 +513,7 @@ struct ForumTagButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(5)) {
-                ForumTagEmoji(tag: tag, customEmojiURL: customEmojiURL, size: ForumTagChipMetrics.emojiSize)
+                ForumTagEmoji(emoji: emoji, size: ForumTagChipMetrics.emojiSize)
                 Text(tag.name)
                     .lineLimit(1)
             }
@@ -587,12 +533,12 @@ struct ForumTagButton: View {
 }
 
 private struct ForumTagEmoji: View {
-    let tag: ForumTag
-    let customEmojiURL: URL?
+    let emoji: ForumTagEmojiPresentation?
     let size: CGFloat
 
     var body: some View {
-        if tag.emojiID != nil, let url = resolvedCustomEmojiURL {
+        switch emoji {
+        case let .custom(url):
             AnimatedRemoteImage(
                 url: url,
                 fallbackSystemImage: "tag",
@@ -600,68 +546,13 @@ private struct ForumTagEmoji: View {
             )
             .frame(width: size, height: size)
             .frame(width: size + 4, height: size + 4)
-        } else if let emoji = tag.emojiName, !emoji.isEmpty {
-            Text(emoji)
+        case let .unicode(name):
+            Text(name)
                 .font(.system(size: size * 0.9))
                 .fixedSize()
                 .frame(width: size + 4, height: size + 4)
+        case nil:
+            EmptyView()
         }
-    }
-
-    private var resolvedCustomEmojiURL: URL? {
-        if let customEmojiURL { return customEmojiURL }
-        guard let id = tag.emojiID else { return nil }
-        return EmojiReference(id: id, name: tag.emojiName ?? "emoji").imageURL(size: 64)
-    }
-}
-
-nonisolated enum ForumTimestampPresentation {
-    static func roundedRelativeText(for date: Date, relativeTo now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(date)))
-        switch seconds {
-        case ..<60:
-            return "now"
-        case ..<3_600:
-            return "\(max(1, seconds / 60))m ago"
-        case ..<86_400:
-            return "\(seconds / 3_600)h ago"
-        case ..<604_800:
-            return "\(seconds / 86_400)d ago"
-        case ..<2_629_800:
-            return "\(seconds / 604_800)w ago"
-        case ..<31_557_600:
-            return "\(seconds / 2_629_800)mo ago"
-        default:
-            return "\(seconds / 31_557_600)y ago"
-        }
-    }
-}
-
-nonisolated enum ForumPostReactionPresentation {
-    static func displayedReaction(
-        reactions: [Reaction],
-        defaultReaction: ForumDefaultReaction?
-    ) -> Reaction? {
-        var highestCountReaction: Reaction?
-        for reaction in MessageReactionPresentation.items(from: reactions) {
-            if highestCountReaction == nil
-                || reaction.count > (highestCountReaction?.count ?? 0)
-            {
-                highestCountReaction = reaction
-            }
-        }
-        if let highestCountReaction {
-            return highestCountReaction
-        }
-        guard let token = defaultReactionToken(defaultReaction) else { return nil }
-        return Reaction(emoji: token, count: 0)
-    }
-
-    static func defaultReactionToken(_ value: ForumDefaultReaction?) -> String? {
-        guard let value else { return nil }
-        if let id = value.emojiID {
-            return EmojiReference(id: id, name: value.emojiName ?? "emoji").rawToken
-        }
-        return value.emojiName
     }
 }

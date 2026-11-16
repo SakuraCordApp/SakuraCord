@@ -74,17 +74,7 @@ private final class CaptchaReplayURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
             return
         }
-        var body = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                body.append(buffer, count: count)
-            }
-            stream.close()
-        }
+        let body = request.bodyData ?? Data()
         fixture.requests.withLock { $0.append(.init(request: request, body: body)) }
         let solved = request.value(forHTTPHeaderField: "X-Captcha-Key") != nil
         let challenged = !solved || fixture.challengesReplay.withLock { $0 }
@@ -92,11 +82,7 @@ private final class CaptchaReplayURLProtocol: URLProtocol, @unchecked Sendable {
             {"captcha_key":["captcha-required"],"captcha_service":"hcaptcha","captcha_sitekey":"site-key",
              "captcha_rqtoken":"request-token","captcha_session_id":"captcha-session"}
             """ : #"{"id":"41","type":1,"recipients":[{"id":"2","username":"known"}]}"#
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: challenged ? 400 : 200, httpVersion: "HTTP/1.1",
-                                                             headerFields: ["Content-Type": "application/json"])!,
-                            cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(response.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(status: challenged ? 400 : 200, body: response)
     }
 
     override func stopLoading() {}

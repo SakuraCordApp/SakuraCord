@@ -54,10 +54,8 @@ extension DiscordRESTProvider {
         let revision = memberPresentationRevisions[memberKey, default: 0]
         let generation = profileEditingGeneration
         let path = "/guilds/\(guildID)/members/\(userID)"
-        let (data, response) = try await perform(path, method: "PATCH", query: [], body: ["nick": .string(nickname)])
-        if response.statusCode == 400, let error = Self.profileValidationError(data: data, method: "PATCH", path: path) {
-            throw apiDiagnostics.coalescing(error, with: response)
-        }
+        let (data, response) = try await perform(path, method: "PATCH", body: ["nick": .string(nickname)])
+        if let error = profileValidationFailure(data: data, response: response, method: "PATCH", path: path) { throw error }
         let saved: JSONValue = try decodedResponse(data, response, method: "PATCH", path: path) { status, _ in
             status == 403 ? ChatProviderError.invalidRequest("You don’t have permission to change this member’s nickname.") : nil
         }
@@ -166,7 +164,7 @@ extension DiscordRESTProvider {
             guard let originals = saved.profile.widgets else {
                 throw ChatProviderError.invalidRequest("Reload your profile before editing its widgets.")
             }
-            if profileApexAssignments?.widgetEligibility(for: user).canEditPersonalWidget != true {
+            if !experiments.widgetEligibility(for: user).canEditPersonalWidget {
                 let originalWidgets = try originals.map { try $0.domain(userID: user.id) }
                 for widget in widgets where !widget.isDiscardable {
                     if case .personal = widget.content,
@@ -182,17 +180,10 @@ extension DiscordRESTProvider {
 
     private func performProfileSaveRequest(_ request: ProfileEditingRequest) async throws -> Data {
         let (data, response) = try await perform(
-            request.path, method: request.method, query: [], body: request.body, headers: request.headers
+            request.path, method: request.method, body: request.body, headers: request.headers
         )
-        guard (200 ..< 300).contains(response.statusCode) else {
-            if response.statusCode == 400,
-               let error = Self.profileValidationError(data: data, method: request.method, path: request.path)
-            { throw apiDiagnostics.coalescing(error, with: response) }
-            if response.statusCode == 401 {
-                authorizationValue = nil
-                throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
-            }
-            throw unexplainedFailure(data, response)
+        try validateEmptyResponse(data, response) { _, _ in
+            profileValidationFailure(data: data, response: response, method: request.method, path: request.path)
         }
         return data
     }

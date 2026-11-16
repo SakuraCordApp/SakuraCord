@@ -276,7 +276,7 @@ final class WorkspaceMotionPhase {
 
     static let shared = WorkspaceMotionPhase()
 
-    /// Whether a motion runs. Only the motion itself reads it.
+    /// Whether a motion runs; read through `WorkspaceLayoutMotion.isMoving`.
     @ObservationIgnored var isMoving = false
     var widening: Widening?
     /// Whether the widening side chat is sliding to the leading edge yet.

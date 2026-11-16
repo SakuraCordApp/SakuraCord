@@ -277,9 +277,7 @@ struct DiagnosticsSettingsPage: View {
 
     private func copySupportSummary() {
         guard let text = try? supportSummary.encodedText() else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        Pasteboard.copy(text)
     }
 
     private func exportSupportSummary() async {

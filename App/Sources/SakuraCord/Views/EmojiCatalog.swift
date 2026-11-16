@@ -97,7 +97,6 @@ private enum NativeEmojiCatalog {
     private struct CatalogFile: Decodable {
         let formatVersion: Int
         let unicodeVersion: String
-        let sourceEntryCount: Int
         let items: [CatalogItem]
     }
 
@@ -110,43 +109,35 @@ private enum NativeEmojiCatalog {
         let shortcodes: [String]
     }
 
-    private struct LoadedCatalog {
-        let items: [NativeEmoji]
-        let sourceEntryCount: Int
-    }
+    static let items: [NativeEmoji] = {
+        let loaded = loadCatalog()
+        return loaded.isEmpty ? fallbackItems : loaded
+    }()
 
-    private static let loadedCatalog = loadCatalog()
-    static let items: [NativeEmoji] =
-        loadedCatalog.items.isEmpty ? fallbackItems : loadedCatalog.items
-    static let sourceEntryCount = loadedCatalog.sourceEntryCount
-
-    private static func loadCatalog() -> LoadedCatalog {
+    private static func loadCatalog() -> [NativeEmoji] {
         guard let url = Bundle.module.url(forResource: "emoji-catalog", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(CatalogFile.self, from: data),
               decoded.formatVersion == 1,
               decoded.unicodeVersion == "17.0"
         else {
-            return LoadedCatalog(items: [], sourceEntryCount: 0)
+            return []
         }
-        return LoadedCatalog(
-            items: decoded.items.compactMap {
-                guard let category = NativeEmojiCategory(rawValue: $0.category) else { return nil }
-                return NativeEmoji(
-                    value: $0.value,
-                    name: $0.name,
-                    aliases: $0.aliases,
-                    category: category,
-                    skinToneVariants: Dictionary(
-                        uniqueKeysWithValues: $0.skinToneVariants.compactMap { key, value in
-                            NativeEmojiSkinTone(rawValue: key).map { ($0, value) }
-                        }
-                    ),
-                    shortcodes: $0.shortcodes
-                )
-            },
-            sourceEntryCount: decoded.sourceEntryCount
-        )
+        return decoded.items.compactMap {
+            guard let category = NativeEmojiCategory(rawValue: $0.category) else { return nil }
+            return NativeEmoji(
+                value: $0.value,
+                name: $0.name,
+                aliases: $0.aliases,
+                category: category,
+                skinToneVariants: Dictionary(
+                    uniqueKeysWithValues: $0.skinToneVariants.compactMap { key, value in
+                        NativeEmojiSkinTone(rawValue: key).map { ($0, value) }
+                    }
+                ),
+                shortcodes: $0.shortcodes
+            )
+        }
     }
 
     private static let fallbackItems: [NativeEmoji] = [
@@ -352,67 +343,6 @@ enum NativeEmojiPickerIndex {
     }
 }
 
-enum NativeEmojiCatalogDiagnostics {
-    static var sourceEntryCount: Int {
-        NativeEmojiCatalog.sourceEntryCount
-    }
-
-    static var itemCount: Int {
-        NativeEmojiCatalog.items.count
-    }
-
-    static var skinToneCapableItemCount: Int {
-        NativeEmojiCatalog.items.count(where: { !$0.skinToneVariants.isEmpty })
-    }
-
-    static var wavingHandValues: [String] {
-        guard let wave = NativeEmojiCatalog.items.first(where: { $0.value == "👋" }) else { return [] }
-        return NativeEmojiSkinTone.allCases.map { wave.value(for: $0) }
-    }
-
-    static var mediumToneVariationSelectorValues: [String] {
-        ["✌️", "☝️", "✍️"].compactMap { base in
-            NativeEmojiCatalog.items.first(where: { $0.value == base })?.value(for: .medium)
-        }
-    }
-
-    static var baseItemsContainingSkinToneModifier: Int {
-        NativeEmojiCatalog.items.count { emoji in
-            emoji.value.unicodeScalars.contains {
-                NativeEmojiSkinTone(modifierCodePoint: $0.value) != nil
-            }
-        }
-    }
-
-    static var categoryItemCounts: [String: Int] {
-        Dictionary(grouping: NativeEmojiCatalog.items, by: { $0.category.rawValue })
-            .mapValues(\.count)
-    }
-
-    static func shortcode(for value: String) -> String? {
-        NativeEmojiCatalogMetadata.shortcode(for: value)
-    }
-
-    static func shortcodes(for value: String) -> [String] {
-        NativeEmojiCatalog.items.first(where: { $0.value == value })?.shortcodes ?? []
-    }
-
-    static func searchMatches(value: String, query: String) -> Bool {
-        guard let emoji = NativeEmojiCatalog.items.first(where: { $0.value == value }) else {
-            return false
-        }
-        return EmojiSearchMatcher.matches(emoji.searchText, query: query)
-    }
-
-    static var emojiCountWithDiscordShortcodes: Int {
-        NativeEmojiCatalog.items.count { !$0.shortcodes.isEmpty }
-    }
-
-    static var discordShortcodeAliasCount: Int {
-        NativeEmojiCatalog.items.reduce(0) { $0 + $1.shortcodes.count }
-    }
-}
-
 enum NativeEmojiCatalogMetadata {
     private static let valuesByShortcode = Dictionary(
         NativeEmojiCatalog.items.flatMap { emoji in emoji.shortcodes.map { ($0, emoji.value) } },
@@ -535,27 +465,5 @@ enum EmojiSearchMatcher {
     nonisolated static func matches(_ searchText: String, query: String) -> Bool {
         let query = normalized(query)
         return !query.isEmpty && searchText.localizedCaseInsensitiveContains(query)
-    }
-}
-
-enum EmojiPickerPerformanceDiagnostics {
-    static let itemsPerRecycledRow = 9
-    static var nativeItemCount: Int {
-        NativeEmojiCatalog.items.count
-    }
-
-    static var nativeDocumentRowCount: Int {
-        NativeEmojiCategory.allCases.reduce(0) { total, category in
-            let count = NativeEmojiPickerIndex.itemsByCategory[category]?.count ?? 0
-            return total + 1 + max(1, Int(ceil(Double(count) / Double(itemsPerRecycledRow))))
-        }
-    }
-
-    static var nativeSectionIDs: [String] {
-        NativeEmojiCategory.allCases.map { EmojiDocumentSection.native($0).id }
-    }
-
-    static func nativeSidebarIsVisible(bounds: CGRect?, viewportHeight: CGFloat) -> Bool {
-        bounds.map { $0.maxY > 0 && $0.minY < viewportHeight } ?? false
     }
 }

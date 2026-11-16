@@ -53,9 +53,7 @@ extension AppModel {
         threadBrowser.recordsTask = startAccountChildTask(account: accountSession()) { model, account in
             let active = await account.provider.activeThreads(in: parentID)
             guard !Task.isCancelled, model.threadBrowser.generation == generation else { return }
-            for post in model.threadBrowser.reconciling(active, since: since) where model.threadBrowser.records[post.id] == nil {
-                model.threadBrowser.records[post.id] = post
-            }
+            model.threadBrowser.applyActiveRecords(active, since: since)
         }
         if threadBrowser.listing?.hasLoadedFirstPage != true {
             loadMoreArchivedThreads()
@@ -85,30 +83,7 @@ extension AppModel {
                     query: ThreadBrowserQuery(scope: .archived(offset: offset))
                 )
                 guard !Task.isCancelled, model.threadBrowser.generation == generation else { return }
-                var reconciled = page
-                reconciled.posts = model.threadBrowser.reconciling(page.posts, since: since)
-                // Records deleted or reopened in flight, whether the provider
-                // or live changes here dropped them, moved later records back.
-                let stillArchived = Set(reconciled.posts.filter(\.thread.isArchived).map(\.id))
-                let departedCount = page.departedCount
-                    + page.posts.count { $0.thread.isArchived && !stillArchived.contains($0.id) }
-                let isCurrent = model.threadBrowser.listings[parentID, default: ThreadBrowserListing()]
-                    .append(reconciled, requestedOffset: offset, departedCount: departedCount)
-                // Page records are as new as the provider's; a thread they show
-                // archived must leave the active sections.
-                for post in reconciled.posts where model.threadBrowser.records[post.id] != nil {
-                    model.threadBrowser.records[post.id] = post
-                }
-                // A thread archived while the page was in flight may be absent
-                // from it; apply the current records to the loaded range.
-                let records = Array(model.threadBrowser.records.values)
-                model.threadBrowser.listings[parentID]?.reconcile(with: records)
-                model.threadBrowser.isLoadingArchived = false
-                // A loaded thread left while the page was in flight, moving the
-                // next offset; request the page at the current one instead.
-                // A page that advanced no further is requested again, as the
-                // footer's identity did not change.
-                if !isCurrent || model.threadBrowser.listings[parentID]?.nextOffset == offset {
+                if model.threadBrowser.applyArchivedPage(page, in: parentID, requestedOffset: offset, since: since) {
                     model.loadMoreArchivedThreads()
                 }
             } catch is CancellationError {
@@ -144,16 +119,7 @@ extension AppModel {
                 guard !Task.isCancelled, model.threadBrowser.generation == generation,
                       model.threadBrowser.search?.query == query
                 else { return }
-                let posts = model.threadBrowser.reconciling(page.posts, since: since)
-                model.threadBrowser.search?.results = posts
-                model.threadBrowser.search?.hasLoaded = true
-                // Results are as new as the provider's records; an active match
-                // the browser had not seen joins its sections.
-                for post in posts {
-                    model.threadBrowser.records[post.id] = post
-                }
-                let records = Array(model.threadBrowser.records.values)
-                model.threadBrowser.listings[parentID]?.reconcile(with: records)
+                model.threadBrowser.applySearchResults(page, in: parentID, since: since)
             } catch is CancellationError {
                 return
             } catch {

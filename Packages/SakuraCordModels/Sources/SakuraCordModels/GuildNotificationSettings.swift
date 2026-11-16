@@ -14,6 +14,11 @@ public enum GuildNotificationToggle: Int, CaseIterable, Codable, Hashable, Senda
 }
 
 public struct GuildNotificationSettings: Codable, Hashable, Sendable {
+    public static let unreadAllMessagesFlag: UInt64 = 1 << 11
+    public static let unreadOnlyMentionsFlag: UInt64 = 1 << 12
+    /// Shows only the channels the member opted into.
+    public static let optInChannelsFlag: UInt64 = 1 << 14
+
     public var guildID: GuildID?
     public var messageNotifications: MessageNotificationLevel
     public var hideMutedChannels: Bool

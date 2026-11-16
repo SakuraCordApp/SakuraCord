@@ -188,14 +188,6 @@ final class ScrollInputPerformanceProbe {
         subsystem: "dev.sakuracord.SakuraCord",
         category: "ScrollInputPerformance"
     )
-    private static let signposter = OSSignposter(
-        subsystem: "dev.sakuracord.SakuraCord",
-        category: "PointsOfInterest"
-    )
-    private static let isEnabled =
-        ProcessInfo.processInfo.environment[
-            "SAKURACORD_SCROLL_INPUT_TELEMETRY"
-        ] == "1"
     private static let boundaryGap: TimeInterval = 0.120
     private static let maximumFrameTicks = 2
 
@@ -204,7 +196,7 @@ final class ScrollInputPerformanceProbe {
     private var eventMonitor: Any?
     private var liveScrollObservers: [NSObjectProtocol] = []
     private var liveScrollEndTask: Task<Void, Never>?
-    private var displayLinkTicker: NativeTimelineDisplayLinkTicker?
+    private var displayLinkTicker: DisplayLinkTicker?
     private var pendingInterval: OSSignpostIntervalState?
     private var pendingInputTimestamp: TimeInterval = 0
     private var pendingDispatchUptime: TimeInterval = 0
@@ -235,7 +227,7 @@ final class ScrollInputPerformanceProbe {
             }
             return event
         }
-        guard Self.isEnabled else { return }
+        guard PerformanceBenchmarkHarness.recordsScrollInputTelemetry else { return }
         emitInstalledEvent()
         Self.logger.debug(
             "Installed gesture probe for \(self.surface.rawValue, privacy: .public)"
@@ -336,7 +328,7 @@ final class ScrollInputPerformanceProbe {
             )
             scheduleLiveScrollFallbackEnd(for: scrollView)
         }
-        guard Self.isEnabled else { return }
+        guard PerformanceBenchmarkHarness.recordsScrollInputTelemetry else { return }
 
         let priorInputTimestamp = lastInputTimestamp
         let inputInterval = event.timestamp - priorInputTimestamp
@@ -383,7 +375,7 @@ final class ScrollInputPerformanceProbe {
         pendingHasPreciseDeltas = event.hasPreciseScrollingDeltas
         pendingInterval = beginSignpostInterval(kind: kind)
 
-        let ticker = NativeTimelineDisplayLinkTicker()
+        let ticker = DisplayLinkTicker()
         displayLinkTicker = ticker
         ticker.start(on: scrollView.contentView) { [weak self] in
             self?.displayLinkDidFire()
@@ -435,22 +427,22 @@ final class ScrollInputPerformanceProbe {
     ) -> OSSignpostIntervalState {
         switch surface {
         case .timeline:
-            Self.signposter.beginInterval(
+            AppPerformanceSignposts.signposter.beginInterval(
                 "TimelineGestureInputToDisplay",
                 "kind=\(kind, privacy: .public) phase=\(self.pendingEventPhase) momentum=\(self.pendingMomentumPhase) velocity=\(self.pendingVelocity)"
             )
         case .memberList:
-            Self.signposter.beginInterval(
+            AppPerformanceSignposts.signposter.beginInterval(
                 "MemberListGestureInputToDisplay",
                 "kind=\(kind, privacy: .public) phase=\(self.pendingEventPhase) momentum=\(self.pendingMomentumPhase) velocity=\(self.pendingVelocity)"
             )
         case .channelList:
-            Self.signposter.beginInterval(
+            AppPerformanceSignposts.signposter.beginInterval(
                 "ChannelListGestureInputToDisplay",
                 "kind=\(kind, privacy: .public) phase=\(self.pendingEventPhase) momentum=\(self.pendingMomentumPhase) velocity=\(self.pendingVelocity)"
             )
         case .serverList:
-            Self.signposter.beginInterval(
+            AppPerformanceSignposts.signposter.beginInterval(
                 "ServerListGestureInputToDisplay",
                 "kind=\(kind, privacy: .public) phase=\(self.pendingEventPhase) momentum=\(self.pendingMomentumPhase) velocity=\(self.pendingVelocity)"
             )
@@ -460,22 +452,22 @@ final class ScrollInputPerformanceProbe {
     private func endSignpostInterval(_ interval: OSSignpostIntervalState) {
         switch surface {
         case .timeline:
-            Self.signposter.endInterval(
+            AppPerformanceSignposts.signposter.endInterval(
                 "TimelineGestureInputToDisplay",
                 interval
             )
         case .memberList:
-            Self.signposter.endInterval(
+            AppPerformanceSignposts.signposter.endInterval(
                 "MemberListGestureInputToDisplay",
                 interval
             )
         case .channelList:
-            Self.signposter.endInterval(
+            AppPerformanceSignposts.signposter.endInterval(
                 "ChannelListGestureInputToDisplay",
                 interval
             )
         case .serverList:
-            Self.signposter.endInterval(
+            AppPerformanceSignposts.signposter.endInterval(
                 "ServerListGestureInputToDisplay",
                 interval
             )
@@ -485,13 +477,13 @@ final class ScrollInputPerformanceProbe {
     private func emitInstalledEvent() {
         switch surface {
         case .timeline:
-            Self.signposter.emitEvent("TimelineGestureProbeInstalled")
+            AppPerformanceSignposts.signposter.emitEvent("TimelineGestureProbeInstalled")
         case .memberList:
-            Self.signposter.emitEvent("MemberListGestureProbeInstalled")
+            AppPerformanceSignposts.signposter.emitEvent("MemberListGestureProbeInstalled")
         case .channelList:
-            Self.signposter.emitEvent("ChannelListGestureProbeInstalled")
+            AppPerformanceSignposts.signposter.emitEvent("ChannelListGestureProbeInstalled")
         case .serverList:
-            Self.signposter.emitEvent("ServerListGestureProbeInstalled")
+            AppPerformanceSignposts.signposter.emitEvent("ServerListGestureProbeInstalled")
         }
     }
 }
@@ -527,11 +519,6 @@ struct ScrollInputPerformanceProbeAttachment: NSViewRepresentable {
 
     @MainActor
     final class Coordinator {
-        private static let recordsInputTelemetry =
-            ProcessInfo.processInfo.environment[
-                "SAKURACORD_SCROLL_INPUT_TELEMETRY"
-            ] == "1"
-
         private let surface: ScrollPerformanceSurface
         private let probe: ScrollInputPerformanceProbe
         private weak var installedScrollView: NSScrollView?
@@ -588,7 +575,7 @@ struct ScrollInputPerformanceProbeAttachment: NSViewRepresentable {
                     }
                 }
                 resolutionTask = nil
-                guard Self.recordsInputTelemetry,
+                guard PerformanceBenchmarkHarness.recordsScrollInputTelemetry,
                       !didReportResolutionFailure,
                       let view
                 else { return }

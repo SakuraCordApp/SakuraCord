@@ -375,7 +375,7 @@ final class ApplicationCommandComposerModel {
 
     func presentPicker(query: String = "") {
         guard draft == nil else { return }
-        isPickerPresented = true
+        if !isPickerPresented { isPickerPresented = true }
         updatePickerQuery(query)
     }
 
@@ -592,14 +592,6 @@ final class ApplicationCommandComposerModel {
         }
     }
 
-    func focusField(_ id: String) {
-        guard var updated = draft, updated.field(id) != nil else { return }
-        updated.focus = .field(id)
-        draft = updated
-        requestCaret(ApplicationCommandEditorDocument(draft: updated).caret(endOf: .field(id)))
-        afterEdit(focusChanged: true)
-    }
-
     /// Fills the focused field with a chosen value; like Discord, the caret
     /// then rests in the gap after that chip.
     func resolveFocusedField(_ value: ApplicationCommandArgument, display: String) {
@@ -649,6 +641,16 @@ final class ApplicationCommandComposerModel {
     func resetSuggestions() {
         suggestionIndex = nil
         areSuggestionsDismissed = false
+    }
+
+    /// Applies a chosen suggestion; choosing a file is left to the composer's importer.
+    func accept(_ suggestion: ApplicationCommandSuggestion) {
+        switch suggestion.action {
+        case let .value(value, display): resolveFocusedField(value, display: display)
+        case .chooseAttachment: break
+        case let .addOption(option): addOption(option)
+        }
+        resetSuggestions()
     }
 
     // MARK: Attachments
@@ -886,14 +888,6 @@ final class ApplicationCommandComposerModel {
         )
         cachedPickerEngine = engine
         return engine
-    }
-
-    func rankedCommands(query: String) -> [ApplicationCommand] {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty || query.contains(" ") else {
-            return pickerEngine.browse().sections.flatMap(\.commands)
-        }
-        return pickerEngine.search(query)
     }
 
     func sections(query: String) -> [ApplicationCommandSection] {

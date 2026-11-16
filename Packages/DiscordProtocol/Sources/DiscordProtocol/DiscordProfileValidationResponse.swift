@@ -2,6 +2,12 @@ import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
+    func profileValidationFailure(data: Data, response: HTTPURLResponse, method: String, path: String) -> (any Error)? {
+        guard response.statusCode == 400, let error = Self.profileValidationError(data: data, method: method, path: path)
+        else { return nil }
+        return apiDiagnostics.coalescing(error, with: response)
+    }
+
     static func profileValidationError(data: Data, method: String, path: String) -> ProfileValidationError? {
         guard method == "PATCH" else { return nil }
         let fields: Set<String>

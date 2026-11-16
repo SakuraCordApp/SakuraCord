@@ -1,609 +1,75 @@
 import AppKit
-import AVFoundation
-import Combine
-import CoreText
-import ImageIO
-import Lottie
-import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineCanvasView {
-    func animatedMediaKeys(
-        for row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout
-    ) -> Set<NativeTimelineMediaKey> {
-        var keys: Set<NativeTimelineMediaKey> = []
-        appendAnimatedAvatarKeys(for: row, layout: layout, into: &keys)
-        appendAnimatedContentKeys(for: row, layout: layout, into: &keys)
-        appendAnimatedComponentKeys(for: row, layout: layout, into: &keys)
-        appendAnimatedStickerAndReactionKeys(for: row, layout: layout, into: &keys)
-        return keys
-    }
-
-    private func appendAnimatedAvatarKeys(
-        for row: MessageRowPresentation,
+    func activateMessageContent(
+        _ target: NativeTimelinePointerActivationTarget,
+        message: Message,
         layout: NativeTimelineRowLayout,
-        into keys: inout Set<NativeTimelineMediaKey>
-    ) {
-        let message = row.message
-        let author =
-            model?.authorPresentation(for: message).user
-            ?? message.author
-        if layout.avatarFrame != nil {
-            if let url =
-                author.avatarURL
-                    ?? message.author.avatarURL,
-               NativeTimelineAvatarPresentation
-                .shouldDecodeAnimation(for: url)
-            {
-                keys.insert(.avatar(url))
+        rowIndex: Int
+    ) -> Bool {
+        switch target {
+        case let .componentReveal(_, componentID):
+            reveal(NativeTimelineComponentRevealKey(messageID: message.id, componentID: componentID), rowIndex: rowIndex)
+        // A file card's button and link act through their own pointer hit.
+        case let .componentImage(_, _, payload), let .componentMedia(_, _, payload), let .componentFile(_, _, payload):
+            let region = payload.value
+            guard case let .media(media) = region.kind, media.isVideo, !spoilerRevealStore.isConcealed(
+                messageID: message.id, contentID: region.componentID, isSpoiler: region.isSpoiler
+            ) else { return activateComponentMedia(region, layout: layout, message: message, rowIndex: rowIndex) }
+            playInline(media.displayURL, mediaID: region.componentID, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
+                _ = self?.activateComponentMedia(region, layout: layout, message: message, rowIndex: index)
             }
-            if let url =
-                author.avatarDecorationURL
-            {
-                // Discord serves both static PNG and animated APNG decoration
-                // assets from this route. Decode only for visible rows; the
-                // media store discards single-frame results from overlay use.
-                keys.insert(.avatarDecoration(url))
+        case let .componentSelect(_, _, region):
+            if !region.value.isDisabled {
+                showComponentChoicePicker(for: region.value, message: message)
             }
-        }
-        if layout.replyFrame != nil,
-           let url = row.replyPreview?.author.avatarURL,
-           NativeTimelineAvatarPresentation
-            .shouldDecodeAnimation(for: url)
-        {
-            keys.insert(.avatar(url))
-        }
-        if layout.commandInvocationRegion?.avatarFrame != nil,
-           let url = message.interactionMetadata?.user?.avatarURL,
-           NativeTimelineAvatarPresentation
-            .shouldDecodeAnimation(for: url)
-        {
-            keys.insert(.avatar(url))
-        }
-        for reaction in layout.reactionRegions {
-            for avatar in reaction.avatarRegions {
-                if let url = avatar.reactor.avatarURL,
-                   NativeTimelineAvatarPresentation
-                    .shouldDecodeAnimation(for: url)
-                {
-                    keys.insert(.avatar(url))
-                }
+        case let .linkedImage(_, _, region):
+            return activateLinkedImage(region.value, in: message, rowIndex: rowIndex)
+        case let .attachment(_, _, region):
+            let attachment = region.value.attachment
+            guard attachment.mediaKind == .video,
+                  !spoilerRevealStore.isConcealed(attachment, in: message.id)
+            else { return activateAttachment(attachment, in: message, rowIndex: rowIndex) }
+            playInline(
+                attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
+                frame: region.value.frame, rowIndex: rowIndex
+            ) { [weak self, attachmentID = attachment.id] index, layout, message in
+                guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
+                _ = self?.openAttachmentInViewer(region.attachment, message: message, rowIndex: index)
             }
-        }
-    }
-
-    private func appendAnimatedContentKeys(
-        for row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        into keys: inout Set<NativeTimelineMediaKey>
-    ) {
-        let message = row.message
-        for region in layout.linkedImageRegions
-        where Self.isPotentiallyAnimated(region.reference.displayURL) {
-            keys.insert(.media(
-                region.reference.displayURL,
-                maximumPixelDimension: region.reference.isEmoji ? 96 : 720
-            ))
-        }
-        for attachment in message.attachments
-        where attachment.mediaKind == .animatedImage {
-            if NativeTimelineSpoilerConcealmentPolicy
-                .shouldAnimate(
-                    messageID: message.id,
-                    contentID:
-                        NativeTimelineComponentRevealKey
-                            .attachmentComponentID(attachment.id),
-                    isSpoiler: attachment.isSpoiler,
-                    store: spoilerRevealStore
-                ) {
-                if let key = NativeTimelineMediaKey.attachment(attachment) {
-                    keys.insert(key)
-                }
-            }
-        }
-        if let value = layout.attributedContent {
-            appendAnimatedInlineKeys(
-                from: value,
-                revealedSpoilerLocations: revealedTextSpoilerLocations(
-                    messageID: message.id,
-                    region: .content,
-                    value: value,
-                    layout: layout
-                ),
-                into: &keys
-            )
-        }
-        for region in layout.embedRegions {
-            for image in region.imageRegions
-            where Self.isPotentiallyAnimated(image.url) {
-                keys.insert(.media(
-                    image.url,
-                    maximumPixelDimension: image.maximumPixelDimension
-                ))
-            }
-            if !region.mediaIsVideo,
-               let url = region.mediaURL,
-               Self.isPotentiallyAnimated(url)
-            {
-                keys.insert(.media(url))
-            }
-            for (textIndex, textRegion) in region.textRegions.enumerated() {
-                appendAnimatedInlineKeys(
-                    from: textRegion.text.value,
-                    revealedSpoilerLocations: revealedTextSpoilerLocations(
-                        messageID: message.id,
-                        region: .embed(
-                            embedID: region.embedID,
-                            textIndex: textIndex
-                        ),
-                        value: textRegion.text.value,
-                        layout: layout
-                    ),
-                    into: &keys
-                )
-            }
-        }
-    }
-
-    private func appendAnimatedComponentKeys(
-        for row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        into keys: inout Set<NativeTimelineMediaKey>
-    ) {
-        let message = row.message
-        for (componentIndex, component) in layout.componentLayouts.enumerated() {
-            let hiddenContainerFrames =
-                NativeTimelineSpoilerConcealmentPolicy
-                    .hiddenContainerFrames(
-                        in: component,
-                        messageID: message.id,
-                        store: spoilerRevealStore
-                    )
-            for image in component.images
-            where Self.isPotentiallyAnimated(image.displayURL)
-                && !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        image.frame,
-                        hiddenContainerFrames: hiddenContainerFrames
-                    )
-                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                    messageID: message.id,
-                    contentID: image.componentID,
-                    isSpoiler: image.isSpoiler,
-                    store: spoilerRevealStore
-                ) {
-                keys.insert(.media(
-                    image.displayURL,
-                    maximumPixelDimension: image.maximumPixelDimension
-                ))
-            }
-            for media in component.media
-            where Self.isPotentiallyAnimated(media.displayURL)
-                && !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        media.frame,
-                        hiddenContainerFrames: hiddenContainerFrames
-                    )
-                && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                    messageID: message.id,
-                    contentID: media.componentID,
-                    isSpoiler: media.isSpoiler,
-                    store: spoilerRevealStore
-                ) {
-                keys.insert(.media(media.displayURL))
-            }
-            for button in component.buttons {
-                guard !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        button.frame,
-                        hiddenContainerFrames: hiddenContainerFrames
-                    )
-                else { continue }
-                guard let emoji = button.emoji,
-                      emoji.isAnimated,
-                      let url = emoji.imageURL(size: 32)
-                else { continue }
-                keys.insert(.media(url, maximumPixelDimension: 64))
-            }
-            for (textIndex, textRegion) in component.textRegions.enumerated() {
-                guard !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        textRegion.frame,
-                        hiddenContainerFrames: hiddenContainerFrames
-                    )
-                else { continue }
-                appendAnimatedInlineKeys(
-                    from: textRegion.text.value,
-                    revealedSpoilerLocations: revealedTextSpoilerLocations(
-                        messageID: message.id,
-                        region: .component(
-                            layoutIndex: componentIndex,
-                            textIndex: textIndex
-                        ),
-                        value: textRegion.text.value,
-                        layout: layout
-                    ),
-                    into: &keys
-                )
-            }
-        }
-    }
-
-    private func appendAnimatedStickerAndReactionKeys(
-        for row: MessageRowPresentation,
-        layout: NativeTimelineRowLayout,
-        into keys: inout Set<NativeTimelineMediaKey>
-    ) {
-        let message = row.message
-        for sticker in message.stickers
-        where sticker.format?.isAnimated == true {
-            if let url = sticker.mediaURL {
-                keys.insert(.media(url, maximumPixelDimension: 384))
-            }
-        }
-        for region in layout.reactionRegions {
-            let reference = region.reaction.emojiReference
-            guard reference.isAnimated,
-                  let url = reference.id.flatMap({
-                      model?.customEmojiURLsByID[$0]
-                  }) ?? reference.imageURL(size: 64)
-            else { continue }
-            keys.insert(.media(url, maximumPixelDimension: 64))
-        }
-    }
-
-    /// Emoji inside a hidden spoiler are omitted, as the painter omits them.
-    func appendAnimatedInlineKeys(
-        from value: NSAttributedString,
-        revealedSpoilerLocations: Set<Int>,
-        into keys: inout Set<NativeTimelineMediaKey>
-    ) {
-        let range = NSRange(location: 0, length: value.length)
-        let hiddenSpoilerRanges = NativeTimelineTextSpoilers.hiddenRanges(
-            in: value,
-            revealedLocations: revealedSpoilerLocations
-        )
-        value.enumerateAttribute(
-            .discordEmojiToken,
-            in: range
-        ) { rawValue, tokenRange, _ in
-            guard let rawToken = rawValue as? String,
-                  !hiddenSpoilerRanges.contains(where: {
-                      NSLocationInRange(tokenRange.location, $0)
-                  })
-            else { return }
-            let reference = EmojiReference(rawToken: rawToken)
-            guard reference.isAnimated,
-                  let url = reference.id.flatMap({
-                      model?.customEmojiURLsByID[$0]
-                  }) ?? reference.imageURL(size: 64)
-            else { return }
-            keys.insert(.media(url, maximumPixelDimension: 64))
-        }
-    }
-
-    static func isPotentiallyAnimated(_ url: URL) -> Bool {
-        switch url.pathExtension.lowercased() {
-        case "gif", "apng", "webp":
-            true
+        case let .embedMedia(_, _, region):
+            _ = activateEmbedMedia(region.value, in: message, rowIndex: rowIndex)
+        case .thread:
+            guard let thread = message.thread else { return false }
+            actions?.openThread(thread)
         default:
-            false
-        }
-    }
-
-    func setHoveredReaction(
-        _ hit: ReactionPointerHit?,
-        mouseLocationInScreen: CGPoint = NSEvent.mouseLocation
-    ) {
-        let oldTarget = hoveredReaction
-        let newTarget = hit?.target
-        hoveredReaction = newTarget
-        if oldTarget != newTarget {
-            if let oldTarget, let index = rowIndex(for: oldTarget) {
-                setNeedsDisplay(rowFrame(at: index))
-            }
-            if let hit {
-                setNeedsDisplay(rowFrame(at: hit.rowIndex))
-            }
-        }
-
-        guard let hit,
-              let reaction = hit.reaction,
-              case .reaction = hit.target
-        else {
-            reactionHoverCoordinator.close()
-            return
-        }
-        presentReactionHover(
-            hit,
-            reaction: reaction,
-            mouseLocationInScreen: mouseLocationInScreen
-        )
-        if oldTarget != newTarget {
-            Task { [weak model] in
-                await model?.loadReactionReactors(reaction, on: hit.message)
-            }
-        }
-    }
-
-    func reconcileReactionHover() {
-        guard let target = hoveredReaction,
-              let hit = reactionPointerHit(for: target)
-        else {
-            hoveredReaction = nil
-            reactionHoverCoordinator.close()
-            return
-        }
-        setHoveredReaction(hit)
-    }
-
-    func presentReactionHover(
-        _ hit: ReactionPointerHit,
-        reaction: Reaction,
-        mouseLocationInScreen: CGPoint
-    ) {
-        let target = hit.target
-        let anchor = StablePopoverAnchor(sourceView: self) { [weak self] in
-            self?.reactionPointerHit(for: target)?.frame
-        }
-        let mouseInWindow = window?.convertPoint(
-            fromScreen: mouseLocationInScreen
-        ) ?? .zero
-        let mouseInCanvas = convert(mouseInWindow, from: nil)
-        let snapshot = StablePopoverAnchorSnapshot(
-            mouseLocationInScreen: mouseLocationInScreen,
-            mouseLocationInSource: CGPoint(
-                x: mouseInCanvas.x - hit.frame.minX,
-                y: mouseInCanvas.y - hit.frame.minY
-            )
-        )
-        let reference = reaction.emojiReference
-        let emojiURL = reference.id.flatMap { id in
-            model?.customEmojiURLsByID[id]
-        } ?? reference.imageURL(size: 64)
-        reactionHoverCoordinator.update(
-            anchor: anchor,
-            anchorSnapshot: snapshot,
-            isPresented: true,
-            configuration: .hover,
-            onDismiss: {},
-            content: MessageReactionTooltip(
-                reaction: reaction,
-                emojiURL: emojiURL
-            )
-        )
-    }
-
-    /// Both native reaction popovers use the visible message row as their anchor.
-    /// The presenters freeze this rectangle while the popover remains open.
-    func messageReactionPopoverAnchor(for message: Message) -> CGRect? {
-        guard let index = items.firstIndex(where: { $0.messageID == message.id }),
-              layouts.indices.contains(index) else { return nil }
-        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
-        let visibleRow = rowFrame(at: index).intersection(viewport)
-        let anchor = visibleRow.isNull || visibleRow.isEmpty ? viewport : visibleRow
-        return anchor.isNull || anchor.isEmpty ? nil : anchor
-    }
-
-    func beginReactionPopoverLayout() {
-        // Layout may restore the viewport or rebase history coordinates. Keep
-        // open popovers steady through that correction, independently of scroll.
-        reactionPopoverLayoutAnchors = [reactionPickerSource.installedSnapshotAnchor, reactionDetailsPopoverAnchor]
-            .compactMap { anchor in
-                guard let anchor, anchor.window != nil, anchor.superview != nil else { return nil }
-                return (anchor, anchor.convert(anchor.bounds, to: nil))
-            }
-    }
-
-    func endReactionPopoverLayout() {
-        for (anchor, frameInWindow) in reactionPopoverLayoutAnchors {
-            guard let parent = anchor.superview, anchor.window === window else { continue }
-            anchor.frame = parent.convert(frameInWindow, from: nil)
-        }
-        reactionPopoverLayoutAnchors.removeAll(keepingCapacity: true)
-        dismissOffscreenReactionPopovers()
-    }
-
-    func dismissOffscreenReactionPopovers() {
-        guard reactionPickerCoordinator.isShown || reactionDetailsPopover?.isShown == true else { return }
-        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
-        func isVisible(_ messageID: MessageID?) -> Bool {
-            guard let messageID, let index = items.firstIndex(where: { $0.messageID == messageID }) else { return false }
-            let intersection = rowFrame(at: index).intersection(viewport)
-            return !intersection.isNull && !intersection.isEmpty
-        }
-        if reactionPickerCoordinator.isShown, !isVisible(reactionPickerMessageID) {
-            reactionPickerMessageID = nil
-            reactionPickerCoordinator.close(notifyBinding: true)
-        }
-        if reactionDetailsPopover?.isShown == true, !isVisible(reactionDetailsMessageID) {
-            reactionDetailsMessageID = nil
-            reactionDetailsPopover?.close()
-        }
-    }
-
-    func showReactionPicker(forMessageRow message: Message) {
-        guard let model, model.canCreateReactions(on: message),
-              let anchor = messageReactionPopoverAnchor(for: message) else { return }
-        reactionPickerMessageID = message.id
-        reactionPickerSource.frame = anchor
-        reactionPickerSource.followsScrolling = true
-        let content = EmojiPickerView(
-            model: model,
-            useCase: .reaction(
-                guildID: message.guildID ?? model.selectedGuildID
-            ),
-            allowsPersistentSelection: true,
-            dismiss: { [weak self] in
-                guard let self else { return }
-                self.reactionPickerCoordinator.close(notifyBinding: false)
-                self.reactionPickerSource.frame = .zero
-            },
-            select: { [weak self] activation in
-                guard let self else { return }
-                let value = switch activation.selection {
-                case let .native(value): value
-                case let .custom(emoji): emoji.messageToken
-                }
-                self.actions?.react(value, message)
-                if !activation.keepsPickerPresented {
-                    self.reactionPickerCoordinator.close(
-                        notifyBinding: false
-                    )
-                    self.reactionPickerSource.frame = .zero
-                }
-            }
-        )
-        reactionPickerCoordinator.update(
-            sourceView: reactionPickerSource,
-            isPresented: true,
-            preferredEdge: .maxX,
-            accessibilityIdentifier: ReactionActionMenuPresentation.inline.pickerAccessibilityIdentifier,
-            content: content,
-            setPresented: { [weak self] isPresented in
-                if !isPresented {
-                    self?.reactionPickerSource.frame = .zero
-                }
-            }
-        )
-    }
-
-    func handleComponentClick(
-        in layout: NativeTimelineRowLayout,
-        message: Message,
-        point: CGPoint,
-        rowIndex: Int
-    ) -> Bool {
-        for componentLayout in layout.componentLayouts {
-            for container in componentLayout.containers
-            where container.isSpoiler && container.frame.contains(point) {
-                let key = NativeTimelineComponentRevealKey(
-                    messageID: message.id,
-                    componentID: container.componentID
-                )
-                if !spoilerRevealStore.isMediaRevealed(key) {
-                    reveal(key, rowIndex: rowIndex)
-                    return true
-                }
-            }
-            for region in componentLayout.images
-            where region.frame.contains(point) {
-                return activateComponentMedia(
-                    id: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    layout: layout,
-                    message: message,
-                    rowIndex: rowIndex
-                )
-            }
-            for region in componentLayout.media
-            where region.frame.contains(point) {
-                let revealKey = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
-                if region.isVideo, !region.isSpoiler || spoilerRevealStore.isMediaRevealed(revealKey) {
-                    let (id, openURL, isSpoiler) = (region.componentID, region.openURL, region.isSpoiler)
-                    playInline(region.displayURL, mediaID: id, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
-                        _ = self?.activateComponentMedia(
-                            id: id, openURL: openURL, isSpoiler: isSpoiler, layout: layout, message: message, rowIndex: index
-                        )
-                    }
-                    return true
-                }
-                return activateComponentMedia(
-                    id: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    layout: layout,
-                    message: message,
-                    rowIndex: rowIndex
-                )
-            }
-            for region in componentLayout.files
-            where region.frame.contains(point) {
-                // The card's button and link act through their own pointer hit.
-                return activateComponentMedia(
-                    id: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    layout: layout,
-                    message: message,
-                    rowIndex: rowIndex
-                )
-            }
-            for region in componentLayout.selects
-            where region.frame.contains(point) {
-                guard !region.isDisabled else { return true }
-                showComponentChoicePicker(
-                    for: region,
-                    message: message
-                )
-                return true
-            }
-        }
-        return false
-    }
-
-    func activateComponentMedia(
-        id: String,
-        openURL: URL,
-        isSpoiler: Bool,
-        layout: NativeTimelineRowLayout,
-        message: Message,
-        rowIndex: Int
-    ) -> Bool {
-        let key = NativeTimelineComponentRevealKey(
-            messageID: message.id,
-            componentID: id
-        )
-        if isSpoiler, !spoilerRevealStore.isMediaRevealed(key) {
-            reveal(key, rowIndex: rowIndex)
-        } else if let presentation = NativeTimelineMediaViewerPlan.components(
-            in: message,
-            layouts: layout.componentLayouts,
-            selectedComponentID: id,
-            isRevealed: { [spoilerRevealStore] componentID in
-                spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(
-                        messageID: message.id,
-                        componentID: componentID
-                    )
-                )
-            }
-        ) {
-            model?.mediaViewerPresentation = mediaViewerPresentation(
-                presentation,
-                componentID: id,
-                rowIndex: rowIndex
-            )
-        } else {
-            NSWorkspace.shared.open(openURL)
+            return false
         }
         return true
     }
 
-    func handleTextClick(
-        in layout: NativeTimelineRowLayout,
-        message: Message?,
-        point: CGPoint,
-        rowIdentifier: NativeMessageTimelineItem.Identifier
+    func activateComponentMedia(
+        _ region: NativeTimelineComponentLayout.MediaRegion,
+        layout: NativeTimelineRowLayout,
+        message: Message,
+        rowIndex: Int
     ) -> Bool {
-        guard let pointerHit = textPointerHit(
-            in: layout,
-            point: point
-        ) else { return false }
-        return activateTextHit(
-            pointerHit.hit,
-            message: message,
-            rowIdentifier: rowIdentifier,
-            region: pointerHit.region,
-            profileAnchor: textLinkAnchorFrame(
-                for: pointerHit,
-                in: layout,
-                rowIdentifier: rowIdentifier
-            )
-        )
+        let id = region.componentID
+        if spoilerRevealStore.isConcealed(messageID: message.id, contentID: id, isSpoiler: region.isSpoiler) {
+            reveal(NativeTimelineComponentRevealKey(messageID: message.id, componentID: id), rowIndex: rowIndex)
+        } else if let presentation = MediaViewerPlan.components(
+            in: message,
+            layouts: layout.componentLayouts,
+            selectedComponentID: id,
+            isRevealed: spoilerRevealStore.isMediaRevealed(in: message.id)
+        ) {
+            model?.mediaViewerPresentation = mediaViewerPresentation(presentation, rowIndex: rowIndex)
+        } else {
+            NSWorkspace.shared.open(region.openURL)
+        }
+        return true
     }
 
     func textLinkAnchorFrame(
@@ -646,11 +112,9 @@ extension NativeTimelineCanvasView {
         point: CGPoint
     ) -> TextPointerHit? {
         if let frame = layout.contentFrame,
-           let value = layout.attributedContent,
-           let framesetter = layout.contentFramesetter,
+           let contentText = layout.contentText,
            let hit = NativeTimelineTextHitTester.hit(
-               value: value,
-               framesetter: framesetter,
+               box: contentText,
                frame: NativeTimelineTextGeometry
                    .messageContentDrawingFrame(frame),
                point: point
@@ -662,10 +126,9 @@ extension NativeTimelineCanvasView {
             return TextPointerHit(hit: hit, region: .content)
         }
         if let translation = layout.translationRegion,
-           let frame = translation.textFrame, let value = translation.attributedText,
-           let framesetter = translation.framesetter,
+           let frame = translation.textFrame, let text = translation.text,
            let hit = NativeTimelineTextHitTester.hit(
-               value: value, framesetter: framesetter,
+               box: text,
                frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame), point: point
            ), hit.mention != nil || hit.url != nil || hit.spoilerRange != nil {
             return TextPointerHit(hit: hit, region: translation.regionID)
@@ -804,8 +267,8 @@ extension NativeTimelineCanvasView {
                 )
                 .filter { $0.range.location == rangeLocation }
                 .map { $0.frame.offsetBy(dx: 0, dy: rowOrigin) },
-                cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
-                duration: NativeTimelineSpoilerAppearance.textRevealDuration
+                cornerRadius: SpoilerAppearance.textCornerRadius,
+                duration: SpoilerAppearance.textRevealDuration
             )
         }
         spoilerRevealStore.revealText(key)
@@ -818,13 +281,8 @@ extension NativeTimelineCanvasView {
     ) {
         guard let model else { return }
         switch mention.target {
-        case .unresolved:
-            break
-        case let .game(id):
-            model.presentedProfileGame = model.gameMentions.gamesByID[id]
-        case let .command(id, name):
-            guard let channelID = message?.channelID ?? model.selectedChannelID else { break }
-            model.startCommandMention(id: id, name: name, in: channelID)
+        case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message:
+            model.openMention(mention.target, fromMessageIn: message?.channelID)
         case let .user(id):
             let resolver = MessageMentionResolver(
                 model: model,
@@ -839,18 +297,6 @@ extension NativeTimelineCanvasView {
             }
         case let .role(id):
             showMentionRole(id, sourceMessage: message, anchor: anchor)
-        case let .guildNavigation(guildID, destination):
-            model.openGuildNavigationDestination(destination, in: guildID)
-        case let .channel(id):
-            model.navigate(to: id)
-        case let .linkedChannel(guildID, channelID):
-            model.navigate(to: guildID, linkedChannelID: channelID)
-        case let .message(guildID, channelID, messageID):
-            model.navigate(
-                to: guildID,
-                channelID: channelID,
-                messageID: messageID
-            )
         }
     }
 
@@ -863,135 +309,20 @@ extension NativeTimelineCanvasView {
         guard let index = items.firstIndex(where: {
             $0.identifier == rowIdentifier
         }),
-           layouts.indices.contains(index)
+           layouts.indices.contains(index),
+           let text = linkPointerTextRegions(for: items[index], layout: layouts[index])
+               .first(where: { $0.region == region })
         else { return nil }
-        let layout = layouts[index]
-        let localFrame: CGRect?
-        switch region {
-        case .beginningTitle:
-            return nil
-        case .beginningDescription:
-            guard let beginning = layout.beginningLayout else { return nil }
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                box: beginning.descriptionBox,
-                frame: beginning.descriptionFrame,
-                characterIndex: characterIndex,
-                rawToken: rawToken
-            )
-        case .content:
-            guard let value = layout.attributedContent,
-                  let framesetter = layout.contentFramesetter,
-                  let frame = layout.contentFrame
-            else { return nil }
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                value: value,
-                framesetter: framesetter,
-                frame: NativeTimelineTextGeometry
-                    .messageContentDrawingFrame(frame),
-                characterIndex: characterIndex,
-                rawToken: rawToken
-            )
-        case .translation:
-            guard let translation = layout.translationRegion, translation.regionID == region,
-                  let value = translation.attributedText, let framesetter = translation.framesetter,
-                  let frame = translation.textFrame else { return nil }
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                value: value, framesetter: framesetter,
-                frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame),
-                characterIndex: characterIndex, rawToken: rawToken
-            )
-        case let .embed(embedID, textIndex):
-            guard let embed = layout.embedRegions.first(where: {
-                $0.embedID == embedID
-            }),
-               embed.textRegions.indices.contains(textIndex)
-            else { return nil }
-            let text = embed.textRegions[textIndex]
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                box: text.text,
-                frame: text.frame,
-                characterIndex: characterIndex,
-                rawToken: rawToken
-            )
-        case let .component(layoutIndex, textIndex):
-            guard layout.componentLayouts.indices.contains(layoutIndex),
-                  layout.componentLayouts[layoutIndex]
-                      .textRegions.indices.contains(textIndex)
-            else { return nil }
-            let text = layout.componentLayouts[layoutIndex]
-                .textRegions[textIndex]
-            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
-                box: text.text,
-                frame: text.frame,
-                characterIndex: characterIndex,
-                rawToken: rawToken
-            )
-        }
-        return localFrame?.offsetBy(
+        return NativeTimelineTextHitTester.mentionAnchorFrame(
+            value: text.value,
+            framesetter: text.framesetter,
+            frame: text.frame,
+            characterIndex: characterIndex,
+            rawToken: rawToken
+        )?.offsetBy(
             dx: 0,
             dy: displayedRowOrigin(at: index)
         )
-    }
-
-    func reveal(
-        _ key: NativeTimelineComponentRevealKey
-    ) {
-        guard let rowIndex = items.firstIndex(where: {
-            $0.messageID == key.messageID
-        }) else { return }
-        reveal(key, rowIndex: rowIndex)
-    }
-
-    func reveal(
-        _ key: NativeTimelineComponentRevealKey,
-        rowIndex: Int
-    ) {
-        guard items.indices.contains(rowIndex),
-              items[rowIndex].messageID == key.messageID,
-              !spoilerRevealStore.isMediaRevealed(key)
-        else { return }
-        if let cover = spoilerOverlays[key] {
-            fadeOutSpoilerCover(
-                [cover.frame],
-                cornerRadius: cover.cornerRadius,
-                duration: NativeTimelineSpoilerAppearance.mediaRevealDuration,
-                dropsPill: true
-            )
-        }
-        spoilerRevealStore.revealMedia(key)
-    }
-
-    func installSpoilerRevealStore(
-        _ store: NativeTimelineSpoilerRevealStore
-    ) {
-        guard spoilerRevealStore !== store else { return }
-        if let spoilerRevealObserverID {
-            spoilerRevealStore.removeObserver(spoilerRevealObserverID)
-        }
-        spoilerRevealStore = store
-        spoilerRevealObserverID = store.observe { [weak self] messageID in
-            self?.spoilerRevealStateDidChange(messageID: messageID)
-        }
-    }
-
-    func spoilerRevealStateDidChange(messageID: MessageID) {
-        // A forum post's starter message shares the post's ID with the
-        // beginning row above it, so a message row takes precedence.
-        guard let rowIndex = items.firstIndex(where: { $0.messageID == messageID })
-            ?? items.firstIndex(where: { $0.beginning?.id.rawValue == messageID.rawValue })
-        else { return }
-        let identifier = items[rowIndex].identifier
-        visibleMediaProjection = nil
-        mediaKeysByIdentifier[identifier] = nil
-        invalidateBitmap(identifier)
-        requestMedia(for: items[rowIndex], at: rowIndex)
-        setNeedsDisplay(rowFrame(at: rowIndex))
-        window?.invalidateCursorRects(for: self)
-        reconcileAnimatedMedia()
-        reconcileSpoilerOverlays()
-        // A reset reveal store hides a video playing in place again.
-        reconcileInlinePlayers()
-        rebuildAccessibilityProxy(for: identifier)
     }
 
     func showComponentChoicePicker(
@@ -1123,9 +454,7 @@ extension NativeTimelineCanvasView {
         messageID: MessageID,
         componentID: String
     ) -> CGRect? {
-        guard let rowIndex = items.firstIndex(where: {
-            $0.messageID == messageID
-        }),
+        guard let rowIndex = rowIndex(forMessageID: messageID),
         layouts.indices.contains(rowIndex),
         let region = layouts[rowIndex].componentLayouts
             .flatMap(\.selects)
@@ -1154,422 +483,6 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
-        dismissHoverLabel()
-        guard !overlayBlocksInteractions, !glideBlocksPointer else { return nil }
-        let point = convert(event.locationInWindow, from: nil)
-        guard let index = rowIndex(at: point.y),
-              layouts.indices.contains(index),
-              case let .message(row, _, _) = items[index]
-        else { return nil }
-        let interactionMode = MessageOutboxPresentation.interactionMode(
-            for: row.message
-        )
-        guard interactionMode.allowsMessageContextMenu else { return nil }
-        let localPoint = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
-        if let menu = userContextMenu(for: row, index: index, localPoint: localPoint) {
-            return menu
-        }
-        let imageItem = NativeTimelineImageContextMenuPlan.item(
-            in: row.message,
-            layout: layouts[index],
-            at: localPoint,
-            isRevealed: { [spoilerRevealStore] componentID in
-                spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(
-                        messageID: row.message.id,
-                        componentID: componentID
-                    )
-                )
-            }
-        )
-        let gif = NativeTimelineGIFContextMenuPlan.result(
-            in: row.message,
-            layout: layouts[index],
-            at: localPoint
-        )
-        if interactionMode.allowsMediaContextMenu,
-           let gif
-        {
-            return GIFContextMenuBuilder.make(
-                actions: gifContextMenuActions(for: gif)
-            )
-        }
-        if interactionMode.allowsMediaContextMenu,
-           let imageItem
-        {
-            return MediaImageContextMenuBuilder.make(
-                actions: imageContextMenuActions(for: imageItem)
-            )
-        }
-        guard let actions,
-              TimelineContextMenuHitTesting.contains(
-                  point,
-                  rowOrigin: displayedRowOrigin(at: index),
-                  highlightFrame: layouts[index].highlightFrame
-              )
-        else { return nil }
-        guard let menu = messageContextMenu(
-            for: row,
-            at: index,
-            targetsAuthor: NativeTimelineAuthorProfileGeometry.hitFrame(
-                at: localPoint,
-                avatarFrame: layouts[index].avatarFrame,
-                authorFrame: layouts[index].authorFrame
-            ) != nil,
-            lookupPoint: point,
-            actions: actions,
-            failedMediaActions: interactionMode == .failed
-                ? imageItem.map(imageContextMenuActions(for:))
-                : nil
-        ) else { return nil }
-        prependTextLinkActions(to: menu, row: row, index: index, localPoint: localPoint)
-        return menu
-    }
-
-    /// `targetsAuthor` offers user commands instead of message commands in
-    /// the Apps submenu, as when the author's avatar or name was clicked.
-    func messageContextMenu(
-        for row: MessageRowPresentation,
-        at index: Int,
-        targetsAuthor: Bool,
-        lookupPoint: CGPoint? = nil,
-        actions: NativeTimelineRowActions,
-        failedMediaActions: MediaImageContextMenuActions?
-    ) -> NSMenu? {
-        guard MessageOutboxPresentation.interactionMode(for: row.message).allowsMessageContextMenu else { return nil }
-        // Discord does not allow editing voice messages.
-        let canEdit =
-            row.message.author.id == model?.currentUser?.id
-                && !row.message.hasPoll
-                && !row.message.flags.contains(.voiceMessage)
-                && model?.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil
-                && MessageReplyPresentationPolicy.allowsReplyAction(
-                    for: row.message
-                )
-        let canDelete = model?.canDeleteMessage(row.message) == true
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        if let lookupPoint, let lookup = dictionaryLookupAction(at: lookupPoint, usesSelection: true) {
-            menu.addItem(actionItem("Look Up", systemImage: "character.book.closed", action: lookup))
-            menu.addItem(.separator())
-        }
-        var insertedFailedMediaActions = false
-        for entry in NativeTimelineMessageMenuPolicy.entries(
-            canEdit: canEdit,
-            canDelete: canDelete,
-            canRetry: row.message.canRetrySending,
-            isFailed: row.message.outboxState == .failed,
-            canReply: actions.reply != nil
-                && model?.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil
-                && MessageReplyPresentationPolicy.allowsReplyAction(
-                    for: row.message
-                ),
-            canEndPoll: row.message.outboxState == .confirmed && row.message.author.id == model?.currentUser?.id && row.message.poll?.isClosed() == false,
-            canForward: actions.forward != nil && model?.canForward(row.message) == true,
-            threadAction: row.message.thread != nil
-                ? .viewThread
-                : (model?.canCreateThread(from: row.message) == true ? .createThread : nil),
-            canPin: model?.canManagePins(for: row.message) == true,
-            isPinned: row.message.isPinned,
-            translationTitle: row.isResource ? nil : model?.messageTranslationMenuTitle(for: row.message),
-            canCopyTranslation: !row.isResource && model?.translatedMessageText(row.message) != nil,
-            context: messageInteractionContext
-        ) {
-            guard case let .action(
-                action,
-                title,
-                systemImage,
-                isDestructive
-            ) = entry
-            else {
-                menu.addItem(.separator())
-                if !insertedFailedMediaActions,
-                   let failedMediaActions
-                {
-                    MediaImageContextMenuBuilder.appendImageActions(
-                        to: menu,
-                        actions: failedMediaActions,
-                        includesLinkActions: false
-                    )
-                    menu.addItem(.separator())
-                    insertedFailedMediaActions = true
-                }
-                continue
-            }
-            if case .addReaction = action, model?.canCreateReactions(on: row.message) != true { continue }
-            let handler = messageMenuHandler(
-                action: action,
-                row: row,
-                index: index,
-                actions: actions
-            )
-            menu.addItem(
-                actionItem(
-                    title,
-                    systemImage: systemImage,
-                    isDestructive: isDestructive,
-                    action: handler
-                )
-            )
-        }
-        appendApplicationCommandMenu(to: menu, row: row, targetsAuthor: targetsAuthor)
-        return menu
-    }
-
-    private func userContextMenu(
-        for row: MessageRowPresentation, index: Int, localPoint: CGPoint
-    ) -> NSMenu? {
-        guard let model, row.message.outboxState == .confirmed else { return nil }
-        let message = row.message
-        let textHit = textPointerHit(in: layouts[index], point: localPoint)
-        if let textHit, let spoilerRange = textHit.hit.spoilerRange,
-           let key = textSpoilerRevealKey(itemIdentifier: items[index].identifier,
-                                         region: textHit.region, rangeLocation: spoilerRange.location),
-           !spoilerRevealStore.isTextRevealed(key) { return nil }
-        let user: User?
-        if NativeTimelineAuthorProfileGeometry.hitFrame(at: localPoint,
-            avatarFrame: layouts[index].avatarFrame, authorFrame: layouts[index].authorFrame) != nil {
-            user = message.author
-        } else if let mention = textHit?.hit.mention,
-                  mention.isInteractive, case let .user(userID) = mention.target {
-            user = model.systemMessageUser(userID: userID, sourceMessage: message)
-        } else if let url = textHit?.hit.url,
-                  url.scheme == "sakuracord-action", url.host == "profile", let userID = UserID(url.lastPathComponent) {
-            user = model.systemMessageUser(userID: userID, sourceMessage: message)
-        } else { return nil }
-        guard let user else { return nil }
-        return UserContextMenu.make(for: user,
-            context: .init(guildID: model.messagePresentationGuildID(for: message), channelID: message.channelID,
-                           isLocalIdentity: user.id == message.author.id && (message.webhookID != nil || DiscordBuiltInCommands.isClydeMessage(message))), model: model)
-    }
-
-    /// Discord's Apps submenu: message commands for the message, or user
-    /// commands when the author's avatar or name was right-clicked.
-    private func appendApplicationCommandMenu(
-        to menu: NSMenu,
-        row: MessageRowPresentation,
-        targetsAuthor: Bool
-    ) {
-        let message = row.message
-        guard let model, messageInteractionContext == .conversation,
-              message.outboxState == .confirmed, !message.flags.contains(.ephemeral),
-              model.supportsCapability(.slashCommands)
-        else { return }
-        let type: ApplicationCommandType = targetsAuthor ? .user : .message
-        let targetID = targetsAuthor ? message.author.id.description : message.id.description
-        let destination = model.commandDestination(in: message.channelID)
-        model.ensureApplicationCommandsLoaded(in: destination)
-        let commandComposer = model.commandComposer(for: destination)
-        guard !commandComposer.contextMenuCommands(of: type).isEmpty
-            || commandComposer.isLoading
-        else { return }
-        let submenu = NSMenu()
-        submenu.autoenablesItems = false
-        // Rebuilt whenever the submenu opens, so a catalog that finishes
-        // loading while the menu is up replaces the loading row.
-        let populator = ApplicationCommandAppsMenuPopulator(model: model, type: type, targetID: targetID, channelID: message.channelID)
-        submenu.delegate = populator
-        let apps = NSMenuItem(title: "Apps", action: nil, keyEquivalent: "")
-        ContextMenuItemSupport.configure(apps, title: "Apps", systemImage: SakuraCordSystemSymbol.applicationCommands)
-        apps.submenu = submenu
-        apps.representedObject = populator
-        // Discord puts Apps at the end of the reply/pin group, before Mark Unread.
-        let insertion = menu.items.firstIndex { $0.title == "Mark Unread" } ?? 0
-        menu.insertItem(apps, at: insertion)
-    }
-
-    func messageMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        row: MessageRowPresentation,
-        index: Int,
-        actions: NativeTimelineRowActions
-    ) -> () -> Void {
-        switch action {
-        case .pinMessage, .unpinMessage:
-            return { actions.togglePin(row.message) }
-        case .toggleTranslation:
-            return { [weak model] in model?.toggleMessageTranslation(row.message) }
-        default:
-            return nonPinMessageMenuHandler(
-                action: action,
-                row: row,
-                index: index,
-                actions: actions
-            )
-        }
-    }
-
-    private func threadMessageMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        row: MessageRowPresentation,
-        actions: NativeTimelineRowActions
-    ) -> (() -> Void)? {
-        switch action {
-        case .createThread:
-            { [weak model] in model?.beginThreadCreation(from: row.message) }
-        case .viewThread:
-            {
-                guard let thread = row.message.thread else { return }
-                actions.openThread(thread)
-            }
-        default:
-            nil
-        }
-    }
-
-    private func nonPinMessageMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        row: MessageRowPresentation,
-        index: Int,
-        actions: NativeTimelineRowActions
-    ) -> () -> Void {
-        if let handler = copyMessageMenuHandler(action: action, row: row)
-            ?? threadMessageMenuHandler(action: action, row: row, actions: actions)
-        {
-            return handler
-        }
-        return switch action {
-        case .jumpToMessage:
-            { actions.openMessage?(row.message) }
-        case .retrySending:
-            { actions.retry(row.message) }
-        case .addReaction:
-            { [weak self] in self?.showReactionPicker(forMessageRow: row.message) }
-        case .viewReactions:
-            { [weak self] in self?.showMessageReactions(row.message) }
-        case .reply:
-            {
-                guard let reply = actions.reply else { return }
-                reply(row.message)
-            }
-        case .forward:
-            {
-                guard let forward = actions.forward else { return }
-                forward(row.message)
-            }
-        case .dismissInboxMention:
-            { [weak model] in model?.dismissInboxMention(row.message) }
-        case .markUnread:
-            { actions.markUnread(row.message) }
-        case .endPoll:
-            { [weak self] in self?.requestEndPoll(row.message) }
-        case .editMessage:
-            { [weak self] in self?.beginEditing(row: row, at: index) }
-        case .deleteMessage, .discardFailedMessage:
-            deletionMenuHandler(action: action, message: row.message)
-        default:
-            {}
-        }
-    }
-
-    private func copyMessageMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        row: MessageRowPresentation
-    ) -> (() -> Void)? {
-        switch action {
-        case .copyTranslation:
-            { [weak model] in
-                if let text = model?.translatedMessageText(row.message) { Self.copyText(text) }
-            }
-        case .copyText:
-            { Self.copyText(row.message.content) }
-        case .copyLink:
-            { [weak self] in
-                guard let self else { return }
-                Self.copyText(self.messageLink(for: row.message))
-            }
-        case .copyMessageID:
-            { Self.copyText(row.message.id.description) }
-        case .copyAuthorID:
-            { Self.copyText(row.message.author.id.description) }
-        default:
-            nil
-        }
-    }
-
-    func deletionMenuHandler(
-        action: NativeTimelineMessageMenuAction,
-        message: Message
-    ) -> () -> Void {
-        if action == .discardFailedMessage {
-            return { [weak self] in self?.requestDiscardFailed(message) }
-        }
-        return { [weak self] in self?.requestDelete(message) }
-    }
-
-    func imageContextMenuActions(
-        for item: RichMediaItem
-    ) -> MediaImageContextMenuActions {
-        MediaImageContextMenuActions(
-            copyImage: { [weak self] in
-                Task { @MainActor [weak self] in
-                    do {
-                        try await MediaViewerActionService.copyImage(
-                            from: item.url
-                        )
-                    } catch {
-                        self?.presentActionError(error)
-                    }
-                }
-            },
-            save: MediaSaveMenuActions(
-                saveAs: { [weak self] in
-                    self?.saveMedia(item, to: .saveAs)
-                },
-                saveToDefaultFolder: { [weak self] in
-                    self?.saveMedia(item, to: .defaultFolder)
-                }
-            ),
-            copyLink: {
-                MediaViewerActionService.copyText(item.url.absoluteString)
-            },
-            openLink: {
-                MediaViewerActionService.openInBrowser(item.url)
-            }
-        )
-    }
-
-    private func saveMedia(
-        _ item: RichMediaItem,
-        to destination: MediaSaveDestination
-    ) {
-        Task { @MainActor [weak self] in
-            do {
-                _ = try await MediaViewerActionService.save(
-                    item,
-                    to: destination
-                )
-            } catch {
-                self?.presentActionError(error)
-            }
-        }
-    }
-
-    func gifContextMenuActions(
-        for gif: GIFSearchResult
-    ) -> GIFContextMenuActions {
-        let isFavorite = model?.favoriteGIFs.contains(where: {
-            $0.url == gif.url
-        }) == true
-        return GIFContextMenuActions(
-            isFavorite: isFavorite,
-            isFavoriteMutationPending: model?.gifFavoriteMutationURL != nil,
-            toggleFavorite: { [weak self] in
-                self?.model?.setGIFFavorite(
-                    gif,
-                    isFavorite: !isFavorite
-                )
-            },
-            copyMediaLink: {
-                MediaViewerActionService.copyText(gif.url.absoluteString)
-            }
-        )
-    }
-
     func presentActionError(_ error: Error) {
         let alert = NSAlert(error: error)
         if let window {
@@ -1579,4 +492,57 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    func activateLinkedImage(
+        _ region: NativeTimelineRowLayout.LinkedImageRegion,
+        in message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        if let presentation = MediaViewerPlan.linkedImages(
+            in: message,
+            selectedReferenceID: region.reference.id
+        ) {
+            model?.mediaViewerPresentation = mediaViewerPresentation(presentation, rowIndex: rowIndex)
+        } else {
+            NSWorkspace.shared.open(region.reference.url)
+        }
+        return true
+    }
+
+    func activateAttachment(
+        _ attachment: Attachment,
+        in message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        if spoilerRevealStore.isConcealed(attachment, in: message.id) {
+            reveal(.attachment(messageID: message.id, attachmentID: attachment.id), rowIndex: rowIndex)
+        } else if !openAttachmentInViewer(attachment, message: message, rowIndex: rowIndex) {
+            NSWorkspace.shared.open(attachment.url)
+        }
+        return true
+    }
+
+    func activateEmbedMedia(
+        _ region: NativeTimelineRowLayout.EmbedRegion,
+        in message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        if openEmbedMediaInViewer(id: region.embedID, message: message, rowIndex: rowIndex) { return true }
+        guard let url = region.mediaURL else { return false }
+        NSWorkspace.shared.open(url)
+        return true
+    }
+
+    func activateComponentButton(
+        _ region: NativeTimelineComponentLayout.ButtonRegion,
+        message: Message
+    ) -> Bool {
+        guard !region.isDisabled else { return false }
+        if let url = region.url {
+            return MessageLinkActivator.activate(url, model: model)
+        }
+        guard let customID = region.customID else { return false }
+        if model?.presentIssueReport(forComponent: customID, on: message) == true { return true }
+        actions?.submitComponent(message, customID, .button, [])
+        return true
+    }
 }

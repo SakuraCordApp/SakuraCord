@@ -19,7 +19,7 @@ struct ProfileWidgetMenu: NSViewRepresentable {
             button.action = #selector(Coordinator.showMenu(_:))
             return button
         }
-        let view = MediaImageContextMenuHitView()
+        let view = ContextClickMenuHitView()
         view.menuProvider = { [weak coordinator = context.coordinator, weak view] in
             guard let view, WindowModalCoordinator.allowsInput(for: view) else { return nil }
             return coordinator?.makeMenu()
@@ -58,13 +58,17 @@ struct ProfileWidgetMenu: NSViewRepresentable {
             menu.autoenablesItems = false
             let index = widgetIndex
             let canEdit = configuration.isEnabled && configuration.editor.canEditWidgets && index != nil
-            menu.addItem(item(String(localized: "Move Up", bundle: #bundle), image: "arrow.up", action: #selector(moveUp),
-                              isEnabled: canEdit && index != 0))
-            menu.addItem(item(String(localized: "Move Down", bundle: #bundle), image: "arrow.down", action: #selector(moveDown),
-                              isEnabled: canEdit && index != configuration.editor.widgets.count - 1))
+            menu.addItem(ContextMenuItemSupport.item(
+                String(localized: "Move Up", bundle: #bundle), systemImage: "arrow.up", isEnabled: canEdit && index != 0
+            ) { [self] in move(by: -1) })
+            menu.addItem(ContextMenuItemSupport.item(
+                String(localized: "Move Down", bundle: #bundle), systemImage: "arrow.down",
+                isEnabled: canEdit && index != configuration.editor.widgets.count - 1
+            ) { [self] in move(by: 1) })
             menu.addItem(.separator())
-            menu.addItem(item(String(localized: "Remove Widget", bundle: #bundle), image: "trash", action: #selector(removeWidget),
-                              isEnabled: canEdit, isDestructive: true))
+            menu.addItem(ContextMenuItemSupport.item(
+                String(localized: "Remove Widget", bundle: #bundle), systemImage: "trash", isEnabled: canEdit, isDestructive: true
+            ) { [self] in removeWidget() })
             return menu
         }
 
@@ -72,24 +76,13 @@ struct ProfileWidgetMenu: NSViewRepresentable {
             configuration.editor.widgets.firstIndex { $0.id == configuration.widgetID }
         }
 
-        private func item(_ title: String, image: String, action: Selector, isEnabled: Bool, isDestructive: Bool = false) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            item.isEnabled = isEnabled
-            ContextMenuItemSupport.configure(item, title: title, systemImage: image, isDestructive: isDestructive)
-            return item
-        }
-
-        @objc private func moveUp() { move(by: -1) }
-        @objc private func moveDown() { move(by: 1) }
-
         private func move(by offset: Int) {
             guard configuration.isEnabled, configuration.editor.canEditWidgets, let index = widgetIndex,
                   configuration.editor.widgets.indices.contains(index + offset) else { return }
             configuration.editor.moveWidget(id: configuration.widgetID, to: index + offset)
         }
 
-        @objc private func removeWidget() {
+        private func removeWidget() {
             guard configuration.isEnabled, configuration.editor.canEditWidgets, widgetIndex != nil else { return }
             configuration.remove()
         }

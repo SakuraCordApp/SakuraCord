@@ -71,9 +71,9 @@ extension AppModel {
         var pool = favoriteSuggestionPool(affinities: affinities)
         publish(pool)
         guard pool.channels.count + pool.users.count < Self.favoriteSuggestionPoolDepth else { return }
-        let history = forwardDestinationHistory
+        let history = conversationDestinationHistory
         let favoriteIDs = favoriteIDs
-        guard let index = await ForwardDestinationSearchIndexCache.shared.prepare(
+        guard let index = await ConversationDestinationSearchIndexCache.shared.prepare(
             for: self, priority: .userInitiated, corpus: .favorites
         ) else { return }
         // Discord's favourites filter applies before the list is capped.
@@ -135,7 +135,7 @@ extension AppModel {
         // favourited top channels never leave the pool short.
         let depth = Self.favoriteSuggestionPoolDepth
         let favoriteIDs = favoriteIDs
-        func resolved(_ ids: [ChannelID]) -> [ForwardDestination] {
+        func resolved(_ ids: [ChannelID]) -> [ConversationDestination] {
             Array(ids.lazy.filter { !favoriteIDs.contains($0) }
                 .compactMap { self.favoriteSuggestion(channelID: $0, channelsByID: channelsByID) }.prefix(depth))
         }
@@ -147,27 +147,27 @@ extension AppModel {
 
     /// A conversation Discord's favourites filter accepts, favourites aside:
     /// for a server channel or thread, one the account can view.
-    private func favoriteSuggestion(channelID: ChannelID, channelsByID: [ChannelID: Channel]) -> ForwardDestination? {
+    private func favoriteSuggestion(channelID: ChannelID, channelsByID: [ChannelID: Channel]) -> ConversationDestination? {
         if let channel = channelsByID[channelID] {
             switch channel.kind {
             case .directMessage:
-                return channel.recipients.first.map { ForwardDestination(kind: .user($0, directMessage: channel), guild: nil) }
+                return channel.recipients.first.map { ConversationDestination(kind: .user($0, directMessage: channel), guild: nil) }
             case .groupDirectMessage:
-                return ForwardDestination(kind: .channel(channel), guild: nil)
+                return ConversationDestination(kind: .channel(channel), guild: nil)
             default:
                 guard canViewFavoriteCandidate(channel) else { return nil }
-                return ForwardDestination(kind: .channel(channel), guild: channel.guildID.flatMap { serverRailGuildsByID[$0] })
+                return ConversationDestination(kind: .channel(channel), guild: channel.guildID.flatMap { serverRailGuildsByID[$0] })
             }
         }
         guard let thread = favoriteThread(channelID),
               let parent = thread.parentID.flatMap({ channelsByID[$0] ?? knownRootChannel($0) }),
               canViewFavoriteCandidate(parent)
         else { return nil }
-        return ForwardDestination(kind: .thread(thread, parent: parent), guild: thread.guildID.flatMap { serverRailGuildsByID[$0] })
+        return ConversationDestination(kind: .thread(thread, parent: parent), guild: thread.guildID.flatMap { serverRailGuildsByID[$0] })
     }
 
     /// A picker candidate the Favorites list would show once added.
-    private func isListableFavoriteCandidate(_ destination: ForwardDestination) -> Bool {
+    private func isListableFavoriteCandidate(_ destination: ConversationDestination) -> Bool {
         switch destination.kind {
         case .channel(let channel): channel.guildID == nil || canViewFavoriteCandidate(channel)
         case .thread(_, let parent): parent.map(canViewFavoriteCandidate) ?? false
@@ -182,15 +182,11 @@ extension AppModel {
     }
 
     func dismissFavoriteSuggestions() {
-        setFavoriteSuggestionsDismissed(true)
-    }
-
-    func setFavoriteSuggestionsDismissed(_ isDismissed: Bool) {
-        favorites.suggestionsDismissed = isDismissed
+        favorites.suggestionsDismissed = true
         refreshFavoriteSuggestions()
         startAccountChildTask(account: accountSession()) { model, account in
             do {
-                try await account.provider.setFavoritesSuggestionsDismissed(isDismissed)
+                try await account.provider.setFavoritesSuggestionsDismissed(true)
             } catch {
                 guard model.isCurrentAccountSession(account) else { return }
                 model.errorMessage = error.localizedDescription
@@ -199,13 +195,13 @@ extension AppModel {
     }
 
     /// A suggestion is filed under Channels, created when missing.
-    func addFavoriteSuggestion(_ destination: ForwardDestination) {
+    func addFavoriteSuggestion(_ destination: ConversationDestination) {
         addFavoriteDestinations([destination], categoryName: Self.favoriteSuggestionsCategoryName)
     }
 
     /// Adds picked or suggested conversations at once; a person without a
     /// DM gets one first, as Discord opens it before favouriting.
-    func addFavoriteDestinations(_ destinations: [ForwardDestination], parentID: ChannelID? = nil, categoryName: String? = nil) {
+    func addFavoriteDestinations(_ destinations: [ConversationDestination], categoryName: String? = nil) {
         var additions: [FavoriteAddition] = []
         var usersWithoutDirectMessage: [UserID] = []
         for destination in destinations {
@@ -216,20 +212,20 @@ extension AppModel {
                 additions.append(FavoriteAddition(id: thread.id, channelType: favoriteChannelType(for: thread)))
             case .user(let user, let directMessage):
                 if let directMessage {
-                    additions.append(FavoriteAddition(id: directMessage.id, channelType: 1))
+                    additions.append(FavoriteAddition(id: directMessage.id, channelType: DiscordChannelType.directMessage))
                 } else {
                     usersWithoutDirectMessage.append(user.id)
                 }
             }
         }
         guard !usersWithoutDirectMessage.isEmpty else {
-            return addFavorites(additions, parentID: parentID, categoryName: categoryName)
+            return addFavorites(additions, categoryName: categoryName)
         }
         startAccountChildTask(account: accountSession()) { model, account in
             var failed = false
             for userID in usersWithoutDirectMessage {
                 if let channel = try? await account.provider.ensurePrivateChannel(for: userID) {
-                    additions.append(FavoriteAddition(id: channel.id, channelType: 1))
+                    additions.append(FavoriteAddition(id: channel.id, channelType: DiscordChannelType.directMessage))
                 } else {
                     failed = true
                 }
@@ -237,37 +233,25 @@ extension AppModel {
             guard model.isCurrentAccountSession(account) else { return }
             // The others are still added.
             if failed { model.errorMessage = "Oops, something went wrong..." }
-            model.addFavorites(additions, parentID: parentID, categoryName: categoryName)
+            model.addFavorites(additions, categoryName: categoryName)
         }
-    }
-
-    /// Reset Favorites: Discord's first-run state, Suggested Channels back
-    /// included (the provider saves both together), and the device's
-    /// Unlimited favorites cleared. Like Discord, it asks nothing and leaves
-    /// for Friends.
-    func resetFavorites() {
-        let wasPresented = favorites.isPresented
-        updateFavorites(.reset)
-        if !favorites.localEntries.isEmpty { clearLocalFavorites() }
-        // After the reset, whose fallback to an empty Favorites would cancel this.
-        if wasPresented { openFriends() }
     }
 }
 
 /// Suggested Channels' resolved candidates: affine channels and DM partners
 /// in rank order, then the picker's default order.
 struct FavoriteSuggestionPool: Equatable {
-    var channels: [ForwardDestination] = []
-    var users: [ForwardDestination] = []
-    var fallback: [ForwardDestination] = []
+    var channels: [ConversationDestination] = []
+    var users: [ConversationDestination] = []
+    var fallback: [ConversationDestination] = []
 
     /// Discord's pick: up to four, alternating the most affine channel and
     /// DM partner (the other kind when one runs out), then the fallback,
     /// skipping favourites. Pure array work, cheap enough for every change.
-    func pick(excluding favoriteIDs: Set<ChannelID>) -> [ForwardDestination] {
+    func pick(excluding favoriteIDs: Set<ChannelID>) -> [ConversationDestination] {
         var channels = channels[...], users = users[...], fallback = fallback[...]
-        var chosen: [ForwardDestination] = []
-        func next(_ queue: inout ArraySlice<ForwardDestination>) -> ForwardDestination? {
+        var chosen: [ConversationDestination] = []
+        func next(_ queue: inout ArraySlice<ConversationDestination>) -> ConversationDestination? {
             while let candidate = queue.popFirst() {
                 if candidate.resolvedChannelID.map(favoriteIDs.contains) != true, !chosen.contains(where: { $0.id == candidate.id }) {
                     return candidate

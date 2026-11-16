@@ -6,7 +6,7 @@ extension AccountReadStateModel {
         Set(entries.values.compactMap { entry in
             guard entry.isAccessible,
                   entry.isUnread,
-                  entry.kind == .directMessage || entry.kind == .groupDirectMessage
+                  entry.kind.isDirectMessage
             else { return nil }
             return entry.channelID
         })
@@ -62,6 +62,12 @@ extension AccountReadStateModel {
                 parentEntry: entry.parentID.flatMap { entries[$0] },
                 isActiveJoined: activeJoinedThreadIDs.contains(entry.channelID)
             )
+        }
+
+        /// Whether the entry makes its category header show unread.
+        func marksUnreadCategory(_ entry: Entry) -> Bool {
+            entry.countsAsUnreadConversation && isAggregateConversation(entry)
+                || newForumPostParentID(of: entry) != nil
         }
 
         func unreadGuildID(for entry: Entry) -> GuildID? {
@@ -137,17 +143,19 @@ extension AccountReadStateModel {
             return false
         }
 
+        func projection(now: Date = .now) -> UnreadPresentationProjection {
+            projection(of: entries.values, now: now) {}
+        }
+
+        /// The projection, or nil once `cancellationCheck`, consulted every
+        /// 64 conversations, asks it to stop.
         func projection(
             now: Date = .now,
-            cancelsCooperatively: Bool = false,
-            cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
+            cancellationCheck: @Sendable () -> Bool
         ) -> UnreadPresentationProjection? {
-            projection(
-                of: entries.values,
-                now: now,
-                cancelsCooperatively: cancelsCooperatively,
-                cancellationCheck: cancellationCheck
-            )
+            try? projection(of: entries.values, now: now) { () throws(CancellationError) in
+                if cancellationCheck() { throw CancellationError() }
+            }
         }
 
         /// The projection of one server's conversations, or of direct
@@ -156,19 +164,15 @@ extension AccountReadStateModel {
         func projection(
             scope guildID: GuildID?,
             now: Date = .now
-        ) -> UnreadPresentationProjection? {
-            projection(
-                of: entries.values.lazy.filter { $0.guildID == guildID },
-                now: now
-            )
+        ) -> UnreadPresentationProjection {
+            projection(of: entries.values.lazy.filter { $0.guildID == guildID }, now: now) {}
         }
 
-        private func projection(
+        private func projection<Failure: Error>(
             of scope: some Sequence<Entry>,
             now: Date,
-            cancelsCooperatively: Bool = false,
-            cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
-        ) -> UnreadPresentationProjection? {
+            checkCancellation: () throws(Failure) -> Void
+        ) throws(Failure) -> UnreadPresentationProjection {
             var unreadConversationIDs: Set<ChannelID> = []
             var unreadByChannelID: [ChannelID: Bool] = [:]
             var mentionsByChannelID: [ChannelID: Int] = [:]
@@ -183,11 +187,8 @@ extension AccountReadStateModel {
             mentionsByChannelID.reserveCapacity(scope.underestimatedCount)
 
             for (offset, entry) in scope.enumerated() {
-                if cancelsCooperatively,
-                   offset.isMultiple(of: 64),
-                   cancellationCheck()
-                {
-                    return nil
+                if offset.isMultiple(of: 64) {
+                    try checkCancellation()
                 }
                 let channelID = entry.channelID
                 let isEligible = entry.isAccessible
@@ -224,9 +225,7 @@ extension AccountReadStateModel {
                     unreadConversationIDs.insert(channelID)
                 }
                 totalMentions += channelMentions
-                if entry.kind == .directMessage
-                    || entry.kind == .groupDirectMessage
-                {
+                if entry.kind.isDirectMessage {
                     directMessageUnread = directMessageUnread || channelUnread
                     directMessageMentions += channelMentions
                 }
@@ -239,9 +238,7 @@ extension AccountReadStateModel {
                 {
                     unreadByGuildID[guildID] = true
                 }
-                if isEligible,
-                   entry.countsAsUnreadConversation && isAggregateConversation(entry)
-                    || newForumPostParentID(of: entry) != nil,
+                if isEligible, marksUnreadCategory(entry),
                    let guildID = entry.guildID,
                    let parentID = entry.parentID
                 {
@@ -299,8 +296,7 @@ extension AccountReadStateModel {
         let usesNewNotifications: Bool
 
         func effectivePolicy(for entry: Entry, now: Date) -> EffectivePolicy {
-            let isDirectMessage = entry.kind == .directMessage
-                || entry.kind == .groupDirectMessage
+            let isDirectMessage = entry.kind.isDirectMessage
             let guildSettings = settingsByGuild[entry.guildID]
             let overrides = overridesByGuildAndChannelID[entry.guildID]
             let directOverride = overrides?[entry.channelID]
@@ -313,14 +309,13 @@ extension AccountReadStateModel {
             let categoryOverride = parentIsConversation
                 ? ancestorOverride
                 : parentOverride
-            let guildMuted = guildSettings?.isMuted == true
-                && (guildSettings?.muteConfiguration?.isActive(at: now) ?? true)
-            let directMuted = activeMute(directOverride, now: now)
-            let parentMuted = activeMute(parentOverride, now: now)
+            let guildMuted = guildSettings?.isActivelyMuted(at: now) == true
+            let directMuted = directOverride?.isActivelyMuted(at: now) == true
+            let parentMuted = parentOverride?.isActivelyMuted(at: now) == true
             let inheritedChannelMuted = directMuted
                 || parentMuted
-                || activeMute(ancestorOverride, now: now)
-            let categoryMuted = activeMute(categoryOverride, now: now)
+                || ancestorOverride?.isActivelyMuted(at: now) == true
+            let categoryMuted = categoryOverride?.isActivelyMuted(at: now) == true
             let guildDefault = isDirectMessage
                 ? .allMessages
                 : (entry.guildID.flatMap {
@@ -392,19 +387,19 @@ extension AccountReadStateModel {
             ancestorFlags: UInt64?
         ) -> Bool {
             let channelFlags = directFlags ?? parentFlags ?? ancestorFlags ?? 0
-            let channelIsOptedIn = (directFlags ?? 0) & (1 << 12) != 0
-                || (parentFlags ?? 0) & (1 << 12) != 0
+            let channelIsOptedIn = (directFlags ?? 0) & ChannelNotificationOverride.optInFlag != 0
+                || (parentFlags ?? 0) & ChannelNotificationOverride.optInFlag != 0
             if !isDirectMessage,
-               guildFlags & (1 << 14) != 0,
+               guildFlags & GuildNotificationSettings.optInChannelsFlag != 0,
                !channelIsOptedIn
             {
                 return false
             }
             if !isDirectMessage, !usesNewNotifications { return true }
-            if channelFlags & (1 << 9) != 0 { return false }
-            if channelFlags & (1 << 10) != 0 { return true }
-            if guildFlags & (1 << 12) != 0 { return false }
-            if guildFlags & (1 << 11) != 0 { return true }
+            if channelFlags & ChannelNotificationOverride.unreadOnlyMentionsFlag != 0 { return false }
+            if channelFlags & ChannelNotificationOverride.unreadAllMessagesFlag != 0 { return true }
+            if guildFlags & GuildNotificationSettings.unreadOnlyMentionsFlag != 0 { return false }
+            if guildFlags & GuildNotificationSettings.unreadAllMessagesFlag != 0 { return true }
             return level == .allMessages
         }
 
@@ -412,8 +407,8 @@ extension AccountReadStateModel {
             parentFlags: UInt64,
             level: MessageNotificationLevel
         ) -> Bool {
-            if parentFlags & (1 << 14) != 0 { return true }
-            if parentFlags & (1 << 13) != 0 { return false }
+            if parentFlags & ChannelNotificationOverride.newForumThreadsOnFlag != 0 { return true }
+            if parentFlags & ChannelNotificationOverride.newForumThreadsOffFlag != 0 { return false }
             return level == .allMessages
         }
 
@@ -462,23 +457,10 @@ extension AccountReadStateModel {
             _ entry: Entry,
             channelByID: [ChannelID: Channel]
         ) -> Bool {
-            let resourceFlag: UInt64 = 1 << 7
-            if let channel = channelByID[entry.channelID],
-               channel.flags & resourceFlag != 0
-            {
+            if let channel = channelByID[entry.channelID], channel.isGuildResource {
                 return true
             }
-            let parentFlags = entry.parentID.flatMap { channelByID[$0] }?.flags
-                ?? 0
-            return parentFlags & resourceFlag != 0
-        }
-
-        private func activeMute(
-            _ override: ChannelNotificationOverride?,
-            now: Date
-        ) -> Bool {
-            override?.isMuted == true
-                && (override?.muteConfiguration?.isActive(at: now) ?? true)
+            return entry.parentID.flatMap { channelByID[$0] }?.isGuildResource == true
         }
     }
 

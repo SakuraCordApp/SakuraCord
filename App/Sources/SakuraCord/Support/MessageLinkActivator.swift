@@ -5,7 +5,7 @@ import SakuraCordModels
 @MainActor
 enum MessageLinkActivator {
     static func accessibilityHelp(for url: URL, label: String) -> String {
-        guard let action = SystemMessageLinkAction(url: url) else {
+        guard let action = SystemMessagePresentation.Action(url: url) else {
             return "Open link"
         }
         return switch action {
@@ -42,7 +42,7 @@ enum MessageLinkActivator {
             ExternalLinkConfirmationPresenter.shared.present($0)
         }
     ) -> Bool {
-        if let action = SystemMessageLinkAction(url: url), let model {
+        if let action = SystemMessagePresentation.Action(url: url), let model {
             switch action {
             case .profile(let userID):
                 if let presentSystemProfile,
@@ -128,85 +128,6 @@ extension AppModel {
         } catch {
             guard isCurrentAccountSession(session) else { return }
             errorMessage = error.localizedDescription
-        }
-    }
-
-    func systemMessageRecipient(for message: Message) -> User? {
-        guard message.type == .friendRequestAccepted,
-              let channel = messagePresentationChannelsByID[message.channelID],
-              channel.kind == .directMessage else { return nil }
-        return channel.recipients.first { $0.id != currentUser?.id }
-    }
-
-    func systemMessageUser(
-        userID: UserID,
-        sourceMessage: Message? = nil
-    ) -> User? {
-        let guildID = sourceMessage.map { messagePresentationGuildID(for: $0) } ?? selectedGuildID
-        if let member = profileMember(userID, in: guildID) {
-            return member.user
-        }
-        let sourceUser = sourceMessage.flatMap { message -> User? in
-            if message.author.id == userID { return message.author }
-            return message.mentionedUsers.first { $0.id == userID }
-                ?? systemMessageRecipient(for: message).flatMap { $0.id == userID ? $0 : nil }
-        }
-        return sourceUser
-            ?? (messages + threadMessages).lazy.compactMap { message -> User? in
-                if message.author.id == userID { return message.author }
-                return message.mentionedUsers.first { $0.id == userID }
-            }.first
-            ?? pinnedMessages.items.lazy.compactMap { item -> User? in
-                if item.message.author.id == userID { return item.message.author }
-                return item.message.mentionedUsers.first { $0.id == userID }
-            }.first
-            ?? messageSearch.page?.results.lazy.compactMap { result -> User? in
-                result.messages.lazy.compactMap { message -> User? in
-                    if message.author.id == userID { return message.author }
-                    return message.mentionedUsers.first { $0.id == userID }
-                }.first
-            }.first
-    }
-}
-
-private enum SystemMessageLinkAction {
-    case profile(UserID)
-    case message(GuildID?, ChannelID, MessageID)
-    case pins(ChannelID)
-    case editGroup(ChannelID)
-
-    init?(url: URL) {
-        guard url.scheme == "sakuracord-action" else { return nil }
-        let parts = url.pathComponents.filter { $0 != "/" }
-        switch url.host {
-        case "profile":
-            guard parts.count == 1, let userID = UserID(parts[0]) else { return nil }
-            self = .profile(userID)
-        case "message":
-            guard parts.count == 3,
-                  let channelID = ChannelID(parts[1]),
-                  let messageID = MessageID(parts[2])
-            else { return nil }
-            let guildID: GuildID?
-            if parts[0] == "@me" {
-                guildID = nil
-            } else {
-                guard let parsedGuildID = GuildID(parts[0]) else { return nil }
-                guildID = parsedGuildID
-            }
-            self = .message(
-                guildID,
-                channelID,
-                messageID
-            )
-        case "pins":
-            guard parts.count == 1, let channelID = ChannelID(parts[0]) else { return nil }
-            self = .pins(channelID)
-        case "edit-group":
-            guard parts.count == 1, let channelID = ChannelID(parts[0]) else { return nil }
-            self = .editGroup(channelID)
-        default:
-            return nil
         }
     }
 }

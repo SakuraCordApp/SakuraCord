@@ -4,6 +4,8 @@ import SakuraCordModels
 import SakuraCordPersistence
 
 extension AppModel {
+    /// The conversation a composer can send to right now; unlike
+    /// `composerChannelID(in:)`, nil while the user may not send there.
     func composerSendChannelID(in destination: MessageComposerDestination) -> ChannelID? {
         switch destination {
         case .channel: selectedConversationAccess.canSend ? selectedChannelID : nil
@@ -27,6 +29,24 @@ extension AppModel {
         composer.replyMentionsAuthorChoice
             && (threadReplyingTo == nil || threadReplyingTo?.author.id != currentUser?.id)
     }
+    func replyingTo(in destination: MessageComposerDestination) -> Message? {
+        switch destination {
+        case .channel: replyingTo
+        case .thread: threadReplyingTo
+        }
+    }
+    func setReplyingTo(_ message: Message?, in destination: MessageComposerDestination) {
+        switch destination {
+        case .channel: replyingTo = message
+        case .thread: threadReplyingTo = message
+        }
+    }
+    func replyMentionsAuthor(in destination: MessageComposerDestination) -> Bool {
+        switch destination {
+        case .channel: replyMentionsAuthor
+        case .thread: threadReplyMentionsAuthor
+        }
+    }
     var draft: String {
         get { composer.draft }
         set { composer.draft = newValue }
@@ -35,11 +55,32 @@ extension AppModel {
         get { composer.threadDraft }
         set { composer.threadDraft = newValue }
     }
-    var channelComposerAttachments: [ForumPostAttachment] {
+    /// The conversation a composer writes to.
+    func composerChannelID(in destination: MessageComposerDestination) -> ChannelID? {
+        switch destination {
+        case .channel: selectedChannelID
+        case .thread: openThread?.id
+        }
+    }
+
+    func messages(in destination: MessageComposerDestination) -> [Message] {
+        switch destination {
+        case .channel: messages
+        case .thread: threadMessages
+        }
+    }
+
+    func draft(in destination: MessageComposerDestination) -> String {
+        switch destination {
+        case .channel: draft
+        case .thread: threadDraft
+        }
+    }
+    var channelComposerAttachments: [StagedAttachment] {
         get { composer.channelAttachments }
         set { composer.channelAttachments = newValue }
     }
-    var threadComposerAttachments: [ForumPostAttachment] {
+    var threadComposerAttachments: [StagedAttachment] {
         get { composer.threadAttachments }
         set { composer.threadAttachments = newValue }
     }
@@ -71,16 +112,8 @@ extension AppModel {
         in destination: MessageComposerDestination,
         direction: MessageReplyNavigationDirection
     ) -> Bool {
-        let availableMessages: [Message]
-        let currentReply: Message?
-        switch destination {
-        case .channel:
-            availableMessages = messages
-            currentReply = replyingTo
-        case .thread:
-            availableMessages = threadMessages
-            currentReply = threadReplyingTo
-        }
+        let availableMessages = messages(in: destination)
+        let currentReply = replyingTo(in: destination)
         guard !availableMessages.isEmpty else { return false }
 
         let nextIndex: Int
@@ -110,12 +143,7 @@ extension AppModel {
     }
 
     func cancelReply(in destination: MessageComposerDestination = .channel) {
-        switch destination {
-        case .channel:
-            replyingTo = nil
-        case .thread:
-            threadReplyingTo = nil
-        }
+        setReplyingTo(nil, in: destination)
         NotificationCenter.default.post(
             name: .sakuracordFocusComposer,
             object: destination
@@ -126,11 +154,7 @@ extension AppModel {
     func consumeEscapeForReply(
         in destination: MessageComposerDestination
     ) -> Bool {
-        let hasReply = switch destination {
-        case .channel: replyingTo != nil
-        case .thread: threadReplyingTo != nil
-        }
-        guard hasReply else { return false }
+        guard replyingTo(in: destination) != nil else { return false }
         cancelReply(in: destination)
         return true
     }
@@ -139,16 +163,12 @@ extension AppModel {
         _ mentionsAuthor: Bool,
         in destination: MessageComposerDestination
     ) {
-        let reply = switch destination {
-        case .channel: replyingTo
-        case .thread: threadReplyingTo
-        }
-        guard let reply, reply.author.id != currentUser?.id else { return }
+        guard let reply = replyingTo(in: destination), reply.author.id != currentUser?.id else { return }
         composer.rememberReplyMentionsAuthor(mentionsAuthor)
     }
 
     func updateDraft(_ value: String) {
-        let draftByteDelta = Int64(value.utf8.count - draft.utf8.count)
+        let previous = draft
         draft = value
         reconcileDraftTranslationText(value, in: .channel)
         if value.hasPrefix("/") || commandComposer.activeCommand != nil {
@@ -157,8 +177,14 @@ extension AppModel {
             scheduleLocalTyping(for: value)
         }
         guard let channelID = selectedChannelID else { return }
+        persistDraft(value, replacing: previous, in: channelID)
+    }
+
+    /// Saves a composer's text as its conversation's draft, which returning
+    /// to the conversation restores.
+    private func persistDraft(_ value: String, replacing previous: String, in channelID: ChannelID) {
         LocalStorageBudgetCoordinator.shared.scheduleAdjustment(
-            draftByteDelta: draftByteDelta
+            draftByteDelta: Int64(value.utf8.count - previous.utf8.count)
         )
         quickSwitcherDraftChannelIDs.removeAll { $0 == channelID }
         if !value.isEmpty {
@@ -169,8 +195,24 @@ extension AppModel {
         composer.persistDraft(value, channelID: channelID, database: session.database)
     }
 
+    func storedDraft(
+        in channelID: ChannelID,
+        account: AppModelAccountSession
+    ) async -> String {
+        guard isCurrentAccountSession(account), let database = account.database else { return "" }
+        return (try? await composer.storedDraft(in: channelID, database: database)) ?? ""
+    }
+
+    func updateDraft(_ value: String, in destination: MessageComposerDestination) {
+        switch destination {
+        case .channel: updateDraft(value)
+        case .thread: updateThreadDraft(value)
+        }
+    }
+
     func updateThreadDraft(_ value: String) {
         guard threadCreation?.isSubmitting != true else { return }
+        let previous = threadDraft
         threadDraft = value
         reconcileDraftTranslationText(value, in: .thread)
         guard let thread = openThread else {
@@ -178,6 +220,7 @@ extension AppModel {
             return
         }
         scheduleLocalTyping(for: value, channelID: thread.id)
+        persistDraft(value, replacing: previous, in: thread.id)
     }
 
     func scheduleLocalTyping(for value: String, channelID: ChannelID? = nil) {

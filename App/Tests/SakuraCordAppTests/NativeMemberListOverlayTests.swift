@@ -23,7 +23,7 @@ func `member list recycles animated avatar overlays during scrolling`() {
     #expect(!NativeMemberListCanvasView.requiresAvatarOverlay(for: staticMember))
     #expect(NativeMemberListCanvasView.requiresAvatarOverlay(for: first))
     let canvas = NativeMemberListCanvasView()
-    canvas.updateDocumentIfNeeded(sections: [
+    show([
         MemberSection(
             id: .online,
             title: "Online",
@@ -31,7 +31,7 @@ func `member list recycles animated avatar overlays during scrolling`() {
             totalCount: 2,
             members: [first, second]
         ),
-    ])
+    ], in: canvas)
 
     canvas.installAvatarOverlays(in: 1 ..< 2)
     let firstHost = canvas.avatarOverlays[.member(first.id)]
@@ -53,7 +53,7 @@ func `member list reuses prepared text for unchanged members`() {
     first.user.primaryGuild = PrimaryGuildIdentity(guildID: GuildID(rawValue: 42), tag: "TEST")
     let second = member(id: 2, name: "Second")
     let canvas = NativeMemberListCanvasView()
-    canvas.updateDocumentIfNeeded(sections: [
+    show([
         MemberSection(
             id: .online,
             title: "Online",
@@ -61,11 +61,11 @@ func `member list reuses prepared text for unchanged members`() {
             totalCount: 1,
             members: [first]
         ),
-    ])
+    ], in: canvas)
     let firstPrepared = canvas.preparedText[.member(first.id)]
     let firstPreparedName = firstPrepared?.name
 
-    canvas.updateDocumentIfNeeded(sections: [
+    show([
         MemberSection(
             id: .online,
             title: "Online",
@@ -73,7 +73,7 @@ func `member list reuses prepared text for unchanged members`() {
             totalCount: 2,
             members: [first, second]
         ),
-    ])
+    ], in: canvas)
     #expect(canvas.preparedText[.member(first.id)]?.name === firstPreparedName)
     #expect(canvas.preparedText[.member(second.id)] != nil)
     #expect(canvas.preparedText[.member(first.id)] === firstPrepared)
@@ -82,7 +82,7 @@ func `member list reuses prepared text for unchanged members`() {
     // A tag identity update must invalidate its prepared content even when
     // the member's display name and row position remain unchanged.
     first.user.primaryGuild = PrimaryGuildIdentity(guildID: GuildID(rawValue: 43), tag: "NEW")
-    canvas.updateDocumentIfNeeded(sections: [
+    show([
         MemberSection(
             id: .online,
             title: "Online",
@@ -90,7 +90,7 @@ func `member list reuses prepared text for unchanged members`() {
             totalCount: 2,
             members: [first, second]
         ),
-    ])
+    ], in: canvas)
     #expect(canvas.preparedText[.member(first.id)] !== firstPrepared)
     #expect(canvas.preparedText[.member(first.id)]?.serverTag?.identity == first.user.primaryGuild)
 }
@@ -132,7 +132,7 @@ func `member list patches stable gateway slots without rebuilding layout`() {
     second.memberListIndex = 13
     let inferred = member(id: 9, name: "Inferred")
     let canvas = NativeMemberListCanvasView()
-    canvas.updateDocumentIfNeeded(sections: [
+    show([
         MemberSection(
             id: .online,
             title: "Online",
@@ -141,7 +141,7 @@ func `member list patches stable gateway slots without rebuilding layout`() {
             members: [first],
             gatewayStartIndex: 10
         ),
-    ])
+    ], in: canvas)
     let originalOrigins = canvas.origins
     let firstPreparedName = canvas.preparedText[.member(first.id)]?.name
 
@@ -226,9 +226,9 @@ func `member list cursor rebuild handles server tags outside the viewport`() thr
     let scrollView = NSScrollView(frame: CGRect(x: 0, y: 0, width: 300, height: 100))
     scrollView.documentView = canvas
     canvas.serverTagCardModel = model
-    canvas.updateDocumentIfNeeded(sections: [
+    show([
         MemberSection(id: .online, title: "Online", colorHex: nil, totalCount: 1, members: [taggedMember]),
-    ])
+    ], in: canvas)
     defer { canvas.tearDown() }
 
     let index = try #require(canvas.itemIndexesByID[.member(taggedMember.id)])
@@ -265,4 +265,15 @@ private func member(
         roleName: "Member",
         status: .online
     )
+}
+
+/// Prepares and applies a document the way the coordinator does.
+@MainActor
+private func show(_ sections: [MemberSection], in canvas: NativeMemberListCanvasView) {
+    guard let document = NativeMemberListCanvasView.prepareDocument(
+        sections: sections,
+        presentation: canvas.presentation,
+        reusing: canvas.preparationSnapshot()
+    ) else { return }
+    canvas.applyPreparedDocument(document)
 }

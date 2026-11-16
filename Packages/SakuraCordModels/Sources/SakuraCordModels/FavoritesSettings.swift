@@ -53,7 +53,7 @@ public struct FavoritesSettings: Equatable, Sendable {
         /// Voice and stage favourites follow the others in each section, and
         /// local favourites follow the synced ones.
         var sortKey: UInt64 {
-            UInt64(position) + (channelType == 2 || channelType == 13 ? 10_000 : 0) + (isLocal ? 1 << 32 : 0)
+            UInt64(position) + (channelType == DiscordChannelType.voice || channelType == DiscordChannelType.stageVoice ? 10_000 : 0) + (isLocal ? 1 << 32 : 0)
         }
     }
 
@@ -136,7 +136,7 @@ public struct FavoritesSettings: Equatable, Sendable {
     /// channel limit from 3 to 200; categories don't count.
     public func limitBlockingAddition(premiumType: Int) -> Int? {
         if entries.count >= Self.maximumEntries { return Self.maximumEntries }
-        let limit = premiumType == 2 ? Self.maximumEntries : 3
+        let limit = premiumType == DiscordPremiumType.nitro ? Self.maximumEntries : 3
         return entries.count(where: { !$0.isCategory }) >= limit ? limit : nil
     }
 

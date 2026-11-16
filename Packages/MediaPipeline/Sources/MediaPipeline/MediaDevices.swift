@@ -3,7 +3,20 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
-public struct AudioDeviceInfo: Identifiable, Equatable, Sendable {
+/// A device a picker lists, with the system default marked.
+public protocol MediaDevice {
+    var name: String { get }
+    var isDefault: Bool { get }
+}
+
+public extension Array where Element: MediaDevice {
+    /// A device menu's System Default entry, naming the device it stands for.
+    var systemDefaultLabel: String {
+        first(where: \.isDefault).map { "System Default (\($0.name))" } ?? "System Default"
+    }
+}
+
+public struct AudioDeviceInfo: MediaDevice, Identifiable, Equatable, Sendable {
     public var id: AudioDeviceID
     public var uid: String
     public var name: String
@@ -23,23 +36,9 @@ public struct AudioDeviceInfo: Identifiable, Equatable, Sendable {
         self.isDefault = isDefault
         self.transportType = transportType
     }
-
-    public var isBluetooth: Bool {
-        transportType == kAudioDeviceTransportTypeBluetooth
-            || transportType == kAudioDeviceTransportTypeBluetoothLE
-    }
-
-    public var isBuiltIn: Bool {
-        transportType == kAudioDeviceTransportTypeBuiltIn
-    }
-
-    public var isVirtual: Bool {
-        transportType == kAudioDeviceTransportTypeVirtual
-            || transportType == kAudioDeviceTransportTypeAggregate
-    }
 }
 
-public struct CameraDeviceInfo: Identifiable, Equatable, Sendable {
+public struct CameraDeviceInfo: MediaDevice, Identifiable, Equatable, Sendable {
     public var id: String {
         uniqueID
     }
@@ -131,12 +130,6 @@ public enum MediaDeviceCatalog {
         return AVCaptureDevice(uniqueID: uid)
     }
 
-    public static func selectInput(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
-        try engine.inputNode.withAudioUnit { audioUnit throws(MediaDeviceError) in
-            try select(deviceID, on: audioUnit)
-        }
-    }
-
     public static func selectOutput(
         _ deviceID: AudioDeviceID,
         on engine: AVAudioEngine,
@@ -166,10 +159,6 @@ public enum MediaDeviceCatalog {
 
     public static func defaultOutputSampleRate() -> Double? {
         try? AudioHardwareSystem.shared.defaultOutputDevice?.nominalSampleRate
-    }
-
-    public static func defaultInputDeviceID() -> AudioDeviceID? {
-        try? AudioHardwareSystem.shared.defaultInputDevice?.id
     }
 
     private static func select(_ deviceID: AudioDeviceID, on audioUnit: AudioUnit?) throws(MediaDeviceError) {

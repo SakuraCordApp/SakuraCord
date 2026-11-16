@@ -144,8 +144,15 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
 
     public var requiresOnboarding: Bool {
         guard let flags else { return false }
-        return flags & 8 != 0 && flags & 2 == 0
+        return flags & 8 != 0 && !hasCompletedOnboarding
     }
+
+    /// Discord's `COMPLETED_ONBOARDING` member flag.
+    public var hasCompletedOnboarding: Bool { (flags ?? 0) & 2 != 0 }
+    /// Discord's `IS_GUEST` member flag.
+    public var isGuest: Bool { (flags ?? 0) & 16 != 0 }
+    /// The AutoMod quarantine member flags.
+    public var isQuarantined: Bool { (flags ?? 0) & (128 | 256 | 1024) != 0 }
     public var hasCompletedGuildGuide: Bool { (flags ?? 0) & 64 != 0 }
     public var joinedAt: Date?
     /// Absolute row index in Discord's virtualized guild member list. This is

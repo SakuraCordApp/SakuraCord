@@ -36,7 +36,7 @@ struct ServerInviteCreationView: View {
                     .clipped()
                 } else {
                     ServerInviteSettingsForm(settings: Bindable(store).settings,
-                                             allowsNever: guild?.features.contains("COMMUNITY") == true)
+                                             allowsNever: guild?.features.contains(GuildFeature.community) == true)
                         .disabled(store.isCreating)
                 }
             }

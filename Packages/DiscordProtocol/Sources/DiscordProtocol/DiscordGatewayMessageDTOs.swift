@@ -212,18 +212,15 @@ struct GatewayInteractionModalDTO: Decodable {
     /// interaction's own context because the event does not carry it.
     func modal(invocationGuildID: GuildID?) -> InteractionModal? {
         guard let applicationIdentifier, let channelID = ChannelID(channelID) else { return nil }
-        let iconURL = application?.icon.flatMap { hash in
-            URL(string: "https://cdn.discordapp.com/app-icons/\(applicationIdentifier)/\(hash).webp?size=64")
-        }
         return InteractionModal(
             interactionID: id,
             openingNonce: nonce?.value ?? "",
             application: ApplicationCommandApplication(
                 id: applicationIdentifier,
                 name: application?.name ?? "Application",
-                description: application?.description ?? "",
-                iconURL: iconURL,
-                bot: application?.bot.flatMap { try? $0.domain() }
+                description: application?.description,
+                icon: application?.icon,
+                bot: application?.bot
             ),
             channelID: channelID,
             guildID: guildID.flatMap(GuildID.init) ?? invocationGuildID,
@@ -233,6 +230,16 @@ struct GatewayInteractionModalDTO: Decodable {
                 $0.element.modalNode(path: "modal.\($0.offset)")
             },
             resolved: resolved?.domain ?? ModalResolvedEntities()
+        )
+    }
+}
+
+private extension ApplicationCommandApplication {
+    init(id: String, name: String, description: String?, icon: String?, bot: UserDTO?) {
+        self.init(
+            id: id, name: name, description: description ?? "",
+            iconURL: icon.flatMap { DiscordCDN.applicationIcon(id, hash: $0) },
+            bot: bot.flatMap { try? $0.domain() }
         )
     }
 }
@@ -274,12 +281,7 @@ struct MessageDTO: Decodable {
         func domain(guildID: GuildID?, userID: UserID) -> MessageGuildMember {
             let nickname = nick?.trimmingCharacters(in: .whitespacesAndNewlines)
             let avatarURL = avatar.flatMap { hash in
-                guildID.flatMap {
-                    URL(
-                        string:
-                        "https://cdn.discordapp.com/guilds/\($0)/users/\(userID)/avatars/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                    )
-                }
+                guildID.flatMap { DiscordCDN.guildMemberAvatar($0, userID: userID, hash: hash) }
             }
             return MessageGuildMember(
                 nickname: nickname?.isEmpty == false ? nickname : nil,
@@ -297,15 +299,7 @@ struct MessageDTO: Decodable {
         var bot: UserDTO?
 
         var domain: ApplicationCommandApplication {
-            ApplicationCommandApplication(
-                id: id,
-                name: name,
-                description: description ?? "",
-                iconURL: icon.flatMap {
-                    URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).webp?size=64")
-                },
-                bot: bot.flatMap { try? $0.domain() }
-            )
+            ApplicationCommandApplication(id: id, name: name, description: description, icon: icon, bot: bot)
         }
     }
 
@@ -337,6 +331,22 @@ struct MessageDTO: Decodable {
             case applicationID = "application_id"
             case originalResponseMessageID = "original_response_message_id"
         }
+    }
+
+    /// `interaction_metadata` wins field by field over the legacy `interaction`.
+    static func mergedInteractionMetadata(
+        _ source: InteractionMetadataDTO?, legacy interaction: InteractionDTO?, applicationIDFallback: String?
+    ) -> MessageInteractionMetadata? {
+        guard interaction != nil || source != nil else { return nil }
+        return MessageInteractionMetadata(
+            id: source?.id ?? interaction?.id,
+            type: source?.type ?? interaction?.type ?? 2,
+            name: source?.name ?? interaction?.name,
+            localizedName: source?.localizedName ?? interaction?.localizedName,
+            user: (source?.user ?? interaction?.user).flatMap { try? $0.domain() },
+            applicationID: source?.applicationID ?? applicationIDFallback,
+            originalResponseMessageID: source?.originalResponseMessageID.flatMap(MessageID.init)
+        )
     }
 
     struct ReferenceDTO: Decodable {
@@ -544,19 +554,9 @@ struct MessageDTO: Decodable {
         guard let author else {
             throw ChatProviderError.invalidRequest("Discord returned a message without an author.")
         }
-        let metadata: MessageInteractionMetadata? = {
-            guard interaction != nil || interactionMetadata != nil else { return nil }
-            let source = interactionMetadata
-            return MessageInteractionMetadata(
-                id: source?.id ?? interaction?.id,
-                type: source?.type ?? interaction?.type ?? 2,
-                name: source?.name ?? interaction?.name,
-                localizedName: source?.localizedName ?? interaction?.localizedName,
-                user: (source?.user ?? interaction?.user).flatMap { try? $0.domain() },
-                applicationID: source?.applicationID ?? applicationID ?? application?.id,
-                originalResponseMessageID: source?.originalResponseMessageID.flatMap(MessageID.init)
-            )
-        }()
+        let metadata = Self.mergedInteractionMetadata(
+            interactionMetadata, legacy: interaction, applicationIDFallback: applicationID ?? application?.id
+        )
         let resolvedGuildID = guildID.flatMap(GuildID.init)
         var resolvedAuthor = try author.domain()
         let resolvedMember = member?.domain(guildID: resolvedGuildID, userID: resolvedAuthor.id)
@@ -750,18 +750,6 @@ struct ForumThreadSearchResponseDTO: Decodable {
             post.owner = post.owner ?? post.firstMessage?.author
             return post
         }
-    }
-}
-
-enum RichMessageFixtureDecoder {
-    static func decodeMessage(from data: Data) throws -> Message {
-        try JSONDecoder().decode(MessageDTO.self, from: data).domain()
-    }
-
-    static func mergeUpdate(from data: Data, into message: Message) throws -> Message {
-        var result = message
-        try JSONDecoder().decode(MessageUpdateDTO.self, from: data).apply(to: &result)
-        return result
     }
 }
 

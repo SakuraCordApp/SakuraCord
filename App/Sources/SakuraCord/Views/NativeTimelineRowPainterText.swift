@@ -1,26 +1,8 @@
 import AppKit
-import AVFoundation
-import Combine
 import CoreText
-import ImageIO
-import Lottie
-import QuartzCore
 import SakuraCordModels
-import SwiftUI
 
 extension NativeTimelineRowPainter {
-    private struct SingleLineTextInput {
-        let sourceLine: CTLine
-        let sourceWidth: CGFloat
-        let frame: CGRect
-        let font: NSFont
-        let color: NSColor
-        let alignment: NSTextAlignment
-        let lineBreakMode: NSLineBreakMode
-        let concealedSpoilerRanges: [NSRange]
-        let context: CGContext
-    }
-
     static func mediaPlayGlyph(in frame: CGRect) {
         let diameter: CGFloat = 50
         let circle = CGRect(
@@ -78,32 +60,65 @@ extension NativeTimelineRowPainter {
         if !concealedSpoilerRanges.isEmpty {
             let concealed = NSMutableAttributedString(attributedString: attributed as NSAttributedString)
             for range in concealedSpoilerRanges {
-                NativeTimelineSpoilerAppearance.concealText(in: concealed, range: range)
+                SpoilerAppearance.concealText(in: concealed, range: range)
             }
             attributed = concealed as CFAttributedString
         }
         let sourceLine = CTLineCreateWithAttributedString(attributed)
-        let sourceWidth = CGFloat(CTLineGetTypographicBounds(sourceLine, nil, nil, nil))
         let usesSingleLine = !value.contains("\n")
-            && (lineBreakMode != .byWordWrapping || sourceWidth <= frame.width)
+            && (lineBreakMode != .byWordWrapping
+                || CGFloat(CTLineGetTypographicBounds(sourceLine, nil, nil, nil)) <= frame.width)
         if usesSingleLine {
-            drawSingleLineText(SingleLineTextInput(
-                sourceLine: sourceLine,
-                sourceWidth: sourceWidth,
-                frame: frame,
+            singleLineText(
+                sourceLine,
+                in: frame,
                 font: font,
                 color: color,
                 alignment: alignment,
                 lineBreakMode: lineBreakMode,
                 concealedSpoilerRanges: concealedSpoilerRanges,
                 context: context
-            ))
+            )
         } else {
             drawMultilineText(attributed, in: frame, context: context)
         }
     }
 
-    private static func coreTextValue(
+    /// Draws `sourceLine` truncated to `frame`, its concealed spoilers
+    /// boxed, and returns where the line was placed.
+    @discardableResult
+    static func singleLineText(
+        _ sourceLine: CTLine,
+        in frame: CGRect,
+        font: NSFont,
+        color: NSColor,
+        alignment: NSTextAlignment = .left,
+        lineBreakMode: NSLineBreakMode = .byTruncatingTail,
+        concealedSpoilerRanges: [NSRange] = [],
+        context: CGContext
+    ) -> CoreTextLinePlacement {
+        let line = CoreTextLinePlacement.truncating(
+            sourceLine,
+            width: CGFloat(CTLineGetTypographicBounds(sourceLine, nil, nil, nil)),
+            to: frame.width,
+            truncation: truncation(for: lineBreakMode)
+        ) {
+            CTLineCreateWithAttributedString(CFAttributedStringCreate(
+                nil,
+                "…" as CFString,
+                [
+                    kCTFontAttributeName: font as CTFont,
+                    kCTForegroundColorAttributeName: color.cgColor,
+                ] as CFDictionary
+            )!)
+        }
+        let placement = CoreTextLinePlacement(line, in: frame, alignment: coreTextAlignment(alignment))
+        drawConcealedSpoilers(concealedSpoilerRanges, in: sourceLine, placement: placement, frame: frame)
+        placement.draw(in: frame, context: context)
+        return placement
+    }
+
+    static func coreTextValue(
         _ value: String,
         font: NSFont,
         color: NSColor,
@@ -111,13 +126,7 @@ extension NativeTimelineRowPainter {
         lineBreakMode: NSLineBreakMode,
         isInteractiveHovered: Bool
     ) -> CFAttributedString {
-        var textAlignment: CTTextAlignment = switch alignment {
-        case .center: .center
-        case .right: .right
-        case .justified: .justified
-        case .natural: .natural
-        default: .left
-        }
+        var textAlignment = coreTextAlignment(alignment)
         var breakMode: CTLineBreakMode = switch lineBreakMode {
         case .byCharWrapping: .byCharWrapping
         case .byClipping: .byClipping
@@ -163,92 +172,53 @@ extension NativeTimelineRowPainter {
         )!
     }
 
-    private static func drawSingleLineText(_ input: SingleLineTextInput) {
-        let sourceLine = input.sourceLine
-        let sourceWidth = input.sourceWidth
-        let frame = input.frame
-        let font = input.font
-        let color = input.color
-        let alignment = input.alignment
-        let lineBreakMode = input.lineBreakMode
-        let context = input.context
-        let line = truncatedLine(
-            sourceLine,
-            sourceWidth: sourceWidth,
-            maximumWidth: frame.width,
-            font: font,
-            color: color,
-            lineBreakMode: lineBreakMode
-        )
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
-        let horizontalPosition: CGFloat = switch alignment {
-        case .center: max(0, (frame.width - lineWidth) / 2)
-        case .right: max(0, frame.width - lineWidth)
-        default: 0
+    private static func coreTextAlignment(_ alignment: NSTextAlignment) -> CTTextAlignment {
+        switch alignment {
+        case .center: .center
+        case .right: .right
+        case .justified: .justified
+        case .natural: .natural
+        default: .left
         }
-        let baseline = max(descent, (frame.height - ascent - descent - leading) / 2 + descent)
-        for range in input.concealedSpoilerRanges {
+    }
+
+    private static func truncation(for lineBreakMode: NSLineBreakMode) -> CTLineTruncationType? {
+        switch lineBreakMode {
+        case .byTruncatingHead: .start
+        case .byTruncatingMiddle: .middle
+        case .byTruncatingTail: .end
+        default: nil
+        }
+    }
+
+    private static func drawConcealedSpoilers(
+        _ ranges: [NSRange],
+        in sourceLine: CTLine,
+        placement: CoreTextLinePlacement,
+        frame: CGRect
+    ) {
+        for range in ranges {
             let startX = CTLineGetOffsetForStringIndex(sourceLine, range.location, nil)
             let endX = min(
                 CTLineGetOffsetForStringIndex(sourceLine, NSMaxRange(range), nil),
-                lineWidth
+                placement.width
             )
             guard endX > startX else { continue }
             let fragment = CGRect(
-                x: frame.minX + horizontalPosition + startX,
-                y: frame.maxY - baseline - ascent,
+                x: frame.minX + placement.horizontalPosition + startX,
+                y: frame.maxY - placement.baseline - placement.ascent,
                 width: endX - startX,
-                height: ascent + descent
+                height: placement.ascent + placement.descent
             )
             let box = NativeTimelineTextSpoilerGeometry.coverFrame(fragment, clippedTo: frame)
             guard !box.isNull else { continue }
-            NativeTimelineSpoilerAppearance.hiddenColor.setFill()
+            SpoilerAppearance.hiddenColor.setFill()
             NSBezierPath(
                 roundedRect: box,
-                xRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
-                yRadius: NativeTimelineSpoilerAppearance.textCornerRadius
+                xRadius: SpoilerAppearance.textCornerRadius,
+                yRadius: SpoilerAppearance.textCornerRadius
             ).fill()
         }
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        context.textPosition = CGPoint(x: horizontalPosition, y: baseline)
-        CTLineDraw(line, context)
-        context.restoreGState()
-    }
-
-    private static func truncatedLine(
-        _ sourceLine: CTLine,
-        sourceWidth: CGFloat,
-        maximumWidth: CGFloat,
-        font: NSFont,
-        color: NSColor,
-        lineBreakMode: NSLineBreakMode
-    ) -> CTLine {
-        guard sourceWidth > maximumWidth,
-              lineBreakMode == .byTruncatingHead
-                || lineBreakMode == .byTruncatingMiddle
-                || lineBreakMode == .byTruncatingTail
-        else { return sourceLine }
-        let token = CTLineCreateWithAttributedString(CFAttributedStringCreate(
-            nil,
-            "…" as CFString,
-            [
-                kCTFontAttributeName: font as CTFont,
-                kCTForegroundColorAttributeName: color.cgColor,
-            ] as CFDictionary
-        )!)
-        let truncation: CTLineTruncationType = switch lineBreakMode {
-        case .byTruncatingHead: .start
-        case .byTruncatingMiddle: .middle
-        default: .end
-        }
-        return CTLineCreateTruncatedLine(sourceLine, Double(maximumWidth), truncation, token)
-            ?? sourceLine
     }
 
     private static func drawMultilineText(
@@ -256,23 +226,12 @@ extension NativeTimelineRowPainter {
         in frame: CGRect,
         context: CGContext
     ) {
-        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
-        let path = CGPath(
-            rect: CGRect(origin: .zero, size: frame.size),
-            transform: nil
+        let textFrame = coreTextFrame(
+            value: attributed as NSAttributedString,
+            framesetter: CTFramesetterCreateWithAttributedString(attributed),
+            size: frame.size
         )
-        let textFrame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: 0),
-            path,
-            nil
-        )
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        CTFrameDraw(textFrame, context)
-        context.restoreGState()
+        context.drawCoreText(in: frame) { CTFrameDraw(textFrame, $0) }
     }
 
     static func attributedText(
@@ -286,57 +245,15 @@ extension NativeTimelineRowPainter {
         spoilerHoverProgress: [Int: CGFloat] = [:],
         revealedSpoilerLocations: Set<Int> = []
     ) {
-        var drawingFrame = frame
-        drawingFrame.size.height += box.layoutHeightAdjustment
-        attributedText(
-            box.value,
-            framesetter: box.framesetter,
-            in: drawingFrame,
-            model: model,
-            bubble: bubble,
-            selectionRange: selectionRange,
-            hoveredMentionCharacterIndex:
-                hoveredMentionCharacterIndex,
-            hoveredLinkCharacterIndex:
-                hoveredLinkCharacterIndex,
-            spoilerHoverProgress:
-                spoilerHoverProgress,
-            revealedSpoilerLocations: revealedSpoilerLocations
-        )
-    }
-
-    static func attributedText(
-        _ value: NSAttributedString,
-        in frame: CGRect,
-        model: AppModel?
-    ) {
-        attributedText(
-            value,
-            framesetter: CTFramesetterCreateWithAttributedString(value),
-            in: frame,
-            model: model
-        )
-    }
-
-    static func attributedText(
-        _ value: NSAttributedString,
-        framesetter: CTFramesetter,
-        in frame: CGRect,
-        model: AppModel?,
-        bubble: NativeTimelineBubbleRegion? = nil,
-        selectionRange: NSRange? = nil,
-        hoveredMentionCharacterIndex: Int? = nil,
-        hoveredLinkCharacterIndex: Int? = nil,
-        spoilerHoverProgress: [Int: CGFloat] = [:],
-        revealedSpoilerLocations: Set<Int> = []
-    ) {
+        let value = box.value
+        let frame = box.drawingFrame(frame)
         guard frame.width > 0, frame.height > 0,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
         let isOutgoingBubble = bubble?.isOutgoing == true
         var (drawingValue, drawingFramesetter) = preparedDrawingText(
             value,
-            framesetter: framesetter,
+            framesetter: box.framesetter,
             hoveredLinkCharacterIndex: hoveredLinkCharacterIndex,
             underlinesLinks: model?.accessibilitySettings.underlinesLinks == true,
             revealedSpoilerLocations: revealedSpoilerLocations
@@ -350,28 +267,22 @@ extension NativeTimelineRowPainter {
             selected.addAttribute(.foregroundColor, value: textColor, range: range)
             for spoiler in NativeTimelineTextSpoilers.ranges(in: value)
                 where !revealedSpoilerLocations.contains(spoiler.location) {
-                NativeTimelineSpoilerAppearance.concealText(in: selected, range: spoiler)
+                SpoilerAppearance.concealText(in: selected, range: spoiler)
             }
             drawingValue = selected
             drawingFramesetter = CTFramesetterCreateWithAttributedString(selected)
         }
-        let path = CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil)
-        let textFrame = CTFramesetterCreateFrame(
-            drawingFramesetter,
-            CFRange(location: 0, length: drawingValue.length),
-            path,
-            nil
-        )
+        let textFrame = coreTextFrame(value: drawingValue, framesetter: drawingFramesetter, size: frame.size)
         drawMarkdownBlocks(
             in: textFrame,
             outerFrame: frame,
             attributedText: drawingValue,
             spoilerHoverProgress: spoilerHoverProgress
         )
-        NativeTimelineSpoilerAppearance.revealedTextColor.setFill()
+        SpoilerAppearance.revealedTextColor.setFill()
         for range in NativeTimelineTextSpoilers.ranges(in: value) where revealedSpoilerLocations.contains(range.location) {
             for rect in NativeTimelineTextSpoilerGeometry.rects(in: textFrame, outerFrame: frame, range: range) {
-                NSBezierPath(concentricRoundedRect: rect, cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius).fill()
+                NSBezierPath(concentricRoundedRect: rect, cornerRadius: SpoilerAppearance.textCornerRadius).fill()
             }
         }
         drawTextSelection(
@@ -380,12 +291,7 @@ extension NativeTimelineRowPainter {
             outerFrame: frame,
             attributedText: drawingValue
         )
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        CTFrameDraw(textFrame, context)
-        context.restoreGState()
+        context.drawCoreText(in: frame) { CTFrameDraw(textFrame, $0) }
         drawInlineAttachments(
             in: textFrame,
             outerFrame: frame,
@@ -428,7 +334,7 @@ extension NativeTimelineRowPainter {
             if revealedSpoilerLocations.contains(range.location) {
                 drawing.removeAttribute(.discordMarkdownSpoiler, range: range)
             } else {
-                NativeTimelineSpoilerAppearance.concealText(in: drawing, range: range)
+                SpoilerAppearance.concealText(in: drawing, range: range)
             }
         }
         return (drawing, CTFramesetterCreateWithAttributedString(drawing))
@@ -601,18 +507,18 @@ extension NativeTimelineRowPainter {
 
     private static func drawInlineCodeDecorations(_ rects: [CGRect]) {
         for inlineRect in rects {
-            drawCodeChrome(in: inlineRect.insetBy(dx: 0, dy: InterfaceScale.metric(1)))
+            MarkdownBlockChrome.drawCode(in: inlineRect.insetBy(dx: 0, dy: InterfaceScale.metric(1)))
         }
     }
 
     private static func drawSpoilerDecorations(_ rects: [(CGRect, CGFloat)]) {
         for (spoilerRect, hover) in rects {
             let backgroundFrame = spoilerRect
-            NativeTimelineSpoilerAppearance.textBackgroundColor(hover: hover).setFill()
+            SpoilerAppearance.textBackgroundColor(hover: hover).setFill()
             NSBezierPath(
                 concentricRoundedRect: backgroundFrame,
                 cornerRadius:
-                    NativeTimelineSpoilerAppearance.textCornerRadius
+                    SpoilerAppearance.textCornerRadius
             ).fill()
         }
     }
@@ -621,26 +527,14 @@ extension NativeTimelineRowPainter {
         _ codeBlocks: [NativeTimelineCodeBlockRegion]
     ) {
         for codeBlock in codeBlocks {
-            drawCodeChrome(in: codeBlock.backgroundFrame)
+            MarkdownBlockChrome.drawCode(in: codeBlock.backgroundFrame)
         }
-    }
-
-    /// Discord's code chrome, which inline code and code blocks share.
-    static func drawCodeChrome(in rect: CGRect) {
-        let radius = NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
-        discordCodeBackgroundColor.setFill()
-        NSBezierPath(concentricRoundedRect: rect, cornerRadius: radius).fill()
-        discordCodeBorderColor.setStroke()
-        let border = NSBezierPath(concentricRoundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: radius)
-        border.lineWidth = 1
-        border.stroke()
     }
 
     /// Discord centers its 5.5 px disc 12 px before the item text, which
     /// starts one 16 px gutter after the marker, and hollows nested ones.
     private static func drawListMarkerDecorations(_ markers: [ListMarker]) {
         for marker in markers {
-            (marker.isQuoted ? NSColor.secondaryLabelColor : NSColor.labelColor).set()
             let diameter = 5.5 * marker.em
             let disc = CGRect(
                 x: marker.frame.minX + 4 * marker.em - diameter / 2,
@@ -648,41 +542,14 @@ extension NativeTimelineRowPainter {
                 width: diameter,
                 height: diameter
             )
-            if marker.isNested {
-                let ring = NSBezierPath(ovalIn: disc.insetBy(dx: 0.5, dy: 0.5))
-                ring.lineWidth = 1
-                ring.stroke()
-            } else {
-                NSBezierPath(ovalIn: disc).fill()
-            }
+            MarkdownBlockChrome.drawListMarker(
+                in: disc, color: marker.isQuoted ? .secondaryLabelColor : .labelColor, isHollow: marker.isNested
+            )
         }
     }
 
     private static func drawQuoteDecorations(_ bars: [CGRect]) {
-        bars.forEach(drawQuoteBar(in:))
-    }
-
-    /// Discord's fully rounded quote bar.
-    static func drawQuoteBar(in bar: CGRect) {
-        NSColor.tertiaryLabelColor.setFill()
-        NSBezierPath(roundedRect: bar, xRadius: bar.width / 2, yRadius: bar.width / 2).fill()
-    }
-
-    /// Discord tints code with its blurple and outlines it in a translucent
-    /// gray, so both read on any background and in either appearance.
-    static let discordCodeBackgroundColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 89 / 255, green: 102 / 255, blue: 242 / 255, alpha: 0.08)
-            : NSColor(srgbRed: 77 / 255, green: 102 / 255, blue: 230 / 255, alpha: 0.04)
-    }
-
-    static let discordCodeBorderColor = NSColor(name: nil) { appearance in
-        NSColor(
-            srgbRed: 150 / 255,
-            green: 150 / 255,
-            blue: 160 / 255,
-            alpha: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.2 : 0.4
-        )
+        bars.forEach(MarkdownBlockChrome.drawQuoteBar(in:))
     }
 
     enum InlineAttachmentDraw {
@@ -745,14 +612,6 @@ extension NativeTimelineRowPainter {
         model: AppModel?,
         selectionRange: NSRange?
     ) -> [InlineAttachmentDraw] {
-        let lines = CTFrameGetLines(textFrame) as NSArray
-        guard lines.count > 0 else { return [] }
-        var origins = Array(repeating: CGPoint.zero, count: lines.count)
-        CTFrameGetLineOrigins(
-            textFrame,
-            CFRange(location: 0, length: lines.count),
-            &origins
-        )
         var draws: [InlineAttachmentDraw] = []
         draws.reserveCapacity(4)
         let context = InlineAttachmentContext(
@@ -763,28 +622,16 @@ extension NativeTimelineRowPainter {
             selectionRange: selectionRange
         )
 
-        for index in 0 ..< lines.count {
-            let line = coreTextLine(lines[index])
-            let lineOrigin = origins[index]
-            let runs = CTLineGetGlyphRuns(line) as NSArray
-            for case let run as CTRun in runs {
-                if let draw = inlineAttachmentDraw(
-                    for: run,
-                    line: line,
-                    lineOrigin: lineOrigin,
-                    context: context
-                ) {
-                    draws.append(draw)
-                }
+        for glyphRun in CoreTextFrameLayout(textFrame: textFrame).runs {
+            if let draw = inlineAttachmentDraw(for: glyphRun, context: context) {
+                draws.append(draw)
             }
         }
         return draws
     }
 
     private static func inlineAttachmentDraw(
-        for run: CTRun,
-        line: CTLine,
-        lineOrigin: CGPoint,
+        for glyphRun: CoreTextFrameLayout.Run,
         context: InlineAttachmentContext
     ) -> InlineAttachmentDraw? {
         let textFrame = context.textFrame
@@ -792,7 +639,7 @@ extension NativeTimelineRowPainter {
         let attributedText = context.attributedText
         let model = context.model
         let selectionRange = context.selectionRange
-        let range = CTRunGetStringRange(run)
+        let range = glyphRun.stringRange
         guard range.location >= 0, range.location < attributedText.length else { return nil }
         let mention = attributedText.attribute(
             .nativeTimelineMention,
@@ -811,20 +658,7 @@ extension NativeTimelineRowPainter {
             effectiveRange: nil
         ) != nil
         guard !isHiddenSpoiler else { return nil }
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        let width = CGFloat(CTRunGetTypographicBounds(
-            run, CFRange(location: 0, length: 0), &ascent, &descent, nil
-        ))
-        let horizontalOffset = lineOrigin.x
-            + CTLineGetOffsetForStringIndex(line, range.location, nil)
-        let size = CGSize(width: max(1, width), height: max(1, ascent + descent))
-        let frame = CGRect(
-            x: outerFrame.minX + horizontalOffset,
-            y: outerFrame.maxY - (lineOrigin.y - descent) - size.height,
-            width: size.width,
-            height: size.height
-        )
+        let frame = glyphRun.frame(in: outerFrame)
         let selectionFrame = inlineAttachmentSelectionFrame(
             range: range,
             selectionRange: selectionRange,
@@ -840,6 +674,17 @@ extension NativeTimelineRowPainter {
               let image = inlineEmojiImage(token: emojiToken, model: model)
         else { return .emojiFallback(frame, selectionFrame: selectionFrame) }
         return .image(image, frame, selectionFrame: selectionFrame)
+    }
+
+    /// Stands in for a custom emoji whose image has not loaded.
+    static func drawEmojiFallback(in frame: CGRect) {
+        text(
+            "🙂",
+            in: frame,
+            font: .systemFont(ofSize: max(11, frame.height * 0.8)),
+            color: .labelColor,
+            alignment: .center
+        )
     }
 
     private static func inlineAttachmentSelectionFrame(
@@ -876,13 +721,7 @@ extension NativeTimelineRowPainter {
                 bubble: bubble
             )
         case let .emojiFallback(frame, _):
-            text(
-                "🙂",
-                in: frame,
-                font: .systemFont(ofSize: max(11, frame.height * 0.8)),
-                color: .labelColor,
-                alignment: .center
-            )
+            drawEmojiFallback(in: frame)
         }
         if let selectionFrame = draw.selectionFrame {
             attachmentSelectionHighlightColor.setFill()
@@ -944,7 +783,7 @@ extension NativeTimelineRowPainter {
                 width: iconSize,
                 height: iconSize
             )
-            if let image = NativeTimelineSystemSymbolCache.configuredImage(
+            if let image = SystemSymbolImageCache.configuredImage(
                 named: systemImage,
                 pointSize: iconSize,
                 weight: .semibold,
@@ -967,7 +806,7 @@ extension NativeTimelineRowPainter {
                 height: avatarSize
             )
             if let url = presentation.avatarURL,
-               let image = mediaImage(for: .avatar(url))
+               let image = MediaImageStore.shared.stillImage(for: .avatar(url))
             {
                 drawImage(
                     image,
@@ -1000,27 +839,8 @@ extension NativeTimelineRowPainter {
         token: String,
         model: AppModel?
     ) -> NSImage? {
-        let reference = EmojiReference(rawToken: token)
-        if let url =
-            reference.id.flatMap({ model?.customEmojiURLsByID[$0] })
-                ?? reference.imageURL(size: 64),
-           let image = mediaImage(
-               for: .media(url, maximumPixelDimension: 64)
-           )
-        {
-            return image
-        }
-        return nil
-    }
-
-    static func roleColor(_ value: UInt32?) -> NSColor? {
-        guard let value, value != 0 else { return nil }
-        return NSColor(
-            red: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
+        MediaImageKey.emoji(EmojiReference(rawToken: token), in: model?.customEmojiURLsByID)
+            .flatMap { MediaImageStore.shared.stillImage(for: $0) }
     }
 
     static func measuredTextWidth(

@@ -3,75 +3,6 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
-extension CAFrameRateRange {
-    /// Every frame the screen can show, up to 120 Hz on ProMotion, and never
-    /// fewer than 60 (or 80 on ProMotion): a lower minimum lets the system
-    /// halve the rate under load.
-    static func fullRate(on screen: NSScreen?) -> Self {
-        let rate = Float(screen?.maximumFramesPerSecond ?? 60)
-        return CAFrameRateRange(minimum: min(rate, 80), maximum: rate, preferred: rate)
-    }
-}
-
-@MainActor
-final class NativeTimelineDisplayLinkTicker: NSObject {
-    var displayLink: CADisplayLink?
-    var tick: (() -> Void)?
-
-    func start(on view: NSView, frameRate: CAFrameRateRange? = nil, tick: @escaping () -> Void) {
-        stop()
-        self.tick = tick
-        let displayLink = view.displayLink(
-            target: self,
-            selector: #selector(displayLinkDidFire(_:))
-        )
-        displayLink.preferredFrameRateRange = frameRate ?? .fullRate(on: view.window?.screen)
-        self.displayLink = displayLink
-        displayLink.add(to: .main, forMode: .common)
-    }
-
-    func stop() {
-        displayLink?.invalidate()
-        displayLink = nil
-        tick = nil
-    }
-
-    @objc
-    func displayLinkDidFire(_ displayLink: CADisplayLink) {
-        tick?()
-    }
-}
-
-nonisolated enum NativeTimelineBenchmarkStartupPolicy {
-    static let minimumPresentedFrames = 2
-    static let quietInterval: TimeInterval = 0.100
-
-    static func isReady(
-        completedTicks: Int,
-        uptime: TimeInterval,
-        lastDelayedTickUptime: TimeInterval
-    ) -> Bool {
-        completedTicks >= minimumPresentedFrames
-            && uptime >= lastDelayedTickUptime + quietInterval
-    }
-}
-
-struct MessageTimelineScrollRequest: Equatable {
-    enum Target: Equatable {
-        case top
-        case bottom
-        case message(MessageID, anchor: UnitPoint)
-        /// A reading position: the message at the top of the viewport and
-        /// its offset from the viewport's top edge.
-        case readingPosition(MessageID, offsetFromViewportTop: CGFloat)
-    }
-
-    let id = UUID()
-    let target: Target
-    /// Glides to a loaded target instead of cutting to it.
-    var isAnimated = false
-}
-
 struct MessageTimelineEditRequest: Equatable {
     let id = UUID()
     let messageID: MessageID
@@ -119,11 +50,6 @@ nonisolated enum TimelineInitialPositionPolicy {
     }
 }
 
-nonisolated enum TimelineHistoryDirection: CaseIterable, Sendable {
-    case earlier
-    case later
-}
-
 nonisolated enum TimelineHistoryLoadingPolicy {
     static func shouldLoad(
         isNearBoundary: Bool,
@@ -144,16 +70,6 @@ nonisolated enum TimelineHistoryLoadingPolicy {
         return contentFitsViewport
             || !requiresUserScrollIntent
             || hasUserScrollIntent
-    }
-}
-
-nonisolated enum TimelineHistoryScrollIntentPolicy {
-    static func shouldRetain(
-        hasIntent: Bool,
-        isGestureActive: Bool,
-        isInProvisionalHistory: Bool
-    ) -> Bool {
-        hasIntent && (isGestureActive || isInProvisionalHistory)
     }
 }
 
@@ -421,7 +337,7 @@ enum NativeTimelineBeginning: Equatable {
                 return "number"
             }
         case let .thread(_, _, _, _, isForumPost):
-            return isForumPost ? "bubble.left.and.bubble.right.fill" : SakuraCordSystemSymbol.thread
+            return ChannelIconPresentation.threadSystemImage(isForumPost: isForumPost)
         }
     }
 
@@ -543,95 +459,6 @@ nonisolated enum NativeTimelineMessageJumpHighlightPolicy {
     }
 }
 
-nonisolated enum NativeTimelineBenchmarkScrollPolicy {
-    // Keep the authenticated workload continuously moving at a speed that is
-    // representative of reading/skim scrolling. The former 9,600 pt/s target
-    // crossed roughly 160 points per 60 Hz frame, exhausting live history far
-    // faster than a person could inspect it and obscuring account-scale costs.
-    /// Run for one fixed wall-clock interval at a refresh-independent target
-    /// speed. Delayed frames remain part of the result: the step cap avoids
-    /// measuring a stall twice, while the artifact records the resulting
-    /// spatial deficit instead of censoring the run.
-    static let pointsPerSecond: CGFloat = 1_200
-    static let maximumStep: CGFloat = 40
-    static let duration: TimeInterval = 20
-    static let nominalDistance = pointsPerSecond * duration
-    /// Measures live updates on a still timeline instead of a scrolling one.
-    static let isIdle = ProcessInfo.processInfo.arguments.contains("--offline-chat-performance-idle")
-
-    static func distance(tickInterval: TimeInterval) -> CGFloat {
-        guard !isIdle else { return 0 }
-        return min(
-            maximumStep,
-            max(0, CGFloat(tickInterval)) * pointsPerSecond
-        )
-    }
-
-    static func distanceDeficit(completedDistance: CGFloat) -> CGFloat {
-        max(0, nominalDistance - completedDistance)
-    }
-
-    static func spatialQuality(completedDistance: CGFloat) -> Double {
-        min(1, max(0, Double(completedDistance / nominalDistance)))
-    }
-}
-
-nonisolated struct NativeTimelineBenchmarkScrollController {
-    enum Outcome: Equatable {
-        case continueBenchmark
-        case completed
-        case insufficientHistory
-        case paginationFailed
-    }
-
-    let startedAt: TimeInterval
-    private(set) var completedDistance: CGFloat = 0
-
-    mutating func recordTick(
-        uptime: TimeInterval,
-        previousDocumentY: CGFloat,
-        currentDocumentY: CGFloat,
-        hasMoreMessages: Bool,
-        paginationFailed: Bool = false
-    ) -> Outcome {
-        let advance = max(0, previousDocumentY - currentDocumentY)
-        completedDistance += advance
-        if paginationFailed {
-            return .paginationFailed
-        }
-        if advance <= 0.5, !hasMoreMessages {
-            return .insufficientHistory
-        }
-        if uptime - startedAt >= NativeTimelineBenchmarkScrollPolicy.duration {
-            return .completed
-        }
-        return .continueBenchmark
-    }
-}
-
-enum NativeTimelineBenchmarkFinishOutcome: String {
-    case completed
-    case insufficientHistory
-    case cancelled
-    case paginationFailed
-}
-
-@MainActor
-enum NativeTimelineBenchmarkFinishSequence {
-    @discardableResult
-    static func run(
-        startedAt: TimeInterval,
-        now: () -> TimeInterval,
-        closeMeasurement: () -> Void,
-        performBookkeeping: (_ elapsed: TimeInterval) -> Void
-    ) -> TimeInterval {
-        let elapsed = now() - startedAt
-        closeMeasurement()
-        performBookkeeping(elapsed)
-        return elapsed
-    }
-}
-
 nonisolated struct NativeTimelineRenderTelemetry: Equatable, Sendable {
     let canvasDrawCount: Int
     let canvasDrawTotalDuration: TimeInterval
@@ -653,156 +480,6 @@ nonisolated struct NativeTimelineRenderTelemetry: Equatable, Sendable {
         rowRasterCount > 0
             ? rowRasterTotalDuration / Double(rowRasterCount)
             : 0
-    }
-}
-
-@MainActor
-enum NativeTimelineBenchmarkArtifact {
-    struct DelayedTick {
-        let offset: TimeInterval
-        let interval: TimeInterval
-    }
-
-    static func write(
-        outcome: NativeTimelineBenchmarkFinishOutcome,
-        completedDistance: CGFloat,
-        elapsed: TimeInterval,
-        completedTicks: Int? = nil,
-        delayedTicks: Int? = nil,
-        tickIntervals: [TimeInterval]? = nil,
-        delayedTickSamples: [DelayedTick]? = nil,
-        maximumTickInterval: TimeInterval? = nil,
-        maximumScrollWork: TimeInterval? = nil,
-        historyStarvedTicks: Int? = nil,
-        maximumConsecutiveHistoryStarvedTicks: Int? = nil,
-        renderTelemetry: NativeTimelineRenderTelemetry? = nil,
-        mainThreadCPUTime: TimeInterval? = nil,
-        timelineUpdates: (count: Int, milliseconds: Double)? = nil
-    ) {
-        guard let path = ProcessInfo.processInfo.environment[
-            "SAKURACORD_PERFORMANCE_RESULT_PATH"
-        ] else { return }
-        let duration = NativeTimelineBenchmarkScrollPolicy.duration
-        let overshoot = max(0, elapsed - duration)
-        var contents = """
-        outcome\t\(outcome.rawValue)
-        elapsed_seconds\t\(elapsed)
-        nominal_duration_seconds\t\(duration)
-        elapsed_overshoot_seconds\t\(overshoot)
-
-        """
-        // A still timeline covers no distance by design.
-        if !NativeTimelineBenchmarkScrollPolicy.isIdle {
-            contents += """
-            completed_distance_points\t\(completedDistance)
-            nominal_distance_points\t\(NativeTimelineBenchmarkScrollPolicy.nominalDistance)
-            distance_deficit_points\t\(NativeTimelineBenchmarkScrollPolicy.distanceDeficit(completedDistance: completedDistance))
-            spatial_quality_ratio\t\(NativeTimelineBenchmarkScrollPolicy.spatialQuality(completedDistance: completedDistance))
-
-            """
-        }
-        if let completedTicks,
-           let delayedTicks,
-           let tickIntervals,
-           let delayedTickSamples,
-           let maximumTickInterval,
-           let maximumScrollWork,
-           let historyStarvedTicks,
-           let maximumConsecutiveHistoryStarvedTicks
-        {
-            let sortedTickIntervals = tickIntervals.sorted()
-            let medianTickInterval = percentile(
-                sortedTickIntervals,
-                percentile: 0.50
-            )
-            let p95TickInterval = percentile(
-                sortedTickIntervals,
-                percentile: 0.95
-            )
-            let p99TickInterval = percentile(
-                sortedTickIntervals,
-                percentile: 0.99
-            )
-            let delayedTickRate = completedTicks > 0
-                ? Double(delayedTicks) / Double(completedTicks)
-                : 0
-            let delayedTickSampleText = delayedTickSamples.map { sample in
-                "\(sample.offset * 1_000):\(sample.interval * 1_000)"
-            }.joined(separator: ",")
-            contents += """
-            completed_ticks\t\(completedTicks)
-            delayed_ticks_over_33ms\t\(delayedTicks)
-            delayed_tick_rate\t\(delayedTickRate)
-            median_tick_interval_ms\t\(medianTickInterval * 1_000)
-            p95_tick_interval_ms\t\(p95TickInterval * 1_000)
-            p99_tick_interval_ms\t\(p99TickInterval * 1_000)
-            maximum_tick_interval_ms\t\(maximumTickInterval * 1_000)
-            delayed_tick_samples_offset_ms_interval_ms\t\(delayedTickSampleText)
-            maximum_scroll_work_ms\t\(maximumScrollWork * 1_000)
-            history_starved_ticks\t\(historyStarvedTicks)
-            maximum_consecutive_history_starved_ticks\t\(maximumConsecutiveHistoryStarvedTicks)
-
-            """
-        }
-        if let renderTelemetry {
-            contents += """
-            canvas_draw_count\t\(renderTelemetry.canvasDrawCount)
-            canvas_draw_total_ms\t\(renderTelemetry.canvasDrawTotalDuration * 1_000)
-            canvas_draw_average_ms\t\(renderTelemetry.canvasDrawAverageDuration * 1_000)
-            canvas_draw_maximum_ms\t\(renderTelemetry.canvasDrawMaximumDuration * 1_000)
-            row_raster_count\t\(renderTelemetry.rowRasterCount)
-            row_raster_total_ms\t\(renderTelemetry.rowRasterTotalDuration * 1_000)
-            row_raster_average_ms\t\(renderTelemetry.rowRasterAverageDuration * 1_000)
-            row_raster_maximum_ms\t\(renderTelemetry.rowRasterMaximumDuration * 1_000)
-            row_raster_maximum_height_points\t\(renderTelemetry.rowRasterMaximumHeight)
-            row_bitmap_cache_hit_count\t\(renderTelemetry.rowBitmapCacheHitCount)
-            live_scroll_direct_paint_count\t\(renderTelemetry.liveScrollDirectPaintCount)
-
-            """
-        }
-        if let mainThreadCPUTime {
-            contents += "main_thread_cpu_ms\t\(mainThreadCPUTime * 1_000)\n"
-        }
-        if let timelineUpdates {
-            contents += """
-            timeline_update_count\t\(timelineUpdates.count)
-            timeline_update_total_ms\t\(timelineUpdates.milliseconds)
-
-            """
-        }
-        try? contents.write(
-            to: URL(fileURLWithPath: path),
-            atomically: true,
-            encoding: .utf8
-        )
-    }
-
-    /// CPU time the calling thread has used, user and system.
-    static func currentThreadCPUTime() -> TimeInterval {
-        let thread = mach_thread_self()
-        defer { mach_port_deallocate(mach_task_self_, thread) }
-        var info = thread_basic_info()
-        var count = mach_msg_type_number_t(
-            MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<integer_t>.size
-        )
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                thread_info(thread, thread_flavor_t(THREAD_BASIC_INFO), $0, &count)
-            }
-        }
-        guard result == KERN_SUCCESS else { return 0 }
-        let seconds = info.user_time.seconds + info.system_time.seconds
-        let microseconds = info.user_time.microseconds + info.system_time.microseconds
-        return TimeInterval(seconds) + TimeInterval(microseconds) / 1_000_000
-    }
-
-    private static func percentile(
-        _ sortedValues: [TimeInterval],
-        percentile: Double
-    ) -> TimeInterval {
-        guard !sortedValues.isEmpty else { return 0 }
-        let rank = Int(ceil(percentile * Double(sortedValues.count)))
-        return sortedValues[min(max(rank - 1, 0), sortedValues.count - 1)]
     }
 }
 
@@ -1055,10 +732,9 @@ nonisolated enum NativeMessageTimelineLayoutPolicy {
     static func clampedDocumentY(
         proposedY: CGFloat,
         contentHeight: CGFloat,
-        viewportHeight: CGFloat,
-        bottomInset: CGFloat
+        viewportHeight: CGFloat
     ) -> CGFloat {
-        let maximumY = max(0, contentHeight - viewportHeight + bottomInset)
+        let maximumY = max(0, contentHeight - viewportHeight)
         return min(max(0, proposedY), maximumY)
     }
 
