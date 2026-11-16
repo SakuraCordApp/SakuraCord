@@ -3,14 +3,14 @@ import Foundation
 import Testing
 
 struct WireTests {
-    /// A settings PATCH carries only what changed; saving one setting must keep the others.
+    /// A settings PATCH carries only the changed sections; saving one must keep the others and apply clears.
     @Test func settingsPatchMergesIntoStoredSettings() throws {
         // field 11 { field 1: 1, field 2: "a" }, field 9 { field 1: 1 }
         let stored = Data([0x5A, 0x05, 0x08, 0x01, 0x12, 0x01, 0x61, 0x4A, 0x02, 0x08, 0x01])
-        // field 11 { field 2: "b" }, field 15 { field 1: 2 }
-        let patch = Data([0x5A, 0x03, 0x12, 0x01, 0x62, 0x7A, 0x02, 0x08, 0x02])
+        // field 11 { field 1: 1 } (field 2 cleared), field 15 { field 1: 2 }
+        let patch = Data([0x5A, 0x02, 0x08, 0x01, 0x7A, 0x02, 0x08, 0x02])
         let merged = try #require(ProtobufMerge.merge(stored, patch))
-        #expect(merged == Data([0x4A, 0x02, 0x08, 0x01, 0x5A, 0x05, 0x08, 0x01, 0x12, 0x01, 0x62, 0x7A, 0x02, 0x08, 0x02]))
+        #expect(merged == Data([0x4A, 0x02, 0x08, 0x01, 0x5A, 0x02, 0x08, 0x01, 0x7A, 0x02, 0x08, 0x02]))
         #expect(ProtobufMerge.merge(stored, Data([0x5A, 0x09])) == nil)
     }
 

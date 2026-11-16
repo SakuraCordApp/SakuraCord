@@ -1,37 +1,22 @@
 import Foundation
 
 /// Merges a settings-proto PATCH into the stored settings at the wire level,
-/// without the settings schema: a field the patch sets replaces the stored
-/// one, and a sub-message set on both sides merges one level further, so
-/// saving favorites keeps status and developer settings saved earlier.
+/// without the settings schema. Clients send each changed section (a
+/// top-level field) complete, so a section in the patch replaces the stored
+/// one, clears included, and every other section is kept.
 enum ProtobufMerge {
     private struct Field {
         var number: UInt64
-        var wireType: UInt64
-        var key: Data
-        var payload: Data
+        var bytes: Data
     }
 
     /// Nil when either side isn't a well-formed protobuf message.
-    static func merge(_ stored: Data, _ patch: Data, depth: Int = 2) -> Data? {
+    static func merge(_ stored: Data, _ patch: Data) -> Data? {
         guard let old = fields(stored), let new = fields(patch) else { return nil }
         let patched = Set(new.map(\.number))
-        var merged = old.filter { !patched.contains($0.number) }
-        for field in new {
-            let previous = old.filter { $0.number == field.number }
-            let repeats = new.count { $0.number == field.number } > 1
-            if depth > 1, !repeats, previous.count == 1, field.wireType == 2, previous[0].wireType == 2,
-               let inner = merge(previous[0].payload, field.payload, depth: depth - 1) {
-                merged.append(Field(number: field.number, wireType: 2, key: field.key, payload: inner))
-            } else {
-                merged.append(field)
-            }
-        }
-        return merged.sorted { $0.number < $1.number }.reduce(into: Data()) { data, field in
-            data += field.key
-            if field.wireType == 2 { data += varint(UInt64(field.payload.count)) }
-            data += field.payload
-        }
+        return (old.filter { !patched.contains($0.number) } + new)
+            .sorted { $0.number < $1.number }
+            .reduce(into: Data()) { $0 += $1.bytes }
     }
 
     private static func fields(_ data: Data) -> [Field]? {
@@ -51,7 +36,6 @@ enum ProtobufMerge {
         while index < bytes.count {
             let keyStart = index
             guard let key = readVarint(), key >> 3 > 0 else { return nil }
-            let keyBytes = Data(bytes[keyStart ..< index])
             let start: Int, length: Int
             switch key & 7 {
             case 0:
@@ -70,18 +54,8 @@ enum ProtobufMerge {
             }
             guard start + length <= bytes.count else { return nil }
             index = start + length
-            result.append(Field(number: key >> 3, wireType: key & 7, key: keyBytes, payload: Data(bytes[start ..< index])))
+            result.append(Field(number: key >> 3, bytes: Data(bytes[keyStart ..< index])))
         }
         return result
-    }
-
-    private static func varint(_ value: UInt64) -> Data {
-        var value = value, data = Data()
-        repeat {
-            let byte = UInt8(value & 0x7F)
-            value >>= 7
-            data.append(value == 0 ? byte : byte | 0x80)
-        } while value != 0
-        return data
     }
 }
