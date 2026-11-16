@@ -4,14 +4,12 @@ struct FeaturesSettingsPage: View {
     let model: AppModel
     let state: SettingsViewState
 
+    @State private var activityValue = PrivacySafetySettingsSnapshot.defaults
+
     var body: some View {
         let value = Binding(
             get: { model.featuresSettings },
             set: { model.applyFeaturesSettings($0) }
-        )
-        let privacyValue = Binding(
-            get: { model.privacySafetySettings },
-            set: { model.applyPrivacySafetySettings($0) }
         )
         SettingsPageForm(page: .features, state: state) {
             Section {
@@ -36,7 +34,7 @@ struct FeaturesSettingsPage: View {
             } header: {
                 Text("Channels", bundle: #bundle)
             }
-            FeaturesActivitySettingsSection(value: privacyValue, state: state)
+            FeaturesActivitySettingsSection(value: $activityValue, state: state)
             FakeNitroSettingsSection(value: value, state: state)
             Section {
                 Toggle("Message hover actions", isOn: value.messageHoverActions)
@@ -63,6 +61,12 @@ struct FeaturesSettingsPage: View {
                 state: state
             )
             TranslationSettingsSection(model: model, state: state)
+        }
+        .task {
+            activityValue = model.privacySafetySettings
+        }
+        .onChange(of: activityValue) { _, newValue in
+            model.applyPrivacySafetySettings(newValue)
         }
     }
 }

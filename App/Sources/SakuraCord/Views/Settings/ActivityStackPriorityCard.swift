@@ -54,9 +54,6 @@ struct ActivityStackPriorityCard: View {
                 Text("Activity Stack Priority", bundle: #bundle)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                Text("Preset", bundle: #bundle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
                 Picker("Priority Preset", selection: Binding(
                     get: { currentPreset },
                     set: { newPreset in
@@ -107,8 +104,8 @@ struct ActivityStackPriorityCard: View {
             }
             .padding(InterfaceScale.metric(4))
             .background(
-                RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous)
-                    .fill(Color.primary.opacity(0.03))
+                RoundedRectangle(cornerRadius: InterfaceScale.metric(10), style: .continuous)
+                    .fill(Color.primary.opacity(0.04))
             )
         }
         .padding(.vertical, InterfaceScale.metric(4))
@@ -150,23 +147,24 @@ struct ActivityStackBlockTile: View {
                         .foregroundStyle(SakuraCordAccentColor.color)
                 }
             }
-
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: InterfaceScale.metric(11), weight: .medium))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
         }
-        .padding(.horizontal, InterfaceScale.metric(10))
+        .padding(.horizontal, InterfaceScale.metric(12))
         .padding(.vertical, InterfaceScale.metric(8))
         .background(
             RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous)
-                .fill(isTargeted ? SakuraCordAccentColor.color.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
+                .fill(
+                    isTargeted
+                        ? SakuraCordAccentColor.color.opacity(0.16)
+                        : (isTopPriority ? SakuraCordAccentColor.color.opacity(0.10) : Color.primary.opacity(0.06))
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous)
                 .strokeBorder(
-                    isTargeted ? SakuraCordAccentColor.color : Color.primary.opacity(0.08),
-                    lineWidth: isTargeted ? 1.5 : 1
+                    isTargeted
+                        ? SakuraCordAccentColor.color
+                        : (isTopPriority ? SakuraCordAccentColor.color.opacity(0.40) : Color.primary.opacity(0.10)),
+                    lineWidth: isTargeted || isTopPriority ? 1.5 : 1
                 )
         )
         .draggable(category.rawValue)
