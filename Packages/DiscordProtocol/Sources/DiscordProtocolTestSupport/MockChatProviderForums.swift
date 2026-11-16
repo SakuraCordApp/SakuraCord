@@ -402,12 +402,12 @@ public extension MockChatProvider {
                 ? titles[templateIndex]
                 : "\(titles[templateIndex]) \(index + 1)"
             let attachments: [Attachment]
-            if count > titles.count, index.isMultiple(of: 5), let imageURL = author.avatarURL {
+            if count > titles.count, index.isMultiple(of: 5) {
                 attachments = [
                     Attachment(
                         id: "\(rawID)-preview",
                         filename: "forum-preview.png",
-                        url: imageURL,
+                        url: author.avatarURL,
                         mediaType: "image/png",
                         width: 256,
                         height: 256

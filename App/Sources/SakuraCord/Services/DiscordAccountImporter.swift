@@ -8,7 +8,7 @@ import Security
 nonisolated struct DiscordImportAccount: Identifiable, Sendable {
     let id: String
     let username: String
-    let avatarURL: URL?
+    let avatarURL: URL
     fileprivate let encryptedSession: String
 }
 
@@ -135,7 +135,7 @@ enum DiscordAccountImporter {
               let tokens = try decodeValue(tokensData) as? [String: String]
         else { throw ImportError.noAccounts }
         var names: [String: String] = [:]
-        var avatars: [String: URL] = [:]
+        var records: [String: [String: Any]] = [:]
         if let metadata = values[storageKey("MultiAccountStore")],
            let store = try decodeValue(metadata) as? [String: Any],
            let state = store["_state"] as? [String: Any],
@@ -143,16 +143,16 @@ enum DiscordAccountImporter {
             for user in users {
                 if let id = user["id"] as? String, let username = user["username"] as? String {
                     names[id] = username
-                    avatars[id] = avatarURL(user: user, id: id)
+                    records[id] = user
                 }
             }
         }
         let accounts = tokens.compactMap { id, value -> DiscordImportAccount? in
-            guard !id.isEmpty, id.utf8.allSatisfy({ (48 ... 57).contains($0) }),
+            guard id.utf8.allSatisfy({ (48 ... 57).contains($0) }), let userID = UserID(id),
                   value.hasPrefix("dQw4w9WgXcQ:"), value.count <= 8192 else { return nil }
             return DiscordImportAccount(
                 id: id, username: names[id] ?? "Discord account \(id)",
-                avatarURL: avatars[id], encryptedSession: value
+                avatarURL: avatarURL(user: records[id] ?? [:], id: userID), encryptedSession: value
             )
         }
         guard !accounts.isEmpty else { throw ImportError.noAccounts }
@@ -160,15 +160,15 @@ enum DiscordAccountImporter {
             .sorted { $0.username.localizedStandardCompare($1.username) == .orderedAscending }
     }
 
-    nonisolated private static func avatarURL(user: [String: Any], id: String) -> URL? {
-        if !id.isEmpty, id.utf8.allSatisfy({ (48 ... 57).contains($0) }),
-           let hash = user["avatar"] as? String {
+    nonisolated private static func avatarURL(user: [String: Any], id: UserID) -> URL {
+        if let hash = user["avatar"] as? String {
             let hex = hash.hasPrefix("a_") ? String(hash.dropFirst(2)) : hash
-            if hex.count == 32, hex.utf8.allSatisfy({ (48 ... 57).contains($0) || (97 ... 102).contains($0) }) {
-                return URL(string: "https://cdn.discordapp.com/avatars/\(id)/\(hash).webp?size=128&animated=false")
+            if hex.count == 32, hex.utf8.allSatisfy({ (48 ... 57).contains($0) || (97 ... 102).contains($0) }),
+               let url = URL(string: "https://cdn.discordapp.com/avatars/\(id)/\(hash).webp?size=128&animated=false") {
+                return url
             }
         }
-        return DiscordProfileImageAssets.defaultAvatarURL(userID: id, discriminator: user["discriminator"] as? String)
+        return User.defaultAvatarURL(id: id, discriminator: user["discriminator"] as? String)
     }
 
     nonisolated private static func decodeValue(_ data: Data) throws -> Any {

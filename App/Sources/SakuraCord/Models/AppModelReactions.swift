@@ -186,7 +186,7 @@ extension AppModel {
             return ReactionReactor(
                 id: userID,
                 displayName: member.user.displayName,
-                avatarURL: member.guildAvatarURL ?? member.user.avatarURL
+                avatarURL: member.avatarURL
             )
         }
         guard currentUser?.id == userID, let user = currentUser else {

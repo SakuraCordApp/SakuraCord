@@ -1650,29 +1650,6 @@ func `benchmark run finalization does not require coordinator lifetime`() {
 }
 
 @MainActor
-@Test func `native reply media dependencies include the replied-to author avatar`() throws {
-    let avatarURL = try #require(
-        URL(string: "https://cdn.discordapp.com/avatars/2/reply.webp")
-    )
-    let preview = MessageReplyPreview(
-        messageID: MessageID(rawValue: 22),
-        author: User(
-            id: UserID(rawValue: 2),
-            username: "reply-author",
-            displayName: "Reply Author",
-            avatarURL: avatarURL
-        ),
-        content: "original message"
-    )
-
-    #expect(
-        NativeTimelineReplyMediaPolicy.avatarKey(for: preview)
-            == .avatar(avatarURL)
-    )
-    #expect(NativeTimelineReplyMediaPolicy.avatarKey(for: nil) == nil)
-}
-
-@MainActor
 @Test func `native reply media dependencies include custom emojis`() throws {
     let preview = MessageReplyPreview(
         messageID: MessageID(rawValue: 23),

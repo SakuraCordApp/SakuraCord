@@ -80,7 +80,7 @@ private struct SettingsAccountSidebarRow: View {
         HStack(spacing: InterfaceScale.metric(8)) {
             AvatarView(
                 name: account?.resolvedDisplayName ?? "",
-                url: account?.avatarURL,
+                url: account?.resolvedAvatarURL,
                 size: InterfaceScale.metric(28),
                 // Reuse the current profile's preloaded avatar rendition.
                 maximumPixelDimension: 140

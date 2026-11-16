@@ -25,6 +25,9 @@ std::pair<bool, size_t> OverflowAdd(size_t a, size_t b)
     bool didOverflow = _addcarry_u64(0, a, b, &res);
 #elif defined(_MSC_VER) && defined(_M_IX86)
     bool didOverflow = _addcarry_u32(0, a, b, &res);
+#elif defined(_MSC_VER) && !defined(__clang__)
+    res = a + b;
+    bool didOverflow = res < a;
 #else
     bool didOverflow = __builtin_add_overflow(a, b, &res);
 #endif
@@ -71,16 +74,21 @@ uint8_t DeserializeUnencryptedRanges(const uint8_t*& readAt,
     auto start = readAt;
     auto end = readAt + bufferSize;
     while (readAt < end) {
-        size_t offset = ReadLeb128(readAt, end);
+        auto offset = ReadLeb128(readAt, end);
         if (readAt == nullptr) {
             break;
         }
 
-        size_t size = ReadLeb128(readAt, end);
+        auto size = ReadLeb128(readAt, end);
         if (readAt == nullptr) {
             break;
         }
-        unencryptedRanges.push_back({offset, size});
+
+        if (static_cast<size_t>(offset) != offset || static_cast<size_t>(size) != size) {
+            readAt = nullptr;
+            break;
+        }
+        unencryptedRanges.push_back({static_cast<size_t>(offset), static_cast<size_t>(size)});
     }
 
     if (readAt != end) {
@@ -194,7 +202,7 @@ void InboundFrameProcessor::ParseFrame(ArrayView<const uint8_t> frame)
 
     // Check the frame ends with the magic marker
     auto magicMarkerBuffer = frame.end() - sizeof(MagicMarker);
-    if (memcmp(magicMarkerBuffer, &kMarkerBytes, sizeof(MagicMarker)) != 0) {
+    if (memcmp(magicMarkerBuffer, kMarkerBytes.data(), kMarkerBytes.size()) != 0) {
         return;
     }
 

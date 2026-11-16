@@ -21,8 +21,8 @@ struct DiscordAccountImporterTests {
         let accounts = try DiscordAccountImporter.decodeAccounts(values: values)
         #expect(accounts.map(\.id) == ["123", "456"])
         #expect(accounts.map(\.username) == ["first", "second"])
-        #expect(accounts[0].avatarURL?.absoluteString == "https://cdn.discordapp.com/avatars/123/\(hash).webp?size=128&animated=false")
-        #expect(accounts[1].avatarURL?.host == "discord.com")
+        #expect(accounts[0].avatarURL.absoluteString == "https://cdn.discordapp.com/avatars/123/\(hash).webp?size=128&animated=false")
+        #expect(accounts[1].avatarURL.host == "discord.com")
         #expect(try DiscordAccountImporter.decodeAccounts(values: values, excluding: ["123"]).map(\.id) == ["456"])
         #expect(try DiscordAccountImporter.decodeAccounts(values: values, excluding: ["123", "456"]).isEmpty)
         #expect(throws: (any Error).self) { try DiscordAccountImporter.decodeAccounts(values: [:]) }

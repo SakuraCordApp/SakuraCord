@@ -92,7 +92,7 @@ struct RelationshipListSettingsPage: View {
 
     private func row(_ relationship: Relationship) -> some View {
         HStack(spacing: InterfaceScale.metric(10)) {
-            AvatarView(name: name(for: relationship), url: relationship.user?.avatarURL, size: InterfaceScale.metric(32))
+            AvatarView(name: name(for: relationship), url: relationship.user?.avatarURL ?? User.defaultAvatarURL(id: relationship.id), size: InterfaceScale.metric(32))
             VStack(alignment: .leading) {
                 Text(name(for: relationship))
                 if let user = relationship.user {

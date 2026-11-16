@@ -314,7 +314,7 @@ final class InteractionModalFormState: Identifiable {
             let user = resolved.users[value.id]
             return ComponentSelectOption(
                 label: user?.displayName ?? value.id, value: value.id,
-                description: user.map { "@\($0.username)" }, imageURL: user?.avatarURL,
+                description: user.map { "@\($0.username)" }, imageURL: user?.avatarURL ?? UserID(value.id).map { User.defaultAvatarURL(id: $0) },
                 imageShape: .circle, entityKind: .user
             )
         case .role:

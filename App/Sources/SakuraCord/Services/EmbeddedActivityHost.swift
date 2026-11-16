@@ -423,7 +423,7 @@ final class EmbeddedActivityHost: NSObject {
             "username": user?.username ?? "",
             "discriminator": user?.discriminator ?? "0",
         ]
-        if let avatar = user?.avatarURL.flatMap(Self.avatarHash) { payload["avatar"] = avatar }
+        if let avatar = user.flatMap({ Self.avatarHash($0.avatarURL) }) { payload["avatar"] = avatar }
         guard includesFlags else { return payload }
         payload["global_name"] = user.map { $0.displayName as Any } ?? NSNull()
         payload["bot"] = user?.isBot ?? false

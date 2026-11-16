@@ -487,9 +487,7 @@ extension NativeMemberListCanvasView {
                     requests.append((url, 32))
                 }
             case .member(let member, _):
-                if let url = member.guildAvatarURL ?? member.user.avatarURL {
-                    requests.append((url, 96))
-                }
+                requests.append((member.avatarURL, 96))
                 if let url = member.user.avatarDecorationURL {
                     requests.append((url, 96))
                 }

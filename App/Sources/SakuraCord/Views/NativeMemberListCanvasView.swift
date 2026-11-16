@@ -165,11 +165,8 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     }
 
     nonisolated static func requiresAvatarOverlay(for member: Member) -> Bool {
-        let avatarURL = member.guildAvatarURL ?? member.user.avatarURL
-        return member.user.avatarDecorationURL != nil
-            || avatarURL.map(
-                UserAvatarPresentation.shouldDecodeAnimation
-            ) == true
+        member.user.avatarDecorationURL != nil
+            || UserAvatarPresentation.shouldDecodeAnimation(for: member.avatarURL)
     }
 
     override var isFlipped: Bool { true }
