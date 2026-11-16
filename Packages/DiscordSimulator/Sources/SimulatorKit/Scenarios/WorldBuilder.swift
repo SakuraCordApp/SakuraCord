@@ -25,7 +25,7 @@ public struct WorldBuilder {
         return animated ? "a_" + value : value
     }
 
-    public func presence(_ status: PresenceStatus, custom: String? = nil, emoji: String? = nil, activity: JSON? = nil) -> Presence {
+    public static func presence(_ status: PresenceStatus, custom: String? = nil, emoji: String? = nil, activity: JSON? = nil) -> Presence {
         var presence = Presence(status: status)
         if custom != nil || emoji != nil {
             var object = JSONObject([("type", 4), ("state", .optional(custom)), ("name", "Custom Status"), ("id", "custom")])

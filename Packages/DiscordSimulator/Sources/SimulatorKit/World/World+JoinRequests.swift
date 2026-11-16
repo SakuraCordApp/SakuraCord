@@ -116,7 +116,7 @@ extension World {
             ("id", guild.id.json), ("name", .string(guild.name)), ("icon", .optional(guild.icon)),
             ("description", .optional(guild.description)), ("home_header", .null), ("splash", .optional(guild.splash)),
             ("discovery_splash", .null), ("features", .array(guild.features.map(JSON.string))),
-            ("approximate_member_count", .int(guild.members.count)), ("approximate_presence_count", .int(onlineCount(guild))),
+            ("approximate_member_count", .int(guild.memberCount)), ("approximate_presence_count", .int(onlineCount(guild))),
             ("emojis", .array(guild.emojis.map(renderEmoji))), ("verification_level", .int(guild.verificationLevel)),
         ]))
     }
@@ -174,10 +174,41 @@ extension World {
             ("prompts", []), ("default_channel_ids", []), ("enabled", false), ("mode", 0),
         ])
         var object = JSONObject([("guild_id", guildID.json)] + config.map { ($0.key, $0.value) })
+        let answers = servers.onboardingResponses[guildID]?[viewer]
         object["below_requirements"] = false
-        object["responses"] = []
-        object["onboarding_prompts_seen"] = .object(JSONObject())
-        object["onboarding_responses_seen"] = .object(JSONObject())
+        object["responses"] = answers?["onboarding_responses"] ?? []
+        object["onboarding_prompts_seen"] = answers?["onboarding_prompts_seen"] ?? .object(JSONObject())
+        object["onboarding_responses_seen"] = answers?["onboarding_responses_seen"] ?? .object(JSONObject())
         return .object(object)
+    }
+
+    /// `PUT /guilds/{id}/onboarding-responses`: stores the answers and swaps the roles they grant.
+    func saveOnboardingResponses(_ guildID: Snowflake, userID: Snowflake, body: JSON) async throws -> JSON {
+        guard var member = try guild(guildID).members[userID] else { throw WorldError.missingAccess }
+        let options = (servers.onboarding[guildID]?["prompts"]?.arrayValue ?? []).flatMap { $0["options"]?.arrayValue ?? [] }
+        func roles(_ answers: [String]) -> Set<Snowflake> {
+            Set(options.filter { answers.contains($0["id"]?.stringValue ?? "") }
+                .flatMap { ($0["role_ids"]?.arrayValue ?? []).compactMap { $0.stringValue.flatMap(Snowflake.init) } })
+        }
+        let answers = (body["onboarding_responses"]?.arrayValue ?? []).compactMap(\.stringValue)
+        guard answers.allSatisfy({ answer in options.contains { $0["id"]?.stringValue == answer } }) else {
+            throw WorldError.invalidBody("onboarding_responses: Unknown option")
+        }
+        let previous = (servers.onboardingResponses[guildID]?[userID]?["onboarding_responses"]?.arrayValue ?? []).compactMap(\.stringValue)
+        let granted = roles(answers), revoked = roles(previous).subtracting(granted)
+        let stored = JSONObject([
+            ("onboarding_responses", .array(answers.map(JSON.string))),
+            ("onboarding_prompts_seen", body["onboarding_prompts_seen"] ?? .object(JSONObject())),
+            ("onboarding_responses_seen", body["onboarding_responses_seen"] ?? .object(JSONObject())),
+        ])
+        servers.onboardingResponses[guildID, default: [:]][userID] = stored
+        let newRoles = member.roles.filter { !revoked.contains($0) } + granted.subtracting(member.roles).sorted()
+        if newRoles != member.roles {
+            member.roles = newRoles
+            guilds[guildID]?.members[userID] = member
+            await emit("GUILD_MEMBER_UPDATE", renderMember(member, guildID: guildID, includeUser: true).merging(["guild_id": guildID.json]),
+                       to: .guild(guildID, channel: nil))
+        }
+        return .object(JSONObject([("guild_id", guildID.json), ("user_id", userID.json)] + stored.map { ($0.key, $0.value) }))
     }
 }

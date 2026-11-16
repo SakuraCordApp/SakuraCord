@@ -118,19 +118,7 @@ struct BenchWorld {
         while people.count < count {
             let person = DemoText.person(index: people.count + 1)
             let created = ScenarioEpoch.accountsReference(for: world.epoch).addingTimeInterval(-Double(900 + people.count % 700) * 86_400)
-            var user = User(id: await world.nextID(at: created), username: person.username, globalName: person.displayName)
-            user.bio = person.bio
-            user.pronouns = person.pronouns
-            user.premiumType = person.premium.premiumType
-            let hash = builder.hash(seed: person.avatar.seed)
-            user.avatar = hash
-            await world.setPalette(person.avatar.palette, forHash: hash)
-            var presence = Presence(status: PresenceStatus(rawValue: person.presence.status.rawValue) ?? .offline)
-            if let custom = person.presence.customStatus {
-                presence = builder.presence(presence.status, custom: custom, emoji: person.presence.customStatusEmoji)
-            }
-            await world.addUser(user, presence: presence)
-            people.append(user.id)
+            people.append(await world.addPerson(person, created: created, avatar: builder.hash(seed: person.avatar.seed)))
         }
     }
 

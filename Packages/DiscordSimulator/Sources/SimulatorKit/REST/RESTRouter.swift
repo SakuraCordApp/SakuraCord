@@ -37,6 +37,8 @@ public final class RESTRouter: Sendable {
     let catalog: ShapeCatalog
     let log: SimulatorLog
     let faults: FaultInjector
+    /// Captcha challenges the control API arms.
+    public let captcha = CaptchaGate()
     private let routes: [String: RouteHandler]
     /// Routes the client may call without a token.
     private let unauthenticated: Set<String>
@@ -67,6 +69,7 @@ public final class RESTRouter: Sendable {
             return .discordError(404, "404: Not Found")
         }
         if let fault = faults.restFault(for: template) { return fault }
+        if let challenge = captcha.check(template: template, request: request) { return challenge }
         let userID: Snowflake
         if unauthenticated.contains(template) {
             userID = Snowflake(0)

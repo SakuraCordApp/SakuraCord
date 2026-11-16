@@ -31,19 +31,17 @@ public final class GatewayFrameCodec {
     public struct EncodedFrame {
         public let data: Data
         public let isBinary: Bool
-        /// Empty for JSON.
-        public let tags: [String: String]
     }
 
     public func encode(_ frame: JSON, shape: ShapeNode?) -> EncodedFrame {
-        let (payload, tags) = switch encoding {
-        case .etf: ETFEncoder.encode(frame, shape: shape)
-        case .json: (frame.data(spaced: false), [String: String]())
+        let payload = switch encoding {
+        case .etf: ETFEncoder.bytes(frame, shape: shape)
+        case .json: frame.data(spaced: false)
         }
         switch compressor {
-        case .none: return EncodedFrame(data: payload, isBinary: encoding == .etf, tags: tags)
-        case let .zstd(stream): return EncodedFrame(data: stream.compress(payload), isBinary: true, tags: tags)
-        case let .zlib(stream): return EncodedFrame(data: stream.compress(payload), isBinary: true, tags: tags)
+        case .none: return EncodedFrame(data: payload, isBinary: encoding == .etf)
+        case let .zstd(stream): return EncodedFrame(data: stream.compress(payload), isBinary: true)
+        case let .zlib(stream): return EncodedFrame(data: stream.compress(payload), isBinary: true)
         }
     }
 

@@ -80,6 +80,12 @@ public actor World {
     public var scheduledMessages: [Snowflake: ScheduledMessage] = [:]
     /// Notification settings per user and guild, wire-shaped; DMs use guild ID 0.
     public var guildSettings: [Snowflake: [Snowflake: JSONObject]] = [:]
+    /// Each user's past avatars (`id`, `storage_hash`, `description`), newest first.
+    public var avatarHistory: [Snowflake: [JSONObject]] = [:]
+    /// Each user's profile widgets, wire-shaped, in display order.
+    public var profileWidgets: [Snowflake: [JSON]] = [:]
+    /// Messages each user cleared from their inbox's Mentions tab.
+    public var dismissedMentions: [Snowflake: Set<Snowflake>] = [:]
     /// Voice states, private calls and voice server grants.
     var voice = VoiceRegistry()
     /// Files the client uploaded to the attachment host, keyed by `upload_filename`.
@@ -90,6 +96,12 @@ public actor World {
     public var lazyMedia: [String: @Sendable () -> (data: Data, contentType: String)] = [:]
     /// Bytes served by the CDN and media hosts, keyed by path.
     public var media: [String: (data: Data, contentType: String)] = [:]
+    /// Older history generated the first time a channel is looked up.
+    var pendingHistory: [Snowflake: HistoryPlan] = [:]
+    /// Generated servers' traffic for the `live-activity` script.
+    var liveActivity: [LiveActivityPlan] = []
+    /// Huge servers' members not yet made, made when the client looks.
+    var memberDirectories: [Snowflake: MemberDirectory] = [:]
 
     private weak var sink: (any WorldEventSink)?
     /// Embeds for links in new messages, as the scenario's pages would unfurl.
@@ -144,6 +156,7 @@ public actor World {
     }
 
     public func channel(_ id: Snowflake) throws -> Channel {
+        materializeHistory(id)
         guard let channel = channels[id] else { throw WorldError.unknown("Channel", code: 10003) }
         return channel
     }

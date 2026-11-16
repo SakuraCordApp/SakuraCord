@@ -97,12 +97,13 @@ final class EmbeddedActivityHost: NSObject {
             parameters["channel_id"] = instance.location.channelID.description
             parameters["guild_id"] = instance.location.guildID?.description
         }
-        var components = URLComponents(url: application.activityURL, resolvingAgainstBaseURL: false)!
+        // The connection target; the same URL outside debug simulator launches.
+        var components = URLComponents(url: DiscordNetworkRedirect.resolve(application.activityURL), resolvingAgainstBaseURL: false)!
         components.queryItems = parameters.sorted { $0.key < $1.key }.map(URLQueryItem.init)
             + [URLQueryItem(name: "discord_proxy_ticket", value: proxyTicket)]
         let literals = (try? JSONSerialization.data(withJSONObject: [
             "source": components.url!.absoluteString,
-            "origin": "https://\(application.activityURL.host() ?? "")",
+            "origin": "\(components.scheme ?? "https")://\(components.host ?? "")" + (components.port.map { ":\($0)" } ?? ""),
             "hello": parameters,
         ])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         return """

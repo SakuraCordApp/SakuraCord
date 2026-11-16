@@ -1,0 +1,7 @@
+// Swift sees libdave's C API and the C wrapper around its external sender
+// (the voice server's side of DAVE); the rest of libdave's headers are C++.
+module CDave {
+    header "../libdave/cpp/includes/dave/dave.h"
+    header "../shim/external_sender_remove.h"
+    export *
+}

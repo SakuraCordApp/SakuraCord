@@ -15,7 +15,7 @@ public final class ControlAPI: Sendable {
         let route = Array(segments.dropFirst())
         do {
             let body = request.body.isEmpty ? JSON.object(JSONObject()) : try JSON.parse(request.body)
-            for handler in [observeRoute, messageRoute, worldRoute, simulationRoute, voiceRoute, serverRoute] {
+            for handler in [observeRoute, messageRoute, worldRoute, simulationRoute, voiceRoute, serverRoute, moderationRoute, expressionRoute] {
                 if let response = try await handler(request, route, body) { return response }
             }
             return notFound(request)
@@ -155,6 +155,12 @@ public final class ControlAPI: Sendable {
             let name = body["name"]?.stringValue ?? route.dropFirst().first ?? ""
             let started = try await simulator.scripts.start(name, params: body["params"] ?? .object(JSONObject()))
             return ok(["script": .string(name), "id": .string(started)])
+        case ("GET", "scripts", _):
+            return ok(["running": .array(simulator.scripts.runningIDs.map(JSON.string)), "available": .array(simulator.scripts.names.map(JSON.string))])
+        case ("DELETE", "scripts", _):
+            // A script ID or name; nothing stops them all.
+            let stopped = route.count > 1 ? simulator.scripts.stop(route[1]) : simulator.scripts.runningIDs.flatMap(simulator.scripts.stop)
+            return ok(["stopped": .array(stopped.map(JSON.string))])
         default:
             return nil
         }

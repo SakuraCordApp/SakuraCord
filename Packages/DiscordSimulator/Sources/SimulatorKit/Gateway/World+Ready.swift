@@ -18,7 +18,7 @@ public extension World {
             .object(JSONObject([
                 ("user_id", relationship.userID.json), ("type", .int(relationship.type.rawValue)),
                 ("since", World.timestamp(relationship.since)), ("nickname", .optional(relationship.nickname)),
-                ("is_spam_request", false), ("user_ignored", false), ("id", relationship.userID.json),
+                ("is_spam_request", false), ("user_ignored", .bool(relationship.ignored)), ("id", relationship.userID.json),
             ]))
         }
 
@@ -46,7 +46,7 @@ public extension World {
             ("merged_members", .array(mergedMembers)),
             ("private_channels", .array(privateChannels)),
             ("relationships", .array(relationshipList)),
-            ("read_state", .object(JSONObject([("version", 1), ("partial", false), ("entries", .array(readStateEntries))]))),
+            ("read_state", .object(JSONObject([("version", 1), ("partial", false), ("entries", .array(readStateEntries + eventReadStates(userID)))]))),
             ("user_guild_settings", .object(JSONObject([("version", 1), ("partial", false), ("entries", .array(renderGuildSettingsEntries(userID)))]))),
             ("user_settings_proto", .string(settingsProto[userID]?[1]?.base64EncodedString() ?? "")),
             ("session_id", .string(sessionID)),
@@ -118,12 +118,12 @@ public extension World {
             ("roles", .array(guild.roles.map(renderRole))),
             ("properties", renderGuildProperties(guild)),
             ("premium_subscription_count", .int(guild.premiumSubscriptionCount)),
-            ("member_count", .int(guild.members.count)),
+            ("member_count", .int(guild.memberCount)),
             ("lazy", true),
-            ("large", .bool(guild.members.count > 250)),
+            ("large", .bool(guild.memberCount > 250)),
             ("joined_at", World.timestamp(guild.members[userID]?.joinedAt ?? guild.id.date)),
             ("id", guild.id.json),
-            ("guild_scheduled_events", []),
+            ("guild_scheduled_events", .array(scheduledEvents(in: guild.id).map(renderScheduledEvent))),
             ("emojis", .array(guild.emojis.map(renderEmoji))),
             ("data_mode", "full"),
             ("channels", .array(visible.map { renderChannel($0, viewer: userID) })),

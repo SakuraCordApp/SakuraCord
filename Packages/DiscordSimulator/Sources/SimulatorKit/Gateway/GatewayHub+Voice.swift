@@ -1,7 +1,7 @@
 import Foundation
 
 /// Voice on the main Gateway: op 4 joins, moves and leaves voice; op 13 asks
-/// for an ongoing private call when a DM opens.
+/// for an ongoing private call when a DM opens; ops 18–22 run Go Live streams.
 extension GatewayHub {
     func updateVoiceState(_ session: Session, _ data: JSON) async {
         do {
@@ -21,5 +21,24 @@ extension GatewayHub {
               let channel = await world.channels[channelID], channel.recipients.contains(session.userID),
               let call = await world.call(in: channelID) else { return }
         await dispatch("CALL_CREATE", await world.renderCallCreate(call), to: session)
+    }
+
+    /// Op 18 create, 19 delete, 20 watch, 21 ping (keep-alive, no reply), 22 pause.
+    func applicationStream(_ op: Int64, _ session: Session, _ data: JSON) async {
+        let key = data["stream_key"]?.stringValue ?? ""
+        do {
+            switch op {
+            case 18:
+                guard let channelID = data["channel_id"]?.stringValue.flatMap(Snowflake.init) else { return }
+                try await world.createStream(session.userID, sessionID: session.id, channelID: channelID,
+                                             guildID: data["guild_id"]?.stringValue.flatMap(Snowflake.init), region: data["preferred_region"]?.stringValue)
+            case 19: await world.deleteStream(key, by: session.userID)
+            case 20: try await world.watchStream(key, by: session.userID, sessionID: session.id)
+            case 22: await world.setStreamPaused(key, by: session.userID, paused: data["paused"]?.boolValue ?? false)
+            default: break
+            }
+        } catch {
+            log.warning("gateway", "stream op \(op) refused: \(error)")
+        }
     }
 }

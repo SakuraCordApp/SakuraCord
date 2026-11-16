@@ -17,6 +17,8 @@ public struct User: Sendable {
     public var accentColor: Int?
     public var bio: String = ""
     public var pronouns: String = ""
+    /// Profile theme `[primary, accent]`; nil renders as null.
+    public var themeColors: [Int]?
     public var bot = false
     public var system = false
     public var premiumType: PremiumType = .none
@@ -77,6 +79,11 @@ public struct Member: Sendable {
     public var pending = false
     public var flags = 0
     public var communicationDisabledUntil: Date?
+    /// The per-server profile (`PATCH /guilds/{id}/profile/@me`); nil means "use the main profile".
+    public var pronouns = ""
+    public var bio: String?
+    public var accentColor: Int?
+    public var themeColors: [Int]?
 }
 
 public struct PermissionOverwrite: Sendable {
@@ -156,6 +163,15 @@ public struct Emoji: Sendable {
     public var available = true
 }
 
+/// A soundboard sound: a server's own, or one of Discord's defaults (`guildID` nil).
+public struct SoundboardSound: Sendable {
+    public var id: Snowflake
+    public var name: String
+    public var emojiName: String?
+    public var volume = 1.0
+    public var userID: Snowflake?
+}
+
 public struct Sticker: Sendable {
     public var id: Snowflake
     public var name: String
@@ -185,8 +201,16 @@ public struct Guild: Sendable {
     public var systemChannelID: Snowflake?
     public var rulesChannelID: Snowflake?
     public var afkChannelID: Snowflake?
+    /// The server tag members can wear (`tag`, badge asset hash), if the server has one.
+    public var serverTag: (tag: String, badge: String)?
+    public var soundboardSounds: [SoundboardSound] = []
     /// Active boosts: who boosts and since when. Count and tier derive from it.
     public var boosts: [(userID: Snowflake, since: Date)] = []
+    /// Discord's member count for a server too large to hold every member; nil counts `members`.
+    public var approximateMemberCount: Int?
+    public var approximatePresenceCount: Int?
+
+    public var memberCount: Int { approximateMemberCount ?? members.count }
 
     public var everyoneRole: Role? { roles.first { $0.id == id } }
     public var premiumSubscriptionCount: Int { boosts.count }
@@ -292,7 +316,8 @@ public struct Message: Sendable {
 }
 
 public enum RelationshipType: Int, Sendable {
-    case friend = 1, blocked = 2, incoming = 3, outgoing = 4
+    /// `unrelated`: someone the user ignores without any other relationship.
+    case unrelated = 0, friend = 1, blocked = 2, incoming = 3, outgoing = 4
 }
 
 public struct Relationship: Sendable {
@@ -300,6 +325,8 @@ public struct Relationship: Sendable {
     public var type: RelationshipType
     public var nickname: String?
     public var since: Date
+    /// Ignored users stay friends but their activity is hidden.
+    public var ignored = false
 }
 
 public struct ReadState: Sendable {

@@ -12,16 +12,25 @@ public enum ETFEncoder {
     /// keys styled like their captured siblings or, failing that, like the key
     /// that holds their object.
     public static func encode(_ value: JSON, shape: ShapeNode?) -> (bytes: Data, tags: [String: String]) {
-        var writer = ETFWriter()
+        var writer = ETFWriter(recordsTags: true)
         writer.bytes.append(ETFTag.version)
         writer.write(value, node: shape, path: "", inheritedKey: .atom)
         return (Data(writer.bytes), writer.tags)
+    }
+
+    /// The same bytes without the per-path tags, for sending: a big account's READY has millions of paths.
+    public static func bytes(_ value: JSON, shape: ShapeNode?) -> Data {
+        var writer = ETFWriter(recordsTags: false)
+        writer.bytes.append(ETFTag.version)
+        writer.write(value, node: shape, path: "", inheritedKey: .atom)
+        return Data(writer.bytes)
     }
 }
 
 private enum KeyStyle { case atom, binary }
 
 private struct ETFWriter {
+    let recordsTags: Bool
     var bytes: [UInt8] = []
     var tags: [String: String] = [:]
 
@@ -95,8 +104,9 @@ private struct ETFWriter {
     }
 
     private mutating func writeElements(_ elements: [JSON], node: ShapeNode?, path: String, inheritedKey: KeyStyle) {
+        let itemPath = recordsTags ? "\(path)/[]" : ""
         for element in elements {
-            write(element, node: node?.items?.value, path: "\(path)/[]", inheritedKey: inheritedKey)
+            write(element, node: node?.items?.value, path: itemPath, inheritedKey: inheritedKey)
         }
     }
 
@@ -107,16 +117,15 @@ private struct ETFWriter {
         let defaultKey = node.flatMap(Self.siblingKeyStyle) ?? inheritedKey
         for (key, value) in object {
             let child = node.flatMap { $0[field: key] ?? $0.values?.value }
-            let childPath = "\(path)/\(key)"
-            let style = writeKey(key, captured: child?.keyETF ?? [], fallback: defaultKey, path: "\(childPath)#key")
+            let childPath = recordsTags ? "\(path)/\(key)" : ""
+            let style = writeKey(key, captured: child?.keyETF ?? [], fallback: defaultKey, path: recordsTags ? "\(childPath)#key" : "")
             write(value, node: child, path: childPath, inheritedKey: style)
         }
     }
 
     /// Writes a map key and returns the style nested objects without captured keys inherit.
     private mutating func writeKey(_ key: String, captured: Set<String>, fallback: KeyStyle, path: String) -> KeyStyle {
-        let integerTags: Set = [ETFTag.smallInteger.name, ETFTag.integer.name, ETFTag.smallBig.name]
-        if !captured.isDisjoint(with: integerTags), let number = Int64(key) {
+        if !captured.isDisjoint(with: Self.integerTags), let number = Int64(key) {
             writeInteger(number, captured: captured, path: path)
             return fallback
         }
@@ -202,8 +211,10 @@ private struct ETFWriter {
         bytes += [ETFTag.smallBig.rawValue, UInt8(digits.count), negative ? 1 : 0] + digits
     }
 
+    private static let integerTags: Set = [ETFTag.smallInteger.name, ETFTag.integer.name, ETFTag.smallBig.name]
+
     private mutating func record(_ tag: ETFTag, _ path: String) {
-        if tags[path] == nil { tags[path] = tag.name }
+        if recordsTags, tags[path] == nil { tags[path] = tag.name }
     }
 
     private mutating func append(_ value: some FixedWidthInteger) {

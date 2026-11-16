@@ -4,26 +4,41 @@ import Foundation
 /// each group header followed by its members with their presence.
 extension World {
     func renderMemberList(guildID: Snowflake, channelID: Snowflake, ranges: [ClosedRange<Int>]) -> JSON? {
+        // Each list row is a member or a group header, so this makes a few more than the rows asked for.
+        materializeMembers(guildID, onlineUpTo: (ranges.map(\.upperBound).max() ?? 0) + 1)
         guard let guild = guilds[guildID], let channel = channels[channelID] else { return nil }
         let viewers = guild.memberOrder.compactMap { guild.members[$0] }.filter { canView($0.userID, channel) }
-        func isOnline(_ id: Snowflake) -> Bool { ![.offline, .invisible].contains(presences[id]?.status ?? .offline) }
         func name(_ member: Member) -> String {
             (member.nick ?? users[member.userID]?.globalName ?? users[member.userID]?.username ?? "").lowercased()
         }
         let hoisted = guild.roles.filter(\.hoist).sorted { $0.position > $1.position }
-        var groups: [(id: String, members: [Member])] = []
+        struct Group {
+            var id: String
+            var members: [Member]
+            /// Can exceed `members` in a server too big to hold everyone.
+            var count: Int
+        }
+        var groups: [Group] = []
         var placed: Set<Snowflake> = []
         for role in hoisted {
             let members = viewers.filter { isOnline($0.userID) && $0.roles.contains(role.id) && !placed.contains($0.userID) }.sorted { name($0) < name($1) }
             placed.formUnion(members.map(\.userID))
-            if !members.isEmpty { groups.append((role.id.description, members)) }
+            if !members.isEmpty { groups.append(Group(id: role.id.description, members: members, count: members.count)) }
         }
-        groups.append(("online", viewers.filter { isOnline($0.userID) && !placed.contains($0.userID) }.sorted { name($0) < name($1) }))
-        groups.append(("offline", viewers.filter { !isOnline($0.userID) }.sorted { name($0) < name($1) }))
+        let online = viewers.filter { isOnline($0.userID) && !placed.contains($0.userID) }.sorted { name($0) < name($1) }
+        // A server too big to hold every member lists only who is online, as Discord does for large
+        // servers, and counts everyone it reports though only the rows asked for exist.
+        let reported = guild.approximateMemberCount != nil
+        let staff = groups.reduce(0) { $0 + $1.count }
+        groups.append(Group(id: "online", members: online, count: reported ? max(online.count, onlineCount(guild) - staff) : online.count))
+        if !reported {
+            let offline = viewers.filter { !isOnline($0.userID) }.sorted { name($0) < name($1) }
+            if !offline.isEmpty { groups.append(Group(id: "offline", members: offline, count: offline.count)) }
+        }
 
         var items: [JSON] = []
-        for group in groups where !group.members.isEmpty || group.id == "online" {
-            items.append(.object(JSONObject([("group", .object(JSONObject([("id", .string(group.id)), ("count", .int(group.members.count))])))])))
+        for group in groups {
+            items.append(.object(JSONObject([("group", .object(JSONObject([("id", .string(group.id)), ("count", .int(group.count))])))])))
             for member in group.members {
                 guard case var .object(rendered) = renderMember(member, guildID: guildID, includeUser: true) else { continue }
                 rendered["presence"] = renderPresence(member.userID, guildID: nil).removing("broadcast")
@@ -34,17 +49,18 @@ extension World {
             let slice = items.indices.contains(range.lowerBound) ? Array(items[range.lowerBound ... min(range.upperBound, items.count - 1)]) : []
             return .object(JSONObject([("op", "SYNC"), ("range", .array([.int(range.lowerBound), .int(range.upperBound)])), ("items", .array(slice))]))
         }
-        let online = viewers.filter { isOnline($0.userID) }.count
         // Discord names a list by its channel's overwrites; channels everyone sees share "everyone".
         let listID = channel.overwrites.isEmpty ? "everyone" : String(channel.id.rawValue.description.hashValueStable % 4_294_967_296)
         return .object(JSONObject([
-            ("ops", .array(ops)), ("online_count", .int(online)), ("member_count", .int(viewers.count)),
+            ("ops", .array(ops)),
+            ("online_count", .int(reported ? onlineCount(guild) : viewers.count { isOnline($0.userID) })),
+            ("member_count", .int(reported ? guild.memberCount : viewers.count)),
             ("id", .string(listID)), ("guild_id", guildID.json),
-            ("groups", .array(groups.filter { !$0.members.isEmpty || $0.id == "online" }.map { group in
-                .object(JSONObject([("id", .string(group.id)), ("count", .int(group.members.count))]))
-            })),
+            ("groups", .array(groups.map { group in .object(JSONObject([("id", .string(group.id)), ("count", .int(group.count))])) })),
         ]))
     }
+
+    func isOnline(_ userID: Snowflake) -> Bool { ![.offline, .invisible].contains(presences[userID]?.status ?? .offline) }
 }
 
 /// Forum and thread lists: active threads arrive through THREAD_LIST_SYNC and

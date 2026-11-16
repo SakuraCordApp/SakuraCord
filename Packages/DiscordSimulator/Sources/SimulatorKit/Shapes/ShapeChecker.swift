@@ -41,6 +41,10 @@ public enum ShapeChecker {
             // ETF has one term for null, the atom `nil`, whatever type the field has when set.
             if !isKey, tag == "atom", target.kinds.contains(.null) { return nil }
             if tag == "nil", !allowed.isDisjoint(with: ["list", "string"]) { return nil }
+            // The reverse: a list the capture only saw empty never showed the LIST_EXT a non-empty one gets.
+            if tag == "list", allowed == ["nil"] { return ShapeViolation(kind: .unverified, path: path, detail: "list only captured empty") }
+            // SMALL_INTEGER_EXT holds only 0–255; a larger value needs INTEGER_EXT whatever the capture saw.
+            if tag == "integer", allowed == ["small_int"] { return ShapeViolation(kind: .unverified, path: path, detail: "integer only captured small") }
             // Older JSON-only captures saw this type without its ETF term, so there is nothing to compare.
             let used = Self.kinds(ofETF: tag)
             if !isKey, !target.kinds.isDisjoint(with: used), allowed.allSatisfy({ Self.kinds(ofETF: $0).isDisjoint(with: used) }) {
@@ -161,29 +165,30 @@ public extension ShapeNode {
     /// never had. Returns the dropped paths so callers can log them.
     func conform(_ value: JSON, path: String = "") -> (JSON, dropped: [String]) {
         var dropped: [String] = []
-        let result = conform(value, path, &dropped)
+        let result = conform(value, { path }, &dropped)
         return (result, dropped)
     }
 
-    private func conform(_ value: JSON, _ path: String, _ dropped: inout [String]) -> JSON {
+    /// Paths are built only for dropped fields: every payload passes through here, READY included.
+    private func conform(_ value: JSON, _ path: () -> String, _ dropped: inout [String]) -> JSON {
         switch value {
         case let .object(object) where !fields.isEmpty:
             var ordered = JSONObject()
             for field in fields {
                 if let element = object[field.name] {
-                    ordered[field.name] = field.node.conform(element, "\(path)/\(field.name)", &dropped)
+                    ordered[field.name] = field.node.conform(element, { "\(path())/\(field.name)" }, &dropped)
                 }
             }
-            for key in object.keys where self[field: key] == nil { dropped.append("\(path)/\(key)") }
+            for key in object.keys where self[field: key] == nil { dropped.append("\(path())/\(key)") }
             return .object(ordered)
         case let .object(object):
             guard let values = values?.value else { return value }
             var mapped = JSONObject()
-            for (key, element) in object { mapped[key] = values.conform(element, "\(path)/\(key)", &dropped) }
+            for (key, element) in object { mapped[key] = values.conform(element, { "\(path())/\(key)" }, &dropped) }
             return .object(mapped)
         case let .array(elements):
             guard let items = items?.value else { return value }
-            return .array(elements.map { items.conform($0, "\(path)/[]", &dropped) })
+            return .array(elements.map { items.conform($0, { "\(path())/[]" }, &dropped) })
         default:
             return value
         }

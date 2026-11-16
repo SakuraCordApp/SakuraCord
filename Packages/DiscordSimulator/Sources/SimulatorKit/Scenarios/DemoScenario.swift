@@ -1,8 +1,9 @@
 import Foundation
 
-/// The everyday demo world built from `DemoContent`.
+/// The hand-written demo world built from `DemoContent`: the realistic world's
+/// close servers and friends, and on its own a small world for quick tests.
 public enum DemoScenario: Scenario {
-    public static let name = "demo"
+    public static let name = "demo-lite"
     public static let summary = "A small friendly server, a busier boosted one, DMs and friends, with history and media."
 
     /// The signed-in account's sign-in details, shown by `discord-simulator` at startup.
@@ -64,6 +65,8 @@ struct DemoConverter {
         try await dressSelf(me)
         await registerBotCommands()
         try await addInboxState(me: me)
+        try await addProfileState(me: me)
+        await addActivities()
     }
 
     /// Pip answers its slash commands with this week's cards, and its RSVP
@@ -176,7 +179,7 @@ struct DemoConverter {
         case let .competing(event)?: WorldBuilder.activity(type: 5, name: event, start: started)
         case nil: nil
         }
-        return builder.presence(status, custom: demo.customStatus, emoji: demo.customStatusEmoji, activity: activity)
+        return WorldBuilder.presence(status, custom: demo.customStatus, emoji: demo.customStatusEmoji, activity: activity)
     }
 
     // MARK: Guilds

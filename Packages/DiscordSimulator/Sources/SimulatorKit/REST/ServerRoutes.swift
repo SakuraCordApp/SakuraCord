@@ -7,6 +7,16 @@ enum ServerRoutes {
         registerJoinRequests(into: &routes)
         registerGuide(into: &routes)
 
+        routes["PATCH /api/v9/guilds/{id}/members/{id}"] = { context in
+            .json(try await context.world.modifyMember(try context.id(1), in: try context.id(0), by: context.userID, body: try context.json))
+        }
+        // No capture has these lists; they carry the captured role and channel objects.
+        routes["GET /api/v9/guilds/{id}/roles"] = { context in
+            .json(try await context.world.guildLists(try context.id(0), viewer: context.userID).roles)
+        }
+        routes["GET /api/v9/guilds/{id}/channels"] = { context in
+            .json(try await context.world.guildLists(try context.id(0), viewer: context.userID).channels)
+        }
         routes["GET /api/v9/guilds/{id}/roles/{id}/member-ids"] = { context in
             .json(try await context.world.roleMemberIDs(try context.id(0), roleID: try context.id(1), viewer: context.userID))
         }
@@ -79,6 +89,12 @@ enum ServerRoutes {
         }
         routes["POST /api/v9/guilds/{id}/new-member-action/{id}"] = { context in
             .json(try await context.world.completeNewMemberAction(try context.id(0), channelID: try context.id(1), viewer: context.userID))
+        }
+        // The app sends POST for its first answers; only PUT is captured, and it takes the same body.
+        for method in ["POST", "PUT"] {
+            routes["\(method) /api/v9/guilds/{id}/onboarding-responses"] = { context in
+                .json(try await context.world.saveOnboardingResponses(try context.id(0), userID: context.userID, body: try context.json))
+            }
         }
         routes["GET /api/v9/guilds/{id}/onboarding"] = { context in
             .json(try await context.world.onboarding(try context.id(0), viewer: context.userID))

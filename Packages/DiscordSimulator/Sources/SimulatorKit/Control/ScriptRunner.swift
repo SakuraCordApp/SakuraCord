@@ -26,12 +26,23 @@ public final class ScriptRunner: Sendable {
         let id = "\(name)-\(running.withLock { $0.count + 1 })"
         let world = world, log = log
         let task = Task {
-            do { try await script(world, params) } catch { log.error("script", "\(name) failed: \(error)") }
+            do { try await script(world, params) } catch is CancellationError {} catch { log.error("script", "\(name) failed: \(error)") }
             log.info("script", "\(name) finished")
         }
         running.withLock { $0[id] = task }
         return id
     }
+
+    /// Stops running scripts by start ID (`live-activity-1`) or by name; returns the IDs stopped.
+    func stop(_ key: String) -> [String] {
+        running.withLock { tasks in
+            let ids = tasks.keys.filter { $0 == key || $0.hasPrefix(key + "-") }.sorted()
+            for id in ids { tasks.removeValue(forKey: id)?.cancel() }
+            return ids
+        }
+    }
+
+    var runningIDs: [String] { running.withLock { $0.keys.sorted() } }
 
     public func cancelAll() {
         running.withLock { tasks in

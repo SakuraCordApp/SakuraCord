@@ -37,6 +37,7 @@ The simulator binds `127.0.0.1` only. One base port `P` (default 47100):
 | P+4 | Attachment uploads | `discord-attachments-uploads-prd.storage.googleapis.com` |
 | P+5 | Voice gateway WebSocket (v8) | `*.discord.media` voice servers |
 | P+6 | Voice media (UDP) | the IP and port the voice server's Ready announces |
+| P+7 | The simulator's own Activity page and its `/.proxy/` backend | `{application_id}.discordsays.com` (the page finds its app from the proxy ticket in its URL) |
 | P+9 | Control API (simulator-only JSON) | none |
 
 ## Scenarios
@@ -45,17 +46,42 @@ The simulator binds `127.0.0.1` only. One base port `P` (default 47100):
 
 | Scenario | World |
 | --- | --- |
-| `demo` | Two servers (one boosted to level 3), DMs, a group DM, friends, ~440 messages with media, embeds, polls, threads, forums, stickers and system messages |
-| `long-server-list` | `demo` + 16 small servers (param `extra`) |
-| `server-rail` | `demo` + servers up to 150 (param `servers`) |
-| `chat-performance` | `demo` + a server whose #general has 5,000 messages (params `messages`, `content=text\|media\|voice\|files`, `pins`) |
-| `forum-performance` | `demo` + a #feedback forum with 5,000 posts (param `posts`) |
-| `friends-performance` | `demo` + 1,000 friends, 100 incoming, 100 outgoing requests |
-| `side-chat-motion` | `demo` + #general with long threads (params `threads`, `thread_messages`) |
+| `demo` | A medium account: `demo-lite` as its close servers and friends inside ~60–80 generated servers (many large public ones), ~100 DMs, folders, muted servers, unread and mention badges, people in voice |
+| `demo-small` | A small account: ~15–25 servers, mostly small communities, few DMs and friends |
+| `demo-large` | A large Nitro account: 100–200 servers, many huge, with peak activity rates |
+| `demo-lite` | Two servers (one boosted to level 3), DMs, a group DM, friends, ~440 messages with media, embeds, polls, threads, forums, stickers and system messages |
+| `long-server-list` | `demo-lite` + 16 small servers (param `extra`) |
+| `server-rail` | `demo-lite` + servers up to 150 (param `servers`) |
+| `chat-performance` | `demo-lite` + a server whose #general has 5,000 messages (params `messages`, `content=text\|media\|voice\|files`, `pins`) |
+| `forum-performance` | `demo-lite` + a #feedback forum with 5,000 posts (param `posts`) |
+| `friends-performance` | `demo-lite` + 1,000 friends, 100 incoming, 100 outgoing requests |
+| `side-chat-motion` | `demo-lite` + #general with long threads (params `threads`, `thread_messages`) |
+
+The account modes are generated from `Resources/Profiles`: structure-only
+skeletons of real accounts (counts, states and activity rates; no names, IDs,
+text or timestamps), jittered and shuffled, used only as ballpark inputs. Each
+mode draws its server count and account numbers from its own ranges and its
+servers from the pooled skeletons. Channel history beyond each channel's
+latest message is generated on the first lookup, seeded by the channel; huge
+servers report Discord's member count and make further members (the same
+person for the same index) when the member list scrolls to them or a member
+search (op 8) asks for them. Refresh the skeletons with
+`discord-sim-profile extract <capture.jsonl>... --out FILE [--mark MARK] [--seed N]`.
+Benchmark scenarios build on `demo-lite`.
+
+The account modes start the `live-activity` script with the simulator: each
+generated server's messages, replies, typing, reactions, edits, deletes,
+presence changes and voice joins at its measured rates (scaled up in
+`demo-large`), from a seeded Poisson process, so the sequence repeats run to
+run. `--param activity=off` leaves it off and `--param activity_scale=N`
+scales it; `ctl script stop live-activity` stops it and `ctl script
+live-activity scale=N` starts it again. Benchmark scenarios and `demo-lite`
+start no script: their only activity is what a benchmark starts, on a fixed
+schedule.
 
 Bots answer slash commands and button presses (`POST /interactions`) the way
 Discord runs them: INTERACTION_CREATE, the bot's reply, INTERACTION_SUCCESS.
-In `demo`, Pip answers `/gamenight` and `/digest`, and its RSVP buttons update
+In `demo-lite` and the account modes, Pip answers `/gamenight` and `/digest`, and its RSVP buttons update
 the card.
 
 The default epoch ("now") is the most recent Sunday 21:30 in the Mac's time
@@ -75,12 +101,17 @@ runs that must be identical on any day.
 | `boosts <guild> <count>` | Boost count, tier, booster `premium_since`, boost system messages |
 | `presence <user> online\|idle\|dnd\|offline [status text]` | PRESENCE_UPDATE |
 | `ring <caller>` | The caller joins a DM call with the signed-in user and rings them (CALL_CREATE, VOICE_STATE_UPDATE, CALL_UPDATE) |
-| `voice <user> join <channel> [--video]` / `leave` / `mute` / `unmute` / `deafen` / `undeafen` / `camera-on` / `camera-off` / `speak` / `quiet` | A simulated person in voice |
+| `voice <user> join <channel> [--video] [--chatter]` / `leave` / `mute` / `unmute` / `deafen` / `undeafen` / `camera-on` / `camera-off` / `speak` / `quiet` / `stream-start` / `stream-stop` / `sound [SOUND_ID]` | A simulated person in voice; `speak` sends generated Opus speech over RTP until `quiet`, a camera or Go Live stream sends generated H.264. `--chatter` people (and the demo's unmuted voice seats) take turns talking whenever someone real is listening; the demo's streaming seat can be watched |
 | `network <profile>` or `network <latency-ms> <jitter-ms> [down-Bps] [up-Bps]` | Delay, jitter and bandwidth for every host |
 | `fault 429\|5xx [route] [count]` | REST faults (429s carry `retry_after` and rate-limit headers) |
 | `fault gateway-drop\|gateway-reconnect\|gateway-invalid-session\|gateway-close-resumable` | Gateway drops, op 7, op 9, close 4000 |
 | `clock freeze\|unfreeze\|advance <seconds>` | The simulated clock behind timestamps and IDs |
-| `script <name> key=value...` | Live streams for benchmarks: `timeline-stress`, `unread-churn`, `presence-churn`, `rail-badges` |
+| `script <name> key=value...` / `script stop [ID\|NAME]` / `scripts` | Start, stop and list live scripts: `live-activity` (`scale`, `seconds`) and the benchmark streams `timeline-stress`, `unread-churn`, `presence-churn`, `rail-badges` |
+| `qr scan\|approve\|cancel [user]` | The phone side of QR sign-in (remote-auth gateway on the Gateway port, `?v=2`) |
+| `application <guild> <user> approve\|reject [reason]` | A moderator's decision on an application to join |
+| `mfa <user> <six-digit-code>\|off` | Two-factor sign-in for an account |
+| `automod <guild> <keyword>...` | A keyword AutoMod rule; matching messages get Discord's blocked-content 400 (code 200000) |
+| `captcha <route-substring> [count]` | Discord's captcha-required 400 on that route until retried with hCaptcha's test token |
 | `log [LEVEL]` / `routes` / `world` | Loud failures (unknown routes and assets), implemented routes, world summary |
 
 The default `standard` profile adds a fixed 35 ms per request and per Gateway
@@ -119,6 +150,10 @@ fields, kinds, nullability and order. A kind or omission the capture only saw
 for the same field in a similar object elsewhere is reported as unverified,
 not as a failure; so is anything inside a value captured only as null or
 empty. `--break SUBJECT` corrupts one response to show the suite failing.
+The flows run on `demo-lite`, whose targets stay put; a second pass on `demo`
+and `demo-large` checks the generated accounts' READY, GUILD_CREATE, lazily
+generated history, threads, forum search, member list ranges, member chunks
+and profiles, and the live activity that arrives meanwhile.
 
 To refresh shapes, capture the official client with the `discord-cdp-research`
 skill (writes only in the SakuraCord Testing server), then:
@@ -130,3 +165,48 @@ swift run --package-path Packages/DiscordSimulator discord-sim-parity extract <s
 Only kinds, field names, order and ETF tags are kept; raw captures stay out of Git.
 `POST /auth/login` is not captured (the official client can't sign in without
 its owner) and follows Discord's documented response.
+
+## Voice and DAVE
+
+The voice gateway (P+5) and media (P+6) follow Discord's documented voice
+protocol; no capture covers them. Calls use DAVE (protocol version 1) when the
+client offers it: the voice server is the MLS external sender, and simulated
+people are real group members whose Opus and H.264 frames libdave encrypts.
+
+### Vendored sources
+
+Third-party code, fetched from upstream and never copied from `Packages/DaveKit`:
+
+- `Sources/CDave/libdave`: [discord/libdave](https://github.com/discord/libdave)
+  tag `v1.3.0/cpp` (`b5463c443df74db75a713c775b09a847621e6d62`).
+- `Sources/CMLS/mlspp`: [cisco/mlspp](https://github.com/cisco/mlspp)
+  `1cc50a124a3bc4e143a787ec934280dc70c1034d`, the commit libdave v1.3.0's
+  vcpkg overlay port pins (not DaveKit's `fc724c3`).
+- `Sources/CJSON`: [nlohmann/json](https://github.com/nlohmann/json) `v3.11.3`
+  single-include headers, which MLS++'s HPKE needs.
+- OpenSSL 3 comes from `krzyzanowskim/OpenSSL-Package` `3.6.5000`, the version
+  the app resolves.
+
+Each tree keeps only what `Package.swift` builds plus upstream's `LICENSE` and
+`README.md`. Dropped, matching libdave's CMake with OpenSSL and without
+persistent keys: `bindings_wasm.cpp`, the BoringSSL cryptor, every persisted
+key-pair store except `src/mls/persisted_key_pair_null.cpp`; from MLS++, its
+build files, tests, tools, `third_party` (only used with `VARIANT_COMPAT`),
+`mls_ds` and `mls_vectors`. libdave's `test/external_sender.{h,cpp}` and
+`test/capi/external_sender_wrapper.{h,cpp}` are kept: they are the voice
+server's side of DAVE.
+
+No upstream file is modified. SwiftPM integration adds only these files:
+
+- `Sources/CMLS/namespace/namespace.h`: what MLS++'s CMake generates from
+  `cmake/namespace.h.in`, with `MLS_NAMESPACE mlspp` as libdave's port sets.
+- `Sources/CDave/include/module.modulemap`: exposes only the C headers to Swift.
+- `Sources/CDave/shim/external_sender_remove.{h,cpp}`: declares the external
+  sender's C API for Swift (its upstream header includes `<dave/dave.h>`, which
+  a Swift importer can't resolve) and adds `daveExternalSenderProposeRemove`,
+  wrapping the upstream `ExternalSender::ProposeRemove`.
+- `Sources/CMLS/namespace/shim.c`, `Sources/CJSON/shim.c`: SwiftPM needs a
+  source file in a header-only target.
+
+Build settings mirror the upstream builds: `DISABLE_GREASE` for MLS++ (as
+libdave's port), `WITH_OPENSSL3` for HPKE, `DAVE_STATIC` for libdave, C++17.

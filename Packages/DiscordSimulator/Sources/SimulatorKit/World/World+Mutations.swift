@@ -39,6 +39,7 @@ public extension World {
         if checkPermissions {
             try require(channel.type.isThread ? .sendMessagesInThreads : .sendMessages, authorID, channel)
             if !draft.attachments.isEmpty { try require(.attachFiles, authorID, channel) }
+            try await enforceAutoMod(draft.content, by: authorID, in: channel)
         }
         let trimmed = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty, draft.attachments.isEmpty, draft.embeds.isEmpty, draft.poll == nil, draft.stickerIDs.isEmpty,

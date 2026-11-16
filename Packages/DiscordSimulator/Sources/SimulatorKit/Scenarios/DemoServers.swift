@@ -13,7 +13,39 @@ extension DemoConverter {
         await addInvite("lindenstreet", guild: garden, channel: channels["garden-chat"], inviter: gardenOwner, created: -90, maxAge: 0)
         await world.setServerState { $0.brandColors[porch] = "#e07a5f" }
         await addGardenGuide(garden)
+        await addEvents(porch: porch, garden: garden)
+        // The garden keeps weedkiller talk out of chat.
+        let rule = AutoModRule(id: await world.nextID(), guildID: garden, creatorID: people["marisol"] ?? gardenOwner, name: "No weedkiller",
+                               keywords: ["roundup", "*glyphosate*", "weedkiller"])
+        await world.setServerState { $0.autoModRules[rule.id] = rule }
+        if let pip = people["pip"] { await world.setServerState { $0.oauthRedirects[pip] = ["https://pip.example.net/discord/callback"] } }
         try await buildBookClub()
+    }
+
+    /// Thursday's game night in the porch's voice channel (Wren already acknowledged it)
+    /// and the garden's planting day, announced an hour ago and still unread.
+    private func addEvents(porch: Snowflake, garden: Snowflake) async {
+        guard let couch = channels["couch-vc"], let nico = people["nico"], let marisol = people["marisol"], let me = people[DemoContent.selfKey]
+        else { return }
+        let hour = 3_600.0
+        var gameNight = ScheduledEvent(id: await world.nextID(at: world.epoch.addingTimeInterval(-50 * hour)), guildID: porch,
+                                       name: "Board game night", creatorID: nico,
+                                       start: world.epoch.addingTimeInterval(94 * hour), entityType: .voice)
+        gameNight.description = "Bring snacks. Wingspan if the birthday frog allows it."
+        gameNight.channelID = couch
+        gameNight.interested = [nico, me] + ["oskar", "hana"].compactMap { people[$0] }
+        var planting = ScheduledEvent(id: await world.nextID(at: world.epoch.addingTimeInterval(-hour)), guildID: garden,
+                                      name: "Spring planting day", creatorID: marisol,
+                                      start: world.epoch.addingTimeInterval(132.5 * hour), entityType: .external)
+        planting.description = "Seedlings go in the long beds. Gloves and tea provided."
+        planting.end = planting.start.addingTimeInterval(3 * hour)
+        planting.location = "Linden Street Garden, north gate"
+        planting.interested = [marisol] + ["kofi", "ada"].compactMap { people[$0] }
+        await world.setServerState { [gameNight, planting] state in
+            state.scheduledEvents[gameNight.id] = gameNight
+            state.scheduledEvents[planting.id] = planting
+            state.eventAcks[me, default: [:]][porch] = gameNight.id
+        }
     }
 
     private func addInvite(_ code: String, guild: Snowflake, channel: Snowflake?, inviter: Snowflake, created days: Int, maxAge: Int) async {
@@ -43,11 +75,12 @@ extension DemoConverter {
             ]))])),
         ])
         let roleIDs = await world.guilds[garden]?.roles.filter { ["Plot Holders", "Compost Crew"].contains($0.name) }.map(\.id) ?? []
+        let optionIDs = [await world.nextID(), await world.nextID()]
         let prompt: JSON = .object(JSONObject([
             ("id", await world.nextID().json), ("title", "What brings you to the garden?"),
             ("options", .array(zip(["I have a plot", "I want to help with compost"], ["🌱", "🪱"]).enumerated().map { index, option in
                 .object(JSONObject([
-                    ("id", Snowflake(UInt64(index) + garden.rawValue + 1).json), ("title", .string(option.0)), ("description", ""),
+                    ("id", optionIDs[index].json), ("title", .string(option.0)), ("description", ""),
                     ("emoji", .object(JSONObject([("id", .null), ("name", .string(option.1)), ("animated", false)]))),
                     ("role_ids", .array(roleIDs.dropFirst(index).prefix(1).map(\.json))), ("channel_ids", [diary.json]),
                 ]))

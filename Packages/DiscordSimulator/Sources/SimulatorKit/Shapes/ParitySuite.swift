@@ -56,9 +56,17 @@ public enum ParitySuite {
     ]
 
     public static func run(seed: UInt64 = 7, mutate: Mutation? = nil) async -> Report {
+        // The flows pick their targets from the hand-written servers; `runWorld` covers the generated ones.
+        await run(scenario: DemoScenario.name, seed: seed, mutate: mutate) { try await $0.execute() }
+    }
+
+    static func run(scenario: String, parameters: [String: String] = [:], seed: UInt64, mutate: Mutation?,
+                    _ body: (inout ParityRun) async throws -> Void) async -> Report {
         var configuration = DiscordSimulator.Configuration()
         configuration.seed = seed
         configuration.enforcesRateLimits = false
+        configuration.scenario = scenario
+        configuration.parameters = parameters
         configuration.epoch = Date(timeIntervalSince1970: 1_794_778_200) // a Sunday, 21:30 UTC
         configuration.basePort = UInt16(40_000 + Int(ProcessInfo.processInfo.processIdentifier % 2_000) * 10)
         var report = Report()
@@ -67,7 +75,7 @@ public enum ParitySuite {
             try await simulator.start()
             defer { simulator.stop() }
             var run = ParityRun(simulator: simulator, mutate: mutate)
-            try await run.execute()
+            try await body(&run)
             report = run.report
         } catch {
             report.sequenceFailures.append("suite could not run: \(error)")
@@ -183,9 +191,18 @@ struct ParityRun {
         try await historyVariants(target, messagesPath: messagesPath)
         try await slashCommand(target)
         try await servers(target)
+        try await eventsAndModeration(target, me: me)
+        try await applications(target)
+        try await guildChannels(target, me: me)
+        try await channelSettingsAndAutoMod(target, me: me)
         try await inboxAndScheduling(target)
         try await voice(target, me: me)
+        try await activities(target)
         try await threadMembership(target)
+        try await profileEditing(target, me: me)
+        try await expressionPickers(target)
+        try await friendsAndGroups(target, me: me)
+        try await mentionsAndServerProfile(target, me: me)
 
         await flowStart()
         _ = try await rest("DELETE", "\(messagesPath)/\(sentID)")

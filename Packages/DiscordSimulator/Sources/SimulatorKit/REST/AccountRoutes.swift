@@ -12,7 +12,7 @@ enum AccountRoutes {
                 list.append(.object(JSONObject([
                     ("id", relationship.userID.json), ("type", .int(relationship.type.rawValue)),
                     ("nickname", .optional(relationship.nickname)), ("user", await world.renderUser(relationship.userID)),
-                    ("since", World.timestamp(relationship.since)), ("is_spam_request", false), ("user_ignored", false),
+                    ("since", World.timestamp(relationship.since)), ("is_spam_request", false), ("user_ignored", .bool(relationship.ignored)),
                 ])))
             }
             return .json(.array(list))
@@ -61,13 +61,6 @@ enum AccountRoutes {
             .json(try await context.world.search(guildID: try context.id(0), request: context.request, viewer: context.userID))
         }
 
-        routes["GET /api/v9/users/@me/application-command-index"] = { context in
-            .json(await context.world.applicationCommandIndex(guildID: nil, viewer: context.userID))
-        }
-        routes["GET /api/v9/guilds/{id}/application-command-index"] = { context in
-            .json(await context.world.applicationCommandIndex(guildID: try context.id(0), viewer: context.userID))
-        }
-
         // Pre-sign-in identity routes. The official client can't be captured
         // before sign-in, so these follow Discord's documented responses.
         routes["GET /api/v9/experiments"] = { context in
@@ -106,7 +99,8 @@ extension World {
 
     func openPrivateChannel(for userID: Snowflake, with recipients: [Snowflake]) async throws -> Channel {
         let members = Set(recipients + [userID])
-        if let existing = channels.values.first(where: { $0.type.isPrivate && Set($0.recipients) == members }) {
+        // A DM is reopened; every group create makes a new group, as on Discord.
+        if recipients.count == 1, let existing = channels.values.first(where: { $0.type == .dm && Set($0.recipients) == members }) {
             if openPrivateChannels[userID]?.contains(existing.id) != true { openPrivateChannels[userID, default: []].append(existing.id) }
             return existing
         }
@@ -115,8 +109,11 @@ extension World {
         channel.recipients = Array(members).sorted()
         if channel.type == .groupDM { channel.ownerID = userID }
         channels[channel.id] = channel
-        openPrivateChannels[userID, default: []].append(channel.id)
-        await emit("CHANNEL_CREATE", renderChannel(channel, viewer: userID), to: .users([userID]))
+        // Everyone in a new group gets it at once; the other side of a DM only once a message arrives.
+        for member in channel.type == .groupDM ? channel.recipients : [userID] {
+            openPrivateChannels[member, default: []].append(channel.id)
+            await emit("CHANNEL_CREATE", renderChannel(channel, viewer: member), to: .users([member]))
+        }
         return channel
     }
 
@@ -138,32 +135,6 @@ extension World {
         ]))
     }
 
-    /// Bots in the user's servers, each with the slash commands their persona offers.
-    func applicationCommandIndex(guildID: Snowflake?, viewer: Snowflake) -> JSON {
-        let guildsInScope = guildID.flatMap { guilds[$0] }.map { [$0] } ?? guilds(of: viewer)
-        let bots = Set(guildsInScope.flatMap { $0.members.keys }).compactMap { users[$0] }.filter(\.bot).sorted { $0.id < $1.id }
-        var applications: [JSON] = [], commands: [JSON] = []
-        for bot in bots {
-            // Modern bots share their application's ID.
-            let applicationID = bot.id
-            applications.append(.object(JSONObject([
-                ("id", applicationID.json), ("name", .string(bot.globalName ?? bot.username)),
-                ("description", .string(bot.bio)), ("icon", .optional(bot.avatar)), ("bot_id", bot.id.json), ("flags", "0"),
-            ])))
-            for (index, command) in [("gamenight", "Post the next board game night"), ("digest", "Show this week's porch digest")].enumerated() {
-                var object = JSONObject([
-                    ("id", Snowflake(applicationID.rawValue + UInt64(index) + 2).json), ("type", 1), ("application_id", applicationID.json),
-                    ("version", Snowflake(applicationID.rawValue + 100).json), ("name", .string(command.0)),
-                    ("description", .string(command.1)), ("dm_permission", true), ("integration_types", [0]), ("options", []),
-                ])
-                if let guildID { object["guild_id"] = guildID.json }
-                commands.append(.object(object))
-            }
-        }
-        return .object(JSONObject([("applications", .array(applications)), ("application_commands", .array(commands)),
-                                   ("version", nextID().json)]))
-    }
-
     func renderProfile(_ userID: Snowflake, viewer: Snowflake, guildID: Snowflake?) throws -> JSON {
         let user = try user(userID)
         let viewerGuilds = Set(guilds(of: viewer).map(\.id))
@@ -177,13 +148,14 @@ extension World {
         var object = JSONObject([
             ("user", .object(userObject)),
             ("connected_accounts", []),
-            ("premium_type", user.premiumType == .none ? .null : .int(user.premiumType.rawValue)),
+            ("premium_type", .int(user.premiumType.rawValue)),
             ("premium_since", World.optionalTimestamp(user.premiumType == .none ? nil : user.premiumSince ?? user.createdAt)),
             ("premium_guild_since", World.optionalTimestamp(guilds.values.compactMap { $0.boosts.first { $0.userID == userID }?.since }.min())),
             ("profile_themes_experiment_bucket", 4),
             ("user_profile", .object(JSONObject([
                 ("bio", .string(user.bio)), ("accent_color", .optional(user.accentColor)), ("pronouns", .string(user.pronouns)),
-                ("profile_effect", .null), ("banner", .optional(user.banner)), ("theme_colors", .null), ("popout_animation_particle_type", .null),
+                ("profile_effect", .null), ("banner", .optional(user.banner)),
+                ("theme_colors", user.themeColors.map { .array($0.map { .int($0) }) } ?? .null), ("popout_animation_particle_type", .null),
                 ("emoji", .null), ("collectibles", []),
             ]))),
             ("badges", .array(user.premiumType == .none ? [] : [.object(JSONObject([
@@ -191,7 +163,7 @@ extension World {
                 ("icon", .string(World.premiumBadgeIcon)), ("link", "https://discord.com/settings/premium"),
             ]))])),
             ("guild_badges", []),
-            ("widgets", []),
+            ("widgets", .array(profileWidgets[userID] ?? [])),
             ("wishlist_settings", .object(JSONObject())),
             ("legacy_username", .null),
         ])
@@ -205,8 +177,9 @@ extension World {
         if let guildID, let guild = guilds[guildID], let member = guild.members[userID] {
             object["guild_member"] = renderMember(member, guildID: guildID, includeUser: true).merging(["bio": ""])
             object["guild_member_profile"] = .object(JSONObject([
-                ("guild_id", guildID.json), ("pronouns", ""), ("bio", .null), ("banner", .null), ("accent_color", .null),
-                ("profile_effect", .null), ("theme_colors", .null), ("popout_animation_particle_type", .null),
+                ("guild_id", guildID.json), ("pronouns", .string(member.pronouns)), ("bio", .optional(member.bio)),
+                ("banner", .optional(member.banner)), ("accent_color", .optional(member.accentColor)), ("profile_effect", .null),
+                ("theme_colors", member.themeColors.map { .array($0.map { .int($0) }) } ?? .null), ("popout_animation_particle_type", .null),
                 ("emoji", .null), ("collectibles", []),
             ]))
         }

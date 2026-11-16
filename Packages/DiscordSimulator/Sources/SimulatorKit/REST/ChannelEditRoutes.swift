@@ -1,6 +1,7 @@
 import Foundation
 
-/// Editing, deleting and joining threads and forum posts (`/channels/{id}`, `/thread-members/@me`).
+/// Editing, deleting and joining threads and forum posts (`/channels/{id}`, `/thread-members/@me`),
+/// and creating, editing and deleting guild channels.
 enum ChannelEditRoutes {
     /// A real route whose behavior for this kind of channel hasn't been built yet: a 500 and an ERROR log, never a quiet stub.
     struct NotSimulated: Error, CustomStringConvertible {
@@ -11,17 +12,53 @@ enum ChannelEditRoutes {
         routes["PATCH /api/v9/channels/{id}"] = { context in
             let world = context.world
             let channel = try await world.channel(try context.id(0))
-            guard channel.type.isThread else { throw NotSimulated(description: "editing a channel of type \(channel.type)") }
-            let thread = try await world.editThread(channel.id, by: context.userID, patch: try context.json)
-            return .json(await world.renderThread(thread, viewer: context.userID))
+            if channel.type.isThread {
+                let thread = try await world.editThread(channel.id, by: context.userID, patch: try context.json)
+                return .json(await world.renderThread(thread, viewer: context.userID))
+            }
+            if channel.type == .groupDM {
+                return .json(await world.renderChannel(try await world.editGroupDM(channel.id, by: context.userID, patch: try context.json),
+                                                       viewer: context.userID))
+            }
+            guard channel.guildID != nil else { throw NotSimulated(description: "editing a channel of type \(channel.type)") }
+            let edited = try await world.editGuildChannel(channel.id, by: context.userID, patch: try context.json)
+            return .json(await world.renderChannel(edited, viewer: context.userID))
         }
         routes["DELETE /api/v9/channels/{id}"] = { context in
             let world = context.world
             let channel = try await world.channel(try context.id(0))
-            guard channel.type.isThread else { throw NotSimulated(description: "deleting a channel of type \(channel.type)") }
-            let rendered = await world.renderThread(channel, viewer: context.userID)
-            _ = try await world.deleteThread(channel.id, by: context.userID)
-            return .json(rendered)
+            if channel.type.isThread {
+                let rendered = await world.renderThread(channel, viewer: context.userID)
+                _ = try await world.deleteThread(channel.id, by: context.userID)
+                return .json(rendered)
+            }
+            if channel.type.isPrivate { return .json(try await world.closePrivateChannel(channel.id, by: context.userID)) }
+            guard channel.guildID != nil else { throw NotSimulated(description: "deleting a channel of type \(channel.type)") }
+            return .json(await world.renderChannel(try await world.deleteGuildChannel(channel.id, by: context.userID), viewer: context.userID))
+        }
+
+        routes["PUT /api/v9/channels/{id}/permissions/{id}"] = { context in
+            try await context.world.setPermissionOverwrite(try context.id(0), target: try context.id(1), by: context.userID, body: try context.json)
+            return .empty
+        }
+        routes["DELETE /api/v9/channels/{id}/permissions/{id}"] = { context in
+            try await context.world.setPermissionOverwrite(try context.id(0), target: try context.id(1), by: context.userID, body: nil)
+            return .empty
+        }
+
+        routes["POST /api/v9/guilds/{id}/channels"] = { context in
+            let world = context.world
+            let channel = try await world.createGuildChannel(in: try context.id(0), by: context.userID, body: try context.json)
+            return .json(await world.renderChannel(channel, viewer: context.userID), status: 201)
+        }
+
+        routes["PUT /api/v9/channels/{id}/recipients/{id}"] = { context in
+            try await context.world.addGroupRecipient(try context.id(0), try context.id(1), by: context.userID)
+            return .empty
+        }
+        routes["DELETE /api/v9/channels/{id}/recipients/{id}"] = { context in
+            try await context.world.removeGroupRecipient(try context.id(0), try context.id(1), by: context.userID)
+            return .empty
         }
 
         routes["POST /api/v9/channels/{id}/thread-members/@me"] = { context in

@@ -62,7 +62,12 @@ public extension World {
         object["premium_usage_flags"] = 0
         object["age_verification_status"] = 1
         object["typing_indicator_style"] = 0
-        object["perks"] = .object(JSONObject([("active_perks_bitmask", []), ("config_by_perk", .object(JSONObject()))]))
+        object["perks"] = .object(JSONObject([("active_perks_bitmask", []), ("config_by_perk", .object(JSONObject())),
+                                              ("rules_version", 1), ("updated_at", World.timestamp(user.createdAt))]))
+        object["premium_state"] = .object(JSONObject([("premium_source", 0), ("premium_subscription_group_role", 0),
+                                                      ("premium_subscription_type", 0)]))
+        object["authenticator_types"] = []
+        object["linked_users"] = []
         object["app_transaction_ids"] = []
         object["store_country"] = .object(JSONObject([("country", "NL"), ("is_locked", false), ("set_at", .null)]))
         object["bot"] = .bool(user.bot)
@@ -193,8 +198,10 @@ public extension World {
         return .object(object)
     }
 
+    /// Looks only through the parent's server: every forum in READY asks, and a big account has thousands of channels.
     internal func threads(in parentID: Snowflake) -> [Channel] {
-        channels.values.filter { $0.parentID == parentID && $0.type.isThread }.sorted { $0.id < $1.id }
+        let ids = channels[parentID]?.guildID.flatMap { guilds[$0]?.channelIDs } ?? []
+        return ids.compactMap { id in channels[id].flatMap { $0.parentID == parentID && $0.type.isThread ? $0 : nil } }.sorted { $0.id < $1.id }
     }
 
     func renderThread(_ thread: Channel, viewer: Snowflake?) -> JSON {
@@ -305,7 +312,8 @@ public extension World {
             ("allow_multiselect", .bool(poll.allowMultiselect)),
             ("layout_type", .int(poll.layoutType)),
             ("results", .object(JSONObject([
-                ("answer_counts", .array(poll.answers.map { answer in
+                // Answers nobody voted for are left out, as Discord does.
+                ("answer_counts", .array(poll.answers.filter { !$0.voters.isEmpty }.map { answer in
                     .object(JSONObject([("id", .int(answer.id)), ("count", .int(answer.voters.count)),
                                         ("me_voted", .bool(viewer.map(answer.voters.contains) ?? false))]))
                 })),

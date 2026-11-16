@@ -12,7 +12,9 @@ extension DemoConverter {
             state.selfVideo = seat.camera
             state.selfStream = seat.streaming
             state.simulated = true
+            state.chatters = !seat.muted && !seat.deafened
             await world.seedVoiceState(state)
+            if seat.streaming { await world.seedStream(userID, channelID: channelID, guildID: guildID) }
         }
     }
 }

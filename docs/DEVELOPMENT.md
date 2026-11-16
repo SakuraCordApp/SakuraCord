@@ -69,7 +69,10 @@ apart from real ones.
 
 | Scenario | Contents |
 | --- | --- |
-| `demo` | Fictional servers, direct messages and rich messages for exploring the app |
+| `demo` | A medium account: ~60–80 generated servers (many large public ones) around the hand-written ones, ~100 DMs, folders, unreads and mentions, constant live activity |
+| `demo-small` | A small account: ~15–25 servers, few DMs and friends, live activity |
+| `demo-large` | A large Nitro account: 100–200 servers, many huge, peak live activity |
+| `demo-lite` | Only the hand-written servers, DMs and rich messages; no live activity, for quick tests |
 | `long-server-list` | 18 extra servers in the rail |
 | `chat-performance` | A server with `#welcome` and a 5,000-message `#general`; `content=text\|media\|voice\|files`, `pins=0\|5000` |
 | `forum-performance` | A `#feedback` forum with `posts=5000` |

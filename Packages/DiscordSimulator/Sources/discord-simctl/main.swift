@@ -9,7 +9,7 @@ import SimulatorKit
 ///   discord-simctl react <channel> <message-id> <author> <emoji>
 ///   discord-simctl typing <channel> <author>
 ///   discord-simctl ring <caller>          (an incoming DM call to the signed-in user)
-///   discord-simctl voice <user> join <channel> [--video] | leave | mute|unmute|deafen|undeafen|camera-on|camera-off | speak|quiet
+///   discord-simctl voice <user> join <channel> [--video] [--chatter] | leave | mute|unmute|deafen|undeafen|camera-on|camera-off | speak|quiet | stream-start|stream-stop | sound [SOUND_ID]
 ///   discord-simctl nitro <user> none|basic|nitro|classic
 ///   discord-simctl boosts <guild> <count>
 ///   discord-simctl presence <user> online|idle|dnd|offline [activity text]
@@ -17,10 +17,12 @@ import SimulatorKit
 ///   discord-simctl fault 429|500|502|503 [route-substring] [count] | fault gateway-drop|gateway-reconnect|gateway-invalid-session|gateway-close-resumable
 ///   discord-simctl faults-clear
 ///   discord-simctl clock freeze|unfreeze|advance <seconds>
-///   discord-simctl script <name> [key=value]...
+///   discord-simctl script <name> [key=value]... | script stop [ID|NAME] | scripts
 ///   discord-simctl qr scan|approve|cancel [user]   (the phone side of QR sign-in)
 ///   discord-simctl application <guild> <user> approve|reject [reason]
 ///   discord-simctl mfa <user> <six-digit-code>|off
+///   discord-simctl automod <guild> <keyword>...   (a rule that blocks those words; `*word*` matches anywhere)
+///   discord-simctl captcha <route-substring> [count]   (e.g. "POST /api/v9/auth/login")
 var arguments = Array(CommandLine.arguments.dropFirst())
 var basePort = Int(DiscordSimulator.Configuration().basePort)
 if let index = arguments.firstIndex(of: "--port"), index + 1 < arguments.count, let port = Int(arguments[index + 1]) {
@@ -95,9 +97,14 @@ case "voice":
     let flags = ["mute": ("self_mute", true), "unmute": ("self_mute", false), "deafen": ("self_deaf", true),
                  "undeafen": ("self_deaf", false), "camera-on": ("self_video", true), "camera-off": ("self_video", false)]
     switch argument(2) {
-    case "join": await call("POST", "voice", ["user": user, "channel": argument(3), "self_video": arguments.contains("--video")])
+    case "join":
+        await call("POST", "voice", ["user": user, "channel": argument(3), "self_video": arguments.contains("--video"),
+                                     "chatter": arguments.contains("--chatter")])
     case "leave": await call("DELETE", "voice", ["user": user])
     case "speak", "quiet": await call("POST", "voice/speaking", ["user": user, "speaking": arguments[2] == "speak"])
+    case "stream-start": await call("POST", "voice/stream", ["user": user])
+    case "stream-stop": await call("DELETE", "voice/stream", ["user": user])
+    case "sound": await call("POST", "voice/soundboard", ["user": user, "sound_id": arguments.count > 3 ? arguments[3] : "1"])
     default:
         guard let (key, value) = flags[arguments[2]] else { usage() }
         await call("PATCH", "voice", ["user": user, key: value])
@@ -133,6 +140,8 @@ case "application":
     var body: [String: Any] = ["guild": argument(1), "user": argument(2), "action": argument(3)]
     if arguments.count > 4 { body["reason"] = arguments[4...].joined(separator: " ") }
     await call("POST", "join-requests", body)
+case "captcha": await call("POST", "captcha", ["route": argument(1), "count": arguments.count > 2 ? Int(arguments[2]) ?? 1 : 1])
+case "automod": await call("POST", "automod", ["guild": argument(1), "keywords": Array(arguments.dropFirst(2))])
 case "mfa": await call("PUT", "users/\(argument(1))/mfa", argument(2) == "off" ? [:] : ["authenticator_code": argument(2)])
 case "clock":
     switch argument(1) {
@@ -141,6 +150,8 @@ case "clock":
     case "advance": await call("POST", "clock", ["advance_seconds": Double(argument(2)) ?? usage()])
     default: usage()
     }
+case "scripts": await call("GET", "scripts", nil)
+case "script" where argument(1) == "stop": await call("DELETE", arguments.count > 2 ? "scripts/\(argument(2))" : "scripts", nil)
 case "script":
     var params: [String: Any] = [:]
     for pair in arguments.dropFirst(2) {

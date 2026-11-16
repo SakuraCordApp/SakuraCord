@@ -10,6 +10,20 @@ struct ParityTests {
         #expect(report.checked.count > 30)
     }
 
+    @Test(arguments: ["demo", "demo-large"])
+    func generatedAccountsMatchCapturedShapes(scenario: String) async {
+        let report = await ParitySuite.runWorld(scenario: scenario)
+        #expect(report.passed, "\(report.summary)")
+        #expect(report.checked.count > 10)
+    }
+
+    /// Voice, DAVE, Go Live, soundboard, calls and Activities on a generated server, not only the hand-written world.
+    @Test func voiceFlowsMatchCapturedShapesOnAGeneratedServer() async {
+        let report = await ParitySuite.runVoice(scenario: "demo")
+        #expect(report.passed, "\(report.summary)")
+        #expect(report.checked.count > 30)
+    }
+
     /// Shapes are committed, so a captured account identifier must never survive as template text.
     @Test func routeTemplatesHideAccountIdentifiers() {
         #expect(RouteTemplate.template(method: "GET", path: "/api/v9/users/@me/connections/twitch/somename/access-token")

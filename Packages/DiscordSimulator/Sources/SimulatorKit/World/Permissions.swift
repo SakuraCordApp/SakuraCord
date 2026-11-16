@@ -39,6 +39,7 @@ public struct Permissions: OptionSet, Sendable, Hashable {
     public static let useExternalStickers = Permissions(rawValue: 1 << 37)
     public static let sendMessagesInThreads = Permissions(rawValue: 1 << 38)
     public static let moderateMembers = Permissions(rawValue: 1 << 40)
+    public static let useSoundboard = Permissions(rawValue: 1 << 42)
     public static let sendVoiceMessages = Permissions(rawValue: 1 << 46)
     public static let sendPolls = Permissions(rawValue: 1 << 49)
 
@@ -49,7 +50,7 @@ public struct Permissions: OptionSet, Sendable, Hashable {
         .createInstantInvite, .addReactions, .stream, .viewChannel, .sendMessages, .embedLinks, .attachFiles,
         .readMessageHistory, .mentionEveryone, .useExternalEmojis, .connect, .speak, .changeNickname,
         .useApplicationCommands, .createPublicThreads, .createPrivateThreads, .useExternalStickers,
-        .sendMessagesInThreads, .sendVoiceMessages, .sendPolls,
+        .sendMessagesInThreads, .useSoundboard, .sendVoiceMessages, .sendPolls,
     ]
 
     public static let moderator: Permissions = [

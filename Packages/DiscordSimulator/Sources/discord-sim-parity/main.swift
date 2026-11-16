@@ -35,7 +35,19 @@ case "check":
     }
     let report = await ParitySuite.run(mutate: mutation)
     print(report.summary)
-    exit(report.passed ? 0 : 1)
+    var passed = report.passed
+    // The generated account modes, unless proving the suite fails.
+    if mutation == nil {
+        for scenario in ["demo", "demo-large"] {
+            let world = await ParitySuite.runWorld(scenario: scenario)
+            print("\(scenario): \(world.summary)")
+            passed = passed && world.passed
+        }
+        let voice = await ParitySuite.runVoice(scenario: "demo")
+        print("demo voice: \(voice.summary)")
+        passed = passed && voice.passed
+    }
+    exit(passed ? 0 : 1)
 default:
     fail("usage: discord-sim-parity extract <capture.jsonl>... --out DIR | check")
 }

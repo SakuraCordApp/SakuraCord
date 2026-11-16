@@ -106,16 +106,9 @@ public actor GatewayHub: WorldEventSink {
         case 6:
             session = await resume(data, connection: connection, codec: codec)
             return session != nil
-        case 3:
-            if let session { await updatePresence(session.userID, data) }
-        case 8:
-            if let session { await requestMembers(session, data) }
-        case 37:
-            if let session { await subscribe(session, data) }
-        case 4:
-            if let session { await updateVoiceState(session, data) }
-        case 13:
-            if let session { await connectPrivateCall(session, data) }
+        case 3, 4, 8, 13, 18 ... 22, 31, 37:
+            // Before Identify there is no session, and these ops are ignored.
+            if let session { await routeSessionOp(op, data: data, session: session) }
         case 14, 41, 43:
             // The legacy lazy request and client telemetry need no reply.
             break
@@ -189,6 +182,7 @@ public actor GatewayHub: WorldEventSink {
         let limit = Int(data["limit"]?.intValue ?? 100)
         let requested = Set((data["user_ids"]?.arrayValue ?? []).compactMap { $0.stringValue.flatMap(Snowflake.init) })
         for guildID in guildIDs {
+            if let query { await world.materializeMembers(guildID, matching: query, limit: limit) }
             guard let guild = await world.guilds[guildID] else { continue }
             var members: [JSON] = []
             for id in guild.memberOrder {
@@ -203,6 +197,10 @@ public actor GatewayHub: WorldEventSink {
             var chunk = JSONObject([("guild_id", guildID.json), ("members", .array(members)),
                                     ("chunk_index", 0), ("chunk_count", 1)])
             if let nonce = data["nonce"]?.stringValue { chunk["nonce"] = .string(nonce) }
+            // Requests by ID list the IDs that aren't members.
+            if !requested.isEmpty {
+                chunk["not_found"] = .array(requested.subtracting(guild.members.keys).sorted().map(\.json))
+            }
             if data["presences"]?.boolValue == true {
                 var presences: [JSON] = []
                 for member in members {
@@ -211,6 +209,27 @@ public actor GatewayHub: WorldEventSink {
                 chunk["presences"] = .array(presences)
             }
             await dispatch("GUILD_MEMBERS_CHUNK", .object(chunk), to: session)
+        }
+    }
+
+    private func routeSessionOp(_ op: Int64, data: JSON, session: Session) async {
+        switch op {
+        case 3: await updatePresence(session.userID, data)
+        case 4: await updateVoiceState(session, data)
+        case 8: await requestMembers(session, data)
+        case 13: await connectPrivateCall(session, data)
+        case 18 ... 22: await applicationStream(op, session, data)
+        case 31: await requestSoundboardSounds(session, data)
+        default: await subscribe(session, data)
+        }
+    }
+
+    /// Op 31: one SOUNDBOARD_SOUNDS per requested server.
+    private func requestSoundboardSounds(_ session: Session, _ data: JSON) async {
+        for guildID in (data["guild_ids"]?.arrayValue ?? []).compactMap({ $0.stringValue.flatMap(Snowflake.init) }) {
+            if let sounds = await world.renderSoundboardSounds(guildID: guildID, viewer: session.userID) {
+                await dispatch("SOUNDBOARD_SOUNDS", sounds, to: session)
+            }
         }
     }
 

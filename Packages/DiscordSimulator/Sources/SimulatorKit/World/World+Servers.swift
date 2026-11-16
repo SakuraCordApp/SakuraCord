@@ -49,6 +49,16 @@ public struct ServerState: Sendable {
     /// Profile card traits and brand colour, per guild.
     public var traits: [Snowflake: [JSON]] = [:]
     public var brandColors: [Snowflake: String] = [:]
+    public var scheduledEvents: [Snowflake: ScheduledEvent] = [:]
+    /// The newest scheduled event each user marked read, per guild.
+    public var eventAcks: [Snowflake: [Snowflake: Snowflake]] = [:]
+    public var eventAckVersion: Int64 = 1
+    /// Registered OAuth2 redirect URIs per application, and each user's grants.
+    public var oauthRedirects: [Snowflake: [String]] = [:]
+    public var autoModRules: [Snowflake: AutoModRule] = [:]
+    /// Each member's onboarding answers and what they've seen, wire-shaped, per guild.
+    public var onboardingResponses: [Snowflake: [Snowflake: JSONObject]] = [:]
+    public var oauthGrants: [Snowflake: [Snowflake: OAuth2Grant]] = [:]
 }
 
 // MARK: Invites and membership
@@ -61,7 +71,7 @@ extension World {
         return invite
     }
 
-    func createInvite(in channelID: Snowflake, by userID: Snowflake, maxAge: Int, maxUses: Int, temporary: Bool) throws -> Invite {
+    func createInvite(in channelID: Snowflake, by userID: Snowflake, maxAge: Int, maxUses: Int, temporary: Bool) async throws -> Invite {
         let channel = try channel(channelID)
         guard let guildID = channel.guildID else { throw WorldError.missingAccess }
         try require(.createInstantInvite, userID, channel)
@@ -70,6 +80,9 @@ extension World {
         let invite = Invite(id: nextID(), code: code, guildID: guildID, channelID: channelID, inviterID: userID, createdAt: clock.now,
                             maxAge: maxAge, maxUses: maxUses, temporary: temporary)
         servers.invites[code] = invite
+        let changes: [(String, JSON)] = [("code", .string(code)), ("channel_id", channelID.json), ("inviter_id", userID.json), ("uses", 0),
+                                         ("max_uses", .int(maxUses)), ("max_age", .int(maxAge)), ("temporary", .bool(temporary)), ("flags", 0)]
+        await emitAuditLog(guildID, action: 40, target: invite.id, by: userID, changes: changes.map { auditChange($0.0, old: nil, new: $0.1) })
         return invite
     }
 
@@ -106,6 +119,7 @@ extension World {
             let added = renderMember(member, guildID: guildID, includeUser: true).merging(["guild_id": guildID.json])
             await emit("GUILD_MEMBER_ADD", added, to: .users(Set(guild.members.keys).subtracting([userID])))
         }
+        if users[userID]?.bot == true { await emitCommandIndexUpdate(guildID) }
         if let systemChannel = guild.systemChannelID {
             var notice = MessageDraft()
             notice.type = 7
@@ -115,15 +129,10 @@ extension World {
 
     /// `DELETE /users/@me/guilds/{id}`. Owners must transfer the server first.
     func leaveGuild(_ guildID: Snowflake, userID: Snowflake) async throws {
-        var guild = try guild(guildID)
+        let guild = try guild(guildID)
         guard guild.members[userID] != nil else { throw WorldError.unknown("Guild", code: 10004) }
         guard guild.ownerID != userID else { throw WorldError(status: 400, code: 50055, message: "Invalid Guild") }
-        await emit("GUILD_MEMBER_REMOVE", .object(JSONObject([("guild_id", guildID.json), ("user", renderUser(userID))])),
-                   to: .guild(guildID, channel: nil))
-        guild.members[userID] = nil
-        guild.memberOrder.removeAll { $0 == userID }
-        guilds[guildID] = guild
-        await emit("GUILD_DELETE", .object(JSONObject([("id", guildID.json)])), to: .users([userID]))
+        try await removeMember(userID, from: guildID)
     }
 
     /// `PUT /guilds/{id}/members/@me`: joining a server listed in Server Discovery.
@@ -153,7 +162,7 @@ extension World {
             ("uses", .int(invite.uses)), ("max_uses", .int(invite.maxUses)), ("temporary", .bool(invite.temporary)),
         ])
         if withCounts {
-            object["approximate_member_count"] = .int(guild.members.count)
+            object["approximate_member_count"] = .int(guild.memberCount)
             object["approximate_presence_count"] = .int(onlineCount(guild))
         }
         if withPermissions {
@@ -165,14 +174,14 @@ extension World {
     }
 
     func onlineCount(_ guild: Guild) -> Int {
-        guild.members.keys.count { (presences[$0]?.status ?? .offline) != .offline && presences[$0]?.status != .invisible }
+        guild.approximatePresenceCount ?? guild.members.keys.count(where: isOnline)
     }
 
     /// The server's profile card, as invites, applications and `GET /guilds/{id}/profile` show it.
     func renderGuildProfile(_ guild: Guild) -> JSON {
         .object(JSONObject([
             ("id", guild.id.json), ("name", .string(guild.name)), ("icon_hash", .optional(guild.icon)),
-            ("member_count", .int(guild.members.count)), ("online_count", .int(onlineCount(guild))),
+            ("member_count", .int(guild.memberCount)), ("online_count", .int(onlineCount(guild))),
             ("description", .optional(guild.description)), ("brand_color_primary", .optional(servers.brandColors[guild.id])),
             ("banner_hash", .optional(guild.banner)), ("game_application_ids", []), ("game_activity", .object(JSONObject())),
             ("tag", .null), ("badge", 0), ("badge_color_primary", .null), ("badge_color_secondary", .null), ("badge_hash", .null),
@@ -194,6 +203,13 @@ extension World {
         object["embedded_activities"] = []
         object["activity_instances"] = []
         return .object(object)
+    }
+
+    /// A member's view of a guild's roles and the channels they can see.
+    func guildLists(_ guildID: Snowflake, viewer: Snowflake) throws -> (roles: JSON, channels: JSON) {
+        let guild = try guild(guildID)
+        guard guild.members[viewer] != nil else { throw WorldError.missingAccess }
+        return (.array(guild.roles.map(renderRole)), .array(visibleChannels(in: guild, for: viewer).map { renderChannel($0, viewer: viewer) }))
     }
 
     /// Members holding a role, as `GET /guilds/{id}/roles/{id}/member-ids` lists them.

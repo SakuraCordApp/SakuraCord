@@ -21,7 +21,7 @@ public final class DiscordSimulator: Sendable {
 
     /// Offsets from the base port, one per stood-in host.
     public enum Port: UInt16, CaseIterable, Sendable {
-        case api = 0, gateway = 1, cdn = 2, media = 3, upload = 4, voice = 5, voiceMedia = 6, control = 9
+        case api = 0, gateway = 1, cdn = 2, media = 3, upload = 4, voice = 5, voiceMedia = 6, activity = 7, control = 9
     }
 
     public let configuration: Configuration
@@ -54,8 +54,11 @@ public final class DiscordSimulator: Sendable {
         AccountRoutes.register(into: &routes)
         ThreadRoutes.register(into: &routes)
         InteractionRoutes.register(into: &routes)
-        CallRoutes.register(into: &routes)
+        VoiceRoutes.register(into: &routes)
+        ActivityRoutes.register(into: &routes)
         ServerRoutes.register(into: &routes)
+        ScheduledEventRoutes.register(into: &routes)
+        OAuth2Routes.register(into: &routes)
         SignInRoutes.register(into: &routes, remoteAuth: hub.remoteAuth)
         ScheduledMessageRoutes.register(into: &routes)
         ChannelEditRoutes.register(into: &routes)
@@ -63,16 +66,23 @@ public final class DiscordSimulator: Sendable {
         AffinityRoutes.register(into: &routes)
         SearchRoutes.register(into: &routes)
         SessionRoutes.register(into: &routes)
+        ProfileRoutes.register(into: &routes)
+        RelationshipRoutes.register(into: &routes)
+        ExpressionRoutes.register(into: &routes)
         var conditioners: [Port: NetworkConditioner] = [:]
         for port in Port.allCases where port != .control {
             conditioners[port] = NetworkConditioner(seed: configuration.seed ^ UInt64(port.rawValue), profile: configuration.network)
         }
         let router = RESTRouter(world: world, catalog: resolvedCatalog, log: log, faults: faults, routes: routes,
-                                unauthenticated: SignInRoutes.unauthenticated.union(["POST /auth/login", "POST /api/v9/auth/login",
-                                                                                     "GET /api/v9/experiments", "GET /api/v9/apex/experiments"]))
+                                unauthenticated: SignInRoutes.unauthenticated.union(OAuth2Routes.unauthenticated).union([
+                                    "POST /auth/login", "POST /api/v9/auth/login", "GET /api/v9/experiments", "GET /api/v9/apex/experiments",
+                                ]))
+        let scripts = ScriptRunner(world: world, log: log, scripts: BenchmarkScripts.all.merging([LiveActivity.name: LiveActivity.script]) { $1 })
+        for (name, params) in scenario.liveScripts(parameters: configuration.parameters).sorted(by: { $0.key < $1.key }) {
+            _ = try await scripts.start(name, params: params)
+        }
         return DiscordSimulator(configuration: configuration, catalog: resolvedCatalog, log: log, world: world, faults: faults,
-                                hub: hub, router: router, scripts: ScriptRunner(world: world, log: log, scripts: BenchmarkScripts.all),
-                                conditioners: conditioners)
+                                hub: hub, router: router, scripts: scripts, conditioners: conditioners)
     }
 
     private init(configuration: Configuration, catalog: ShapeCatalog, log: SimulatorLog, world: World, faults: FaultInjector,
@@ -100,8 +110,10 @@ public final class DiscordSimulator: Sendable {
         let cdn = CDNHandler(world: world, log: log, host: "cdn.discordapp.com")
         let media = CDNHandler(world: world, log: log, host: "media.discordapp.net")
         let upload = UploadHandler(world: world, log: log)
+        let activities = ActivityHost(world: world, log: log)
         let hub = hub, router = router, voice = voice
         await world.attachVoiceMedia(voice)
+        try await voice.start()
         let instant = NetworkConditioner(seed: configuration.seed, profile: .instant)
         let definitions: [ServerDefinition] = [
             ServerDefinition(.api) { await router.handle($0) },
@@ -114,6 +126,7 @@ public final class DiscordSimulator: Sendable {
                 return .discordError(400, "Bad Request")
             }),
             ServerDefinition(.cdn) { await cdn.handle($0) },
+            ServerDefinition(.activity) { [activities] in await activities.handle($0) },
             ServerDefinition(.media) { await media.handle($0) },
             ServerDefinition(.upload) { await upload.handle($0) },
             ServerDefinition(.control) { await control.handle($0) },
@@ -129,6 +142,7 @@ public final class DiscordSimulator: Sendable {
 
     public func stop() {
         scripts.cancelAll()
+        voice.stop()
         servers.withLock { servers in
             servers.forEach { $0.stop() }
             servers.removeAll()

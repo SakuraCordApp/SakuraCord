@@ -19,6 +19,8 @@ public struct VoiceState: Sendable {
     public var suppress = false
     /// Simulated people have no voice connection of their own; the voice server stands in for them.
     public var simulated = false
+    /// A simulated person who takes part in the channel's conversation whenever someone is listening.
+    public var chatters = false
 }
 
 /// What a client needs to reach the voice server: the payload of VOICE_SERVER_UPDATE.
@@ -29,8 +31,12 @@ public struct VoiceServerGrant: Sendable {
     public var sessionID: String
     public var guildID: Snowflake?
     public var channelID: Snowflake
-    /// The voice gateway's `server_id`: the guild, or the private channel for calls.
-    public var serverID: Snowflake { guildID ?? channelID }
+    /// A Go Live stream's own media server; nil for voice.
+    public var rtcServerID: Snowflake?
+    /// The voice gateway's `server_id`: a stream's server, the guild, or the private channel for calls.
+    public var serverID: Snowflake { rtcServerID ?? guildID ?? channelID }
+    /// Where the connection's media goes: the stream's server for Go Live, else the voice channel.
+    public var room: Snowflake { rtcServerID ?? channelID }
 }
 
 /// The voice server, told when who is in a channel changes.
@@ -46,6 +52,13 @@ struct VoiceRegistry {
     var calls: [Snowflake: Call] = [:]
     var grants: [String: VoiceServerGrant] = [:]
     var channelStatus: [Snowflake: String] = [:]
+    /// Go Live streams by stream key.
+    var streams: [String: GoLiveStream] = [:]
+    /// Activities on the shelf, running instances by application and channel, proxy tickets and acknowledged disclosures.
+    var activityApps: [Snowflake: ActivityApp] = [:]
+    var activities: [String: ActivityInstance] = [:]
+    var activityTickets: [String: Snowflake] = [:]
+    var ackedDisclosures: [Snowflake: [Snowflake: Set<Int>]] = [:]
     weak var media: (any VoiceMediaHost)?
 }
 
@@ -139,7 +152,7 @@ public extension World {
         guard moved, !simulated else { return nil }
         let grant = VoiceServerGrant(token: String(nextHash().prefix(16)), endpoint: voiceEndpoint(region: request.region),
                                      userID: userID, sessionID: sessionID, guildID: channel.guildID, channelID: channelID)
-        voice.grants = voice.grants.filter { $0.value.sessionID != sessionID }
+        voice.grants = voice.grants.filter { $0.value.sessionID != sessionID || $0.value.rtcServerID != nil }
         voice.grants[grant.token] = grant
         return grant
     }
@@ -153,11 +166,21 @@ public extension World {
         await voice.media?.participantsChanged(in: state.channelID)
     }
 
+    /// Whether a simulated person joins in the channel's conversation (simulator-side only; nothing is dispatched).
+    func setChatters(_ userID: Snowflake, _ chatters: Bool) async throws {
+        guard let state = voice.states[userID], state.simulated else { throw WorldError.invalidBody("user is not a simulated person in voice") }
+        voice.states[userID]?.chatters = chatters
+        await voice.media?.participantsChanged(in: state.channelID)
+    }
+
     /// Leaves voice: VOICE_STATE_UPDATE with no channel, then the channel or call's own clean-up.
     func leaveVoice(_ userID: Snowflake) async {
+        guard voice.states[userID] != nil else { return }
+        await leaveStreams(userID)
         guard let state = voice.states.removeValue(forKey: userID) else { return }
         voice.grants = voice.grants.filter { $0.value.sessionID != state.sessionID }
         await emitVoiceState(state, left: true)
+        await leaveActivities(userID, in: state.channelID)
         await channelEmptied(state)
         await voice.media?.disconnect(sessionID: state.sessionID)
         await voice.media?.participantsChanged(in: state.channelID)
@@ -245,7 +268,7 @@ public extension World {
     }
 
     /// A Discord media host name for the region, e.g. `c-rtm06-1a2b3c4d.discord.media:2096`.
-    private func voiceEndpoint(region: String?) -> String {
+    internal func voiceEndpoint(region: String?) -> String {
         let codes = ["rotterdam": "rtm", "frankfurt": "fra", "milan": "mxp", "madrid": "mad", "stockholm": "arn",
                      "brussels": "bru", "paris": "cdg", "london": "lhr", "us-east": "iad", "us-west": "lax"]
         let code = codes[region ?? "rotterdam"] ?? "rtm"

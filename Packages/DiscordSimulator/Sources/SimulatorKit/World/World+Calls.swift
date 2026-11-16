@@ -14,10 +14,10 @@ public struct Call: Sendable {
 
 /// Private calls. The first join starts one: the call message, CALL_CREATE,
 /// then the joiner's VOICE_STATE_UPDATE; ringing is CALL_UPDATE, rings time out
-/// after 30 seconds, and the last leave ends the call with CALL_DELETE and the
-/// call message's end. Order and payloads follow captures of the official
-/// client placing a call; the callee's side can't be captured without a second
-/// person, so it receives the same events, as Discord documents.
+/// after 30 seconds, and the last leave ends the call: the call message's end,
+/// then CALL_DELETE. Order and payloads follow captures of the official client
+/// placing a call; the callee's side can't be captured without a second
+/// person, so it receives the same events.
 public extension World {
     func call(in channelID: Snowflake) -> Call? { voice.calls[channelID] }
 
@@ -90,13 +90,14 @@ public extension World {
         if wasRinging { await emitCallUpdate(call) }
     }
 
-    /// The last participant left: CALL_DELETE, then the call message gets its end.
+    /// The last participant left: the call message gets its end, then CALL_DELETE (the captured order).
     internal func endCall(_ channelID: Snowflake) async {
         guard let call = voice.calls.removeValue(forKey: channelID), let channel = channels[channelID] else { return }
-        await emit("CALL_DELETE", .object(JSONObject([("channel_id", channelID.json)])), to: .users(Set(channel.recipients)))
         let ended = JSON.object(JSONObject([("participants", .array(call.participants.map(\.json))), ("ended_timestamp", World.timestamp(clock.now))]))
-        guard let updated = try? updateMessage(call.messageID, in: channelID, { $0.call = ended }) else { return }
-        await emit("MESSAGE_UPDATE", renderMessageEvent(updated), to: .users(Set(channel.recipients)))
+        if let updated = try? updateMessage(call.messageID, in: channelID, { $0.call = ended }) {
+            await emit("MESSAGE_UPDATE", renderMessageEvent(updated), to: .users(Set(channel.recipients)))
+        }
+        await emit("CALL_DELETE", .object(JSONObject([("channel_id", channelID.json)])), to: .users(Set(channel.recipients)))
     }
 
     private func stopRinging(_ channelID: Snowflake, recipients: [Snowflake], ifCall messageID: Snowflake?) async {

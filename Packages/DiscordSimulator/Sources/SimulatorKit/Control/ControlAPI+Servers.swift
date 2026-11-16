@@ -23,6 +23,13 @@ extension ControlAPI {
             try await world.reviewJoinRequest(guildID, applicant: try await resolveUser(body["user"]), approve: action == "approve",
                                               by: moderator, reason: body["reason"]?.stringValue)
             return ok([:])
+        case ("POST", "captcha", _):
+            // Arms `route` (a route template substring, e.g. "POST /api/v9/auth/login") for `count` captchas.
+            simulator.router.captcha.arm(route: body["route"]?.stringValue ?? "", count: Int(body["count"]?.intValue ?? 1))
+            return ok(["site_key": .string(CaptchaGate.testSiteKey)])
+        case ("DELETE", "captcha", _):
+            simulator.router.captcha.clear()
+            return ok([:])
         case ("PUT", "users", 3) where route[2] == "mfa":
             let userID = try await resolveUser(.string(route[1]))
             try await world.configureMFA(userID, code: body["authenticator_code"]?.stringValue,

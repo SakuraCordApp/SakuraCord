@@ -5,9 +5,12 @@ import Foundation
 /// top-level field) complete, so a section in the patch replaces the stored
 /// one, clears included, and every other section is kept.
 enum ProtobufMerge {
-    private struct Field {
+    struct Field {
         var number: UInt64
+        /// The whole field, key included.
         var bytes: Data
+        /// The value: a varint's or fixed number's bytes, or a length-delimited field's contents.
+        var payload: Data
     }
 
     /// Nil when either side isn't a well-formed protobuf message.
@@ -19,7 +22,7 @@ enum ProtobufMerge {
             .reduce(into: Data()) { $0 += $1.bytes }
     }
 
-    private static func fields(_ data: Data) -> [Field]? {
+    static func fields(_ data: Data) -> [Field]? {
         let bytes = [UInt8](data)
         var index = 0, result: [Field] = []
         func readVarint() -> UInt64? {
@@ -54,7 +57,7 @@ enum ProtobufMerge {
             }
             guard start + length <= bytes.count else { return nil }
             index = start + length
-            result.append(Field(number: key >> 3, bytes: Data(bytes[keyStart ..< index])))
+            result.append(Field(number: key >> 3, bytes: Data(bytes[keyStart ..< index]), payload: Data(bytes[start ..< index])))
         }
         return result
     }
