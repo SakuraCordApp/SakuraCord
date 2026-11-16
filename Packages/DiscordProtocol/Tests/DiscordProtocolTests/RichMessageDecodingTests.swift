@@ -55,29 +55,6 @@ import Testing
     #expect(MessageGuildMember.merging(incoming: nil, existing: existing) == existing)
 }
 
-@Test func `channel decoder retains hidden channel timestamps`() throws {
-    let lastMessageID = ClientNonce.make(
-        now: Date(timeIntervalSince1970: 1_784_158_980.123)
-    )
-    let data = Data(
-        #"{"id":"200","guild_id":"300","name":"private","type":0,"last_message_id":"\#(lastMessageID)","last_pin_timestamp":"2026-07-10T11:16:00.000Z"}"#.utf8
-    )
-    let dto = try JSONDecoder().decode(ChannelDTO.self, from: data)
-    let channel = try dto.domain(guildID: nil)
-
-    #expect(channel.lastMessageID?.description == lastMessageID)
-    #expect(
-        abs((channel.lastMessageID?.createdAt.timeIntervalSince1970 ?? 0) - 1_784_158_980.123)
-            < 0.001
-    )
-    let timestampFormatter = ISO8601DateFormatter()
-    timestampFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    #expect(
-        channel.lastPinTimestamp
-            == timestampFormatter.date(from: "2026-07-10T11:16:00.000Z")
-    )
-}
-
 @Test func `channel DTOs and cached snapshots preserve value semantics across copies`() throws {
     let data = Data(
         #"""

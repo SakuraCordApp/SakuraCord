@@ -47,10 +47,9 @@ public extension DiscordRESTProvider {
            let current = privateChannel(id: channelID)
         {
             var channel = saved
-            // The edit response omits account-scoped warning state and may
-            // omit the latest pin; changing a name or icon must preserve them.
+            // The edit response omits account-scoped warning state; changing
+            // a name or icon must preserve it.
             channel.blockedUserWarningDismissed = dto.blockedUserWarningDismissed ?? current.blockedUserWarningDismissed
-            channel.lastPinTimestamp = channel.lastPinTimestamp ?? current.lastPinTimestamp
             // Message events update activity independently of the group's revision.
             channel.lastMessageID = [saved.lastMessageID, current.lastMessageID].compactMap(\.self).max()
             upsertPrivateChannel(channel)

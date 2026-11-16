@@ -372,10 +372,6 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             key: "settings.features.channelManagement", defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
-            id: .showHiddenChannels, page: .features,
-            key: "settings.features.showHiddenChannels", defaultValue: .bool(true)
-        ),
-        SettingsPreferenceRegistration(
             id: .fakeNitroEmojis, page: .features,
             key: "settings.features.fakeNitroEmojis", defaultValue: .bool(true)
         ),

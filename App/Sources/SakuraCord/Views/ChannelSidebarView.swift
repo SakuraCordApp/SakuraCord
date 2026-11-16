@@ -198,7 +198,6 @@ struct ChannelSidebarView: View {
                         ),
                         rulesChannelID: guild?.rulesChannelID,
                         activeVoiceChannelID: activeVoiceChannelID,
-                        hiddenChannelIDs: hiddenChannelIDs,
                         checkingChannelIDs: checkingChannelIDs,
                         // Read here so another server's unread categories
                         // do not invalidate the workspace around the sidebar.
@@ -314,10 +313,6 @@ struct ChannelSidebarView: View {
         )
     }
 
-    private var hiddenChannelIDs: Set<ChannelID> {
-        voiceModel.hiddenChannelIDs
-    }
-
     private var checkingChannelIDs: Set<ChannelID> {
         voiceModel.checkingChannelIDs
     }
@@ -337,7 +332,6 @@ nonisolated private struct GuildChannelListInput: Equatable, Sendable {
     let channelGroups: [ChannelGroup]
     let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
-    let hiddenChannelIDs: Set<ChannelID>
     let checkingChannelIDs: Set<ChannelID>
     let unreadCategoryIDs: Set<ChannelID>
     let sidebarSelection: GuildSidebarSelection?
@@ -391,7 +385,6 @@ private struct GuildChannelList: View, Equatable {
                     rulesChannelID: input.rulesChannelID,
                     activeVoiceChannelID: input.activeVoiceChannelID,
                     sidebarSelection: input.sidebarSelection,
-                    hiddenChannelIDs: input.hiddenChannelIDs,
                     checkingChannelIDs: input.checkingChannelIDs,
                     threadsByParentID: input.threadsByParentID,
                     isUnread: group.categoryID.map(
@@ -564,7 +557,6 @@ private struct ChannelGroupRows: View {
     let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
     let sidebarSelection: GuildSidebarSelection?
-    let hiddenChannelIDs: Set<ChannelID>
     let checkingChannelIDs: Set<ChannelID>
     let threadsByParentID: [ChannelID: [SidebarThreadRow]]
     let isUnread: Bool
@@ -580,7 +572,6 @@ private struct ChannelGroupRows: View {
         rulesChannelID: ChannelID?,
         activeVoiceChannelID: ChannelID?,
         sidebarSelection: GuildSidebarSelection?,
-        hiddenChannelIDs: Set<ChannelID>,
         checkingChannelIDs: Set<ChannelID>,
         threadsByParentID: [ChannelID: [SidebarThreadRow]],
         isUnread: Bool
@@ -592,7 +583,6 @@ private struct ChannelGroupRows: View {
         self.rulesChannelID = rulesChannelID
         self.activeVoiceChannelID = activeVoiceChannelID
         self.sidebarSelection = sidebarSelection
-        self.hiddenChannelIDs = hiddenChannelIDs
         self.checkingChannelIDs = checkingChannelIDs
         self.threadsByParentID = threadsByParentID
         self.isUnread = isUnread
@@ -650,7 +640,6 @@ private struct ChannelGroupRows: View {
                         isSelected: sidebarSelection == .channel(channel.id),
                         rulesChannelID: rulesChannelID,
                         isVoiceConnected: activeVoiceChannelID == channel.id,
-                        isHidden: hiddenChannelIDs.contains(channel.id),
                         isChecking: checkingChannelIDs.contains(channel.id),
                         isPinned: group.isPinnedSection
                     )
@@ -667,7 +656,6 @@ private struct ChannelGroupRows: View {
                         channel: channel,
                         isSelected: sidebarSelection == .channel(channel.id),
                         rulesChannelID: rulesChannelID,
-                        isHidden: hiddenChannelIDs.contains(channel.id),
                         isChecking: checkingChannelIDs.contains(channel.id),
                         isPinned: group.isPinnedSection
                     )
@@ -864,7 +852,6 @@ private struct ChannelRow: View {
     let isSelected: Bool
     var rulesChannelID: ChannelID?
     var isVoiceConnected = false
-    var isHidden = false
     var isChecking = false
     var isPinned = false
 
@@ -925,7 +912,7 @@ private struct ChannelRow: View {
                     ? model.canMarkConversationRead(channelID: channel.id)
                     : channel.unreadCount > 0,
                 allowsMutations: !isChecking,
-                pinAction: isHidden ? .unavailable : .available(
+                pinAction: .available(
                     isPinned: isPinned,
                     isServerChannel: true,
                     toggle: { model.toggleChannelPin(channel) }
@@ -960,7 +947,7 @@ private struct ChannelRow: View {
         if isChecking { return "lock.fill" }
         return ChannelIconPresentation.systemImage(
             for: channel,
-            isHidden: isHidden,
+            isHidden: false,
             rulesChannelID: rulesChannelID
         )
     }

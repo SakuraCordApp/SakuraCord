@@ -20,8 +20,6 @@ struct FeaturesSettingsPage: View {
                 Toggle("Channel customization", isOn: value.channelManagement)
                     .settingsControlAnchor(.channelManagement, state: state)
                     .help("When off, all channels are shown and channel customization controls are hidden. Your server selections are preserved.")
-                Toggle("Show hidden channels", isOn: value.showHiddenChannels)
-                    .settingsControlAnchor(.showHiddenChannels, state: state)
                 Toggle("Show Favorites server", isOn: Binding(
                     get: { model.favoritesAreEnabled },
                     set: { model.setFavoritesEnabled($0) }
