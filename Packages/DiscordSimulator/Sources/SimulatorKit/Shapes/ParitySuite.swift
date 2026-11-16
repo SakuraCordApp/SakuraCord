@@ -232,7 +232,7 @@ struct ParityRun {
         else { throw WorldError.invalidBody("scenario has no bot in the target guild") }
         await flowStart()
         _ = try await rest("POST", "/api/v9/interactions", body: .object(JSONObject([
-            ("type", 2), ("application_id", .string(Snowflake(bot.rawValue + 1).description)),
+            ("type", 2), ("application_id", .string(bot.description)),
             ("guild_id", .string(target.guild.description)), ("channel_id", .string(target.channel.description)),
             ("session_id", "parity"), ("nonce", .string(nonce())),
             ("data", .object(JSONObject([("type", 1), ("name", "gamenight"), ("options", [])]))),

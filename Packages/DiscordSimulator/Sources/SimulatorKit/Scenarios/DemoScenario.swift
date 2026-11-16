@@ -88,7 +88,8 @@ struct DemoConverter {
                 for group in (entry["value"]?.stringValue ?? "").components(separatedBy: " · ") {
                     let parts = group.split(separator: " ", maxSplits: 1).map(String.init)
                     guard parts.count == 2, groups[parts[0]] != nil else { continue }
-                    groups[parts[0]] = parts[1].components(separatedBy: ", ").filter { $0 != name }
+                    // "Nico (birthday rules: he picks)" is still Nico.
+                    groups[parts[0]] = parts[1].components(separatedBy: ", ").filter { $0 != name && !$0.hasPrefix(name + " ") }
                 }
                 groups[mark, default: []].append(name)
                 let text = marks.compactMap { groups[$0.1]?.isEmpty == false ? "\($0.1) \(groups[$0.1]!.joined(separator: ", "))" : nil }

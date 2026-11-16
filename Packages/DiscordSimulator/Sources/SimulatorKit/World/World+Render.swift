@@ -332,11 +332,11 @@ public extension World {
         return .object(legacy)
     }
 
-    /// Discord gives each embed an ID.
+    /// Discord gives each embed an ID; these use snowflake worker 2, which other IDs here never do.
     func renderEmbeds(_ message: Message) -> JSON {
         .array(message.embeds.enumerated().map { index, embed in
             guard case var .object(fields) = embed, fields["id"] == nil else { return embed }
-            fields["id"] = Snowflake(message.id.rawValue + UInt64(index)).json
+            fields["id"] = Snowflake((message.id.rawValue & ~(0x1F << 17) | 2 << 17) + UInt64(index)).json
             return .object(fields)
         })
     }

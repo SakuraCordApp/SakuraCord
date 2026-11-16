@@ -47,8 +47,8 @@ public extension World {
         else { throw WorldError.invalidBody("interaction needs channel_id, application_id and nonce") }
         let channel = try channel(channelID)
         guard canView(userID, channel) else { throw WorldError.missingAccess }
-        // Command-index application IDs are their bot's user ID plus one.
-        let botID = Snowflake(applicationID.rawValue - 1)
+        // Modern bots share their application's ID.
+        let botID = applicationID
         guard users[botID]?.bot == true else { throw WorldError.unknown("Application", code: 10002) }
         let type = body["type"]?.intValue
         let name = body["data"]?["name"]?.stringValue ?? ""
@@ -75,7 +75,11 @@ public extension World {
         } else if let messageID, let responder = componentResponders.first(where: { customID.hasPrefix($0.key) })?.value {
             // Buttons without a responder are acknowledged without a change, like a deferred update.
             let presser = users[userID].map { $0.globalName ?? $0.username } ?? ""
-            let updated = try updateMessage(messageID, in: channelID) { $0.embeds = responder($0.embeds, customID, presser) }
+            let now = clock.now
+            let updated = try updateMessage(messageID, in: channelID) { message in
+                message.embeds = responder(message.embeds, customID, presser)
+                message.editedAt = now
+            }
             await emit("MESSAGE_UPDATE", renderMessageEvent(updated), to: audience(for: channel))
         }
         await emit("INTERACTION_SUCCESS", .object(ids), to: .users([userID]))

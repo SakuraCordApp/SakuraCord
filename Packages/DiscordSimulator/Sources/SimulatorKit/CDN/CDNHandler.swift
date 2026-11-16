@@ -22,7 +22,7 @@ public final class CDNHandler: Sendable {
             return response(request, stored.data, contentType: stored.contentType)
         }
         let size = min(1024, max(16, Int(request.query["size"]?.first ?? request.query["width"]?.first ?? "128") ?? 128))
-        let cacheKey = "\(path)@\(size)"
+        let cacheKey = "\(path)@\(size)" + (request.query["passthrough"]?.first.map { "?passthrough=\($0)" } ?? "")
         if let cached = cache.withLock({ $0[cacheKey] }) { return response(request, cached.0, contentType: cached.1) }
         guard let generated = await generate(path: path, size: size, request: request) else {
             log.error("cdn", "UNKNOWN ASSET \(host)\(request.target)")

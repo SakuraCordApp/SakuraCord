@@ -143,7 +143,8 @@ extension World {
         let bots = Set(guildsInScope.flatMap { $0.members.keys }).compactMap { users[$0] }.filter(\.bot).sorted { $0.id < $1.id }
         var applications: [JSON] = [], commands: [JSON] = []
         for bot in bots {
-            let applicationID = Snowflake(bot.id.rawValue + 1)
+            // Modern bots share their application's ID.
+            let applicationID = bot.id
             applications.append(.object(JSONObject([
                 ("id", applicationID.json), ("name", .string(bot.globalName ?? bot.username)),
                 ("description", .string(bot.bio)), ("icon", .optional(bot.avatar)), ("bot_id", bot.id.json), ("flags", "0"),
