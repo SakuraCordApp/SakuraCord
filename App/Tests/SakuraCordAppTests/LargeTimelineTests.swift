@@ -2678,19 +2678,29 @@ func `viewport window policy preserves coverage with zero overscan and fractiona
         overscan: NativeTimelineViewportWindowPolicy.overscan
     )
 
+    let expectedOriginPixel = Int(floor(max(0, viewport.minY - NativeTimelineViewportWindowPolicy.overscan) * scale))
+    #expect(abs(normalGeometry.frame.minY * scale - CGFloat(expectedOriginPixel)) < 0.0001)
     #expect(normalGeometry.frame.minY <= viewport.minY)
     #expect(normalGeometry.frame.maxY >= min(documentHeight, viewport.maxY))
     #expect(normalGeometry.frame.minY >= 0)
     #expect(normalGeometry.frame.maxY <= documentHeight)
 
-    // Early return path preserves coverage and bounds equality
+    // Early return path with independently fractional currentFrame exercises retained-frame rounding
+    let fractionalCurrentFrame = CGRect(
+        x: 0,
+        y: normalGeometry.frame.minY + 0.3333 / scale,
+        width: normalGeometry.frame.width,
+        height: normalGeometry.frame.height
+    )
     let earlyReturnGeometry = NativeTimelineViewportWindowPolicy.geometry(
         viewport: viewport,
         documentSize: documentSize,
-        currentFrame: normalGeometry.frame,
+        currentFrame: fractionalCurrentFrame,
         scale: scale,
         overscan: NativeTimelineViewportWindowPolicy.overscan
     )
+    let expectedRetainedPixel = floor(fractionalCurrentFrame.minY * scale)
+    #expect(abs(earlyReturnGeometry.frame.minY * scale - expectedRetainedPixel) < 0.0001)
     #expect(earlyReturnGeometry.frame.minY <= viewport.minY)
     #expect(earlyReturnGeometry.frame.minY == earlyReturnGeometry.bounds.minY)
     #expect(earlyReturnGeometry.frame.height == earlyReturnGeometry.bounds.height)
