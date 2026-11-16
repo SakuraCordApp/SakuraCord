@@ -704,3 +704,11 @@ private func spoilerOutline(_ source: String) -> String {
     #expect(singleValue.string == "swift let x = 1")
     #expect(singleValue.attribute(.discordMarkdownBlock, at: 0, effectiveRange: nil) as? String == "code")
 }
+
+@Test func `empty source lines outside code fences preserve paragraph spacing`() {
+    let source = "first\n\nsecond"
+    let plan = DiscordMarkdown.appKitPlan(source)
+    #expect(plan.lines.count == 3)
+    let rendered = DiscordMarkdown.appKitAttributed(plan)
+    #expect(rendered.string == "first\n\nsecond")
+}

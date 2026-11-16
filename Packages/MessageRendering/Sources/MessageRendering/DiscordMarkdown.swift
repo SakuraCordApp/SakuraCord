@@ -1343,6 +1343,11 @@ private extension DiscordMarkdown {
         startsCodeFence: inout Bool,
         body: (Substring, SourceLine) -> Void
     ) {
+        if line.isEmpty {
+            let (content, isQuoted) = resolveQuoteContent(line, isInMultilineQuote: &isInMultilineQuote)
+            body(line, .text(content, isQuoted: isQuoted))
+            return
+        }
         var cursor = line
         while !cursor.isEmpty {
             guard let openRange = cursor.range(of: "```") else {

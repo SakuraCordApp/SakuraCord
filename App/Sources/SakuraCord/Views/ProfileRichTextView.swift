@@ -407,7 +407,7 @@ enum ProfileInlineAttributedText {
                 replacement = MentionAttachmentRenderer.attributedString(presentation: presentation, font: font)
             }
             let retainedAttributes = output.attributes(at: range.location, effectiveRange: nil)
-                .filter { [.paragraphStyle, .discordMarkdownBlock, .discordMarkdownEm].contains($0.key) }
+                .filter { [.paragraphStyle, .discordMarkdownBlock, .discordMarkdownEm, .link].contains($0.key) }
             output.replaceCharacters(in: range, with: replacement)
             output.addAttributes(
                 retainedAttributes,
