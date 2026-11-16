@@ -703,11 +703,12 @@ final class TypingIndicator: NSView {
         }
     }
 
-    /// A nil image leaves the slot empty while its picture loads.
+    /// A nil image shows a neutral circle while the picture loads.
     private func show(_ image: CGImage?, in slot: AvatarSlot, arrives: Bool) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         slot.picture.contents = image
+        slot.picture.backgroundColor = image == nil ? placeholderColor : nil
         let wasWaiting = slot.isWaitingForPicture
         if wasWaiting {
             slot.isWaitingForPicture = false
@@ -865,5 +866,14 @@ final class TypingIndicator: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             countText.foregroundColor = NSColor.secondaryLabelColor.cgColor
         }
+        for slot in stack where slot.picture.contents == nil {
+            slot.picture.backgroundColor = placeholderColor
+        }
+    }
+
+    private var placeholderColor: CGColor? {
+        var color: CGColor?
+        effectiveAppearance.performAsCurrentDrawingAppearance { color = NSColor.quaternaryLabelColor.cgColor }
+        return color
     }
 }
