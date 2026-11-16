@@ -686,3 +686,21 @@ private func spoilerOutline(_ source: String) -> String {
     #expect(code.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil)
     #expect(code.attribute(.discordMarkdownSpoiler, at: 0, effectiveRange: nil) != nil)
 }
+
+@Test func `discord markdown renders inline opening and closing code fences`() {
+    let source = "```**focus mode** • back\n<t:1750000000:r> :rocket:```"
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
+    #expect(!value.string.contains("```"))
+    #expect(value.string.contains("**focus mode** • back\n<t:1750000000:r> :rocket:"))
+    let string = value.string as NSString
+    let codeRange = string.range(of: "**focus mode** • back")
+    #expect(value.attribute(.discordMarkdownBlock, at: codeRange.location, effectiveRange: nil) as? String == "code")
+    let secondLineRange = string.range(of: "<t:1750000000:r> :rocket:")
+    #expect(value.attribute(.discordMarkdownBlock, at: secondLineRange.location, effectiveRange: nil) as? String == "code")
+
+    let singleLine = "```swift let x = 1```"
+    let singleValue = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(singleLine))
+    #expect(!singleValue.string.contains("```"))
+    #expect(singleValue.string == "swift let x = 1")
+    #expect(singleValue.attribute(.discordMarkdownBlock, at: 0, effectiveRange: nil) as? String == "code")
+}

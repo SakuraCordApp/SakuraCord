@@ -1,3 +1,4 @@
+import MessageRendering
 import AppKit
 import SakuraCordModels
 import SwiftUI
@@ -655,7 +656,7 @@ struct ProfileStatusBubble: View {
             .contentShape(ProfileStatusBubbleLayout.shape)
             .onModalHover { isBubbleHovering = $0 }
             .animation(.snappy(duration: 0.16), value: isExpanded)
-            .help(displayText)
+            .help(isTextHovering ? "" : displayText)
             .accessibilityLabel("Custom status: \(displayText)")
             .zIndex(2)
     }
@@ -698,11 +699,15 @@ struct ProfileStatusBubble: View {
     }
 
     private var displayText: String {
-        text.replacingOccurrences(
+        var result = text.replacingOccurrences(
             of: #"<a?:([A-Za-z0-9_~]+):[0-9]+>"#,
             with: ":$1:",
             options: .regularExpression
         )
+        for token in TimestampMentionPresentation.tokens(in: text) {
+            result = result.replacingOccurrences(of: token.rawToken, with: token.formatted())
+        }
+        return result
     }
 }
 

@@ -154,12 +154,23 @@ public enum DiscordMarkdown {
         }
         let collector = SourceFormatCollector(source: source, collect: collect)
         for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            guard line.hasPrefix("```") else { continue }
             if !inCodeFence {
-                _ = inlineRuns(source[segmentStart ..< line.startIndex], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+                if let openRange = line.range(of: "```") {
+                    _ = inlineRuns(source[segmentStart ..< openRange.lowerBound], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+                    let afterFence = line[openRange.upperBound...]
+                    if let closeRange = afterFence.range(of: "```") {
+                        segmentStart = closeRange.upperBound
+                    } else {
+                        inCodeFence = true
+                        segmentStart = line.endIndex
+                    }
+                }
+            } else {
+                if let closeRange = line.range(of: "```") {
+                    inCodeFence = false
+                    segmentStart = closeRange.upperBound
+                }
             }
-            inCodeFence.toggle()
-            segmentStart = line.endIndex
         }
         // Text after a fence that never closes is text, as Discord shows it.
         _ = inlineRuns(source[segmentStart...], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
@@ -314,32 +325,100 @@ public enum DiscordMarkdown {
         var startsCodeFence = false
         var isInMultilineQuote = false
         for rawLine in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            if rawLine.hasPrefix("```") {
-                isInCodeFence.toggle()
-                startsCodeFence = isInCodeFence
-                let suffix = rawLine.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
-                codeLanguage = isInCodeFence && !suffix.isEmpty ? suffix.lowercased() : nil
-                body(rawLine, .fence(opening: isInCodeFence ? "```" + (codeLanguage ?? "") : nil))
-            } else if isInCodeFence {
-                body(rawLine, .code(language: codeLanguage, isFirstLine: startsCodeFence))
-                startsCodeFence = false
-            } else {
-                // `>>>` quotes the rest of the message, blank lines included.
-                var content = rawLine
-                var isQuoted = isInMultilineQuote
-                if !isQuoted, content.hasPrefix(">>> ") {
-                    isInMultilineQuote = true
-                    isQuoted = true
-                    content = content.dropFirst(4)
-                } else if !isQuoted, content.hasPrefix("> ") {
-                    isQuoted = true
-                    content = content.dropFirst(2)
-                } else if !isQuoted, let quoted = quoteContent(content) {
-                    isQuoted = true
-                    content = quoted
+            if !isInCodeFence {
+                if let openRange = rawLine.range(of: "```") {
+                    let before = rawLine[..<openRange.lowerBound]
+                    if !before.isEmpty {
+                        var content = before
+                        var isQuoted = isInMultilineQuote
+                        if !isQuoted, content.hasPrefix(">>> ") {
+                            isInMultilineQuote = true
+                            isQuoted = true
+                            content = content.dropFirst(4)
+                        } else if !isQuoted, content.hasPrefix("> ") {
+                            isQuoted = true
+                            content = content.dropFirst(2)
+                        } else if !isQuoted, let quoted = quoteContent(content) {
+                            isQuoted = true
+                            content = quoted
+                        }
+                        body(before, .text(content, isQuoted: isQuoted))
+                    }
+                    let afterFence = rawLine[openRange.upperBound...]
+                    if let closeRange = afterFence.range(of: "```") {
+                        let inside = afterFence[..<closeRange.lowerBound]
+                        let fenceStart = rawLine[openRange.lowerBound ..< afterFence.startIndex]
+                        body(fenceStart, .fence(opening: "```"))
+                        if !inside.isEmpty {
+                            body(inside, .code(language: nil, isFirstLine: true))
+                        }
+                        let fenceEnd = afterFence[closeRange]
+                        body(fenceEnd, .fence(opening: nil))
+                        let after = afterFence[closeRange.upperBound...]
+                        if !after.isEmpty {
+                            body(after, .text(after, isQuoted: isInMultilineQuote))
+                        }
+                    } else {
+                        isInCodeFence = true
+                        startsCodeFence = true
+                        let trimmed = afterFence.trimmingCharacters(in: .whitespaces)
+                        if !trimmed.isEmpty && isValidLanguageIdentifier(trimmed) {
+                            codeLanguage = trimmed.lowercased()
+                            let fenceStart = rawLine[openRange.lowerBound ..< afterFence.startIndex]
+                            body(fenceStart, .fence(opening: "```" + codeLanguage!))
+                        } else {
+                            codeLanguage = nil
+                            let fenceStart = rawLine[openRange.lowerBound ..< afterFence.startIndex]
+                            body(fenceStart, .fence(opening: "```"))
+                            if !afterFence.isEmpty {
+                                body(afterFence, .code(language: nil, isFirstLine: true))
+                                startsCodeFence = false
+                            }
+                        }
+                    }
+                } else {
+                    // `>>>` quotes the rest of the message, blank lines included.
+                    var content = rawLine
+                    var isQuoted = isInMultilineQuote
+                    if !isQuoted, content.hasPrefix(">>> ") {
+                        isInMultilineQuote = true
+                        isQuoted = true
+                        content = content.dropFirst(4)
+                    } else if !isQuoted, content.hasPrefix("> ") {
+                        isQuoted = true
+                        content = content.dropFirst(2)
+                    } else if !isQuoted, let quoted = quoteContent(content) {
+                        isQuoted = true
+                        content = quoted
+                    }
+                    body(rawLine, .text(content, isQuoted: isQuoted))
                 }
-                body(rawLine, .text(content, isQuoted: isQuoted))
+            } else {
+                if let closeRange = rawLine.range(of: "```") {
+                    isInCodeFence = false
+                    let content = rawLine[..<closeRange.lowerBound]
+                    if !content.isEmpty {
+                        body(content, .code(language: codeLanguage, isFirstLine: startsCodeFence))
+                        startsCodeFence = false
+                    }
+                    let fenceClose = rawLine[closeRange]
+                    body(fenceClose, .fence(opening: nil))
+                    let after = rawLine[closeRange.upperBound...]
+                    if !after.isEmpty {
+                        body(after, .text(after, isQuoted: isInMultilineQuote))
+                    }
+                } else {
+                    body(rawLine, .code(language: codeLanguage, isFirstLine: startsCodeFence))
+                    startsCodeFence = false
+                }
             }
+        }
+    }
+
+    private static func isValidLanguageIdentifier(_ string: String) -> Bool {
+        guard let first = string.first, first.isASCII && first.isLetter else { return false }
+        return string.allSatisfy { char in
+            char.isASCII && (char.isLetter || char.isNumber || char == "+" || char == "-" || char == "_" || char == "#")
         }
     }
 
@@ -1363,18 +1442,28 @@ extension DiscordMarkdown {
         var inCodeFence = false
         var inMultilineQuote = false
         for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            if line.hasPrefix("```") {
-                inCodeFence.toggle()
-                ranges.append(NSRange(line.startIndex ..< line.endIndex, in: source))
-            } else if inCodeFence {
-                ranges.append(NSRange(line.startIndex ..< line.endIndex, in: source))
+            if !inCodeFence {
+                if let openRange = line.range(of: "```") {
+                    let afterFence = line[openRange.upperBound...]
+                    if let closeRange = afterFence.range(of: "```") {
+                        ranges.append(NSRange(openRange.lowerBound ..< closeRange.upperBound, in: source))
+                    } else {
+                        inCodeFence = true
+                        ranges.append(NSRange(openRange.lowerBound ..< line.endIndex, in: source))
+                    }
+                } else {
+                    if line.isEmpty { inMultilineQuote = false }
+                    let content = line.hasPrefix("* ") && !inMultilineQuote ? line.dropFirst(2) : line
+                    _ = inlineRuns(content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+                    if line.hasPrefix(">>> ") { inMultilineQuote = true }
+                }
             } else {
-                if line.isEmpty { inMultilineQuote = false }
-                // planLine removes a list marker before parsing inline syntax;
-                // multiline quote continuations instead retain their whole line.
-                let content = line.hasPrefix("* ") && !inMultilineQuote ? line.dropFirst(2) : line
-                _ = inlineRuns(content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
-                if line.hasPrefix(">>> ") { inMultilineQuote = true }
+                if let closeRange = line.range(of: "```") {
+                    inCodeFence = false
+                    ranges.append(NSRange(line.startIndex ..< closeRange.upperBound, in: source))
+                } else {
+                    ranges.append(NSRange(line.startIndex ..< line.endIndex, in: source))
+                }
             }
         }
         return ranges
@@ -1462,8 +1551,19 @@ public extension DiscordMarkdown {
             // Discord shows it: the open fence literal and the lines after it
             // as text.
             var openFence: String.Index?
-            for line in source.split(separator: "\n", omittingEmptySubsequences: false) where line.hasPrefix("```") {
-                openFence = openFence == nil ? line.startIndex : nil
+            for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+                if openFence == nil {
+                    if let openRange = line.range(of: "```") {
+                        let afterFence = line[openRange.upperBound...]
+                        if !afterFence.contains("```") {
+                            openFence = openRange.lowerBound
+                        }
+                    }
+                } else {
+                    if line.contains("```") {
+                        openFence = nil
+                    }
+                }
             }
             forEachSourceLine(source) { rawLine, kind in
                 guard let openFence, rawLine.startIndex >= openFence else {
