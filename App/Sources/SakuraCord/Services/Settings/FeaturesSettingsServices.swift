@@ -77,7 +77,6 @@ extension AppModel {
             dropSyncedLocalFavorites()
             if favorites.isPresented { loadFavoriteThreads() }
         }
-        refreshVisibleChannelGroups()
         reconcileSelectedOnboardingChannel()
         if allowedScreenShareSettings(screenShareSettings) != screenShareSettings {
             Task { [weak self] in

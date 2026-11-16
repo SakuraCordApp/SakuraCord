@@ -865,6 +865,7 @@ final class SettingsPreferenceStore {
             "settings.accessibility.reduceAnimatedContent",
             "settings.accessibility.increaseContrast",
             "settings.accessibility.largerTargets",
+            "settings.features.showHiddenChannels",
         ] {
             defaults.removeObject(forKey: key)
         }
