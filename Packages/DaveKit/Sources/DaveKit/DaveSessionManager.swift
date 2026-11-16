@@ -115,11 +115,7 @@ public actor DaveSessionManager {
     public func selectProtocol(protocolVersion: UInt16) async {
         daveProtocolLogger.info("DAVE protocol selected; version=\(protocolVersion)")
         if protocolVersion > Self.disabledProtocolVersion {
-            await prepareEpoch(
-                transitionId: Self.initialTransitionID,
-                epoch: Self.mlsNewGroupExpectedEpoch,
-                protocolVersion: protocolVersion
-            )
+            await prepareEpoch(epoch: Self.mlsNewGroupExpectedEpoch, protocolVersion: protocolVersion)
         } else {
             await prepareTransition(
                 transitionId: Self.initialTransitionID,
@@ -167,14 +163,10 @@ public actor DaveSessionManager {
     }
 
     /// Opcode DAVE_PROTOCOL_PREPARE_EPOCH (24)
-    public func prepareEpoch(
-        transitionId: UInt16,
-        epoch: String,
-        protocolVersion: UInt16
-    ) async {
+    public func prepareEpoch(epoch: String, protocolVersion: UInt16) async {
         guard let epochNumber = UInt64(epoch), epochNumber > 0 else { return }
         daveProtocolLogger.info(
-            "DAVE epoch preparation; id=\(transitionId), epoch=\(epoch, privacy: .public), version=\(protocolVersion)"
+            "DAVE epoch preparation; epoch=\(epoch, privacy: .public), version=\(protocolVersion)"
         )
 
         if epoch == Self.mlsNewGroupExpectedEpoch {
@@ -186,10 +178,9 @@ public actor DaveSessionManager {
             return
         }
 
-        // Epochs after the initial MLS group retain the existing group state.
-        // Only the DAVE protocol context and media ratchets transition.
+        // A later epoch keeps the MLS group. Its media ratchets switch on the
+        // prepare-transition, commit or welcome that carries the transition ID.
         session.setProtocolVersion(protocolVersion)
-        await prepareTransition(transitionId: transitionId, protocolVersion: protocolVersion)
     }
 
     /// Opcode MLS_EXTERNAL_SENDER_PACKAGE (25)

@@ -596,12 +596,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         case let .daveExecuteTransition(transitionID):
             await dave.executeTransition(transitionId: transitionID)
             await requestCurrentRemoteKeyframes(reason: "DAVE transition became usable")
-        case let .davePrepareEpoch(transitionID, epoch, protocolVersion):
-            await dave.prepareEpoch(
-                transitionId: transitionID,
-                epoch: String(epoch),
-                protocolVersion: protocolVersion
-            )
+        case let .davePrepareEpoch(epoch, protocolVersion):
+            await dave.prepareEpoch(epoch: String(epoch), protocolVersion: protocolVersion)
         case let .daveMLSExternalSender(data):
             await dave.mlsExternalSenderPackage(externalSenderPackage: data)
         case let .daveMLSProposals(data):

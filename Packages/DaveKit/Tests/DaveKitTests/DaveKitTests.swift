@@ -29,14 +29,13 @@ private actor TestDelegate: DaveSessionDelegate {
     let delegate = TestDelegate()
     let manager = DaveSessionManager(selfUserId: "1", groupId: 10, delegate: delegate)
 
-    await manager.prepareEpoch(transitionId: 3, epoch: "1", protocolVersion: 1)
+    await manager.prepareEpoch(epoch: "1", protocolVersion: 1)
     #expect(await delegate.keyPackageCount == 1)
     #expect(await !delegate.lastKeyPackage.isEmpty)
-    #expect(await delegate.readyTransitionIDs.isEmpty)
 
-    await manager.prepareEpoch(transitionId: 44, epoch: "2", protocolVersion: 2)
+    await manager.prepareEpoch(epoch: "2", protocolVersion: 2)
     #expect(await delegate.keyPackageCount == 1)
-    #expect(await delegate.readyTransitionIDs == [44])
+    #expect(await delegate.readyTransitionIDs.isEmpty)
 }
 
 @Test func `passthrough encryption round trips H 264 frames`() async throws {
