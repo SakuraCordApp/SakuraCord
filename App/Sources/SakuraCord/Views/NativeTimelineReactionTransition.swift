@@ -467,9 +467,8 @@ extension NativeTimelineCanvasView {
         guard let first = frames.first else { return nil }
         let frame = frames.reduce(first) { $0.union($1) }
         let key: [AnyHashable] = ["avatars", region.placeholderAvatarFrames.count] + region.avatarRegions.map { avatar in
-            [avatar.reactor.id, avatar.reactor.displayName, avatar.reactor.avatarURL, avatar.reactor.avatarURL.map {
-                MediaImageStore.shared.stillImage(for: .avatar($0)) != nil
-            }] as [AnyHashable]
+            [avatar.reactor.id, avatar.reactor.displayName, avatar.reactor.avatarURL,
+             MediaImageStore.shared.stillImage(for: .avatar(avatar.reactor.avatarURL)) != nil] as [AnyHashable]
         }
         return ReactionAvatarsPicture(
             picture: reactionPicture(key, covering: frame) { NativeTimelineRowPainter.drawReactionAvatars(region) },

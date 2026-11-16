@@ -162,13 +162,7 @@ extension NativeTimelineRowPainter {
             let presentedAuthor =
                 author?.user
                 ?? message.author
-            avatar(
-                name: presentedAuthor.displayName,
-                url:
-                    presentedAuthor.avatarURL
-                        ?? message.author.avatarURL,
-                in: frame
-            )
+            avatar(url: presentedAuthor.avatarURL, in: frame)
             if let decorationURL =
                 presentedAuthor.avatarDecorationURL
             {
@@ -799,10 +793,9 @@ extension NativeTimelineRowPainter {
                 ).fill()
             }
             let iconWidth: CGFloat = source.iconURL == nil ? 0 : 18
-            if iconWidth > 0 {
+            if let iconURL = source.iconURL {
                 avatar(
-                    name: source.label,
-                    url: source.iconURL,
+                    url: iconURL,
                     in: CGRect(
                         x: source.frame.minX + InterfaceScale.metric(6),
                         y: source.frame.midY - InterfaceScale.metric(9),
@@ -827,42 +820,14 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    static func avatar(
-        name: String,
-        url: URL?,
-        in frame: CGRect
-    ) {
-        if let url,
-           let image = MediaImageStore.shared.stillImage(for: .avatar(url))
-        {
+    /// Draws a neutral circle until the picture is decoded.
+    static func avatar(url: URL?, in frame: CGRect) {
+        if let url, let image = MediaImageStore.shared.stillImage(for: .avatar(url)) {
             drawImage(image, in: frame, cornerRadius: frame.width / 2, fillsFrame: true)
-            return
+        } else {
+            NSColor.quaternaryLabelColor.setFill()
+            NSBezierPath(ovalIn: frame).fill()
         }
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(ovalIn: frame).addClip()
-        let accent = NSColor.sakuraCordAccentColor
-        let lighter =
-            accent.blended(withFraction: 0.28, of: .white)
-            ?? accent
-        let darker =
-            accent.blended(withFraction: 0.18, of: .black)
-            ?? accent
-        NSGradient(starting: darker, ending: lighter)?
-            .draw(in: frame, angle: -45)
-        NSGraphicsContext.restoreGraphicsState()
-        text(
-            String(name.prefix(1)).uppercased(),
-            in: frame.insetBy(
-                dx: InterfaceScale.metric(4),
-                dy: frame.height * 0.26
-            ),
-            font: .systemFont(
-                ofSize: frame.height * 0.42,
-                weight: .semibold
-            ),
-            color: .sakuraCordLabelOnAccentColor,
-            alignment: .center
-        )
     }
 
     static func avatarDecoration(
@@ -1115,11 +1080,7 @@ extension NativeTimelineRowPainter {
     ) -> CGRect {
         let presentation = model?.authorPresentation(for: preview, in: message)
         let author = presentation?.user ?? preview.author
-        avatar(
-            name: author.displayName,
-            url: author.avatarURL,
-            in: avatarFrame
-        )
+        avatar(url: author.avatarURL, in: avatarFrame)
         let font = ProfileNameFontCache.font(id: author.displayNameStyle?.fontID, fallback: NativeTimelineReplyMetrics.authorFont)
         let displayName = showsReplyMention
             ? NativeTimelineReplyMetrics.authorDisplayName(author, in: message)
@@ -1222,11 +1183,7 @@ extension NativeTimelineRowPainter {
         }
         let user = message.interactionMetadata?.user.map(cosmeticPolicy.user)
         if let frame = region.avatarFrame, let user {
-            avatar(
-                name: user.displayName,
-                url: user.avatarURL,
-                in: frame
-            )
+            avatar(url: user.avatarURL, in: frame)
         } else if let frame = region.fallbackAvatarFrame {
             systemSymbol(
                 "person.crop.circle",

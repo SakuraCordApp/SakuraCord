@@ -31,7 +31,7 @@ import Testing
         await provider.handleGatewayDispatch(name: "GUILD_MEMBER_UPDATE", body: member(guildID, avatar: "after"))
     }
     #expect(await provider.cachedGuilds[guildIDs[0]]?.currentUserPermissions == 1_024)
-    #expect(await provider.cachedMembers[guildIDs.last!]?.first?.user.avatarURL?.path.contains("after") == true)
+    #expect(await provider.cachedMembers[guildIDs.last!]?.first?.user.avatarURL.path.contains("after") == true)
 
     // Real nickname and role changes must still propagate and invalidate
     // the old permission snapshot after removing no-op publications.

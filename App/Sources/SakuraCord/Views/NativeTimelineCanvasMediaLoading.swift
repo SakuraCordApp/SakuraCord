@@ -385,9 +385,7 @@ extension NativeTimelineCanvasView {
     ) {
         let message = row.message
         let author = model?.authorPresentation(for: message)
-        if let url = author?.user.avatarURL ?? message.author.avatarURL {
-            keys.append(.avatar(url))
-        }
+        keys.append(.avatar((author?.user ?? message.author).avatarURL))
         if let url =
             (author?.user ?? message.author).avatarDecorationURL
         {
@@ -530,11 +528,7 @@ extension NativeTimelineCanvasView {
             ) {
                 keys.append(key)
             }
-            for avatar in region.avatarRegions {
-                if let url = avatar.reactor.avatarURL {
-                    keys.append(.avatar(url))
-                }
-            }
+            keys += region.avatarRegions.map { .avatar($0.reactor.avatarURL) }
         }
     }
 

@@ -14,7 +14,7 @@ struct ServerInviteContractTests {
         #expect(preview.traits.first?.label == "Testing")
         #expect(preview.inviter?.displayName == "Invite Maker")
         #expect(preview.inviter?.username == "maker")
-        #expect(preview.inviter?.avatarURL?.absoluteString == "https://cdn.discordapp.com/avatars/902/avatar.webp?size=32")
+        #expect(preview.inviter?.avatarURL.absoluteString == "https://cdn.discordapp.com/avatars/902/avatar.webp?size=32")
         let accepted = try await provider.acceptServerInvite(reference, messageID: .init(rawValue: 42))
         #expect(accepted.invite == preview)
         #expect(!accepted.requiresVerification)

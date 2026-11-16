@@ -473,7 +473,7 @@ private struct AccountSelectionPopover: View {
             HStack(spacing: InterfaceScale.metric(9)) {
                 AvatarView(
                     name: account.resolvedDisplayName,
-                    url: account.avatarURL,
+                    url: account.resolvedAvatarURL,
                     size: InterfaceScale.metric(20),
                     maximumPixelDimension: 40,
                     animates: false

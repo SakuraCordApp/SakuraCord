@@ -49,7 +49,9 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
 
     public var discriminator: String
     public var displayName: String
-    public var avatarURL: URL?
+    /// Like the official client, a user without an avatar shows their default
+    /// avatar, so every user has an image to show.
+    public var avatarURL: URL
     public var isBot: Bool
     public var isSystem: Bool
     public var avatarDecorationURL: URL?
@@ -80,7 +82,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         self.username = username
         self.discriminator = discriminator
         self.displayName = displayName
-        self.avatarURL = avatarURL
+        self.avatarURL = avatarURL ?? Self.defaultAvatarURL(id: id, discriminator: discriminator)
         self.isBot = isBot
         self.isSystem = isSystem
         self.avatarDecorationURL = avatarDecorationURL
@@ -104,6 +106,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         discriminator = try container.decodeIfPresent(String.self, forKey: .discriminator) ?? "0"
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? username
         avatarURL = try container.decodeIfPresent(URL.self, forKey: .avatarURL)
+            ?? Self.defaultAvatarURL(id: id, discriminator: discriminator)
         isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot) ?? false
         isSystem = try container.decodeIfPresent(Bool.self, forKey: .isSystem) ?? false
         avatarDecorationURL = try container.decodeIfPresent(URL.self, forKey: .avatarDecorationURL)
@@ -116,6 +119,25 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         publicFlags = try container.decodeIfPresent(UInt64.self, forKey: .publicFlags) ?? 0
         premiumType = try container.decodeIfPresent(Int.self, forKey: .premiumType) ?? 0
         allowsAdultContent = try container.decodeIfPresent(Bool.self, forKey: .allowsAdultContent)
+    }
+
+    public var defaultAvatarURL: URL {
+        Self.defaultAvatarURL(id: id, discriminator: discriminator)
+    }
+
+    /// The official client's bundled default avatars, chosen by user ID or
+    /// legacy discriminator.
+    public static func defaultAvatarURL(id: UserID, discriminator: String? = nil) -> URL {
+        let assets = ["18e336a74a159cfd", "788f05731f8aa02e", "9855d7e3b9780976",
+                      "2ccd8ae8b2379360", "411d8a698dd15ddf", "320d5a40d309f942"]
+        // Only the migrated "0" discriminator indexes by ID; any legacy value,
+        // including a webhook's "0000", indexes by discriminator.
+        let index = if let discriminator, discriminator != "0", let legacy = UInt64(discriminator) {
+            legacy % 5
+        } else {
+            id.discordEpochMilliseconds % UInt64(assets.count)
+        }
+        return URL(string: "https://discord.com/assets/\(assets[Int(index)]).png")!
     }
 
     public var tag: String {

@@ -2,22 +2,6 @@ import Foundation
 import SakuraCordModels
 
 public enum DiscordProfileImageAssets {
-    /// The clean client's standard avatar assets, ordered by its user-ID or
-    /// legacy discriminator index. These are bundled artwork, not inventory.
-    /// Every decoded user without an avatar resolves through this one source.
-    public static func defaultAvatarURL(userID: String, discriminator: String?) -> URL? {
-        let assets = ["18e336a74a159cfd.png", "788f05731f8aa02e.png", "9855d7e3b9780976.png",
-                      "2ccd8ae8b2379360.png", "411d8a698dd15ddf.png", "320d5a40d309f942.png"]
-        // Only the migrated "0" discriminator indexes by ID; any legacy value,
-        // including a webhook's "0000", indexes by discriminator.
-        let index = if let discriminator, discriminator != "0", let legacy = UInt64(discriminator) {
-            legacy % 5
-        } else {
-            (UserID(userID)?.discordEpochMilliseconds ?? 0) % UInt64(assets.count)
-        }
-        return URL(string: "https://discord.com/assets/\(assets[Int(index)])")
-    }
-
     /// Profile cropping uses the first-party asset proxy. Picker thumbnails
     /// continue to use the response-provided media origin.
     public static func editableGIFURL(_ candidate: URL?) -> URL? {

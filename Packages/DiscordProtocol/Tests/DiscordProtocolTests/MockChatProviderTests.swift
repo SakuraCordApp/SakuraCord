@@ -142,7 +142,7 @@ private func verifyMemberFixtures(provider: MockChatProvider) async throws {
         in: guildID, query: "maya", limit: 25
     )
     #expect(searchedMembers.map(\.user.displayName) == ["Maya • Orbit"])
-    #expect(members.allSatisfy { $0.user.avatarURL?.isFileURL == true })
+    #expect(members.allSatisfy { $0.user.avatarURL.isFileURL == true })
     for member in members {
         let profile = try await provider.profile(for: member.user.id, in: guildID)
         #expect(profile.bio?.isEmpty == false)
@@ -476,7 +476,7 @@ private func verifyAnimatedAndCommandFixtures(
     )
     let reaction = try #require(message.reactions.first { $0.emoji == "😭" })
     #expect(reaction.reactors.count == 2)
-    #expect(reaction.reactors.allSatisfy { $0.avatarURL?.isFileURL == true })
+    #expect(reaction.reactors.allSatisfy { $0.avatarURL.isFileURL == true })
     #expect(reaction.didCurrentUserReact)
 
     let overflowing = try #require(message.reactions.first { $0.emoji == "🔥" })
@@ -487,7 +487,7 @@ private func verifyAnimatedAndCommandFixtures(
         reactionCount: overflowing.count
     )
     #expect(overflowingReactors.count == 5)
-    #expect(overflowingReactors.allSatisfy { $0.avatarURL?.isFileURL == true })
+    #expect(overflowingReactors.allSatisfy { $0.avatarURL.isFileURL == true })
 
     try await provider.toggleReaction(reaction.emoji, messageID: messageID, channelID: channelID)
     message = try #require(

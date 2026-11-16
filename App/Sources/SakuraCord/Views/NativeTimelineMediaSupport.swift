@@ -4,7 +4,7 @@ enum NativeTimelineReplyMediaPolicy {
     static func avatarKey(
         for preview: MessageReplyPreview?
     ) -> MediaImageKey? {
-        preview?.author.avatarURL.map(MediaImageKey.avatar)
+        preview.map { .avatar($0.author.avatarURL) }
     }
 
     static func emojiKeys(

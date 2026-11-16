@@ -105,12 +105,12 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
 public struct ReactionReactor: Identifiable, Codable, Hashable, Sendable {
     public let id: UserID
     public var displayName: String
-    public var avatarURL: URL?
+    public var avatarURL: URL
 
     public init(id: UserID, displayName: String, avatarURL: URL? = nil) {
         self.id = id
         self.displayName = displayName
-        self.avatarURL = avatarURL
+        self.avatarURL = avatarURL ?? User.defaultAvatarURL(id: id)
     }
 
     public init(user: User) {
