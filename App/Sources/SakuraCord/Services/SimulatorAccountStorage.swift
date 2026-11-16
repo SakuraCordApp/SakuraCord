@@ -7,10 +7,16 @@ import SakuraCordModels
 /// real token is never loaded or sent while the redirect is active.
 nonisolated enum SimulatorAccountStorage {
     /// Nil outside a simulator launch; release builds always use the default location.
-    static var databaseDirectory: URL? {
+    static var databaseDirectory: URL? { directory("Data") }
+
+    /// The simulator serves its own images under real CDN URLs, so they must
+    /// never enter the real media cache. Nil outside a simulator launch.
+    static var mediaCacheDirectory: URL? { directory("Caches") }
+
+    private static func directory(_ name: String) -> URL? {
         #if DEBUG
         guard DiscordNetworkRedirect.isActive else { return nil }
-        return root.appendingPathComponent("Data", isDirectory: true)
+        return root.appendingPathComponent(name, isDirectory: true)
         #else
         return nil
         #endif

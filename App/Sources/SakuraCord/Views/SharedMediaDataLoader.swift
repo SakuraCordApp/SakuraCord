@@ -100,7 +100,8 @@ actor SharedMediaDataLoader {
             forKey: "mediaCacheLimit"
         ) as? NSNumber)?.int64Value ?? Self.defaultRemoteDiskCostLimit
         remoteDiskCache = try? MediaCache(
-            maximumBytes: configuredLimit
+            maximumBytes: configuredLimit,
+            directory: SimulatorAccountStorage.mediaCacheDirectory
         )
         remoteFetch = Self.download
         remoteDownload = Self.downloadToTemporaryFile

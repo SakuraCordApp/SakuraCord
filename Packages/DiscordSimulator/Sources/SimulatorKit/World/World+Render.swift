@@ -314,6 +314,49 @@ public extension World {
         ]))
     }
 
+    func renderInteractionMetadata(_ interaction: InteractionRecord, guildID: Snowflake?) -> JSON {
+        .object(JSONObject([
+            ("id", interaction.id.json), ("type", .int(interaction.type)), ("name", .string(interaction.name)),
+            ("command_type", 1), ("user", renderUser(interaction.userID)),
+            ("authorizing_integration_owners", .object(JSONObject(guildID.map { [("0", $0.json)] } ?? [("1", interaction.userID.json)]))),
+        ]))
+    }
+
+    /// The deprecated `interaction` object, which Discord still sends beside `interaction_metadata`.
+    func renderLegacyInteraction(_ interaction: InteractionRecord, guildID: Snowflake?) -> JSON {
+        var legacy = JSONObject([("id", interaction.id.json), ("type", .int(interaction.type)),
+                                 ("name", .string(interaction.name)), ("user", renderUser(interaction.userID))])
+        if let guildID, let member = guilds[guildID]?.members[interaction.userID] {
+            legacy["member"] = renderMember(member, guildID: guildID, includeUser: false)
+        }
+        return .object(legacy)
+    }
+
+    /// Discord gives each embed an ID.
+    func renderEmbeds(_ message: Message) -> JSON {
+        .array(message.embeds.enumerated().map { index, embed in
+            guard case var .object(fields) = embed, fields["id"] == nil else { return embed }
+            fields["id"] = Snowflake(message.id.rawValue + UInt64(index)).json
+            return .object(fields)
+        })
+    }
+
+    /// Discord numbers components in tree order.
+    static func numberedComponents(_ components: [JSON]) -> JSON {
+        var number = 0
+        return .array(components.map { numbered($0, from: &number) })
+    }
+
+    private static func numbered(_ component: JSON, from number: inout Int) -> JSON {
+        guard case var .object(fields) = component else { return component }
+        number += 1
+        if fields["id"] == nil { fields["id"] = .int(Int64(number)) }
+        if let children = fields["components"]?.arrayValue {
+            fields["components"] = .array(children.map { numbered($0, from: &number) })
+        }
+        return .object(fields)
+    }
+
     /// A message as REST returns it and MESSAGE_CREATE carries it (`member` and
     /// `guild_id` are added for Gateway dispatches by the caller).
     func renderMessage(_ message: Message, viewer: Snowflake?, depth: Int = 0) -> JSON {
@@ -323,11 +366,11 @@ public extension World {
         object["mentions"] = .array(message.mentions.map(renderUser))
         object["mention_roles"] = .array(message.mentionRoles.map(\.json))
         object["attachments"] = .array(message.attachments.map(renderAttachment))
-        object["embeds"] = .array(message.embeds)
+        object["embeds"] = renderEmbeds(message)
         object["timestamp"] = World.timestamp(message.timestamp)
         object["edited_timestamp"] = World.optionalTimestamp(message.editedAt)
         object["flags"] = .int(message.flags)
-        object["components"] = .array(message.components)
+        object["components"] = World.numberedComponents(message.components)
         object["id"] = message.id.json
         object["channel_id"] = message.channelID.json
         object["author"] = renderUser(message.authorID)
@@ -342,6 +385,11 @@ public extension World {
         }
         if let webhookID = message.webhookID { object["webhook_id"] = webhookID.json }
         if let applicationID = message.applicationID { object["application_id"] = applicationID.json }
+        if let interaction = message.interaction {
+            let guildID = channels[message.channelID]?.guildID
+            object["interaction_metadata"] = renderInteractionMetadata(interaction, guildID: guildID)
+            object["interaction"] = renderLegacyInteraction(interaction, guildID: guildID)
+        }
         if !message.reactions.isEmpty { object["reactions"] = renderReactions(message, viewer: viewer) }
         if let nonce = message.nonce { object["nonce"] = .string(nonce) }
         if let reference = message.reference {

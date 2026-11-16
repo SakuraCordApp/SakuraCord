@@ -88,6 +88,11 @@
     "REST POST /api/v9/channels/{id}/messages",
     "GW MESSAGE_CREATE"
   ],
+  "send-artist-command": [
+    "REST POST /api/v9/interactions",
+    "REST POST /api/v9/channels/{id}/messages/{id}/ack",
+    "GW MESSAGE_ACK"
+  ],
   "send-message": [
     "REST POST /api/v9/channels/{id}/messages",
     "GW MESSAGE_CREATE"

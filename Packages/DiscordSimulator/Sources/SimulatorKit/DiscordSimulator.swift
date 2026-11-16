@@ -52,6 +52,7 @@ public final class DiscordSimulator: Sendable {
         MessageRoutes.register(into: &routes)
         AccountRoutes.register(into: &routes)
         ThreadRoutes.register(into: &routes)
+        InteractionRoutes.register(into: &routes)
         var conditioners: [Port: NetworkConditioner] = [:]
         for port in Port.allCases where port != .control {
             conditioners[port] = NetworkConditioner(seed: configuration.seed ^ UInt64(port.rawValue), profile: configuration.network)

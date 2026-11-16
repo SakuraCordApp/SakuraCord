@@ -61,6 +61,42 @@ struct DemoConverter {
         }
         await world.setUnfurler(DemoConverter.unfurl)
         try await dressSelf(me)
+        await registerBotCommands()
+    }
+
+    /// Pip answers its slash commands with this week's cards, and its RSVP
+    /// buttons move the presser into the matching group.
+    mutating func registerBotCommands() async {
+        let nextGameNight = DemoContent.gameNight(on: 4, rsvps: "nobody yet", games: "whatever the birthday frog wants")
+        await world.setCommandReply("gamenight", CommandReply(
+            embeds: [await embed(nextGameNight)], components: DemoContent.gameNightButtons.map(Self.component)))
+        let digest = DemoContent.digest(week: 4, top: "Nico turned a year older 🐸", newFaces: "nobody yet",
+                                        next: "Game night (Thu)", at: DemoContent.at(0, 21, 0))
+        await world.setCommandReply("digest", CommandReply(embeds: [await embed(digest)]))
+        await world.setComponentResponder(prefix: "gamenight:", Self.rsvp)
+    }
+
+    /// Rewrites the "RSVPs" field, e.g. "✅ Wren, Nico · 🤔 Tomás", with `name` in the group `customID` picks.
+    static func rsvp(_ embeds: [JSON], customID: String, name: String) -> [JSON] {
+        let marks = [("gamenight:yes", "✅"), ("gamenight:maybe", "🤔"), ("gamenight:no", "❌")]
+        guard let mark = marks.first(where: { $0.0 == customID })?.1 else { return embeds }
+        return embeds.map { embed in
+            guard case var .object(object) = embed, let fields = object["fields"]?.arrayValue else { return embed }
+            object["fields"] = .array(fields.map { field in
+                guard case var .object(entry) = field, entry["name"]?.stringValue == "RSVPs" else { return field }
+                var groups = Dictionary(uniqueKeysWithValues: marks.map { ($0.1, [String]()) })
+                for group in (entry["value"]?.stringValue ?? "").components(separatedBy: " · ") {
+                    let parts = group.split(separator: " ", maxSplits: 1).map(String.init)
+                    guard parts.count == 2, groups[parts[0]] != nil else { continue }
+                    groups[parts[0]] = parts[1].components(separatedBy: ", ").filter { $0 != name }
+                }
+                groups[mark, default: []].append(name)
+                let text = marks.compactMap { groups[$0.1]?.isEmpty == false ? "\($0.1) \(groups[$0.1]!.joined(separator: ", "))" : nil }
+                entry["value"] = .string(text.joined(separator: " · "))
+                return .object(entry)
+            })
+            return .object(object)
+        }
     }
 
     // MARK: People

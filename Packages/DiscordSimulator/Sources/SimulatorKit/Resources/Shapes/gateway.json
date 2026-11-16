@@ -1,5 +1,29 @@
 {
   "received": {
+    "APPLICATION_COMMAND_AUTOCOMPLETE_RESPONSE": {
+      "t": "object",
+      "f": {
+        "t": {"t": "string"},
+        "s": {"t": "int"},
+        "op": {"t": "int"},
+        "d": {
+          "t": "object",
+          "f": {
+            "choices": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "name": {"t": "string"},
+                  "value": {"t": "string"}
+                }
+              }
+            },
+            "nonce": {"t": "snowflake"}
+          }
+        }
+      }
+    },
     "CHANNEL_CREATE": {
       "t": "object",
       "etf": "map",
@@ -544,7 +568,8 @@
                       "id": {"t": "snowflake", "etf": "small_big", "ketf": "atom"},
                       "primary_guild": {"t": "null", "etf": "atom", "ketf": "atom"},
                       "public_flags": {"t": "int", "etf": "small_int", "ketf": "atom"},
-                      "username": {"t": "string", "etf": "binary", "ketf": "atom"}
+                      "username": {"t": "string", "etf": "binary", "ketf": "atom"},
+                      "vad_colors": {"t": "null", "opt": true}
                     }
                   }
                 }
@@ -693,14 +718,15 @@
                                   "etf": "atom|map",
                                   "ketf": "atom",
                                   "f": {
-                                    "badge": {"t": "string", "etf": "binary", "ketf": "atom"},
+                                    "badge": {"t": "null|string", "etf": "binary", "ketf": "atom"},
                                     "identity_enabled": {"t": "bool", "etf": "atom", "ketf": "atom"},
-                                    "identity_guild_id": {"t": "snowflake", "etf": "small_big", "ketf": "atom"},
-                                    "tag": {"t": "string", "etf": "binary", "ketf": "atom"}
+                                    "identity_guild_id": {"t": "null|snowflake", "etf": "small_big", "ketf": "atom"},
+                                    "tag": {"t": "null|string", "etf": "binary", "ketf": "atom"}
                                   }
                                 },
                                 "public_flags": {"t": "int", "etf": "integer|small_int", "ketf": "atom"},
-                                "username": {"t": "string", "etf": "binary", "ketf": "atom"}
+                                "username": {"t": "string", "etf": "binary", "ketf": "atom"},
+                                "vad_colors": {"t": "null", "opt": true}
                               }
                             }
                           },
@@ -1087,6 +1113,36 @@
         }
       }
     },
+    "INTERACTION_CREATE": {
+      "t": "object",
+      "f": {
+        "t": {"t": "string"},
+        "s": {"t": "int"},
+        "op": {"t": "int"},
+        "d": {
+          "t": "object",
+          "f": {
+            "id": {"t": "snowflake"},
+            "nonce": {"t": "snowflake"}
+          }
+        }
+      }
+    },
+    "INTERACTION_SUCCESS": {
+      "t": "object",
+      "f": {
+        "t": {"t": "string"},
+        "s": {"t": "int"},
+        "op": {"t": "int"},
+        "d": {
+          "t": "object",
+          "f": {
+            "id": {"t": "snowflake"},
+            "nonce": {"t": "snowflake"}
+          }
+        }
+      }
+    },
     "MESSAGE_ACK": {
       "t": "object",
       "etf": "map",
@@ -1130,19 +1186,88 @@
                 "t": "object",
                 "etf": "map",
                 "f": {
+                  "application": {"t": "null", "opt": true},
+                  "clip_created_at": {"t": "timestamp", "opt": true},
+                  "clip_events_timeline": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "speaking": {
+                          "t": "object",
+                          "f": {
+                            "speaking_flags": {"t": "int"},
+                            "user_id": {"t": "snowflake"}
+                          }
+                        },
+                        "timestamp_ms": {"t": "int"}
+                      }
+                    },
+                    "opt": true
+                  },
+                  "clip_participants": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "avatar": {"t": "string"},
+                        "avatar_decoration_data": {"t": "null"},
+                        "clan": {"t": "null"},
+                        "collectibles": {
+                          "t": "null|object",
+                          "f": {
+                            "nameplate": {
+                              "t": "object",
+                              "f": {
+                                "asset": {"t": "string"},
+                                "expires_at": {"t": "null"},
+                                "label": {"t": "string"},
+                                "palette": {"t": "string"},
+                                "sku_id": {"t": "snowflake"}
+                              }
+                            }
+                          }
+                        },
+                        "discriminator": {"t": "string"},
+                        "display_name_styles": {
+                          "t": "null|object",
+                          "f": {
+                            "colors": {
+                              "t": "array",
+                              "i": {"t": "int"}
+                            },
+                            "effect_id": {"t": "int"},
+                            "font_id": {"t": "int"}
+                          }
+                        },
+                        "global_name": {"t": "string"},
+                        "id": {"t": "snowflake"},
+                        "primary_guild": {"t": "null"},
+                        "public_flags": {"t": "int"},
+                        "username": {"t": "string"}
+                      }
+                    },
+                    "opt": true
+                  },
+                  "clip_sync_timestamp": {"t": "timestamp", "opt": true},
                   "content_scan_version": {"t": "int", "etf": "small_int", "ketf": "binary"},
                   "content_type": {"t": "string", "etf": "binary", "ketf": "binary"},
                   "duration_secs": {"t": "float", "etf": "new_float", "opt": true},
                   "filename": {"t": "string", "etf": "binary", "ketf": "binary"},
-                  "height": {"t": "int", "etf": "integer|small_int", "ketf": "binary"},
+                  "flags": {"t": "int", "opt": true},
+                  "height": {"t": "int", "etf": "integer|small_int", "ketf": "binary", "opt": true},
                   "id": {"t": "snowflake", "etf": "small_big", "ketf": "binary"},
                   "original_content_type": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
-                  "placeholder": {"t": "string", "etf": "binary", "ketf": "binary"},
-                  "placeholder_version": {"t": "int", "etf": "small_int", "ketf": "binary"},
+                  "placeholder": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
+                  "placeholder_version": {"t": "int", "etf": "small_int", "ketf": "binary", "opt": true},
                   "proxy_url": {"t": "string", "etf": "binary", "ketf": "binary"},
                   "size": {"t": "int", "etf": "integer", "ketf": "binary"},
+                  "spritesheet_image_url": {"t": "string", "opt": true},
+                  "spritesheet_vtt_url": {"t": "string", "opt": true},
+                  "title": {"t": "string", "opt": true},
                   "url": {"t": "string", "etf": "binary", "ketf": "binary"},
-                  "width": {"t": "int", "etf": "integer|small_int", "ketf": "binary"}
+                  "waveform": {"t": "string", "opt": true},
+                  "width": {"t": "int", "etf": "integer|small_int", "ketf": "binary", "opt": true}
                 }
               }
             },
@@ -1170,7 +1295,7 @@
                   "ketf": "binary",
                   "f": {
                     "badge": {"t": "null|string", "etf": "atom|binary", "ketf": "binary"},
-                    "identity_enabled": {"t": "bool", "etf": "atom", "ketf": "binary"},
+                    "identity_enabled": {"t": "null|bool", "etf": "atom", "ketf": "binary"},
                     "identity_guild_id": {"t": "null|snowflake", "etf": "atom|small_big", "ketf": "binary"},
                     "tag": {"t": "null|string", "etf": "atom|binary", "ketf": "binary"}
                   },
@@ -1221,7 +1346,7 @@
                   "ketf": "binary",
                   "f": {
                     "badge": {"t": "null|string", "etf": "atom|binary", "ketf": "binary"},
-                    "identity_enabled": {"t": "bool", "etf": "atom", "ketf": "binary"},
+                    "identity_enabled": {"t": "null|bool", "etf": "atom", "ketf": "binary"},
                     "identity_guild_id": {"t": "null|snowflake", "etf": "atom|small_big", "ketf": "binary"},
                     "tag": {"t": "null|string", "etf": "atom|binary", "ketf": "binary"}
                   },
@@ -1251,6 +1376,14 @@
                       "etf": "map",
                       "f": {
                         "custom_id": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
+                        "emoji": {
+                          "t": "object",
+                          "f": {
+                            "id": {"t": "snowflake"},
+                            "name": {"t": "string"}
+                          },
+                          "opt": true
+                        },
                         "content": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
                         "divider": {"t": "bool", "etf": "atom", "ketf": "binary", "opt": true},
                         "accessory": {
@@ -1269,7 +1402,7 @@
                               },
                               "opt": true
                             },
-                            "description": {"t": "null", "etf": "atom", "ketf": "binary", "opt": true},
+                            "description": {"t": "null|string", "etf": "atom", "ketf": "binary", "opt": true},
                             "id": {"t": "int", "etf": "small_int", "ketf": "binary"},
                             "style": {"t": "int", "etf": "small_int", "ketf": "binary", "opt": true},
                             "media": {
@@ -1287,15 +1420,15 @@
                                   },
                                   "opt": true
                                 },
-                                "content_type": {"t": "string", "etf": "binary", "ketf": "binary"},
-                                "height": {"t": "int", "etf": "integer|small_int", "ketf": "binary"},
+                                "content_type": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
+                                "height": {"t": "int", "etf": "integer|small_int", "ketf": "binary", "opt": true},
                                 "id": {"t": "snowflake", "etf": "small_big", "ketf": "binary"},
                                 "loading_state": {"t": "int", "etf": "small_int", "ketf": "binary"},
-                                "placeholder": {"t": "string", "etf": "binary", "ketf": "binary"},
-                                "placeholder_version": {"t": "int", "etf": "small_int", "ketf": "binary"},
+                                "placeholder": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
+                                "placeholder_version": {"t": "int", "etf": "small_int", "ketf": "binary", "opt": true},
                                 "proxy_url": {"t": "string", "etf": "binary", "ketf": "binary"},
                                 "url": {"t": "string", "etf": "binary", "ketf": "binary"},
-                                "width": {"t": "int", "etf": "integer|small_int", "ketf": "binary"}
+                                "width": {"t": "int", "etf": "integer|small_int", "ketf": "binary", "opt": true}
                               },
                               "opt": true
                             },
@@ -1312,9 +1445,12 @@
                             "t": "object",
                             "etf": "map",
                             "f": {
-                              "content": {"t": "string", "etf": "binary", "ketf": "binary"},
+                              "content": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
                               "id": {"t": "int", "etf": "small_int", "ketf": "binary"},
-                              "type": {"t": "int", "etf": "small_int", "ketf": "binary"}
+                              "label": {"t": "string", "opt": true},
+                              "style": {"t": "int", "opt": true},
+                              "type": {"t": "int", "etf": "small_int", "ketf": "binary"},
+                              "url": {"t": "string", "opt": true}
                             }
                           },
                           "opt": true
@@ -1352,7 +1488,8 @@
                     "f": {
                       "icon_url": {"t": "string", "etf": "binary", "ketf": "binary"},
                       "name": {"t": "string", "etf": "binary", "ketf": "binary"},
-                      "proxy_icon_url": {"t": "string", "etf": "binary", "ketf": "binary"}
+                      "proxy_icon_url": {"t": "string", "etf": "binary", "ketf": "binary"},
+                      "url": {"t": "string", "opt": true}
                     },
                     "opt": true
                   },
@@ -1466,12 +1603,12 @@
                   "f": {
                     "avatar": {"t": "null", "etf": "atom", "ketf": "atom"},
                     "banner": {"t": "null", "etf": "atom", "ketf": "atom"},
-                    "communication_disabled_until": {"t": "timestamp", "etf": "binary", "ketf": "atom"},
+                    "communication_disabled_until": {"t": "null|timestamp", "etf": "binary", "ketf": "atom"},
                     "deaf": {"t": "bool", "etf": "atom", "ketf": "atom"},
                     "flags": {"t": "int", "etf": "small_int", "ketf": "atom"},
                     "joined_at": {"t": "timestamp", "etf": "binary", "ketf": "atom"},
                     "mute": {"t": "bool", "etf": "atom", "ketf": "atom"},
-                    "nick": {"t": "string", "etf": "binary", "ketf": "atom"},
+                    "nick": {"t": "null|string", "etf": "binary", "ketf": "atom"},
                     "pending": {"t": "bool", "etf": "atom", "ketf": "atom"},
                     "premium_since": {"t": "null", "etf": "atom", "ketf": "atom"},
                     "roles": {
@@ -1501,7 +1638,7 @@
                       }
                     },
                     "clan": {
-                      "t": "object",
+                      "t": "null|object",
                       "etf": "map",
                       "ketf": "binary",
                       "f": {
@@ -1535,7 +1672,7 @@
                     "global_name": {"t": "string", "etf": "binary", "ketf": "binary"},
                     "id": {"t": "snowflake", "etf": "small_big", "ketf": "binary"},
                     "primary_guild": {
-                      "t": "object",
+                      "t": "null|object",
                       "etf": "map",
                       "ketf": "binary",
                       "f": {
@@ -1888,7 +2025,7 @@
               },
               "opt": true
             },
-            "nonce": {"t": "snowflake", "etf": "binary", "ketf": "binary", "opt": true},
+            "nonce": {"t": "string|snowflake", "etf": "binary", "ketf": "binary", "opt": true},
             "pinned": {"t": "bool", "etf": "atom", "ketf": "binary"},
             "sticker_items": {
               "t": "array",
@@ -1959,10 +2096,75 @@
                     "t": "object",
                     "etf": "map",
                     "f": {
+                      "application": {"t": "null", "opt": true},
+                      "clip_created_at": {"t": "timestamp", "opt": true},
+                      "clip_events_timeline": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "speaking": {
+                              "t": "object",
+                              "f": {
+                                "speaking_flags": {"t": "int"},
+                                "user_id": {"t": "snowflake"}
+                              }
+                            },
+                            "timestamp_ms": {"t": "int"}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "clip_participants": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "avatar": {"t": "string"},
+                            "avatar_decoration_data": {"t": "null"},
+                            "clan": {"t": "null"},
+                            "collectibles": {
+                              "t": "null|object",
+                              "f": {
+                                "nameplate": {
+                                  "t": "object",
+                                  "f": {
+                                    "asset": {"t": "string"},
+                                    "expires_at": {"t": "null"},
+                                    "label": {"t": "string"},
+                                    "palette": {"t": "string"},
+                                    "sku_id": {"t": "snowflake"}
+                                  }
+                                }
+                              }
+                            },
+                            "discriminator": {"t": "string"},
+                            "display_name_styles": {
+                              "t": "null|object",
+                              "f": {
+                                "colors": {
+                                  "t": "array",
+                                  "i": {"t": "int"}
+                                },
+                                "effect_id": {"t": "int"},
+                                "font_id": {"t": "int"}
+                              }
+                            },
+                            "global_name": {"t": "string"},
+                            "id": {"t": "snowflake"},
+                            "primary_guild": {"t": "null"},
+                            "public_flags": {"t": "int"},
+                            "username": {"t": "string"}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "clip_sync_timestamp": {"t": "timestamp", "opt": true},
                       "content_scan_version": {"t": "int", "etf": "small_int", "ketf": "binary"},
                       "content_type": {"t": "string", "etf": "binary", "ketf": "binary"},
                       "duration_secs": {"t": "float", "etf": "new_float", "ketf": "binary", "opt": true},
                       "filename": {"t": "string", "etf": "binary", "ketf": "binary"},
+                      "flags": {"t": "int", "opt": true},
                       "height": {"t": "int", "etf": "integer", "ketf": "binary"},
                       "id": {"t": "snowflake", "etf": "small_big", "ketf": "binary"},
                       "original_content_type": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
@@ -1970,6 +2172,8 @@
                       "placeholder_version": {"t": "int", "etf": "small_int", "ketf": "binary"},
                       "proxy_url": {"t": "string", "etf": "binary", "ketf": "binary"},
                       "size": {"t": "int", "etf": "integer", "ketf": "binary"},
+                      "spritesheet_image_url": {"t": "string", "opt": true},
+                      "spritesheet_vtt_url": {"t": "string", "opt": true},
                       "title": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
                       "url": {"t": "string", "etf": "binary", "ketf": "binary"},
                       "width": {"t": "int", "etf": "integer", "ketf": "binary"}
@@ -2520,7 +2724,7 @@
                   "etf": "map",
                   "ketf": "atom",
                   "f": {
-                    "avatar": {"t": "string", "etf": "binary", "ketf": "atom"},
+                    "avatar": {"t": "null|string", "etf": "binary", "ketf": "atom"},
                     "avatar_decoration_data": {
                       "t": "null|object",
                       "etf": "atom|map",
@@ -2582,7 +2786,8 @@
                       }
                     },
                     "public_flags": {"t": "int", "etf": "integer|small_int", "ketf": "atom"},
-                    "username": {"t": "string", "etf": "binary", "ketf": "atom"}
+                    "username": {"t": "string", "etf": "binary", "ketf": "atom"},
+                    "vad_colors": {"t": "null", "opt": true}
                   }
                 }
               }
@@ -2650,16 +2855,18 @@
                 "f": {
                   "content_scan_version": {"t": "int", "etf": "small_int"},
                   "content_type": {"t": "string", "etf": "binary"},
+                  "duration_secs": {"t": "float", "opt": true},
                   "filename": {"t": "string", "etf": "binary"},
-                  "height": {"t": "int", "etf": "small_int"},
+                  "height": {"t": "int", "etf": "small_int", "opt": true},
                   "id": {"t": "snowflake", "etf": "small_big"},
-                  "original_content_type": {"t": "string", "etf": "binary"},
-                  "placeholder": {"t": "string", "etf": "binary"},
-                  "placeholder_version": {"t": "int", "etf": "small_int"},
+                  "original_content_type": {"t": "string", "etf": "binary", "opt": true},
+                  "placeholder": {"t": "string", "etf": "binary", "opt": true},
+                  "placeholder_version": {"t": "int", "etf": "small_int", "opt": true},
                   "proxy_url": {"t": "string", "etf": "binary"},
                   "size": {"t": "int", "etf": "integer"},
                   "url": {"t": "string", "etf": "binary"},
-                  "width": {"t": "int", "etf": "small_int"}
+                  "waveform": {"t": "string", "opt": true},
+                  "width": {"t": "int", "etf": "small_int", "opt": true}
                 }
               }
             },
@@ -2768,6 +2975,15 @@
                       "etf": "map",
                       "f": {
                         "custom_id": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
+                        "disabled": {"t": "bool", "opt": true},
+                        "emoji": {
+                          "t": "object",
+                          "f": {
+                            "id": {"t": "snowflake", "opt": true},
+                            "name": {"t": "string"}
+                          },
+                          "opt": true
+                        },
                         "content": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
                         "divider": {"t": "bool", "etf": "atom", "ketf": "binary", "opt": true},
                         "accessory": {
@@ -2776,7 +2992,7 @@
                           "ketf": "binary",
                           "f": {
                             "custom_id": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
-                            "description": {"t": "null", "etf": "atom", "ketf": "binary", "opt": true},
+                            "description": {"t": "null|string", "etf": "atom", "ketf": "binary", "opt": true},
                             "id": {"t": "int", "etf": "small_int", "ketf": "binary"},
                             "label": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
                             "style": {"t": "int", "etf": "small_int", "ketf": "binary", "opt": true},
@@ -2792,17 +3008,18 @@
                                   "f": {
                                     "flags": {"t": "int", "etf": "small_int", "ketf": "binary"},
                                     "version": {"t": "int", "etf": "small_int", "ketf": "binary"}
-                                  }
+                                  },
+                                  "opt": true
                                 },
-                                "content_type": {"t": "string", "etf": "binary", "ketf": "binary"},
-                                "height": {"t": "int", "etf": "integer", "ketf": "binary"},
+                                "content_type": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
+                                "height": {"t": "int", "etf": "integer", "ketf": "binary", "opt": true},
                                 "id": {"t": "snowflake", "etf": "small_big", "ketf": "binary"},
                                 "loading_state": {"t": "int", "etf": "small_int", "ketf": "binary"},
-                                "placeholder": {"t": "string", "etf": "binary", "ketf": "binary"},
-                                "placeholder_version": {"t": "int", "etf": "small_int", "ketf": "binary"},
+                                "placeholder": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
+                                "placeholder_version": {"t": "int", "etf": "small_int", "ketf": "binary", "opt": true},
                                 "proxy_url": {"t": "string", "etf": "binary", "ketf": "binary"},
                                 "url": {"t": "string", "etf": "binary", "ketf": "binary"},
-                                "width": {"t": "int", "etf": "integer", "ketf": "binary"}
+                                "width": {"t": "int", "etf": "integer", "ketf": "binary", "opt": true}
                               },
                               "opt": true
                             },
@@ -2819,9 +3036,22 @@
                             "t": "object",
                             "etf": "map",
                             "f": {
-                              "content": {"t": "string", "etf": "binary", "ketf": "binary"},
+                              "custom_id": {"t": "string", "opt": true},
+                              "disabled": {"t": "bool", "opt": true},
+                              "emoji": {
+                                "t": "object",
+                                "f": {
+                                  "id": {"t": "snowflake", "opt": true},
+                                  "name": {"t": "string"}
+                                },
+                                "opt": true
+                              },
+                              "content": {"t": "string", "etf": "binary", "ketf": "binary", "opt": true},
                               "id": {"t": "int", "etf": "small_int", "ketf": "binary"},
-                              "type": {"t": "int", "etf": "small_int", "ketf": "binary"}
+                              "label": {"t": "string", "opt": true},
+                              "style": {"t": "int", "opt": true},
+                              "type": {"t": "int", "etf": "small_int", "ketf": "binary"},
+                              "url": {"t": "string", "opt": true}
                             }
                           },
                           "opt": true
@@ -2945,6 +3175,87 @@
             },
             "flags": {"t": "int", "etf": "integer|small_int", "ketf": "binary"},
             "id": {"t": "snowflake", "etf": "small_big", "ketf": "binary"},
+            "interaction": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "member": {
+                  "t": "object",
+                  "f": {
+                    "avatar": {"t": "null"},
+                    "banner": {"t": "null"},
+                    "communication_disabled_until": {"t": "null"},
+                    "deaf": {"t": "bool"},
+                    "flags": {"t": "int"},
+                    "joined_at": {"t": "timestamp"},
+                    "mute": {"t": "bool"},
+                    "nick": {"t": "null|string"},
+                    "pending": {"t": "bool"},
+                    "premium_since": {"t": "null"},
+                    "roles": {
+                      "t": "array",
+                      "i": {"t": "snowflake"}
+                    }
+                  }
+                },
+                "name": {"t": "string"},
+                "type": {"t": "int"},
+                "user": {
+                  "t": "object",
+                  "f": {
+                    "avatar": {"t": "string"},
+                    "avatar_decoration_data": {
+                      "t": "null|object",
+                      "f": {
+                        "asset": {"t": "string"},
+                        "expires_at": {"t": "null"},
+                        "sku_id": {"t": "snowflake"}
+                      }
+                    },
+                    "clan": {
+                      "t": "null|object",
+                      "f": {
+                        "badge": {"t": "string"},
+                        "identity_enabled": {"t": "bool"},
+                        "identity_guild_id": {"t": "snowflake"},
+                        "tag": {"t": "string"}
+                      }
+                    },
+                    "collectibles": {
+                      "t": "null|object",
+                      "f": {
+                        "nameplate": {
+                          "t": "object",
+                          "f": {
+                            "asset": {"t": "string"},
+                            "expires_at": {"t": "null"},
+                            "label": {"t": "string"},
+                            "palette": {"t": "string"},
+                            "sku_id": {"t": "snowflake"}
+                          }
+                        }
+                      }
+                    },
+                    "discriminator": {"t": "string"},
+                    "display_name_styles": {"t": "null"},
+                    "global_name": {"t": "string"},
+                    "id": {"t": "snowflake"},
+                    "primary_guild": {
+                      "t": "null|object",
+                      "f": {
+                        "badge": {"t": "string"},
+                        "identity_enabled": {"t": "bool"},
+                        "identity_guild_id": {"t": "snowflake"},
+                        "tag": {"t": "string"}
+                      }
+                    },
+                    "public_flags": {"t": "int"},
+                    "username": {"t": "string"}
+                  }
+                }
+              },
+              "opt": true
+            },
             "interaction_metadata": {
               "t": "object",
               "etf": "map",
@@ -2956,8 +3267,10 @@
                   "ketf": "binary",
                   "v": {"t": "snowflake", "etf": "binary", "ketf": "small_int"}
                 },
+                "command_type": {"t": "int", "opt": true},
                 "id": {"t": "snowflake", "etf": "small_big", "ketf": "binary"},
-                "interacted_message_id": {"t": "snowflake", "etf": "small_big", "ketf": "binary"},
+                "name": {"t": "string", "opt": true},
+                "interacted_message_id": {"t": "snowflake", "etf": "small_big", "ketf": "binary", "opt": true},
                 "type": {"t": "int", "etf": "small_int", "ketf": "binary"},
                 "user": {
                   "t": "object",
@@ -2965,7 +3278,16 @@
                   "ketf": "binary",
                   "f": {
                     "avatar": {"t": "string", "etf": "binary", "ketf": "binary"},
-                    "avatar_decoration_data": {"t": "null", "etf": "atom", "ketf": "binary"},
+                    "avatar_decoration_data": {
+                      "t": "null|object",
+                      "etf": "atom",
+                      "ketf": "binary",
+                      "f": {
+                        "asset": {"t": "string"},
+                        "expires_at": {"t": "null"},
+                        "sku_id": {"t": "snowflake"}
+                      }
+                    },
                     "clan": {
                       "t": "null|object",
                       "etf": "atom|map",
@@ -3677,6 +3999,7 @@
                     "etf": "map",
                     "ketf": "atom",
                     "f": {
+                      "invite_cover_image": {"t": "snowflake", "opt": true},
                       "large_image": {"t": "string|snowflake", "etf": "binary", "ketf": "atom", "opt": true},
                       "large_text": {"t": "string", "etf": "binary", "ketf": "atom", "opt": true},
                       "large_url": {"t": "string", "etf": "binary", "ketf": "atom", "opt": true},
@@ -3771,12 +4094,18 @@
                   "id": {"t": "string", "etf": "binary", "ketf": "atom"},
                   "name": {"t": "string", "etf": "binary", "ketf": "atom"},
                   "official_game_id": {"t": "null|snowflake", "etf": "atom|small_big", "ketf": "atom"},
+                  "parent_application_id": {"t": "snowflake", "opt": true},
                   "party": {
                     "t": "object",
                     "etf": "map",
                     "ketf": "atom",
                     "f": {
-                      "id": {"t": "string", "etf": "binary", "ketf": "atom"}
+                      "id": {"t": "string", "etf": "binary", "ketf": "atom"},
+                      "size": {
+                        "t": "array",
+                        "i": {"t": "int"},
+                        "opt": true
+                      }
                     },
                     "opt": true
                   },
@@ -4139,11 +4468,11 @@
                           "ketf": "atom",
                           "f": {
                             "application_id": {"t": "snowflake", "etf": "small_big", "ketf": "atom"},
-                            "game_organization_id": {"t": "null", "etf": "atom", "ketf": "atom"},
+                            "game_organization_id": {"t": "null", "etf": "atom", "ketf": "atom", "opt": true},
                             "linked_at": {"t": "timestamp", "etf": "binary", "ketf": "atom"},
                             "linked_by": {"t": "snowflake", "etf": "small_big", "ketf": "atom"},
                             "lobby_id": {"t": "snowflake", "etf": "small_big", "ketf": "atom"},
-                            "lobby_name": {"t": "null", "etf": "atom", "ketf": "atom"},
+                            "lobby_name": {"t": "null", "etf": "atom", "ketf": "atom", "opt": true},
                             "require_application_authorization": {"t": "bool", "etf": "atom", "ketf": "atom"}
                           },
                           "opt": true
@@ -4230,7 +4559,7 @@
                           "i": {"t": "int", "etf": "integer|small_big|small_int"}
                         }
                       },
-                      "evaluation_id": {"t": "string", "etf": "binary", "ketf": "atom"}
+                      "evaluation_id": {"t": "null|string", "etf": "binary", "ketf": "atom"}
                     }
                   },
                   "guild_scheduled_events": {
@@ -4401,7 +4730,16 @@
                       "game_application_ids": {"t": "null|array", "etf": "atom|nil", "ketf": "atom"},
                       "max_video_channel_users": {"t": "int", "etf": "small_int", "ketf": "atom"},
                       "safety_alerts_channel_id": {"t": "null|snowflake", "etf": "atom|small_big", "ketf": "atom"},
-                      "theme": {"t": "null", "etf": "atom", "ketf": "atom"},
+                      "theme": {
+                        "t": "null|object",
+                        "etf": "atom",
+                        "ketf": "atom",
+                        "f": {
+                          "custom_user_theme_settings": {"t": "null"},
+                          "enabled": {"t": "bool"},
+                          "preset_id": {"t": "int"}
+                        }
+                      },
                       "home_header": {"t": "null|string", "etf": "atom|binary", "ketf": "atom"}
                     }
                   },
@@ -4622,7 +4960,8 @@
                   },
                   "public_flags": {"t": "int", "etf": "integer|small_int", "ketf": "binary"},
                   "system": {"t": "bool", "etf": "atom", "ketf": "binary", "opt": true},
-                  "username": {"t": "string", "etf": "binary", "ketf": "binary"}
+                  "username": {"t": "string", "etf": "binary", "ketf": "binary"},
+                  "vad_colors": {"t": "null", "opt": true}
                 }
               }
             },
@@ -4741,9 +5080,9 @@
               "ketf": "atom",
               "f": {
                 "age_gated_features": {"t": "int", "etf": "integer", "ketf": "binary"},
-                "app_store_consent_revoked_android": {"t": "bool", "etf": "atom", "ketf": "binary"},
-                "app_store_consent_revoked_ios": {"t": "bool", "etf": "atom", "ketf": "binary"},
-                "media_takedown_regulation": {"t": "null", "etf": "atom", "ketf": "binary"},
+                "app_store_consent_revoked_android": {"t": "bool", "etf": "atom", "ketf": "binary", "opt": true},
+                "app_store_consent_revoked_ios": {"t": "bool", "etf": "atom", "ketf": "binary", "opt": true},
+                "media_takedown_regulation": {"t": "null", "etf": "atom", "ketf": "binary", "opt": true},
                 "should_collect_app_store_signal": {"t": "bool", "etf": "atom", "ketf": "binary"},
                 "teen_by_default_settings": {"t": "int", "etf": "small_int", "ketf": "binary"}
               }
@@ -4863,10 +5202,10 @@
                   "etf": "map",
                   "ketf": "atom",
                   "f": {
-                    "badge": {"t": "string", "etf": "binary", "ketf": "atom"},
+                    "badge": {"t": "null|string", "etf": "binary", "ketf": "atom"},
                     "identity_enabled": {"t": "bool", "etf": "atom", "ketf": "atom"},
-                    "identity_guild_id": {"t": "snowflake", "etf": "small_big", "ketf": "atom"},
-                    "tag": {"t": "string", "etf": "binary", "ketf": "atom"}
+                    "identity_guild_id": {"t": "null|snowflake", "etf": "small_big", "ketf": "atom"},
+                    "tag": {"t": "null|string", "etf": "binary", "ketf": "atom"}
                   }
                 },
                 "mfa_enabled": {"t": "bool", "etf": "atom", "ketf": "atom"},
@@ -4923,10 +5262,10 @@
                   "etf": "map",
                   "ketf": "atom",
                   "f": {
-                    "badge": {"t": "string", "etf": "binary", "ketf": "atom"},
+                    "badge": {"t": "null|string", "etf": "binary", "ketf": "atom"},
                     "identity_enabled": {"t": "bool", "etf": "atom", "ketf": "atom"},
-                    "identity_guild_id": {"t": "snowflake", "etf": "small_big", "ketf": "atom"},
-                    "tag": {"t": "string", "etf": "binary", "ketf": "atom"}
+                    "identity_guild_id": {"t": "null|snowflake", "etf": "small_big", "ketf": "atom"},
+                    "tag": {"t": "null|string", "etf": "binary", "ketf": "atom"}
                   }
                 },
                 "global_name": {"t": "string", "etf": "binary", "ketf": "atom"},
@@ -5182,7 +5521,106 @@
                 "t": "object",
                 "etf": "map",
                 "f": {
-                  "activity_instances": {"t": "array", "etf": "nil", "ketf": "atom"},
+                  "activity_instances": {
+                    "t": "array",
+                    "etf": "nil",
+                    "ketf": "atom",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "application_id": {"t": "snowflake"},
+                        "composite_instance_id": {"t": "string"},
+                        "instance_id": {"t": "snowflake"},
+                        "launch_id": {"t": "string"},
+                        "location": {
+                          "t": "object",
+                          "f": {
+                            "channel_id": {"t": "snowflake"},
+                            "guild_id": {"t": "snowflake"},
+                            "id": {"t": "string"},
+                            "kind": {"t": "string"}
+                          }
+                        },
+                        "participants": {
+                          "t": "array",
+                          "i": {
+                            "t": "object",
+                            "f": {
+                              "member": {
+                                "t": "object",
+                                "f": {
+                                  "avatar": {"t": "null"},
+                                  "banner": {"t": "null"},
+                                  "communication_disabled_until": {"t": "timestamp"},
+                                  "deaf": {"t": "bool"},
+                                  "flags": {"t": "int"},
+                                  "joined_at": {"t": "timestamp"},
+                                  "mute": {"t": "bool"},
+                                  "nick": {"t": "string"},
+                                  "pending": {"t": "bool"},
+                                  "premium_since": {"t": "null"},
+                                  "roles": {
+                                    "t": "array",
+                                    "i": {"t": "snowflake"}
+                                  },
+                                  "user": {
+                                    "t": "object",
+                                    "f": {
+                                      "avatar": {"t": "string"},
+                                      "avatar_decoration_data": {
+                                        "t": "object",
+                                        "f": {
+                                          "asset": {"t": "string"},
+                                          "expires_at": {"t": "null"},
+                                          "sku_id": {"t": "snowflake"}
+                                        }
+                                      },
+                                      "bot": {"t": "bool"},
+                                      "collectibles": {
+                                        "t": "object",
+                                        "f": {
+                                          "nameplate": {
+                                            "t": "object",
+                                            "f": {
+                                              "asset": {"t": "string"},
+                                              "expires_at": {"t": "null"},
+                                              "label": {"t": "string"},
+                                              "palette": {"t": "string"},
+                                              "sku_id": {"t": "snowflake"}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "discriminator": {"t": "string"},
+                                      "display_name": {"t": "string"},
+                                      "display_name_styles": {"t": "null"},
+                                      "global_name": {"t": "string"},
+                                      "id": {"t": "snowflake"},
+                                      "primary_guild": {
+                                        "t": "object",
+                                        "f": {
+                                          "badge": {"t": "string"},
+                                          "identity_enabled": {"t": "bool"},
+                                          "identity_guild_id": {"t": "snowflake"},
+                                          "tag": {"t": "string"}
+                                        }
+                                      },
+                                      "public_flags": {"t": "int"},
+                                      "username": {"t": "string"},
+                                      "vad_colors": {"t": "null"}
+                                    }
+                                  }
+                                }
+                              },
+                              "nonce": {"t": "snowflake"},
+                              "session_id": {"t": "string"},
+                              "user_id": {"t": "snowflake"}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
                   "embedded_activities": {"t": "array", "etf": "nil", "ketf": "atom"},
                   "id": {"t": "snowflake", "etf": "small_big", "ketf": "atom"},
                   "voice_states": {
@@ -5433,7 +5871,12 @@
                               "etf": "map",
                               "ketf": "atom",
                               "f": {
-                                "id": {"t": "string", "etf": "binary", "ketf": "atom"}
+                                "id": {"t": "string", "etf": "binary", "ketf": "atom"},
+                                "size": {
+                                  "t": "array",
+                                  "i": {"t": "int"},
+                                  "opt": true
+                                }
                               },
                               "opt": true
                             },
@@ -5501,6 +5944,7 @@
                                 "etf": "map",
                                 "ketf": "atom",
                                 "f": {
+                                  "invite_cover_image": {"t": "snowflake", "opt": true},
                                   "large_image": {"t": "string|snowflake", "etf": "binary", "ketf": "atom", "opt": true},
                                   "small_image": {"t": "string|snowflake", "etf": "binary", "ketf": "atom", "opt": true},
                                   "small_text": {"t": "string", "etf": "binary", "ketf": "atom", "opt": true},
@@ -5595,12 +6039,18 @@
                               "id": {"t": "string", "etf": "binary", "ketf": "atom"},
                               "name": {"t": "string", "etf": "binary", "ketf": "atom"},
                               "official_game_id": {"t": "null|snowflake", "etf": "atom|small_big", "ketf": "atom"},
+                              "parent_application_id": {"t": "snowflake", "opt": true},
                               "party": {
                                 "t": "object",
                                 "etf": "map",
                                 "ketf": "atom",
                                 "f": {
-                                  "id": {"t": "string", "etf": "binary", "ketf": "atom"}
+                                  "id": {"t": "string", "etf": "binary", "ketf": "atom"},
+                                  "size": {
+                                    "t": "array",
+                                    "i": {"t": "int"},
+                                    "opt": true
+                                  }
                                 },
                                 "opt": true
                               },
@@ -5629,6 +6079,7 @@
                           "etf": "map",
                           "ketf": "binary",
                           "f": {
+                            "vr": {"t": "string", "opt": true},
                             "mobile": {"t": "string", "etf": "atom", "ketf": "atom", "opt": true},
                             "desktop": {"t": "string", "etf": "atom", "ketf": "atom", "opt": true},
                             "embedded": {"t": "string", "etf": "atom", "ketf": "atom", "opt": true},
@@ -6314,7 +6765,7 @@
                 "release_channel": {"t": "string"},
                 "client_version": {"t": "string"},
                 "os_version": {"t": "string"},
-                "os_version_is_release": {"t": "bool"},
+                "os_version_is_release": {"t": "bool", "opt": true},
                 "os_sdk_version": {"t": "string"},
                 "os_arch": {"t": "string"},
                 "app_arch": {"t": "string"},
@@ -6513,7 +6964,7 @@
               "i": {"t": "snowflake"}
             },
             "presences": {"t": "bool"},
-            "nonce": {"t": "null"}
+            "nonce": {"t": "null", "opt": true}
           }
         }
       }

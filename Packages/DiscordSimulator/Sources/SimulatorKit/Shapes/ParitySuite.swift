@@ -176,6 +176,7 @@ struct ParityRun {
         await flowEnd("create-thread")
 
         try await historyVariants(target, messagesPath: messagesPath)
+        try await slashCommand(target)
 
         await flowStart()
         _ = try await rest("DELETE", "\(messagesPath)/\(sentID)")
@@ -220,6 +221,23 @@ struct ParityRun {
         if let pollID = poll["id"]?.stringValue {
             _ = try await rest("GET", "/api/v9/channels/\(target.channel)/polls/\(pollID)/answers/1?limit=25")
         }
+    }
+
+    /// A slash command: INTERACTION_CREATE, the bot's reply and INTERACTION_SUCCESS, checked by shape.
+    mutating func slashCommand(_ target: Targets) async throws {
+        let world = simulator.world
+        let users = await world.users
+        guard let guild = try? await world.guild(target.guild),
+              let bot = guild.members.keys.sorted().first(where: { users[$0]?.bot == true })
+        else { throw WorldError.invalidBody("scenario has no bot in the target guild") }
+        await flowStart()
+        _ = try await rest("POST", "/api/v9/interactions", body: .object(JSONObject([
+            ("type", 2), ("application_id", .string(Snowflake(bot.rawValue + 1).description)),
+            ("guild_id", .string(target.guild.description)), ("channel_id", .string(target.channel.description)),
+            ("session_id", "parity"), ("nonce", .string(nonce())),
+            ("data", .object(JSONObject([("type", 1), ("name", "gamenight"), ("options", [])]))),
+        ])))
+        await flowEnd(nil)
     }
 
     /// The official client's nonces are snowflakes for "now".

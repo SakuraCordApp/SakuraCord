@@ -84,6 +84,28 @@ public enum MediaGenerator {
         return data as Data
     }
 
+    /// An avatar decoration: a frame drawn around the avatar, transparent in
+    /// the middle (the avatar shows through at 1/1.2 of the size, as on
+    /// Discord). Animated decorations are APNG, Discord's format for them.
+    public static func avatarDecorationPNG(seed: UInt64, size: Int, animated: Bool) -> Data {
+        let frames = animated ? 12 : 1
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, frames, nil)!
+        if animated {
+            CGImageDestinationSetProperties(destination, [
+                kCGImagePropertyPNGDictionary: [kCGImagePropertyAPNGLoopCount: 0],
+            ] as CFDictionary)
+        }
+        for frame in 0 ..< frames {
+            let image = render(size, size) { drawDecoration($0, seed: seed, phase: Double(frame) / Double(frames)) }
+            CGImageDestinationAddImage(destination, image, animated ? [
+                kCGImagePropertyPNGDictionary: [kCGImagePropertyAPNGDelayTime: 0.08],
+            ] as CFDictionary : nil)
+        }
+        CGImageDestinationFinalize(destination)
+        return data as Data
+    }
+
     /// An avatar, guild icon or emoji image for `style`: GIF when animated.
     public static func avatar(_ style: DemoImageStyle, size: Int) -> Data {
         style.animated
@@ -302,6 +324,25 @@ private func drawAvatar(_ canvas: Canvas, seed: UInt64, palette index: Int?, pha
             let angle = Double(dot) * 2 * .pi / 3 + phase * 2 * .pi
             canvas.fill(colors[1 + dot], 0.85, disc(cos(angle) * radius * 0.9, sin(angle) * radius * 0.9, radius * 0.55))
         }
+    }
+}
+
+private func drawDecoration(_ canvas: Canvas, seed: UInt64, phase: Double) {
+    var rng = SeededRandom(seed: seed).fork("decoration")
+    let colors = palette(nil, &rng)
+    let center = canvas.point(0.5, 0.5)
+    // The ring sits just outside the avatar's edge (radius 0.5 / 1.2 of the side).
+    let ring = canvas.side * 0.455
+    canvas.stroke(colors[1], canvas.side * 0.07, CGPath(ellipseIn: CGRect(
+        x: center.x - ring, y: center.y - ring, width: ring * 2, height: ring * 2), transform: nil))
+    canvas.stroke(colors[0], canvas.side * 0.02, CGPath(ellipseIn: CGRect(
+        x: center.x - ring, y: center.y - ring, width: ring * 2, height: ring * 2), transform: nil), alpha: 0.8)
+    for index in 0 ..< 3 {
+        let angle = (phase + Double(index) / 3) * 2 * .pi
+        let sparkle = 0.07 + 0.02 * sin(angle * 2)
+        canvas.ellipse(colors[index % 2 == 0 ? 0 : 2],
+                       0.5 + 0.455 * cos(angle) - sparkle / 2, 0.5 + 0.455 * sin(angle) - sparkle / 2,
+                       sparkle, sparkle)
     }
 }
 

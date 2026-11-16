@@ -68,7 +68,9 @@ public final class CDNHandler: Sendable {
             let width = max(size, 600)
             return (MediaGenerator.bannerPNG(width: width, height: width * 2 / 5, seed: seed, palette: palette), "image/png")
         case "avatar-decoration-presets":
-            return (MediaGenerator.animatedGIF(seed: seed, size: min(size, 160)), file.hasSuffix(".png") ? "image/png" : "image/gif")
+            // `passthrough=false` asks for the still frame, as the client does when animation is off.
+            let still = request.query["passthrough"]?.first == "false" || !stem.hasPrefix("a_")
+            return (MediaGenerator.avatarDecorationPNG(seed: seed, size: min(size, 240), animated: !still), "image/png")
         case "assets" where segments.contains("collectibles"), "media" where segments.contains("collectibles-shop"):
             return (MediaGenerator.bannerPNG(width: 480, height: 96, seed: Self.seed(segments.dropLast().last ?? stem)), "image/png")
         default:

@@ -51,6 +51,11 @@ The simulator binds `127.0.0.1` only. One base port `P` (default 47100):
 | `friends-performance` | `demo` + 1,000 friends, 100 incoming, 100 outgoing requests |
 | `side-chat-motion` | `demo` + #general with long threads (params `threads`, `thread_messages`) |
 
+Bots answer slash commands and button presses (`POST /interactions`) the way
+Discord runs them: INTERACTION_CREATE, the bot's reply, INTERACTION_SUCCESS.
+In `demo`, Pip answers `/gamenight` and `/digest`, and its RSVP buttons update
+the card.
+
 The default epoch ("now") is the most recent Sunday 21:30 in the Mac's time
 zone, which is what the demo conversation is written for; pass `--epoch` for
 runs that must be identical on any day.

@@ -21,6 +21,9 @@ public struct MessageDraft: Sendable {
     public var id: Snowflake?
     /// For forwards: the original message as Discord snapshots it.
     public var forwardSnapshot: JSON?
+    /// For a bot's interaction response: its application and the interaction it answers.
+    public var applicationID: Snowflake?
+    public var interaction: InteractionRecord?
 
     public init(content: String = "") { self.content = content }
 }
@@ -53,6 +56,10 @@ public extension World {
         message.poll = draft.poll
         message.stickerIDs = draft.stickerIDs
         if let snapshot = draft.forwardSnapshot { message.messageSnapshots = [snapshot] }
+        // Interaction responses come through the application's webhook.
+        message.applicationID = draft.applicationID
+        message.webhookID = draft.applicationID
+        message.interaction = draft.interaction
         let mentions = parseMentions(draft.content, in: channel)
         mentions.apply(to: &message)
         if let parse = draft.allowedMentionsParse {

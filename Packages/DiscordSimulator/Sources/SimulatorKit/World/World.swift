@@ -67,6 +67,9 @@ public actor World {
     public var tokens: [String: Snowflake] = [:]
     /// Discord's own sticker packs, outside any guild.
     public var standardStickers: [Sticker] = []
+    /// Simulated bots' slash command replies and button behavior, set by scenarios.
+    var commandReplies: [String: CommandReply] = [:]
+    var componentResponders: [String: ComponentResponder] = [:]
     /// The account the app signs in as.
     public private(set) var primaryUserID: Snowflake?
     /// Files the client uploaded to the attachment host, keyed by `upload_filename`.

@@ -282,6 +282,7 @@ public struct Message: Sendable {
     public var threadID: Snowflake?
     public var webhookID: Snowflake?
     public var applicationID: Snowflake?
+    public var interaction: InteractionRecord?
 
     public var timestamp: Date { id.date }
 }
