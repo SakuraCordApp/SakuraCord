@@ -125,19 +125,22 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         Self.defaultAvatarURL(id: id, discriminator: discriminator)
     }
 
-    /// The official client's bundled default avatars, chosen by user ID or
-    /// legacy discriminator.
+    /// The official client's bundled default avatars.
+    private static let defaultAvatarURLs = [
+        "18e336a74a159cfd", "788f05731f8aa02e", "9855d7e3b9780976",
+        "2ccd8ae8b2379360", "411d8a698dd15ddf", "320d5a40d309f942",
+    ].map { URL(string: "https://discord.com/assets/\($0).png")! }
+
+    /// Chosen by user ID or legacy discriminator.
     public static func defaultAvatarURL(id: UserID, discriminator: String? = nil) -> URL {
-        let assets = ["18e336a74a159cfd", "788f05731f8aa02e", "9855d7e3b9780976",
-                      "2ccd8ae8b2379360", "411d8a698dd15ddf", "320d5a40d309f942"]
         // Only the migrated "0" discriminator indexes by ID; any legacy value,
         // including a webhook's "0000", indexes by discriminator.
         let index = if let discriminator, discriminator != "0", let legacy = UInt64(discriminator) {
             legacy % 5
         } else {
-            id.discordEpochMilliseconds % UInt64(assets.count)
+            id.discordEpochMilliseconds % UInt64(defaultAvatarURLs.count)
         }
-        return URL(string: "https://discord.com/assets/\(assets[Int(index)]).png")!
+        return defaultAvatarURLs[Int(index)]
     }
 
     public var tag: String {

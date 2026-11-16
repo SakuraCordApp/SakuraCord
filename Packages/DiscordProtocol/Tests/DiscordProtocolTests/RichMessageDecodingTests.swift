@@ -180,7 +180,7 @@ import Testing
     #expect(message.author.displayName == "Guild Fixture")
     #expect(message.guildMember?.nickname == "Guild Fixture")
     #expect(message.guildMember?.roleIDs == [RoleID(rawValue: 10), RoleID(rawValue: 11)])
-    #expect(message.author.avatarURL.absoluteString.contains("/guilds/300/users/1/avatars/guild-avatar.webp") == true)
+    #expect(message.author.avatarURL.absoluteString.contains("/guilds/300/users/1/avatars/guild-avatar.webp"))
     #expect(message.applicationID == ApplicationID(rawValue: 400))
     #expect(message.attachments.count == 1)
     #expect(message.attachments[0].title == "Photo")

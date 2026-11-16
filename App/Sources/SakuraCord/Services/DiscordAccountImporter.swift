@@ -135,7 +135,7 @@ enum DiscordAccountImporter {
               let tokens = try decodeValue(tokensData) as? [String: String]
         else { throw ImportError.noAccounts }
         var names: [String: String] = [:]
-        var avatars: [String: URL] = [:]
+        var records: [String: [String: Any]] = [:]
         if let metadata = values[storageKey("MultiAccountStore")],
            let store = try decodeValue(metadata) as? [String: Any],
            let state = store["_state"] as? [String: Any],
@@ -143,7 +143,7 @@ enum DiscordAccountImporter {
             for user in users {
                 if let id = user["id"] as? String, let username = user["username"] as? String {
                     names[id] = username
-                    if let userID = UserID(id) { avatars[id] = avatarURL(user: user, id: userID) }
+                    records[id] = user
                 }
             }
         }
@@ -152,7 +152,7 @@ enum DiscordAccountImporter {
                   value.hasPrefix("dQw4w9WgXcQ:"), value.count <= 8192 else { return nil }
             return DiscordImportAccount(
                 id: id, username: names[id] ?? "Discord account \(id)",
-                avatarURL: avatars[id] ?? User.defaultAvatarURL(id: userID), encryptedSession: value
+                avatarURL: avatarURL(user: records[id] ?? [:], id: userID), encryptedSession: value
             )
         }
         guard !accounts.isEmpty else { throw ImportError.noAccounts }

@@ -1,12 +1,6 @@
 import SakuraCordModels
 
 enum NativeTimelineReplyMediaPolicy {
-    static func avatarKey(
-        for preview: MessageReplyPreview?
-    ) -> MediaImageKey? {
-        preview.map { .avatar($0.author.avatarURL) }
-    }
-
     static func emojiKeys(
         for preview: MessageReplyPreview,
         in message: Message,

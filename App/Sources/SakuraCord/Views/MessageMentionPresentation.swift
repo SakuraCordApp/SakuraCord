@@ -312,12 +312,7 @@ extension MessageMentionResolver {
         guard mention.kind == .user,
               let userID = UserID(mention.id)
         else { return nil }
-        return userAvatarURL(userID)
-    }
-
-    /// A user who has not loaded yet still shows their default avatar.
-    private func userAvatarURL(_ userID: UserID) -> URL {
-        member(userID)?.avatarURL ?? user(userID)?.avatarURL ?? User.defaultAvatarURL(id: userID)
+        return member(userID)?.avatarURL ?? user(userID)?.avatarURL ?? User.defaultAvatarURL(id: userID)
     }
 
     private func gamePresentation(_ mention: RenderedMention) -> MentionPresentation {
@@ -347,7 +342,8 @@ extension MessageMentionResolver {
             rawToken: mention.rawToken,
             label: "@\((sourceGuildID == nil ? model.friendNickname(for: userID) : nil) ?? member?.user.displayName ?? value?.displayName ?? "unknown-user")",
             target: .user(userID),
-            avatarURL: userAvatarURL(userID),
+            // A user who has not loaded yet still shows their default avatar.
+            avatarURL: member?.avatarURL ?? value?.avatarURL ?? User.defaultAvatarURL(id: userID),
             colorHex: topColor
         )
     }

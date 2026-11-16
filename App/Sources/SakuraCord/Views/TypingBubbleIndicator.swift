@@ -863,12 +863,16 @@ final class TypingIndicator: NSView {
 
     private func updateColors() {
         bubble.updateColors(for: effectiveAppearance)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         effectiveAppearance.performAsCurrentDrawingAppearance {
             countText.foregroundColor = NSColor.secondaryLabelColor.cgColor
+            let placeholder = NSColor.quaternaryLabelColor.cgColor
+            for slot in stack where slot.picture.contents == nil {
+                slot.picture.backgroundColor = placeholder
+            }
         }
-        for slot in stack where slot.picture.contents == nil {
-            slot.picture.backgroundColor = placeholderColor
-        }
+        CATransaction.commit()
     }
 
     private var placeholderColor: CGColor? {
