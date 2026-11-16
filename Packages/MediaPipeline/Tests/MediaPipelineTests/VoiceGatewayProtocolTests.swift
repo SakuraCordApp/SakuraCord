@@ -53,6 +53,11 @@ import Testing
     #expect(event.event == .daveExecuteTransition(transitionID: 0))
 }
 
+@Test func `dave prepare epoch decodes a sole member reset without transition ID`() throws {
+    let event = try VoiceGatewayCodec.decodeJSON(Data(#"{"op":24,"d":{"protocol_version":1,"epoch":1},"seq":13}"#.utf8))
+    #expect(event.event == .davePrepareEpoch(epoch: 1, protocolVersion: 1))
+}
+
 @Test func `voice gateway identify advertises DAVE and resume acknowledges sequence`() throws {
     let identify = try VoiceGatewayCodec.identify(
         serverID: "10",

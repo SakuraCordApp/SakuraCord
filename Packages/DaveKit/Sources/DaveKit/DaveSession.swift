@@ -11,8 +11,9 @@ class DaveSession {
         daveSessionDestroy(self.sessionHandle)
     }
 
-    func getKeyRatchet(userId: String) -> KeyRatchet {
-        KeyRatchet(handle: daveSessionGetKeyRatchet(sessionHandle, userId))
+    /// Nil until the MLS group is established, such as right after a sole-member reset.
+    func getKeyRatchet(userId: String) -> KeyRatchet? {
+        daveSessionGetKeyRatchet(sessionHandle, userId).map(KeyRatchet.init)
     }
 
     func reset() {
