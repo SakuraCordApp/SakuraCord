@@ -223,7 +223,7 @@ The tap's README owns its local checks and workflow setup.
 ## One-time Sparkle setup
 
 SakuraCord pins the `SakuraCordApp/Sparkle` fork at
-`2.10.0-sakuracord.1`, based on upstream Sparkle 2.10.0. The fork preserves
+`2.10.1-sakuracord.1`, based on upstream Sparkle 2.10.1. The fork preserves
 Sparkle's signed-feed, archive, bundle-identity, and installation verification.
 Its explicit-version API installs the selected signed full archive even when
 its version is older or equal. Authorization lasts for one update operation;

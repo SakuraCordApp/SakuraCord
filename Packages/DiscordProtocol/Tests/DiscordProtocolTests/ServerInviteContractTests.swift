@@ -381,7 +381,7 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
         let code = request.url!.lastPathComponent
         let write = request.httpMethod == "POST"
         let hasSolution = request.value(forHTTPHeaderField: "X-Captcha-Key") != nil
-        if write && code == "captchaTimeout" && hasSolution {
+        if write, code == "captchaTimeout", hasSolution {
             client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
             return
         }

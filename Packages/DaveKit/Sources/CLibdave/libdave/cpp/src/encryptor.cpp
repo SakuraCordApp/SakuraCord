@@ -28,18 +28,23 @@ std::unique_ptr<IEncryptor> CreateEncryptor()
 void Encryptor::SetKeyRatchet(std::unique_ptr<IKeyRatchet> keyRatchet)
 {
     std::lock_guard<std::mutex> lock(keyGenMutex_);
-    // Protocol transitions may reinstall the current epoch/user key. Retain its
-    // nonce sequence: resetting it would reuse AES-GCM nonces and replay frames.
-    if (keyRatchet_ && keyRatchet) {
-        const auto domain = keyRatchet->GetDomainIdentity();
-        if (!domain.empty() && domain == keyRatchet_->GetDomainIdentity()) {
-            return;
+
+    // only a new key domain may restart the nonce sequence, a repeat would reuse nonces
+    if (keyRatchet) {
+        auto domainIdentity = keyRatchet->GetDomainIdentity();
+        if (domainIdentity != keyDomainIdentity_) {
+            keyDomainIdentity_ = std::move(domainIdentity);
+            currentKeyGeneration_ = 0;
+            truncatedNonce_ = 0;
+        }
+        else {
+            DISCORD_LOG(LS_INFO)
+              << "Key ratchet re-installed for current key domain, keeping nonce sequence";
         }
     }
+
     keyRatchet_ = std::move(keyRatchet);
     cryptor_ = nullptr;
-    currentKeyGeneration_ = 0;
-    truncatedNonce_ = 0;
 }
 
 void Encryptor::SetPassthroughMode(bool passthroughMode)
@@ -128,11 +133,8 @@ Encryptor::ResultCode Encryptor::Encrypt(MediaType mediaType,
             break;
         }
 
-        // write the truncated nonce to our temporary full nonce array
-        // (since the encryption call expects a full size nonce)
-        memcpy(nonceBuffer.data() + kAesGcm128TruncatedSyncNonceOffset,
-               &truncatedNonce,
-               kAesGcm128TruncatedSyncNonceBytes);
+        // the encryption call expects a full size nonce
+        nonceBuffer = ExpandTruncatedNonce(truncatedNonce);
 
         // encrypt the plaintext, adding the unencrypted header to the tag
         bool success = cryptor->Encrypt(
@@ -190,7 +192,7 @@ Encryptor::ResultCode Encryptor::Encrypt(MediaType mediaType,
         memcpy(supplementalBytesBuffer.data(), &supplementalBytes, sizeof(SupplementalBytesSize));
 
         // write the marker bytes, ends the frame
-        memcpy(markerBytesBuffer.data(), &kMarkerBytes, sizeof(MagicMarker));
+        memcpy(markerBytesBuffer.data(), kMarkerBytes.data(), kMarkerBytes.size());
 
         auto encryptedFrameBytes = reconstructedFrameSize + kAesGcm128TruncatedTagBytes +
           nonceSize + unencryptedRangesSize + sizeof(SupplementalBytesSize) + sizeof(MagicMarker);

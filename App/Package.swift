@@ -4,7 +4,7 @@ import Foundation
 
 let sparkleDependency: Package.Dependency = ProcessInfo.processInfo.environment["SAKURACORD_SPARKLE_PACKAGE_PATH"]
     .map { .package(path: $0) }
-    ?? .package(url: "https://github.com/SakuraCordApp/Sparkle", exact: "2.10.0-sakuracord.1")
+    ?? .package(url: "https://github.com/SakuraCordApp/Sparkle", exact: "2.10.1-sakuracord.1")
 
 // Opt-in developer tooling: `SAKURACORD_MOTION_BENCHMARK=1` compiles the side
 // chat motion benchmark into the app and the mock provider's fixture for it.
