@@ -50,39 +50,39 @@ extension World {
         let sound = SoundboardSound(id: nextID(), name: name, emojiName: emoji, userID: userID)
         _ = try guild(guildID)
         guilds[guildID]?.soundboardSounds.append(sound)
-        guard case var .object(payload) = renderSoundboardSounds(guildID: guildID, viewer: guilds[guildID]!.ownerID)?["soundboard_sounds"]?
-            .arrayValue?.last else { return }
-        payload["id"] = sound.id.json
-        payload["user"] = renderUser(userID)
-        await emit("GUILD_SOUNDBOARD_SOUND_CREATE", .object(payload), to: .guild(guildID, channel: nil))
+        await emitSoundboardSound("GUILD_SOUNDBOARD_SOUND_CREATE", sound, in: guildID)
     }
 
     /// A member renames a sound or changes its emoji or volume. Captured: GUILD_SOUNDBOARD_SOUND_UPDATE carries the
     /// same fields as the create, `id` included.
     func updateSoundboardSound(_ name: String, in guildID: Snowflake, newName: String?, emoji: String?, volume: Double?) async throws {
-        let sound = try soundboardSound(name, in: guildID)
-        guard let index = guilds[guildID]?.soundboardSounds.firstIndex(where: { $0.id == sound.id }) else { return }
-        if let newName { guilds[guildID]?.soundboardSounds[index].name = newName }
-        if let emoji { guilds[guildID]?.soundboardSounds[index].emojiName = emoji }
-        if let volume { guilds[guildID]?.soundboardSounds[index].volume = volume }
-        guard case var .object(payload) = renderSoundboardSounds(guildID: guildID, viewer: guilds[guildID]!.ownerID)?["soundboard_sounds"]?
-            .arrayValue?[index] else { return }
-        payload["id"] = sound.id.json
-        if let userID = sound.userID { payload["user"] = renderUser(userID) }
-        await emit("GUILD_SOUNDBOARD_SOUND_UPDATE", .object(payload), to: .guild(guildID, channel: nil))
+        let index = try soundboardSoundIndex(name, in: guildID)
+        var sound = guilds[guildID]!.soundboardSounds[index]
+        if let newName { sound.name = newName }
+        if let emoji { sound.emojiName = emoji }
+        if let volume { sound.volume = volume }
+        guilds[guildID]!.soundboardSounds[index] = sound
+        await emitSoundboardSound("GUILD_SOUNDBOARD_SOUND_UPDATE", sound, in: guildID)
     }
 
     func removeSoundboardSound(_ name: String, in guildID: Snowflake) async throws {
-        let sound = try soundboardSound(name, in: guildID)
-        guilds[guildID]?.soundboardSounds.removeAll { $0.id == sound.id }
+        let index = try soundboardSoundIndex(name, in: guildID)
+        let sound = guilds[guildID]!.soundboardSounds.remove(at: index)
         await emit("GUILD_SOUNDBOARD_SOUND_DELETE", .object(JSONObject([("guild_id", guildID.json), ("sound_id", sound.id.json)])),
                    to: .guild(guildID, channel: nil))
     }
 
-    private func soundboardSound(_ name: String, in guildID: Snowflake) throws -> SoundboardSound {
-        guard let sound = try guild(guildID).soundboardSounds.first(where: { $0.name == name || $0.id.description == name }) else {
+    private func soundboardSoundIndex(_ name: String, in guildID: Snowflake) throws -> Int {
+        guard let index = try guild(guildID).soundboardSounds.firstIndex(where: { $0.name == name || $0.id.description == name }) else {
             throw WorldError.unknown("Sound", code: 10097)
         }
-        return sound
+        return index
+    }
+
+    private func emitSoundboardSound(_ event: String, _ sound: SoundboardSound, in guildID: Snowflake) async {
+        var payload = renderSoundboardSound(sound, in: guilds[guildID]!)
+        payload["id"] = sound.id.json
+        if let userID = sound.userID { payload["user"] = renderUser(userID) }
+        await emit(event, .object(payload), to: .guild(guildID, channel: nil))
     }
 }

@@ -29,7 +29,7 @@ public extension World {
 
     /// `POST /channels/{id}/call/ring`: rings `recipients` (nil: everyone not in the call).
     func ring(_ channelID: Snowflake, by userID: Snowflake, recipients: [Snowflake]?) async throws {
-        let channel = try privateCallChannel(channelID, member: userID)
+        let channel = try privateChannel(channelID, member: userID)
         guard var call = voice.calls[channelID] else { return }
         let targets = (recipients ?? channel.recipients).filter { recipient in
             recipient != userID && channel.recipients.contains(recipient) && voice.states[recipient]?.channelID != channelID
@@ -48,13 +48,13 @@ public extension World {
 
     /// `POST /channels/{id}/call/stop-ringing`: declining (your own ID) or cancelling a ring.
     func stopRinging(_ channelID: Snowflake, by userID: Snowflake, recipients: [Snowflake]) async throws {
-        _ = try privateCallChannel(channelID, member: userID)
+        _ = try privateChannel(channelID, member: userID)
         await stopRinging(channelID, recipients: recipients, ifCall: nil)
     }
 
     /// `GET /channels/{id}/call`: whether the viewer can ring this channel.
     func callEligibility(_ channelID: Snowflake, for userID: Snowflake) throws -> JSON {
-        let channel = try privateCallChannel(channelID, member: userID)
+        let channel = try privateChannel(channelID, member: userID)
         let blocked = channel.recipients.contains { relationships[$0]?[userID]?.type == .blocked || relationships[userID]?[$0]?.type == .blocked }
         return .object(JSONObject([("ringable", .bool(!blocked))]))
     }
@@ -107,13 +107,6 @@ public extension World {
         for recipient in recipients { call.ongoingRings[recipient] = nil }
         voice.calls[channelID] = call
         await emitCallUpdate(call)
-    }
-
-    private func privateCallChannel(_ channelID: Snowflake, member userID: Snowflake) throws -> Channel {
-        let channel = try channel(channelID)
-        guard channel.type.isPrivate else { throw WorldError.wrongChannelType }
-        guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
-        return channel
     }
 
     private func emitCallUpdate(_ call: Call) async {

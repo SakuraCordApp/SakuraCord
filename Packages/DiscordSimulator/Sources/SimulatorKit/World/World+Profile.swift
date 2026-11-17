@@ -173,7 +173,7 @@ extension World {
                         throw WorldError.invalidBody("image: Invalid image data")
                     }
                     let fileID = nextID(), contentType = Self.contentType(forFilename: name, data: data)
-                    media["/widget-assets/\(userID)/\(fileID)"] = (data, contentType)
+                    storeMedia("/widget-assets/\(userID)/\(fileID)", data, contentType: contentType)
                     saved[key] = .object(JSONObject([("file_id", fileID.json), ("width", .int(Int64(image.width))),
                                                      ("height", .int(Int64(image.height))), ("is_animated", .bool(Self.isAnimated(data)))]))
                 } else {

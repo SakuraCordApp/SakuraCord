@@ -73,13 +73,19 @@ extension World {
         return event
     }
 
-    /// The creator, or anyone with Manage Events, may delete an event.
-    func deleteScheduledEvent(_ id: Snowflake, in guildID: Snowflake, by userID: Snowflake) async throws {
+    /// The event, when the user is its creator with Create Events or has Manage Events.
+    private func managedScheduledEvent(_ id: Snowflake, in guildID: Snowflake, by userID: Snowflake) throws -> ScheduledEvent {
         let event = try scheduledEvent(id, in: guildID)
         let permissions = try guild(guildID).permissions(of: userID, at: clock.now)
         guard permissions.contains(.manageEvents) || event.creatorID == userID && permissions.contains(.createEvents) else {
             throw WorldError.missingPermissions
         }
+        return event
+    }
+
+    /// The creator, or anyone with Manage Events, may delete an event.
+    func deleteScheduledEvent(_ id: Snowflake, in guildID: Snowflake, by userID: Snowflake) async throws {
+        let event = try managedScheduledEvent(id, in: guildID, by: userID)
         servers.scheduledEvents[id] = nil
         await emit("GUILD_SCHEDULED_EVENT_DELETE", renderScheduledEvent(event), to: eventAudience(event))
         await emitAuditLog(guildID, action: 102, target: event.id, by: userID, changes: eventAuditChanges(event, created: false))
@@ -89,11 +95,7 @@ extension World {
     /// renames it. Status moves only forward, as Discord documents: scheduled to active or
     /// canceled, active to completed.
     func updateScheduledEvent(_ id: Snowflake, in guildID: Snowflake, by userID: Snowflake, status: Int?, name: String?) async throws {
-        var event = try scheduledEvent(id, in: guildID)
-        let permissions = try guild(guildID).permissions(of: userID, at: clock.now)
-        guard permissions.contains(.manageEvents) || event.creatorID == userID && permissions.contains(.createEvents) else {
-            throw WorldError.missingPermissions
-        }
+        var event = try managedScheduledEvent(id, in: guildID, by: userID)
         var changes: [JSON] = []
         if let status, status != event.status {
             guard [1: [2, 4], 2: [3]][event.status]?.contains(status) == true else { throw WorldError.invalidBody("status: Invalid transition") }

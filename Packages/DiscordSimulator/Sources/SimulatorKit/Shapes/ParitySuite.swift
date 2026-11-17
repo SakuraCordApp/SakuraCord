@@ -76,7 +76,7 @@ public enum ParitySuite {
             let simulator = try await DiscordSimulator.make(configuration: configuration)
             try await simulator.start()
             defer { simulator.stop() }
-            var run = ParityRun(simulator: simulator, mutate: mutate)
+            var run = try ParityRun(simulator: simulator, mutate: mutate)
             try await body(&run)
             report = run.report
         } catch {
@@ -98,11 +98,11 @@ struct ParityRun {
     /// REST templates sent since the last `flowStart`.
     var flowRequests: [String] = []
 
-    init(simulator: DiscordSimulator, mutate: ParitySuite.Mutation?) {
+    init(simulator: DiscordSimulator, mutate: ParitySuite.Mutation?) throws {
         self.simulator = simulator
         self.mutate = mutate
         // Captured shapes only: a field from the client's code mustn't make a missing field elsewhere look merely unverified.
-        elsewhere = FieldIndex((try? ShapeCatalog.captured()) ?? simulator.catalog)
+        elsewhere = FieldIndex(try ShapeCatalog.captured())
     }
 
     struct SignedIn {

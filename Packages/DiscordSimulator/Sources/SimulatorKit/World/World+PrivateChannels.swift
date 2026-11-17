@@ -4,7 +4,7 @@ import Foundation
 extension World {
     /// `PATCH /channels/{id}` on a group DM: any member may rename it or change its icon.
     func editGroupDM(_ channelID: Snowflake, by userID: Snowflake, patch: JSON) async throws -> Channel {
-        var channel = try groupDM(channelID, member: userID)
+        var channel = try privateChannel(channelID, member: userID, type: .groupDM)
         var notices: [MessageDraft] = []
         if let name = patch["name"] {
             let trimmed = name.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -29,7 +29,7 @@ extension World {
     /// `PUT /channels/{id}/recipients/{id}`: a member adds a friend or someone they share a server with
     /// (the official client's picker: "Add friends or server members to group DMs"), who gets the group in their DM list.
     func addGroupRecipient(_ channelID: Snowflake, _ added: Snowflake, by userID: Snowflake) async throws {
-        var channel = try groupDM(channelID, member: userID)
+        var channel = try privateChannel(channelID, member: userID, type: .groupDM)
         _ = try user(added)
         guard !channel.recipients.contains(added) else { return }
         // Not captured: the errors for anyone else and for the ten-person cap follow Discord's documentation.
@@ -48,7 +48,7 @@ extension World {
 
     /// `DELETE /channels/{id}/recipients/{id}`: the owner removes someone; they lose the group.
     func removeGroupRecipient(_ channelID: Snowflake, _ removed: Snowflake, by userID: Snowflake) async throws {
-        let channel = try groupDM(channelID, member: userID)
+        let channel = try privateChannel(channelID, member: userID, type: .groupDM)
         guard channel.ownerID == userID else { throw WorldError.missingPermissions }
         guard channel.recipients.contains(removed) else { return }
         try await dropRecipient(removed, from: channel, by: userID)
@@ -72,22 +72,20 @@ extension World {
     /// `PUT /channels/{id}/recipients/@me` with `consent_status` 2 (accepted). No simulated DM is a
     /// message request, so accepting one changes nothing and sends no event.
     func acceptMessageRequest(_ channelID: Snowflake, by userID: Snowflake, consent: JSON?) throws {
-        _ = try directMessage(channelID, member: userID)
+        _ = try privateChannel(channelID, member: userID, type: .dm)
         guard consent?.intValue == 2 else { throw WorldError.invalidBody("consent_status") }
     }
 
     /// `DELETE /channels/{id}/recipients/@me`: ignoring a request closes the DM for this user only.
     func ignoreMessageRequest(_ channelID: Snowflake, by userID: Snowflake) async throws {
-        _ = try directMessage(channelID, member: userID)
+        _ = try privateChannel(channelID, member: userID, type: .dm)
         _ = try await closePrivateChannel(channelID, by: userID)
     }
 
     /// "Don't leave" on a group's blocked-member warning. Captured: the dismisser's sessions get CHANNEL_UPDATE with
     /// `blocked_user_warning_dismissed`, which READY carries from then on.
     func dismissBlockedUserWarning(in channelID: Snowflake, by userID: Snowflake) async throws {
-        let channel = try channel(channelID)
-        guard channel.type.isPrivate else { throw WorldError.wrongChannelType }
-        guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
+        let channel = try privateChannel(channelID, member: userID)
         dismissedBlockedUserWarnings[userID, default: []].insert(channelID)
         await emit("CHANNEL_UPDATE", renderChannel(channel, viewer: userID), to: .users([userID]))
     }
@@ -113,16 +111,10 @@ extension World {
         try await postRecipientNotice(type: 2, about: removed, by: userID, in: channel.id)
     }
 
-    private func groupDM(_ channelID: Snowflake, member userID: Snowflake) throws -> Channel {
+    /// A DM or group the user is in; `type` narrows it to one of the two.
+    func privateChannel(_ channelID: Snowflake, member userID: Snowflake, type: ChannelType? = nil) throws -> Channel {
         let channel = try channel(channelID)
-        guard channel.type == .groupDM else { throw WorldError.wrongChannelType }
-        guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
-        return channel
-    }
-
-    private func directMessage(_ channelID: Snowflake, member userID: Snowflake) throws -> Channel {
-        let channel = try channel(channelID)
-        guard channel.type == .dm else { throw WorldError.wrongChannelType }
+        guard type.map({ channel.type == $0 }) ?? channel.type.isPrivate else { throw WorldError.wrongChannelType }
         guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
         return channel
     }

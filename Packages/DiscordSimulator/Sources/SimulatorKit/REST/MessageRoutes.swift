@@ -96,7 +96,7 @@ enum MessageRoutes {
         routes["GET /api/v9/channels/{id}/messages/{id}/reactions/{emoji}"] = { context in
             let (name, id) = try MessageRoutes.emoji(context.parameters[2])
             let message = try await context.world.message(try context.id(1), in: try context.id(0))
-            let key = id.map { "\(name):\($0)" } ?? name
+            let key = Reaction.key(name: name, id: id)
             let reaction = message.reactions.first { $0.key == key }
             let users = context.query("type") == "1" ? reaction?.burstUsers ?? [] : reaction?.users ?? []
             let after = context.query("after").flatMap(Snowflake.init)

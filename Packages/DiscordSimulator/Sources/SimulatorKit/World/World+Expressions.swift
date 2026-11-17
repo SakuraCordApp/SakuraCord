@@ -86,15 +86,17 @@ extension World {
         guard let guild = guilds[guildID], guild.members[viewer] != nil else { return nil }
         return .object(JSONObject([
             ("guild_id", guildID.json),
-            ("soundboard_sounds", .array(guild.soundboardSounds.map { sound in
-                storeSoundMedia(sound.id.description, seed: sound.id.rawValue)
-                return .object(JSONObject([
-                    ("available", true), ("emoji_id", .null), ("emoji_name", .optional(sound.emojiName)), ("guild_id", guildID.json),
-                    ("name", .string(sound.name)), ("sound_id", sound.id.json), ("user_id", sound.userID?.json ?? guild.ownerID.json),
-                    ("volume", .double(sound.volume)),
-                ]))
-            })),
+            ("soundboard_sounds", .array(guild.soundboardSounds.map { .object(renderSoundboardSound($0, in: guild)) })),
         ]))
+    }
+
+    func renderSoundboardSound(_ sound: SoundboardSound, in guild: Guild) -> JSONObject {
+        storeSoundMedia(sound.id.description, seed: sound.id.rawValue)
+        return JSONObject([
+            ("available", true), ("emoji_id", .null), ("emoji_name", .optional(sound.emojiName)), ("guild_id", guild.id.json),
+            ("name", .string(sound.name)), ("sound_id", sound.id.json), ("user_id", sound.userID?.json ?? guild.ownerID.json),
+            ("volume", .double(sound.volume)),
+        ])
     }
 
     private func storeSoundMedia(_ id: String, seed: UInt64) {

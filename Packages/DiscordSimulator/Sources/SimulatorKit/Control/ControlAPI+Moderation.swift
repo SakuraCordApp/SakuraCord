@@ -40,7 +40,7 @@ extension ControlAPI {
             let channel = try await resolveChannel(body)
             let key = try body["emoji"]?.stringValue.map { emoji -> String in
                 let (name, id) = try MessageRoutes.emoji(emoji)
-                return id.map { "\(name):\($0)" } ?? name
+                return Reaction.key(name: name, id: id)
             }
             try await world.clearReactions(try snowflake(body["message_id"]?.stringValue ?? ""), in: channel, emojiKey: key,
                                            by: try await moderator(body, channel: channel))

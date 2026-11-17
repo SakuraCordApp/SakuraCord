@@ -122,15 +122,8 @@ public struct ShapeExtractor {
                 node.applyETF(path: path, tags: tagSet)
             }
         }
-        if record["dir"]?.stringValue == "out" {
-            var merged = catalog.gatewaySent[name] ?? ShapeNode()
-            merged.merge(node)
-            catalog.gatewaySent[name] = merged
-        } else {
-            var merged = catalog.gateway[name] ?? ShapeNode()
-            merged.merge(node)
-            catalog.gateway[name] = merged
-        }
+        let table: WritableKeyPath<ShapeCatalog, [String: ShapeNode]> = record["dir"]?.stringValue == "out" ? \.gatewaySent : \.gateway
+        catalog[keyPath: table][name, default: ShapeNode()].merge(node)
     }
 
     /// Voice gateway JSON frames; binary DAVE payloads are MLS messages with no JSON shape.
@@ -142,10 +135,8 @@ public struct ShapeExtractor {
         fields += [("op", .int(op)), ("d", payload)]
         var node = ShapeNode()
         node.absorb(.object(JSONObject(fields)))
-        let sent = record["dir"]?.stringValue == "out"
-        var merged = (sent ? catalog.voiceSent : catalog.voice)["op\(op)"] ?? ShapeNode()
-        merged.merge(node)
-        if sent { catalog.voiceSent["op\(op)"] = merged } else { catalog.voice["op\(op)"] = merged }
+        let table: WritableKeyPath<ShapeCatalog, [String: ShapeNode]> = record["dir"]?.stringValue == "out" ? \.voiceSent : \.voice
+        catalog[keyPath: table]["op\(op)", default: ShapeNode()].merge(node)
     }
 
     // MARK: Sequences

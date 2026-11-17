@@ -252,7 +252,9 @@ public struct Reaction: Sendable {
     public var burstUsers: [Snowflake] = []
     public var burstColors: [String] = []
 
-    public var key: String { emojiID.map { "\(emojiName):\($0)" } ?? emojiName }
+    public var key: String { Self.key(name: emojiName, id: emojiID) }
+
+    static func key(name: String, id: Snowflake?) -> String { id.map { "\(name):\($0)" } ?? name }
 }
 
 public struct Poll: Sendable {

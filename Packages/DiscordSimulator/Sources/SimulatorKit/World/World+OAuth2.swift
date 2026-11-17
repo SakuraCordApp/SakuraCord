@@ -111,7 +111,7 @@ extension World {
 
     /// `GET /oauth2/tokens`: the applications the user authorized, oldest first.
     /// Captured: the profile widgets ask with `application_ids`, which narrows the list to those applications.
-    func renderOAuthTokens(_ userID: Snowflake, only applicationIDs: Set<Snowflake>? = nil) -> JSON {
+    func renderOAuthTokens(_ userID: Snowflake, only applicationIDs: Set<Snowflake>?) -> JSON {
         .array((servers.oauthGrants[userID] ?? [:]).sorted { $0.value.id < $1.value.id }.compactMap { appID, grant in
             guard let app = users[appID], applicationIDs?.contains(appID) ?? true else { return nil }
             return .object(JSONObject([

@@ -249,7 +249,7 @@ public extension World {
         let existing = try message(messageID, in: channelID)
         var added = false
         _ = try updateMessage(messageID, in: channelID) { message in
-            let key = emojiID.map { "\(emojiName):\($0)" } ?? emojiName
+            let key = Reaction.key(name: emojiName, id: emojiID)
             var index = message.reactions.firstIndex { $0.key == key }
             if index == nil {
                 message.reactions.append(Reaction(emojiName: emojiName, emojiID: emojiID))
@@ -276,7 +276,7 @@ public extension World {
         let existing = try message(messageID, in: channelID)
         var removed = false
         _ = try updateMessage(messageID, in: channelID) { message in
-            let key = emojiID.map { "\(emojiName):\($0)" } ?? emojiName
+            let key = Reaction.key(name: emojiName, id: emojiID)
             guard let index = message.reactions.firstIndex(where: { $0.key == key }) else { return }
             let before = message.reactions[index].users.count + message.reactions[index].burstUsers.count
             if burst { message.reactions[index].burstUsers.removeAll { $0 == userID } } else { message.reactions[index].users.removeAll { $0 == userID } }
