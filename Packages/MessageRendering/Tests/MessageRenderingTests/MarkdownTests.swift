@@ -253,19 +253,27 @@ import Testing
     }
 }
 
-@Test func `profile bios use Discord's bio rules without code blocks or user, role and channel mentions`() {
-    let source = "```\nlet x\n```\n<@1> <@&2> <#3> @here <t:0:R> <:wave:4>"
+@Test func `profile bios use Discord's bio rules for code and mentions`() {
+    let source = "```swift\nlet **x** = 1\n``` <@1> <@&2> <#3> @here <t:0:R> <:wave:4>\n``` <t:1:R>"
     let bio = MessageDocument(source: source, rules: .profileBio)
     let mentionKinds = bio.segments.compactMap { segment -> RenderedMention.Kind? in
         guard case let .mention(mention) = segment else { return nil }
         return mention.kind
     }
-    #expect(mentionKinds == [.timestamp])
+    // An unclosed fence is plain text in a bio, so the last timestamp renders.
+    #expect(mentionKinds == [.channel, .timestamp, .timestamp])
     #expect(bio.segments.contains { if case .customEmoji = $0 { true } else { false } })
 
+    // A fence is inline code across lines, its Markdown kept literal.
     let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
-    let code = (value.string as NSString).range(of: "let x")
+    let string = value.string as NSString
+    let code = string.range(of: "swift\nlet **x** = 1\n")
+    #expect(code.location != NSNotFound)
+    #expect(value.attribute(.discordMarkdownInlineCode, at: code.location, effectiveRange: nil) != nil)
+    #expect(value.attribute(.discordMarkdownInlineCode, at: NSMaxRange(code) - 2, effectiveRange: nil) != nil)
     #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) == nil)
+    // Only the unclosed fence stays as literal backticks.
+    #expect(value.string.components(separatedBy: "```").count == 2)
 }
 
 @Test func `message document detects jumbo custom emoji`() {

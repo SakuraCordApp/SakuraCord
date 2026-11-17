@@ -204,7 +204,7 @@ public struct MessageDocument: Hashable, Sendable {
                 result.append(.customEmoji(emoji))
             } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token),
                       rules.renders(mention.kind),
-                      !isLiteralMention(mention, range: range, in: source, literalRanges: &literalRanges),
+                      !isLiteralMention(mention, range: range, in: source, rules: rules, literalRanges: &literalRanges),
                       !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
                 result.append(.mention(mention))
             } else {
@@ -239,11 +239,12 @@ public struct MessageDocument: Hashable, Sendable {
     }
 
     private static func isLiteralMention(
-        _ mention: RenderedMention, range: Range<String.Index>, in source: String, literalRanges: inout [NSRange]?
+        _ mention: RenderedMention, range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules,
+        literalRanges: inout [NSRange]?
     ) -> Bool {
         guard [.game, .broadcast, .timestamp, .command].contains(mention.kind) else { return false }
         let tokenRange = NSRange(range, in: source)
-        let ranges = literalRanges ?? DiscordMarkdown.sourceCodeRanges(source) + urlRanges(in: source)
+        let ranges = literalRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules) + urlRanges(in: source)
         literalRanges = ranges
         if ranges.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
         var cursor = range.lowerBound
@@ -318,19 +319,23 @@ public struct MessageDocument: Hashable, Sendable {
 @MainActor
 public final class MessageDocumentCache {
     public static let shared = MessageDocumentCache()
-    private let values = NSCache<NSString, MessageDocumentBox>()
+    private var caches: [DiscordMarkdown.Rules: NSCache<NSString, MessageDocumentBox>] = [:]
 
-    private init() {
-        values.countLimit = 2000
-        values.totalCostLimit = 12 * 1024 * 1024
-    }
+    private init() {}
 
-    public func document(for source: String) -> MessageDocument {
+    public func document(for source: String, rules: DiscordMarkdown.Rules = .message) -> MessageDocument {
+        let values = caches[rules] ?? {
+            let values = NSCache<NSString, MessageDocumentBox>()
+            values.countLimit = 2000
+            values.totalCostLimit = 12 * 1024 * 1024
+            caches[rules] = values
+            return values
+        }()
         let key = source as NSString
         if let cached = values.object(forKey: key) {
             return cached.value
         }
-        let document = MessageDocument(source: source)
+        let document = MessageDocument(source: source, rules: rules)
         values.setObject(MessageDocumentBox(document), forKey: key, cost: source.utf8.count)
         return document
     }

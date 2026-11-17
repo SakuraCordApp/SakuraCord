@@ -1,33 +1,45 @@
 import AppKit
 import SwiftUI
 
+/// A saved bio, rendered with Discord's bio rules. Its channel mentions and
+/// links resolve through the profile presentation's model.
+struct ProfileBioText: View {
+    let source: String
+    @Environment(\.serverTagCardModel) private var model
+
+    var body: some View {
+        CustomEmojiRichText(
+            model: model,
+            content: source,
+            markdownRules: .profileBio,
+            emojiSize: InterfaceScale.metric(18),
+            baseFontSize: InterfaceScale.fontSize(14),
+            mentionPresentation: { mention in
+                model.map { MessageMentionResolver(model: $0).presentation(mention) }
+                    ?? MentionPresentation.fallback(for: mention)
+            }
+        )
+    }
+}
+
+/// The bio editor, which shows the bio's source with its emoji, as Discord's
+/// bio field does.
 struct ProfileRichTextView: View {
     let source: String
-    var editing: ProfileBioTextEditing?
+    let editing: ProfileBioTextEditing
     @State private var emojiImages: [String: NSImage] = [:]
 
     var body: some View {
-        if let editing {
-            // The editor shows the bio's source, as Discord's bio field does.
-            ProfileTextRepresentable(source: source, emojiImages: emojiImages, editing: editing)
-                .task(id: source) {
-                    emojiImages = [:]
-                    for emoji in Set(EmojiDescriptor.all(in: source)) {
-                        guard !Task.isCancelled,
-                              let image = await ComposerEmojiImageStore.shared.image(for: emoji.rawToken)
-                        else { continue }
-                        emojiImages[emoji.rawToken] = image
-                    }
+        ProfileTextRepresentable(source: source, emojiImages: emojiImages, editing: editing)
+            .task(id: source) {
+                emojiImages = [:]
+                for emoji in Set(EmojiDescriptor.all(in: source)) {
+                    guard !Task.isCancelled,
+                          let image = await ComposerEmojiImageStore.shared.image(for: emoji.rawToken)
+                    else { continue }
+                    emojiImages[emoji.rawToken] = image
                 }
-        } else {
-            CustomEmojiRichText(
-                content: source,
-                markdownRules: .profileBio,
-                emojiSize: InterfaceScale.metric(18),
-                baseFontSize: InterfaceScale.fontSize(14),
-                foregroundColor: .labelColor
-            )
-        }
+            }
     }
 }
 
@@ -135,8 +147,7 @@ private struct ProfileStatusTextRepresentable: NSViewRepresentable {
             source: source,
             font: NSFont.interfaceSystemFont(ofSize: fontSize),
             color: usesSecondaryColor ? .secondaryLabelColor : .labelColor,
-            emojiImages: emojiImages,
-            stylesLinks: false
+            emojiImages: emojiImages
         )
     }
 }
@@ -150,8 +161,8 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    func makeNSView(context: Context) -> HoverLinkTextView {
-        let textView = HoverLinkTextView()
+    func makeNSView(context: Context) -> ProfileBioNSTextView {
+        let textView = ProfileBioNSTextView()
         textView.delegate = context.coordinator
         textView.isEditable = true
         textView.isRichText = true
@@ -164,14 +175,10 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
         textView.textContainer?.heightTracksTextView = false
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
-        textView.linkTextAttributes = [
-            .foregroundColor: NSColor.systemBlue,
-            .underlineStyle: 0
-        ]
         return textView
     }
 
-    func updateNSView(_ textView: HoverLinkTextView, context: Context) {
+    func updateNSView(_ textView: ProfileBioNSTextView, context: Context) {
         context.coordinator.parent = self
         editing.interaction.textView = textView
         textView.onBeginEditing = editing.onBegin
@@ -193,7 +200,7 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
-        nsView textView: HoverLinkTextView,
+        nsView textView: ProfileBioNSTextView,
         context: Context
     ) -> CGSize? {
         let width = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 298
@@ -211,8 +218,7 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
             source: source,
             font: NSFont.interfaceSystemFont(ofSize: 14),
             color: .labelColor,
-            emojiImages: emojiImages,
-            stylesLinks: true
+            emojiImages: emojiImages
         )
     }
 
@@ -233,9 +239,6 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             textView.typingAttributes = ComposerTextStyle.composer(.interfaceSystemFont(ofSize: 14)).attributes
         }
-
-        // A click in the editor places the caret instead of opening the link.
-        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool { true }
     }
 }
 
@@ -243,17 +246,12 @@ enum ProfileInlineAttributedText {
     private static let emojiExpression = RegularExpressionFactory.make(
         #"<(a?):([A-Za-z0-9_~]+):([0-9]+)>"#
     )
-    private static let linkExpression = RegularExpressionFactory.make(
-        #"https?://[^\s<>]+"#,
-        options: .caseInsensitive
-    )
 
     static func make(
         source: String,
         font: NSFont,
         color: NSColor,
-        emojiImages: [String: NSImage],
-        stylesLinks: Bool
+        emojiImages: [String: NSImage]
     ) -> NSAttributedString {
         let output = NSMutableAttributedString()
         let sourceString = source as NSString
@@ -300,9 +298,6 @@ enum ProfileInlineAttributedText {
         if cursor < sourceString.length {
             output.append(styledText(sourceString.substring(from: cursor), font: font, color: color))
         }
-        if stylesLinks {
-            styleLinks(in: output)
-        }
         return output
     }
 
@@ -314,26 +309,6 @@ enum ProfileInlineAttributedText {
         var attributes = ComposerTextStyle.composer(font).attributes
         attributes[.foregroundColor] = color
         return NSAttributedString(string: text, attributes: attributes)
-    }
-
-    private static func styleLinks(in value: NSMutableAttributedString) {
-        let fullString = value.string as NSString
-        let matches = linkExpression.matches(
-            in: value.string,
-            range: NSRange(location: 0, length: fullString.length)
-        )
-        let trailingPunctuation = CharacterSet(charactersIn: ".,;:!?)]}")
-        for match in matches {
-            var range = match.range
-            while range.length > 0 {
-                let last = fullString.substring(with: NSRange(location: NSMaxRange(range) - 1, length: 1))
-                guard last.rangeOfCharacter(from: trailingPunctuation) != nil else { break }
-                range.length -= 1
-            }
-            guard range.length > 0,
-                  let url = URL(string: fullString.substring(with: range)) else { continue }
-            value.addAttributes([.link: url, .foregroundColor: NSColor.systemBlue], range: range)
-        }
     }
 }
 
@@ -399,102 +374,30 @@ private final class ProfileStatusNSTextView: ProfileSelectableTextView, WindowMo
     }
 }
 
-private final class HoverLinkTextView: ProfileSelectableTextView {
-    var onBeginEditing: (() -> Void)?
-    var onEndEditing: (() -> Void)?
-    var onCancelEditing: (() -> Void)?
+private final class ProfileBioNSTextView: ProfileSelectableTextView {
+    var onBeginEditing: () -> Void = {}
+    var onEndEditing: () -> Void = {}
+    var onCancelEditing: () -> Void = {}
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
-        if accepted { onBeginEditing?() }
+        if accepted { onBeginEditing() }
         return accepted
     }
 
     override func resignFirstResponder() -> Bool {
         let accepted = super.resignFirstResponder()
-        if accepted { onEndEditing?() }
+        if accepted { onEndEditing() }
         return accepted
     }
 
-    override func cancelOperation(_ sender: Any?) {
-        if let onCancelEditing { onCancelEditing() } else { super.cancelOperation(sender) }
-    }
+    override func cancelOperation(_ sender: Any?) { onCancelEditing() }
 
     override func paste(_ sender: Any?) { pasteAsPlainText(sender) }
 
-    override func insertTab(_ sender: Any?) {
-        if onBeginEditing != nil { window?.selectNextKeyView(sender) } else { super.insertTab(sender) }
-    }
+    override func insertTab(_ sender: Any?) { window?.selectNextKeyView(sender) }
 
-    override func insertBacktab(_ sender: Any?) {
-        if onBeginEditing != nil { window?.selectPreviousKeyView(sender) } else { super.insertBacktab(sender) }
-    }
-    private var tracking: NSTrackingArea?
-    private var underlinedRange: NSRange?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking {
-            removeTrackingArea(tracking)
-        }
-        let tracking = NSTrackingArea(
-            rect: bounds,
-            options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(tracking)
-        self.tracking = tracking
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        super.mouseMoved(with: event)
-        guard let layoutManager, let textContainer, let textStorage else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        let containerPoint = NSPoint(
-            x: point.x - textContainerOrigin.x,
-            y: point.y - textContainerOrigin.y
-        )
-        let glyphIndex = layoutManager.glyphIndex(
-            for: containerPoint,
-            in: textContainer,
-            fractionOfDistanceThroughGlyph: nil
-        )
-        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-        guard characterIndex < textStorage.length else {
-            updateUnderline(nil)
-            return
-        }
-        var linkRange = NSRange(location: 0, length: 0)
-        if textStorage.attribute(.link, at: characterIndex, effectiveRange: &linkRange) != nil {
-            updateUnderline(linkRange)
-            NSCursor.pointingHand.set()
-        } else {
-            updateUnderline(nil)
-            NSCursor.iBeam.set()
-        }
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        updateUnderline(nil)
-    }
-
-    private func updateUnderline(_ range: NSRange?) {
-        guard range != underlinedRange else { return }
-        if let underlinedRange {
-            layoutManager?.removeTemporaryAttribute(.underlineStyle, forCharacterRange: underlinedRange)
-        }
-        underlinedRange = range
-        if let range {
-            layoutManager?.addTemporaryAttribute(
-                .underlineStyle,
-                value: NSUnderlineStyle.single.rawValue,
-                forCharacterRange: range
-            )
-        }
-    }
+    override func insertBacktab(_ sender: Any?) { window?.selectPreviousKeyView(sender) }
 }
 
 private extension NSRange {

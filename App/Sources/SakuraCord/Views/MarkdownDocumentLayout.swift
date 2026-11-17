@@ -421,16 +421,47 @@ nonisolated final class MarkdownQuoteBox: NSTextTableBlock {
     }
 }
 
-/// Draws inline code's chrome behind its glyphs, which a text view's
-/// square background colour can't round or outline.
+/// Draws Markdown's chrome behind its glyphs, as the timeline does: code
+/// blocks, quote bars and inline code, which a text view's square
+/// background colour can't round or outline.
 nonisolated class MarkdownLayoutManager: NSLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        let blocks = blockRects().map { ($0.rect.offsetBy(dx: origin.x, dy: origin.y), $0.isCode) }
+        // AppKit draws text on the main thread.
+        MainActor.assumeIsolated {
+            for (rect, isCode) in blocks {
+                if isCode { MarkdownBlockChrome.drawCode(in: rect) } else { MarkdownBlockChrome.drawQuoteBar(in: rect) }
+            }
+        }
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         let rects = rects(of: .discordMarkdownInlineCode, forGlyphRange: glyphsToShow, padding: DiscordMarkdown.inlineCodePadding)
             .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
         guard !rects.isEmpty else { return }
-        // AppKit draws text on the main thread.
         MainActor.assumeIsolated { rects.forEach(MarkdownBlockChrome.drawCode(in:)) }
+    }
+
+    /// Each code block's padded background and each quote's bar, as wide
+    /// as their lines and as tall as their text, without its paragraph spacing.
+    private func blockRects() -> [(rect: NSRect, isCode: Bool)] {
+        guard let textStorage else { return [] }
+        var result: [(NSRect, Bool)] = []
+        textStorage.enumerateAttribute(.discordMarkdownBlock, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
+            guard let name = value as? String, name != "fence" else { return }
+            var extent: NSRect?
+            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) { rect, used, _, _, _ in
+                let line = NSRect(x: rect.minX, y: used.minY, width: rect.width, height: used.height)
+                extent = extent?.union(line) ?? line
+            }
+            guard let extent else { return }
+            if name == "code" {
+                let inset = NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location)
+                result.append((extent.insetBy(dx: 0, dy: -inset), true))
+            } else {
+                let width = NativeTimelineMarkdownChromeMetrics.quoteBarWidth(in: textStorage, at: range.location)
+                result.append((NSRect(x: extent.minX, y: extent.minY, width: width, height: extent.height), false))
+            }
+        }
+        return result
     }
 
     /// Each line's run of text marked with `key`, as tall as its line, as the

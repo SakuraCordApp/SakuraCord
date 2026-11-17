@@ -83,7 +83,7 @@ struct CustomEmojiRichText: View {
     }
 
     private var document: MessageDocument {
-        MessageDocumentCache.shared.document(for: content)
+        MessageDocumentCache.shared.document(for: content, rules: markdownRules)
     }
 
     private var mentionPresentations: [String: MentionPresentation] {

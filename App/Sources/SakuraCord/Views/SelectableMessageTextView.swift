@@ -25,7 +25,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> RichMessageNSTextView {
-        let textView = RichMessageNSTextView()
+        let textView = RichMessageNSTextView(usingTextLayoutManager: false)
         textView.textContainer?.replaceLayoutManager(MarkdownLayoutManager())
         textView.delegate = context.coordinator
         textView.isEditable = false
@@ -59,7 +59,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.isSelectable = isSelectable
         configureTextContainer(textView.textContainer)
         let coordinator = context.coordinator
-        if !TimestampMentionPresentation.tokens(in: source).isEmpty {
+        if !TimestampMentionPresentation.tokens(in: source, rules: markdownRules).isEmpty {
             textView.timestampRefresh = { [weak textView, weak coordinator] date in
                 guard let textView, let coordinator else { return }
                 render(in: textView, coordinator: coordinator, at: date)
@@ -73,7 +73,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
 
     func render(in textView: RichMessageNSTextView, coordinator: Coordinator, at date: Date) {
         let currentMentions = TimestampMentionPresentation.refreshed(
-            mentionPresentations, source: source, at: date
+            mentionPresentations, source: source, rules: markdownRules, at: date
         )
         let signature = RichMessageRenderSignature(
             source: source,
@@ -132,6 +132,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: RichMessageNSTextView, coordinator: Coordinator) {
         RelativeTimestampClock.shared.remove(nsView)
+        nsView.timestampLabel.close()
         nsView.timestampRefresh = nil
         coordinator.cancelEmojiLoads()
         RichMessageSelectionOwnership.remove(nsView)
@@ -237,6 +238,8 @@ final class RichMessageNSTextView: NSTextView {
     var onURLClick: (URL) -> Bool = { _ in false }
     var onRevealSpoiler: (Int) -> Void = { _ in }
     private var hoveredMentionLocation: Int?
+    private var hoveredTimestampLocation: Int?
+    let timestampLabel = StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
     private var hoveredLinkRange: NSRange?
     private var mentionTrackingArea: NSTrackingArea?
     private var unconstrainedMeasurement: CGSize?
@@ -324,6 +327,7 @@ final class RichMessageNSTextView: NSTextView {
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         let point = convert(event.locationInWindow, from: nil)
         updateHoveredMention(at: point)
+        updateTimestampLabel(at: NSEvent.pressedMouseButtons == 0 ? point : nil)
         setHoveredLink(link(at: point)?.range)
         super.mouseMoved(with: event)
         // NSTextView restores the I-beam on every move, even over a mention.
@@ -332,6 +336,7 @@ final class RichMessageNSTextView: NSTextView {
 
     override func mouseExited(with event: NSEvent) {
         setHoveredMention(nil)
+        updateTimestampLabel(at: nil)
         clearHoveredLink()
         super.mouseExited(with: event)
     }
@@ -350,6 +355,7 @@ final class RichMessageNSTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        updateTimestampLabel(at: nil)
         claimSelectionOwnership()
         let point = convert(event.locationInWindow, from: nil)
         if event.modifierFlags.isDisjoint(with: [.command, .shift, .option, .control]) {
@@ -372,6 +378,10 @@ final class RichMessageNSTextView: NSTextView {
     }
 
     private func mentionAttachment(at point: NSPoint) -> (Int, MentionTextAttachment)? {
+        anyMentionAttachment(at: point).flatMap { $0.1.presentation.isInteractive ? $0 : nil }
+    }
+
+    private func anyMentionAttachment(at point: NSPoint) -> (Int, MentionTextAttachment)? {
         guard let layoutManager, let textContainer, attributedString().length > 0 else { return nil }
         var location = point
         location.x -= textContainerOrigin.x
@@ -380,9 +390,31 @@ final class RichMessageNSTextView: NSTextView {
         let index = layoutManager.characterIndexForGlyph(at: glyph)
         guard index < attributedString().length,
               let attachment = attributedString().attribute(.attachment, at: index, effectiveRange: nil)
-              as? MentionTextAttachment, attachment.presentation.isInteractive
+              as? MentionTextAttachment
         else { return nil }
         return (index, attachment)
+    }
+
+    /// A hovered timestamp shows its full date and time in the native hover
+    /// label, as the timeline's do.
+    private func updateTimestampLabel(at point: NSPoint?) {
+        let hovered = point.flatMap(anyMentionAttachment(at:)).flatMap { index, attachment in
+            DiscordTimestampToken(rawToken: attachment.presentation.rawToken).map { (index, $0) }
+        }
+        guard hovered?.0 != hoveredTimestampLocation else { return }
+        hoveredTimestampLocation = hovered?.0
+        guard let (index, token) = hovered, let anchor = mentionPopoverAnchor(at: index, rawToken: token.rawToken) else {
+            timestampLabel.close()
+            return
+        }
+        timestampLabel.update(
+            anchor: anchor,
+            anchorSnapshot: nil,
+            isPresented: true,
+            configuration: .intrinsicHoverLabel,
+            onDismiss: {},
+            content: NativeHoverHelpLabel(title: token.date.formatted(date: .complete, time: .shortened))
+        )
     }
 
     private func link(at point: NSPoint) -> (url: URL, range: NSRange)? {

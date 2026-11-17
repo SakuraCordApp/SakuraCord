@@ -47,13 +47,17 @@ public enum DiscordMarkdown {
     /// The official client's Markdown rule sets that SakuraCord renders.
     public enum Rules: Hashable, Sendable {
         case message
-        /// `PROFILE_BIO_RULES`: no code blocks, and user, role and channel
-        /// mentions stay literal text.
+        /// `PROFILE_BIO_RULES`: no code blocks, so a fence is inline code, and
+        /// user, @everyone, @here and role mentions stay literal text.
         case profileBio
+        /// Personal profile widgets: no code, spoilers or strike-through.
+        case profileWidget
+
+        var parsesCodeBlocks: Bool { self == .message }
 
         public func renders(_ mention: RenderedMention.Kind) -> Bool {
             switch (self, mention) {
-            case (.profileBio, .user), (.profileBio, .broadcast), (.profileBio, .role), (.profileBio, .channel): false
+            case (.profileBio, .user), (.profileBio, .broadcast), (.profileBio, .role): false
             default: true
             }
         }
@@ -234,7 +238,7 @@ public enum DiscordMarkdown {
     /// Personal profile widgets allow emphasis, underline and links, but no
     /// message-only blocks, code, spoilers, strike-through or emoji parsing.
     public static func profileWidgetAttributed(_ source: String, font: Font = .body, links: Bool = true) -> AttributedString {
-        let runs = inlineRuns(source[...], inheritedTraits: [], inheritedLink: nil, widgetRules: true)
+        let runs = inlineRuns(source[...], inheritedTraits: [], inheritedLink: nil, rules: .profileWidget)
         var output = AttributedString()
         for run in runs {
             var value = AttributedString(run.text)
@@ -268,7 +272,7 @@ public enum DiscordMarkdown {
         var unclosedFence: String?
         var list = ListNesting()
 
-        forEachSourceLine(source, fences: rules == .message) { rawLine, kind in
+        forEachSourceLine(source, rules: rules) { rawLine, kind in
             switch kind {
             case let .fence(opening):
                 unclosedFence = opening
@@ -282,7 +286,7 @@ public enum DiscordMarkdown {
                 if lines.last.map({ $0.isQuoted != isQuoted }) == true {
                     list = ListNesting()
                 }
-                var line = planLine(content, list: &list)
+                var line = planLine(content, rules: rules, list: &list)
                 line.isQuoted = isQuoted
                 lines.append(line)
             }
@@ -324,14 +328,17 @@ public enum DiscordMarkdown {
     }
 
     private static func forEachSourceLine(
-        _ source: String, fences: Bool = true, _ body: (Substring, SourceLine) -> Void
+        _ source: String, rules: Rules = .message, _ body: (Substring, SourceLine) -> Void
     ) {
         var codeLanguage: String?
         var isInCodeFence = false
         var startsCodeFence = false
         var isInMultilineQuote = false
-        for rawLine in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            if fences, rawLine.hasPrefix("```") {
+        let lines = rules.parsesCodeBlocks
+            ? source.split(separator: "\n", omittingEmptySubsequences: false)
+            : linesOutsideInlineCode(source)
+        for rawLine in lines {
+            if rules.parsesCodeBlocks, rawLine.hasPrefix("```") {
                 isInCodeFence.toggle()
                 startsCodeFence = isInCodeFence
                 let suffix = rawLine.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -358,6 +365,77 @@ public enum DiscordMarkdown {
                 body(rawLine, .text(content, isQuoted: isQuoted))
             }
         }
+    }
+
+    /// Inline code at `start` under `rules`. Message rendering closes it at
+    /// the next backtick.
+    private static func inlineCode(
+        in source: Substring, at start: String.Index, rules: Rules, collector: SourceFormatCollector?
+    ) -> (content: Range<String.Index>, end: String.Index)? {
+        switch rules {
+        case .message:
+            let open = source.index(after: start)
+            return nextInlineTerminator("`", in: source, from: open, collector: collector).map { (open ..< $0, source.index(after: $0)) }
+        case .profileBio:
+            return inlineCode(in: source, at: start)
+        case .profileWidget:
+            return nil
+        }
+    }
+
+    /// Discord's inline code, `` ^(`+)([\s\S]*?[^`])\1(?!`) ``, at `start`:
+    /// fenced by any run of backticks, closed by a run of the same length,
+    /// and free to span lines. Where it doesn't match, the backtick is text.
+    private static func inlineCode(
+        in source: Substring, at start: String.Index
+    ) -> (content: Range<String.Index>, end: String.Index)? {
+        let contentStart = source[start...].firstIndex { $0 != "`" } ?? source.endIndex
+        let fence = source[start ..< contentStart]
+        guard !fence.isEmpty else { return nil }
+        var cursor = contentStart
+        while let close = source[cursor...].range(of: fence) {
+            let end = close.upperBound
+            if close.lowerBound > contentStart, source[source.index(before: close.lowerBound)] != "`",
+               end == source.endIndex || source[end] != "`" {
+                return (contentStart ..< close.lowerBound, end)
+            }
+            cursor = source.index(after: close.lowerBound)
+        }
+        return nil
+    }
+
+    /// Each `` `code` `` span in rules without code blocks, backticks
+    /// included, skipping escaped characters as inline parsing does.
+    private static func inlineCodeSpans(_ source: String) -> [Range<String.Index>] {
+        var spans: [Range<String.Index>] = []
+        var cursor = source.startIndex
+        while cursor < source.endIndex {
+            if source[cursor] == "\\" {
+                cursor = source.index(cursor, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
+            } else if source[cursor] == "`", let code = inlineCode(in: source[...], at: cursor) {
+                spans.append(cursor ..< code.end)
+                cursor = code.end
+            } else {
+                cursor = source.index(after: cursor)
+            }
+        }
+        return spans
+    }
+
+    /// Source lines, except that inline code spanning lines stays in the
+    /// line it starts on, as Discord parses it before line breaks.
+    private static func linesOutsideInlineCode(_ source: String) -> [Substring] {
+        var lines: [Substring] = []
+        var lineStart = source.startIndex
+        var spans = inlineCodeSpans(source)[...]
+        for newline in source.indices where source[newline] == "\n" {
+            while let span = spans.first, span.upperBound <= newline { spans.removeFirst() }
+            if let span = spans.first, span.contains(newline) { continue }
+            lines.append(source[lineStart ..< newline])
+            lineStart = source.index(after: newline)
+        }
+        lines.append(source[lineStart...])
+        return lines
     }
 
     /// The text after a `>` quote marker that Swift reads as part of a
@@ -587,7 +665,7 @@ public enum DiscordMarkdown {
         }
     }
 
-    private static func planLine(_ source: Substring, list: inout ListNesting) -> AppKitPlan.Line {
+    private static func planLine(_ source: Substring, rules: Rules, list: inout ListNesting) -> AppKitPlan.Line {
         if let item = listItemContent(source) {
             let indentation = source.prefix { $0 == " " }.count
             let (block, marker) = list.item(indentation: indentation, number: item.number)
@@ -600,14 +678,14 @@ public enum DiscordMarkdown {
                     color: nil
                 ),
                 AppKitPlan.InlineRun(text: " ", traits: [], link: nil, color: nil),
-            ] + inlineRuns(item.content, inheritedTraits: [], inheritedLink: nil)
+            ] + inlineRuns(item.content, inheritedTraits: [], inheritedLink: nil, rules: rules)
             return AppKitPlan.Line(runs: runs, block: block)
         }
         list = ListNesting()
         if let candidate = blockPrefixes.first(where: { source.hasPrefix($0.prefix) }) {
-            return line(source.dropFirst(candidate.prefix.count), block: candidate.block)
+            return line(source.dropFirst(candidate.prefix.count), block: candidate.block, rules: rules)
         }
-        return line(source, block: .paragraph)
+        return line(source, block: .paragraph, rules: rules)
     }
 
     private static let blockPrefixes: [(prefix: String, block: AppKitPlan.Block)] = [
@@ -616,13 +694,15 @@ public enum DiscordMarkdown {
 
     private static func line(
         _ source: Substring,
-        block: AppKitPlan.Block
+        block: AppKitPlan.Block,
+        rules: Rules
     ) -> AppKitPlan.Line {
         AppKitPlan.Line(
             runs: inlineRuns(
                 source,
                 inheritedTraits: [],
-                inheritedLink: nil
+                inheritedLink: nil,
+                rules: rules
             ),
             block: block
         )
@@ -648,7 +728,7 @@ public enum DiscordMarkdown {
         _ source: Substring,
         inheritedTraits: AppKitPlan.InlineTraits,
         inheritedLink: URL?,
-        widgetRules: Bool = false,
+        rules: Rules = .message,
         sourceCollector: SourceFormatCollector? = nil
     ) -> [AppKitPlan.InlineRun] {
         var result: [AppKitPlan.InlineRun] = []
@@ -680,15 +760,12 @@ public enum DiscordMarkdown {
                 }
             }
 
-            if !widgetRules, source[cursor] == "`",
-               let close = nextInlineTerminator("`", in: source, from: source.index(after: cursor), collector: sourceCollector)
-            {
+            if source[cursor] == "`", let code = inlineCode(in: source, at: cursor, rules: rules, collector: sourceCollector) {
                 flushPlain()
                 result.append(inlineCodeRun(
-                    source[source.index(after: cursor) ..< close],
-                    traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
+                    source[code.content], traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
                 ))
-                cursor = source.index(after: close)
+                cursor = code.end
                 continue
             }
 
@@ -711,7 +788,7 @@ public enum DiscordMarkdown {
                 in: source,
                 at: cursor,
                 inheritedTraits: inheritedTraits,
-                widgetRules: widgetRules,
+                rules: rules,
                 sourceCollector: sourceCollector
             )
             {
@@ -742,7 +819,7 @@ public enum DiscordMarkdown {
                 at: cursor,
                 inheritedTraits: inheritedTraits,
                 inheritedLink: inheritedLink,
-                widgetRules: widgetRules,
+                rules: rules,
                 sourceCollector: sourceCollector
             ) {
                 flushPlain()
@@ -790,7 +867,7 @@ public enum DiscordMarkdown {
         in source: Substring,
         at cursor: String.Index,
         inheritedTraits: AppKitPlan.InlineTraits,
-        widgetRules: Bool = false,
+        rules: Rules = .message,
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
         guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector) else { return nil }
@@ -804,7 +881,7 @@ public enum DiscordMarkdown {
             source[target.label],
             inheritedTraits: inheritedTraits,
             inheritedLink: target.url,
-            widgetRules: widgetRules,
+            rules: rules,
             sourceCollector: sourceCollector
         )
         if target.suppressesPreview {
@@ -893,12 +970,12 @@ public enum DiscordMarkdown {
         at cursor: String.Index,
         inheritedTraits: AppKitPlan.InlineTraits,
         inheritedLink: URL?,
-        widgetRules: Bool = false,
+        rules: Rules = .message,
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
         for delimiter in delimiters
         where source[cursor...].hasPrefix(delimiter.marker) {
-            if widgetRules, !delimiter.traits.isDisjoint(with: [.strikethrough, .spoiler]) { continue }
+            if rules == .profileWidget, !delimiter.traits.isDisjoint(with: [.strikethrough, .spoiler]) { continue }
             let contentStart = source.index(
                 cursor,
                 offsetBy: delimiter.marker.count
@@ -929,7 +1006,7 @@ public enum DiscordMarkdown {
                 source[contentStart ..< closingRange.lowerBound],
                 inheritedTraits: inheritedTraits.union(delimiter.traits),
                 inheritedLink: inheritedLink,
-                widgetRules: widgetRules,
+                rules: rules,
                 sourceCollector: sourceCollector
             )
             if isSpoiler {
@@ -1369,8 +1446,9 @@ public enum DiscordMarkdown {
 
 extension DiscordMarkdown {
     /// Literal code ranges use the same delimiter rules as message rendering.
-    static func sourceCodeRanges(_ source: String) -> [NSRange] {
+    static func sourceCodeRanges(_ source: String, rules: Rules = .message) -> [NSRange] {
         guard source.utf8.contains(96) else { return [] }
+        guard rules.parsesCodeBlocks else { return inlineCodeSpans(source).map { NSRange($0, in: source) } }
         var source = source
         source.makeContiguousUTF8()
         var ranges: [NSRange] = []

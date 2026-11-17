@@ -109,7 +109,7 @@ final class ProfileBioTextInteraction {
         if let emoji {
             let attributed = ProfileInlineAttributedText.make(
                 source: emoji, font: .interfaceSystemFont(ofSize: 14), color: .labelColor,
-                emojiImages: [:], stylesLinks: false
+                emojiImages: [:]
             )
             textView.insertText(attributed, replacementRange: range)
         }
