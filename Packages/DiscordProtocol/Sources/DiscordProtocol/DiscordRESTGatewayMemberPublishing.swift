@@ -61,7 +61,6 @@ extension DiscordRESTProvider {
         if userID == currentUser?.id {
             continuation?.yield(.currentUserRolesChanged(guildID: guildID, roleIDs: []))
         }
-        invalidateSavedProfilePresentation(for: userID)
         continuation?.yield(.guildMemberRemoved(guildID: guildID, userID: userID))
     }
 }

@@ -339,9 +339,8 @@ struct MemberProfilePopover<Footer: View>: View {
                         CompactProfileWidgets(widgets: widgets, resources: profile.widgetResources, animates: animatesRemoteMedia, open: expandProfile)
                             .padding(.horizontal, InterfaceScale.metric(16))
                     }
-                    ProfileMembershipSection(createdAt: profile.id.createdAt, guild: guild,
-                                             guildJoinedAt: member.joinedAt ?? profile.guildJoinedAt)
-                    if showsRoles, !profile.roles.isEmpty {
+                    ProfileMembershipSection(createdAt: profile.id.createdAt, guild: guild, guildJoinedAt: member.joinedAt)
+                    if showsRoles, member.joinedAt != nil, !profile.roles.isEmpty {
                         ProfileRolesSection(roles: profile.roles, keepsExpanded: layout == .expanded)
                             .id(profile.id)
                     }

@@ -62,22 +62,26 @@ extension AppModel {
     /// Stored members stay for message history, but a missing join date marks
     /// them as no longer in the server, so profiles drop the server badge and roles.
     func consumeGuildMemberRemoved(guildID: GuildID, userID: UserID) {
-        membersByGuildID[guildID]?[userID]?.joinedAt = nil
-        if guildID == selectedGuildID { membersByID[userID]?.joinedAt = nil }
-        profileCache[ProfileCacheKey(userID: userID, guildID: guildID)] = nil
-        for destination in [ProfilePresentationDestination.inspector, .contextual, .expanded] {
-            guard var presentation = profilePresentation(for: destination), presentation.member.id == userID,
-                  presentation.guildID == guildID else { continue }
-            presentation.member.joinedAt = nil
-            if presentation.isLoading {
-                // Restart the load; the one in flight can still carry the old membership.
-                presentProfile(for: presentation.member, in: guildID, destination: destination)
-                continue
-            }
-            presentation.profile?.guildJoinedAt = nil
-            presentation.profile?.roles = []
-            setProfilePresentation(presentation, for: destination)
+        let presented = [ProfilePresentationDestination.inspector, .contextual, .expanded].compactMap { destination in
+            profilePresentation(for: destination).flatMap { $0.member.id == userID && $0.guildID == guildID ? (destination, $0) : nil }
         }
+        // Storing an open profile's member too keeps a load still in flight from adding them back.
+        if var member = membersByGuildID[guildID]?[userID] ?? presented.first?.1.member {
+            member.joinedAt = nil
+            membersByGuildID[guildID, default: [:]][userID] = member
+        }
+        if guildID == selectedGuildID { membersByID[userID]?.joinedAt = nil }
+        // The member store is not observed, so republish open profiles to re-read it.
+        for (destination, presentation) in presented { setProfilePresentation(presentation, for: destination) }
+    }
+
+    /// Discord's profile fetch adds `guild_member` to its member store. This does the
+    /// same for members the store has never seen, without touching the member list.
+    func storeProfileMembership(_ profile: UserProfile, of member: Member, in guildID: GuildID?) {
+        guard let guildID, let joinedAt = profile.guildJoinedAt, profileMember(member.id, in: guildID) == nil else { return }
+        var member = member
+        member.joinedAt = joinedAt
+        membersByGuildID[guildID, default: [:]][member.id] = member
     }
 
     func updateStatus(_ status: PresenceStatus) async {
@@ -312,6 +316,7 @@ extension AppModel {
             errorMessage: nil
         )
         profileTasks[destination]?.cancel()
+        if let cachedProfile { storeProfileMembership(cachedProfile, of: member, in: guildID) }
         setProfilePresentation(presentation, for: destination)
         guard cachedProfile == nil else { return requestID }
         let session = accountSession()
@@ -332,6 +337,7 @@ extension AppModel {
                     return
                 }
                 let profile = cacheLoadedProfile(loaded, for: cacheKey)
+                storeProfileMembership(profile, of: member, in: guildID)
                 var value = profilePresentation(for: destination)
                 value?.profile = profile
                 value?.isLoading = false
@@ -456,7 +462,12 @@ extension AppModel {
     ) -> ProfilePresentationState? {
         guard var presentation = profilePresentation(for: destination) else { return nil }
         guard !presentation.isLocalIdentity else { return presentation }
-        presentation.member = profileMember(presentation.member.id, in: presentation.guildID) ?? presentation.member
+        if let member = profileMember(presentation.member.id, in: presentation.guildID) {
+            presentation.member = member
+        } else if presentation.guildID != nil {
+            // As with Discord's GuildMemberStore, only the live store decides server membership.
+            presentation.member.joinedAt = nil
+        }
         if presentation.member.id == currentUser?.id {
             // Member stores do not track our own presence; the account does.
             presentation.member.status = currentStatus
