@@ -16,9 +16,14 @@ nonisolated enum RichMessageTextMeasurement {
 
 nonisolated enum RichMessageAttributedText {
     private struct PreparedCacheState: Sendable {
-        var values: [String: Prepared] = [:]
-        var insertionOrder: [String] = []
+        var values: [PreparedKey: Prepared] = [:]
+        var insertionOrder: [PreparedKey] = []
         var evictionIndex = 0
+    }
+
+    private struct PreparedKey: Hashable, Sendable {
+        let source: String
+        let rules: Rules
     }
 
     private static let maximumPreparedCacheEntries = 2_048
@@ -35,8 +40,15 @@ nonisolated enum RichMessageAttributedText {
         let isEmojiOnly: Bool
     }
 
-    nonisolated static func prepare(source: String) -> Prepared {
-        if let cached = preparedCache.withLock({ $0.values[source] }) {
+    enum Rules: Hashable, Sendable {
+        case message
+        /// Discord's embed-title rules, without links when the embed itself links.
+        case embedTitle(allowsLinks: Bool)
+    }
+
+    nonisolated static func prepare(source: String, rules: Rules = .message) -> Prepared {
+        let key = PreparedKey(source: source, rules: rules)
+        if let cached = preparedCache.withLock({ $0.values[key] }) {
             return cached
         }
         let signpost = AppPerformanceSignposts.signposter.beginInterval(
@@ -58,21 +70,33 @@ nonisolated enum RichMessageAttributedText {
                 transformed.append("\u{FFFC}")
                 tokens.append(.customEmoji(emoji))
             case let .mention(mention):
-                transformed.append("\u{FFFC}")
-                tokens.append(.mention(mention))
+                // Embed titles have no user, role or game mention rules, so
+                // Discord shows those tokens as typed.
+                if case .embedTitle = rules, [.user, .role, .broadcast, .game].contains(mention.kind) {
+                    transformed += mention.rawToken
+                } else {
+                    transformed.append("\u{FFFC}")
+                    tokens.append(.mention(mention))
+                }
             }
         }
-        let prepared = Prepared(
-            markdownPlan: DiscordMarkdown.appKitPlan(transformed),
-            tokens: tokens,
-            isEmojiOnly: document.isEmojiOnly
-        )
+        let prepared = switch rules {
+        case .message:
+            Prepared(markdownPlan: DiscordMarkdown.appKitPlan(transformed), tokens: tokens, isEmojiOnly: document.isEmojiOnly)
+        case let .embedTitle(allowsLinks):
+            // Embed emoji keep one size, never jumbo.
+            Prepared(
+                markdownPlan: DiscordMarkdown.appKitEmbedTitlePlan(transformed, allowsLinks: allowsLinks),
+                tokens: tokens,
+                isEmojiOnly: false
+            )
+        }
         return preparedCache.withLock { state in
-            if let existing = state.values[source] {
+            if let existing = state.values[key] {
                 return existing
             }
-            state.values[source] = prepared
-            state.insertionOrder.append(source)
+            state.values[key] = prepared
+            state.insertionOrder.append(key)
             while state.values.count > maximumPreparedCacheEntries,
                   state.evictionIndex < state.insertionOrder.count
             {

@@ -95,25 +95,37 @@ enum NativeTimelineEmbedLayout {
                         link: $0.url
                     )
                 }
-                let title = embed.title.map {
-                    NativeTimelineEmbedLayout.resolvedTextBox(
-                        prepared: RichMessageAttributedText.prepare(source: $0),
-                        scope: embed.url == nil ? "title" : "title:\(embed.url!.absoluteString)",
-                        emojiSize: InterfaceTypographyMetrics.message(16),
-                        baseFontSize: InterfaceScale.fontSize(InterfaceTypographyMetrics.message(14)),
-                        baseFontWeight: .semibold,
-                        link: embed.url,
+                let titleRules = MessageEmbedPresentation.titleRules(for: embed)
+                // Discord draws titles and field names semibold, as plain
+                // text outside rich embeds.
+                func titleBox(_ text: String, fontSize: CGFloat, scope: String, link: URL? = nil) -> NativeTimelineAttributedTextBox {
+                    guard let titleRules else {
+                        return NativeTimelineAttributedTextBox.plain(
+                            text,
+                            font: .messageSystemFont(ofSize: fontSize, weight: .semibold),
+                            color: link == nil ? .labelColor : .linkColor,
+                            link: link
+                        )
+                    }
+                    return NativeTimelineEmbedLayout.resolvedTextBox(
+                        prepared: RichMessageAttributedText.prepare(source: text, rules: titleRules),
+                        scope: scope,
+                        fontSize: fontSize,
+                        emojiSize: InterfaceTypographyMetrics.message(18),
+                        link: link,
                         embed: embed,
                         message: message,
                         source: source
                     )
                 }
+                // The link is not part of the text cache key, so it scopes the title.
+                let title = embed.title.map { titleBox($0, fontSize: 14, scope: "title:\(embed.url?.absoluteString ?? "")", link: embed.url) }
                 let description = (["image", "video", "gifv"].contains(embed.type?.lowercased() ?? "") ? nil : embed.description).map {
                     NativeTimelineEmbedLayout.resolvedTextBox(
                         prepared: RichMessageAttributedText.prepare(source: $0),
                         scope: "description",
+                        fontSize: 14,
                         emojiSize: InterfaceTypographyMetrics.message(18),
-                        fontSizeAdjustment: -1,
                         embed: embed,
                         message: message,
                         source: source
@@ -122,16 +134,7 @@ enum NativeTimelineEmbedLayout {
                 let fields = embed.fields.enumerated().map { index, field in
                     PreparedField(
                         field: field,
-                        name: NativeTimelineEmbedLayout.resolvedTextBox(
-                            prepared: RichMessageAttributedText.prepare(source: field.name),
-                            scope: "field:name:\(index)",
-                            emojiSize: InterfaceTypographyMetrics.message(13),
-                            baseFontSize: InterfaceScale.fontSize(InterfaceTypographyMetrics.message(11)),
-                            baseFontWeight: .bold,
-                            embed: embed,
-                            message: message,
-                            source: source
-                        ),
+                        name: titleBox(field.name, fontSize: 11, scope: "field:name:\(index)"),
                         value: NativeTimelineEmbedLayout.resolvedTextBox(
                             prepared: RichMessageAttributedText.prepare(
                                 source: field.value
@@ -516,26 +519,22 @@ enum NativeTimelineEmbedLayout {
     static func resolvedTextBox(
         prepared: RichMessageAttributedText.Prepared,
         scope: String,
+        fontSize: CGFloat = InterfaceTypographyMetrics.defaultMessageTextSize,
         emojiSize: CGFloat,
-        fontSizeAdjustment: CGFloat = 0,
-        baseFontSize: CGFloat? = nil,
-        baseFontWeight: NSFont.Weight? = nil,
         link: URL? = nil,
         embed: MessageEmbed,
         message: Message,
         source: AppModel?
     ) -> NativeTimelineAttributedTextBox {
         let mentions = MessageMentionResolver.presentations(for: prepared, model: source, message: message)
-        let resolvedBaseFontSize = baseFontSize ?? InterfaceScale.fontSize(
-            InterfaceTypographyMetrics.messageTextSize + fontSizeAdjustment
-        )
+        let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.message(fontSize))
         let emojiSize = InterfaceScale.metric(emojiSize)
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
             scope: "embed:\(embed.id):\(scope)",
             prepared: prepared,
             emojiSize: emojiSize,
-            baseFontSize: resolvedBaseFontSize,
+            baseFontSize: baseFontSize,
             presentations: mentions
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
@@ -543,8 +542,7 @@ enum NativeTimelineEmbedLayout {
                 NativeTimelineCoreText.make(
                     prepared: prepared,
                     emojiSize: emojiSize,
-                    baseFontSize: resolvedBaseFontSize,
-                    baseFontWeight: baseFontWeight,
+                    baseFontSize: baseFontSize,
                     mentionPresentations: mentions,
                     link: link
                 ),

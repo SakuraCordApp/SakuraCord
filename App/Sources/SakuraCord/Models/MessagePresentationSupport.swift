@@ -73,14 +73,17 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
         for embed in MessageEmbedPresentation.visibleEmbeds(
             for: message
         ) {
-            if let title = embed.title {
-                _ = RichMessageAttributedText.prepare(source: title)
+            let titleRules = MessageEmbedPresentation.titleRules(for: embed)
+            if let titleRules, let title = embed.title {
+                _ = RichMessageAttributedText.prepare(source: title, rules: titleRules)
             }
             if let description = embed.description {
                 _ = RichMessageAttributedText.prepare(source: description)
             }
             for field in embed.fields {
-                _ = RichMessageAttributedText.prepare(source: field.name)
+                if let titleRules {
+                    _ = RichMessageAttributedText.prepare(source: field.name, rules: titleRules)
+                }
                 _ = RichMessageAttributedText.prepare(source: field.value)
             }
         }

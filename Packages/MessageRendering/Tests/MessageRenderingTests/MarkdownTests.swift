@@ -41,6 +41,25 @@ import Testing
     #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("**text [label*](https://example.com) end**")).string == "text label* end")
 }
 
+// Leaderboard bots name fields `1. Alice`; Discord shows these and other
+// block syntax as text in embed titles and field names.
+@Test func `embed titles parse inline markdown without lists headings or subtext`() throws {
+    for source in ["1. Alice", "- Daily", "# Weekly", "-# beta"] {
+        let plan = DiscordMarkdown.appKitEmbedTitlePlan(source, allowsLinks: true)
+        let rendered = DiscordMarkdown.appKitAttributed(plan)
+        #expect(rendered.string == source)
+        #expect(rendered.attribute(.discordMarkdownListMarker, at: 0, effectiveRange: nil) == nil)
+        let font = try #require(rendered.attribute(.font, at: rendered.length - 1, effectiveRange: nil) as? NSFont)
+        #expect(font.pointSize == 15)
+    }
+    let linked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitEmbedTitlePlan("[x](https://a.example) *Level*", allowsLinks: false))
+    #expect(linked.string == "[x](https://a.example) Level")
+    #expect(linked.attribute(.link, at: 5, effectiveRange: nil) == nil)
+    // Italic keeps the title's semibold weight.
+    let italic = try #require(linked.attribute(.font, at: linked.length - 1, effectiveRange: nil) as? NSFont)
+    #expect(italic.fontName.contains("SemiboldItalic"))
+}
+
 @Test func `angle bracket masked links match discord rendering`() throws {
     let source =
         "[portfolio](<https://exyron.dev>) and [docs](<https://example.com/docs>)"

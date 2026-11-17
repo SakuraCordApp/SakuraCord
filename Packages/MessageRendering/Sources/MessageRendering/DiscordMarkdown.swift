@@ -115,10 +115,14 @@ public enum DiscordMarkdown {
         /// Pins the code colours to that background; a message's own code
         /// follows the appearance it is drawn in.
         fileprivate let codeBackground: CodeBackground?
+        /// Discord sets embed titles and field names semibold, so their
+        /// bold text steps up to bold.
+        fileprivate let isSemibold: Bool
 
-        fileprivate init(lines: [Line], codeBackground: CodeBackground? = nil) {
+        fileprivate init(lines: [Line], codeBackground: CodeBackground? = nil, isSemibold: Bool = false) {
             self.lines = lines
             self.codeBackground = codeBackground
+            self.isSemibold = isSemibold
         }
     }
 
@@ -171,6 +175,17 @@ public enum DiscordMarkdown {
         let traits: AppKitPlan.InlineTraits
     }
 
+    /// The inline rules a surface parses beyond emphasis and underline.
+    private struct InlineRules: OptionSet {
+        let rawValue: UInt8
+
+        static let code = Self(rawValue: 1 << 0)
+        static let strikethroughAndSpoilers = Self(rawValue: 1 << 1)
+        static let links = Self(rawValue: 1 << 2)
+
+        static let message: Self = [.code, .strikethroughAndSpoilers, .links]
+    }
+
     private static let delimiters: [Delimiter] = [
         Delimiter(marker: "||", traits: .spoiler),
         Delimiter(marker: "~~", traits: .strikethrough),
@@ -219,7 +234,7 @@ public enum DiscordMarkdown {
     /// Personal profile widgets allow emphasis, underline and links, but no
     /// message-only blocks, code, spoilers, strike-through or emoji parsing.
     public static func profileWidgetAttributed(_ source: String, font: Font = .body, links: Bool = true) -> AttributedString {
-        let runs = inlineRuns(source[...], inheritedTraits: [], inheritedLink: nil, widgetRules: true)
+        let runs = inlineRuns(source[...], inheritedTraits: [], inheritedLink: nil, rules: .links)
         var output = AttributedString()
         for run in runs {
             var value = AttributedString(run.text)
@@ -298,6 +313,20 @@ public enum DiscordMarkdown {
         return AppKitPlan(lines: qualifyingSpoilerIDs(lines))
     }
 
+    /// An embed title or field name, under Discord's embed-title rules:
+    /// inline formatting and quotes, but no lists, headings, subtext or code
+    /// blocks, and no links when the embed itself links.
+    public static func appKitEmbedTitlePlan(_ source: String, allowsLinks: Bool) -> AppKitPlan {
+        var lines: [AppKitPlan.Line] = []
+        forEachSourceLine(source, parsesFences: false) { _, kind in
+            guard case let .text(content, isQuoted) = kind else { return }
+            var line = line(content, block: .paragraph, rules: allowsLinks ? .message : [.code, .strikethroughAndSpoilers])
+            line.isQuoted = isQuoted
+            lines.append(line)
+        }
+        return AppKitPlan(lines: qualifyingSpoilerIDs(lines), isSemibold: true)
+    }
+
     /// How message rendering reads one line of source.
     private enum SourceLine {
         /// A fence that opens a block, as its literal opening with the
@@ -308,13 +337,15 @@ public enum DiscordMarkdown {
         case text(Substring, isQuoted: Bool)
     }
 
-    private static func forEachSourceLine(_ source: String, _ body: (Substring, SourceLine) -> Void) {
+    private static func forEachSourceLine(
+        _ source: String, parsesFences: Bool = true, _ body: (Substring, SourceLine) -> Void
+    ) {
         var codeLanguage: String?
         var isInCodeFence = false
         var startsCodeFence = false
         var isInMultilineQuote = false
         for rawLine in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            if rawLine.hasPrefix("```") {
+            if parsesFences, rawLine.hasPrefix("```") {
                 isInCodeFence.toggle()
                 startsCodeFence = isInCodeFence
                 let suffix = rawLine.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -406,6 +437,7 @@ public enum DiscordMarkdown {
         let output = NSMutableAttributedString()
         let metrics = BlockMetrics(
             baseFontSize: baseFontSize,
+            weight: plan.isSemibold ? .semibold : .regular,
             usesMessageLineHeight: usesMessageLineHeight,
             reservesCodeCopyButton: reservesCodeCopyButton,
             codeAppearance: plan.codeBackground.flatMap { NSAppearance(named: $0 == .light ? .aqua : .darkAqua) }
@@ -599,13 +631,15 @@ public enum DiscordMarkdown {
 
     private static func line(
         _ source: Substring,
-        block: AppKitPlan.Block
+        block: AppKitPlan.Block,
+        rules: InlineRules = .message
     ) -> AppKitPlan.Line {
         AppKitPlan.Line(
             runs: inlineRuns(
                 source,
                 inheritedTraits: [],
-                inheritedLink: nil
+                inheritedLink: nil,
+                rules: rules
             ),
             block: block
         )
@@ -631,21 +665,21 @@ public enum DiscordMarkdown {
         _ source: Substring,
         inheritedTraits: AppKitPlan.InlineTraits,
         inheritedLink: URL?,
-        widgetRules: Bool = false,
+        rules: InlineRules = .message,
         sourceCollector: SourceFormatCollector? = nil
     ) -> [AppKitPlan.InlineRun] {
         var result: [AppKitPlan.InlineRun] = []
         var plain = ""
         var cursor = source.startIndex
+        let parsesLinks = rules.contains(.links)
 
         func flushPlain() {
             guard !plain.isEmpty else { return }
-            appendPlainRuns(
-                plain,
-                traits: inheritedTraits,
-                link: inheritedLink,
-                to: &result
-            )
+            if parsesLinks {
+                appendPlainRuns(plain, traits: inheritedTraits, link: inheritedLink, to: &result)
+            } else {
+                result.append(AppKitPlan.InlineRun(text: plain, traits: inheritedTraits, link: nil, color: nil))
+            }
             plain.removeAll(keepingCapacity: true)
         }
 
@@ -663,7 +697,7 @@ public enum DiscordMarkdown {
                 }
             }
 
-            if !widgetRules, source[cursor] == "`",
+            if rules.contains(.code), source[cursor] == "`",
                let close = nextInlineTerminator("`", in: source, from: source.index(after: cursor), collector: sourceCollector)
             {
                 flushPlain()
@@ -675,7 +709,7 @@ public enum DiscordMarkdown {
                 continue
             }
 
-            if inheritedLink == nil,
+            if parsesLinks, inheritedLink == nil,
                let autolink = angleBracketAutolink(
                    in: source,
                    at: cursor,
@@ -690,11 +724,11 @@ public enum DiscordMarkdown {
                 continue
             }
 
-            if let link = markdownLink(
+            if parsesLinks, let link = markdownLink(
                 in: source,
                 at: cursor,
                 inheritedTraits: inheritedTraits,
-                widgetRules: widgetRules,
+                rules: rules,
                 sourceCollector: sourceCollector
             )
             {
@@ -704,7 +738,7 @@ public enum DiscordMarkdown {
                 continue
             }
 
-            if inheritedLink == nil,
+            if parsesLinks, inheritedLink == nil,
                sourceCollector == nil || source[cursor...].hasPrefix("http://") || source[cursor...].hasPrefix("https://"),
                let autolink = bareAutolink(
                    in: source,
@@ -725,7 +759,7 @@ public enum DiscordMarkdown {
                 at: cursor,
                 inheritedTraits: inheritedTraits,
                 inheritedLink: inheritedLink,
-                widgetRules: widgetRules,
+                rules: rules,
                 sourceCollector: sourceCollector
             ) {
                 flushPlain()
@@ -773,7 +807,7 @@ public enum DiscordMarkdown {
         in source: Substring,
         at cursor: String.Index,
         inheritedTraits: AppKitPlan.InlineTraits,
-        widgetRules: Bool = false,
+        rules: InlineRules,
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
         guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector) else { return nil }
@@ -787,7 +821,7 @@ public enum DiscordMarkdown {
             source[target.label],
             inheritedTraits: inheritedTraits,
             inheritedLink: target.url,
-            widgetRules: widgetRules,
+            rules: rules,
             sourceCollector: sourceCollector
         )
         if target.suppressesPreview {
@@ -876,12 +910,13 @@ public enum DiscordMarkdown {
         at cursor: String.Index,
         inheritedTraits: AppKitPlan.InlineTraits,
         inheritedLink: URL?,
-        widgetRules: Bool = false,
+        rules: InlineRules,
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
         for delimiter in delimiters
         where source[cursor...].hasPrefix(delimiter.marker) {
-            if widgetRules, !delimiter.traits.isDisjoint(with: [.strikethrough, .spoiler]) { continue }
+            if !rules.contains(.strikethroughAndSpoilers),
+               !delimiter.traits.isDisjoint(with: [.strikethrough, .spoiler]) { continue }
             let contentStart = source.index(
                 cursor,
                 offsetBy: delimiter.marker.count
@@ -912,7 +947,7 @@ public enum DiscordMarkdown {
                 source[contentStart ..< closingRange.lowerBound],
                 inheritedTraits: inheritedTraits.union(delimiter.traits),
                 inheritedLink: inheritedLink,
-                widgetRules: widgetRules,
+                rules: rules,
                 sourceCollector: sourceCollector
             )
             if isSpoiler {
@@ -1105,6 +1140,9 @@ public enum DiscordMarkdown {
     /// text's base size: every length is Discord's CSS pixels times `em`.
     private struct BlockMetrics {
         let baseFontSize: CGFloat
+        /// Body text's weight, and the heavier one its bold text takes.
+        let weight: NSFont.Weight
+        var strongWeight: NSFont.Weight { weight == .regular ? .semibold : .bold }
         /// One of Discord's CSS pixels at this text's size.
         var em: CGFloat { baseFontSize / 16 }
         var listIndent: CGFloat { px(16) }
@@ -1129,10 +1167,11 @@ public enum DiscordMarkdown {
         }
 
         init(
-            baseFontSize: CGFloat, usesMessageLineHeight: Bool, reservesCodeCopyButton: Bool,
+            baseFontSize: CGFloat, weight: NSFont.Weight = .regular, usesMessageLineHeight: Bool, reservesCodeCopyButton: Bool,
             codeAppearance: NSAppearance?
         ) {
             self.baseFontSize = baseFontSize
+            self.weight = weight
             self.reservesCodeCopyButton = reservesCodeCopyButton
             self.codeAppearance = codeAppearance
             let font = NSFont.systemFont(ofSize: baseFontSize)
@@ -1197,7 +1236,7 @@ public enum DiscordMarkdown {
         case .heading(2): (base * 1.25, .bold)
         case .heading: (base, .bold)
         case .subtext, .code: (base * smallTextScale, .regular)
-        case .paragraph, .listItem: (base, traits.contains(.bold) ? .semibold : .regular)
+        case .paragraph, .listItem: (base, metrics.weight)
         }
 
         var font = if case .code = block {
@@ -1208,12 +1247,12 @@ public enum DiscordMarkdown {
         } else if traits.contains(.inlineCode) {
             NSFont.monospacedSystemFont(
                 ofSize: size * 0.85,
-                weight: traits.contains(.bold) ? .semibold : .regular
+                weight: traits.contains(.bold) ? metrics.strongWeight : metrics.weight
             )
         } else {
             NSFont.systemFont(
                 ofSize: size,
-                weight: traits.contains(.bold) ? .semibold : defaultWeight
+                weight: traits.contains(.bold) ? metrics.strongWeight : defaultWeight
             )
         }
         if traits.contains(.italic) {
