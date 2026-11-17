@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -114,7 +115,7 @@ struct ReadAllServersTests {
                                              ChannelReadState(channelID: $0.id, lastAcknowledgedMessageID: MessageID(rawValue: 300))
                                          })
         let provider = MockChatProvider(snapshot: snapshot, messages: [])
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         await model.start()
         return (model, provider)
     }

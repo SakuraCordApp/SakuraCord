@@ -3,30 +3,29 @@ set -euo pipefail
 
 # SakuraCord side chat motion benchmark
 #
-# Builds a benchmark build, then launches it in the offline side chat motion
-# fixture. The app opens, closes and widens fixture threads and toggles the
-# member list while recording every display-link frame with the workspace
-# geometry, then this script analyzes the recording with
-# motion_benchmark_analyze.py.
+# Builds a benchmark build, starts the local Discord simulator's
+# side-chat-motion scenario and launches the app signed in to it. The app
+# opens, closes and widens the scenario's threads and toggles the member list
+# while recording every display-link frame with the workspace geometry, then
+# this script analyzes the recording with motion_benchmark_analyze.py.
 #
-# The benchmark exists only in builds made with SAKURACORD_MOTION_BENCHMARK=1,
-# which this script sets when it builds. A benchmark build is a developer
-# tool, not a release build: never ship it. It is packaged to the same dist/
-# path as a normal build, so package again without the variable before using
-# that app for anything else.
+# The benchmark exists only in debug builds made with
+# SAKURACORD_MOTION_BENCHMARK=1, which this script sets when it builds; only
+# debug builds connect to the simulator. A benchmark build is a developer
+# tool: never ship it. It is packaged to the same dist/ path as a normal
+# build, so package again without the variable before using that app for
+# anything else.
 #
 # Usage: script/motion_benchmark.sh [options] [-- analyzer options]
-#   --release              Build and measure dist/SakuraCord.app
-#                          (package-release) instead of the debug app.
 #   --no-build             Measure the app already in dist/ without building.
 #                          It must be a benchmark build.
 #   --app PATH             Measure an explicit benchmark build; implies
 #                          --no-build.
-#   --label NAME           Artifact directory label. Default: configuration.
+#   --label NAME           Artifact directory label. Default: debug.
 #   --cycles N             Animated cycles. Default: 6.
-#   --history-delay-ms N   Simulated thread history latency. Default: 120, so
-#                          messages arrive while the pane opens.
-#   --thread-messages N    Messages per fixture thread. Default: 150.
+#   --history-delay-ms N   Simulator network latency. Default: 120, so thread
+#                          history arrives while the pane opens.
+#   --thread-messages N    Messages per scenario thread. Default: 150.
 #   --runs N               Repeat the launch N times. Default: 1.
 #   --compare FILE         Print a before/after table against an earlier
 #                          analysis.json.
@@ -52,7 +51,6 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=runtime.sh
 source "$root/script/runtime.sh"
 
-configuration=debug
 app=""
 build=1
 label=""
@@ -70,7 +68,6 @@ analyzer_arguments=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --release) configuration=release ;;
         --no-build) build=0 ;;
         --app) app="$2"; build=0; shift ;;
         --label) label="$2"; shift ;;
@@ -92,14 +89,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$app" ]]; then
-    sakuracord_select_app_variant "$configuration" "${SAKURACORD_RELEASE_TRACK:-regular}"
+    sakuracord_select_app_variant debug "${SAKURACORD_RELEASE_TRACK:-regular}"
     app="$SAKURACORD_APP_BUNDLE"
 fi
 if [[ "$build" == 1 ]]; then
-    package_mode=package
-    [[ "$configuration" == release ]] && package_mode=package-release
     echo "Building a motion benchmark build (SAKURACORD_MOTION_BENCHMARK=1), not a release build." >&2
-    SAKURACORD_MOTION_BENCHMARK=1 "$root/script/build_and_run.sh" "$package_mode"
+    SAKURACORD_MOTION_BENCHMARK=1 "$root/script/build_and_run.sh" package
 fi
 [[ -d "$app" ]] || { echo "No app bundle at $app; build it first (omit --no-build)." >&2; exit 2; }
 if [[ -n "$trace" ]]; then
@@ -115,7 +110,7 @@ if ! grep -rqa SIDE_CHAT_MOTION_BENCHMARK_DONE "$app/Contents/MacOS" "$app/Conte
     echo "$app is not a benchmark build (build it with SAKURACORD_MOTION_BENCHMARK=1)." >&2
     exit 2
 fi
-label="${label:-$configuration}"
+label="${label:-debug}"
 output="$root/.build/performance/motion/$label-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$output"
 trace_scratch=""
@@ -244,6 +239,13 @@ if [[ "$quiet_machine" == 1 ]]; then
     fi
 fi
 
+# One thread per animated cycle plus the reference layouts' thread, all in
+# #general beside the #feedback forum.
+"$root/script/simulator.sh" start --scenario side-chat-motion \
+    --param "threads=$((cycles + 1))" --param "thread_messages=$thread_messages"
+"$root/script/simulator.sh" ctl network "$history_delay" 0
+simulator_token="$("$root/script/simulator.sh" token)"
+
 for run in $(seq 1 "$runs"); do
     stop_app
     log="$output/run-$run.log"
@@ -252,7 +254,8 @@ for run in $(seq 1 "$runs"); do
         > "$log" 2>&1 &
     stream_pid=$!
     sleep 1
-    /usr/bin/open -n -F "$app" --args --offline-side-chat-motion \
+    /usr/bin/open -n -F "$app" --env "SAKURACORD_SIMULATOR_TOKEN=$simulator_token" \
+        --args --discord-simulator "${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}" --benchmark-side-chat-motion \
         "--motion-cycles=$cycles" \
         "--motion-history-delay-ms=$history_delay" \
         "--motion-thread-messages=$thread_messages" ${app_arguments[@]+"${app_arguments[@]}"}

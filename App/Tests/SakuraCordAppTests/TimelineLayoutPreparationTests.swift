@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 import AppKit
 @testable import SakuraCord
 import SakuraCordModels
@@ -9,7 +10,7 @@ func `timeline layout preparation commits a complete update or discards supersed
     replacesDuringPreparation: Bool,
     changesPresentation: Bool
 ) async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 99_400)
     let author = User(id: UserID(rawValue: 99_401), username: "history", displayName: "History")
     let messages = (0 ..< 84).map {
@@ -90,7 +91,7 @@ private final class OverlayScrollView: NSScrollView {
 func `timeline server tags own their activation and reject stale identity layouts`(
     missingGuildID: Bool
 ) throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channelID = ChannelID(rawValue: 99_410)
     let guildID = GuildID(rawValue: 99_411)
     let tagGuildID = GuildID(rawValue: 99_412)

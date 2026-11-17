@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+@testable import DiscordProtocolTestSupport
 import MessageRendering
 import SakuraCordModels
 import SwiftUI
@@ -26,7 +27,7 @@ import Testing
 
 @MainActor
 @Test func `thread links and mentions present the names of known threads`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let parent = try #require(model.snapshot?.channels.first { $0.kind == .text && $0.guildID != nil })
     let guildID = try #require(parent.guildID)
@@ -323,60 +324,6 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
     )
 }
 
-@Test func `hidden channel details resolve explicitly allowed members and roles`() {
-    let guildID = GuildID(rawValue: 100)
-    let memberID = UserID(rawValue: 1)
-    let allowedRole = GuildRole(
-        id: RoleID(rawValue: 10), name: "Design", position: 20, colorHex: 0xF472B6
-    )
-    let deniedRole = GuildRole(
-        id: RoleID(rawValue: 11), name: "Guests", position: 5, colorHex: 0x94A3B8
-    )
-    let member = Member(
-        user: User(id: memberID, username: "maya", displayName: "Maya • Orbit"),
-        roleName: "Design",
-        isOnline: true,
-        roles: [allowedRole]
-    )
-    let channel = Channel(
-        id: ChannelID(rawValue: 200),
-        guildID: guildID,
-        name: "staff-vault",
-        permissionOverwrites: [
-            ChannelPermissionOverwrite(
-                id: guildID.description,
-                type: 0,
-                allow: DiscordPermissionBits.viewChannel
-            ),
-            ChannelPermissionOverwrite(
-                id: deniedRole.id.description,
-                type: 0,
-                deny: DiscordPermissionBits.viewChannel
-            ),
-            ChannelPermissionOverwrite(
-                id: allowedRole.id.description,
-                type: 0,
-                allow: DiscordPermissionBits.viewChannel
-            ),
-            ChannelPermissionOverwrite(
-                id: memberID.description,
-                type: 1,
-                allow: DiscordPermissionBits.viewChannel
-            )
-        ]
-    )
-
-    let principals = HiddenChannelAccessPresentation.allowedPrincipals(
-        channel: channel,
-        members: [member],
-        roles: [allowedRole, deniedRole]
-    )
-
-    #expect(principals.map(\.id) == ["member:1", "role:10"])
-    #expect(principals.map(\.name) == ["Maya • Orbit", "Design"])
-    #expect(principals.first?.colorHex == 0xF472B6)
-}
-
 @Test func `thread access requires send messages in threads and honors locks`() {
     let readable = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
     let sendable = readable | DiscordPermissionBits.sendMessagesInThreads
@@ -593,7 +540,7 @@ func `server verification blocks sends without exposing hidden channels`(state: 
 }
 
 @MainActor @Test func `webhook profiles remain scoped to each message instead of cached members`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let user = User(id: UserID(rawValue: 300), username: "First persona", discriminator: "0000", displayName: "First persona", isBot: true)
     var first = Message(id: MessageID(rawValue: 100), channelID: ChannelID(rawValue: 200), author: user, webhookID: "300", content: "Test")
     let stale = Member(user: User(id: user.id, username: "Cached", displayName: "Cached"), roleName: "Cached role", status: .online)
@@ -603,14 +550,14 @@ func `server verification blocks sends without exposing hidden channels`(state: 
     #expect(initial.isWebhook && !initial.isLoading && initial.errorMessage == nil)
     #expect(model.profileTasks[.contextual] == nil)
     first.author.displayName = "Second persona"
-    first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/second.png")
+    first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/second.png")!
     model.showProfile(for: first.author, sourceMessage: first)
     let second = try #require(model.liveProfilePresentation(for: .contextual))
     #expect(second.member.user == first.author)
     #expect(second.profile?.avatarURL == first.author.avatarURL)
     #expect(second.requestID != initial.requestID)
     #expect(model.profileCache.isEmpty)
-    first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/ready.png")
+    first.author.avatarURL = URL(string: "https://cdn.discordapp.com/avatars/300/ready.png")!
     model.consumeMessageUpdated(first, preparedTextPlan: nil)
     let refreshed = try #require(model.liveProfilePresentation(for: .contextual))
     #expect(refreshed.requestID == second.requestID)

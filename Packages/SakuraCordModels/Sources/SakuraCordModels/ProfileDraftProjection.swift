@@ -38,9 +38,9 @@ public enum ProfileDraftProjection {
         result.user.displayName = result.displayName
         switch changes.avatar {
         case .unchanged: break
-        case .clear: result.avatarURL = fallback?.avatarURL ?? result.defaultAvatarURL
+        case .clear: result.avatarURL = fallback?.avatarURL ?? result.user.defaultAvatarURL
         case let .set(.history(entry)): result.avatarURL = avatarUploadURL ?? entry.cropImageURL
-        case .set(.upload): result.avatarURL = avatarUploadURL
+        case .set(.upload): result.avatarURL = avatarUploadURL ?? result.avatarURL
         }
         result.user.avatarURL = result.avatarURL
     }

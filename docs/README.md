@@ -8,7 +8,7 @@ belong in GitHub Issues and milestones, not these documents.
 | --- | --- |
 | Contribute a change or open a pull request | [Contributing](../CONTRIBUTING.md) |
 | Install or build the app | [Root README](../README.md#build-from-source) |
-| Run a local/offline build, choose credentials or signing | [Development](DEVELOPMENT.md) |
+| Run a local or simulator build, choose credentials or signing | [Development](DEVELOPMENT.md) |
 | Find the model, provider and presentation owner | [Architecture](ARCHITECTURE.md#find-the-owner) |
 | Change a Discord request or event | [Protocol baseline](PROTOCOL_BASELINE.md), then its topic guide |
 | Choose tests or run focused verification | [Testing](TESTING.md) |

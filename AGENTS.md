@@ -106,6 +106,6 @@ actually performed, and distinguish compilation, tests, packaging, signature,
 live-account, and visual verification.
 
 Don't call a UI change fixed or verified until you've launched a build that
-contains it signed in (`./script/run.sh`, not an `--offline` demo), looked at
+contains it signed in (`./script/run.sh` or `./script/run.sh --simulator`), looked at
 it with Computer Use, and attached a screenshot or clip. Otherwise say it
 wasn't checked in the app.

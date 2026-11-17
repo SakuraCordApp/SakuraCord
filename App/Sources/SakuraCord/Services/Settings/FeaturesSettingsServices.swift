@@ -4,7 +4,6 @@ nonisolated struct FeaturesSettingsSnapshot: Equatable, Sendable {
     static let defaults = Self(reading: SettingsPreferenceRegistry.foundation.defaultValue(for:))
 
     var readAllButton: Bool
-    var showHiddenChannels: Bool
     var channelManagement: Bool
     var fakeNitroEmojis: Bool
     var fakeNitroStickers: Bool
@@ -20,7 +19,6 @@ nonisolated extension FeaturesSettingsSnapshot {
     init(reading value: (SettingsControlID) -> SettingsPreferenceValue) {
         readAllButton = value(.readAllButton).boolValue
         channelManagement = value(.channelManagement).boolValue
-        showHiddenChannels = value(.showHiddenChannels).boolValue
         fakeNitroEmojis = value(.fakeNitroEmojis).boolValue
         fakeNitroStickers = value(.fakeNitroStickers).boolValue
         fakeNitroSoundboard = value(.fakeNitroSoundboard).boolValue
@@ -48,7 +46,6 @@ final class FeaturesSettingsStore {
     func save(_ value: FeaturesSettingsSnapshot) {
         preferences.set(.bool(value.readAllButton), for: .readAllButton)
         preferences.set(.bool(value.channelManagement), for: .channelManagement)
-        preferences.set(.bool(value.showHiddenChannels), for: .showHiddenChannels)
         preferences.set(.bool(value.fakeNitroEmojis), for: .fakeNitroEmojis)
         preferences.set(.bool(value.fakeNitroStickers), for: .fakeNitroStickers)
         preferences.set(.bool(value.fakeNitroSoundboard), for: .fakeNitroSoundboard)
@@ -80,7 +77,6 @@ extension AppModel {
             dropSyncedLocalFavorites()
             if favorites.isPresented { loadFavoriteThreads() }
         }
-        refreshVisibleChannelGroups()
         reconcileSelectedOnboardingChannel()
         if allowedScreenShareSettings(screenShareSettings) != screenShareSettings {
             Task { [weak self] in
@@ -92,9 +88,7 @@ extension AppModel {
 
     func refreshVisibleChannelGroups() {
         visibleChannelGroups = AppPerformanceSignposts.measureSync("ChannelSidebarGrouping") {
-            ChannelGroup.make(from: featuresSettings.showHiddenChannels
-                ? visibleChannels
-                : visibleChannels.filter { !hiddenChannelIDs.contains($0.id) })
+            ChannelGroup.make(from: visibleChannels.filter { !hiddenChannelIDs.contains($0.id) })
         }
     }
 }

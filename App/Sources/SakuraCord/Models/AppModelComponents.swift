@@ -281,7 +281,7 @@ extension AppModel {
             label: member.user.displayName,
             value: String(member.id.rawValue),
             description: "@\(member.user.username)",
-            imageURL: member.guildAvatarURL ?? member.user.avatarURL,
+            imageURL: member.avatarURL,
             imageShape: .circle,
             entityKind: .user,
             colorHex: colorHex

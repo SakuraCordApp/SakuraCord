@@ -1,10 +1,11 @@
+@testable import DiscordProtocolTestSupport
 @testable import SakuraCord
 import SakuraCordModels
 import Testing
 
 @MainActor
 @Test func `only remote streams in connected one-to-one calls are automatically watched`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let currentUser = User(
         id: UserID(rawValue: 10),
         username: "current",
@@ -76,7 +77,7 @@ import Testing
 
 @MainActor
 @Test func `application stream lifecycle remains independent from the voice channel`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let key = ApplicationStreamKey(
         type: .guild,
         guildID: GuildID(rawValue: 10),
@@ -111,7 +112,7 @@ import Testing
 
 @MainActor
 @Test func `recoverable stream media errors do not replace successful playback with retry`() {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let key = ApplicationStreamKey(
         type: .guild,
         guildID: GuildID(rawValue: 10),
@@ -135,7 +136,7 @@ import Testing
 
 @MainActor
 @Test func `hidden stream demand survives connection replacement`() async {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let key = ApplicationStreamKey(
         type: .guild,
         guildID: GuildID(rawValue: 10),
@@ -205,7 +206,7 @@ import Testing
 @MainActor
 @Test func `single active screen share announces viewer count changes`() {
     let sounds = RecordingAppSoundPlayer()
-    let model = AppModel(launchMode: .offlineTesting, soundPlayer: sounds)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider(), soundPlayer: sounds)
     let channel = Channel(
         id: ChannelID(rawValue: 20),
         guildID: GuildID(rawValue: 10),

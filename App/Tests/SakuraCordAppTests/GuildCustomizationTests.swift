@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -9,7 +10,7 @@ struct GuildCustomizationTests {
     @Test(arguments: [false, true])
     func `onboarding refresh preserves a timeout changed while configuration is loading`(removingTimeout: Bool) async throws {
         let provider = try CustomizationProvider()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         await model.start()
         await model.memberLoadTask?.value
         let guildID = await provider.configuration.guildID
@@ -42,7 +43,7 @@ struct GuildCustomizationTests {
     @Test
     func `returning to onboarding preserves the cached question and advancing cannot strand a refresh`() async throws {
         let provider = try CustomizationProvider()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         await model.start()
         let configuration = await provider.configuration
         let guildID = configuration.guildID
@@ -69,7 +70,7 @@ struct GuildCustomizationTests {
 
     @Test
     func `channel filtering respects community capabilities local override resources and mentions`() async throws {
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let guild = try #require(model.snapshot?.guilds.first)
         let id = guild.id
@@ -121,7 +122,7 @@ struct GuildCustomizationTests {
 
     @Test
     func `hide muted sync filters channels independently of opt in while preserving visible conversation context`() async throws {
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let guildID = try #require(model.selectedGuildID)
         let muted = Channel(id: .init(rawValue: 200), guildID: guildID, name: "muted")
@@ -159,7 +160,7 @@ struct GuildCustomizationTests {
     @Test
     func `hide muted completion preserves newer synchronized settings and retains the HTTP fallback`() async throws {
         let provider = try CustomizationProvider()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         await model.start()
         let guild = try #require(model.snapshot?.guilds.first)
         let channel = try #require(model.snapshot?.channels.first { $0.guildID == guild.id })
@@ -204,7 +205,7 @@ struct GuildCustomizationTests {
 
     @Test
     func `hide muted schedules channel mute expiry without joined threads`() async throws {
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let guildID = try #require(model.selectedGuildID)
         model.snapshot?.activeJoinedThreads = []
@@ -225,7 +226,7 @@ struct GuildCustomizationTests {
         let clock = CustomizationGate()
         var ticks = clock.arrivals.makeAsyncIterator()
         var writes = provider.writes.makeAsyncIterator()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         let configuration = await provider.configuration
         let guildID = configuration.guildID
         model.onboarding.entries[guildID] = .init(configuration: configuration, responses: ["required"])
@@ -276,7 +277,7 @@ struct GuildCustomizationTests {
         let clock = CustomizationGate()
         var ticks = clock.arrivals.makeAsyncIterator()
         var writes = provider.writes.makeAsyncIterator()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         let guildID = GuildID(rawValue: 100)
         let a = ChannelID(rawValue: 200), b = ChannelID(rawValue: 201)
         model.featuresSettings.channelManagement = true

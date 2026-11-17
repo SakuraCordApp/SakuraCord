@@ -1,5 +1,6 @@
 @testable import SakuraCord
 @testable import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -33,7 +34,7 @@ import Testing
 
 @MainActor
 @Test func `slowmode guards preserve drafts and apply current permissions and thread settings`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let user = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
     let guildID = GuildID(rawValue: 100)
     let base = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory

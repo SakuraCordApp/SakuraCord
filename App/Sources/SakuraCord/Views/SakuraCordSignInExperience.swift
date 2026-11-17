@@ -93,37 +93,3 @@ struct SakuraCordSignInReveal: ViewModifier {
             .scaleEffect(reduceMotion ? 1 : 0.985 + 0.015 * progress)
     }
 }
-
-struct OfflineSignInControls: View {
-    let service: OfflineSignInService
-    let canScan: Bool
-    let canSimulateMFA: Bool
-    let simulateMFA: () -> Void
-    let replay: () -> Void
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(12)) {
-            Label("Offline preview", systemImage: "network.slash")
-                .foregroundStyle(.secondary)
-            Button("Simulate scan") { Task { await service.simulateScan() } }
-                .disabled(!canScan)
-            Button("Simulate MFA", action: simulateMFA)
-                .disabled(!canSimulateMFA)
-            Menu("More") {
-                Button("Expire QR code") { Task { await service.expireCode() } }
-                    .disabled(!canScan)
-                Button("Replay welcome", action: replay)
-                Divider()
-                Text("Any email + 8–72 character password")
-                Text("Authenticator / SMS: 123456")
-                Text("Backup code: abcd1234")
-                Text("Error: password incorrect")
-            }
-        }
-        .font(.interface(.caption))
-        .controlSize(.small)
-        .padding(.horizontal, InterfaceScale.metric(14))
-        .padding(.vertical, InterfaceScale.metric(8))
-        .background(.regularMaterial, in: Capsule())
-    }
-}

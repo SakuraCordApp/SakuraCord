@@ -7,8 +7,8 @@
       "icon": "play"
     },
     {
-      "name": "Run Offline",
-      "command": "./script/run.sh --offline",
+      "name": "Run Simulator",
+      "command": "./script/run.sh --simulator",
       "icon": "play"
     },
     {
@@ -17,8 +17,8 @@
       "icon": "play"
     },
     {
-      "name": "Build & Run Offline",
-      "command": "./script/build_and_run.sh --offline",
+      "name": "Build & Run Simulator",
+      "command": "./script/build_and_run.sh --simulator",
       "icon": "play"
     },
     {
@@ -32,13 +32,13 @@
       "icon": "test"
     },
     {
-      "name": "Run Offline Sign In",
-      "command": "./script/run.sh --offline-sign-in",
+      "name": "Run Simulator Sign In",
+      "command": "./script/run.sh --simulator-sign-in",
       "icon": "play"
     },
     {
-      "name": "Build & Run Offline Sign In",
-      "command": "./script/build_and_run.sh --offline-sign-in",
+      "name": "Build & Run Simulator Sign In",
+      "command": "./script/build_and_run.sh --simulator-sign-in",
       "icon": "play"
     },
     {

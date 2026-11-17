@@ -95,7 +95,7 @@ public enum VoiceGatewayServerEvent: Equatable, Sendable {
     case videoSinkWants([UInt32: Int], any: Int?)
     case davePrepareTransition(transitionID: UInt16, protocolVersion: UInt16)
     case daveExecuteTransition(transitionID: UInt16)
-    case davePrepareEpoch(transitionID: UInt16, epoch: UInt32, protocolVersion: UInt16)
+    case davePrepareEpoch(epoch: UInt32, protocolVersion: UInt16)
     case daveMLSExternalSender(Data)
     case daveMLSProposals(Data)
     case daveMLSAnnounceCommit(transitionID: UInt16, commit: Data)
@@ -196,11 +196,7 @@ public enum VoiceGatewayCodec {
             event = try .daveExecuteTransition(transitionID: decodePayload(TransitionIDPayload.self, from: data).transitionID)
         case 24:
             let value = try decodePayload(EpochPayload.self, from: data)
-            event = .davePrepareEpoch(
-                transitionID: value.transitionID,
-                epoch: value.epoch,
-                protocolVersion: value.protocolVersion
-            )
+            event = .davePrepareEpoch(epoch: value.epoch, protocolVersion: value.protocolVersion)
         default:
             event = .unknown(opcode: UInt8(clamping: raw.op))
         }
@@ -569,12 +565,12 @@ private struct TransitionPayload: Decodable {
     }
 }
 
+/// Like the official client, read only these fields: Discord omits
+/// `transition_id` from a sole-member group reset.
 private struct EpochPayload: Decodable {
-    var transitionID: UInt16
     var epoch: UInt32
     var protocolVersion: UInt16
     enum CodingKeys: String, CodingKey {
-        case transitionID = "transition_id"
         case epoch
         case protocolVersion = "protocol_version"
     }

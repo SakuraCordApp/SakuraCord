@@ -79,7 +79,6 @@ extension DiscordRESTProvider {
             channel.blockedUserWarningDismissed = dto.blockedUserWarningDismissed ?? existing.blockedUserWarningDismissed
             channel.isMessageRequest = dto.isMessageRequest ?? existing.isMessageRequest
             channel.isSpam = dto.isSpam ?? existing.isSpam
-            channel.lastPinTimestamp = channel.lastPinTimestamp ?? existing.lastPinTimestamp
             if dto.lastMessageID == nil {
                 channel.lastMessageID = existing.lastMessageID
             }
@@ -153,18 +152,6 @@ extension DiscordRESTProvider {
                 GatewayChannelPinsUpdateDTO.self, from: body
             ), let channelID = ChannelID(update.channelID)
         else { return }
-        let timestamp = update.lastPinTimestamp.flatMap(DiscordDate.parse)
-        if let guildID = update.guildID.flatMap(GuildID.init) {
-            cachedGuildChannelDTOs[guildID]?[update.channelID]?.lastPinTimestamp =
-                update.lastPinTimestamp
-            publishGuildChannels(guildID)
-        } else if var channels = cachedChannels[nil],
-                  let index = channels.firstIndex(where: { $0.id == channelID })
-        {
-            channels[index].lastPinTimestamp = timestamp
-            cachedChannels[nil] = channels
-            continuation?.yield(.channelsChanged(guildID: nil, channels: channels))
-        }
         continuation?.yield(.channelPinsInvalidated(channelID: channelID))
     }
 }

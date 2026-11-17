@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import ImageIO
 import SakuraCordModels
@@ -16,7 +17,7 @@ struct UploadPrivacyPreparationTests {
             Issue.record("The TIFF should be sanitized without requiring original-file consent")
             return false
         }
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider(),
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider(),
                              attachmentSettingsStore: AttachmentSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())),
                              privacySafetySettingsStore: store, uploadPrivacyPreparation: privacy)
         await model.start()
@@ -63,7 +64,7 @@ struct UploadPrivacyPreparationTests {
             warnings += 1
             return accept && warnings == 1
         }
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider(),
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider(),
                              privacySafetySettingsStore: store, uploadPrivacyPreparation: privacy)
         await model.start()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

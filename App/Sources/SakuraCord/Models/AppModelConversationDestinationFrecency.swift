@@ -23,7 +23,7 @@ extension AppModel {
         }
         destinationHistoryDefaultsKey = historyKey
         discordFrecencyUsageDeltasDefaultsKey = deltasKey
-        guard launchMode == .normal else {
+        guard !isEphemeral else {
             conversationDestinationHistory = []
             persistedDiscordFrecencyUsageDeltas = [:]
             appliedDiscordFrecencyDeltasKey = nil
@@ -57,7 +57,7 @@ extension AppModel {
             conversationDestinationHistory,
             visiting: channelID
         )
-        guard launchMode == .normal else { return }
+        guard !isEphemeral else { return }
         UserDefaults.standard.set(
             conversationDestinationHistory.map(\.description),
             forKey: destinationHistoryDefaultsKey
@@ -144,7 +144,7 @@ extension AppModel {
         _ key: String,
         timestamp: UInt64
     ) {
-        guard launchMode == .normal else { return }
+        guard !isEphemeral else { return }
         var delta = persistedDiscordFrecencyUsageDeltas[key]
             ?? DiscordFrecencyUsage(totalUses: 0, recentUses: [])
         delta.totalUses += 1

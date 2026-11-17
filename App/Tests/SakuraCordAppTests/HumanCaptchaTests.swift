@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import Observation
 @testable import SakuraCord
@@ -27,7 +28,7 @@ struct HumanCaptchaTests {
 
     @Test(arguments: ["close", "account-reset", "task-cancel", "failure"])
     func `dismissing or invalidating a challenge always releases the waiting request`(action: String) async {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         let store = model.captcha
         store.isPresentable = true
         let challenge = makeChallenge()
@@ -54,7 +55,7 @@ struct HumanCaptchaTests {
     @Test(arguments: [true, false])
     func `invite and tag cards cannot join the same guild concurrently`(inviteFirst: Bool) async throws {
         let provider = SharedJoinProbeProvider()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         let guildID = GuildID(rawValue: 950)
         let reference = try #require(ServerInviteReference("probe"))
         model.serverInvites.entries[reference] = .init(invite: .init(reference: reference, guildID: guildID, name: "Probe"))

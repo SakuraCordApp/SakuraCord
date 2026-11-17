@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -296,7 +297,7 @@ struct KeyboardShortcutNavigationTests {
     }
 
     private func makeModel() -> AppModel {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         let guilds = (1 ... 3).map {
             Guild(id: GuildID(rawValue: UInt64($0)), name: "Server \($0)", defaultMessageNotifications: .allMessages)
         }

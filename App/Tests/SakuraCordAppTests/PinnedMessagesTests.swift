@@ -1,5 +1,6 @@
 import AppKit
 @testable import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -234,7 +235,7 @@ func `interactive system message families share actor tint and profile link`(
 @MainActor
 @Test func `system message links route profiles messages and pins through shared activator`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let directMessage = try #require(model.snapshot?.channels.first {
         $0.kind == .directMessage && !$0.isOfficialSystemDirectMessage
@@ -344,7 +345,7 @@ func `interactive system message families share actor tint and profile link`(
             deny: DiscordPermissionBits.manageMessages
         )]
     )
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.snapshot = BootstrapSnapshot(
         currentUser: currentUser,
         guilds: [guild],
@@ -470,7 +471,7 @@ func `interactive system message families share actor tint and profile link`(
         )]
     )
     let channels = guildChannels + [denied, forum, direct, group, systemDirect]
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.snapshot = BootstrapSnapshot(
         currentUser: currentUser,
         guilds: [guild],
@@ -525,7 +526,7 @@ func `interactive system message families share actor tint and profile link`(
 
 @MainActor
 @Test func `account presentation reset clears pins and pending intents`() {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let message = pinTestMessage(in: ChannelID(rawValue: 10))
     model.pinnedMessages.channelID = message.channelID
     model.pinnedMessages.isPresented = true
@@ -549,7 +550,7 @@ func `interactive system message families share actor tint and profile link`(
 
 @MainActor
 @Test func `pins consume Escape only while presented`() {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     #expect(!model.consumeEscapeForPinnedMessages())
 
     model.pinnedMessages.isPresented = true
@@ -561,7 +562,7 @@ func `interactive system message families share actor tint and profile link`(
 @MainActor
 @Test func `direct message pin mutation updates optimistically and records one provider request`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let directMessage = try #require(model.snapshot?.channels.first {
         $0.kind == .directMessage && !$0.isOfficialSystemDirectMessage
@@ -583,7 +584,7 @@ func `interactive system message families share actor tint and profile link`(
 @MainActor
 @Test func `pinned row activation dismisses and uses exact message navigation`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let directMessage = try #require(model.snapshot?.channels.first {
         $0.kind == .directMessage && !$0.isOfficialSystemDirectMessage
@@ -628,7 +629,7 @@ func `interactive system message families share actor tint and profile link`(
 
 @MainActor
 @Test func `message deletion removes only matching channel pin`() {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let author = User(id: UserID(rawValue: 1), username: "a", displayName: "A")
     let first = Message(
         id: MessageID(rawValue: 1), channelID: ChannelID(rawValue: 10),
@@ -655,7 +656,7 @@ func `interactive system message families share actor tint and profile link`(
 @MainActor
 @Test func `definite pin failure rolls back optimistic state`() async throws {
     let provider = MockChatProvider(pinMutationFailureStatus: 403)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let directMessage = try #require(model.snapshot?.channels.first {
         $0.kind == .directMessage && !$0.isOfficialSystemDirectMessage
@@ -699,7 +700,7 @@ func `interactive system message families share actor tint and profile link`(
         timelineMessageCount: 250,
         pinnedMessageCount: 250
     )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 210)
     model.navigate(to: channelID)
@@ -760,7 +761,7 @@ func `interactive system message families share actor tint and profile link`(
 @MainActor
 @Test func `conflicting pin intents serialize and ignore stale gateway echo`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let directMessage = try #require(model.snapshot?.channels.first {
         $0.kind == .directMessage && !$0.isOfficialSystemDirectMessage
@@ -783,7 +784,7 @@ func `interactive system message families share actor tint and profile link`(
 @MainActor
 @Test func `pinned reply activation jumps to the referenced message`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let directMessage = try #require(model.snapshot?.channels.first {
         $0.kind == .directMessage && !$0.isOfficialSystemDirectMessage
@@ -813,7 +814,7 @@ func `interactive system message families share actor tint and profile link`(
 
 @MainActor
 @Test func `pin invalidation is channel scoped`() {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let message = Message(
         id: MessageID(rawValue: 1),
         channelID: ChannelID(rawValue: 10),

@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import AppKit
 import Foundation
 import MediaPipeline
@@ -35,7 +36,7 @@ import Testing
     let guild = Guild(id: GuildID(rawValue: 20), name: "Guild", currentUserPermissions: permissions)
     let provider = TypingTestProvider(guild: guild, suspendsPreuploads: true)
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         privacySafetySettingsStore: PrivacySafetySettingsStore(
             preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())
@@ -84,7 +85,7 @@ import Testing
 func `account or thread draft replacement invalidates an external upload result`(resetsAccount: Bool) async throws {
     let uploader = SequencedAttachmentUploadTestUploader()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: TypingTestProvider(),
         externalAttachmentUploader: uploader,
         attachmentSettingsStore: AttachmentSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences()))
@@ -135,7 +136,7 @@ func `oversized files reach an external host only when the upload policy allows`
     try createSparseFile(file, size: DiscordAttachmentUploadPolicy.baseLimit + 1)
     let worker = AttachmentCompactionTestWorker(outputSize: DiscordAttachmentUploadPolicy.baseLimit + 1)
     let uploader = AttachmentUploadTestUploader(result: URL(string: "https://litter.catbox.moe/test.png")!)
-    let model = AppModel(launchMode: .offlineTesting, provider: TypingTestProvider(),
+    let model = AppModel(isEphemeral: true, provider: TypingTestProvider(),
                          externalAttachmentUploader: uploader, attachmentCompactor: worker,
                          attachmentSettingsStore: AttachmentSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())))
     await model.start()
@@ -170,7 +171,7 @@ func `oversized files reach an external host only when the upload policy allows`
     try createSparseFile(oversized, size: DiscordAttachmentUploadPolicy.baseLimit + 1)
     let worker = AttachmentCompactionTestWorker(outputSize: DiscordAttachmentUploadPolicy.baseLimit)
     let uploader = AttachmentUploadTestUploader(result: URL(string: "https://litter.catbox.moe/unused.png")!)
-    let model = AppModel(launchMode: .offlineTesting, provider: TypingTestProvider(),
+    let model = AppModel(isEphemeral: true, provider: TypingTestProvider(),
                          externalAttachmentUploader: uploader, attachmentCompactor: worker,
                          attachmentSettingsStore: AttachmentSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())))
     await model.start()
@@ -246,7 +247,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
 @MainActor
 @Test func `instant attachment upload preserves the current draft and staged files`() async {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let staged = URL(fileURLWithPath: "/tmp/sakuracord-staged")
     let instant = URL(fileURLWithPath: "/tmp/sakuracord-instant")
@@ -267,7 +268,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
     privacy.anonymisesFileNames = true
     privacy.removesMediaMetadata = false // This test edits names of a synthetic, nonexistent file.
     store.save(privacy)
-    let model = AppModel(launchMode: .offlineTesting, provider: TypingTestProvider(), privacySafetySettingsStore: store)
+    let model = AppModel(isEphemeral: true, provider: TypingTestProvider(), privacySafetySettingsStore: store)
     await model.start()
     let url = URL(fileURLWithPath: "/tmp/sakuracord-editable-attachment.png")
     await model.addComposerAttachments([url], to: .channel)
@@ -326,7 +327,6 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
     let targetAccount = CredentialHandle(accountID: "target-account")
     let credentials = NotificationCredentialStore(handles: [targetAccount])
     let model = AppModel(
-        launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: credentials,
@@ -371,7 +371,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
 @MainActor
 @Test func `an AutoMod blocked message is not resent and keeps the failed draft and newer composer text`() async throws {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = try #require(model.selectedChannelID)
     let attachment = StagedAttachment(url: URL(fileURLWithPath: "/tmp/synthetic-automod.txt"))
@@ -403,7 +403,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
 @MainActor
 @Test func `profile message retry after a timeout reuses the failed outbox nonce`() async throws {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let recipient = User(id: UserID(rawValue: 2), username: "recipient", displayName: "Recipient")
     let channelID = try #require(model.selectedChannelID)
@@ -427,7 +427,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
 @Test(arguments: [false, true])
 func `profile send retains a Gateway receipt across timeout and history eviction`(confirmsAfterTimeout: Bool) async throws {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let recipient = provider.otherUser
     let channelID = try #require(model.selectedChannelID)
@@ -464,7 +464,7 @@ func `profile send retains a Gateway receipt across timeout and history eviction
 @MainActor
 @Test func `retrying a timed out send resends the exact draft under the same nonce`() async throws {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     await provider.timeOutNextSend()
     let attachment = StagedAttachment(
@@ -491,7 +491,7 @@ func `profile send retains a Gateway receipt across timeout and history eviction
 @MainActor
 @Test func `queued sends are delivered in order and a full queue refuses without losing the draft`() async throws {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
 
     await provider.suspendNextSend()
@@ -526,7 +526,7 @@ func `timeout during thread creation preserves its unsent message without replac
         | DiscordPermissionBits.createPublicThreads | DiscordPermissionBits.attachFiles
     let guild = Guild(id: GuildID(rawValue: 20), name: "Guild", currentUserPermissions: permissions)
     let provider = TypingTestProvider(guild: guild)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     await model.memberLoadTask?.value
     defer { model.onboarding.reset() }
@@ -569,7 +569,7 @@ func `timeout during thread creation preserves its unsent message without replac
 @MainActor
 @Test func `queued retry confirmed outside the visible history is not sent again`() async throws {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     await provider.timeOutNextSend()
     model.updateDraft("ambiguous send")
@@ -604,7 +604,7 @@ func `timeout during thread creation preserves its unsent message without replac
 @Test(arguments: [false, true])
 func `Gateway confirmation wins before or after a send timeout`(confirmsBeforeTimeout: Bool) async throws {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     await provider.timeOutNextSend()
     await provider.suspendNextSend()
@@ -692,7 +692,7 @@ private actor SequencedAttachmentUploadTestUploader: ExternalAttachmentUploading
 @Test(arguments: [UInt64(10), 13])
 func `Diagnostics sharing binds confirmation to its source and preserves drafts and retry files`(sourceID: UInt64) async throws {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let source = ChannelID(rawValue: sourceID)
     let thread = MessageThreadSummary(id: ChannelID(rawValue: 13), parentID: ChannelID(rawValue: 10), name: "thread")
@@ -729,7 +729,7 @@ func `Diagnostics sharing binds confirmation to its source and preserves drafts 
 @Test(arguments: ["cancel", "session", "permission"])
 func `Diagnostics sharing stops before delivery when confirmation is cancelled or the session or access changes`(reason: String) async {
     let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let source = ChannelID(rawValue: 10)
     let sent = await model.shareDiagnostics(in: source, confirm: { _ in
@@ -958,7 +958,7 @@ func `a late translation cannot repopulate a draft that was already sent`(comple
         settingsStore: TranslationSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())),
         translator: translator
     )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider, translation: state)
+    let model = AppModel(isEphemeral: true, provider: provider, translation: state)
     await model.start()
     model.selectedChannelID = ChannelID(rawValue: 10)
     model.applyTranslationSettings(.init(isEnabled: true, messageLanguage: "en", draftLanguage: "en"))

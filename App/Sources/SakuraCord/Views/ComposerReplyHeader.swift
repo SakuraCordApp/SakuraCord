@@ -4,7 +4,7 @@ struct ComposerReplyHeader: View {
     @Environment(\.roleColorDisplay) private var roleColorDisplay
     var authorFontID: Int?
     let authorName: String
-    let avatarURL: URL?
+    let avatarURL: URL
     let roleColorHex: UInt32?
     var roleSecondaryColorHex: UInt32?
     var roleTertiaryColorHex: UInt32?

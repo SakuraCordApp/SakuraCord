@@ -2,9 +2,7 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
-/// A network-free provider used only while the normal app is signed out.
-/// It intentionally contains no fixtures, so normal launches cannot fall
-/// through to the offline testing experience.
+/// A network-free provider used only while the app is signed out.
 actor SignedOutChatProvider: ChatProvider {
     func bootstrap() async throws -> BootstrapSnapshot {
         throw ChatProviderError.unauthenticated

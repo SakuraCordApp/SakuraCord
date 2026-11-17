@@ -1,6 +1,7 @@
 import DiscordProtocol
 import Foundation
 import MediaPipeline
+import SakuraCordModels
 
 nonisolated enum SharedMediaDataMemoryPolicy {
     static let remoteBytes = 24 * 1_024 * 1_024
@@ -99,7 +100,8 @@ actor SharedMediaDataLoader {
             forKey: "mediaCacheLimit"
         ) as? NSNumber)?.int64Value ?? Self.defaultRemoteDiskCostLimit
         remoteDiskCache = try? MediaCache(
-            maximumBytes: configuredLimit
+            maximumBytes: configuredLimit,
+            directory: SimulatorAccountStorage.mediaCacheDirectory
         )
         remoteFetch = Self.download
         remoteDownload = Self.downloadToTemporaryFile
@@ -460,7 +462,7 @@ actor SharedMediaDataLoader {
 
     nonisolated private static func download(_ url: URL) async throws -> Data {
         let request = URLRequest(
-            url: url,
+            url: DiscordNetworkRedirect.resolve(url),
             cachePolicy: .returnCacheDataElseLoad,
             timeoutInterval: 30
         )
@@ -478,7 +480,7 @@ actor SharedMediaDataLoader {
         _ url: URL
     ) async throws -> SharedMediaDownloadedFile {
         let request = URLRequest(
-            url: url,
+            url: DiscordNetworkRedirect.resolve(url),
             cachePolicy: .returnCacheDataElseLoad,
             timeoutInterval: 60
         )

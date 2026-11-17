@@ -4,23 +4,7 @@ import SakuraCordModels
 import SakuraCordPersistence
 
 extension AppModel {
-    func completeOfflineSignIn() async -> String? {
-        guard launchMode == .offlineTesting, awaitsOfflineSignIn else {
-            return "The offline sign-in session is no longer active."
-        }
-        awaitsOfflineSignIn = false
-        await start(publishesSessionState: false)
-        if snapshot != nil {
-            sessionState = .workspace
-            return nil
-        }
-        awaitsOfflineSignIn = true
-        sessionState = .signedOut
-        return errorMessage ?? "The offline workspace could not be opened."
-    }
-
     func start(publishesSessionState: Bool = true) async {
-        guard !awaitsOfflineSignIn else { return }
         let session = accountSession()
         let startSignpost = AppPerformanceSignposts.signposter.beginInterval("SessionStart")
         defer {
@@ -71,7 +55,7 @@ extension AppModel {
         account session: AppModelAccountSession
     ) async {
         guard isCurrentAccountSession(session) else { return }
-        guard launchMode == .normal else {
+        guard !isEphemeral else {
             handleSessionStartFailure(error, account: session)
             return
         }
@@ -156,7 +140,7 @@ extension AppModel {
         guard isCurrentAccountSession(account) else { return }
         DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
         errorMessage = error.localizedDescription
-        guard launchMode == .normal else { return }
+        guard !isEphemeral else { return }
         // No workspace is published until bootstrap succeeds. A failed
         // bootstrap must return to sign-in without exposing partial state.
         snapshot = nil
@@ -166,7 +150,7 @@ extension AppModel {
     }
 
     func prepareSessionStart() async -> Bool {
-        if launchMode == .normal, discordNetworkDisabled {
+        if !isEphemeral, discordNetworkDisabled {
             if usesInsecureDebugCredentials {
                 do {
                     _ = try await credentialStore.handles()
@@ -180,7 +164,7 @@ extension AppModel {
             sessionState = .signedOut
             return false
         }
-        if launchMode == .normal, !didAttemptSessionRestore {
+        if !isEphemeral, !didAttemptSessionRestore {
             didAttemptSessionRestore = true
             let handles: [CredentialHandle]? = if restoresStoredSession {
                 try? await AppPerformanceSignposts.measure(
@@ -197,6 +181,15 @@ extension AppModel {
                     matching: handles
                 )
             }
+            #if DEBUG
+            if let token = SimulatorAccountStorage.launchToken,
+               let credential = try? PendingDiscordCredential(Data(token.utf8)) {
+                // Unattended simulator runs sign in with the running scenario's
+                // token, through the same path as an imported account.
+                Task { _ = await connectPendingAuthenticatedAccount(credential) }
+                return false
+            }
+            #endif
             if savedAccounts.isEmpty {
                 // If a remembered account disappeared, return to sign-in
                 // without playing the welcome after its loading skeleton.
@@ -245,7 +238,7 @@ extension AppModel {
                 return false
             }
         }
-        if launchMode == .normal, credentialHandle == nil {
+        if !isEphemeral, credentialHandle == nil {
             isLoading = false
             sessionState = .signedOut
             return false
@@ -274,8 +267,7 @@ extension AppModel {
             ignoredUsers.replaceRelationships(value.relationships)
             installBootstrapMembership(value)
             configureConversationDestinationHistoryScope(
-                credentialHandle?.accountID
-                    ?? (launchMode == .offlineTesting ? "offline" : "signed-out")
+                credentialHandle?.accountID ?? signedOutScope
             )
         }
         let bootstrapAccount: SavedAccount? = if let handle = credentialHandle,
@@ -371,10 +363,7 @@ extension AppModel {
     private func prepareBootstrapInitialAccess(
         account: AppModelAccountSession?
     ) async -> UnreadAccessProjection? {
-        if launchMode == .offlineTesting {
-            return snapshot.map { unreadAccessProjection(for: $0.channels) }
-        }
-        if let account {
+        if !isEphemeral, let account {
             return await prepareBootstrapUnreadAccessProjection(account: account)
         }
         return snapshot.map { unreadAccessProjection(for: $0.channels) }
@@ -383,8 +372,7 @@ extension AppModel {
     private func makeBootstrapReadState(
         from value: BootstrapSnapshot
     ) async -> AccountReadStateModel.InitialState {
-        let accountID = credentialHandle?.accountID
-            ?? (launchMode == .offlineTesting ? "offline" : nil)
+        let accountID = credentialHandle?.accountID ?? ephemeralAccountID
         return await AppPerformanceSignposts.measure("BootstrapReadStateBuild") {
             await Task.detached(priority: .userInitiated) {
                 AccountReadStateModel.makeInitialState(.init(

@@ -12,7 +12,7 @@ extension AppModel {
     func presentInbox() {
         guard sessionState == .workspace else { return }
         inbox.isPresented = true
-        if !isOfflineTesting {
+        if !isEphemeral {
             let preferences = UserDefaults.standard
             inbox.query = InboxMentionQuery(
                 guildID: preferences.bool(forKey: InboxPreferenceKeys.currentServer) ? selectedGuildID : nil,
@@ -28,7 +28,7 @@ extension AppModel {
     }
 
     func inboxMentionQueryDidChange() {
-        if !isOfflineTesting {
+        if !isEphemeral {
             let preferences = UserDefaults.standard
             if selectedChannel?.guildID != nil {
                 preferences.set(inbox.query.guildID != nil, forKey: InboxPreferenceKeys.currentServer)

@@ -39,7 +39,6 @@ struct AccountControlView: View {
     let connectionState: ConnectionState
     let currentStatus: PresenceStatus
     let isAuthenticated: Bool
-    let isOfflineTesting: Bool
     let connectAccount: () -> Void
     let updateStatus: (PresenceStatus) async -> Void
 
@@ -65,7 +64,6 @@ struct AccountControlView: View {
                     subtitle: accountSubtitle,
                     currentStatus: currentStatus,
                     isAuthenticated: isAuthenticated,
-                    isOfflineTesting: isOfflineTesting,
                     connectAccount: connectAccount,
                     updateStatus: updateStatus
                 )
@@ -88,9 +86,7 @@ struct AccountControlView: View {
         if user != nil {
             return currentStatus.label
         }
-        return isOfflineTesting
-            ? "Mock data • networking disabled"
-            : (isAuthenticated ? connectionState.rawValue : "Sign in to Discord")
+        return isAuthenticated ? connectionState.rawValue : "Sign in to Discord"
     }
 }
 
@@ -101,7 +97,6 @@ private struct CurrentUserCapsule: View {
     let subtitle: String
     let currentStatus: PresenceStatus
     let isAuthenticated: Bool
-    let isOfflineTesting: Bool
     let connectAccount: () -> Void
     let updateStatus: (PresenceStatus) async -> Void
 
@@ -251,8 +246,7 @@ private struct CurrentUserCapsule: View {
             footer: {
                 YouPopoverOptions(
                     currentStatus: currentStatus,
-                    isStatusEnabled: isAuthenticated && !isOfflineTesting,
-                    isAccountSwitchingEnabled: !isOfflineTesting,
+                    isStatusEnabled: isAuthenticated,
                     savedAccounts: model.savedAccounts,
                     activeAccountID: model.activeAccountID,
                     updateStatus: updateStatus,
@@ -300,7 +294,6 @@ private struct CurrentUserCapsule: View {
 private struct YouPopoverOptions: View {
     let currentStatus: PresenceStatus
     let isStatusEnabled: Bool
-    let isAccountSwitchingEnabled: Bool
     let savedAccounts: [SavedAccount]
     let activeAccountID: String?
     let updateStatus: (PresenceStatus) async -> Void
@@ -349,8 +342,6 @@ private struct YouPopoverOptions: View {
                 }
             }
             .buttonStyle(PopoverRowButtonStyle())
-            .disabled(!isAccountSwitchingEnabled)
-            .opacity(isAccountSwitchingEnabled ? 1 : 0.45)
             .escapeDismissiblePopover(
                 isPresented: $isAccountPopoverPresented,
                 arrowEdge: .trailing
@@ -473,7 +464,7 @@ private struct AccountSelectionPopover: View {
             HStack(spacing: InterfaceScale.metric(9)) {
                 AvatarView(
                     name: account.resolvedDisplayName,
-                    url: account.avatarURL,
+                    url: account.resolvedAvatarURL,
                     size: InterfaceScale.metric(20),
                     maximumPixelDimension: 40,
                     animates: false

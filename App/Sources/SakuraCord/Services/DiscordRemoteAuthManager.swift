@@ -1,6 +1,7 @@
 import DiscordProtocol
 import Foundation
 import Security
+import SakuraCordModels
 
 nonisolated struct DiscordRemoteAuthUser: Equatable, Sendable {
     let id: String
@@ -94,7 +95,7 @@ actor DiscordRemoteAuthManager {
             generation = UUID()
 
             var request = URLRequest(
-                url: URL(string: "wss://remote-auth-gateway.discord.gg/?v=2")!
+                url: DiscordNetworkRedirect.resolve(URL(string: "wss://remote-auth-gateway.discord.gg/?v=2")!)
             )
             request.timeoutInterval = 20
             let metadata = DiscordClientMetadata()

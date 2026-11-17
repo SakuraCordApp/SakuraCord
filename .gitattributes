@@ -1,2 +1,11 @@
 App/Sources/SakuraCord/Resources/emoji-catalog.json -diff linguist-generated=true
 App/Sources/SakuraCord/Resources/emoji-frecency-keys.json -diff linguist-generated=true
+Packages/DiscordSimulator/Sources/CDave/** linguist-vendored=true linguist-generated=true
+Packages/DiscordSimulator/Sources/CMLS/** linguist-vendored=true linguist-generated=true
+Packages/DiscordSimulator/Sources/CJSON/** linguist-vendored=true linguist-generated=true
+Packages/DiscordSimulator/Sources/SimulatorKit/Resources/Shapes/*.json -diff linguist-generated=true
+Packages/DiscordSimulator/Sources/SimulatorKit/Resources/Profiles/*.json -diff linguist-generated=true
+Packages/DaveKit/Sources/CLibdave/** linguist-vendored=true linguist-generated=true
+Packages/DaveKit/Sources/CMLS/** linguist-vendored=true linguist-generated=true
+Packages/DaveKit/Sources/CJson/** linguist-vendored=true linguist-generated=true
+App/Sources/SakuraCord/Resources/public-suffix-list.dat linguist-vendored=true linguist-generated=true

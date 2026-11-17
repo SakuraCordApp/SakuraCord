@@ -109,7 +109,7 @@ public actor VoiceGatewayConnection {
         reportedClosedGeneration = nil
         lastHeartbeatAcknowledged = true
         closeSocketOnly()
-        guard let url = Self.endpointURL(info.endpoint) else {
+        guard let url = DiscordNetworkRedirect.resolve(Self.endpointURL(info.endpoint)) else {
             throw VoiceGatewayCodecError.malformedPayload
         }
         let socket = session.webSocketTask(with: url)

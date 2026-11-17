@@ -128,7 +128,7 @@ final class AttachmentDownloadStore {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
         let (file, response) = try await session.download(
-            for: URLRequest(url: url),
+            for: URLRequest(url: DiscordNetworkRedirect.resolve(url)),
             delegate: ProgressObserver(onProgress: progress)
         )
         if let status = (response as? HTTPURLResponse)?.statusCode, !(200 ..< 300).contains(status) {

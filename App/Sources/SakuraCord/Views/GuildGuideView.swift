@@ -84,7 +84,7 @@ struct GuildGuideView: View {
             ZStack(alignment: .bottomLeading) {
                 Group {
                     if let url = guild?.guideHeaderURL {
-                        AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Color.primary.opacity(0.04) }
+                        AsyncImage(url: DiscordNetworkRedirect.resolve(url)) { image in image.resizable().scaledToFill() } placeholder: { Color.primary.opacity(0.04) }
                     } else {
                         LinearGradient(
                             colors: ProfilePalette.banner(themeHexes: [], accentHex: bannerColor),
@@ -111,7 +111,7 @@ struct GuildGuideView: View {
     }
 
     private func serverIcon(size: CGFloat) -> some View {
-        AsyncImage(url: guild?.iconURL) { image in image.resizable().scaledToFill() } placeholder: {
+        AsyncImage(url: DiscordNetworkRedirect.resolve(guild?.iconURL)) { image in image.resizable().scaledToFill() } placeholder: {
             Text(String(guild?.name.prefix(1) ?? "")).font(.system(size: size * 0.4)).frame(maxWidth: .infinity, maxHeight: .infinity).background(.background)
         }
         .frame(width: size, height: size)
@@ -125,7 +125,11 @@ struct GuildGuideView: View {
             HStack(spacing: InterfaceScale.metric(8)) {
                 ForEach(guide.welcomeMessage.authorIDs, id: \.self) { id in
                     if let author = model.membersByGuildID[guildID]?[id] ?? model.membersByID[id] {
-                        AsyncImage(url: author.user.avatarURL) { image in image.resizable().scaledToFill() } placeholder: { Image(systemName: "person.crop.circle.fill") }
+                        AsyncImage(url: DiscordNetworkRedirect.resolve(author.user.avatarURL)) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Image(systemName: "person.crop.circle.fill")
+                        }
                             .frame(width: InterfaceScale.metric(40), height: InterfaceScale.metric(40)).clipShape(Circle())
                         Text(author.user.displayName).font(.interface(.callout).weight(.semibold))
                     }
@@ -188,7 +192,7 @@ private struct GuideActionRow: View {
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(12)) {
                 if let url = item.iconURL {
-                    AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
+                    AsyncImage(url: DiscordNetworkRedirect.resolve(url)) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
                         .frame(width: InterfaceScale.metric(36), height: InterfaceScale.metric(36)).clipShape(.rect(cornerRadius: InterfaceScale.metric(8)))
                 } else if item.emoji != nil {
                     OnboardingEmoji(emoji: item.emoji)

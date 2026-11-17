@@ -20,7 +20,7 @@ struct ApplicationCommandIndexDecoder {
             let avatarURL = avatar.flatMap { DiscordCDN.userAvatar(id, hash: $0, size: 64) }
             return User(
                 id: id, username: username, discriminator: discriminator ?? "0", displayName: globalName ?? username,
-                avatarURL: avatarURL ?? DiscordProfileImageAssets.defaultAvatarURL(userID: id.description, discriminator: discriminator), isBot: bot ?? true
+                avatarURL: avatarURL, isBot: bot ?? true
             )
         }
     }

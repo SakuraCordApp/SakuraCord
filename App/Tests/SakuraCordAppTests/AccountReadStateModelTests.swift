@@ -4,6 +4,7 @@ import SakuraCordModels
 import Observation
 import Testing
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import UserNotifications
 
 @MainActor
@@ -1062,7 +1063,7 @@ struct AccountReadStateModelTests {
     let preferences = NotificationPreferences(defaults: InMemoryPreferences())
     preferences.dockBadgeStyle = .unreadConversations
     let model = AppModel(
-        launchMode: .offlineTesting, provider: provider,
+        isEphemeral: true, provider: provider,
         notificationService: service, notificationPreferences: preferences
     )
     await model.start()
@@ -1091,7 +1092,7 @@ struct AccountReadStateModelTests {
 func `bulk Inbox acknowledgement preserves notifications beyond its captured boundary`(receivesNewerMessage: Bool) async throws {
     let provider = MockChatProvider()
     let service = RecordingNotificationService()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider, notificationService: service,
+    let model = AppModel(isEphemeral: true, provider: provider, notificationService: service,
         notificationPreferences: NotificationPreferences(defaults: InMemoryPreferences()))
     await model.start()
     let channelID = ChannelID(rawValue: 211)
@@ -1148,7 +1149,7 @@ func `bulk Inbox acknowledgement preserves notifications beyond its captured bou
 @Test(arguments: [GuildWorkspacePage.guide, .channelsAndRoles])
 func `guild pages do not acknowledge the hidden selected conversation`(page: GuildWorkspacePage) async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 210)
     let guildID = GuildID(rawValue: 100)
@@ -1209,7 +1210,7 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
 @Test func `automated benchmark emits no acknowledgement mutations`() async {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         runsChatPerformanceBenchmarkOverride: true
     )
@@ -1232,7 +1233,7 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
 @Test func `view acknowledgements coalesce serialize and chain the response token`() async {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(10))
     )
@@ -1306,7 +1307,7 @@ func `incoming message plants a new divider only when the newest edge is not on 
 ) async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(10))
     )
@@ -1342,7 +1343,7 @@ func `incoming message plants a new divider only when the newest edge is not on 
 @MainActor
 @Test func `batched gateway message in an inactive window still plants a new divider`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 212)
     model.selectedChannelID = channelID
@@ -1366,7 +1367,7 @@ func `incoming message plants a new divider only when the newest edge is not on 
 @Test func `opening acknowledgement survives a gateway reconnect before transport`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(30))
     )
@@ -1407,7 +1408,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @Test func `opening a backlog at its newest message waits for a further scroll toward it`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(10))
     )
@@ -1438,7 +1439,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @Test func `a never acknowledged conversation opened at its newest message acknowledges`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(10))
     )
@@ -1469,7 +1470,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @Test func `read state completion releases a held backlog without another geometry callback`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(10))
     )
@@ -1508,7 +1509,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @Test func `opening above the newest message acknowledges once the reader reaches it`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(10))
     )
@@ -1534,7 +1535,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @Test func `rapid channel switching preserves both qualified acknowledgements`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(30))
     )
@@ -1573,7 +1574,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @MainActor
 @Test func `local send releases a held backlog like scrolling to the newest message`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 210)
     model.selectedChannelID = channelID
@@ -1591,7 +1592,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @Test func `local send scrolls once and confirmation leaves unseen messages unread`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(10))
     )
@@ -1632,7 +1633,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @Test func `mark unread sends one backward manual acknowledgement`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .milliseconds(10))
     )
@@ -1684,7 +1685,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @Test func `a manual acknowledgement cancels an unsent read`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         readAcknowledgementTiming: .init(debounce: .seconds(60))
     )
@@ -1713,7 +1714,7 @@ private func makeLowerBoundBacklog(in model: AppModel, channelID: ChannelID) {
 @MainActor
 @Test func `a manual echo keeps a queued explicit read`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 210)
     model.selectedChannelID = channelID

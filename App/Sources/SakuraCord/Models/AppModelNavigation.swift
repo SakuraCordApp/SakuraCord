@@ -629,10 +629,6 @@ extension AppModel {
                 accessAffectedGuildIDs: [guildID]
             )
         }
-        if launchMode == .offlineTesting, let guildID {
-            await loadEmojis(for: guildID)
-            guard isCurrentAccountSession(session) else { return }
-        }
         restoreGuildChannelSelection(guildID: guildID, rememberedChannelID: rememberedChannelID, keepsFriends: keepsFriends)
         beginMemberLoad(for: guildID)
     }

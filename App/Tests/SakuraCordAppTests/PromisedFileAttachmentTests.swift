@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 @testable import SakuraCord
@@ -7,7 +8,7 @@ import Testing
 @MainActor
 @Test(arguments: [false, true], [MessageComposerDestination.channel, .thread])
 func composerAttachmentPermission(canAttach: Bool, destination: MessageComposerDestination) async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     var channel = try #require(model.selectedChannel)
     let user = try #require(model.currentUser)
@@ -59,7 +60,7 @@ func composerAttachmentPermission(canAttach: Bool, destination: MessageComposerD
 @MainActor
 @Test func `removing a promised attachment releases only its owned batch`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
     let promisedFile = directory.appendingPathComponent("promised.bin")
@@ -97,7 +98,7 @@ func composerAttachmentPermission(canAttach: Bool, destination: MessageComposerD
 @MainActor
 @Test func `promised file symlink outside managed directory is rejected safely`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
     let outsideDirectory = FileManager.default.temporaryDirectory
