@@ -20,7 +20,7 @@ lists package/full-validation commands and retained hang diagnostics.
 | Storage or account separation | [DatabaseTests.swift](../Packages/SakuraCordPersistence/Tests/SakuraCordPersistenceTests/DatabaseTests.swift) |
 | Upload privacy | [UploadMetadataTests.swift](../Packages/MediaPipeline/Tests/MediaPipelineTests/UploadMetadataTests.swift); [UploadPrivacyContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadPrivacyContractTests.swift) |
 | Voice transport | [VoiceConnectionTests.swift](../Packages/MediaPipeline/Tests/MediaPipelineTests/VoiceConnectionTests.swift); [VoiceTransportTests.swift](../Packages/MediaPipeline/Tests/MediaPipelineTests/VoiceTransportTests.swift) |
-| Visual-only change | Rendered app verification in the relevant [offline scene](DEVELOPMENT.md#launch-modes); no committed UI test. |
+| Visual-only change | Rendered app verification in the relevant [simulator scenario](DEVELOPMENT.md#discord-simulator) or signed-in session; no committed UI test. |
 | Documentation-only change | Check claims against owners, local links/anchors, command syntax and `git diff --check`; no app rebuild solely for prose. |
 
 ## Focused protocol run
@@ -96,8 +96,8 @@ request identity independently of cooperative task cancellation. Run the normal
 `./script/code_quality.sh check` and `./script/ci.sh` on the required Xcode toolchain.
 A source parse or isolated service test is not an application build or UI test.
 
-For manual verification, build the offline fixture with
-`./script/build_and_run.sh --offline`, obtain its exact bundle path from
+For manual verification, build and launch on the Discord simulator with
+`./script/build_and_run.sh --simulator`, obtain its exact bundle path from
 `./script/runtime.sh`, and use only synthetic messages/drafts. Enable Translation
 under Features and test Dutch→English, English→Dutch, Japanese/Korean→a supported
 target, and short ambiguous text. Include repeated mentions/custom emoji, links,

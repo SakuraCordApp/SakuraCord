@@ -32,11 +32,12 @@ for how reports move through development and releases.
 3. Complete the [developer bootstrap](docs/README.md#developer-and-agent-bootstrap)
    to install the repository Git hooks before your first commit or push. Verify
    that `git config --local --get core.hooksPath` prints `.githooks`.
-4. Set up local signing and launch the offline demo using the linked build
-   instructions. It lets you explore the app without contacting Discord.
+4. Set up local signing and launch the app on the local Discord simulator using
+   the linked build instructions. It lets you explore the app without contacting
+   Discord.
 
 Use the guarded build and launch scripts. The [development guide](docs/DEVELOPMENT.md)
-covers signing, credentials, authenticated sessions, and focused offline scenes.
+covers signing, credentials, authenticated sessions, simulator scenarios and benchmarks.
 
 ## Make a focused change
 

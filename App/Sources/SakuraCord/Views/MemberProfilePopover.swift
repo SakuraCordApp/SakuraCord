@@ -146,8 +146,7 @@ private struct CompactIdentityProfilePopover: View {
         .task(id: user.avatarURL) {
             guard !isClyde else { return }
             accent = nil
-            guard let url = user.avatarURL else { return }
-            let palette = try? await ProfileAvatarPaletteLoader.shared.colors(url)
+            let palette = try? await ProfileAvatarPaletteLoader.shared.colors(user.avatarURL)
             guard !Task.isCancelled else { return }
             accent = palette?.first
         }
@@ -512,9 +511,8 @@ private struct ProfileHeroSection: View {
 
     private var defaultAvatarBannerSource: URL? {
         guard let profile, profile.bannerURL == nil, profile.accentHex == nil,
-              let url = profile.defaultAvatarURL,
-              (profile.avatarURL ?? profile.user.avatarURL ?? url) == url else { return nil }
-        return url
+              profile.avatarURL == profile.user.defaultAvatarURL else { return nil }
+        return profile.avatarURL
     }
 
     private var avatarSize: CGFloat { InterfaceScale.metric(70) }
@@ -559,7 +557,7 @@ private struct ProfileHeroSection: View {
                 ) {
                     DecoratedAvatarView(
                         name: profile?.displayName ?? member.user.displayName,
-                        avatarURL: profile?.avatarURL ?? member.guildAvatarURL ?? member.user.avatarURL,
+                        avatarURL: profile?.avatarURL ?? member.avatarURL,
                         decorationURL: cosmeticPolicy.disables(.avatarDecoration, for: member.id) ? nil : (profile?.user.avatarDecorationURL ?? member.user.avatarDecorationURL),
                         size: avatarSize,
                         playback: animatesRemoteMedia ? .continuous : .paused

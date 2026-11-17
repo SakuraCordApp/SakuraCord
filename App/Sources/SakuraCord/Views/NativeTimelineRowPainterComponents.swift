@@ -378,19 +378,10 @@ extension NativeTimelineRowPainter {
     }
 
     static func drawReactionAvatars(_ region: NativeTimelineRowLayout.ReactionRegion) {
-        let avatars = region.avatarRegions.map {
-            (frame: $0.frame, name: $0.reactor.displayName, url: $0.reactor.avatarURL, isPlaceholder: false)
-        } + region.placeholderAvatarFrames.map {
-            (frame: $0, name: "", url: nil as URL?, isPlaceholder: true)
-        }
+        let avatars = region.avatarRegions.map { (frame: $0.frame, url: $0.reactor.avatarURL as URL?) }
+            + region.placeholderAvatarFrames.map { (frame: $0, url: nil as URL?) }
         for avatar in avatars {
-            let isLoadingImage = avatar.url.map { MediaImageStore.shared.stillImage(for: .avatar($0)) == nil } ?? false
-            if avatar.isPlaceholder || isLoadingImage {
-                NSColor.quaternaryLabelColor.setFill()
-                NSBezierPath(ovalIn: avatar.frame).fill()
-            } else {
-                self.avatar(name: avatar.name, url: avatar.url, in: avatar.frame)
-            }
+            self.avatar(url: avatar.url, in: avatar.frame)
             NSColor.labelColor.withAlphaComponent(0.24).setStroke()
             let border = NSBezierPath(ovalIn: avatar.frame.insetBy(
                 dx: 0.5,

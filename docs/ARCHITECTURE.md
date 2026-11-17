@@ -11,12 +11,13 @@ For commands, use [Development](DEVELOPMENT.md). For wire behaviour, use the
 | --- | --- |
 | [App](../App/Package.swift) | SwiftUI scenes, AppKit presentation, account/workspace coordination, settings, authentication UI, plugin-host executable. |
 | [SakuraCordModels](../Packages/SakuraCordModels/Package.swift) | Domain values, typed IDs, messages, commands, interactions, provider events. |
-| [DiscordProtocol](../Packages/DiscordProtocol/Package.swift) | Provider boundary, REST/Gateway, DTOs, scheduling, credentials, offline fixtures. |
+| [DiscordProtocol](../Packages/DiscordProtocol/Package.swift) | Provider boundary, REST/Gateway, DTOs, scheduling, credentials. Its `DiscordProtocolTestSupport` library, linked only by test targets, holds the `MockChatProvider` test double. |
 | [SakuraCordPersistence](../Packages/SakuraCordPersistence/Package.swift) | Account-scoped GRDB storage and migrations for user-authored drafts and created invite links. |
 | [MessageRendering](../Packages/MessageRendering/Package.swift) | Message parsing, Discord Markdown, attributed-content planning. |
 | [MediaPipeline](../Packages/MediaPipeline/Package.swift) | Media caching/processing; voice/video capture, playback, signaling, transport and codecs. |
 | [DaveKit](../Packages/DaveKit/README.md) | Vendored DAVE/MLS encryption bridge, used through MediaPipeline. |
 | [SakuraCordPluginSDK](../Packages/SakuraCordPluginSDK/Package.swift) | Plugin manifest, capability and permission contracts. |
+| [DiscordSimulator](../Packages/DiscordSimulator/DESIGN.md) | Separate executable standing in for Discord's hosts in development and benchmarks; imports no SakuraCord package. |
 
 Views consume domain state and invoke owners. They do not construct Discord
 requests, open authenticated transports, or import DaveKit directly.
@@ -60,10 +61,15 @@ local loading, selection, optimistic edits and errors; AppModel coordinates
 navigation and account lifetime. High-frequency state such as typing belongs
 in narrow observables rather than invalidating the entire workspace.
 
-A normal launch restores credentials or presents sign-in. It never falls back
-to mock data. Live workspace state comes from Gateway bootstrap, with a data-free
-skeleton until that state is ready. Offline modes select fixture providers and
-an in-memory database explicitly; their launch recipes live in Development.
+A launch restores credentials or presents sign-in. It never falls back to mock
+data. Live workspace state comes from Gateway bootstrap, with a data-free
+skeleton until that state is ready. Debug builds launched with
+`--discord-simulator` reach the same provider through
+[DiscordNetworkRedirect](../Packages/SakuraCordModels/Sources/SakuraCordModels/DiscordNetworkRedirect.swift),
+which rewrites Discord hosts to the local simulator at fetch time, and keep their
+accounts in [SimulatorAccountStorage](../App/Sources/SakuraCord/Services/SimulatorAccountStorage.swift);
+release builds compile the redirect out. Tests build an ephemeral `AppModel`
+(`isEphemeral`) over an injected provider and an in-memory database.
 
 Closing the workspace window with Command-W or the close button keeps the app
 and account session running. Reopening the app restores its single workspace.
@@ -185,7 +191,7 @@ not start network work merely because a row redraws.
 | Saved-account labels, avatar and preferred account | Local picker metadata in user defaults; not an authenticated workspace snapshot. |
 | Message drafts and explicitly created invite links | Account-scoped GRDB. Expired links are pruned and checked before reuse; neither restores permissions or membership. |
 | Staged files and slash command of a conversation the user left | `MessageComposerState` session memory, keyed by channel or thread, like the official client. Dropped on account switch or sign-out; a deleted or hidden conversation or a left server also deletes its early uploads. Its app-owned files stay until the draft is dropped. |
-| Reply ping choice | App-wide user defaults through `SettingsPreferenceStore`, shared by both composers and retained across account resets. Self-replies suppress the effective ping without changing the saved choice. Offline fixtures keep this choice in memory. |
+| Reply ping choice | App-wide user defaults through `SettingsPreferenceStore`, shared by both composers and retained across account resets. Self-replies suppress the effective ping without changing the saved choice. Ephemeral test models keep this choice in memory. |
 | Workspace, message history, members, read state, onboarding choices | Session memory; restored from the live provider, not disk. |
 | Unsaved emoji/reaction usage | Account-scoped user defaults until acknowledged by Discord; replayed over remote history and removed with the account. |
 | Unlimited favorites past Discord's limit | Account-scoped user defaults; never sent to Discord and removed with the account. See [settings synchronization](protocol/SETTINGS.md#favorites-server). |

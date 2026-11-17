@@ -12,12 +12,8 @@ class Encryptor {
         daveEncryptorDestroy(self.encryptorHandle)
     }
 
-    func setKeyRatchet(keyRatchet: KeyRatchet) {
-        daveEncryptorSetKeyRatchet(encryptorHandle, keyRatchet.handle)
-    }
-
-    func clearKeyRatchet() {
-        daveEncryptorSetKeyRatchet(encryptorHandle, nil)
+    func setKeyRatchet(keyRatchet: KeyRatchet?) {
+        daveEncryptorSetKeyRatchet(encryptorHandle, keyRatchet?.handle)
     }
 
     func setPassthroughMode(enabled: Bool) {

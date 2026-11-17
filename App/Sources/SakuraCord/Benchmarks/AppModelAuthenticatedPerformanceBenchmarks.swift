@@ -53,11 +53,20 @@ extension AppModel {
             await memberLoadTask?.value
         }
 
-        func prepareAuthenticatedTimelineScrollPerformanceBenchmark() async {
+        /// Opens the simulator scenario's `#general`, or on a real account the
+        /// first conversation with more history to scroll through.
+        func prepareTimelineScrollPerformanceBenchmark() async {
             guard runsChatPerformanceBenchmark,
                   sessionState == .workspace
             else { return }
             await channelLoadTask?.value
+            if let general = SimulatorBenchmarkControl.channel(named: "general", in: self) {
+                _ = await runAuthenticatedNavigationBenchmarkOperation(
+                    channel: general,
+                    kind: general.guildID != selectedGuildID ? .server : .channel
+                )
+                return
+            }
             // The timeline starts its run on the first channel with more
             // history and pages in the rest itself.
             if hasMoreMessages { return }

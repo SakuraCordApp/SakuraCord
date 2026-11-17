@@ -8,7 +8,7 @@ import Testing
 @Test(arguments: [(false, false), (true, false), (false, true)])
 func `poll votes apply before confirmation ignore their echo and roll back on failure`(failure: (losesConfirmedResponse: Bool, finalizesOnRejection: Bool)) async throws {
     let provider = PollVoteTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let message = try #require(model.messages.first { $0.poll != nil })
     model.pinnedMessages.items = [PinnedMessage(pinnedAt: .now, message: message)]
@@ -86,7 +86,7 @@ func `poll votes apply before confirmation ignore their echo and roll back on fa
 @MainActor
 @Test func `guide resource messages reconcile reactions and pending poll votes`() async throws {
     let provider = PollVoteTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let message = try #require(model.messages.first { $0.poll != nil })
     let guildID = GuildID(rawValue: 99_003)
@@ -172,7 +172,7 @@ func `poll votes apply before confirmation ignore their echo and roll back on fa
 @Test(arguments: [InboxTab.mentions, .unread])
 func `Inbox loads preserve poll patches for messages not yet retained`(tab: InboxTab) async throws {
     let provider = PollVoteTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let message = try #require(model.messages.first)
     model.replaceSelectedMessages(with: [])
@@ -212,7 +212,7 @@ func `Inbox loads preserve poll patches for messages not yet retained`(tab: Inbo
 @Test(arguments: [(false, false), (false, true), (true, false)])
 func `search results preserve poll events before their messages are retained`(scenario: (finalizes: Bool, responseIncludesVotes: Bool)) async throws {
     let provider = PollVoteTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let message = try #require(model.messages.first)
     model.replaceSelectedMessages(with: [])
@@ -279,7 +279,7 @@ func `search results preserve poll events before their messages are retained`(sc
 @Test(arguments: [(false, false, false), (false, true, false), (false, true, true), (true, false, false)])
 func `poll result fetch preserves updates received while awaiting history`(scenario: (finalizes: Bool, responseIncludesVote: Bool, keepsChanging: Bool)) async throws {
     let provider = PollVoteTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let stale = try #require(model.messages.first)
     var unknown = stale

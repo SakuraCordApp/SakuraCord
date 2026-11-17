@@ -27,6 +27,8 @@ void Decryptor::TransitionToKeyRatchet(std::unique_ptr<IKeyRatchet> keyRatchet,
     DISCORD_LOG(LS_INFO) << "Transitioning to new key ratchet: " << keyRatchet.get()
                          << ", expiry: " << transitionExpiry.count();
 
+    std::lock_guard<std::mutex> lock(mutex_);
+
     // Remove expired cryptor managers first so a re-install of an expired key
     // domain is treated as a fresh install
     CleanupExpiredCryptorManagers();
@@ -54,6 +56,10 @@ void Decryptor::TransitionToKeyRatchet(std::unique_ptr<IKeyRatchet> keyRatchet,
 
 void Decryptor::TransitionToPassthroughMode(bool passthroughMode, Duration transitionExpiry)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto previousAllowPassThroughUntil = allowPassThroughUntil_;
+
     if (passthroughMode) {
         allowPassThroughUntil_ = TimePoint::max();
     }
@@ -61,6 +67,11 @@ void Decryptor::TransitionToPassthroughMode(bool passthroughMode, Duration trans
         // Update the pass through mode expiry
         auto maxExpiry = clock_.Now() + transitionExpiry;
         allowPassThroughUntil_ = std::min(allowPassThroughUntil_, maxExpiry);
+    }
+
+    if (allowPassThroughUntil_ != previousAllowPassThroughUntil) {
+        DISCORD_LOG(LS_INFO) << "Transitioning to passthrough mode: " << passthroughMode
+                             << ", expiry: " << transitionExpiry.count();
     }
 }
 
@@ -75,9 +86,11 @@ Decryptor::ResultCode Decryptor::Decrypt(MediaType mediaType,
         *bytesWritten = 0;
         return ResultCode::DecryptionFailure;
     }
-    auto& stats = stats_[mediaType];
+
+    std::lock_guard<std::mutex> lock(mutex_);
 
     auto start = clock_.Now();
+    auto& stats = stats_[mediaType];
 
     auto localFrame = GetOrCreateFrameProcessor();
     ScopeExit cleanup([&] { ReturnFrameProcessor(std::move(localFrame)); });
@@ -183,10 +196,7 @@ Decryptor::ResultCode Decryptor::DecryptImpl(CryptorManager& cryptorManager,
     auto plaintext = encryptedFrame.GetPlaintext();
 
     // expand the truncated nonce to the full sized one needed for decryption
-    auto nonceBuffer = std::array<uint8_t, kAesGcm128NonceBytes>();
-    memcpy(nonceBuffer.data() + kAesGcm128TruncatedSyncNonceOffset,
-           &truncatedNonce,
-           kAesGcm128TruncatedSyncNonceBytes);
+    auto nonceBuffer = ExpandTruncatedNonce(truncatedNonce);
 
     auto nonceBufferView = MakeArrayView<const uint8_t>(nonceBuffer.data(), nonceBuffer.size());
 
@@ -241,7 +251,6 @@ void Decryptor::CleanupExpiredCryptorManagers()
 
 std::unique_ptr<InboundFrameProcessor> Decryptor::GetOrCreateFrameProcessor()
 {
-    std::lock_guard<std::mutex> lock(frameProcessorsMutex_);
     if (frameProcessors_.empty()) {
         return std::make_unique<InboundFrameProcessor>();
     }
@@ -252,7 +261,6 @@ std::unique_ptr<InboundFrameProcessor> Decryptor::GetOrCreateFrameProcessor()
 
 void Decryptor::ReturnFrameProcessor(std::unique_ptr<InboundFrameProcessor> frameProcessor)
 {
-    std::lock_guard<std::mutex> lock(frameProcessorsMutex_);
     frameProcessors_.push_back(std::move(frameProcessor));
 }
 

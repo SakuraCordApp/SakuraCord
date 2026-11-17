@@ -70,6 +70,8 @@ run_package_tests() {
   run_tests "$ROOT_DIR/Packages/DaveKit"
   run_tests "$ROOT_DIR/Packages/MediaPipeline"
   run_tests "$ROOT_DIR/Packages/SakuraCordPluginSDK"
+  # Includes the parity suite: simulator responses against captured Discord shapes.
+  run_tests "$ROOT_DIR/Packages/DiscordSimulator"
 }
 
 case "$TARGET" in
@@ -85,6 +87,9 @@ case "$TARGET" in
   media)
     run_tests "$ROOT_DIR/Packages/MediaPipeline"
     ;;
+  simulator)
+    run_tests "$ROOT_DIR/Packages/DiscordSimulator"
+    ;;
   packages)
     run_package_tests
     ;;
@@ -93,13 +98,22 @@ case "$TARGET" in
     run_tests "$ROOT_DIR/Packages/SakuraCordPersistence"
     run_tests "$ROOT_DIR/Packages/MessageRendering"
     run_tests "$ROOT_DIR/Packages/SakuraCordPluginSDK"
+    # The simulator imports nothing from the app, so a pull request that leaves
+    # it and the test tooling alone cannot change its results.
+    if [[ -n "${SAKURACORD_CHANGES_BASE:-}" ]] \
+      && changed="$(git -C "$ROOT_DIR" diff --name-only "$SAKURACORD_CHANGES_BASE...HEAD")" \
+      && ! grep -qE '^(Packages/DiscordSimulator/|script/(test|ci|simulator)\.sh$|\.github/workflows/ci\.yml$)' <<<"$changed"; then
+      echo "=== DiscordSimulator: unchanged since $SAKURACORD_CHANGES_BASE, skipped ==="
+    else
+      run_tests "$ROOT_DIR/Packages/DiscordSimulator"
+    fi
     ;;
   all)
     run_package_tests
     run_tests "$ROOT_DIR/App"
     ;;
   *)
-    echo "usage: $0 [app|protocol|dave|media|packages|packages-core|all]" >&2
+    echo "usage: $0 [app|protocol|dave|media|simulator|packages|packages-core|all]" >&2
     exit 2
     ;;
 esac

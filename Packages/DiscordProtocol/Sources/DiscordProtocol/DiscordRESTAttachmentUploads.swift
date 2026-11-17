@@ -372,7 +372,7 @@ extension DiscordRESTProvider {
         diagnosticPath path: String,
         delegate: (any URLSessionTaskDelegate)? = nil
     ) async throws -> HTTPURLResponse {
-        var uploadRequest = URLRequest(url: uploadURL)
+        var uploadRequest = URLRequest(url: DiscordNetworkRedirect.resolve(uploadURL))
         uploadRequest.httpMethod = "PUT"
         uploadRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
         apiDiagnostics.recordHTTPRequest(

@@ -20,10 +20,9 @@ enum ProfilePreviewPreparation {
             }
             // Match the hero and customization-card avatar renderers' cache keys.
             for size in [CGFloat(70), CGFloat(80)] {
-                if let url = profile.avatarURL {
-                    let pixels = AvatarView(name: "", url: url, size: size).requestedPixelDimension
-                    group.addTask { await preloadAvatar(url, maximumPixelDimension: pixels) }
-                }
+                let url = profile.avatarURL
+                let pixels = AvatarView(name: "", url: url, size: size).requestedPixelDimension
+                group.addTask { await preloadAvatar(url, maximumPixelDimension: pixels) }
                 if let url = profile.user.avatarDecorationURL {
                     let pixels = DecoratedAvatarView(name: "", avatarURL: nil, decorationURL: url, size: size).decorationPixelDimension
                     group.addTask { await preload(url, maximumPixelDimension: pixels) }

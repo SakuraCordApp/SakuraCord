@@ -3,9 +3,9 @@ import Foundation
 nonisolated extension SettingsCatalog {
     static let featuresPage = page(
         .features, group: .preferences, title: "Features", image: "square.stack.3d.up.fill",
-        help: "Manage hidden channels, the Favorites server, FakeNitro, the message timeline, voice messages, attachments, and on-device translation.",
+        help: "Manage the Favorites server, FakeNitro, the message timeline, voice messages, attachments, and on-device translation.",
         keywords: [
-            "channels", "hidden", "favorites", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
+            "channels", "favorites", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
             "language",
         ]
     )
@@ -40,11 +40,6 @@ nonisolated extension SettingsCatalog {
             .showFavoritesServer, page: .features, section: .featuresChannels,
             label: "Show Favorites server", help: "Show your favourite channels and DMs as a server above your server list. Your Favorites stay saved when this is off.",
             keywords: ["favorites", "favourites", "star", "server"]
-        ),
-        control(
-            .showHiddenChannels, page: .features, section: .featuresChannels,
-            label: "Show hidden channels", help: "Show channels you cannot access, including their available metadata.",
-            keywords: ["features", "hidden channels"]
         ),
         control(
             .fakeNitroEmojis, page: .features, section: .featuresFakeNitro,

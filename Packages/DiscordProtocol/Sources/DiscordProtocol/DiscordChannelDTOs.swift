@@ -140,7 +140,6 @@ struct ChannelDTO: Decodable {
     var permissionOverwrites: [PermissionOverwriteDTO]?
     var memberListID: String?
     var lastMessageID: String?
-    var lastPinTimestamp: String?
     var ownerID: String?
     var owner: LossyValue<UserDTO>?
     var messageCount: Int?
@@ -209,7 +208,6 @@ struct ChannelDTO: Decodable {
         case permissionOverwrites = "permission_overwrites"
         case memberListID = "member_list_id"
         case lastMessageID = "last_message_id"
-        case lastPinTimestamp = "last_pin_timestamp"
         case lastNonMessageActivityTimestamp = "last_non_message_activity_timestamp"
         case ownerID = "owner_id"
         case owner, flags, member
@@ -301,7 +299,6 @@ struct ChannelDTO: Decodable {
             permissionOverwrites: permissionOverwrites?.map(\.domain),
             memberListID: memberListID,
             lastMessageID: lastMessageID.flatMap(MessageID.init),
-            lastPinTimestamp: lastPinTimestamp.flatMap(DiscordDate.parse),
             flags: flags ?? 0,
             availableTags: availableTags?.value?.elements.compactMap(\.domain) ?? [],
             defaultReaction: defaultReactionEmoji?.value.map {

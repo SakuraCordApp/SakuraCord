@@ -1,4 +1,5 @@
 import Foundation
+@testable import DiscordProtocolTestSupport
 @testable import SakuraCord
 import SakuraCordModels
 import Testing
@@ -31,7 +32,7 @@ import Testing
 func `cancelled history preparation does not return a partial page`(throughModel: Bool) async {
     let fixture = replyGroupingFixture()
     let messages = [fixture.target, fixture.reply, fixture.followUp]
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let work = Task { @MainActor in
         if throughModel {
             return await model.prepareTimelineRows(for: messages, priority: .userInitiated)
@@ -57,7 +58,7 @@ func `running history preparation cancels its active detached worker`(grouping: 
         value.content += " <@\(fixture.target.author.id.rawValue)>"
         return value
     }
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.replaceSelectedMessages(with: [fixture.target])
     let originalRows = model.messageRows
     let probe = HistoryPreparationCancellationProbe()

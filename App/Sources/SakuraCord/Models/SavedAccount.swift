@@ -20,6 +20,10 @@ nonisolated struct SavedAccount: Codable, Hashable, Identifiable, Sendable {
         displayName ?? username ?? "Discord Account"
     }
 
+    var resolvedAvatarURL: URL? {
+        avatarURL ?? UserID(accountID).map { User.defaultAvatarURL(id: $0) }
+    }
+
     var resolvedSubtitle: String {
         if let username {
             return "@\(username)"
@@ -69,7 +73,8 @@ nonisolated protocol SavedAccountStoring: Sendable {
 }
 
 actor UserDefaultsSavedAccountStore: SavedAccountStoring {
-    nonisolated static let shared = UserDefaultsSavedAccountStore()
+    /// Simulator sessions keep their accounts apart from real ones.
+    nonisolated static let shared = UserDefaultsSavedAccountStore(defaults: DiscordNetworkRedirect.sessionDefaults)
 
     private nonisolated static let accountsKey =
         "dev.sakuracord.saved-account-presentations"

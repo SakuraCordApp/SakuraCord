@@ -1,0 +1,6222 @@
+{
+  "directMessages" : {
+    "dms" : 115,
+    "groupDMs" : 5,
+    "groupSizes" : [
+      1,
+      2,
+      2,
+      2,
+      0,
+      5
+    ]
+  },
+  "folders" : [
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : true,
+      "named" : true,
+      "servers" : 4
+    },
+    {
+      "colored" : true,
+      "named" : true,
+      "servers" : 5
+    },
+    {
+      "colored" : true,
+      "named" : true,
+      "servers" : 11
+    },
+    {
+      "colored" : true,
+      "named" : true,
+      "servers" : 6
+    },
+    {
+      "colored" : true,
+      "named" : true,
+      "servers" : 1
+    },
+    {
+      "colored" : true,
+      "named" : true,
+      "servers" : 16
+    },
+    {
+      "colored" : true,
+      "named" : true,
+      "servers" : 11
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    },
+    {
+      "colored" : true,
+      "named" : true,
+      "servers" : 4
+    },
+    {
+      "colored" : false,
+      "named" : false,
+      "servers" : 1
+    }
+  ],
+  "relationships" : {
+    "blocked" : 2,
+    "friendStatuses" : {
+      "dnd" : 0,
+      "online" : 1
+    },
+    "friends" : 15
+  },
+  "servers" : [
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 3,
+      "boostCount" : 3,
+      "boostTier" : 1,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 6
+        },
+        {
+          "forum" : 5,
+          "text" : 8
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 9,
+          "voice" : 1
+        },
+        {
+          "text" : 8,
+          "voice" : 1
+        },
+        {
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "text" : 1,
+          "voice" : 3
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 32,
+      "forumPosts" : 0,
+      "memberCount" : 110,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 52
+      },
+      "restrictedChannels" : 87,
+      "roles" : 51,
+      "scheduledEvents" : 5,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 13
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 6,
+      "boostCount" : 15,
+      "boostTier" : 2,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 2,
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 6
+        },
+        {
+          "forum" : 1
+        },
+        {
+          "forum" : 1,
+          "media" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 4
+        },
+        {
+          "forum" : 1,
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 9
+        },
+        {
+          "text" : 6
+        },
+        {
+          "forum" : 3,
+          "text" : 13
+        },
+        {
+          "announcement" : 1,
+          "forum" : 2,
+          "text" : 5
+        },
+        {
+          "media" : 1,
+          "text" : 30
+        },
+        {
+          "text" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 151,
+      "forumPosts" : 0,
+      "memberCount" : 100000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 15
+      },
+      "restrictedChannels" : 97,
+      "roles" : 61,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 17
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 3
+        }
+      ],
+      "community" : false,
+      "discoverable" : false,
+      "emojis" : 0,
+      "forumPosts" : 0,
+      "memberCount" : 89000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 1
+      },
+      "restrictedChannels" : 5,
+      "roles" : 7,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 1,
+      "boostCount" : 3,
+      "boostTier" : 1,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 9
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+          "forum" : 1,
+          "text" : 2
+        },
+        {
+          "voice" : 11
+        },
+        {
+          "text" : 7,
+          "voice" : 2
+        },
+        {
+          "text" : 9
+        },
+        {
+          "voice" : 6
+        }
+      ],
+      "community" : false,
+      "discoverable" : false,
+      "emojis" : 10,
+      "forumPosts" : 0,
+      "memberCount" : 22000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 13
+      },
+      "restrictedChannels" : 45,
+      "roles" : 75,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 2
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 13,
+      "boostCount" : 134,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 4,
+          "text" : 1
+        },
+        {
+          "announcement" : 4
+        },
+        {
+          "text" : 1
+        },
+        {
+          "announcement" : 3,
+          "forum" : 1,
+          "text" : 8,
+          "voice" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 5
+        },
+        {
+          "text" : 7
+        },
+        {
+          "announcement" : 12,
+          "text" : 23
+        },
+        {
+
+        },
+        {
+
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 57,
+      "forumPosts" : 0,
+      "memberCount" : 120000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 4
+      },
+      "restrictedChannels" : 93,
+      "roles" : 67,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 18
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 49.86,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 2,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 1
+        },
+        {
+          "voice" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+          "announcement" : 1,
+          "text" : 5
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 9
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 2
+        },
+        {
+          "voice" : 1
+        },
+        {
+          "voice" : 5
+        },
+        {
+          "text" : 8,
+          "voice" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 24,
+      "forumPosts" : 0,
+      "memberCount" : 68,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 7
+      },
+      "restrictedChannels" : 86,
+      "roles" : 74,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 2,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 0,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 13
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 114,
+      "boostCount" : 2,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "forum" : 1
+        },
+        {
+          "announcement" : 2,
+          "text" : 3
+        },
+        {
+          "text" : 9
+        },
+        {
+          "announcement" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "stage" : 1,
+          "voice" : 4
+        },
+        {
+          "text" : 5
+        },
+        {
+          "announcement" : 4,
+          "text" : 6
+        },
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 3,
+          "forum" : 4,
+          "media" : 2,
+          "stage" : 2,
+          "text" : 25,
+          "voice" : 6
+        },
+        {
+          "text" : 5
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 348,
+      "forumPosts" : 0,
+      "memberCount" : 5600,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 28
+      },
+      "restrictedChannels" : 87,
+      "roles" : 214,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 53
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 6,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 6
+        },
+        {
+          "text" : 5
+        },
+        {
+          "forum" : 2,
+          "text" : 2
+        },
+        {
+          "text" : 5
+        },
+        {
+          "voice" : 3
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "text" : 38,
+          "voice" : 1
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 7
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 63,
+      "forumPosts" : 0,
+      "memberCount" : 350,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 17
+      },
+      "restrictedChannels" : 58,
+      "roles" : 33,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 3
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 74.13,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 4,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "voice" : 1
+        },
+        {
+          "announcement" : 2,
+          "text" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 6
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 8,
+      "forumPosts" : 0,
+      "memberCount" : 88000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 2
+      },
+      "restrictedChannels" : 17,
+      "roles" : 16,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "voice" : 1
+        },
+        {
+          "text" : 9
+        },
+        {
+          "voice" : 1
+        }
+      ],
+      "community" : false,
+      "discoverable" : false,
+      "emojis" : 0,
+      "forumPosts" : 0,
+      "memberCount" : 1,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 5
+      },
+      "restrictedChannels" : 2,
+      "roles" : 8,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 3,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 177,
+      "boostCount" : 22,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "voice" : 1
+        },
+        {
+          "text" : 1,
+          "voice" : 2
+        },
+        {
+          "announcement" : 4,
+          "text" : 5
+        },
+        {
+          "text" : 5
+        },
+        {
+          "announcement" : 2,
+          "text" : 4
+        },
+        {
+          "text" : 5
+        },
+        {
+          "announcement" : 2,
+          "text" : 7,
+          "voice" : 1
+        },
+        {
+          "text" : 6
+        },
+        {
+          "forum" : 1,
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "stage" : 1,
+          "text" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 1,
+          "voice" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 7
+        },
+        {
+          "announcement" : 1,
+          "forum" : 3,
+          "text" : 35
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 308,
+      "forumPosts" : 0,
+      "memberCount" : 97000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 7
+      },
+      "restrictedChannels" : 153,
+      "roles" : 122,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 47
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 2,
+      "boostCount" : 4,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "text" : 4
+        },
+        {
+          "announcement" : 1,
+          "text" : 1
+        },
+        {
+          "forum" : 2,
+          "text" : 5
+        },
+        {
+          "forum" : 1,
+          "text" : 12
+        },
+        {
+          "forum" : 1,
+          "text" : 2
+        },
+        {
+          "voice" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 29,
+      "forumPosts" : 0,
+      "memberCount" : 1500,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 15
+      },
+      "restrictedChannels" : 32,
+      "roles" : 16,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 56,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 1
+        },
+        {
+          "voice" : 6
+        },
+        {
+          "announcement" : 1,
+          "text" : 6
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 2,
+          "voice" : 3
+        },
+        {
+          "stage" : 1,
+          "voice" : 8
+        },
+        {
+          "text" : 2,
+          "voice" : 3
+        },
+        {
+          "text" : 1,
+          "voice" : 1
+        },
+        {
+          "text" : 5,
+          "voice" : 2
+        },
+        {
+          "text" : 6
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 101,
+      "forumPosts" : 0,
+      "memberCount" : 1900,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 19
+      },
+      "restrictedChannels" : 62,
+      "roles" : 65,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 6
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "text" : 22
+        },
+        {
+
+        },
+        {
+          "text" : 4,
+          "voice" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 4,
+      "forumPosts" : 0,
+      "memberCount" : 220,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 16
+      },
+      "restrictedChannels" : 30,
+      "roles" : 25,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 26.02,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 6,
+      "boostCount" : 2,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "text" : 1,
+          "voice" : 1
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 11,
+          "voice" : 1
+        },
+        {
+          "text" : 2,
+          "voice" : 1
+        },
+        {
+          "text" : 1,
+          "voice" : 1
+        },
+        {
+          "text" : 1,
+          "voice" : 3
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 15
+        },
+        {
+          "announcement" : 1,
+          "forum" : 3,
+          "text" : 3
+        },
+        {
+          "stage" : 1,
+          "text" : 5
+        },
+        {
+          "forum" : 1,
+          "text" : 12
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "voice" : 11
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 4
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 30,
+      "forumPosts" : 0,
+      "memberCount" : 7600,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+          2
+        ],
+        "unreadChannels" : 33
+      },
+      "restrictedChannels" : 66,
+      "roles" : 84,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 10
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 165,
+      "boostCount" : 5,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "text" : 4
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 13
+        },
+        {
+
+        },
+        {
+          "text" : 22
+        },
+        {
+          "announcement" : 1,
+          "text" : 2,
+          "voice" : 1
+        },
+        {
+          "announcement" : 3,
+          "text" : 14,
+          "voice" : 1
+        },
+        {
+          "text" : 13,
+          "voice" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 11
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 4,
+          "voice" : 1
+        },
+        {
+          "text" : 15
+        },
+        {
+          "text" : 26
+        },
+        {
+          "text" : 15
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 361,
+      "forumPosts" : 0,
+      "memberCount" : 260000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 45
+      },
+      "restrictedChannels" : 171,
+      "roles" : 171,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 9
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          0.9,
+          0.1
+        ],
+        "deletes" : 25.49,
+        "edits" : 0,
+        "messages" : 124.51,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 44.74
+      },
+      "animatedEmojis" : 1,
+      "boostCount" : 12,
+      "boostTier" : 2,
+      "categories" : [
+        {
+          "stage" : 3
+        },
+        {
+
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 4
+        },
+        {
+
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "text" : 4
+        },
+        {
+          "announcement" : 1,
+          "text" : 7
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 5
+        },
+        {
+          "forum" : 2,
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 6
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 4
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 10
+        },
+        {
+
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 1
+        },
+        {
+          "announcement" : 2,
+          "text" : 1
+        },
+        {
+          "voice" : 8
+        },
+        {
+          "text" : 12
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 4
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 91,
+      "forumPosts" : 0,
+      "memberCount" : 15000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 50
+      },
+      "restrictedChannels" : 112,
+      "roles" : 157,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 3,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 18
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "voice" : 2
+        },
+        {
+          "text" : 4
+        },
+        {
+          "announcement" : 1,
+          "text" : 4
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 2
+        },
+        {
+          "voice" : 8
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 7
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 7,
+      "forumPosts" : 0,
+      "memberCount" : 34,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 4
+      },
+      "restrictedChannels" : 41,
+      "roles" : 36,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 1,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 41.83,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 4,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "text" : 4
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "voice" : 3
+        },
+        {
+
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 7
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 13,
+      "forumPosts" : 0,
+      "memberCount" : 81,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 6
+      },
+      "restrictedChannels" : 48,
+      "roles" : 32,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : false,
+        "mutedChannels" : 1,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 21,
+      "boostCount" : 25,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "text" : 2,
+          "voice" : 2
+        },
+        {
+          "text" : 5
+        },
+        {
+
+        },
+        {
+          "voice" : 1
+        },
+        {
+          "text" : 17,
+          "voice" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 15
+        },
+        {
+          "forum" : 1,
+          "text" : 6
+        },
+        {
+          "text" : 6,
+          "voice" : 1
+        },
+        {
+          "voice" : 3
+        },
+        {
+
+        },
+        {
+          "voice" : 9
+        },
+        {
+          "text" : 13,
+          "voice" : 4
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 34
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 58,
+      "forumPosts" : 0,
+      "memberCount" : 65000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 28
+      },
+      "restrictedChannels" : 118,
+      "roles" : 97,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 4,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          0.9
+        ],
+        "deletes" : 0,
+        "edits" : 13.38,
+        "messages" : 409.37,
+        "presence" : 0,
+        "reactions" : 99.26,
+        "typing" : 153.89
+      },
+      "animatedEmojis" : 71,
+      "boostCount" : 29,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "forum" : 1,
+          "stage" : 1
+        },
+        {
+          "announcement" : 2,
+          "text" : 5
+        },
+        {
+          "text" : 3
+        },
+        {
+          "forum" : 1,
+          "text" : 3
+        },
+        {
+          "forum" : 1,
+          "text" : 5
+        },
+        {
+          "text" : 3
+        },
+        {
+          "voice" : 4
+        },
+        {
+          "text" : 1
+        },
+        {
+          "forum" : 1,
+          "text" : 4,
+          "voice" : 3
+        },
+        {
+          "text" : 8
+        },
+        {
+          "forum" : 3,
+          "text" : 16
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 169,
+      "forumPosts" : 0,
+      "memberCount" : 16000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+          1
+        ],
+        "unreadChannels" : 13
+      },
+      "restrictedChannels" : 60,
+      "roles" : 208,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 45
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 43,
+      "boostCount" : 194,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "text" : 8
+        },
+        {
+          "forum" : 1,
+          "text" : 2
+        },
+        {
+          "text" : 6
+        },
+        {
+          "forum" : 1,
+          "voice" : 2
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 2,
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "text" : 2
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 1
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 12,
+          "voice" : 28
+        },
+        {
+          "forum" : 1,
+          "stage" : 1,
+          "text" : 22,
+          "voice" : 6
+        },
+        {
+          "voice" : 7
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 36
+        },
+        {
+
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 227,
+      "forumPosts" : 0,
+      "memberCount" : 1200000,
+      "peopleInVoice" : 9,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 63
+      },
+      "restrictedChannels" : 238,
+      "roles" : 76,
+      "scheduledEvents" : 1,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 23
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          0.5,
+          0.5
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 98.65,
+        "presence" : 0,
+        "reactions" : 12.5,
+        "typing" : 34.07
+      },
+      "animatedEmojis" : 9,
+      "boostCount" : 61,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 3,
+          "stage" : 1,
+          "text" : 3
+        },
+        {
+          "forum" : 1,
+          "text" : 6
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 21
+        },
+        {
+          "forum" : 3,
+          "text" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1,
+          "voice" : 7
+        },
+        {
+          "text" : 2,
+          "voice" : 5
+        },
+        {
+          "text" : 1
+        },
+        {
+          "forum" : 3,
+          "text" : 8
+        },
+        {
+          "announcement" : 2,
+          "forum" : 10,
+          "text" : 31
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 265,
+      "forumPosts" : 0,
+      "memberCount" : 53000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 21
+      },
+      "restrictedChannels" : 147,
+      "roles" : 44,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 14
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 26,
+      "boostCount" : 63,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "text" : 2
+        },
+        {
+          "text" : 2
+        },
+        {
+
+        },
+        {
+          "forum" : 2,
+          "text" : 1
+        },
+        {
+          "text" : 6
+        },
+        {
+          "announcement" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 6
+        },
+        {
+          "stage" : 2,
+          "voice" : 3
+        },
+        {
+          "forum" : 2,
+          "text" : 10
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 53,
+      "forumPosts" : 0,
+      "memberCount" : 320000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 4
+      },
+      "restrictedChannels" : 57,
+      "roles" : 106,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 107,
+      "boostCount" : 1,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "announcement" : 6,
+          "forum" : 2,
+          "text" : 7
+        },
+        {
+          "text" : 3
+        },
+        {
+          "forum" : 1,
+          "text" : 12
+        },
+        {
+          "announcement" : 5,
+          "forum" : 2,
+          "text" : 6
+        },
+        {
+          "announcement" : 2,
+          "forum" : 1,
+          "text" : 15
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 2,
+          "voice" : 9
+        },
+        {
+          "text" : 2,
+          "voice" : 1
+        },
+        {
+          "announcement" : 4,
+          "forum" : 2,
+          "text" : 34,
+          "voice" : 1
+        },
+        {
+          "text" : 14
+        },
+        {
+          "text" : 6
+        },
+        {
+          "announcement" : 1,
+          "forum" : 2,
+          "text" : 5
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 355,
+      "forumPosts" : 0,
+      "memberCount" : 98000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+          1,
+          4
+        ],
+        "unreadChannels" : 13
+      },
+      "restrictedChannels" : 216,
+      "roles" : 127,
+      "scheduledEvents" : 2,
+      "settings" : {
+        "collapsedCategories" : 4,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 63
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 8.91,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 2
+        },
+        {
+          "voice" : 2
+        }
+      ],
+      "community" : false,
+      "discoverable" : false,
+      "emojis" : 0,
+      "forumPosts" : 0,
+      "memberCount" : 8,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 0
+      },
+      "restrictedChannels" : 1,
+      "roles" : 1,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 3,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 19,
+      "boostCount" : 14,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "forum" : 3,
+          "text" : 6
+        },
+        {
+          "forum" : 1,
+          "text" : 8,
+          "voice" : 1
+        },
+        {
+          "text" : 8
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 9
+        },
+        {
+          "text" : 3
+        },
+        {
+          "forum" : 1
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+
+        },
+        {
+          "forum" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 2
+        },
+        {
+          "text" : 8
+        },
+        {
+          "announcement" : 1,
+          "text" : 1
+        },
+        {
+          "forum" : 12,
+          "text" : 30
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 117,
+      "forumPosts" : 0,
+      "memberCount" : 140000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 22
+      },
+      "restrictedChannels" : 108,
+      "roles" : 132,
+      "scheduledEvents" : 1,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 8.72,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 19,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "text" : 1
+        },
+        {
+          "announcement" : 2,
+          "forum" : 2,
+          "stage" : 2,
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "stage" : 1,
+          "text" : 5,
+          "voice" : 4
+        },
+        {
+          "announcement" : 2,
+          "stage" : 2,
+          "text" : 2
+        },
+        {
+          "text" : 7
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 8,
+      "forumPosts" : 0,
+      "memberCount" : 18000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 3
+      },
+      "restrictedChannels" : 34,
+      "roles" : 16,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 3,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 3
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 9,
+      "boostCount" : 3,
+      "boostTier" : 1,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 8
+        },
+        {
+          "forum" : 1,
+          "text" : 5
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+
+        },
+        {
+
+        },
+        {
+          "text" : 10
+        },
+        {
+          "stage" : 1,
+          "text" : 1,
+          "voice" : 8
+        },
+        {
+          "text" : 1,
+          "voice" : 2
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 4
+        },
+        {
+
+        },
+        {
+          "text" : 18
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 94,
+      "forumPosts" : 0,
+      "memberCount" : 53000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 16
+      },
+      "restrictedChannels" : 92,
+      "roles" : 67,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 23
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 3,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 2
+        },
+        {
+          "text" : 9,
+          "voice" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 37,
+      "forumPosts" : 0,
+      "memberCount" : 28,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 6
+      },
+      "restrictedChannels" : 21,
+      "roles" : 22,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 3
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 1,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 2
+        },
+        {
+          "text" : 5
+        },
+        {
+          "announcement" : 2,
+          "forum" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 8
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 5,
+      "forumPosts" : 0,
+      "memberCount" : 8100,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 25
+      },
+      "restrictedChannels" : 35,
+      "roles" : 12,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 2
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          1
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 8.85,
+        "presence" : 0,
+        "reactions" : 86.46,
+        "typing" : 0
+      },
+      "animatedEmojis" : 3,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 13
+        },
+        {
+          "forum" : 2,
+          "text" : 12
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 4,
+          "voice" : 1
+        },
+        {
+          "forum" : 2,
+          "text" : 1
+        },
+        {
+          "text" : 1,
+          "voice" : 4
+        },
+        {
+          "text" : 2,
+          "voice" : 1
+        },
+        {
+          "voice" : 1
+        },
+        {
+          "text" : 33
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 39,
+      "forumPosts" : 0,
+      "memberCount" : 2000,
+      "peopleInVoice" : 6,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 15
+      },
+      "restrictedChannels" : 98,
+      "roles" : 27,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 1,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 1
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 6,
+          "voice" : 2
+        },
+        {
+          "text" : 9,
+          "voice" : 1
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 3,
+          "voice" : 1
+        }
+      ],
+      "community" : false,
+      "discoverable" : false,
+      "emojis" : 24,
+      "forumPosts" : 0,
+      "memberCount" : 2400,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+          1
+        ],
+        "unreadChannels" : 9
+      },
+      "restrictedChannels" : 42,
+      "roles" : 66,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 7
+        },
+        {
+          "voice" : 2
+        },
+        {
+
+        }
+      ],
+      "community" : false,
+      "discoverable" : false,
+      "emojis" : 8,
+      "forumPosts" : 0,
+      "memberCount" : 4000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 17
+      },
+      "restrictedChannels" : 21,
+      "roles" : 15,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 1,
+      "boostCount" : 331,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 4
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 5
+        },
+        {
+          "text" : 5
+        },
+        {
+          "forum" : 2,
+          "text" : 3
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 7
+        },
+        {
+          "voice" : 5
+        },
+        {
+          "text" : 2,
+          "voice" : 8
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 14,
+          "voice" : 1
+        },
+        {
+
+        },
+        {
+
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 71,
+      "forumPosts" : 0,
+      "memberCount" : 340000,
+      "peopleInVoice" : 18,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 10
+      },
+      "restrictedChannels" : 110,
+      "roles" : 40,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 74
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 195.86,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 1,
+      "boostCount" : 12,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "text" : 7
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 10
+        },
+        {
+          "forum" : 1,
+          "text" : 14
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 2,
+          "forum" : 2,
+          "text" : 8
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "announcement" : 2,
+          "text" : 3
+        },
+        {
+          "forum" : 1,
+          "text" : 7
+        },
+        {
+          "text" : 6
+        },
+        {
+          "forum" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 7
+        },
+        {
+          "stage" : 1,
+          "voice" : 8
+        },
+        {
+          "forum" : 1,
+          "text" : 8
+        },
+        {
+          "text" : 14
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 58,
+      "forumPosts" : 0,
+      "memberCount" : 84000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 33
+      },
+      "restrictedChannels" : 126,
+      "roles" : 172,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 27
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 18,
+      "boostCount" : 12,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "voice" : 2
+        },
+        {
+          "announcement" : 1,
+          "text" : 6
+        },
+        {
+          "forum" : 3,
+          "text" : 6
+        },
+        {
+
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "voice" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 7,
+          "voice" : 1
+        },
+        {
+          "text" : 2,
+          "voice" : 2
+        },
+        {
+
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 46,
+          "voice" : 1
+        },
+        {
+          "text" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 131,
+      "forumPosts" : 0,
+      "memberCount" : 5400,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 19
+      },
+      "restrictedChannels" : 112,
+      "roles" : 150,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 1,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 18
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 84,
+      "boostCount" : 34,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 4
+        },
+        {
+          "announcement" : 2,
+          "text" : 2
+        },
+        {
+          "text" : 11
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 5
+        },
+        {
+          "forum" : 1,
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 11
+        },
+        {
+          "text" : 10
+        },
+        {
+          "forum" : 6,
+          "text" : 41
+        },
+        {
+          "text" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 259,
+      "forumPosts" : 0,
+      "memberCount" : 89000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 32
+      },
+      "restrictedChannels" : 129,
+      "roles" : 59,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 9.05,
+        "reactions" : 44.72,
+        "typing" : 0
+      },
+      "animatedEmojis" : 8,
+      "boostCount" : 23,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "forum" : 1,
+          "text" : 6
+        },
+        {
+          "announcement" : 1,
+          "text" : 5,
+          "voice" : 7
+        },
+        {
+          "announcement" : 5,
+          "text" : 1
+        },
+        {
+          "text" : 7
+        },
+        {
+          "announcement" : 1
+        },
+        {
+          "forum" : 2,
+          "text" : 5
+        },
+        {
+          "announcement" : 3,
+          "stage" : 1,
+          "text" : 2,
+          "voice" : 1
+        },
+        {
+          "announcement" : 2,
+          "stage" : 2,
+          "text" : 4,
+          "voice" : 1
+        },
+        {
+          "announcement" : 2,
+          "forum" : 1,
+          "stage" : 1,
+          "text" : 2,
+          "voice" : 1
+        },
+        {
+          "forum" : 2,
+          "text" : 5
+        },
+        {
+          "stage" : 1,
+          "voice" : 8
+        },
+        {
+          "announcement" : 2,
+          "forum" : 2,
+          "stage" : 1,
+          "text" : 20,
+          "voice" : 11
+        },
+        {
+          "forum" : 1,
+          "text" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 94,
+      "forumPosts" : 0,
+      "memberCount" : 38000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 8
+      },
+      "restrictedChannels" : 109,
+      "roles" : 92,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 3,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 27
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 82,
+      "boostCount" : 12,
+      "boostTier" : 2,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 5
+        },
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 1,
+          "stage" : 1,
+          "text" : 4,
+          "voice" : 8
+        },
+        {
+          "text" : 24,
+          "voice" : 25
+        },
+        {
+          "text" : 5,
+          "voice" : 4
+        },
+        {
+          "text" : 5,
+          "voice" : 5
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 235,
+      "forumPosts" : 0,
+      "memberCount" : 25000,
+      "peopleInVoice" : 1,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 70
+      },
+      "restrictedChannels" : 71,
+      "roles" : 102,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 5
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 5,
+      "boostCount" : 271,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 2,
+          "text" : 5
+        },
+        {
+          "text" : 17
+        },
+        {
+          "forum" : 1,
+          "media" : 1,
+          "text" : 9,
+          "voice" : 2
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 9
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 4
+        },
+        {
+          "stage" : 1,
+          "text" : 3
+        },
+        {
+          "forum" : 1
+        },
+        {
+          "text" : 21
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 19
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 25
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 1
+        },
+        {
+          "stage" : 1,
+          "text" : 2,
+          "voice" : 15
+        },
+        {
+          "forum" : 1,
+          "text" : 18
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 32
+        },
+        {
+          "text" : 55
+        },
+        {
+          "text" : 42
+        },
+        {
+          "text" : 41
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 68,
+      "forumPosts" : 0,
+      "memberCount" : 21000000,
+      "peopleInVoice" : 2,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 53
+      },
+      "restrictedChannels" : 453,
+      "roles" : 153,
+      "scheduledEvents" : 2,
+      "settings" : {
+        "collapsedCategories" : 2,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 10
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 5,
+      "boostTier" : 2,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 5
+        },
+        {
+          "announcement" : 1,
+          "text" : 4
+        },
+        {
+          "announcement" : 1,
+          "text" : 9
+        },
+        {
+          "forum" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 15,
+      "forumPosts" : 0,
+      "memberCount" : 12000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 25
+      },
+      "restrictedChannels" : 49,
+      "roles" : 19,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 3,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          1
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 12.66,
+        "presence" : 0,
+        "reactions" : 11.9,
+        "typing" : 0
+      },
+      "animatedEmojis" : 1,
+      "boostCount" : 5,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 3,
+          "text" : 4
+        },
+        {
+          "text" : 10
+        },
+        {
+          "text" : 6
+        },
+        {
+          "forum" : 1,
+          "text" : 4,
+          "voice" : 1
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 16
+        },
+        {
+          "text" : 18
+        },
+        {
+          "announcement" : 1,
+          "text" : 6,
+          "voice" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "forum" : 1,
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "forum" : 1,
+          "text" : 7
+        },
+        {
+          "text" : 1,
+          "voice" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 56,
+      "forumPosts" : 0,
+      "memberCount" : 1600,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 31
+      },
+      "restrictedChannels" : 95,
+      "roles" : 70,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 7
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 7,
+      "boostCount" : 1537,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 3,
+          "text" : 2
+        },
+        {
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 7
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 22
+        },
+        {
+
+        },
+        {
+
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 19
+        },
+        {
+          "text" : 4
+        },
+        {
+          "voice" : 1
+        },
+        {
+          "forum" : 1,
+          "text" : 10,
+          "voice" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 6
+        },
+        {
+
+        },
+        {
+
+        },
+        {
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 1,
+          "voice" : 1
+        },
+        {
+          "announcement" : 2,
+          "forum" : 6,
+          "text" : 19
+        },
+        {
+          "text" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 94,
+      "forumPosts" : 0,
+      "memberCount" : 1200000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 14
+      },
+      "restrictedChannels" : 128,
+      "roles" : 78,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 30
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 78.91,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 9,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 3
+        },
+        {
+
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 2
+        },
+        {
+
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 4
+        },
+        {
+          "voice" : 6
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 48,
+      "forumPosts" : 0,
+      "memberCount" : 1400,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 17
+      },
+      "restrictedChannels" : 55,
+      "roles" : 95,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 12
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 1
+        },
+        {
+          "forum" : 2,
+          "text" : 5
+        },
+        {
+          "voice" : 3
+        },
+        {
+          "text" : 1,
+          "voice" : 3
+        },
+        {
+          "text" : 2,
+          "voice" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 1,
+      "forumPosts" : 0,
+      "memberCount" : 60,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 5
+      },
+      "restrictedChannels" : 26,
+      "roles" : 38,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 2,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          0.5,
+          0.5
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 26.53,
+        "presence" : 168.74,
+        "reactions" : 0,
+        "typing" : 8.55
+      },
+      "animatedEmojis" : 5,
+      "boostCount" : 27,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "text" : 1
+        },
+        {
+          "stage" : 2,
+          "text" : 3,
+          "voice" : 2
+        },
+        {
+          "text" : 5
+        },
+        {
+          "announcement" : 3,
+          "text" : 3
+        },
+        {
+          "announcement" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 12
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 6
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "text" : 3
+        },
+        {
+          "stage" : 1,
+          "voice" : 7
+        },
+        {
+          "text" : 8,
+          "voice" : 1
+        },
+        {
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "text" : 4,
+          "voice" : 1
+        },
+        {
+          "text" : 10
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 102,
+      "forumPosts" : 0,
+      "memberCount" : 46000,
+      "peopleInVoice" : 3,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 27
+      },
+      "restrictedChannels" : 82,
+      "roles" : 76,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 71
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 67,
+      "boostCount" : 677,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "stage" : 1,
+          "text" : 5
+        },
+        {
+          "announcement" : 17
+        },
+        {
+          "forum" : 1,
+          "text" : 12,
+          "voice" : 1
+        },
+        {
+          "text" : 9
+        },
+        {
+          "forum" : 2,
+          "text" : 4,
+          "voice" : 1
+        },
+        {
+          "announcement" : 2,
+          "text" : 4
+        },
+        {
+          "text" : 5
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 3
+        },
+        {
+          "forum" : 2,
+          "text" : 10
+        },
+        {
+          "announcement" : 2,
+          "text" : 5
+        },
+        {
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 9
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 3
+        },
+        {
+          "announcement" : 14,
+          "text" : 11
+        },
+        {
+          "announcement" : 2,
+          "forum" : 5,
+          "text" : 3
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 13
+        },
+        {
+          "announcement" : 1,
+          "text" : 34
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 38
+        },
+        {
+          "text" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 340,
+      "forumPosts" : 0,
+      "memberCount" : 5000000,
+      "peopleInVoice" : 5,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 42
+      },
+      "restrictedChannels" : 289,
+      "roles" : 56,
+      "scheduledEvents" : 1,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 50
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 4
+        },
+        {
+          "forum" : 3,
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 3
+        },
+        {
+
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 4,
+      "forumPosts" : 0,
+      "memberCount" : 7,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 2
+      },
+      "restrictedChannels" : 8,
+      "roles" : 28,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 0,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 2,
+          "text" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 3
+        },
+        {
+          "forum" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "stage" : 1,
+          "voice" : 1
+        },
+        {
+          "text" : 2,
+          "voice" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 25,
+      "forumPosts" : 0,
+      "memberCount" : 3600,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 12
+      },
+      "restrictedChannels" : 31,
+      "roles" : 46,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 6
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          1
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 12.71,
+        "presence" : 8.19,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 18,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "text" : 6
+        },
+        {
+          "text" : 8
+        },
+        {
+          "text" : 5,
+          "voice" : 2
+        },
+        {
+          "announcement" : 2,
+          "text" : 3
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 7,
+          "voice" : 1
+        },
+        {
+          "forum" : 2,
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 1,
+          "voice" : 1
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 17
+        },
+        {
+          "text" : 1
+        },
+        {
+          "forum" : 1,
+          "text" : 4
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 17,
+      "forumPosts" : 1,
+      "memberCount" : 27000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 7
+      },
+      "restrictedChannels" : 77,
+      "roles" : 40,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 1,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 2
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 69,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 1
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 5
+        },
+        {
+          "voice" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 7
+        },
+        {
+          "text" : 6
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 130,
+      "forumPosts" : 0,
+      "memberCount" : 7100,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 0
+      },
+      "restrictedChannels" : 23,
+      "roles" : 50,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 15
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 3
+        },
+        {
+          "voice" : 1
+        }
+      ],
+      "community" : false,
+      "discoverable" : false,
+      "emojis" : 0,
+      "forumPosts" : 0,
+      "memberCount" : 2,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 0
+      },
+      "restrictedChannels" : 0,
+      "roles" : 5,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 3,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 7,
+      "boostCount" : 63,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 3,
+          "text" : 5
+        },
+        {
+          "forum" : 2,
+          "text" : 3
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "announcement" : 2,
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "stage" : 1,
+          "voice" : 3
+        },
+        {
+
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 4
+        },
+        {
+          "stage" : 1,
+          "text" : 10,
+          "voice" : 1
+        },
+        {
+          "text" : 7
+        },
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "forum" : 2,
+          "text" : 4
+        },
+        {
+          "announcement" : 1,
+          "forum" : 6,
+          "text" : 13
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 55,
+      "forumPosts" : 0,
+      "memberCount" : 360000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 8
+      },
+      "restrictedChannels" : 120,
+      "roles" : 33,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 5
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 47,
+      "boostCount" : 2,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 1
+        },
+        {
+
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 3,
+          "text" : 2
+        },
+        {
+          "announcement" : 1
+        },
+        {
+          "text" : 5
+        },
+        {
+          "stage" : 1,
+          "voice" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 16,
+          "voice" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 76,
+      "forumPosts" : 0,
+      "memberCount" : 14000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+          1
+        ],
+        "unreadChannels" : 8
+      },
+      "restrictedChannels" : 50,
+      "roles" : 59,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 30
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          1
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 27.82,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 12.81
+      },
+      "animatedEmojis" : 11,
+      "boostCount" : 19,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 7
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "text" : 16
+        },
+        {
+          "text" : 2,
+          "voice" : 5
+        },
+        {
+          "text" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 50,
+      "forumPosts" : 0,
+      "memberCount" : 720,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+          1
+        ],
+        "unreadChannels" : 19
+      },
+      "restrictedChannels" : 49,
+      "roles" : 54,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 24
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 74.54,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 7,
+      "boostCount" : 2,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "text" : 1
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 21
+        },
+        {
+          "voice" : 7
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "text" : 2
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 33,
+      "forumPosts" : 0,
+      "memberCount" : 290,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 32
+      },
+      "restrictedChannels" : 49,
+      "roles" : 29,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 3,
+      "boostCount" : 10,
+      "boostTier" : 2,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 2
+        },
+        {
+          "text" : 9
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "voice" : 2
+        },
+        {
+          "text" : 1,
+          "voice" : 1
+        },
+        {
+          "forum" : 1,
+          "text" : 9,
+          "voice" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "voice" : 5
+        },
+        {
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 24,
+      "forumPosts" : 0,
+      "memberCount" : 65000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 12
+      },
+      "restrictedChannels" : 74,
+      "roles" : 20,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 1
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 1,
+      "boostCount" : 19,
+      "boostTier" : 3,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 5
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "text" : 6
+        },
+        {
+          "forum" : 2
+        },
+        {
+          "text" : 10
+        },
+        {
+          "voice" : 4
+        },
+        {
+          "announcement" : 1,
+          "text" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 23,
+      "forumPosts" : 0,
+      "memberCount" : 470000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 15
+      },
+      "restrictedChannels" : 31,
+      "roles" : 18,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 152,
+      "boostCount" : 25,
+      "boostTier" : 3,
+      "categories" : [
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 3,
+          "text" : 3
+        },
+        {
+          "text" : 9
+        },
+        {
+          "forum" : 1,
+          "text" : 9,
+          "voice" : 4
+        },
+        {
+          "text" : 12,
+          "voice" : 1
+        },
+        {
+          "announcement" : 3,
+          "stage" : 3,
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "stage" : 1,
+          "text" : 6,
+          "voice" : 2
+        },
+        {
+          "text" : 11,
+          "voice" : 10
+        },
+        {
+          "text" : 4
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 3
+        },
+        {
+
+        },
+        {
+          "forum" : 1,
+          "text" : 10
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 303,
+      "forumPosts" : 0,
+      "memberCount" : 140000,
+      "peopleInVoice" : 5,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 31
+      },
+      "restrictedChannels" : 101,
+      "roles" : 136,
+      "scheduledEvents" : 1,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 25
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "voice" : 2
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 0,
+      "forumPosts" : 0,
+      "memberCount" : 2,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 2
+      },
+      "restrictedChannels" : 2,
+      "roles" : 2,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 5
+        },
+        {
+          "voice" : 2
+        }
+      ],
+      "community" : false,
+      "discoverable" : false,
+      "emojis" : 3,
+      "forumPosts" : 0,
+      "memberCount" : 2,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 0
+      },
+      "restrictedChannels" : 6,
+      "roles" : 2,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 0,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 2
+        },
+        {
+          "text" : 5
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 1
+        },
+        {
+          "voice" : 1
+        },
+        {
+          "text" : 3
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 32,
+      "forumPosts" : 0,
+      "memberCount" : 2,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 0
+      },
+      "restrictedChannels" : 9,
+      "roles" : 19,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 7,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 0,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "announcement" : 2
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 6
+        },
+        {
+          "voice" : 5
+        },
+        {
+          "text" : 4
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 25,
+      "forumPosts" : 0,
+      "memberCount" : 110,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 2
+      },
+      "restrictedChannels" : 19,
+      "roles" : 13,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 5
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+          1
+        ],
+        "deletes" : 0,
+        "edits" : 12.04,
+        "messages" : 11.96,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 4,
+      "boostTier" : 1,
+      "categories" : [
+        {
+          "text" : 4
+        },
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 2,
+          "text" : 2
+        },
+        {
+          "forum" : 1,
+          "text" : 5,
+          "voice" : 5
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 9,
+          "voice" : 5
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "text" : 4,
+          "voice" : 1
+        },
+        {
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "forum" : 1,
+          "text" : 6,
+          "voice" : 1
+        },
+        {
+          "forum" : 2,
+          "text" : 7,
+          "voice" : 1
+        },
+        {
+          "text" : 3
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "text" : 3
+        },
+        {
+          "voice" : 1
+        },
+        {
+          "text" : 9
+        },
+        {
+          "text" : 10
+        },
+        {
+          "text" : 10
+        },
+        {
+          "forum" : 1,
+          "stage" : 1,
+          "text" : 27
+        },
+        {
+          "forum" : 1,
+          "text" : 2
+        },
+        {
+          "text" : 1,
+          "voice" : 1
+        },
+        {
+          "stage" : 1,
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "text" : 14
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 47,
+      "forumPosts" : 0,
+      "memberCount" : 10000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 11
+      },
+      "restrictedChannels" : 226,
+      "roles" : 104,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 2
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 5,
+      "boostCount" : 17,
+      "boostTier" : 2,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 8
+        },
+        {
+          "announcement" : 2
+        },
+        {
+          "forum" : 3,
+          "text" : 15
+        },
+        {
+          "text" : 3
+        },
+        {
+          "voice" : 2
+        },
+        {
+          "announcement" : 1,
+          "text" : 6
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 16
+        },
+        {
+          "text" : 1
+        },
+        {
+          "announcement" : 5,
+          "text" : 5
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 58,
+      "forumPosts" : 0,
+      "memberCount" : 20000,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 14
+      },
+      "restrictedChannels" : 63,
+      "roles" : 54,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 2
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 1,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 10,
+          "voice" : 1
+        },
+        {
+          "text" : 3
+        },
+        {
+          "announcement" : 2,
+          "text" : 2
+        },
+        {
+          "announcement" : 3
+        },
+        {
+          "forum" : 2,
+          "text" : 2
+        },
+        {
+          "text" : 8
+        },
+        {
+          "announcement" : 1,
+          "text" : 2
+        },
+        {
+          "text" : 3,
+          "voice" : 6
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 82,
+      "forumPosts" : 0,
+      "memberCount" : 8800,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 27
+      },
+      "restrictedChannels" : 67,
+      "roles" : 34,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 71
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 7
+        },
+        {
+          "forum" : 1,
+          "text" : 6
+        },
+        {
+          "voice" : 7
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 9,
+      "forumPosts" : 0,
+      "memberCount" : 2600,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 15
+      },
+      "restrictedChannels" : 23,
+      "roles" : 17,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 2,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : true
+      },
+      "stickers" : 6
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 2,
+      "boostCount" : 13,
+      "boostTier" : 2,
+      "categories" : [
+        {
+
+        },
+        {
+          "stage" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 5,
+          "voice" : 2
+        },
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "text" : 11,
+          "voice" : 1
+        },
+        {
+          "text" : 6,
+          "voice" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "text" : 8,
+          "voice" : 2
+        },
+        {
+          "text" : 5,
+          "voice" : 1
+        },
+        {
+          "text" : 4
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 6
+        },
+        {
+          "announcement" : 1,
+          "forum" : 3,
+          "text" : 5,
+          "voice" : 2
+        },
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 7,
+          "voice" : 1
+        },
+        {
+          "forum" : 1,
+          "text" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 3,
+          "voice" : 1
+        },
+        {
+          "text" : 2
+        },
+        {
+          "announcement" : 1,
+          "forum" : 1,
+          "text" : 5,
+          "voice" : 3
+        },
+        {
+          "text" : 4,
+          "voice" : 1
+        },
+        {
+          "text" : 10
+        },
+        {
+          "text" : 18
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 102,
+      "forumPosts" : 0,
+      "memberCount" : 32000,
+      "peopleInVoice" : 3,
+      "readState" : {
+        "mentions" : [
+          1
+        ],
+        "unreadChannels" : 43
+      },
+      "restrictedChannels" : 199,
+      "roles" : 55,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 17,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 19
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 0,
+      "boostTier" : 0,
+      "categories" : [
+        {
+          "text" : 1
+        },
+        {
+          "text" : 1
+        },
+        {
+          "text" : 2,
+          "voice" : 1
+        },
+        {
+          "text" : 1
+        },
+        {
+          "announcement" : 1,
+          "text" : 1,
+          "voice" : 1
+        }
+      ],
+      "community" : true,
+      "discoverable" : false,
+      "emojis" : 0,
+      "forumPosts" : 0,
+      "memberCount" : 1,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 0
+      },
+      "restrictedChannels" : 8,
+      "roles" : 4,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 3,
+        "muted" : false,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : false,
+        "suppressRoles" : false
+      },
+      "stickers" : 0
+    },
+    {
+      "activeThreads" : 0,
+      "activity" : {
+        "channelShares" : [
+
+        ],
+        "deletes" : 0,
+        "edits" : 0,
+        "messages" : 0,
+        "presence" : 0,
+        "reactions" : 0,
+        "typing" : 0
+      },
+      "animatedEmojis" : 0,
+      "boostCount" : 2,
+      "boostTier" : 1,
+      "categories" : [
+        {
+
+        },
+        {
+          "announcement" : 1,
+          "text" : 3
+        },
+        {
+          "text" : 6
+        },
+        {
+          "text" : 5
+        },
+        {
+          "forum" : 4
+        },
+        {
+          "voice" : 3
+        },
+        {
+          "text" : 6
+        }
+      ],
+      "community" : true,
+      "discoverable" : true,
+      "emojis" : 22,
+      "forumPosts" : 0,
+      "memberCount" : 8100,
+      "peopleInVoice" : 0,
+      "readState" : {
+        "mentions" : [
+
+        ],
+        "unreadChannels" : 10
+      },
+      "restrictedChannels" : 25,
+      "roles" : 45,
+      "scheduledEvents" : 0,
+      "settings" : {
+        "collapsedCategories" : 0,
+        "hideMutedChannels" : false,
+        "messageNotifications" : 1,
+        "muted" : true,
+        "mutedChannels" : 0,
+        "notificationOverrides" : 0,
+        "suppressEveryone" : true,
+        "suppressRoles" : false
+      },
+      "stickers" : 3
+    }
+  ]
+}

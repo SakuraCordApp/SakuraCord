@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 
@@ -7,7 +8,7 @@ import Testing
 struct MessageSearchNavigationTests {
     @Test func `search is retained per server and across DMs while side threads temporarily hide it`() async throws {
         let provider = MockChatProvider()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         await model.start()
         model.navigate(to: ChannelID(rawValue: 210))
         await model.guildActivationTask?.value
@@ -67,7 +68,7 @@ struct MessageSearchNavigationTests {
     }
 
     @Test func `group DM scope suggests only its recipients and the current user`() async throws {
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let group = try #require(model.snapshot?.channels.first { $0.id.rawValue == 401 })
         let currentUser = try #require(model.currentUser)
@@ -85,7 +86,7 @@ struct MessageSearchNavigationTests {
     @Test(arguments: [UInt64(300), 400, 220])
     func `search stays within its scope and thread results use the primary pane`(destinationID: UInt64) async throws {
         let provider = MockChatProvider()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         await model.start()
         let destination = try #require(model.snapshot?.channels.first { $0.id.rawValue == destinationID })
         model.navigate(to: destination.id)
@@ -167,7 +168,7 @@ struct MessageSearchNavigationTests {
 
     @Test func `manual selection cancels navigation without dismissing its search`() async throws {
         let provider = MockChatProvider()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         await model.start()
         let page = try await provider.messages(in: ChannelID(rawValue: 300), before: nil, limit: 50)
         let hit = try #require(page.messages.first)

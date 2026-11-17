@@ -1,4 +1,5 @@
 @testable import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -8,7 +9,7 @@ import Testing
 struct GuildTimeoutTests {
     @Test(arguments: [false, true])
     func replacementReadyClearsOmittedTimeoutWithoutRestoringCachedEvidence(storedSelfMember: Bool) async throws {
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         await model.memberLoadTask?.value
         let guildID = try #require(model.selectedGuildID)
@@ -64,7 +65,7 @@ struct GuildTimeoutTests {
 
     @Test func liveMembershipChangesGateCommunicationAndPreserveDrafts() async throws {
         let provider = MockChatProvider()
-        let model = AppModel(launchMode: .offlineTesting, provider: provider)
+        let model = AppModel(isEphemeral: true, provider: provider)
         await model.start()
         await model.memberLoadTask?.value
         let channel = try #require(model.selectedChannel)

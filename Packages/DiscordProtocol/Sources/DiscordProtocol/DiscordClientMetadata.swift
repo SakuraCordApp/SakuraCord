@@ -1,4 +1,5 @@
 import Foundation
+import SakuraCordModels
 
 /// Stable, non-secret client metadata shared by REST and Gateway for one
 /// provider lifetime. Its shape follows Paicord's current normal-account
@@ -114,12 +115,12 @@ public final class DiscordClientMetadata: @unchecked Sendable {
 
     nonisolated static let installationDefaultsKey = "dev.sakuracord.discord-installation-id"
 
-    static func persistedInstallationID() -> String? {
-        UserDefaults.standard.string(forKey: installationDefaultsKey)
+    public static func persistedInstallationID() -> String? {
+        DiscordNetworkRedirect.sessionDefaults.string(forKey: installationDefaultsKey)
     }
 
-    static func persistInstallationID(_ installationID: String) {
-        UserDefaults.standard.set(installationID, forKey: installationDefaultsKey)
+    public static func persistInstallationID(_ installationID: String) {
+        DiscordNetworkRedirect.sessionDefaults.set(installationID, forKey: installationDefaultsKey)
     }
 
     func currentHeartbeatSession() -> DiscordHeartbeatSession {

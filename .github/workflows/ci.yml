@@ -100,6 +100,8 @@ jobs:
         run: echo 'No compiler outputs were restored; this suite can supply clean release validation.'
       - name: Build and test
         timeout-minutes: 30
+        env:
+          SAKURACORD_CHANGES_BASE: ${{ github.event.pull_request.base.sha }}
         run: ./script/ci.sh ${{ matrix.suite == 'packages' && 'packages-core' || matrix.suite }}
       - name: Package downloadable pull request app and matching symbols
         if: github.event_name == 'pull_request' && matrix.suite == 'app'

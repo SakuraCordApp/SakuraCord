@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -37,7 +38,7 @@ struct ChannelPinTests {
     }
 
     @Test func `rapid pin toggles save only the settled state`() async throws {
-        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let guildID = try #require(model.selectedGuildID)
         let channel = try #require(model.visibleChannels.first { $0.guildID == guildID })

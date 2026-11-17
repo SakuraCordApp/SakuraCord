@@ -136,7 +136,7 @@ enum MentionAutocompleteSuggestionFactory {
                 detail: "@\(member.user.username)",
                 value: "<@\(member.id)>",
                 target: .user(member.id),
-                avatarURL: member.guildAvatarURL ?? member.user.avatarURL,
+                avatarURL: member.avatarURL,
                 colorHex: topColor,
                 member: member
             )

@@ -858,16 +858,6 @@ private struct QuickSwitcherRowIcon: View {
                 )
             } else if let imageURL = row.imageURL {
                 AvatarView(name: row.title, url: imageURL, size: size, animates: false, isHovered: false)
-                    .background {
-                        // The initial shows until the image loads, or if it fails.
-                        Circle()
-                            .fill(SakuraCordAccentColor.color.gradient)
-                            .overlay {
-                                Text(row.title.prefix(1).uppercased())
-                                    .font(.system(size: size * 0.42, weight: .semibold))
-                                    .foregroundStyle(SakuraCordAccentColor.labelOnFill)
-                            }
-                    }
             } else {
                 Image(systemName: row.systemImage)
                     .font(.interfaceSystem(size: 15, weight: .medium))

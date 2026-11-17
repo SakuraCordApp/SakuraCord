@@ -1311,6 +1311,9 @@ private final class MessageSearchAutocompleteCanvas: NSView {
             context.translateBy(x: 0, y: destination.minY * 2 + destination.height)
             context.scaleBy(x: 1, y: -1)
             context.draw(image, in: destination)
+        } else if url != nil {
+            UserAvatarPresentation.placeholderColor.setFill()
+            context.fillEllipse(in: rect)
         } else {
             NSColor.sakuraCordAccentColor.setFill()
             context.fillEllipse(in: rect)

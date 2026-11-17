@@ -475,7 +475,7 @@ private extension VoiceMessagePlaybackStore {
                let duration = try? await measuredDuration(of: .local(file), resolve: nil) {
                 return duration
             }
-            let duration = try await AVURLAsset(url: resolved).load(.duration).seconds
+            let duration = try await AVURLAsset(url: DiscordNetworkRedirect.resolve(resolved)).load(.duration).seconds
             guard duration.isFinite, duration > 0 else { throw CocoaError(.fileReadCorruptFile) }
             return duration
         }
