@@ -278,6 +278,18 @@ public enum DiscordMarkdown {
                     runs: codeRuns(String(rawLine), language: language),
                     block: .code(language: language, isFirstLine: isFirstLine)
                 ))
+            case let .closingCode(code, language, isFirstLine, after):
+                unclosedFence = nil
+                list = ListNesting()
+                if !code.isEmpty {
+                    lines.append(AppKitPlan.Line(
+                        runs: codeRuns(String(code), language: language),
+                        block: .code(language: language, isFirstLine: isFirstLine)
+                    ))
+                }
+                if !after.isEmpty {
+                    lines.append(planLine(after, list: &list))
+                }
             case let .text(content, isQuoted):
                 if lines.last.map({ $0.isQuoted != isQuoted }) == true {
                     list = ListNesting()
@@ -334,6 +346,10 @@ public enum DiscordMarkdown {
         /// language, or that closes one.
         case fence(opening: String?)
         case code(language: String?, isFirstLine: Bool)
+        /// A block's last code, up to the three backticks that close it
+        /// within the line, and the text after them. Discord closes a block
+        /// at the next three backticks, so one line can hold a whole block.
+        case closingCode(Substring, language: String?, isFirstLine: Bool, after: Substring)
         /// Text after any quote prefix.
         case text(Substring, isQuoted: Bool)
     }
@@ -346,7 +362,19 @@ public enum DiscordMarkdown {
         var startsCodeFence = false
         var isInMultilineQuote = false
         for rawLine in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            if parsesFences, rawLine.hasPrefix("```") {
+            // Code needs at least one character before its closing fence.
+            if parsesFences, !isInCodeFence, rawLine.hasPrefix("```"),
+               let close = rawLine.dropFirst(4).range(of: "```") {
+                let code = rawLine[rawLine.index(rawLine.startIndex, offsetBy: 3) ..< close.lowerBound]
+                body(rawLine, .closingCode(code, language: nil, isFirstLine: true, after: rawLine[close.upperBound...]))
+            } else if isInCodeFence, let close = rawLine.range(of: "```"),
+                      close.lowerBound != rawLine.startIndex || !rawLine[close.upperBound...].allSatisfy(\.isWhitespace) {
+                isInCodeFence = false
+                body(rawLine, .closingCode(
+                    rawLine[..<close.lowerBound], language: codeLanguage, isFirstLine: startsCodeFence, after: rawLine[close.upperBound...]
+                ))
+                codeLanguage = nil
+            } else if parsesFences, rawLine.hasPrefix("```") {
                 isInCodeFence.toggle()
                 startsCodeFence = isInCodeFence
                 let suffix = rawLine.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -698,15 +726,18 @@ public enum DiscordMarkdown {
                 }
             }
 
-            if rules.contains(.code), source[cursor] == "`",
-               let close = nextInlineTerminator("`", in: source, from: source.index(after: cursor), collector: sourceCollector)
-            {
-                flushPlain()
-                result.append(inlineCodeRun(
-                    source[source.index(after: cursor) ..< close],
-                    traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
-                ))
-                cursor = source.index(after: close)
+            if rules.contains(.code), source[cursor] == "`" {
+                let match = inlineCode(in: source, at: cursor, collector: sourceCollector)
+                if let code = match.code {
+                    flushPlain()
+                    result.append(inlineCodeRun(
+                        source[code], delimiter: source.distance(from: cursor, to: code.lowerBound),
+                        traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
+                    ))
+                } else if sourceCollector == nil {
+                    plain += source[cursor ..< match.end]
+                }
+                cursor = match.end
                 continue
             }
 
@@ -971,8 +1002,8 @@ public enum DiscordMarkdown {
         if source[cursor] == "\\", next < source.endIndex {
             return source.index(after: next)
         }
-        if source[cursor] == "`", let close = collector.next("`", from: next, before: source.endIndex) {
-            return source.index(after: close)
+        if source[cursor] == "`", case let match = inlineCode(in: source, at: cursor, collector: collector), match.code != nil {
+            return match.end
         }
         if let link = markdownLinkTarget(in: source, at: cursor, collector: collector) {
             return link.end
@@ -1400,21 +1431,19 @@ extension DiscordMarkdown {
         let collector = SourceFormatCollector(source: source, matchesComposerDelimiters: false) { range, traits, _ in
             if traits.contains(.inlineCode) { ranges.append(NSRange(range, in: source)) }
         }
-        var inCodeFence = false
-        var inMultilineQuote = false
-        for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            if line.hasPrefix("```") {
-                inCodeFence.toggle()
-                ranges.append(NSRange(line.startIndex ..< line.endIndex, in: source))
-            } else if inCodeFence {
-                ranges.append(NSRange(line.startIndex ..< line.endIndex, in: source))
-            } else {
-                if line.isEmpty { inMultilineQuote = false }
-                // planLine removes a list marker before parsing inline syntax;
-                // multiline quote continuations instead retain their whole line.
-                let content = line.hasPrefix("* ") && !inMultilineQuote ? line.dropFirst(2) : line
-                _ = inlineRuns(content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
-                if line.hasPrefix(">>> ") { inMultilineQuote = true }
+        // Read as planLine reads text: inline syntax after any list marker.
+        func scanInline(_ content: Substring) {
+            _ = inlineRuns(listItemContent(content)?.content ?? content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+        }
+        forEachSourceLine(source) { rawLine, kind in
+            switch kind {
+            case .fence, .code:
+                ranges.append(NSRange(rawLine.startIndex ..< rawLine.endIndex, in: source))
+            case let .closingCode(_, _, _, after):
+                ranges.append(NSRange(rawLine.startIndex ..< after.startIndex, in: source))
+                scanInline(after)
+            case let .text(content, _):
+                scanInline(content)
             }
         }
         return ranges
@@ -1502,8 +1531,12 @@ public extension DiscordMarkdown {
             // Discord shows it: the open fence literal and the lines after it
             // as text.
             var openFence: String.Index?
-            for line in source.split(separator: "\n", omittingEmptySubsequences: false) where line.hasPrefix("```") {
-                openFence = openFence == nil ? line.startIndex : nil
+            forEachSourceLine(source) { rawLine, kind in
+                switch kind {
+                case let .fence(opening): openFence = opening == nil ? nil : rawLine.startIndex
+                case .closingCode: openFence = nil
+                case .code, .text: break
+                }
             }
             forEachSourceLine(source) { rawLine, kind in
                 guard let openFence, rawLine.startIndex >= openFence else {
@@ -1540,6 +1573,9 @@ public extension DiscordMarkdown {
                 closingFenceHeight = metrics.codeInset
                 setParagraph(spacing: closingFenceHeight, for: paragraphRange)
                 return
+            case let .closingCode(_, language, isFirstLine, _):
+                // The draft keeps the line's backticks and text as code.
+                return styleLine(rawLine, kind: .code(language: language, isFirstLine: isFirstLine), collector: collector)
             case let .code(language, isFirstLine):
                 line = AppKitPlan.Line(runs: codeRuns(String(rawLine), language: language), block: .code(language: language, isFirstLine: isFirstLine))
                 style(range)
@@ -1656,10 +1692,35 @@ public extension DiscordMarkdown.AppKitPlan.Line {
 
 private extension DiscordMarkdown {
     static func inlineCodeRun(
-        _ source: Substring, traits: AppKitPlan.InlineTraits, link: URL?, sourceCollector: SourceFormatCollector?
+        _ source: Substring, delimiter: Int, traits: AppKitPlan.InlineTraits, link: URL?, sourceCollector: SourceFormatCollector?
     ) -> AppKitPlan.InlineRun {
-        sourceCollector?.collect(source.startIndex ..< source.endIndex, traits.union(.inlineCode), "`")
+        sourceCollector?.collect(source.startIndex ..< source.endIndex, traits.union(.inlineCode), String(repeating: "`", count: delimiter))
         return AppKitPlan.InlineRun(text: String(source), traits: traits.union(.inlineCode), link: link, color: nil)
+    }
+
+    /// Discord's inline code, `^(`+)([\s\S]*?[^`])\1(?!`)`: a run of
+    /// backticks closes at the nearest later run of the same length. When no
+    /// run that long follows, the expression backtracks to a shorter opening,
+    /// so the earliest of the longest later runs no longer than it closes,
+    /// and the content keeps the opening's other backticks. A run that
+    /// nothing closes is text, ending at `end`.
+    private static func inlineCode(
+        in source: Substring, at cursor: String.Index, collector: SourceFormatCollector?
+    ) -> (code: Range<String.Index>?, end: String.Index) {
+        let opening = source[cursor...].prefix { $0 == "`" }.count
+        var closing: (start: String.Index, length: Int)?
+        var search = source.index(cursor, offsetBy: opening)
+        while let tick = nextInlineTerminator("`", in: source, from: search, collector: collector) {
+            let runEnd = source[tick...].firstIndex { $0 != "`" } ?? source.endIndex
+            let length = source.distance(from: tick, to: runEnd)
+            if length <= opening, length > closing?.length ?? 0 {
+                closing = (tick, length)
+                if length == opening { break }
+            }
+            search = runEnd
+        }
+        guard let closing else { return (nil, source.index(cursor, offsetBy: opening)) }
+        return (source.index(cursor, offsetBy: closing.length) ..< closing.start, source.index(closing.start, offsetBy: closing.length))
     }
 
     static func isComposerSyntaxCharacter(_ character: Character) -> Bool {

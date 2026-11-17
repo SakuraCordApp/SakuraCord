@@ -60,6 +60,27 @@ import Testing
     #expect(italic.fontName.contains("SemiboldItalic"))
 }
 
+// Discord's code rules: inline code closes at a backtick run of its own
+// length, and a block closes at the next three backticks, even mid-line.
+@Test func `code closes at matching backtick runs and the next fence`() {
+    func code(_ source: String) -> [String] {
+        let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
+        var kinds: [(kind: String, text: String)] = []
+        value.enumerateAttributes(in: NSRange(location: 0, length: value.length)) { attributes, range, _ in
+            let kind = attributes[.discordMarkdownInlineCode] != nil ? "inline" : (attributes[.discordMarkdownBlock] as? String ?? "text")
+            let text = (value.string as NSString).substring(with: range)
+            if kinds.last?.kind == kind { kinds[kinds.count - 1].text += text } else { kinds.append((kind, text)) }
+        }
+        return kinds.map { "\($0.kind):\($0.text)" }
+    }
+    #expect(code("``a`b`` c") == ["inline:a`b", "text: c"])
+    #expect(code("``a` c") == ["inline:`a", "text: c"])
+    #expect(code("```code```\nhello") == ["code:code", "text:\nhello"])
+    #expect(code("```\ncode```after") == ["code:code", "text:\nafter"])
+    let title = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitEmbedTitlePlan("```x``` ``y``", allowsLinks: true))
+    #expect(title.string == "x y")
+}
+
 @Test func `angle bracket masked links match discord rendering`() throws {
     let source =
         "[portfolio](<https://exyron.dev>) and [docs](<https://example.com/docs>)"
@@ -360,7 +381,7 @@ import Testing
     let tokens = ["@everyone", "<t:1000000:R>", "<@$356875221078245376>", "</role add:1234>"]
     let raw = tokens.joined(separator: " ") + " <:x:1> <a:y:2>"
     for source in [
-        "🌸 `\(raw)`", "**`\(raw)`**", "```swift\n\(raw)\n```",
+        "🌸 `\(raw)`", "``\(raw)``", "``a`\(raw)``", "**`\(raw)`**", "```swift\n\(raw)\n```", "```\(raw)```",
         "* `**\(raw)**`", ">>> quote\n\n* `**\(raw)**`",
         #"\@everyone \<t:1000000:R> \<@$356875221078245376> \</role add:1234> \<:x:1> \<a:y:2>"#,
         "[open](https://example.com/@here) https://example.com/@everyone",
@@ -387,6 +408,10 @@ import Testing
     #expect(mentions.map(\.rawToken) == tokens)
     #expect(mentions.map(\.kind) == [.broadcast, .timestamp, .game, .command])
     #expect(mixed.segments.filter { if case .customEmoji = $0 { true } else { false } }.count == 2)
+    // A block that closes on its own line, or mid-line, leaves the text after it.
+    for source in ["```code``` <:x:1>", "```code```\n<:x:1>", "```\ncode```\n<:x:1>", "``a`` <:x:1>"] {
+        #expect(MessageDocument(source: source).segments.last == .customEmoji(RenderedEmoji(rawToken: "<:x:1>")!))
+    }
     #expect(mentions.last?.id == "1234")
     #expect(mentions.last?.commandName == "role add")
     let afterLink = MessageDocument(source: "[read](https://example.com)@here").segments
