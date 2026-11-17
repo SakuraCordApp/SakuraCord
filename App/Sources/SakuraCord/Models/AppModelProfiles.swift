@@ -425,6 +425,14 @@ extension AppModel {
             ?? (guildID == selectedGuildID ? membersByID[userID] : nil)
     }
 
+    /// Discord reads server membership from its member store. Ours keeps departed
+    /// members for message history, so departures are tracked on their own.
+    func guildJoinedAt(of userID: UserID, in guildID: GuildID?, profile: UserProfile?) -> Date? {
+        guard let guildID, removedMemberIDsByGuildID[guildID]?.contains(userID) != true else { return nil }
+        if let member = profileMember(userID, in: guildID) { return member.joinedAt }
+        return profile?.guildJoinedAt
+    }
+
     func knownUser(_ userID: UserID) -> User? {
         currentUser?.id == userID ? currentUser : membersByID[userID]?.user
     }
@@ -436,6 +444,10 @@ extension AppModel {
         guard var presentation = profilePresentation(for: destination) else { return nil }
         guard !presentation.isLocalIdentity else { return presentation }
         presentation.member = profileMember(presentation.member.id, in: presentation.guildID) ?? presentation.member
+        if presentation.guildID != nil {
+            presentation.member.joinedAt = guildJoinedAt(of: presentation.member.id, in: presentation.guildID, profile: presentation.profile)
+            if presentation.member.joinedAt == nil { presentation.profile?.roles = [] }
+        }
         if presentation.member.id == currentUser?.id {
             // Member stores do not track our own presence; the account does.
             presentation.member.status = currentStatus

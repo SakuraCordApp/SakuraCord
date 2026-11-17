@@ -277,6 +277,8 @@ final class AppModel {
 
     var membersByID: [UserID: Member] = [:]
     @ObservationIgnored var membersByGuildID: [GuildID: [UserID: Member]] = [:]
+    /// Users who left each server this session; `membersByGuildID` keeps them for message history.
+    var removedMemberIDsByGuildID: [GuildID: Set<UserID>] = [:]
     var profileCustomStatus: ProfileCustomStatus?
     var profileCustomStatusUserID: UserID?
     var profileWidgetConnectionsRevision = UUID()

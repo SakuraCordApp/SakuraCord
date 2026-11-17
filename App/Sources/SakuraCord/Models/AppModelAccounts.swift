@@ -347,6 +347,7 @@ extension AppModel {
         threadPreviewMessages = [:]
         threadPreviewParentIDs = [:]
         membersByGuildID = [:]
+        removedMemberIDsByGuildID = [:]
         profileCustomStatus = nil
         profileCustomStatusUserID = nil
         presentedProfileGame = nil
