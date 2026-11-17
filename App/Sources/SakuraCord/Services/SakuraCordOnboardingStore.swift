@@ -1,4 +1,5 @@
 import Foundation
+import SakuraCordModels
 
 enum SakuraCordOnboardingStore {
     private static let completionKey = "dev.sakuracord.onboarding-completed"
@@ -6,10 +7,14 @@ enum SakuraCordOnboardingStore {
     /// Run before startup services write preferences so an existing installation
     /// is grandfathered in, while an unfinished new installation stays pending.
     static func registerInstallation() {
-        let defaults = UserDefaults.standard
-        guard defaults.object(forKey: completionKey) == nil,
-              let bundleID = Bundle.main.bundleIdentifier
-        else { return }
+        let defaults = DiscordNetworkRedirect.sessionDefaults
+        guard defaults.object(forKey: completionKey) == nil else { return }
+        // Each simulator store starts as a new installation.
+        if DiscordNetworkRedirect.isActive {
+            defaults.set(false, forKey: completionKey)
+            return
+        }
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
         let existingPreferences = defaults.persistentDomain(forName: bundleID) ?? [:]
         // AppKit can record system preferences even before the app delegate is
         // initialized. Those alone do not establish a previous SakuraCord run.
@@ -20,10 +25,10 @@ enum SakuraCordOnboardingStore {
     }
 
     static var needsThemeSetup: Bool {
-        !UserDefaults.standard.bool(forKey: completionKey)
+        !DiscordNetworkRedirect.sessionDefaults.bool(forKey: completionKey)
     }
 
     static func complete() {
-        UserDefaults.standard.set(true, forKey: completionKey)
+        DiscordNetworkRedirect.sessionDefaults.set(true, forKey: completionKey)
     }
 }

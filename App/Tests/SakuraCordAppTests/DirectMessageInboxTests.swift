@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import SakuraCordModels
 import Testing
@@ -114,7 +115,7 @@ import Testing
 
 @MainActor
 @Test func `direct message pins follow account notification overrides`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let channel = try #require(model.snapshot?.channels.first { $0.kind == .directMessage })
     let originalFlags: UInt64 = 1 << 5
@@ -158,7 +159,7 @@ import Testing
 @MainActor
 @Test func `selecting an existing direct message uses the shared timeline and profile`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let existing = try #require(
         model.snapshot?.channels.first {
@@ -199,7 +200,7 @@ import Testing
 @MainActor
 @Test func `group direct messages retain the participant list inspector`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let group = try #require(
         model.snapshot?.channels.first { $0.kind == .groupDirectMessage }
@@ -262,7 +263,7 @@ import Testing
 @MainActor
 @Test func `official Discord system direct messages are read only`() {
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: MockChatProvider()
     )
     let officialUser = User(

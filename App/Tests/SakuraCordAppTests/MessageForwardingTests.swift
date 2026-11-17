@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Observation
 import SakuraCordModels
 import Testing
@@ -70,7 +71,7 @@ func `forward destination index warms before the menu is presented`() async thro
         kind: .text
     )
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: MockChatProvider()
     )
     model.snapshot = BootstrapSnapshot(
@@ -127,7 +128,7 @@ func `open forward search observes live user and guild nickname store updates`()
         displayName: "Observed"
     )
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: MockChatProvider()
     )
     model.snapshot = BootstrapSnapshot(
@@ -254,7 +255,6 @@ func `open forward search observes live user and guild nickname store updates`()
     }
 
     let first = AppModel(
-        launchMode: .normal,
         provider: MockChatProvider(),
         discordNetworkDisabledOverride: true,
         restoresStoredSession: false
@@ -264,7 +264,6 @@ func `open forward search observes live user and guild nickname store updates`()
     first.recordConversationDestinationVisit(ChannelID(rawValue: 20))
 
     let second = AppModel(
-        launchMode: .normal,
         provider: MockChatProvider(),
         discordNetworkDisabledOverride: true,
         restoresStoredSession: false
@@ -292,7 +291,7 @@ func `passive initial channel selection does not contaminate forward history`() 
         name: "general", kind: .text
     )
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: MockChatProvider()
     )
     model.snapshot = BootstrapSnapshot(
@@ -312,7 +311,7 @@ func `passive initial channel selection does not contaminate forward history`() 
 
 @MainActor @Test func `failed frecency enrichment never leaves forwarding destinations loading`() async {
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: ForwardSettingsFailureProvider()
     )
 
@@ -367,7 +366,7 @@ func `passive initial channel selection does not contaminate forward history`() 
 @MainActor @Test
 func `persisted forward frecency replay is idempotent for one account scope`() {
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: MockChatProvider()
     )
     model.discordFrecencyUsageDeltasDefaultsKey = "test.forward-frecency.scope"

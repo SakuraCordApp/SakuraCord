@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 @testable import SakuraCord
 import SakuraCordModels
@@ -41,7 +42,7 @@ struct EmojiFrecencyTests {
     }
 
     @Test func sharedSettingsSaveRetainsFailuresAndOnlyAcknowledgesItsCapturedUses() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         model.applyDiscordEmojiSettings(EmojiUserSettings(dataVersion: 1))
         model.recordMessageEmojiUsage("🐢")
         let session = model.accountSession()
@@ -61,7 +62,7 @@ struct EmojiFrecencyTests {
     }
 
     @Test func incomingHistoryReplaysPendingUsageAndPickerCapsResolvedCandidates() {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         let timestamp = UInt64(now.timeIntervalSince1970 * 1_000)
         let entries = NativeEmojiPickerIndex.allItems.prefix(45).enumerated().map { index, item in
             DiscordFrecencyEntry(key: item.discordKey, totalUses: 100 - index, recentUses: [timestamp])

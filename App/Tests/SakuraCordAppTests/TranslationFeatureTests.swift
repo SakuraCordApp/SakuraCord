@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import AppKit
 import Foundation
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 
@@ -41,7 +42,7 @@ final class ControlledTranslationTestService: TextTranslating {
 private func translationFixture(_ translator: ControlledTranslationTestService) -> AppModel {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let state = TranslationState(settingsStore: TranslationSettingsStore(preferences: preferences), translator: translator)
-    let model = AppModel(launchMode: .offlineTesting, translation: state)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider(), translation: state)
     model.applyTranslationSettings(.init(isEnabled: true, messageLanguage: "en", draftLanguage: "en"))
     model.selectedChannelID = ChannelID(rawValue: 200)
     return model

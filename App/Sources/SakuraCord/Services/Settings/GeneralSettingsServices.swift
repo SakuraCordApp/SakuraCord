@@ -61,7 +61,7 @@ final class SettingsConversationRestorationStore {
     private let defaults: any PreferenceStoring
     private var pendingLaunchRestoration: SettingsConversationRestoration?
 
-    init(defaults: any PreferenceStoring = UserDefaults.standard) {
+    init(defaults: any PreferenceStoring = DiscordNetworkRedirect.sessionDefaults) {
         self.defaults = defaults
     }
 

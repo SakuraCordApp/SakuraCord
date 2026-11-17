@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+@testable import DiscordProtocolTestSupport
 import MessageRendering
 import SakuraCordModels
 import SwiftUI
@@ -26,7 +27,7 @@ import Testing
 
 @MainActor
 @Test func `thread links and mentions present the names of known threads`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let parent = try #require(model.snapshot?.channels.first { $0.kind == .text && $0.guildID != nil })
     let guildID = try #require(parent.guildID)
@@ -539,7 +540,7 @@ func `server verification blocks sends without exposing hidden channels`(state: 
 }
 
 @MainActor @Test func `webhook profiles remain scoped to each message instead of cached members`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let user = User(id: UserID(rawValue: 300), username: "First persona", discriminator: "0000", displayName: "First persona", isBot: true)
     var first = Message(id: MessageID(rawValue: 100), channelID: ChannelID(rawValue: 200), author: user, webhookID: "300", content: "Test")
     let stale = Member(user: User(id: user.id, username: "Cached", displayName: "Cached"), roleName: "Cached role", status: .online)

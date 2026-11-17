@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 @testable import SakuraCord
 import SakuraCordModels
 import Testing
@@ -5,7 +6,7 @@ import Testing
 @MainActor
 struct IgnoredUsersTests {
     @Test func `ignored content collapses without deleting history and new messages stay concealed`() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let channel = ChannelID(rawValue: 99100)
         let author = User(id: .init(rawValue: 99101), username: "ignored", displayName: "Ignored")
@@ -65,7 +66,7 @@ struct IgnoredUsersTests {
     }
 
     @Test func `ignore covers command initiators and menus retain eligibility and account guards`() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let author = User(id: .init(rawValue: 99300), username: "person", displayName: "Person")
         var bot = User(id: .init(rawValue: 99301), username: "app", displayName: "App")
@@ -92,7 +93,7 @@ struct IgnoredUsersTests {
     }
 
     @Test func `ignored guild voice requires confirmation and teardown releases the pending join`() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let userID = UserID(rawValue: 99400)
         let channel = Channel(id: .init(rawValue: 99401), guildID: .init(rawValue: 99402), name: "Voice", kind: .voice)
@@ -118,7 +119,7 @@ struct IgnoredUsersTests {
     }
 
     @Test func `ignored group warnings honor server acknowledgements and reset with the account`() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let user = User(id: .init(rawValue: 99500), username: "ignored", displayName: "Ignored")
         var group = Channel(id: .init(rawValue: 99501), guildID: nil, name: "Group", kind: .groupDirectMessage, recipients: [user])

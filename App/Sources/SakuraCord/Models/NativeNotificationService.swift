@@ -242,15 +242,12 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         return UNNotificationSound(named: UNNotificationSoundName(name))
     }
 
-    // Offline demos use real system permissions without publishing fixture alerts.
-    private let deliversNotifications: Bool
     private let preparePreviewImage: @MainActor (URL?, Int) async -> Data?
     private let submitRequest: @MainActor (UNNotificationRequest) async throws -> Void
     private var isSuppressed = false
     private var pendingRequests: [String: UUID] = [:]
 
     init(
-        deliversNotifications: Bool = true,
         preparePreviewImage: @escaping @MainActor (URL?, Int) async -> Data? = {
             await NotificationMedia.previewImage(at: $0, maximumDimension: $1)
         },
@@ -258,7 +255,6 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
             try await UNUserNotificationCenter.current().add($0)
         }
     ) {
-        self.deliversNotifications = deliversNotifications
         self.preparePreviewImage = preparePreviewImage
         self.submitRequest = submitRequest
         super.init()
@@ -285,7 +281,7 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         presentation: NotificationContentPresentation,
         preferences: NotificationPreferences
     ) async {
-        guard deliversNotifications, !isSuppressed, preferences.isEnabled else { return }
+        guard !isSuppressed, preferences.isEnabled else { return }
         let identifier = NativeNotificationIdentity.message(
             accountID: accountID, channelID: message.channelID, messageID: message.id
         )
@@ -349,7 +345,6 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
     }
 
     func cancel(accountID: String, channelID: ChannelID) async {
-        guard deliversNotifications else { return }
         let prefix = NativeNotificationIdentity.messagePrefix(accountID: accountID, channelID: channelID)
         pendingRequests = pendingRequests.filter { !$0.key.hasPrefix(prefix) }
         let delivered = await center.deliveredNotifications()
@@ -361,7 +356,6 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
     }
 
     func setDockBadge(_ count: Int, enabled: Bool) {
-        guard deliversNotifications else { return }
         NSApplication.shared.dockTile.badgeLabel =
             enabled && count > 0 ? String(count) : nil
     }

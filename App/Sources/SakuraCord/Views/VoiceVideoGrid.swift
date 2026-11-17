@@ -902,7 +902,7 @@ private struct SoundboardCardEffectIcon: View {
 
     var body: some View {
         if let url = emoji.imageURL(size: 128) {
-            AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+            AsyncImage(url: DiscordNetworkRedirect.resolve(url), transaction: Transaction(animation: nil)) { phase in
                 if case .success(let image) = phase {
                     image
                         .resizable()

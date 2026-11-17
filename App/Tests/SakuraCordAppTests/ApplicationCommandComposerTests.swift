@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+@testable import DiscordProtocolTestSupport
 @testable import SakuraCord
 import SakuraCordModels
 import Testing
@@ -478,7 +479,7 @@ func commandLiteralTextPreservation() throws {
 @MainActor
 @Test("returned modals settle their opener and late successes cannot close another form")
 func commandInteractionModalOrdering() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let channel = ChannelID(rawValue: 400)
     model.trackInteraction(.init(kind: .command(channelID: channel, commandName: "find", application: composerApplication)), nonce: "opening")
     #expect(model.interactionDeadlineTasks.isEmpty)

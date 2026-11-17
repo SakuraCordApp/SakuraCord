@@ -104,7 +104,7 @@ struct ForumFrameTimingSampler {
     }
 }
 
-/// Offline forum benchmark: after the first page loads, scrolls the board at a
+/// Forum benchmark: after the first page loads, scrolls the board at a
 /// steady speed on the display link, then writes frame timing and layout
 /// stability.
 @MainActor

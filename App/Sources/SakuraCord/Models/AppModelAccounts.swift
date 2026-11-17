@@ -40,8 +40,14 @@ nonisolated enum BootstrapInitialGuildPolicy {
 }
 
 extension AppModel {
-    var isOfflineTesting: Bool {
-        launchMode == .offlineTesting
+    /// An ephemeral model's injected account, which has read state and
+    /// frecency of its own although no credential is signed in.
+    var ephemeralAccountID: String? {
+        isEphemeral ? "ephemeral" : nil
+    }
+
+    var signedOutScope: String {
+        ephemeralAccountID ?? "signed-out"
     }
 
     var isDiscordNetworkingDisabled: Bool {
@@ -49,7 +55,7 @@ extension AppModel {
     }
 
     func refreshSavedAccounts() async {
-        guard launchMode == .normal else {
+        guard !isEphemeral else {
             savedAccounts = []
             return
         }
@@ -106,7 +112,7 @@ extension AppModel {
         preservesInteractivePresentation: Bool = false
     ) async -> Bool {
         guard !discordNetworkDisabled else {
-            errorMessage = "Discord networking is disabled in offline UI mode."
+            errorMessage = "Discord networking is disabled."
             return false
         }
         guard await accountTransitionCoordinator.acquireIfAvailable() else { return false }
@@ -241,14 +247,13 @@ extension AppModel {
 
     /// Points account-owned stores at `handle`'s account, or at the signed-out scope when it is `nil`.
     func resetAccountScopedState(for handle: CredentialHandle?) {
-        let isOffline = launchMode == .offlineTesting
-        let frecencyScope = handle?.accountID ?? (isOffline ? "offline" : "signed-out")
+        let frecencyScope = handle?.accountID ?? signedOutScope
         hasPendingLaunchWelcome = false
         credentialHandle = handle
         activeAccountID = handle?.accountID
         resetAcknowledgementWork()
         resetChannelNotificationMutations()
-        readState.reset(accountID: handle?.accountID ?? (isOffline ? "offline" : nil))
+        readState.reset(accountID: handle?.accountID ?? ephemeralAccountID)
         currentUserRoleIDsByGuild = [:]
         commandComposer.configureFrecencyScope(frecencyScope)
         configureEmojiFrecency(scope: frecencyScope)
@@ -420,27 +425,21 @@ extension AppModel {
         }
         installSignedOutAccountState()
         errorMessage = removalError
-        if launchMode == .offlineTesting {
-            await start()
-            guard accountSessionGeneration == transitionGeneration else { return }
-        }
     }
 
     func installSignedOutAccountState() {
         bootstrapHistoryPrefetch?.task.cancel()
         bootstrapHistoryPrefetch = nil
         resetAccountScopedState(for: nil)
-        let signedOutProvider: any ChatProvider =
-            launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider()
-        let signedOutDatabase = launchMode == .offlineTesting
-            ? try? SakuraCordDatabase(inMemory: true)
-            : nil
-        installAccountSession(provider: signedOutProvider, database: signedOutDatabase)
+        installAccountSession(
+            provider: SignedOutChatProvider(),
+            database: isEphemeral ? try? SakuraCordDatabase(inMemory: true) : nil
+        )
         accountTransitionIsActive = false
         resetAccountPresentationState()
         connectionState = .disconnected
         isAuthenticated = false
-        sessionState = launchMode == .offlineTesting ? .connecting : .signedOut
+        sessionState = .signedOut
     }
 
     func removeSavedAccount(
@@ -455,7 +454,7 @@ extension AppModel {
         await savedAccountStore.setPreferredAccountID(
             activeAccountID != accountID ? activeAccountID ?? savedAccounts.first?.accountID : savedAccounts.first?.accountID
         )
-        if launchMode == .normal {
+        if !isEphemeral {
             DiscordRESTProvider.removePendingStatusEdit(accountID: accountID)
             DiscordFrecencyStore.removePendingEmojiUsage(scope: accountID)
             AppModel.removeLocalFavorites(accountID: accountID)

@@ -1,5 +1,6 @@
 import AppKit
 import AVKit
+import SakuraCordModels
 
 /// A video attachment playing in place over its tile, filling it like its
 /// thumbnail, with the system's inline controls: play and pause, scrubbing,
@@ -47,7 +48,7 @@ final class NativeTimelineInlinePlayer: NSView, AVPlayerViewDelegate {
         scaler.addSubview(playerView)
         addSubview(scaler)
         layoutPlayer()
-        let player = AVPlayer(url: url)
+        let player = AVPlayer(url: DiscordNetworkRedirect.resolve(url))
         playerView.player = player
         player.play()
     }

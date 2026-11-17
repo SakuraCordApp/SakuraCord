@@ -179,6 +179,8 @@ enum DiscordAccountImporter {
     }
 
     @concurrent static func credential(for account: DiscordImportAccount) async throws -> PendingDiscordCredential {
+        // Imported tokens are real Discord tokens; a simulator session must never see one.
+        guard !DiscordNetworkRedirect.isActive else { throw ImportError.unsupported }
         try Task.checkCancellation()
         var password = try keychainPassword()
         defer { password.resetBytes(in: password.indices) }

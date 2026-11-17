@@ -1,6 +1,7 @@
 import AVFAudio
 @testable import SakuraCord
 import Foundation
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Observation
 import Testing
@@ -232,7 +233,7 @@ func `Incoming calls ring in the app whether or not it is in front, and only Do 
 ) async throws {
     let sounds = RecordingAppSoundPlayer()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         notificationService: RecordingNotificationService(),
         soundPlayer: sounds,
         notificationPreferences: NotificationPreferences(defaults: InMemoryPreferences())
@@ -273,7 +274,7 @@ func `Incoming calls ring in the app whether or not it is in front, and only Do 
 @Test func `Muting a ringing conversation silences its call`() async throws {
     let sounds = RecordingAppSoundPlayer()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         notificationService: RecordingNotificationService(),
         soundPlayer: sounds,
         notificationPreferences: NotificationPreferences(defaults: InMemoryPreferences())
@@ -314,7 +315,7 @@ func `Incoming calls ring in the app whether or not it is in front, and only Do 
     let service = RecordingNotificationService(status: .denied)
     let preferences = NotificationPreferences(defaults: InMemoryPreferences())
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         notificationService: service,
         notificationPreferences: preferences
     )
@@ -377,7 +378,7 @@ func `Desktop and sound delivery are independent and share message filters`(appI
         preferences.playsSound = sound
         preferences.suppressesCurrentConversation = false
         let model = AppModel(
-            launchMode: .offlineTesting,
+            isEphemeral: true, provider: MockChatProvider(),
             notificationService: service,
             soundPlayer: sounds,
             notificationPreferences: preferences

@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import Foundation
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import SakuraCordPersistence
 import Testing
@@ -95,7 +96,7 @@ import Testing
     try await first.saveDraft("first", channelID: ChannelID(rawValue: 1))
     try await second.saveDraft("second", channelID: ChannelID(rawValue: 2))
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         accountDatabaseFactory: { databases[$0] }
     )
     model.savedAccounts = [

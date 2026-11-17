@@ -1,4 +1,5 @@
 @testable import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 @testable import SakuraCord
 import SakuraCordModels
@@ -6,7 +7,7 @@ import Testing
 
 @MainActor
 @Test func `name style effect changes preserve inactive draft colors and reset discards them`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let editor = ProfileEditorState(model: model)
     await editor.load()
@@ -49,7 +50,7 @@ import Testing
 
 @MainActor
 @Test func `server tag drafts use the same account identity in main and server editors`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let editor = ProfileEditorState(model: model)
     let tag = PrimaryGuildIdentity(guildID: GuildID(rawValue: 999), tag: "TEST")
@@ -67,7 +68,7 @@ import Testing
 
 @MainActor
 @Test func `clearing profile text preserves explicit empty values and restoring it removes the draft`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let editor = ProfileEditorState(model: model)
     await editor.load()
@@ -108,7 +109,7 @@ import Testing
 @MainActor
 @Test func `profile editing reuses fresh scopes and refreshes stale data without discarding edits`() async throws {
     let provider = ProfileEditorCacheProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.serverRailGuildsByID[GuildID(rawValue: 100)]?.currentUserPermissions = DiscordPermissionBits.changeNickname
     var time = ContinuousClock.now
@@ -155,7 +156,7 @@ import Testing
 @Test(arguments: [ProfileEditingScope.main, .server(GuildID(rawValue: 100))])
 func `profile editor uses a preloaded editable baseline without another read`(scope: ProfileEditingScope) async throws {
     let provider = ProfileEditorCacheProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     model.serverRailGuildsByID[GuildID(rawValue: 100)]?.currentUserPermissions = DiscordPermissionBits.changeNickname
     let editor = ProfileEditorState(model: model)
@@ -191,7 +192,7 @@ func `profile editor uses a preloaded editable baseline without another read`(sc
 @MainActor
 @Test func `prepared editor baseline is editable on construction and does not replace drafts`() async throws {
     let provider = ProfileEditorCacheProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let baseline = try await provider.profileEditingSnapshot(in: .main)
     model.preparedProfileEditingSnapshot = baseline
@@ -211,7 +212,7 @@ func `profile editor uses a preloaded editable baseline without another read`(sc
 @MainActor
 @Test func `unloaded server profile retains the current canvas but cannot save its baseline`() async throws {
     let provider = ProfileEditorCacheProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let editor = ProfileEditorState(model: model)
     await editor.load()
@@ -238,7 +239,7 @@ func `profile editor uses a preloaded editable baseline without another read`(sc
     let games = [ProfileWidgetGame(id: "a", comment: "Keep this comment"), ProfileWidgetGame(id: "b"), ProfileWidgetGame(id: "c")]
     let third = ProfileWidget(serverID: "3", content: .games(.liked, games))
     let provider = ProfileEditorCacheProvider(widgets: [first, second, third])
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let editor = ProfileEditorState(model: model)
     await editor.load()
@@ -290,7 +291,7 @@ func `profile editor uses a preloaded editable baseline without another read`(sc
 @Test func `external profile changes refresh immediately while preserving the preview and unsaved edits`() async throws {
     let widget = ProfileWidget(serverID: "1", content: .application(id: "10"))
     let provider = ProfileEditorCacheProvider(widgets: [widget])
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let editor = ProfileEditorState(model: model)
     await editor.load()
@@ -339,7 +340,7 @@ func `profile editor uses a preloaded editable baseline without another read`(sc
 @MainActor
 @Test func `status drafts stay local survive gateway updates and reset with profile edits`() async throws {
     let provider = ProfileEditorCacheProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let editor = ProfileEditorState(model: model)
     await editor.load()
@@ -374,7 +375,7 @@ func `profile editor uses a preloaded editable baseline without another read`(sc
 @MainActor
 @Test func `profile save keeps failed status pending without repeating acknowledged profile writes`() async throws {
     let provider = ProfileEditorCacheProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let editor = ProfileEditorState(model: model)
     await editor.load()
@@ -402,7 +403,7 @@ func `profile editor uses a preloaded editable baseline without another read`(sc
 
 @MainActor
 @Test func `own status survives stale member refreshes and explicit clears replace cached values`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let user = try #require(model.snapshot?.currentUser)
     var member = Member(user: user, roleName: "You", status: .offline)
@@ -519,7 +520,7 @@ private actor ProfileEditorCacheProvider: ChatProviderStub {
 
 @MainActor
 @Test func `server nickname editing follows current permissions and rejects revoked drafts`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let editor = ProfileEditorState(model: model)
     await editor.load()
@@ -571,7 +572,7 @@ private actor ProfileEditorCacheProvider: ChatProviderStub {
     let guildID = GuildID(rawValue: 100)
     let target = try #require(try await provider.members(in: guildID).first { $0.id == UserID(rawValue: 5) })
     _ = try await provider.setMemberNickname("Existing nickname", for: target.id, in: guildID)
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     model.snapshot = try await provider.bootstrap()
     model.serverRailGuildsByID[guildID] = Guild(id: guildID, name: "Fixture", ownerID: UserID(rawValue: 9),
                                               currentUserPermissions: DiscordPermissionBits.manageNicknames)
@@ -617,7 +618,7 @@ private actor ProfileEditorCacheProvider: ChatProviderStub {
 @MainActor
 @Test func `edit group drafts the saved name and saves only changes through the provider`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let groupID = ChannelID(rawValue: 401)
     let store = model.groupDirectMessageEditor
@@ -664,7 +665,7 @@ private actor ProfileEditorCacheProvider: ChatProviderStub {
 @MainActor
 @Test func `leave group confirms, leaves once through the provider and moves selection off the group`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let groupID = ChannelID(rawValue: 401)
     let store = model.directMessageExit
@@ -702,7 +703,7 @@ private actor ProfileEditorCacheProvider: ChatProviderStub {
 @MainActor
 @Test func `a temporary account transition cannot leave group saving busy`() async throws {
     let provider = ProfileEditorCacheProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     await model.start()
     let store = model.groupDirectMessageEditor
     model.presentGroupDirectMessageEditor(for: ChannelID(rawValue: 401))

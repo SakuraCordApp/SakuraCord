@@ -102,7 +102,7 @@ extension AppModel {
         }
         let guildID = message.guildID ?? channel?.guildID
         let guild = guildID.flatMap { serverRailGuildsByID[$0] }
-        let accountID = readState.accountID ?? "offline"
+        guard let accountID = readState.accountID else { return }
         let account = accountSession()
         startAccountChildTask(account: account) { model, account in
             guard model.isCurrentAccountSession(account), !Task.isCancelled,
@@ -161,7 +161,7 @@ extension AppModel {
         guard !runsChatPerformanceBenchmark,
               notificationPreferences.clearsWhenRead
         else { return }
-        let accountID = readState.accountID ?? "offline"
+        guard let accountID = readState.accountID else { return }
         let account = accountSession()
         startAccountChildTask(account: account) { model, account in
             guard model.isCurrentAccountSession(account), !Task.isCancelled else { return }

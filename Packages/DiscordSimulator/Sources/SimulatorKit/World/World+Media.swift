@@ -1,0 +1,119 @@
+import Foundation
+import ImageIO
+import UniformTypeIdentifiers
+
+/// Uploads, stored attachments and link unfurling.
+public extension World {
+    /// Reserves a slot on the attachment host. Discord's names are `<uuid>/<filename>`.
+    /// The slot belongs to `owner` posting in `channel` (nil for a profile widget image);
+    /// nobody else can attach it.
+    func reserveUpload(filename: String, owner: Snowflake, channel: Snowflake?) -> String {
+        let uuid = String(format: "%08x-%04x-4%03x-a%03x-%012llx", UInt32(truncatingIfNeeded: random.next()),
+                          UInt16(truncatingIfNeeded: random.next()), UInt16(truncatingIfNeeded: random.next()) & 0xFFF,
+                          UInt16(truncatingIfNeeded: random.next()) & 0xFFF, random.next() & 0xFFFF_FFFF_FFFF)
+        let name = "\(uuid)/\(filename)"
+        pendingUploads[name] = PendingUpload(filename: filename, owner: owner, channel: channel)
+        return name
+    }
+
+    /// Where the client PUTs the file for a reserved slot.
+    nonisolated static func uploadURL(for name: String) -> String {
+        "https://discord-attachments-uploads-prd.storage.googleapis.com/discord-attachments-uploads-prd/\(name)?upload_id=\(name.split(separator: "/").first ?? "")"
+    }
+
+    /// The upload host received the bytes for a reserved slot.
+    func completeUpload(_ name: String, data: Data) -> Bool {
+        guard pendingUploads[name] != nil else { return false }
+        pendingUploads[name]?.data = data
+        return true
+    }
+
+    /// Not captured: Discord's answer for an unknown or someone else's name; it stays 204 here.
+    func discardUpload(_ name: String, owner: Snowflake) {
+        if pendingUploads[name]?.owner == owner { pendingUploads[name] = nil }
+    }
+
+    /// Consumes a completed slot reserved by `owner` for `channel` (nil for a profile widget image).
+    func takeUpload(_ name: String, owner: Snowflake, channel: Snowflake?) -> Data? {
+        guard let upload = pendingUploads[name], upload.owner == owner, upload.channel == channel, let data = upload.data else { return nil }
+        pendingUploads[name] = nil
+        return data
+    }
+
+    /// `POST /attachments/refresh-urls`, per URL: a stored attachment's link signed afresh on the
+    /// same host. Not captured: any other URL comes back without `refreshed` (inferred).
+    func refreshAttachmentURL(_ original: String) -> JSON {
+        var object = JSONObject([("original", .string(original))])
+        if let url = URL(string: original), let host = url.host(), ["cdn.discordapp.com", "media.discordapp.net"].contains(host),
+           media[url.path(percentEncoded: false)] != nil, url.pathComponents.count > 3, url.pathComponents[1] == "attachments",
+           let id = Snowflake(url.pathComponents[3]) {
+            object["refreshed"] = .string(attachmentURL(path: url.path(percentEncoded: false), id: id, host: host))
+        }
+        return .object(object)
+    }
+
+    /// Stores bytes as an attachment on the CDN and reads image dimensions like Discord does.
+    func storeAttachment(_ data: Data, filename: String, channelID: Snowflake, description: String?,
+                         durationSeconds: Double?, waveform: String?, flags: Int) -> Attachment {
+        let id = nextID()
+        let contentType = Self.contentType(forFilename: filename, data: data)
+        var attachment = Attachment(id: id, filename: filename, size: data.count, contentType: contentType,
+                                    cdnPath: "/attachments/\(channelID)/\(id)/\(filename)")
+        attachment.description = description
+        attachment.durationSeconds = durationSeconds
+        attachment.waveform = waveform
+        attachment.flags = flags
+        attachment.spoiler = filename.hasPrefix("SPOILER_")
+        if contentType.hasPrefix("image/"), let image = Self.imageSize(data) {
+            attachment.width = image.width
+            attachment.height = image.height
+            attachment.placeholder = ThumbHash.placeholder(for: data)
+        }
+        media[attachment.cdnPath] = (data, contentType)
+        return attachment
+    }
+
+    /// Pixel size of an image ImageIO can read.
+    internal nonisolated static func imageSize(_ data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        return (width, height)
+    }
+
+    /// More than one frame: an animated GIF, WebP or PNG.
+    internal nonisolated static func isAnimated(_ data: Data) -> Bool {
+        CGImageSourceCreateWithData(data as CFData, nil).map { CGImageSourceGetCount($0) > 1 } ?? false
+    }
+
+    internal nonisolated static func contentType(forFilename filename: String, data: Data) -> String {
+        let ext = (filename as NSString).pathExtension.lowercased()
+        switch ext {
+        case "ogg": return "audio/ogg"
+        case "txt": return "text/plain; charset=utf-8"
+        case "json": return "application/json; charset=utf-8"
+        default: return UTType(filenameExtension: ext)?.preferredMIMEType ?? "application/octet-stream"
+        }
+    }
+
+    /// The `message_snapshots` entry Discord stores for a forward.
+    func renderForwardSnapshot(_ original: Message) -> JSON {
+        guard case let .object(full) = renderMessage(original, viewer: nil, depth: 1) else { return .null }
+        var inner = JSONObject()
+        for key in ["type", "content", "mentions", "mention_roles", "attachments", "embeds", "timestamp",
+                    "edited_timestamp", "flags", "components"] {
+            if let value = full[key] { inner[key] = value }
+        }
+        return .object(JSONObject([("message", .object(inner))]))
+    }
+
+    /// Discord fetches linked pages and adds embeds in a follow-up MESSAGE_UPDATE.
+    /// The simulator knows pages it generated; other links get no embed.
+    func unfurlLinks(in message: Message) async {
+        guard message.embeds.isEmpty, let unfurler else { return }
+        let embeds = unfurler(message.content)
+        guard !embeds.isEmpty else { return }
+        try? await attachUnfurledEmbeds(message.id, in: message.channelID, embeds: embeds)
+    }
+}
