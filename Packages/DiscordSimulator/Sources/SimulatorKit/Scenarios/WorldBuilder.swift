@@ -49,4 +49,10 @@ public struct WorldBuilder {
     public static func everyoneRole(guildID: Snowflake) -> Role {
         Role(id: guildID, name: "@everyone", permissions: .everyoneDefault)
     }
+
+    /// The features a server's boost level unlocks.
+    static func boostFeatures(tier: Int) -> [String] {
+        (tier >= 1 ? ["ANIMATED_ICON", "INVITE_SPLASH"] : []) + (tier >= 2 ? ["BANNER", "ROLE_ICONS"] : [])
+            + (tier >= 3 ? ["VANITY_URL", "ANIMATED_BANNER"] : [])
+    }
 }

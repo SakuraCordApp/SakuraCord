@@ -303,3 +303,17 @@ private struct JSONParser {
         return .double(value)
     }
 }
+
+extension JSON {
+    func removing(_ key: String) -> JSON {
+        guard case var .object(object) = self else { return self }
+        object[key] = nil
+        return .object(object)
+    }
+
+    func merging(_ fields: [String: JSON]) -> JSON {
+        guard case var .object(object) = self else { return self }
+        for key in fields.keys.sorted() { object[key] = fields[key] }
+        return .object(object)
+    }
+}

@@ -38,6 +38,9 @@ public struct WorldError: Error, Sendable {
     public static let missingPermissions = WorldError(status: 403, code: 50013, message: "Missing Permissions")
     public static let missingAccess = WorldError(status: 403, code: 50001, message: "Missing Access")
     public static let unauthorized = WorldError(status: 401, code: 0, message: "401: Unauthorized")
+    /// Discord's bare 404 for a resource it does not name.
+    static let notFound = WorldError(status: 404, code: 0, message: "404: Not Found")
+    static let wrongChannelType = WorldError(status: 400, code: 50024, message: "Cannot execute action on this channel type")
     public static func invalidBody(_ reason: String) -> WorldError {
         WorldError(status: 400, code: 50035, message: "Invalid Form Body: \(reason)")
     }
@@ -149,7 +152,7 @@ public actor World {
         idIncrements[milliseconds] = increment + 1
         // Past 4,096 IDs in one millisecond, borrow the next millisecond like a busy worker would.
         guard increment < 4_096 else { return nextID(at: Date(timeIntervalSince1970: when.timeIntervalSince1970 + 0.001)) }
-        return Snowflake((milliseconds << 22) | (1 << 17) | increment)
+        return Snowflake(date: when, increment: increment)
     }
 
     /// A 32-hex-digit asset hash, deterministic for the seed.

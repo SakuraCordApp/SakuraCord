@@ -2,11 +2,6 @@ import Foundation
 
 // Applications to join servers that review new members, and the server guide
 // and onboarding a new member sees.
-extension WorldError {
-    /// Discord's bare 404 for a resource it does not name.
-    static let notFound = WorldError(status: 404, code: 0, message: "404: Not Found")
-}
-
 extension World {
     func joinRequest(_ guildID: Snowflake, userID: Snowflake) -> JoinRequest? {
         servers.joinRequests.values.filter { $0.guildID == guildID && $0.userID == userID }.max { $0.id < $1.id }

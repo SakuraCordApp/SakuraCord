@@ -40,8 +40,7 @@ extension World {
     // MARK: Emoji and stickers
 
     func guildEmojis(_ guildID: Snowflake, viewer: Snowflake) throws -> [JSON] {
-        let guild = try guild(guildID)
-        guard guild.members[viewer] != nil else { throw WorldError.missingAccess }
+        let guild = try memberGuild(guildID, of: viewer)
         let manages = guild.permissions(of: viewer, at: clock.now).contains(.manageGuildExpressions)
         // Expression managers also see who uploaded each emoji.
         return guild.emojis.map { emoji in

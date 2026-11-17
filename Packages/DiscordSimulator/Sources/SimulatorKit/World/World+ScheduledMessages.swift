@@ -78,7 +78,7 @@ extension World {
     private func scheduledMessage(_ id: Snowflake, of userID: Snowflake) throws -> ScheduledMessage {
         guard let scheduled = scheduledMessages[id], scheduled.userID == userID else {
             // Not captured: the error for someone else's or an unknown scheduled message.
-            throw WorldError(status: 404, code: 0, message: "404: Not Found")
+            throw WorldError.notFound
         }
         return scheduled
     }

@@ -11,15 +11,8 @@ extension ParityRun {
     mutating func executeVoice() async throws {
         // The flows check exact event order; generated worlds' live chatter would interleave.
         simulator.scripts.cancelAll()
-        let world = simulator.world
-        guard let me = await world.primaryUserID, let token = await world.tokens.first(where: { $0.value == me })?.key else {
-            throw WorldError.invalidBody("scenario has no primary account")
-        }
-        self.token = token
-        let probe = try GatewayProbe(url: URL(string: "ws://127.0.0.1:\(simulator.port(.gateway))/?v=9&encoding=etf&compress=zstd-stream")!)
-        gateway = probe
-        try await probe.identify(token: token)
-        _ = try await probe.waitFor("READY_SUPPLEMENTAL", timeout: .seconds(60))
+        let signedIn = try await connect(timeout: .seconds(60))
+        let (me, probe) = (signedIn.me, signedIn.probe)
         let target = try await voiceTargets(me: me)
         try await voice(target, me: me)
         try await activities(target)

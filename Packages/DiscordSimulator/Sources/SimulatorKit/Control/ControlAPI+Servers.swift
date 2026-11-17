@@ -15,7 +15,7 @@ extension ControlAPI {
                                                      approve: action == "scan" ? nil : action == "approve")
             return ok([:])
         case ("POST", "join-requests", _):
-            let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
+            let guildID = try await self.guild(body)
             let guild = try await world.guild(guildID)
             let action = body["action"]?.stringValue ?? "approve"
             guard action == "approve" || action == "reject" else { throw WorldError.invalidBody("action must be approve or reject") }

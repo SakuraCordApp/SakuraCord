@@ -4,10 +4,7 @@ extension ParityRun {
     /// A command that opens a modal and its submit, then a bot that never answers.
     mutating func modalsAndFailures(_ target: Targets) async throws {
         let world = simulator.world
-        let users = await world.users
-        guard let bot = try await world.guild(target.guild).members.keys.sorted().first(where: { users[$0]?.bot == true }) else {
-            throw WorldError.invalidBody("scenario has no bot in the target guild")
-        }
+        let bot = try await targetBot(target)
         func command(_ name: String) -> JSON {
             .object(JSONObject([
                 ("type", 2), ("application_id", .string(bot.description)), ("guild_id", .string(target.guild.description)),

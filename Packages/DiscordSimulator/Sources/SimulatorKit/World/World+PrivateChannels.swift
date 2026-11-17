@@ -88,7 +88,7 @@ extension World {
 
     private func groupDM(_ channelID: Snowflake, member userID: Snowflake) throws -> Channel {
         let channel = try channel(channelID)
-        guard channel.type == .groupDM else { throw WorldError(status: 400, code: 50024, message: "Cannot execute action on this channel type") }
+        guard channel.type == .groupDM else { throw WorldError.wrongChannelType }
         guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
         return channel
     }

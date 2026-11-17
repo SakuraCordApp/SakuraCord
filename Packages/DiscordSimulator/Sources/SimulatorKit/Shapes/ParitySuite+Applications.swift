@@ -4,10 +4,7 @@ extension ParityRun {
     /// Command catalogues, the command behind a bot reply, OAuth2 consent, and member requests by ID.
     mutating func applications(_ target: Targets) async throws {
         let world = simulator.world
-        let users = await world.users
-        guard let bot = try await world.guild(target.guild).members.keys.sorted().first(where: { users[$0]?.bot == true }) else {
-            throw WorldError.invalidBody("scenario has no bot in the target guild")
-        }
+        let bot = try await targetBot(target)
         _ = try await rest("GET", "/api/v9/channels/\(target.channel)/application-command-index")
         _ = try await rest("GET", "/api/v9/applications/\(bot)/application-command-index")
         if let reply = await world.channels[target.channel]?.messages.last(where: { $0.interaction?.type == 2 }) {

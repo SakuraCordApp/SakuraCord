@@ -396,10 +396,8 @@ public extension World {
         object["mention_everyone"] = .bool(message.mentionEveryone)
         object["tts"] = .bool(message.tts)
         object["channel_type"] = .int(channels[message.channelID]?.type.rawValue ?? 0)
-        if let channel = channels[message.channelID], channel.type.isThread, channel.messages.first?.id != message.id {
+        if let channel = channels[message.channelID], channel.type.isThread {
             object["position"] = .int(channel.messages.firstIndex { $0.id == message.id } ?? channel.messages.count)
-        } else if channels[message.channelID]?.type.isThread == true {
-            object["position"] = 0
         }
         if let webhookID = message.webhookID { object["webhook_id"] = webhookID.json }
         if let applicationID = message.applicationID { object["application_id"] = applicationID.json }
@@ -441,7 +439,6 @@ public extension World {
     internal func renderMessageEvent(_ message: Message) -> JSON {
         guard case var .object(object) = renderMessage(message, viewer: nil) else { return .null }
         if let channel = channels[message.channelID] {
-            object["channel_type"] = .int(channel.type.rawValue)
             if let guildID = channel.guildID {
                 object["guild_id"] = guildID.json
                 if let member = guilds[guildID]?.members[message.authorID] {

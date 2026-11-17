@@ -6,7 +6,7 @@ import Synchronization
 /// optional WebSocket upgrades. Requests on one connection are handled in order.
 public final class HTTPServer: Sendable {
     public typealias Handler = @Sendable (HTTPRequest) async -> HTTPResponse
-    public typealias WebSocketHandler = @Sendable (HTTPRequest, WebSocketConnection) async -> Void
+    public typealias WebSocketHandler = @Sendable (WebSocketConnection) async -> Void
 
     private struct State {
         var listener: NWListener?
@@ -134,7 +134,7 @@ public final class HTTPServer: Sendable {
                         + "Sec-WebSocket-Accept: \(accept)\r\n\r\n"
                     try await channel.send(Data(head.utf8))
                     let socket = WebSocketConnection(request: request, server: name, reader: reader, shaper: shaper)
-                    await webSocketHandler(request, socket)
+                    await webSocketHandler(socket)
                     await socket.finish()
                     return
                 }

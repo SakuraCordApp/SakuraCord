@@ -140,12 +140,9 @@ enum MessageRoutes {
         routes["GET /api/v9/channels/{id}/messages/pins"] = { context in
             let channel = try await context.world.channel(try context.id(0))
             let limit = Int(context.query("limit") ?? "50") ?? 50
-            let before = context.query("before")
             // Newest pin first; `before` is a pin time, as Discord paginates pins.
             var pinned = channel.messages.filter(\.pinned).sorted { ($0.pinnedAt ?? $0.timestamp) > ($1.pinnedAt ?? $1.timestamp) }
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let before, let date = formatter.date(from: before) ?? ISO8601DateFormatter().date(from: before) {
+            if let date = context.query("before").flatMap(World.parseTimestamp) {
                 pinned = pinned.filter { ($0.pinnedAt ?? $0.timestamp) < date }
             }
             var items: [JSON] = []

@@ -79,12 +79,10 @@ final class EmbeddedActivityHost: NSObject {
     /// A debug simulator launch serves the Activity over plain HTTP, which a page
     /// with an HTTPS base blocks as mixed content, so the base takes its scheme.
     private var hostPageBaseURL: URL {
-        #if DEBUG
-            if DiscordNetworkRedirect.isActive, var components = URLComponents(url: Self.hostURL, resolvingAgainstBaseURL: false) {
-                components.scheme = DiscordNetworkRedirect.resolve(application.activityURL).scheme
-                return components.url ?? Self.hostURL
-            }
-        #endif
+        if DiscordNetworkRedirect.isActive, var components = URLComponents(url: Self.hostURL, resolvingAgainstBaseURL: false) {
+            components.scheme = DiscordNetworkRedirect.resolve(application.activityURL).scheme
+            return components.url ?? Self.hostURL
+        }
         return Self.hostURL
     }
 

@@ -12,18 +12,20 @@ public enum ETFEncoder {
     /// keys styled like their captured siblings or, failing that, like the key
     /// that holds their object.
     public static func encode(_ value: JSON, shape: ShapeNode?) -> (bytes: Data, tags: [String: String]) {
-        var writer = ETFWriter(recordsTags: true)
-        writer.bytes.append(ETFTag.version)
-        writer.write(value, node: shape, path: "", inheritedKey: .atom)
+        let writer = write(value, shape: shape, recordsTags: true)
         return (Data(writer.bytes), writer.tags)
     }
 
     /// The same bytes without the per-path tags, for sending: a big account's READY has millions of paths.
     public static func bytes(_ value: JSON, shape: ShapeNode?) -> Data {
-        var writer = ETFWriter(recordsTags: false)
+        Data(write(value, shape: shape, recordsTags: false).bytes)
+    }
+
+    private static func write(_ value: JSON, shape: ShapeNode?, recordsTags: Bool) -> ETFWriter {
+        var writer = ETFWriter(recordsTags: recordsTags)
         writer.bytes.append(ETFTag.version)
         writer.write(value, node: shape, path: "", inheritedKey: .atom)
-        return Data(writer.bytes)
+        return writer
     }
 }
 

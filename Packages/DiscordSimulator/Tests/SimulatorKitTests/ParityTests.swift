@@ -40,9 +40,13 @@ struct ParityTests {
 
     @Test func brokenResponseShapeFails() async {
         let target = "REST GET /api/v9/channels/{id}/messages"
-        let report = await ParitySuite.run { subject, body in
+        let report = await ParitySuite.run(scenario: DemoScenario.name, seed: 7, mutate: { subject, body in
             subject == target ? ParitySuite.dropFirstField(body) : body
-        }
+        }, { run in
+            let me = try await run.connect().me
+            let channel = try await run.pickTargets(me: me).channel
+            _ = try await run.rest("GET", "/api/v9/channels/\(channel)/messages?limit=50")
+        })
         #expect(!report.passed)
         #expect(report.failures.contains { $0.subject == target && $0.violation.kind == .missingField })
     }

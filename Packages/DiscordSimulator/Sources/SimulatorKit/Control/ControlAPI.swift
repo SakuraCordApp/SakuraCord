@@ -210,6 +210,8 @@ public final class ControlAPI: Sendable {
         return match.id
     }
 
+    func guild(_ body: JSON) async throws -> Snowflake { try await resolveGuild(body["guild"]?.stringValue ?? "") }
+
     func resolveGuild(_ text: String) async throws -> Snowflake {
         if let id = Snowflake(text), await world.guilds[id] != nil { return id }
         if let match = await world.guilds.values.first(where: { $0.name.lowercased() == text.lowercased() }) { return match.id }

@@ -203,8 +203,7 @@ struct DemoConverter {
             guild.splash = builder.hash(seed: splash.seed)
             await world.setPalette(splash.palette, forHash: guild.splash!)
         }
-        guild.features = ["COMMUNITY", "NEWS", "THREADS_ENABLED"] + (demo.boostTier >= 1 ? ["ANIMATED_ICON", "INVITE_SPLASH"] : [])
-            + (demo.boostTier >= 2 ? ["BANNER", "ROLE_ICONS"] : []) + (demo.boostTier >= 3 ? ["VANITY_URL", "ANIMATED_BANNER"] : [])
+        guild.features = ["COMMUNITY", "NEWS", "THREADS_ENABLED"] + WorldBuilder.boostFeatures(tier: demo.boostTier)
         guild.roles = [WorldBuilder.everyoneRole(guildID: guildID)]
         await addRoles(demo, to: &guild, firstJoin: firstJoin)
         for member in demo.members {
@@ -681,20 +680,6 @@ struct DemoConverter {
             ("provider", .object(JSONObject([("name", .string(host))]))),
             ("content_scan_version", 3),
         ]))]
-    }
-}
-
-extension JSON {
-    func removing(_ key: String) -> JSON {
-        guard case var .object(object) = self else { return self }
-        object[key] = nil
-        return .object(object)
-    }
-
-    func merging(_ fields: [String: JSON]) -> JSON {
-        guard case var .object(object) = self else { return self }
-        for key in fields.keys.sorted() { object[key] = fields[key] }
-        return .object(object)
     }
 }
 

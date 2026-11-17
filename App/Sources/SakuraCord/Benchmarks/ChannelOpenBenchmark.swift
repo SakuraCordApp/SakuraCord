@@ -13,14 +13,12 @@ enum ChannelOpenBenchmark {
     private static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "ChannelOpenBenchmark")
 
     static func run(model: AppModel) async {
-        guard let welcome = SimulatorBenchmarkControl.channel(named: "welcome", in: model),
-              let channelID = SimulatorBenchmarkControl.channel(named: "general", in: model)?.id,
-              await SimulatorBenchmarkControl.open(welcome, in: model)
+        guard let channelID = SimulatorBenchmarkControl.channel(named: "general", in: model)?.id,
+              let start = await SimulatorBenchmarkControl.open(named: "welcome", in: model)?.id
         else {
             logger.error("Channel-open benchmark could not find #welcome and #general")
             return
         }
-        let start = welcome.id
         let clock = ContinuousClock()
         var opens: [Double] = []
         for _ in 0 ..< 11 {

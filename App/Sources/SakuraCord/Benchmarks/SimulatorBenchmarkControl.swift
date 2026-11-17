@@ -49,11 +49,12 @@ enum SimulatorBenchmarkControl {
         return model.snapshot?.channels.first { $0.name == name && $0.kind == kind }
     }
 
-    /// Opens `channel`, switching servers if needed, and waits until it is
-    /// the selected conversation.
-    static func open(_ channel: Channel, in model: AppModel) async -> Bool {
+    /// Opens the scenario's channel `name` of `kind`, switching servers if
+    /// needed, and returns it once it is the selected conversation.
+    static func open(named name: String, kind: ChannelKindValue = .text, in model: AppModel) async -> Channel? {
+        guard let channel = channel(named: name, kind: kind, in: model) else { return nil }
         model.navigate(to: channel.id)
-        return await PerformanceBenchmarkHarness.waitUntil({ model.selectedChannelID == channel.id }, seconds: 15)
+        return await PerformanceBenchmarkHarness.waitUntil({ model.selectedChannelID == channel.id }, seconds: 15) ? channel : nil
     }
 }
 #endif

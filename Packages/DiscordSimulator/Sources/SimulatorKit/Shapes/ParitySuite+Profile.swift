@@ -43,11 +43,10 @@ extension ParityRun {
         await flowEnd(nil)
 
         await flowStart()
-        let poll = try await rest("POST", "/api/v9/channels/\(target.channel)/messages", body: .object(JSONObject([
-            ("content", ""), ("nonce", .string(nonce())), ("tts", false), ("flags", 0),
+        let poll = try await postMessage(in: target.channel, "", [
             ("poll", .object(JSONObject([("question", ["text": "parity expire?"]), ("answers", [["poll_media": ["text": "a"]], ["poll_media": ["text": "b"]]]),
                                          ("allow_multiselect", false), ("duration", 24), ("layout_type", 1)]))),
-        ])))
+        ])
         if let id = poll["id"]?.stringValue { _ = try await rest("POST", "/api/v9/channels/\(target.channel)/polls/\(id)/expire") }
         await flowEnd(nil)
     }

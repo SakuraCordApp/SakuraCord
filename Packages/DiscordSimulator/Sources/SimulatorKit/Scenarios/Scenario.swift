@@ -22,15 +22,6 @@ public enum ScenarioRegistry {
     public static func scenario(named name: String) -> (any Scenario.Type)? {
         all.first { $0.name == name }
     }
-
-    /// Opens the existential so the static requirement is called on a concrete type.
-    public static func build(_ scenario: any Scenario.Type, into world: World, parameters: [String: String]) async throws {
-        try await build(concrete: scenario, into: world, parameters: parameters)
-    }
-
-    private static func build<S: Scenario>(concrete: S.Type, into world: World, parameters: [String: String]) async throws {
-        try await S.build(into: world, parameters: parameters)
-    }
 }
 
 /// The scenario's "now". Content is written for a Sunday at 21:30, so by

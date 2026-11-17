@@ -270,7 +270,7 @@ struct DiscordLoginView: View {
     }
 
     private func beginAccountImport() {
-        guard !isWorking, !isTransitioning, networkingEnabled, !DiscordNetworkRedirect.isActive else { return }
+        guard !isWorking, !isTransitioning, networkingEnabled else { return }
         remoteAuthTask?.cancel()
         transitionAuthentication {
             errorTitle = nil

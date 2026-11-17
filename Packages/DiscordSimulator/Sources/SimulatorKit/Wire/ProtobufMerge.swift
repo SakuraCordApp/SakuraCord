@@ -81,3 +81,23 @@ enum ProtobufMerge {
         return result
     }
 }
+
+/// The few protobuf wire pieces the settings proto needs.
+enum Protobuf {
+    static func field(_ number: UInt64, _ payload: Data) -> Data {
+        varintBytes(number << 3 | 2) + varintBytes(UInt64(payload.count)) + payload
+    }
+
+    static func varint(_ number: UInt64, _ value: UInt64) -> Data {
+        varintBytes(number << 3) + varintBytes(value)
+    }
+
+    private static func varintBytes(_ value: UInt64) -> Data {
+        var value = value, bytes = Data()
+        repeat {
+            bytes.append(UInt8(value & 0x7f) | (value > 0x7f ? 0x80 : 0))
+            value >>= 7
+        } while value > 0
+        return bytes
+    }
+}

@@ -17,7 +17,7 @@ extension VoiceGateway {
                 let speakers = await self.world.mediaParticipants(in: channelID).filter { $0.simulated && $0.chatters && !$0.selfMute }.map(\.userID)
                 guard !speakers.isEmpty else { return }
                 let choices = speakers.count > 1 ? speakers.filter { $0 != previous } : speakers
-                let speaker = choices[Int(random.next() % UInt64(choices.count))]
+                let speaker = random.pick(choices)
                 previous = speaker
                 try? await self.setSpeaking(speaker, true)
                 try? await Task.sleep(for: .milliseconds(1_500 + Int(random.next() % 4_500)))

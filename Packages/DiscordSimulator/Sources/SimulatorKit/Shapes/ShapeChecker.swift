@@ -20,10 +20,9 @@ public enum ShapeChecker {
     /// `elsewhere` holds, per field name, the kinds and ETF tags that field had anywhere in the
     /// captures. A kind the capture saw for the same field in another context (a user's
     /// `banner` in a profile, say) is reported as unverified rather than wrong.
-    public static func check(_ value: JSON, against node: ShapeNode, path: String = "",
-                             elsewhere: FieldIndex? = nil) -> [ShapeViolation] {
+    public static func check(_ value: JSON, against node: ShapeNode, elsewhere: FieldIndex? = nil) -> [ShapeViolation] {
         var violations: [ShapeViolation] = []
-        check(value, node, path, elsewhere, &violations)
+        check(value, node, "", elsewhere, &violations)
         return violations
     }
 
@@ -163,9 +162,9 @@ public extension ShapeNode {
 
     /// Reorders object keys to the captured order and drops keys the capture
     /// never had. Returns the dropped paths so callers can log them.
-    func conform(_ value: JSON, path: String = "") -> (JSON, dropped: [String]) {
+    func conform(_ value: JSON) -> (JSON, dropped: [String]) {
         var dropped: [String] = []
-        let result = conform(value, { path }, &dropped)
+        let result = conform(value, { "" }, &dropped)
         return (result, dropped)
     }
 

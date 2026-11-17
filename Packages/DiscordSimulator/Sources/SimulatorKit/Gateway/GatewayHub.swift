@@ -40,8 +40,6 @@ public actor GatewayHub: WorldEventSink {
     public let remoteAuth: RemoteAuthGateway
     private var sessions: [String: Session] = [:]
     private var random: SeededRandom
-    /// Every dispatch sent, in order, for the parity harness.
-    public private(set) var sentDispatches: [(userID: Snowflake, name: String)] = []
 
     public init(world: World, catalog: ShapeCatalog, log: SimulatorLog, seed: UInt64,
                 resumeURL: String = "wss://gateway-us-east1-c.discord.gg") {
@@ -71,12 +69,13 @@ public actor GatewayHub: WorldEventSink {
                 if let session, code == 1000 || code == 1001 { await end(session) }
                 break
             }
-            guard let payload = await decodeClientMessage(message, connection: connection, codec: codec) else { return }
+            guard let payload = await decodeClientMessage(message, connection: connection, codec: codec) else { break }
             let op = payload["op"]?.intValue ?? -1
             checkSent(op: op, payload: payload)
-            guard await route(op: op, data: payload["d"] ?? .null, session: &session, connection: connection, codec: codec) else { return }
+            guard await route(op: op, data: payload["d"] ?? .null, session: &session, connection: connection, codec: codec) else { break }
         }
-        // A dropped session waits for a Resume; one already resumed belongs to a newer connection.
+        // A dropped session, including one closed for a bad frame (4001, 4002, both resumable), waits for a
+        // Resume; one already resumed belongs to a newer connection.
         if let session, sessions[session.id] === session, session.connection === connection || session.connection == nil {
             drop(session)
         }
@@ -206,33 +205,11 @@ public actor GatewayHub: WorldEventSink {
         let limit = Int(data["limit"]?.intValue ?? 100)
         let requested = Set((data["user_ids"]?.arrayValue ?? []).compactMap { $0.stringValue.flatMap(Snowflake.init) })
         for guildID in guildIDs {
-            if let query { await world.materializeMembers(guildID, matching: query, limit: limit) }
-            guard let guild = await world.guilds[guildID] else { continue }
-            var members: [JSON] = []
-            for id in guild.memberOrder {
-                guard let member = guild.members[id], let user = await world.users[id] else { continue }
-                if !requested.isEmpty, !requested.contains(id) { continue }
-                if let query, !query.isEmpty,
-                   !(user.username.lowercased().hasPrefix(query) || (user.globalName ?? "").lowercased().hasPrefix(query)
-                       || (member.nick ?? "").lowercased().hasPrefix(query)) { continue }
-                members.append(await world.renderMember(member, guildID: guildID, includeUser: true))
-                if limit > 0, members.count >= limit { break }
-            }
-            var chunk = JSONObject([("guild_id", guildID.json), ("members", .array(members)),
-                                    ("chunk_index", 0), ("chunk_count", 1)])
-            if let nonce = data["nonce"]?.stringValue { chunk["nonce"] = .string(nonce) }
-            // Requests by ID list the IDs that aren't members.
-            if !requested.isEmpty {
-                chunk["not_found"] = .array(requested.subtracting(guild.members.keys).sorted().map(\.json))
-            }
-            if data["presences"]?.boolValue == true {
-                var presences: [JSON] = []
-                for member in members {
-                    if let id = member["user"]?["id"]?.stringValue.flatMap(Snowflake.init) { presences.append(await world.renderPresence(id, guildID: guildID)) }
-                }
-                chunk["presences"] = .array(presences)
-            }
-            await dispatch("GUILD_MEMBERS_CHUNK", .object(chunk), to: session)
+            guard let chunk = await world.renderMembersChunk(guildID: guildID, query: query, limit: limit, requested: requested,
+                                                             nonce: data["nonce"]?.stringValue,
+                                                             presences: data["presences"]?.boolValue == true)
+            else { continue }
+            await dispatch("GUILD_MEMBERS_CHUNK", chunk, to: session)
         }
     }
 
@@ -300,7 +277,6 @@ public actor GatewayHub: WorldEventSink {
         if !dropped.isEmpty { log.debug("gateway", "\(name): dropped uncaptured fields \(dropped.joined(separator: ", "))") }
         session.buffer.append(.init(sequence: session.sequence, frame: conformed, shape: shape))
         if session.buffer.count > 2_000 { session.buffer.removeFirst(session.buffer.count - 2_000) }
-        sentDispatches.append((session.userID, name))
         guard let connection = session.connection, let codec = session.codec else { return }
         send(conformed, shape: shape, over: connection, codec: codec)
     }

@@ -9,7 +9,7 @@ public struct RouteContext: Sendable {
 
     public func id(_ index: Int) throws -> Snowflake {
         guard index < parameters.count, let id = Snowflake(parameters[index]) else {
-            throw WorldError(status: 404, code: 0, message: "404: Not Found")
+            throw WorldError.notFound
         }
         return id
     }

@@ -106,7 +106,7 @@ struct NetTests {
     }
 
     @Test func webSocketRoundTripAndServerClose() async throws {
-        let server = try await Self.startServer { _, socket in
+        let server = try await Self.startServer { socket in
             for await message in socket.messages {
                 switch message {
                 case .text("bye"): await socket.close(code: 4004, reason: "Authentication failed.")
@@ -137,7 +137,7 @@ struct NetTests {
     }
 
     @Test func webSocketKeepsOrderUnderJitter() async throws {
-        let server = try await Self.startServer(profile: .mobile) { _, socket in
+        let server = try await Self.startServer(profile: .mobile) { socket in
             for index in 0 ..< 20 { socket.send(text: String(index)) }
             for await _ in socket.messages {}
         }

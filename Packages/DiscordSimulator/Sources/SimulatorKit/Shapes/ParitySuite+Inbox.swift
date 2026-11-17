@@ -52,7 +52,7 @@ extension ParityRun {
         _ = try await rest("POST", "\(path)/thread-members/@me?location=Banner")
         _ = try await rest("PATCH", path, body: ["name": "parity thread renamed", "type": 11, "locked": false, "invitable": true])
         _ = try await rest("PATCH", path, body: ["archived": true])
-        _ = try await rest("POST", "\(path)/messages", body: .object(JSONObject([("content", "parity reopen"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0)])))
+        _ = try await postMessage(in: thread, "parity reopen")
         if await simulator.world.channels[thread]?.thread?.archived != false { report.sequenceFailures.append("a reply did not reopen the archived thread") }
         _ = try await rest("DELETE", path)
         await flowEnd(nil)
@@ -63,10 +63,9 @@ extension ParityRun {
         let path = "/api/v9/channels/\(target.channel)/messages"
         let original = try await simulator.world.sendMessage(MessageDraft(content: "parity original"), as: target.otherUser, in: target.channel,
                                                              checkPermissions: false)
-        let reply = try await rest("POST", path, body: .object(JSONObject([
-            ("content", "parity reply"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0),
+        let reply = try await postMessage(in: target.channel, "parity reply", [
             ("message_reference", .object(JSONObject([("channel_id", .string(target.channel.description)), ("message_id", original.id.json)]))),
-        ])))
+        ])
         guard let replyID = reply["id"]?.stringValue else { return }
         for pings in [false, true] {
             let edited = try await rest("PATCH", "\(path)/\(replyID)", body: .object(JSONObject([

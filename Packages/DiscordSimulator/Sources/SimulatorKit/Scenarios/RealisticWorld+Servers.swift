@@ -52,8 +52,7 @@ extension RealisticWorld {
         }
         guild.boosts = boosts(profile, members: members, founded: founded, &rng)
         guild.features = (profile.community ? ["COMMUNITY", "NEWS", "THREADS_ENABLED"] : [])
-            + (profile.discoverable ? ["DISCOVERABLE"] : []) + (guild.premiumTier >= 1 ? ["ANIMATED_ICON", "INVITE_SPLASH"] : [])
-            + (guild.premiumTier >= 2 ? ["BANNER", "ROLE_ICONS"] : []) + (guild.premiumTier >= 3 ? ["VANITY_URL", "ANIMATED_BANNER"] : [])
+            + (profile.discoverable ? ["DISCOVERABLE"] : []) + WorldBuilder.boostFeatures(tier: guild.premiumTier)
         guild.emojis = await emojis(profile, kind: kind, owner: guild.ownerID, founded: founded, &rng)
         guild.stickers = await stickers(profile.stickers, kind: kind, founded: founded, &rng)
         await world.addGuild(guild)

@@ -83,7 +83,7 @@ public enum MediaGenerator {
                 } else if let art {
                     drawArt(canvas, art, seed: seed, phase: phase)
                 } else {
-                    drawAvatar(canvas, seed: seed, palette: nil, phase: phase)
+                    drawAvatar(canvas, seed: seed, phase: phase)
                 }
             }
             CGImageDestinationAddImage(destination, image, [
@@ -283,9 +283,9 @@ extension SeededRandom {
 
 // MARK: - Avatars, icons, banners
 
-private func drawAvatar(_ canvas: Canvas, seed: UInt64, palette index: Int?, phase: Double) {
+private func drawAvatar(_ canvas: Canvas, seed: UInt64, phase: Double) {
     var rng = SeededRandom(seed: seed)
-    let colors = palette(index, &rng)
+    let colors = palette(nil, &rng)
     canvas.linear([colors[0], colors[1]], angle: rng.range(0, 2 * .pi))
     for blob in 0 ..< 3 {
         let (px, py, radius) = (rng.range(0.1, 0.9), rng.range(0.1, 0.9), rng.range(0.35, 0.6))

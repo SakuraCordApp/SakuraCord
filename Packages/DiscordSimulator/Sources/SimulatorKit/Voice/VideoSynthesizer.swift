@@ -12,19 +12,14 @@ import VideoToolbox
 enum VideoSynthesizer {
     enum Kind: Sendable { case camera, screen }
 
-    struct Clip: Sendable {
-        /// Each frame's NAL units (no start codes); keyframes begin with SPS and PPS.
-        var frames: [[Data]]
-        var framesPerSecond: Int
-    }
-
     static let width = 640, height = 360, framesPerSecond = 15
-    private static let clips = Mutex<[String: Clip]>([:])
+    private static let clips = Mutex<[String: [[Data]]]>([:])
 
-    static func clip(seed: UInt64, kind: Kind) -> Clip {
+    /// Each frame's NAL units (no start codes); keyframes begin with SPS and PPS.
+    static func clip(seed: UInt64, kind: Kind) -> [[Data]] {
         let key = "\(seed)-\(kind)"
         if let cached = clips.withLock({ $0[key] }) { return cached }
-        let clip = Clip(frames: encode(seconds: 3, seed: seed, kind: kind), framesPerSecond: framesPerSecond)
+        let clip = encode(seconds: 3, seed: seed, kind: kind)
         clips.withLock { $0[key] = clip }
         return clip
     }

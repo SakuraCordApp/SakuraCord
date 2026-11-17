@@ -45,7 +45,7 @@ public final class DiscordSimulator: Sendable {
         let log = SimulatorLog(verbose: configuration.verbose)
         let world = World(seed: configuration.seed, epoch: configuration.epoch ?? ScenarioEpoch.recentSundayEvening(),
                           freezeClock: configuration.freezeClock)
-        try await ScenarioRegistry.build(scenario, into: world, parameters: configuration.parameters)
+        try await scenario.build(into: world, parameters: configuration.parameters)
         let faults = FaultInjector(enforcesRateLimits: configuration.enforcesRateLimits)
         let hub = GatewayHub(world: world, catalog: resolvedCatalog, log: log, seed: configuration.seed)
         await world.attach(hub)
@@ -117,11 +117,11 @@ public final class DiscordSimulator: Sendable {
         let instant = NetworkConditioner(seed: configuration.seed, profile: .instant)
         let definitions: [ServerDefinition] = [
             ServerDefinition(.api) { await router.handle($0) },
-            ServerDefinition(.gateway, webSocket: { _, connection in await hub.handle(connection) }, handler: { [log] request in
+            ServerDefinition(.gateway, webSocket: { await hub.handle($0) }, handler: { [log] request in
                 log.error("gateway", "plain HTTP request to the Gateway host: \(request.method) \(request.target)")
                 return .discordError(400, "Bad Request")
             }),
-            ServerDefinition(.voice, webSocket: { _, connection in await voice.handle(connection) }, handler: { [log] request in
+            ServerDefinition(.voice, webSocket: { await voice.handle($0) }, handler: { [log] request in
                 log.error("voice", "plain HTTP request to the voice server: \(request.method) \(request.target)")
                 return .discordError(400, "Bad Request")
             }),

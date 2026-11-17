@@ -30,7 +30,9 @@ struct LaunchBenchmarks {
             await model.prepareAuthenticatedMemberListScrollPerformanceBenchmark()
         }
         if launch.runsForumPerformanceAutoScroll {
-            await openForum(model: model)
+            if await SimulatorBenchmarkControl.open(named: "feedback", kind: .forum, in: model) == nil {
+                Self.logger.error("Forum benchmark could not open #feedback")
+            }
             await ForumBoardBenchmark.run(model: model, resizesGallery: launch.runsForumGalleryResize)
         }
         if launch.runsFriendsPerformanceBenchmark {
@@ -79,15 +81,6 @@ struct LaunchBenchmarks {
         if launch.runsLoadingScrollOverlapBenchmark {
             await model.runAuthenticatedLoadingScrollOverlapPerformanceBenchmark()
         }
-    }
-
-    /// The forum-performance scenario's `#feedback` forum.
-    private func openForum(model: AppModel) async {
-        guard let forum = SimulatorBenchmarkControl.channel(named: "feedback", kind: .forum, in: model) else {
-            Self.logger.error("Forum benchmark could not find #feedback")
-            return
-        }
-        _ = await SimulatorBenchmarkControl.open(forum, in: model)
     }
 
     /// Streams reactions, arrivals, edits and deletions into the scrolling

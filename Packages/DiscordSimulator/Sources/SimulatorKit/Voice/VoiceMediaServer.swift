@@ -251,18 +251,18 @@ public actor VoiceMediaServer {
         for (ssrc, userID) in senders where videos[ssrc] == nil {
             videos[ssrc] = (room, Task.detached { [weak self] in
                 let clip = VideoSynthesizer.clip(seed: userID.rawValue, kind: kind)
-                guard !clip.frames.isEmpty else { return }
+                guard !clip.isEmpty else { return }
                 var sequence = UInt16(truncatingIfNeeded: ssrc)
                 var timestamp = UInt32(truncatingIfNeeded: userID.rawValue >> 8)
                 var deadline = ContinuousClock.now
                 var index = 0
                 while !Task.isCancelled {
-                    let sent = await self?.sendVideo(clip.frames[index % clip.frames.count], sequence: sequence, timestamp: timestamp, ssrc: ssrc,
+                    let sent = await self?.sendVideo(clip[index % clip.count], sequence: sequence, timestamp: timestamp, ssrc: ssrc,
                                                      in: room, from: userID)
                     sequence &+= sent ?? 0
-                    timestamp &+= UInt32(90_000 / clip.framesPerSecond)
+                    timestamp &+= UInt32(90_000 / VideoSynthesizer.framesPerSecond)
                     index += 1
-                    deadline += .milliseconds(1_000 / clip.framesPerSecond)
+                    deadline += .milliseconds(1_000 / VideoSynthesizer.framesPerSecond)
                     try? await Task.sleep(until: deadline)
                 }
             })

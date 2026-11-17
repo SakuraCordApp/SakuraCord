@@ -98,8 +98,7 @@ extension World {
             member.banner = try banner.stringValue.map { try storeUploadedImage($0, path: { "/guilds/\(guildID)/users/\(userID)/banners/\($0)" }) }
         }
         guilds[guildID]?.members[userID] = member
-        let rendered = renderMember(member, guildID: guildID, includeUser: true)
-        await emit("GUILD_MEMBER_UPDATE", rendered.merging(["guild_id": guildID.json]), to: .guild(guildID, channel: nil))
+        await emitMemberUpdate(member, in: guildID)
         return .object(JSONObject([("guild_id", guildID.json), ("pronouns", .string(member.pronouns)), ("bio", .optional(member.bio)),
                                    ("accent_color", .optional(member.accentColor)), ("profile_effect", .null), ("collectibles", [])]))
     }

@@ -17,9 +17,7 @@ extension ParityRun {
         }
         await flowEnd(nil)
 
-        let users = await world.users
-        let guild = try await world.guild(target.guild)
-        guard let bot = guild.members.keys.sorted().first(where: { users[$0]?.bot == true }) else { return }
+        let bot = try await targetBot(target)
         // Removing the bot, then adding it back through its OAuth2 link.
         await flowStart()
         _ = try await rest("DELETE", "/api/v9/guilds/\(target.guild)/members/\(bot)?reason=")
@@ -86,13 +84,9 @@ extension ParityRun {
             ("onboarding_responses_seen", .object(JSONObject())),
         ])))
         _ = try await rest("GET", "/api/v9/guilds/\(garden.id)/onboarding")
-        _ = try await rest("POST", "/api/v9/channels/\(gardenChat.id)/messages", body: .object(JSONObject([
-            ("content", "is roundup ok on the paths?"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0),
-        ])))
+        _ = try await postMessage(in: gardenChat.id, "is roundup ok on the paths?")
         // An alert-only rule lets the message through and posts an AutoMod alert for the coordinators.
-        _ = try await rest("POST", "/api/v9/channels/\(gardenChat.id)/messages", body: .object(JSONObject([
-            ("content", "anyone want my plot for sale cheap?"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0),
-        ])))
+        _ = try await postMessage(in: gardenChat.id, "anyone want my plot for sale cheap?")
         await flowEnd(nil)
     }
 }

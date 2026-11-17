@@ -13,15 +13,9 @@ public extension ParitySuite {
 extension ParityRun {
     mutating func executeWorld() async throws {
         let world = simulator.world
-        guard let me = await world.primaryUserID, let token = await world.tokens.first(where: { $0.value == me })?.key else {
-            throw WorldError.invalidBody("scenario has no primary account")
-        }
-        self.token = token
-        let probe = try GatewayProbe(url: URL(string: "ws://127.0.0.1:\(simulator.port(.gateway))/?v=9&encoding=etf&compress=zstd-stream")!)
-        gateway = probe
-        try await probe.identify(token: token)
         // A big account's READY is megabytes, as on Discord; debug builds take seconds to send it.
-        let startup = try await probe.waitFor("READY_SUPPLEMENTAL", timeout: .seconds(60))
+        let signedIn = try await connect(timeout: .seconds(60))
+        let (me, probe, startup) = (signedIn.me, signedIn.probe, signedIn.startup)
         checkSequence("startup", observed: startup.map(\.name))
         for frame in startup where frame.op == 0 { checkFrame(frame) }
         _ = try await simulator.scripts.start(LiveActivity.name, params: .object(JSONObject()))
@@ -109,12 +103,7 @@ extension ParityRun {
 
     /// Subscribes to a channel's member list (op 37) and returns the GUILD_MEMBER_LIST_UPDATE it gets.
     private mutating func memberList(_ probe: GatewayProbe, guild: Snowflake, channel: Snowflake, ranges: JSON = [[0, 99]]) async throws -> JSON {
-        try await probe.send(.object(JSONObject([("op", 37), ("d", .object(JSONObject([("subscriptions", .object(JSONObject([
-            (guild.description, .object(JSONObject([
-                ("typing", true), ("threads", true), ("activities", true), ("member_updates", true),
-                ("channels", .object(JSONObject([(channel.description, ranges)]))),
-            ]))),
-        ])))])))])))
+        try await probe.send(Self.subscribe(guild: guild, channel: channel, ranges: ranges))
         var update = JSON.null
         for frame in try await probe.waitFor("GUILD_MEMBER_LIST_UPDATE") where frame.op == 0 {
             checkFrame(frame)

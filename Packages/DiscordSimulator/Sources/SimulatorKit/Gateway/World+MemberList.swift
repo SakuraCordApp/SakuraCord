@@ -36,17 +36,21 @@ extension World {
             if !offline.isEmpty { groups.append(Group(id: "offline", members: offline, count: offline.count)) }
         }
 
-        var items: [JSON] = []
-        for group in groups {
-            items.append(.object(JSONObject([("group", .object(JSONObject([("id", .string(group.id)), ("count", .int(group.count))])))])))
-            for member in group.members {
-                guard case var .object(rendered) = renderMember(member, guildID: guildID, includeUser: true) else { continue }
+        enum Row { case group(Group), member(Member) }
+        let rows = groups.flatMap { [Row.group($0)] + $0.members.map(Row.member) }
+        // Only the rows a range asks for are rendered.
+        func render(_ row: Row) -> JSON {
+            switch row {
+            case let .group(group):
+                return .object(JSONObject([("group", .object(JSONObject([("id", .string(group.id)), ("count", .int(group.count))])))]))
+            case let .member(member):
+                var rendered = renderMember(member, guildID: guildID, includeUser: true).objectValue ?? JSONObject()
                 rendered["presence"] = renderPresence(member.userID, guildID: nil).removing("broadcast")
-                items.append(.object(JSONObject([("member", .object(rendered))])))
+                return .object(JSONObject([("member", .object(rendered))]))
             }
         }
         let ops: [JSON] = ranges.map { range in
-            let slice = items.indices.contains(range.lowerBound) ? Array(items[range.lowerBound ... min(range.upperBound, items.count - 1)]) : []
+            let slice = rows.indices.contains(range.lowerBound) ? rows[range.lowerBound ... min(range.upperBound, rows.count - 1)].map(render) : []
             return .object(JSONObject([("op", "SYNC"), ("range", .array([.int(range.lowerBound), .int(range.upperBound)])), ("items", .array(slice))]))
         }
         return .object(JSONObject([
@@ -57,6 +61,34 @@ extension World {
             ("id", .string(listID)), ("guild_id", guildID.json),
             ("groups", .array(groups.map { group in .object(JSONObject([("id", .string(group.id)), ("count", .int(group.count))])) })),
         ]))
+    }
+
+    /// Op 8's GUILD_MEMBERS_CHUNK for one server; nil when the server is unknown.
+    func renderMembersChunk(guildID: Snowflake, query: String?, limit: Int, requested: Set<Snowflake>,
+                            nonce: String?, presences: Bool) -> JSON? {
+        if let query { materializeMembers(guildID, matching: query, limit: limit) }
+        guard let guild = guilds[guildID] else { return nil }
+        var members: [JSON] = []
+        var memberIDs: [Snowflake] = []
+        for id in guild.memberOrder {
+            guard let member = guild.members[id], let user = users[id] else { continue }
+            if !requested.isEmpty, !requested.contains(id) { continue }
+            if let query, !query.isEmpty,
+               !(user.username.lowercased().hasPrefix(query) || (user.globalName ?? "").lowercased().hasPrefix(query)
+                   || (member.nick ?? "").lowercased().hasPrefix(query)) { continue }
+            members.append(renderMember(member, guildID: guildID, includeUser: true))
+            memberIDs.append(id)
+            if limit > 0, members.count >= limit { break }
+        }
+        var chunk = JSONObject([("guild_id", guildID.json), ("members", .array(members)),
+                                ("chunk_index", 0), ("chunk_count", 1)])
+        if let nonce { chunk["nonce"] = .string(nonce) }
+        // Requests by ID list the IDs that aren't members.
+        if !requested.isEmpty {
+            chunk["not_found"] = .array(requested.subtracting(guild.members.keys).sorted().map(\.json))
+        }
+        if presences { chunk["presences"] = .array(memberIDs.map { renderPresence($0, guildID: guildID) }) }
+        return .object(chunk)
     }
 
     /// The list ID the official client derives for a channel (web client bundle): `everyone` when

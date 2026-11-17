@@ -34,6 +34,4 @@ extension ControlAPI {
         guard let name = body["name"]?.stringValue, !name.isEmpty else { throw WorldError.invalidBody("name is required") }
         return name
     }
-
-    private func guild(_ body: JSON) async throws -> Snowflake { try await resolveGuild(body["guild"]?.stringValue ?? "") }
 }

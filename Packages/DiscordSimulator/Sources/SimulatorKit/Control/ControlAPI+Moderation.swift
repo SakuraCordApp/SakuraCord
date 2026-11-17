@@ -7,7 +7,7 @@ extension ControlAPI {
         switch (request.method, route.first ?? "", route.count) {
         case ("POST", "members", _):
             // Someone joins a server; a bot is installed by the owner, as through its OAuth2 link.
-            let (guildID, userID) = (try await resolveGuild(body["guild"]?.stringValue ?? ""), try await resolveUser(body["user"]))
+            let (guildID, userID) = (try await guild(body), try await resolveUser(body["user"]))
             if let bot = await world.users[userID], bot.bot {
                 try await world.installBot(bot, in: guildID, by: try await world.guild(guildID).ownerID, scopes: ["bot", "applications.commands"])
             } else {
@@ -30,7 +30,7 @@ extension ControlAPI {
         case ("POST", "roles", 1), ("PATCH", "roles", 2), ("DELETE", "roles", 2):
             return try await saveRole(request.method, route, body)
         case ("POST", "events", _):
-            let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
+            let guildID = try await guild(body)
             let start = world.clock.now.addingTimeInterval((body["starts_in_minutes"]?.doubleValue ?? 60) * 60)
             var fields = JSONObject([("name", body["name"] ?? "Hangout"), ("description", body["description"] ?? ""),
                                      ("scheduled_start_time", World.timestamp(start))])
@@ -51,7 +51,7 @@ extension ControlAPI {
 
     /// Creates (`POST roles`), edits (`PATCH roles/{id}`) or deletes (`DELETE roles/{id}`) a role.
     private func saveRole(_ method: String, _ route: [String], _ body: JSON) async throws -> HTTPResponse {
-        let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
+        let guildID = try await guild(body)
         if method == "DELETE" {
             try await world.saveRole(nil, deleting: Snowflake(route[1]), in: guildID)
             return ok([:])
@@ -73,7 +73,7 @@ extension ControlAPI {
     /// A keyword rule: it blocks matching messages unless `block` is false, posts alerts to `alert_channel`,
     /// and times the sender out for `timeout_seconds`.
     private func createAutoModRule(_ body: JSON) async throws -> HTTPResponse {
-        let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
+        let guildID = try await guild(body)
         let owner = try await world.guild(guildID).ownerID
         let creator = try await body["creator"].asyncMap { try await resolveUser($0) } ?? owner
         var rule = AutoModRule(id: await world.nextID(), guildID: guildID, creatorID: creator, name: body["name"]?.stringValue ?? "Block Custom Words",
@@ -89,7 +89,7 @@ extension ControlAPI {
 
     /// `action`: kick, timeout (`minutes`, default 10) or untimeout, by `moderator` (default: the owner).
     private func moderate(_ body: JSON) async throws -> HTTPResponse {
-        let guildID = try await resolveGuild(body["guild"]?.stringValue ?? "")
+        let guildID = try await guild(body)
         let target = try await resolveUser(body["user"])
         let owner = try await world.guild(guildID).ownerID
         let moderator = try await body["moderator"].asyncMap { try await resolveUser($0) } ?? owner

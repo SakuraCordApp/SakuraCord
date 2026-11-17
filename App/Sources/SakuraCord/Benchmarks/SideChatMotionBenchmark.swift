@@ -63,9 +63,7 @@ enum SideChatMotionBenchmark {
             await showFollowShowcase(model: model)
             return
         }
-        guard let general = SimulatorBenchmarkControl.channel(named: "general", in: model),
-              await SimulatorBenchmarkControl.open(general, in: model)
-        else {
+        guard let general = await SimulatorBenchmarkControl.open(named: "general", in: model) else {
             logger.error("Side chat motion benchmark could not find #general")
             return
         }
@@ -316,9 +314,7 @@ enum SideChatMotionBenchmark {
 
     /// The scenario forum's posts, once the forum is selected and loaded.
     private static func forumPosts(model: AppModel) async -> [ForumPost]? {
-        guard let forum = SimulatorBenchmarkControl.channel(named: "feedback", kind: .forum, in: model),
-              await SimulatorBenchmarkControl.open(forum, in: model)
-        else { return nil }
+        guard await SimulatorBenchmarkControl.open(named: "feedback", kind: .forum, in: model) != nil else { return nil }
         guard await PerformanceBenchmarkHarness.waitUntil({ !model.forumPosts.isEmpty }, seconds: 10) else { return nil }
         try? await Task.sleep(for: .seconds(1))
         return model.forumPosts

@@ -51,7 +51,6 @@ extension DiscordFingerprintStoring {
 actor UserDefaultsDiscordFingerprintStore: DiscordFingerprintStoring {
     nonisolated static let shared = UserDefaultsDiscordFingerprintStore()
     private nonisolated static let key = "dev.sakuracord.discord-fingerprint"
-    private nonisolated static let installationKey = "dev.sakuracord.discord-installation-id"
 
     func load() -> String? {
         DiscordNetworkRedirect.sessionDefaults.string(forKey: Self.key)
@@ -62,11 +61,11 @@ actor UserDefaultsDiscordFingerprintStore: DiscordFingerprintStoring {
     }
 
     func loadInstallationID() async -> String? {
-        DiscordNetworkRedirect.sessionDefaults.string(forKey: Self.installationKey)
+        DiscordClientMetadata.persistedInstallationID()
     }
 
     func saveInstallationID(_ installationID: String) async {
-        DiscordNetworkRedirect.sessionDefaults.set(installationID, forKey: Self.installationKey)
+        DiscordClientMetadata.persistInstallationID(installationID)
     }
 }
 

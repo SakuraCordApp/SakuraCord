@@ -4,7 +4,7 @@ import Foundation
 extension World {
     func joinThread(_ threadID: Snowflake, by userID: Snowflake) async throws {
         let thread = try channel(threadID)
-        guard thread.type.isThread else { throw WorldError(status: 400, code: 50024, message: "Cannot execute action on this channel type") }
+        guard thread.type.isThread else { throw WorldError.wrongChannelType }
         guard canView(userID, thread) else { throw WorldError.missingAccess }
         if thread.thread?.locked == true, !permissions(of: userID, in: thread).contains(.manageThreads) { throw WorldError.missingPermissions }
         guard !thread.threadMembers.contains(userID) else { return }
@@ -17,7 +17,7 @@ extension World {
 
     func leaveThread(_ threadID: Snowflake, by userID: Snowflake) async throws {
         let thread = try channel(threadID)
-        guard thread.type.isThread else { throw WorldError(status: 400, code: 50024, message: "Cannot execute action on this channel type") }
+        guard thread.type.isThread else { throw WorldError.wrongChannelType }
         guard thread.threadMembers.contains(userID) else { return }
         channels[threadID]?.threadMembers.removeAll { $0 == userID }
         channels[threadID]?.mutedThreadMembers.remove(userID)
@@ -36,7 +36,7 @@ extension World {
     func editThread(_ threadID: Snowflake, by userID: Snowflake, patch: JSON) async throws -> Channel {
         var thread = try channel(threadID)
         guard thread.type.isThread, var metadata = thread.thread else {
-            throw WorldError(status: 400, code: 50024, message: "Cannot execute action on this channel type")
+            throw WorldError.wrongChannelType
         }
         guard canView(userID, thread) else { throw WorldError.missingAccess }
         let manages = permissions(of: userID, in: thread).contains(.manageThreads)

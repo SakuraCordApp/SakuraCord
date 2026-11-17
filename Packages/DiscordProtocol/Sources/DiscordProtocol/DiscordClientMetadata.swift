@@ -115,11 +115,11 @@ public final class DiscordClientMetadata: @unchecked Sendable {
 
     nonisolated static let installationDefaultsKey = "dev.sakuracord.discord-installation-id"
 
-    static func persistedInstallationID() -> String? {
+    public static func persistedInstallationID() -> String? {
         DiscordNetworkRedirect.sessionDefaults.string(forKey: installationDefaultsKey)
     }
 
-    static func persistInstallationID(_ installationID: String) {
+    public static func persistInstallationID(_ installationID: String) {
         DiscordNetworkRedirect.sessionDefaults.set(installationID, forKey: installationDefaultsKey)
     }
 

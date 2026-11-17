@@ -449,9 +449,7 @@ public extension World {
         await emit("USER_UPDATE", renderSelf(userID), to: .users([userID]))
         // Everyone sharing a server sees the public profile change through member updates.
         for guild in guilds(of: userID) {
-            guard let member = guild.members[userID], case var .object(payload) = renderMember(member, guildID: guild.id, includeUser: true) else { continue }
-            payload["guild_id"] = guild.id.json
-            await emit("GUILD_MEMBER_UPDATE", .object(payload), to: .guild(guild.id, channel: nil))
+            if let member = guild.members[userID] { await emitMemberUpdate(member, in: guild.id) }
         }
     }
 
@@ -471,10 +469,7 @@ public extension World {
         guilds[guildID] = guild
         await emit("GUILD_UPDATE", renderGuildUpdate(guild), to: .guild(guildID, channel: nil))
         for booster in boosters.filter({ !previous.contains($0) }) {
-            if let member = guild.members[booster], case var .object(payload) = renderMember(member, guildID: guildID, includeUser: true) {
-                payload["guild_id"] = guildID.json
-                await emit("GUILD_MEMBER_UPDATE", .object(payload), to: .guild(guildID, channel: nil))
-            }
+            if let member = guild.members[booster] { await emitMemberUpdate(member, in: guildID) }
             if let systemChannel = guild.systemChannelID {
                 var notice = MessageDraft()
                 notice.type = 8

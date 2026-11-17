@@ -102,7 +102,15 @@ struct ParityRun {
         elsewhere = FieldIndex(simulator.catalog)
     }
 
-    mutating func execute() async throws {
+    struct SignedIn {
+        let me: Snowflake
+        let probe: GatewayProbe
+        /// The frames up to READY_SUPPLEMENTAL.
+        let startup: [GatewayProbe.Frame]
+    }
+
+    /// Signs the primary account in on a new Gateway connection.
+    mutating func connect(timeout: Duration = .seconds(10)) async throws -> SignedIn {
         let world = simulator.world
         guard let me = await world.primaryUserID, let token = await world.tokens.first(where: { $0.value == me })?.key else {
             throw WorldError.invalidBody("scenario has no primary account")
@@ -111,7 +119,13 @@ struct ParityRun {
         let probe = try GatewayProbe(url: URL(string: "ws://127.0.0.1:\(simulator.port(.gateway))/?v=9&encoding=etf&compress=zstd-stream")!)
         gateway = probe
         try await probe.identify(token: token)
-        let startup = try await probe.waitFor("READY_SUPPLEMENTAL")
+        return SignedIn(me: me, probe: probe, startup: try await probe.waitFor("READY_SUPPLEMENTAL", timeout: timeout))
+    }
+
+    mutating func execute() async throws {
+        let world = simulator.world
+        let signedIn = try await connect()
+        let (me, probe, startup) = (signedIn.me, signedIn.probe, signedIn.startup)
         checkSequence("startup", observed: startup.map(\.name))
         for frame in startup where frame.op == 0 { checkFrame(frame) }
 
@@ -131,28 +145,22 @@ struct ParityRun {
         }
 
         // Opening a guild subscribes to its channel, member list and threads (op 37).
-        try await probe.send(.object(JSONObject([("op", 37), ("d", .object(JSONObject([("subscriptions", .object(JSONObject([
-            (target.guild.description, .object(JSONObject([
-                ("typing", true), ("threads", true), ("activities", true), ("member_updates", true),
-                ("channels", .object(JSONObject([(target.channel.description, [[0, 99]])]))),
-            ]))),
-        ])))])))])))
+        try await probe.send(Self.subscribe(guild: target.guild, channel: target.channel))
         for frame in try await probe.waitFor("THREAD_LIST_SYNC") where frame.op == 0 { checkFrame(frame) }
 
         // send-message / reply / edit / react / unreact / pin / delete, as captured.
         await flowStart()
-        let sent = try await rest("POST", messagesPath, body: .object(JSONObject([("content", "parity check message"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0)])))
+        let sent = try await postMessage(in: target.channel, "parity check message")
         await flowEnd("send-message")
         guard let sentID = sent["id"]?.stringValue else { throw WorldError.invalidBody("send returned no id") }
 
         await flowStart()
-        _ = try await rest("POST", messagesPath, body: .object(JSONObject([
-            ("content", "parity reply"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0),
+        _ = try await postMessage(in: target.channel, "parity reply", [
             ("message_reference", .object(JSONObject([
                 ("guild_id", .string(target.guild.description)), ("channel_id", .string(target.channel.description)),
                 ("message_id", .string(sentID)), ("type", 0),
             ]))),
-        ])))
+        ])
         await flowEnd("reply")
 
         await flowStart()
@@ -221,22 +229,18 @@ struct ParityRun {
     /// A message with two reactions, a sticker, a forward and a voted poll, then history: the variants history must keep.
     mutating func historyVariants(_ target: Targets, messagesPath: String) async throws {
         await flowStart()
-        func post(_ fields: [(String, JSON)]) async throws -> JSON {
-            try await rest("POST", messagesPath, body: .object(JSONObject(
-                [("content", ""), ("nonce", .string(nonce())), ("tts", false), ("flags", 0)] + fields)))
-        }
-        let base = try await post([("content", "parity variants")])
+        let base = try await postMessage(in: target.channel, "parity variants")
         guard let baseID = base["id"]?.stringValue else { throw WorldError.invalidBody("send returned no id") }
         for emoji in ["%F0%9F%91%8D", "%F0%9F%8E%89"] {
             _ = try await rest("PUT", "\(messagesPath)/\(baseID)/reactions/\(emoji)/%40me?location=Message&type=0")
         }
         guard let sticker = await simulator.world.standardStickers.first?.id else { throw WorldError.invalidBody("scenario has no standard sticker") }
-        _ = try await post([("sticker_ids", [.string(sticker.description)])])
-        _ = try await post([("message_reference", .object(JSONObject([
+        _ = try await postMessage(in: target.channel, "", [("sticker_ids", [.string(sticker.description)])])
+        _ = try await postMessage(in: target.channel, "", [("message_reference", .object(JSONObject([
             ("channel_id", .string(target.channel.description)), ("guild_id", .string(target.guild.description)),
             ("message_id", .string(baseID)), ("type", 1),
         ])))])
-        let poll = try await post([("poll", .object(JSONObject([
+        let poll = try await postMessage(in: target.channel, "", [("poll", .object(JSONObject([
             ("question", ["text": "parity poll?"]), ("answers", [["poll_media": ["text": "yes"]], ["poll_media": ["text": "no"]]]),
             ("allow_multiselect", false), ("duration", 24), ("layout_type", 1),
         ])))])
@@ -252,11 +256,7 @@ struct ParityRun {
 
     /// A slash command: INTERACTION_CREATE, the bot's reply and INTERACTION_SUCCESS, checked by shape.
     mutating func slashCommand(_ target: Targets) async throws {
-        let world = simulator.world
-        let users = await world.users
-        guard let guild = try? await world.guild(target.guild),
-              let bot = guild.members.keys.sorted().first(where: { users[$0]?.bot == true })
-        else { throw WorldError.invalidBody("scenario has no bot in the target guild") }
+        let bot = try await targetBot(target)
         await flowStart()
         _ = try await rest("POST", "/api/v9/interactions", body: .object(JSONObject([
             ("type", 2), ("application_id", .string(bot.description)),
@@ -270,9 +270,34 @@ struct ParityRun {
     /// The official client's nonces are snowflakes for "now".
     func nonce() -> String { Snowflake(date: Date(), increment: UInt64.random(in: 0 ..< 4096)).description }
 
+    /// Sends a message the way the official client does; `extra` fields follow the client's defaults.
+    mutating func postMessage(in channel: Snowflake, _ content: String, _ extra: [(String, JSON)] = []) async throws -> JSON {
+        try await rest("POST", "/api/v9/channels/\(channel)/messages", body: .object(JSONObject(
+            [("content", .string(content)), ("nonce", .string(nonce())), ("tts", false), ("flags", 0)] + extra)))
+    }
+
+    /// Op 37: subscribes to a guild's typing, threads, activities and one channel's member list `ranges`.
+    static func subscribe(guild: Snowflake, channel: Snowflake, ranges: JSON = [[0, 99]]) -> JSON {
+        .object(JSONObject([("op", 37), ("d", .object(JSONObject([("subscriptions", .object(JSONObject([
+            (guild.description, .object(JSONObject([
+                ("typing", true), ("threads", true), ("activities", true), ("member_updates", true),
+                ("channels", .object(JSONObject([(channel.description, ranges)]))),
+            ]))),
+        ])))])))]))
+    }
+
     // MARK: Targets
 
     struct Targets { var guild: Snowflake; var channel: Snowflake; var forum: Snowflake?; var otherUser: Snowflake }
+
+    /// The target server's bot (the lowest ID if there are several).
+    func targetBot(_ target: Targets) async throws -> Snowflake {
+        let users = await simulator.world.users
+        guard let bot = try await simulator.world.guild(target.guild).members.keys.sorted().first(where: { users[$0]?.bot == true }) else {
+            throw WorldError.invalidBody("scenario has no bot in the target guild")
+        }
+        return bot
+    }
 
     func pickTargets(me: Snowflake) async throws -> Targets {
         let world = simulator.world

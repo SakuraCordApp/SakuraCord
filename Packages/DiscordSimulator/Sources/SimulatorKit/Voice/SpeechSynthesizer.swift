@@ -34,7 +34,7 @@ enum SpeechSynthesizer {
             let syllables = 2 + Int(random.next() % 5)
             for _ in 0 ..< syllables where index < count {
                 let length = Int(sampleRate * (0.14 + Double(random.next() % 120) / 1000))
-                let (f1, f2) = vowels[Int(random.next() % UInt64(vowels.count))]
+                let (f1, f2) = random.pick(vowels)
                 let start = index
                 while index < min(count, start + length) {
                     let progress = Float(index - start) / Float(length)

@@ -120,7 +120,7 @@ public extension World {
     func leaveActivity(_ applicationID: Snowflake, locationID: String, instanceID: Snowflake, by userID: Snowflake) async throws {
         guard let (key, instance) = voice.activities.first(where: {
             $0.value.applicationID == applicationID && $0.value.locationID == locationID && $0.value.instanceID == instanceID
-        }) else { throw WorldError(status: 404, code: 0, message: "404: Not Found") }
+        }) else { throw WorldError.notFound }
         await removeParticipant(userID, from: key, instance)
     }
 

@@ -13,15 +13,15 @@ LOG_FILE="$RUNTIME_DIR/simulator.log"
 PORT="${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}"
 mkdir -p "$RUNTIME_DIR"
 
-bin_dir() {
-  swift build --package-path "$PACKAGE_DIR" --scratch-path "$PACKAGE_DIR/.build" -c release --show-bin-path
+swift_build() {
+  swift build --package-path "$PACKAGE_DIR" --scratch-path "$PACKAGE_DIR/.build" -c release "$@"
 }
 
+bin_dir() { swift_build --show-bin-path; }
+
 build() {
-  swift build --package-path "$PACKAGE_DIR" --scratch-path "$PACKAGE_DIR/.build" -c release \
-    --product discord-simulator >&2
-  swift build --package-path "$PACKAGE_DIR" --scratch-path "$PACKAGE_DIR/.build" -c release \
-    --product discord-simctl >&2
+  swift_build --product discord-simulator >&2
+  swift_build --product discord-simctl >&2
 }
 
 running_pid() {
