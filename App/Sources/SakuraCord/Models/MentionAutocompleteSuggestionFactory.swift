@@ -18,13 +18,10 @@ struct MentionAutocompleteSuggestion: Identifiable {
 enum MentionAutocompleteSuggestionFactory {
     private static let resultLimit = 10
 
-    /// Discord's member matcher order: a literal prefix, then a prefix of the
-    /// accent-folded name, then an ordered subsequence.
     private enum MemberMatchRank: Int {
         case none = 0
         case fuzzy = 1
-        case normalizedPrefix = 2
-        case prefix = 3
+        case strong = 2
     }
 
     private struct RankedMember {
@@ -48,14 +45,9 @@ enum MentionAutocompleteSuggestionFactory {
         let globalDisplayName: String?
     }
 
-    private struct MemberSearchName {
-        let lowered: String
-        let folded: String
-    }
-
     private struct MemberSearchCacheEntry {
         let signature: MemberSearchSignature
-        let names: [MemberSearchName]
+        let candidates: [String]
     }
 
     private static var memberSearchCache: [UserID: MemberSearchCacheEntry] = [:]
@@ -105,9 +97,8 @@ enum MentionAutocompleteSuggestionFactory {
         } else {
             var bestMatches: [RankedMember] = []
             bestMatches.reserveCapacity(resultLimit)
-            let loweredQuery = trimmedQuery.lowercased()
             for (index, member) in members.enumerated() {
-                let rank = memberMatchRank(member, loweredQuery: loweredQuery, normalizedQuery: normalizedQuery)
+                let rank = memberMatchRank(member, normalizedQuery: normalizedQuery)
                 guard rank != .none else { continue }
                 let candidate = RankedMember(storeIndex: index, rank: rank, member: member)
                 let insertionIndex = bestMatches.firstIndex {
@@ -362,6 +353,12 @@ enum MentionAutocompleteSuggestionFactory {
         return result
     }
 
+    /// Adds only the `members` that `store` lacks; existing entries always win.
+    static func appendingMissingMembers(_ members: [Member], to store: [Member]) -> [Member] {
+        let storeIDs = Set(store.map(\.id))
+        return store + members.filter { !storeIDs.contains($0.id) }
+    }
+
     private static func isPreferred(_ lhs: RankedMember, over rhs: RankedMember) -> Bool {
         if lhs.rank != rhs.rank { return lhs.rank.rawValue > rhs.rank.rawValue }
         // Discord's user comparator is stable for equal scores, so
@@ -385,40 +382,41 @@ enum MentionAutocompleteSuggestionFactory {
 
     private static func memberMatchRank(
         _ member: Member,
-        loweredQuery: String,
         normalizedQuery: String
     ) -> MemberMatchRank {
-        if member.id.description == normalizedQuery { return .prefix }
-        var rank = MemberMatchRank.none
-        for name in searchNames(for: member) {
-            if name.lowered.hasPrefix(loweredQuery) { return .prefix }
-            if name.folded.hasPrefix(normalizedQuery) {
-                rank = .normalizedPrefix
-            } else if rank == .none, isOrderedSubsequence(normalizedQuery, of: name.folded) {
-                rank = .fuzzy
+        guard !normalizedQuery.isEmpty else { return .strong }
+        if member.id.description == normalizedQuery { return .strong }
+        var hasFuzzyMatch = false
+        for candidate in normalizedCandidates(for: member) {
+            if candidate.hasPrefix(normalizedQuery) { return .strong }
+            if isOrderedSubsequence(normalizedQuery, of: candidate) {
+                hasFuzzyMatch = true
             }
         }
-        return rank
+        return hasFuzzyMatch ? .fuzzy : .none
     }
 
-    private static func searchNames(for member: Member) -> [MemberSearchName] {
+    private static func normalizedCandidates(for member: Member) -> [String] {
         let signature = MemberSearchSignature(
             username: member.user.username,
             displayName: member.user.displayName,
             globalDisplayName: member.globalDisplayName
         )
         if let cached = memberSearchCache[member.id], cached.signature == signature {
-            return cached.names
+            return cached.candidates
         }
 
-        let names = ([signature.username, signature.displayName] + [signature.globalDisplayName].compactMap { $0 })
-            .map { value in
-                let lowered = value.lowercased()
-                return MemberSearchName(
-                    lowered: lowered,
-                    folded: lowered.utf8.allSatisfy { $0 < 0x80 } ? lowered : normalized(value)
-                )
+        var candidates: [String] = []
+        candidates.reserveCapacity(6)
+        for value in [signature.username, signature.displayName] + [signature.globalDisplayName].compactMap({ $0 }) {
+            let lowered = value.lowercased()
+            candidates.append(lowered)
+            guard !lowered.utf8.allSatisfy({ $0 < 0x80 }) else { continue }
+            let folded = normalized(value)
+            if folded != lowered {
+                candidates.append(folded)
             }
+        }
         if memberSearchCache.count >= memberSearchCacheLimit,
            memberSearchCache[member.id] == nil
         {
@@ -426,9 +424,9 @@ enum MentionAutocompleteSuggestionFactory {
         }
         memberSearchCache[member.id] = MemberSearchCacheEntry(
             signature: signature,
-            names: names
+            candidates: candidates
         )
-        return names
+        return candidates
     }
 
     /// Match-sorter's ranking ladder used by Discord for role autocomplete.

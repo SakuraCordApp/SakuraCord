@@ -53,7 +53,11 @@ extension AppModel {
             mentionMemberSearchTask?.cancel()
             mentionMemberSearchTask = nil
             mentionMemberSearchQuery = nil
-            mergeMentionAutocompleteMembers(cached.members)
+            // The cached reply can be older than member updates since, so it
+            // only adds members the store doesn't hold.
+            mentionAutocompleteMembers = MentionAutocompleteSuggestionFactory.appendingMissingMembers(
+                cached.members, to: mentionAutocompleteMembers
+            )
             return
         }
         mentionMemberSearchCache[key] = nil
