@@ -7,6 +7,7 @@ struct CustomEmojiRichText: View {
     /// Resolves clicked user mentions the source message knows about.
     var message: Message?
     let content: String
+    var markdownRules = DiscordMarkdown.Rules.message
     let emojiSize: CGFloat
     var baseFontSize: CGFloat?
     var maximumNumberOfLines: Int?
@@ -22,6 +23,7 @@ struct CustomEmojiRichText: View {
         model: AppModel? = nil,
         message: Message? = nil,
         content: String,
+        markdownRules: DiscordMarkdown.Rules = .message,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
         maximumNumberOfLines: Int? = nil,
@@ -36,6 +38,7 @@ struct CustomEmojiRichText: View {
         self.model = model
         self.message = message
         self.content = content
+        self.markdownRules = markdownRules
         self.emojiSize = emojiSize
         self.baseFontSize = baseFontSize
         self.maximumNumberOfLines = maximumNumberOfLines
@@ -50,6 +53,7 @@ struct CustomEmojiRichText: View {
         SelectableMessageTextView(
             model: model,
             source: content,
+            markdownRules: markdownRules,
             emojiSize: emojiSize,
             baseFontSize: baseFontSize,
             maximumNumberOfLines: maximumNumberOfLines,

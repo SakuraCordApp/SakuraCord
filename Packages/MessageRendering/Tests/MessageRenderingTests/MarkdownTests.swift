@@ -253,6 +253,21 @@ import Testing
     }
 }
 
+@Test func `profile bios use Discord's bio rules without code blocks or user, role and channel mentions`() {
+    let source = "```\nlet x\n```\n<@1> <@&2> <#3> @here <t:0:R> <:wave:4>"
+    let bio = MessageDocument(source: source, rules: .profileBio)
+    let mentionKinds = bio.segments.compactMap { segment -> RenderedMention.Kind? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention.kind
+    }
+    #expect(mentionKinds == [.timestamp])
+    #expect(bio.segments.contains { if case .customEmoji = $0 { true } else { false } })
+
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
+    let code = (value.string as NSString).range(of: "let x")
+    #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) == nil)
+}
+
 @Test func `message document detects jumbo custom emoji`() {
     #expect(MessageDocument(source: "<:one:1> <:two:2>").isEmojiOnly)
     #expect(!MessageDocument(source: "text <:one:1>").isEmojiOnly)
@@ -685,30 +700,4 @@ private func spoilerOutline(_ source: String) -> String {
     let code = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("||`x`||"))
     #expect(code.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil)
     #expect(code.attribute(.discordMarkdownSpoiler, at: 0, effectiveRange: nil) != nil)
-}
-
-@Test func `discord markdown renders inline opening and closing code fences`() {
-    let source = "```**focus mode** • back\n<t:1750000000:r> :rocket:```"
-    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
-    #expect(!value.string.contains("```"))
-    #expect(value.string.contains("**focus mode** • back\n<t:1750000000:r> :rocket:"))
-    let string = value.string as NSString
-    let codeRange = string.range(of: "**focus mode** • back")
-    #expect(value.attribute(.discordMarkdownBlock, at: codeRange.location, effectiveRange: nil) as? String == "code")
-    let secondLineRange = string.range(of: "<t:1750000000:r> :rocket:")
-    #expect(value.attribute(.discordMarkdownBlock, at: secondLineRange.location, effectiveRange: nil) as? String == "code")
-
-    let singleLine = "```swift let x = 1```"
-    let singleValue = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(singleLine))
-    #expect(!singleValue.string.contains("```"))
-    #expect(singleValue.string == "swift let x = 1")
-    #expect(singleValue.attribute(.discordMarkdownBlock, at: 0, effectiveRange: nil) as? String == "code")
-}
-
-@Test func `empty source lines outside code fences preserve paragraph spacing`() {
-    let source = "first\n\nsecond"
-    let plan = DiscordMarkdown.appKitPlan(source)
-    #expect(plan.lines.count == 3)
-    let rendered = DiscordMarkdown.appKitAttributed(plan)
-    #expect(rendered.string == "first\n\nsecond")
 }

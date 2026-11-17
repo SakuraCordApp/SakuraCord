@@ -8,6 +8,7 @@ import Synchronization
 struct SelectableMessageTextView: NSViewRepresentable {
     var model: AppModel?
     let source: String
+    var markdownRules = DiscordMarkdown.Rules.message
     let emojiSize: CGFloat
     var baseFontSize: CGFloat?
     var maximumNumberOfLines: Int?
@@ -75,6 +76,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
         )
         let signature = RichMessageRenderSignature(
             source: source,
+            markdownRules: markdownRules,
             emojiSize: emojiSize,
             baseFontSize: baseFontSize,
             maximumNumberOfLines: maximumNumberOfLines,
@@ -91,6 +93,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
         let rendered = NSMutableAttributedString(
             attributedString: RichMessageAttributedText.make(
                 source: source,
+                rules: markdownRules,
                 emojiSize: emojiSize,
                 baseFontSize: baseFontSize,
                 mentionPresentations: currentMentions
@@ -197,6 +200,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
 
 private struct RichMessageRenderSignature: Equatable {
     let source: String
+    let markdownRules: DiscordMarkdown.Rules
     let emojiSize: CGFloat
     let baseFontSize: CGFloat?
     let maximumNumberOfLines: Int?

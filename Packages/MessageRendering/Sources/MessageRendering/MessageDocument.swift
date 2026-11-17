@@ -178,13 +178,13 @@ public struct MessageDocument: Hashable, Sendable {
     public var segments: [Segment]
     public var isEmojiOnly: Bool
 
-    public init(source: String) {
+    public init(source: String, rules: DiscordMarkdown.Rules = .message) {
         self.source = source
-        segments = Self.tokenize(source)
+        segments = Self.tokenize(source, rules: rules)
         isEmojiOnly = Self.detectEmojiOnly(source: source, segments: segments)
     }
 
-    private static func tokenize(_ source: String) -> [Segment] {
+    private static func tokenize(_ source: String, rules: DiscordMarkdown.Rules) -> [Segment] {
         let matches = tokenExpression.matches(
             in: source, range: NSRange(source.startIndex ..< source.endIndex, in: source)
         )
@@ -203,6 +203,7 @@ public struct MessageDocument: Hashable, Sendable {
             if let emoji = RenderedEmoji(rawToken: token) {
                 result.append(.customEmoji(emoji))
             } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token),
+                      rules.renders(mention.kind),
                       !isLiteralMention(mention, range: range, in: source, literalRanges: &literalRanges),
                       !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
                 result.append(.mention(mention))
