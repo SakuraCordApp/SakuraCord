@@ -356,13 +356,13 @@ import Testing
     #expect(mentions.first?.rawToken == token)
 }
 
-@Test func `new mention types stay literal in code and escaped text`() {
+@Test func `custom emoji and new mention types stay literal in code and escaped text`() {
     let tokens = ["@everyone", "<t:1000000:R>", "<@$356875221078245376>", "</role add:1234>"]
-    let raw = tokens.joined(separator: " ")
+    let raw = tokens.joined(separator: " ") + " <:x:1> <a:y:2>"
     for source in [
         "🌸 `\(raw)`", "**`\(raw)`**", "```swift\n\(raw)\n```",
         "* `**\(raw)**`", ">>> quote\n\n* `**\(raw)**`",
-        #"\@everyone \<t:1000000:R> \<@$356875221078245376> \</role add:1234>"#,
+        #"\@everyone \<t:1000000:R> \<@$356875221078245376> \</role add:1234> \<:x:1> \<a:y:2>"#,
         "[open](https://example.com/@here) https://example.com/@everyone",
     ] {
         #expect(MessageDocument(source: source).segments == [.markdown(source)])
@@ -386,6 +386,7 @@ import Testing
     }
     #expect(mentions.map(\.rawToken) == tokens)
     #expect(mentions.map(\.kind) == [.broadcast, .timestamp, .game, .command])
+    #expect(mixed.segments.filter { if case .customEmoji = $0 { true } else { false } }.count == 2)
     #expect(mentions.last?.id == "1234")
     #expect(mentions.last?.commandName == "role add")
     let afterLink = MessageDocument(source: "[read](https://example.com)@here").segments

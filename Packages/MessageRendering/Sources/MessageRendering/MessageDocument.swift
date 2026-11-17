@@ -189,7 +189,7 @@ public struct MessageDocument: Hashable, Sendable {
             in: source, range: NSRange(source.startIndex ..< source.endIndex, in: source)
         )
         guard !matches.isEmpty else { return source.isEmpty ? [] : [.markdown(source)] }
-        // Only the token-only mention kinds need these scans; most matches are not.
+        // Only custom emoji and the token-only mention kinds need these scans.
         var literalRanges: [NSRange]?
         var linkLabels: [NSRange]?
         var result: [Segment] = []
@@ -200,10 +200,13 @@ public struct MessageDocument: Hashable, Sendable {
                 result.append(.markdown(String(source[cursor ..< range.lowerBound])))
             }
             let token = String(source[range])
+            // Inline code and escapes keep custom emoji, and the token-only
+            // mention kinds, as the text they were typed as.
             if let emoji = RenderedEmoji(rawToken: token) {
-                result.append(.customEmoji(emoji))
+                result.append(isLiteral(range, in: source, literalRanges: &literalRanges) ? .markdown(token) : .customEmoji(emoji))
             } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token),
-                      !isLiteralMention(mention, range: range, in: source, literalRanges: &literalRanges),
+                      ![.game, .broadcast, .timestamp, .command].contains(mention.kind)
+                          || !isLiteral(range, in: source, literalRanges: &literalRanges),
                       !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
                 result.append(.mention(mention))
             } else {
@@ -237,10 +240,9 @@ public struct MessageDocument: Hashable, Sendable {
         return ranges
     }
 
-    private static func isLiteralMention(
-        _ mention: RenderedMention, range: Range<String.Index>, in source: String, literalRanges: inout [NSRange]?
+    private static func isLiteral(
+        _ range: Range<String.Index>, in source: String, literalRanges: inout [NSRange]?
     ) -> Bool {
-        guard [.game, .broadcast, .timestamp, .command].contains(mention.kind) else { return false }
         let tokenRange = NSRange(range, in: source)
         let ranges = literalRanges ?? DiscordMarkdown.sourceCodeRanges(source) + urlRanges(in: source)
         literalRanges = ranges

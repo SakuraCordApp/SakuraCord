@@ -418,13 +418,7 @@ nonisolated enum NativeTimelineCoreText {
         }
         output.enumerateAttribute(.link, in: fullRange) { value, range, _ in
             guard value != nil else { return }
-            output.addAttributes(
-                [
-                    .foregroundColor: NSColor.linkColor,
-                    .underlineStyle: 0,
-                ],
-                range: range
-            )
+            output.addAttribute(.foregroundColor, value: NSColor.linkColor, range: range)
         }
         normalizeParagraphMetrics(in: output)
         return output

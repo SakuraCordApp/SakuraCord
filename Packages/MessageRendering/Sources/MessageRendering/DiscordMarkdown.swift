@@ -319,8 +319,9 @@ public enum DiscordMarkdown {
     public static func appKitEmbedTitlePlan(_ source: String, allowsLinks: Bool) -> AppKitPlan {
         var lines: [AppKitPlan.Line] = []
         forEachSourceLine(source, parsesFences: false) { _, kind in
-            guard case let .text(content, isQuoted) = kind else { return }
-            var line = line(content, block: .paragraph, rules: allowsLinks ? .message : [.code, .strikethroughAndSpoilers])
+            // Without fences every line is text.
+            guard case let .text(content, isQuoted) = kind else { preconditionFailure("fence outside fence parsing") }
+            var line = line(content, block: .paragraph, rules: allowsLinks ? .message : InlineRules.message.subtracting(.links))
             line.isQuoted = isQuoted
             lines.append(line)
         }
