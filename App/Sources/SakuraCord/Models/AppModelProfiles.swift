@@ -313,9 +313,6 @@ extension AppModel {
                 let profile = cacheLoadedProfile(loaded, for: cacheKey)
                 var value = profilePresentation(for: destination)
                 value?.profile = profile
-                if let guildJoinedAt = profile.guildJoinedAt, value?.member.joinedAt == nil {
-                    value?.member.joinedAt = guildJoinedAt
-                }
                 value?.isLoading = false
                 value?.errorMessage = nil
                 setProfilePresentation(value, for: destination)
@@ -405,9 +402,6 @@ extension AppModel {
     func cacheLoadedProfile(_ profile: UserProfile, for key: ProfileCacheKey) -> UserProfile {
         var profile = profile
         if let roles = key.guildID.flatMap({ guildRolesByGuildID[$0] }) { profile.refreshRoles(from: roles) }
-        if profile.guildJoinedAt == nil, let guildID = key.guildID {
-            profile.guildJoinedAt = membersByGuildID[guildID]?[key.userID]?.joinedAt
-        }
         profileCache[key] = profile
         return profile
     }

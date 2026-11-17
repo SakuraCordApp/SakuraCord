@@ -653,6 +653,18 @@ Official Fresh 0.0.411, inspected on 2026-10-05.
 The artwork remains Discord’s property and identifies Discord's local command
 notices. Its inclusion does not imply affiliation or endorsement.
 
+## Discord Clyde icon
+
+`discord.fill.svg` is the unmodified `ClydeIcon` vector path (24×24 viewBox)
+from Discord Official Fresh 0.0.411, inspected on 2026-11-17.
+
+- Source: https://discord.com/assets/web.8b3b2b6ffeb3e3cf.js, module `111159`
+- SHA-256 of that bundle: `60a4ae5eead758b9a431eb5aad5befce123565ada9630c064b33221abcd29917`
+
+The icon remains Discord’s property and marks the Discord account date in
+profile Member Since rows, as the official client does. Its inclusion does not
+imply affiliation or endorsement.
+
 ## Public Suffix List
 
 SakuraCord bundles the unmodified Public Suffix List to reject wildcard trust
