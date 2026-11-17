@@ -102,6 +102,8 @@ public enum ClientEvent: Equatable, Sendable {
     case profileInvalidated(userID: UserID)
     /// GUILD_MEMBER_ADD or GUILD_MEMBER_REMOVE for that user and server.
     case guildMembershipChanged(guildID: GuildID, userID: UserID, isMember: Bool)
+    /// GUILD_CREATE or GUILD_DELETE replaced that server's whole membership.
+    case guildMembershipReset(guildID: GuildID)
     case profileChanged(userID: UserID, scope: ProfileEditingScope, profile: UserProfile?)
     case profileCustomStatusChanged(userID: UserID, status: ProfileCustomStatus?)
     case profileWidgetConnectionsChanged(userID: UserID, connections: [String: ProfileWidgetConnection])
