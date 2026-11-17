@@ -26,6 +26,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> RichMessageNSTextView {
         let textView = RichMessageNSTextView()
+        textView.textContainer?.replaceLayoutManager(MarkdownLayoutManager())
         textView.delegate = context.coordinator
         textView.isEditable = false
         textView.isSelectable = isSelectable
