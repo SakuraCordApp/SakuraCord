@@ -38,10 +38,14 @@ extension World {
     /// `GET /games/autocomplete`: up to ten games, as captured. Names starting with the query rank
     /// before names containing it (inferred ranking).
     func autocompleteGames(_ query: String) -> JSON {
-        let needle = query.trimmingCharacters(in: .whitespaces)
-        let matches = games.filter { !needle.isEmpty && $0.name.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
-        let ranked = matches.filter { $0.name.lowercased().hasPrefix(needle.lowercased()) } + matches.filter { !$0.name.lowercased().hasPrefix(needle.lowercased()) }
-        return .array(ranked.prefix(10).map { game in
+        // Captured: names with a word starting with the query, ranked by popularity rather than by where the
+        // word falls ("mine" puts "This War of Mine" first); catalogue order stands in for popularity.
+        let needle = query.trimmingCharacters(in: .whitespaces).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        let matches = games.filter { game in
+            !needle.isEmpty && game.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains { $0.hasPrefix(needle) }
+        }
+        return .array(matches.prefix(10).map { game in
             .object(JSONObject([
                 ("id", game.id.json), ("name", .string(game.name)),
                 ("icon", .object(JSONObject([("type", "hash"), ("value", .string(game.iconHash))]))),

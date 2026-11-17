@@ -29,7 +29,7 @@ enum ProfileRoutes {
         routes["GET /api/v9/users/@me/avatars"] = { context in
             .json(.object(JSONObject([("avatars", .array((await context.world.avatarHistory[context.userID] ?? []).map(JSON.object)))])))
         }
-        // Not captured: removing a past avatar answers 204, and an unknown one Discord's bare 404.
+        // Captured: removing a past avatar answers 204 with no Gateway event. Not captured: an unknown one (Discord's bare 404).
         routes["DELETE /api/v9/users/@me/avatars/{id}"] = { context in
             try await context.world.deleteAvatarHistoryEntry(try context.id(0), of: context.userID)
             return .empty

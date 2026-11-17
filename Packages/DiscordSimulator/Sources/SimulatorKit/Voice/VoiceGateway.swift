@@ -1,10 +1,9 @@
 import Foundation
 
 /// Discord's voice server: the voice gateway (JSON text frames, binary for DAVE)
-/// that a client reaches through the endpoint in VOICE_SERVER_UPDATE. No capture
-/// has its frames, so the ops and fields the server sends follow the captured
-/// official client's own voice-gateway parser, and close codes and sequencing
-/// follow Discord's documented voice protocol
+/// that a client reaches through the endpoint in VOICE_SERVER_UPDATE. The handshake,
+/// heartbeats, speaking, video and stream frames follow captures of the official client
+/// (`Resources/Shapes`); close codes and resuming follow Discord's documented voice protocol
 /// (discord.com/developers/docs/topics/voice-connections); DESIGN.md lists what is inferred.
 ///
 /// Simulated people in a channel have no connection of their own; the server
@@ -18,7 +17,8 @@ public actor VoiceGateway: VoiceMediaHost {
         let grant: VoiceServerGrant
         let ssrc: UInt32
         var connection: WebSocketConnection?
-        var sequence: Int64 = 0
+        /// The last sequence number sent; the first sequenced message is 0.
+        var sequence: Int64 = -1
         var sent: [(sequence: Int64, message: WebSocketMessage)] = []
         /// The op 12 state last sent to this client for each peer in its channel.
         var peers: [Snowflake: JSON] = [:]
@@ -62,7 +62,7 @@ public actor VoiceGateway: VoiceMediaHost {
     // MARK: Connections
 
     public func handle(_ connection: WebSocketConnection) async {
-        connection.send(text: Self.frame(op: 8, ["v": 8, "heartbeat_interval": .int(Self.heartbeatIntervalMilliseconds)]))
+        connection.send(text: Self.frame(op: 8, [("v", 8), ("heartbeat_interval", .int(Self.heartbeatIntervalMilliseconds))]))
         var client: Client?
         for await message in connection.messages {
             guard case let .text(text) = message else {
@@ -91,7 +91,12 @@ public actor VoiceGateway: VoiceMediaHost {
     /// Returns false when the connection was closed.
     private func route(op: Int64, data: JSON, client: inout Client?, connection: WebSocketConnection) async -> Bool {
         if op == 3 {
-            connection.send(text: Self.frame(op: 6, ["t": data["t"] ?? .null]))
+            connection.send(text: Self.frame(op: 6, [("t", data["t"] ?? .null)]))
+            return true
+        }
+        if op == 16 {
+            // Captured: the client asks for the server's versions right after Ready.
+            connection.send(text: Self.frame(op: 16, [("voice", "0.22.4"), ("rtc_worker", "1.7.10")]))
             return true
         }
         if op == 0 || op == 7 {
@@ -110,6 +115,7 @@ public actor VoiceGateway: VoiceMediaHost {
         case 12:
             client.video = data
             await media.addAliases([data["video_ssrc"], data["rtx_ssrc"]].compactMap { $0?.intValue.map(UInt32.init) }, to: client.ssrc)
+            sendMediaSinkWants(to: client)
             await syncPeers(in: client.grant.room)
         case 15:
             // Media sink wants only shape what this client is sent.
@@ -146,10 +152,12 @@ public actor VoiceGateway: VoiceMediaHost {
             ]))
         }
         await media.addAliases(streams.flatMap { [$0["ssrc"], $0["rtx_ssrc"]] }.compactMap { $0?.intValue.map(UInt32.init) }, to: client.ssrc)
-        send(2, .object(JSONObject([
-            ("ssrc", .int(Int64(client.ssrc))), ("ip", "127.0.0.1"), ("port", .int(Int64(media.port))),
-            ("modes", .array(VoiceCrypto.Mode.allCases.map { .string($0.rawValue) })), ("experiments", []), ("streams", .array(streams)),
-        ])), to: client)
+        // Captured: Ready, like the session description, carries no sequence number.
+        connection.send(text: Self.frame(op: 2, [
+            ("streams", .array(streams)), ("ssrc", .int(Int64(client.ssrc))), ("port", .int(Int64(media.port))),
+            ("modes", .array(VoiceCrypto.Mode.allCases.map { .string($0.rawValue) })), ("ip", "127.0.0.1"),
+            ("experiments", ["fixed_keyframe_interval"]),
+        ]))
         await syncPeers(in: grant.room)
         return client
     }
@@ -163,7 +171,7 @@ public actor VoiceGateway: VoiceMediaHost {
             await connection.close(code: 4006, reason: "Session is no longer valid.")
             return nil
         }
-        let acknowledged = data["seq_ack"]?.intValue ?? 0
+        let acknowledged = data["seq_ack"]?.intValue ?? -1
         client.connection = connection
         for (sequence, message) in client.sent where sequence > acknowledged { Self.transmit(message, over: connection) }
         send(9, .null, to: client)
@@ -177,15 +185,23 @@ public actor VoiceGateway: VoiceMediaHost {
             return await reject(connection, 4016, "Unknown encryption mode.")
         }
         client.secretKey = (0 ..< 32).map { _ in UInt8(truncatingIfNeeded: random.next()) }
-        send(4, .object(JSONObject([
-            ("audio_codec", "opus"), ("video_codec", "H264"),
+        // Discord picks H265 for the official client; the simulator's video is H.264, the codec it can encode.
+        connection.send(text: Self.frame(op: 4, [
+            ("video_codec", "H264"), ("secure_frames_version", .int(client.daveVersion)),
+            ("secret_key", .array(client.secretKey.map { .int(Int64($0)) })), ("mode", .string(mode.rawValue)),
             ("media_session_id", .string(String(format: "%016llx%016llx", random.next(), random.next()))),
-            ("mode", .string(mode.rawValue)), ("secret_key", .array(client.secretKey.map { .int(Int64($0)) })),
-            ("dave_protocol_version", .int(client.daveVersion)),
-        ])), to: client)
+            ("dave_protocol_version", .int(client.daveVersion)), ("audio_codec", "opus"),
+        ]))
+        sendMediaSinkWants(to: client)
         await media.register(ssrc: client.ssrc, userID: client.grant.userID, channelID: client.grant.room, mode: mode, key: client.secretKey)
         if client.daveVersion > 0 { await daveJoined(client) }
         return true
+    }
+
+    /// Captured: op 15 follows the session description and each of the client's op 12. Its `any` is the share
+    /// of full quality the client may send; the simulator never throttles.
+    private func sendMediaSinkWants(to client: Client) {
+        send(15, .object(JSONObject([("any", 100)])), to: client)
     }
 
     private func reject(_ connection: WebSocketConnection, _ code: UInt16, _ reason: String) async -> Bool {
@@ -267,11 +283,11 @@ public actor VoiceGateway: VoiceMediaHost {
         let on = state.selfVideo
         return user.merging([
             "audio_ssrc": .int(audio), "video_ssrc": .int(on ? audio + 1 : 0), "rtx_ssrc": .int(on ? audio + 2 : 0),
+            // As the official client sends its own camera (captured): 720p at 20 fps and 2.5 Mbps.
             "streams": .array([.object(JSONObject([
-                ("type", "video"), ("rid", "100"), ("ssrc", .int(audio + 1)), ("rtx_ssrc", .int(audio + 2)),
-                ("active", .bool(on)), ("quality", 100),
+                ("type", "video"), ("rid", "100"), ("ssrc", .int(audio + 1)), ("active", .bool(on)), ("quality", 100),
+                ("rtx_ssrc", .int(audio + 2)), ("max_bitrate", 2_500_000), ("max_framerate", 20),
                 ("max_resolution", .object(JSONObject([("type", "fixed"), ("width", 1280), ("height", 720)]))),
-                ("max_framerate", 30), ("max_bitrate", 2_500_000),
             ]))]),
         ])
     }
@@ -293,7 +309,7 @@ public actor VoiceGateway: VoiceMediaHost {
     /// Sends a sequenced server message, kept for a buffered resume.
     func send(_ op: Int64, _ data: JSON, to client: Client) {
         client.sequence += 1
-        let text = JSON.object(JSONObject([("op", .int(op)), ("d", data), ("seq", .int(client.sequence))])).serialized(spaced: false)
+        let text = JSON.object(JSONObject([("seq", .int(client.sequence)), ("op", .int(op)), ("d", data)])).serialized(spaced: false)
         deliver(.text(text), to: client)
     }
 
@@ -321,8 +337,8 @@ public actor VoiceGateway: VoiceMediaHost {
     /// Connected clients in a room that use DAVE.
     func daveClients(in room: Snowflake) -> [Client] { connectedClients(in: room).filter { $0.daveVersion > 0 } }
 
-    /// Hello and heartbeat ACKs carry no sequence number.
-    static func frame(op: Int64, _ data: [String: JSON]) -> String {
-        JSON.object(JSONObject([("op", .int(op)), ("d", .object(JSONObject(data.sorted { $0.key < $1.key }.map { ($0.key, $0.value) })))])).serialized(spaced: false)
+    /// Hello, Ready, the session description, versions and heartbeat ACKs carry no sequence number and aren't replayed.
+    static func frame(op: Int64, _ data: [(String, JSON)]) -> String {
+        JSON.object(JSONObject([("op", .int(op)), ("d", .object(JSONObject(data)))])).serialized(spaced: false)
     }
 }

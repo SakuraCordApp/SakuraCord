@@ -57,7 +57,8 @@ extension World {
         await emit("GUILD_SOUNDBOARD_SOUND_CREATE", .object(payload), to: .guild(guildID, channel: nil))
     }
 
-    /// A member renames a sound or changes its emoji or volume (GUILD_SOUNDBOARD_SOUND_UPDATE, as Discord documents).
+    /// A member renames a sound or changes its emoji or volume. Captured: GUILD_SOUNDBOARD_SOUND_UPDATE carries the
+    /// same fields as the create, `id` included.
     func updateSoundboardSound(_ name: String, in guildID: Snowflake, newName: String?, emoji: String?, volume: Double?) async throws {
         let sound = try soundboardSound(name, in: guildID)
         guard let index = guilds[guildID]?.soundboardSounds.firstIndex(where: { $0.id == sound.id }) else { return }
@@ -66,6 +67,7 @@ extension World {
         if let volume { guilds[guildID]?.soundboardSounds[index].volume = volume }
         guard case var .object(payload) = renderSoundboardSounds(guildID: guildID, viewer: guilds[guildID]!.ownerID)?["soundboard_sounds"]?
             .arrayValue?[index] else { return }
+        payload["id"] = sound.id.json
         if let userID = sound.userID { payload["user"] = renderUser(userID) }
         await emit("GUILD_SOUNDBOARD_SOUND_UPDATE", .object(payload), to: .guild(guildID, channel: nil))
     }

@@ -5,7 +5,7 @@ import Foundation
 /// encoded the way the client asked for in its connection URL.
 public actor GatewayHub: WorldEventSink {
     public static let heartbeatIntervalMilliseconds: Int64 = 41_250
-    /// How long a dropped session stays resumable before Discord ends it (not captured; see DESIGN.md).
+    /// How long a dropped session stays resumable before Discord ends it (inferred; see DESIGN.md).
     static let resumeWindow: Duration = .seconds(60)
 
     final class Session {

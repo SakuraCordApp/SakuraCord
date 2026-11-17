@@ -6,9 +6,9 @@ import Synchronization
 /// The voice server's UDP side: IP discovery, then encrypted RTP. Like
 /// Discord's media servers it forwards each client's packets to everyone else
 /// in the channel (re-encrypted per receiver) and plays simulated people's
-/// generated speech. Not captured (the official client's native voice module
-/// is outside the captured layer); packet formats follow Discord's documented
-/// voice connection protocol (discord.com/developers/docs/topics/voice-connections).
+/// generated speech. Not captured: RTP travels over UDP, which CDP can't see;
+/// packet formats follow Discord's documented voice connection protocol
+/// (discord.com/developers/docs/topics/voice-connections).
 public actor VoiceMediaServer {
     struct Endpoint {
         let userID: Snowflake

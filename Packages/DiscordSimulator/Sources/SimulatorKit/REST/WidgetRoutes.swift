@@ -10,13 +10,12 @@ enum WidgetRoutes {
         routes["GET /api/v9/games/autocomplete"] = { context in
             .json(await context.world.autocompleteGames(context.query("q") ?? ""))
         }
-        // Not captured for a game without an official server, which no simulated game has:
-        // Discord's bare 404 is inferred.
+        // Captured: a game without an official server (no simulated game has one) answers with no channel and no messages.
         routes["GET /api/v9/games/{id}/announcements"] = { context in
             _ = try await context.world.game(try context.id(0))
-            throw WorldError.notFound
+            return .json(.object(JSONObject([("guild_id", .null), ("channel_id", .null), ("messages", [])])))
         }
-        // Not captured with a small catalogue: every other game is listed (inferred).
+        // Captured: up to 20 similar games. Which ones Discord picks isn't knowable; the catalogue's others stand in.
         routes["GET /api/v9/content-inventory/users/@me/similar-games/{id}"] = { context in
             let game = try await context.world.game(try context.id(0))
             let others = await context.world.games.filter { $0.id != game.id }.prefix(20).map(\.id.json)

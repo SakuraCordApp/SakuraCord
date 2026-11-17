@@ -1,9 +1,8 @@
 import Foundation
 
 /// Private call ringing, Go Live previews and soundboard sounds in voice.
-/// `POST /call/ring`, `GET /call`, `GET /streams/{key}/preview` and
-/// `POST /send-soundboard-sound` follow captured requests;
-/// `POST /call/stop-ringing` is not captured yet.
+/// `POST /call/ring`, `POST /call/stop-ringing`, `GET /call`, `GET /streams/{key}/preview`
+/// and `POST /send-soundboard-sound` follow captured requests.
 enum VoiceRoutes {
     static func register(into routes: inout [String: RouteHandler]) {
         routes["GET /api/v9/channels/{id}/call"] = { context in

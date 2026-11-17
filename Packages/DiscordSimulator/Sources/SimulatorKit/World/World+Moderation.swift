@@ -46,7 +46,11 @@ extension World {
         if let until = body["communication_disabled_until"] {
             try requireModeration(.moderateMembers, by: moderator, on: target, in: guild)
             guard target != guild.ownerID, !guild.permissions(of: target, at: clock.now).contains(.administrator) else { throw WorldError.missingPermissions }
-            member.communicationDisabledUntil = until.stringValue.flatMap(World.parseTimestamp)
+            let new = until.stringValue.flatMap(World.parseTimestamp)
+            // Captured: a timeout and its removal are audit log entries (action 24) with only the side that is set.
+            changes.append(auditChange("communication_disabled_until", old: member.communicationDisabledUntil.map(World.timestamp),
+                                       new: new.map(World.timestamp)))
+            member.communicationDisabledUntil = new
         }
         guilds[guildID]?.members[target] = member
         await emitMemberUpdate(member, in: guildID)
@@ -95,8 +99,8 @@ extension World {
 
     func auditChange(_ key: String, old: JSON?, new: JSON?) -> JSON {
         var object = JSONObject([("key", .string(key))])
-        if let old { object["old_value"] = old }
         if let new { object["new_value"] = new }
+        if let old { object["old_value"] = old }
         return .object(object)
     }
 
@@ -116,7 +120,7 @@ extension World {
         ])), to: audience(for: channel))
     }
 
-    /// A moderator removes every reaction from a message (MESSAGE_REACTION_REMOVE_ALL, as Discord documents),
+    /// A moderator removes every reaction from a message (captured: 204, then MESSAGE_REACTION_REMOVE_ALL),
     /// or every reaction with one emoji (MESSAGE_REACTION_REMOVE_EMOJI; its `burst` and `type` are inferred).
     func clearReactions(_ messageID: Snowflake, in channelID: Snowflake, emojiKey: String?, by userID: Snowflake) async throws {
         let channel = try channel(channelID)

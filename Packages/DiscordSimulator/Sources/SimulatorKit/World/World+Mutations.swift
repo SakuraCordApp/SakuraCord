@@ -37,6 +37,7 @@ public extension World {
         var channel = try channel(channelID)
         guard channel.type.holdsMessages else { throw WorldError(status: 400, code: 50008, message: "Cannot send messages in a non-text channel") }
         // Documented, not captured: only thread managers can post in (and so reopen) an archived locked thread.
+        // The official client never sends this request; it disables the composer.
         if checkPermissions, let metadata = channel.thread, metadata.archived, metadata.locked,
            !permissions(of: authorID, in: channel).contains(.manageThreads) {
             throw WorldError(status: 400, code: 50083, message: "Operation cannot be performed on an archived thread")
@@ -71,13 +72,17 @@ public extension World {
             return message
         }
         if channel.type.isThread, !channel.threadMembers.contains(authorID) { channel.threadMembers.append(authorID) }
-        // Posting reopens an archived thread; captured, THREAD_UPDATE and the author's membership come before the message.
+        // Posting reopens an archived thread; captured, THREAD_UPDATE, the author's membership and the audit log entry
+        // (action 111) come before the message. A locked thread stays locked.
         if channel.thread?.archived == true {
             channel.thread?.archived = false
             channel.thread?.archiveTimestamp = clock.now
             channels[channelID] = channel
             await emit("THREAD_UPDATE", renderThread(channel, viewer: nil), to: audience(for: channels[channel.parentID ?? channelID] ?? channel))
             await emitThreadMemberUpdate(channel, userID: authorID)
+            if let guildID = channel.guildID {
+                await emitAuditLog(guildID, action: 111, target: channelID, by: authorID, changes: [auditChange("archived", old: true, new: false)])
+            }
         }
         channel.messages.append(message)
         channel.totalMessageSent += 1
@@ -200,7 +205,8 @@ public extension World {
         let existing = try message(messageID, in: channelID)
         guard existing.authorID == userID else { throw WorldError(status: 403, code: 50005, message: "Cannot edit a message authored by another user") }
         let channel = try channel(channelID)
-        // Edits resolve mentions like a send. Not captured: without `replied_user`, a reply keeps pinging only if it did before.
+        // Edits resolve mentions like a send. Captured: the official client re-sends `allowed_mentions`, `replied_user` included,
+        // on every edit. Not captured (no official client omits it): without `replied_user`, a reply keeps pinging only if it did before.
         let allowed = Self.allowedMentions(allowedMentions)
         let repliedAuthor = existing.reference.flatMap { ref in ref.messageID.flatMap { id in channels[ref.channelID]?.messages.first { $0.id == id }?.authorID } }
         let mentions = content.map { content in

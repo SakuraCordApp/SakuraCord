@@ -9,7 +9,7 @@ extension World {
         var user = try user(userID)
         if let name = body["global_name"] {
             let trimmed = name.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Not captured: Discord's documented 32-character limit.
+            // The official client stops typing at 32 characters; the server's error for more is Discord's documented one.
             guard (trimmed?.count ?? 0) <= 32 else { throw WorldError.invalidBody("global_name: Must be between 1 and 32 in length.") }
             user.globalName = trimmed?.isEmpty == false ? trimmed : nil
         }
@@ -42,7 +42,7 @@ extension World {
     /// Only the user's own sessions hear about it (USER_UPDATE).
     func editProfileDetails(_ userID: Snowflake, body: JSON) async throws -> JSON {
         var user = try user(userID)
-        if let bio = try Self.capped(body["bio"], 190, "bio") { user.bio = bio }
+        if let bio = try Self.capped(body["bio"], Self.bioLimit, "bio") { user.bio = bio }
         if let pronouns = try Self.capped(body["pronouns"], 40, "pronouns") { user.pronouns = pronouns }
         if let accent = body["accent_color"] { user.accentColor = accent.intValue.map(Int.init) }
         if let banner = body["banner"] {
@@ -91,7 +91,7 @@ extension World {
         guard var member = try guild(guildID).members[userID] else { throw WorldError.unknown("Guild", code: 10004) }
         if let pronouns = try Self.capped(body["pronouns"], 40, "pronouns") { member.pronouns = pronouns }
         // An empty or null server bio falls back to the main profile's.
-        if body["bio"] != nil { member.bio = try Self.capped(body["bio"], 190, "bio").flatMap { $0.isEmpty ? nil : $0 } }
+        if body["bio"] != nil { member.bio = try Self.capped(body["bio"], Self.bioLimit, "bio").flatMap { $0.isEmpty ? nil : $0 } }
         if let accent = body["accent_color"] { member.accentColor = accent.intValue.map(Int.init) }
         if let colors = body["theme_colors"] { member.themeColors = Self.themeColors(colors) }
         if let banner = body["banner"] {
@@ -181,7 +181,10 @@ extension World {
         return hash
     }
 
-    /// Not captured: the length limits are Discord's documented ones (190 for bios, 40 for pronouns).
+    /// Captured: the official client accepts 300-character bios without Nitro (it blocks longer ones itself)
+    /// and caps pronouns at 40. Not captured: the server's error for longer values, which follows Discord's documented form.
+    static let bioLimit = 300
+
     private static func capped(_ value: JSON?, _ limit: Int, _ field: String) throws -> String? {
         guard let text = value?.stringValue else { return nil }
         guard text.count <= limit else { throw WorldError.invalidBody("\(field): Must be \(limit) or fewer in length.") }

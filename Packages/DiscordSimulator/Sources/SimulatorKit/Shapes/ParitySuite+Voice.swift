@@ -147,7 +147,11 @@ extension ParityRun {
         }
         let key = connection.key
         if connection.description["d"]?["dave_protocol_version"]?.intValue != 1 { failures.append("session description doesn't select DAVE") }
-        _ = await expect(6, after: Self.voiceFrame(3, [("t", 1_234), ("seq_ack", connection.ready["seq"] ?? 0)]))
+        for frame in [connection.hello, connection.ready, connection.description] { checkVoiceFrame(frame) }
+        // As captured: the client asks for versions (op 16), and op 15 follows the session description.
+        if let versions = await expect(16, after: Self.voiceFrame(16, [])) { checkVoiceFrame(versions) }
+        if let sinkWants = await expect(15) { checkVoiceFrame(sinkWants) }
+        if let ack = await expect(6, after: Self.voiceFrame(3, [("t", 1_234), ("seq_ack", 0)])) { checkVoiceFrame(ack) }
 
         // DAVE: take the external sender (op 25) and send a key package (op 26).
         guard let package = await probe.waitForBinary(op: 25),
@@ -164,6 +168,7 @@ extension ParityRun {
         if await !probe.acceptWelcome(into: member) { failures.append("no DAVE welcome and transition from the simulated person's commit") }
         try? await simulator.voice.setSpeaking(speaker, true)
         let speaking = await expect(5)
+        if let speaking { checkVoiceFrame(speaking) }
         if let packet = await udp.receive(), let (header, body) = try? VoiceCrypto.open(packet, key: key, mode: .aes256GCM) {
             let packetSSRC = header[8 ..< 12].reduce(0) { $0 << 8 | Int64($1) }
             if packetSSRC != speaking?["d"]?["ssrc"]?.intValue { failures.append("RTP from the speaker has the wrong SSRC") }
@@ -185,6 +190,18 @@ extension ParityRun {
                                           speaker: speaker)
         report.checked.append("VOICE handshake and media")
         report.sequenceFailures += failures.map { "voice: \($0)" }
+    }
+
+    /// A voice gateway frame against the captured shape for its op; ops only simulated peers cause are uncaptured.
+    mutating func checkVoiceFrame(_ frame: JSON) {
+        guard let op = frame["op"]?.intValue else { return }
+        let subject = "VOICE op\(op)"
+        report.checked.append(subject)
+        guard let shape = catalog.voice["op\(op)"] else {
+            report.unverified.append(.init(subject: subject, violation: ShapeViolation(kind: .unverified, path: "", detail: "op never captured")))
+            return
+        }
+        record(subject, ShapeChecker.check(frame, against: shape))
     }
 
     /// The speaker leaves and comes back while we stay: alone, we get op 24 with exactly `epoch` 1 and
@@ -303,6 +320,7 @@ final class VoiceProbe: @unchecked Sendable {
     func close() { task.cancel(with: .normalClosure, reason: nil) }
 
     struct Connection {
+        var hello: JSON
         var ready: JSON
         var description: JSON
         var key: [UInt8]
@@ -310,7 +328,7 @@ final class VoiceProbe: @unchecked Sendable {
 
     /// Hello, Identify → Ready, IP discovery, Select Protocol (AES-GCM) → Session Description, and the transport key.
     func connect(_ identify: [(String, JSON)], udp: UDPProbe) async -> Connection? {
-        guard await waitFor(op: 8) != nil else { return nil }
+        guard let hello = await waitFor(op: 8) else { return nil }
         send(ParityRun.voiceFrame(0, identify))
         guard let ready = await waitFor(op: 2), let ssrc = ready["d"]?["ssrc"]?.intValue,
               let (address, port) = await udp.discover(ssrc: UInt32(ssrc)) else { return nil }
@@ -318,7 +336,7 @@ final class VoiceProbe: @unchecked Sendable {
             ("protocol", "udp"), ("data", .object(JSONObject([("address", .string(address)), ("port", .int(Int64(port))), ("mode", "aead_aes256_gcm_rtpsize")]))),
         ]))
         guard let description = await waitFor(op: 4) else { return nil }
-        return Connection(ready: ready, description: description,
+        return Connection(hello: hello, ready: ready, description: description,
                           key: (description["d"]?["secret_key"]?.arrayValue ?? []).compactMap { $0.intValue.map(UInt8.init) })
     }
 

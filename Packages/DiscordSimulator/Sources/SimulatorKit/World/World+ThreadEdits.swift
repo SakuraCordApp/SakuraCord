@@ -40,12 +40,15 @@ extension World {
         }
         guard canView(userID, thread) else { throw WorldError.missingAccess }
         let manages = permissions(of: userID, in: thread).contains(.manageThreads)
-        // Documented, not captured: owners may rename, archive and retag their own thread;
-        // locking and editing others' need Manage Threads.
-        if !manages, thread.ownerID != userID || patch["locked"] != nil || metadata.locked { throw WorldError.missingPermissions }
+        // Captured: an owner renames and archives their own thread, the rename sending the thread's full settings
+        // (`locked` unchanged among them). Documented, not captured: retagging; locking and editing others' need Manage Threads.
+        let changesLock = patch["locked"]?.boolValue.map { $0 != metadata.locked } ?? false
+        if !manages, thread.ownerID != userID || changesLock || metadata.locked { throw WorldError.missingPermissions }
+        var renamed: String?
         if let name = patch["name"]?.stringValue {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard (1 ... 100).contains(trimmed.count) else { throw WorldError.invalidBody("name: Must be between 1 and 100 in length.") }
+            if trimmed != thread.name { renamed = trimmed }
             thread.name = trimmed
         }
         if let archived = patch["archived"]?.boolValue, archived != metadata.archived {
@@ -58,6 +61,13 @@ extension World {
         if let tags = patch["applied_tags"]?.arrayValue { thread.appliedTags = tags.compactMap { $0.stringValue.flatMap(Snowflake.init) } }
         thread.thread = metadata
         channels[threadID] = thread
+        // Captured: a rename posts the "changed the title" system message (type 4) before THREAD_UPDATE.
+        if let renamed {
+            var notice = MessageDraft(content: renamed)
+            notice.type = 4
+            _ = try await sendSystemMessage(notice, as: userID, in: threadID)
+            thread = channels[threadID] ?? thread
+        }
         let parent = channels[thread.parentID ?? threadID] ?? thread
         await emit("THREAD_UPDATE", renderThread(thread, viewer: nil), to: audience(for: parent))
         // An open thread the editor belongs to also refreshes their membership.

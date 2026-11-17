@@ -25,7 +25,9 @@ public struct GoLiveStream: Sendable {
 /// `self_stream`, then STREAM_SERVER_UPDATE. Leaving voice while streaming
 /// sends the leave (still `self_stream`), the channel's own clean-up, then
 /// STREAM_DELETE; the client's op 19 that follows gets a second STREAM_DELETE.
-/// Watching and stopping while staying in voice are not captured yet.
+/// Stopping while staying in voice sends STREAM_DELETE (`user_requested`), then
+/// the voice state without `self_stream`. Watching someone else's stream is not
+/// captured (it needs a second client streaming at the same time).
 public extension World {
     func stream(rtcServerID: Snowflake) -> GoLiveStream? { voice.streams.values.first { $0.rtcServerID == rtcServerID } }
 

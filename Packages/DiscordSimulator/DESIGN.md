@@ -167,7 +167,7 @@ and requests list the same delays.
 
 `discord-sim-parity check` (also run by `swift test` and CI) drives a fresh
 simulator over real HTTP and WebSocket connections and compares responses,
-Gateway frames, ETF term types and event order with the captured shapes:
+Gateway and voice gateway frames, ETF term types and event order with the captured shapes:
 fields, kinds, nullability and order. A kind or omission the capture only saw
 for the same field in a similar object elsewhere is reported as unverified,
 not as a failure; so is anything inside a value captured only as null or
@@ -185,57 +185,79 @@ swift run --package-path Packages/DiscordSimulator discord-sim-parity extract <s
 ```
 
 Only kinds, field names, order and ETF tags are kept; raw captures stay out of Git.
-`POST /auth/login` is not captured (the official client can't sign in without
-its owner) and follows Discord's documented response.
 
 ## Voice and DAVE
 
-No capture has voice-gateway (P+5) or media (P+6) frames: the official
-client's native voice module sends them outside the captured layer. The ops
-and fields the server sends (hello, ready, session description, speaking,
-clients connect/disconnect, flags, platform, video, DAVE ops 21–30) follow the
-captured official client's own voice-gateway parser; close codes, sequencing,
-IP discovery and the `_rtpsize` transport modes follow Discord's documented
-voice protocol; DAVE rounds follow Discord's DAVE protocol. Calls use DAVE
-(protocol version 1) when the client offers it: the voice server is the MLS
-external sender, and simulated people are real group members whose Opus and
-H.264 frames libdave encrypts.
+The voice gateway (P+5) follows captures of the official client
+(`Resources/Shapes/gateway.json`, `voice`): hello (`v` 8, `heartbeat_interval`
+13,750 ms; the main Gateway's is 41,250 ms), Ready, the versions reply to op
+16, the session description, op 15 after it and after each op 12, speaking,
+the client's own op 12 for a camera or screen, heartbeats, and DAVE's first
+binary ops (25 from the server, 26 from the client). Ready and the session
+description carry no `seq`; sequenced messages start at 0 with `seq` first.
+Discord picks H265 for the official client; the simulator answers H264, the
+only codec its video generator encodes. Calls use DAVE (protocol version 1)
+when the client offers it: the voice server is the MLS external sender, and
+simulated people are real group members whose Opus and H.264 frames libdave
+encrypts. Media (P+6) is RTP over UDP, which CDP can't see.
 
 Inferred, not captured:
 
-- Main Gateway: a session dropped without a normal close stays resumable for
-  60 s; after that, like an invalidated session, it ends and its voice state
-  is left (VOICE_STATE_UPDATE with no channel).
-- Values: hello's `heartbeat_interval` (13,750 ms), op 18 `flags` and op 20
-  `platform` of 0, a simulated camera's op 12 stream limits (1280×720, 30 fps),
-  SSRCs (audio, then video and RTX at +1 and +2), a 200-message resume buffer.
-- DAVE rounds: the first commit wins; a simulated member creates a new group
-  when there is one; a transition executes after 5 s if a member never
-  answers; a group left with one member starts over with op 24 (epoch 1, no
-  `transition_id`, as the official client parses it and a live test showed).
-- A stream's group ID is its `rtc_channel_id`, which viewers identify with.
+- Main Gateway resume window: a session dropped without a normal close stays
+  resumable for 60 s, then ends and leaves its voice state. CDP's offline
+  emulation keeps the old socket open, so Discord never sees a drop; the
+  official client itself identifies afresh after about a minute of failed
+  reconnects (it resumed after 30 s and gave up at 60 s).
+- Voice frames that need a second person in the channel (the two accounts
+  can't share one client): what the server sends about other people (ops 5,
+  11, 12, 13, 18 `flags`, 20 `platform`) and DAVE transitions and commits
+  (ops 21–24, 27–31). They follow the official client's voice-gateway parser
+  and Discord's DAVE protocol: the first commit wins; a simulated member
+  creates a new group when there is one; a transition executes after 5 s if a
+  member never answers; a group left with one member starts over with op 24
+  (epoch 1, no `transition_id`, as the client parses it and a live test
+  showed). Op 15's `pixelCounts`, seen only on a stream connection, is left out.
+- Values: SSRCs (audio, then video and RTX at +1 and +2) and a 200-message
+  voice resume buffer.
+- A stream's group ID is its `rtc_channel_id`, which viewers identify with;
+  watching someone else's stream needs a second client.
 - Media: simulated speech and video are generated (Opus, H.264 with a keyframe
   every second) and sent at 50 and 15 packets/frames per second.
-- REST routes with no capture: `GET /users/@me/guilds` (Discord's documented
-  partial servers and paging); a widget image's upload slot (like a message
-  attachment's); removing a past avatar (204, unknown 404); `POST
-  /attachments/refresh-urls` (the official client's body; only stored
-  attachments are signed afresh); `PATCH /users/@me/guilds/@me/settings` (DMs,
-  `guild_id` null); accepting a message request (204; no simulated DM is one,
-  so nothing changes) and ignoring one (closes the DM for that user); the
-  blocked-member warning dismissal (200, empty body, as the official client
-  expects).
+- Errors the official client never lets through (it blocks the action
+  itself): a timed-out member sending, reacting or joining voice; a
+  non-manager posting in a locked archived thread (50083); a display name over
+  32, pronouns over 40 or a bio over 300 characters; adding someone who is
+  neither a friend nor a server member to a group DM, and an eleventh member.
+  These follow Discord's documentation.
+- Edits without `allowed_mentions` (the official client always sends it): a
+  reply keeps pinging only if it did before.
+- An owner retagging their own thread (no forum in the Testing server has
+  tags); Discord documents it as allowed.
+- Unreachable from the official client with two accounts: the error for
+  someone else's or an unknown scheduled message or pre-uploaded file name;
+  RATE_LIMITED (the client debounces member searches); MESSAGE_POLL_VOTE_ADD_MANY
+  (voting several answers sends one MESSAGE_POLL_VOTE_ADD each); AUTH_SESSION_CHANGE
+  (it needs a sign-in or another session logged out).
+- REST routes the official client never called in any capture: `GET
+  /users/@me/guilds` (Discord's documented partial servers and paging), `GET
+  /users/@me/channels`, `GET /guilds/{id}/channels`, `/roles` and
+  `/members/{id}`, `GET /channels/{id}/messages/{id}`, `PATCH
+  /guilds/{id}/members/@me/nick` (the client uses `PATCH /members/@me`),
+  `PATCH /users/@me/guilds/{id}/settings` (it uses the bulk route),
+  settings-proto 3, `GET /experiments`, `GET /applications/{id}/widget-configs`,
+  widget image uploads (Nitro-only), `POST /attachments/refresh-urls`, and
+  accepting or ignoring a message request.
 - Captured routes, inferred behavior: the game catalogue is the games people
-  play; game search ranks prefix matches first; unknown game IDs are left
-  out; every other game is "similar"; suggested games are what the user and
-  their friends play; announcements are a bare 404, as no simulated game has
-  an official server; no simulated application publishes a widget config; the
-  shop is one category holding what the account wears, bought 90 days ago and
-  never expiring, with made-up euro prices.
+  play, ranked by catalogue order where Discord ranks by popularity; unknown
+  game IDs are left out; every other game is "similar"; suggested games are
+  what the user and their friends play; no simulated game has an official
+  server or publishes a widget config; the shop is one category holding what
+  the account wears, bought 90 days ago and never expiring, with made-up euro
+  prices.
 - Gateway: THREAD_MEMBER_LIST_UPDATE lists every thread member in join order;
-  MESSAGE_REACTION_REMOVE_EMOJI's `burst` and `type`; MESSAGE_REACTION_REMOVE_ALL,
-  GUILD_SOUNDBOARD_SOUND_UPDATE and event status changes follow Discord's
-  documentation.
+  MESSAGE_REACTION_REMOVE_EMOJI's `burst` and `type`.
+- Sign-in (`POST /auth/login`, MFA and QR remote auth) follows Discord's
+  documented responses: capturing it would sign an account out.
 
 ### Vendored sources
 

@@ -65,10 +65,7 @@ extension World {
             let denied = "error=access_denied&error_description=The+resource+owner+or+authorization+server+denied+the+request&\(issuer)"
             return .object(JSONObject([("location", .string("\(redirect)?\(denied)"))]))
         }
-        if let previous = servers.oauthGrants[viewer]?[app.id] {
-            await emit("OAUTH2_TOKEN_REVOKE", .object(JSONObject([("access_token", .string(previous.accessToken))])), to: .users([viewer]))
-            await emit("OAUTH2_TOKEN_DELETE", .object(JSONObject([("application_id", app.id.json), ("id", previous.id.json)])), to: .users([viewer]))
-        }
+        if let previous = servers.oauthGrants[viewer]?[app.id] { await emitRevoked(previous, of: app.id, for: viewer) }
         let grant = OAuth2Grant(id: nextID(), scopes: scopes, accessToken: random.urlSafeString(30))
         servers.oauthGrants[viewer, default: [:]][app.id] = grant
         await emit("OAUTH2_TOKEN_CREATE", .object(JSONObject([
@@ -78,6 +75,24 @@ extension World {
         var location = "\(redirect)?\(issuer)&code=\(random.urlSafeString(30))"
         if let state = request.query["state"]?.first?.addingPercentEncoding(withAllowedCharacters: .alphanumerics) { location += "&state=\(state)" }
         return .object(JSONObject([("location", .string(location))]))
+    }
+
+    /// `DELETE /oauth2/tokens/{id}` (Deauthorize in Authorized Apps). Captured: USER_CONNECTIONS_UPDATE, the token's
+    /// revoke and delete, then USER_APPLICATION_REMOVE, all only to the user.
+    func deauthorize(grant grantID: Snowflake, by userID: Snowflake) async throws {
+        guard let (appID, grant) = servers.oauthGrants[userID]?.first(where: { $0.value.id == grantID }) else {
+            throw WorldError.unknown("Token", code: 10012)
+        }
+        servers.oauthGrants[userID]?[appID] = nil
+        await emit("USER_CONNECTIONS_UPDATE", .object(JSONObject([("user_id", userID.json)])), to: .users([userID]))
+        await emitRevoked(grant, of: appID, for: userID)
+        await emit("USER_APPLICATION_REMOVE", .object(JSONObject([("application_id", appID.json)])), to: .users([userID]))
+    }
+
+    private func emitRevoked(_ grant: OAuth2Grant, of appID: Snowflake, for userID: Snowflake) async {
+        await emit("OAUTH2_TOKEN_REVOKE", .object(JSONObject([("access_token", .string(grant.accessToken)), ("application_id", appID.json)])),
+                   to: .users([userID]))
+        await emit("OAUTH2_TOKEN_DELETE", .object(JSONObject([("application_id", appID.json), ("id", grant.id.json)])), to: .users([userID]))
     }
 
     /// `GET /oauth2/@me`: who an access token belongs to, for which application and scopes.
@@ -95,9 +110,10 @@ extension World {
     }
 
     /// `GET /oauth2/tokens`: the applications the user authorized, oldest first.
-    func renderOAuthTokens(_ userID: Snowflake) -> JSON {
+    /// Captured: the profile widgets ask with `application_ids`, which narrows the list to those applications.
+    func renderOAuthTokens(_ userID: Snowflake, only applicationIDs: Set<Snowflake>? = nil) -> JSON {
         .array((servers.oauthGrants[userID] ?? [:]).sorted { $0.value.id < $1.value.id }.compactMap { appID, grant in
-            guard let app = users[appID] else { return nil }
+            guard let app = users[appID], applicationIDs?.contains(appID) ?? true else { return nil }
             return .object(JSONObject([
                 ("id", grant.id.json), ("scopes", .array(grant.scopes.map(JSON.string))), ("application", renderOAuthApplication(app)),
             ]))

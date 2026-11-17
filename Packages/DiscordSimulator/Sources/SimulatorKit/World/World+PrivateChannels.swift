@@ -26,13 +26,17 @@ extension World {
         return channel
     }
 
-    /// `PUT /channels/{id}/recipients/{id}`: a member adds a friend, who gets the group in their DM list.
+    /// `PUT /channels/{id}/recipients/{id}`: a member adds a friend or someone they share a server with
+    /// (the official client's picker: "Add friends or server members to group DMs"), who gets the group in their DM list.
     func addGroupRecipient(_ channelID: Snowflake, _ added: Snowflake, by userID: Snowflake) async throws {
         var channel = try groupDM(channelID, member: userID)
         _ = try user(added)
         guard !channel.recipients.contains(added) else { return }
-        // Not captured: the friends-only rule, the ten-person cap and their errors follow Discord's documentation.
-        guard relationships[userID]?[added]?.type == .friend else { throw WorldError(status: 403, code: 50007, message: "Cannot send messages to this user") }
+        // Not captured: the errors for anyone else and for the ten-person cap follow Discord's documentation.
+        let sharesServer = guilds.values.contains { $0.members[userID] != nil && $0.members[added] != nil }
+        guard relationships[userID]?[added]?.type == .friend || sharesServer else {
+            throw WorldError(status: 403, code: 50007, message: "Cannot send messages to this user")
+        }
         guard channel.recipients.count < 10 else { throw WorldError(status: 400, code: 30011, message: "Maximum number of group DM recipients reached (10)") }
         channel.recipients.append(added)
         channels[channelID] = channel
@@ -78,11 +82,13 @@ extension World {
         _ = try await closePrivateChannel(channelID, by: userID)
     }
 
-    /// "Don't leave" on a group's blocked-member warning; READY then carries `blocked_user_warning_dismissed`.
-    func dismissBlockedUserWarning(in channelID: Snowflake, by userID: Snowflake) throws {
+    /// "Don't leave" on a group's blocked-member warning. Captured: the dismisser's sessions get CHANNEL_UPDATE with
+    /// `blocked_user_warning_dismissed`, which READY carries from then on.
+    func dismissBlockedUserWarning(in channelID: Snowflake, by userID: Snowflake) async throws {
         let channel = try channel(channelID)
         guard channel.type.isPrivate else { throw WorldError.wrongChannelType }
         dismissedBlockedUserWarnings[userID, default: []].insert(channelID)
+        await emit("CHANNEL_UPDATE", renderChannel(channel, viewer: userID), to: .users([userID]))
     }
 
     /// The person leaves the group: they get CHANNEL_DELETE and an ack of the last message;
@@ -90,7 +96,7 @@ extension World {
     private func dropRecipient(_ removed: Snowflake, from channel: Channel, by userID: Snowflake) async throws {
         var channel = channel
         channel.recipients.removeAll { $0 == removed }
-        // Not captured (the owner stayed): ownership passes to the next member, as Discord documents.
+        // Captured (the remaining member's READY): ownership passes to the next member.
         let ownerLeft = channel.ownerID == removed
         if ownerLeft { channel.ownerID = channel.recipients.first }
         openPrivateChannels[removed]?.removeAll { $0 == channel.id }

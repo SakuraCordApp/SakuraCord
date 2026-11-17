@@ -63,6 +63,8 @@ public struct ShapeExtractor {
             absorbGateway(record)
             absorbStartup(record)
             interval?.records.append(record)
+        case "vgw"?:
+            absorbVoice(record)
         default:
             break
         }
@@ -129,6 +131,21 @@ public struct ShapeExtractor {
             merged.merge(node)
             catalog.gateway[name] = merged
         }
+    }
+
+    /// Voice gateway JSON frames; binary DAVE payloads are MLS messages with no JSON shape.
+    private mutating func absorbVoice(_ record: JSON) {
+        guard let op = record["op"]?.intValue, let payload = record["d"], record["binary"] == nil else { return }
+        // Captured frames put `seq` first, and only sequenced ones have it.
+        var fields: [(String, JSON)] = []
+        if let sequence = record["voiceSeq"], sequence != .null { fields.append(("seq", sequence)) }
+        fields += [("op", .int(op)), ("d", payload)]
+        var node = ShapeNode()
+        node.absorb(.object(JSONObject(fields)))
+        let sent = record["dir"]?.stringValue == "out"
+        var merged = (sent ? catalog.voiceSent : catalog.voice)["op\(op)"] ?? ShapeNode()
+        merged.merge(node)
+        if sent { catalog.voiceSent["op\(op)"] = merged } else { catalog.voice["op\(op)"] = merged }
     }
 
     // MARK: Sequences

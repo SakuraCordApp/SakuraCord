@@ -18,6 +18,10 @@ public struct ShapeCatalog: Sendable {
     public var gateway: [String: ShapeNode] = [:]
     /// Client-sent Gateway frames, keyed like `gateway`.
     public var gatewaySent: [String: ShapeNode] = [:]
+    /// Voice gateway JSON frames the server sends, by `"op8"`; the whole frame `{seq, op, d}` (`seq` only when sequenced).
+    public var voice: [String: ShapeNode] = [:]
+    /// Voice gateway JSON frames the client sends, keyed like `voice`.
+    public var voiceSent: [String: ShapeNode] = [:]
     /// Named flows as ordered steps such as `"REST POST /api/v9/channels/{id}/messages"` or `"GW MESSAGE_CREATE"`.
     public var sequences: [String: [String]] = [:]
 
@@ -88,6 +92,12 @@ public extension ShapeCatalog {
         for (name, node) in gateway["sent"]?.objectValue ?? JSONObject() {
             catalog.gatewaySent[name] = try ShapeNode(encoded: node)
         }
+        for (name, node) in gateway["voice"]?["received"]?.objectValue ?? JSONObject() {
+            catalog.voice[name] = try ShapeNode(encoded: node)
+        }
+        for (name, node) in gateway["voice"]?["sent"]?.objectValue ?? JSONObject() {
+            catalog.voiceSent[name] = try ShapeNode(encoded: node)
+        }
         let sequences = try JSON.parse(Data(contentsOf: directory.appending(path: fileNames.sequences)))
         for (name, steps) in sequences.objectValue ?? JSONObject() {
             catalog.sequences[name] = steps.arrayValue?.compactMap(\.stringValue) ?? []
@@ -114,8 +124,13 @@ public extension ShapeCatalog {
         for name in gateway.keys.sorted() { received[name] = gateway[name]!.encoded() }
         var sent = JSONObject()
         for name in gatewaySent.keys.sorted() { sent[name] = gatewaySent[name]!.encoded() }
-        try JSON.object(JSONObject([("received", .object(received)), ("sent", .object(sent))]))
-            .prettyData().write(to: directory.appending(path: Self.fileNames.gateway))
+        var voiceReceived = JSONObject(), voiceSent = JSONObject()
+        for name in voice.keys.sorted() { voiceReceived[name] = voice[name]!.encoded() }
+        for name in self.voiceSent.keys.sorted() { voiceSent[name] = self.voiceSent[name]!.encoded() }
+        try JSON.object(JSONObject([
+            ("received", .object(received)), ("sent", .object(sent)),
+            ("voice", .object(JSONObject([("received", .object(voiceReceived)), ("sent", .object(voiceSent))]))),
+        ])).prettyData().write(to: directory.appending(path: Self.fileNames.gateway))
         var flows = JSONObject()
         for name in sequences.keys.sorted() { flows[name] = .array(sequences[name]!.map(JSON.string)) }
         try JSON.object(flows).prettyData().write(to: directory.appending(path: Self.fileNames.sequences))

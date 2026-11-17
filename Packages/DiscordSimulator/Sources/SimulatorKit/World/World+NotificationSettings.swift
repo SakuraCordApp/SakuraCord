@@ -15,7 +15,8 @@ extension World {
     }
 
     /// One scope's settings: a server, or nil for direct messages (`@me`), which Discord
-    /// keys by a null `guild_id`. Overrides there name the user's DMs and groups (inferred).
+    /// keys by a null `guild_id`. Overrides there name the user's DMs and groups; captured, the official client
+    /// mutes a DM (`muted`) and pins it (`flags` 2048) this way.
     func patchGuildSettings(_ userID: Snowflake, scope guildID: Snowflake?, fields: JSONObject) async throws -> JSON {
         if let guildID, guilds[guildID]?.members[userID] == nil { throw WorldError.unknown("Guild", code: 10004) }
         var settings = guildSettings(userID, guildID)

@@ -152,6 +152,7 @@ public extension World {
                 object["owner_id"] = channel.ownerID?.json ?? .null
             }
             if let pinned = channel.lastPinTimestamp { object["last_pin_timestamp"] = World.timestamp(pinned) }
+            if let viewer { object["blocked_user_warning_dismissed"] = .bool(dismissedBlockedUserWarnings[viewer]?.contains(channel.id) == true) }
             return .object(object)
         }
         object["name"] = .optional(channel.name)

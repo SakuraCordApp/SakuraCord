@@ -16,6 +16,13 @@ enum OAuth2Routes {
         routes["POST /api/v9/oauth2/authorize"] = { context in
             .json(try await context.world.oauthAuthorize(context.request, body: try context.json, viewer: context.userID))
         }
-        routes["GET /api/v9/oauth2/tokens"] = { context in .json(await context.world.renderOAuthTokens(context.userID)) }
+        routes["DELETE /api/v9/oauth2/tokens/{id}"] = { context in
+            try await context.world.deauthorize(grant: try context.id(0), by: context.userID)
+            return .empty
+        }
+        routes["GET /api/v9/oauth2/tokens"] = { context in
+            let filter = context.request.query["application_ids"].map { Set($0.compactMap(Snowflake.init)) }
+            return .json(await context.world.renderOAuthTokens(context.userID, only: filter))
+        }
     }
 }
