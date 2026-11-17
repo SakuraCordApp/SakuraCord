@@ -408,6 +408,7 @@ import Testing
     """.utf8)
     let dto = try JSONDecoder().decode(UserProfileDTO.self, from: payload)
     let domain = try dto.domain(guildID: GuildID(rawValue: 100), guilds: [:], guildRoles: [], effectConfig: nil)
-    #expect(domain.guildJoinedAt == DiscordDate.parse("2026-07-21T15:30:00.000000+00:00"))
+    let expectedJoinedAt = try #require(DiscordDate.parse("2026-07-21T15:30:00.000000+00:00"))
+    #expect(domain.guildJoinedAt == expectedJoinedAt)
     #expect(domain.displayName == "AliceInServer")
 }

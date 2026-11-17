@@ -441,7 +441,7 @@ struct MemberProfilePopover<Footer: View>: View {
 
     private var serverJoinedAt: Date? {
         guard guildID != nil else { return nil }
-        return profile?.guildJoinedAt ?? member.joinedAt ?? (isCurrentUser ? currentGuild?.joinedAt : nil)
+        return member.joinedAt ?? profile?.guildJoinedAt ?? (isCurrentUser ? currentGuild?.joinedAt : nil)
     }
 
     private var profileThemeHexes: [UInt32] {
