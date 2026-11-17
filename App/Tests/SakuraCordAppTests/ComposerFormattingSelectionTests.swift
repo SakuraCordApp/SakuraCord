@@ -220,7 +220,7 @@ func `member mention autocomplete covers display names with spaces`(
         status: .online
     )
     let remote1 = Member(
-        user: User(id: UserID(rawValue: 301), username: "remote_alice", displayName: "Remote Alice"),
+        user: User(id: UserID(rawValue: 301), username: "alice_remote", displayName: "Alice Remote"),
         roleName: "Member",
         status: .online
     )
@@ -237,4 +237,6 @@ func `member mention autocomplete covers display names with spaces`(
     #expect(suggestedIDs.contains("user:201"))
     #expect(suggestedIDs.contains("user:301"))
     #expect(!suggestedIDs.contains("user:202"))
+    // Remote members must retain their supplied order and precedence ahead of local additions
+    #expect(suggestedIDs.first == "user:301")
 }

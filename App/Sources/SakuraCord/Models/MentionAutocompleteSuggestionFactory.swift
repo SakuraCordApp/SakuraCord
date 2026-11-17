@@ -90,11 +90,11 @@ enum MentionAutocompleteSuggestionFactory {
         if normalizedQuery.isEmpty || remoteMembers.isEmpty {
             memberStore = mergingMemberStore(localMembers, updates: remoteMembers)
         } else {
-            let matchingLocals = localMembers.filter { member in
-                let rank = memberMatchRank(member, normalizedQuery: normalizedQuery)
-                return rank >= .wordPrefix
+            let remoteIDs = Set(remoteMembers.map(\.id))
+            let missingLocals = localMembers.filter { member in
+                !remoteIDs.contains(member.id) && memberMatchRank(member, normalizedQuery: normalizedQuery) >= .wordPrefix
             }
-            memberStore = mergingMemberStore(matchingLocals, updates: remoteMembers)
+            memberStore = remoteMembers + missingLocals
         }
 
         let orderedMembers: [Member]
