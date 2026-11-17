@@ -18,10 +18,13 @@ struct MentionAutocompleteSuggestion: Identifiable {
 enum MentionAutocompleteSuggestionFactory {
     private static let resultLimit = 10
 
+    /// Discord's member matcher order: a literal prefix, then a prefix of the
+    /// accent-folded name, then an ordered subsequence.
     private enum MemberMatchRank: Int {
         case none = 0
         case fuzzy = 1
-        case strong = 2
+        case normalizedPrefix = 2
+        case prefix = 3
     }
 
     private struct RankedMember {
@@ -45,9 +48,14 @@ enum MentionAutocompleteSuggestionFactory {
         let globalDisplayName: String?
     }
 
+    private struct MemberSearchName {
+        let lowered: String
+        let folded: String
+    }
+
     private struct MemberSearchCacheEntry {
         let signature: MemberSearchSignature
-        let candidates: [String]
+        let names: [MemberSearchName]
     }
 
     private static var memberSearchCache: [UserID: MemberSearchCacheEntry] = [:]
@@ -66,22 +74,18 @@ enum MentionAutocompleteSuggestionFactory {
     static func memberSuggestions(
         query: String,
         recentMessages: [Message],
-        localMembers: [Member],
-        remoteMembers: [Member],
+        members: [Member],
         roles: [GuildRole],
         isGuildChannel: Bool = false,
         canMentionNonMentionableRoles: Bool = false
     ) -> [MentionAutocompleteSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedQuery = normalized(trimmedQuery)
-        // Discord re-searches its whole GuildMemberStore after an opcode-8
-        // reply, so cached members matched by nickname or global name stay.
-        let memberStore = mergingMemberStore(localMembers, updates: remoteMembers)
 
         let orderedMembers: [Member]
         if normalizedQuery.isEmpty {
             let resolvedByID = Dictionary(
-                memberStore.map { ($0.id, $0) },
+                members.map { ($0.id, $0) },
                 uniquingKeysWith: { _, rhs in rhs }
             )
             var seen = Set<UserID>()
@@ -97,12 +101,13 @@ enum MentionAutocompleteSuggestionFactory {
             // Discord prefers recent channel authors for a bare @. When the
             // channel has no messages cached, its guild-member store order is
             // the fallback.
-            orderedMembers = recent.isEmpty ? memberStore : recent
+            orderedMembers = recent.isEmpty ? members : recent
         } else {
             var bestMatches: [RankedMember] = []
             bestMatches.reserveCapacity(resultLimit)
-            for (index, member) in memberStore.enumerated() {
-                let rank = memberMatchRank(member, normalizedQuery: normalizedQuery)
+            let loweredQuery = trimmedQuery.lowercased()
+            for (index, member) in members.enumerated() {
+                let rank = memberMatchRank(member, loweredQuery: loweredQuery, normalizedQuery: normalizedQuery)
                 guard rank != .none else { continue }
                 let candidate = RankedMember(storeIndex: index, rank: rank, member: member)
                 let insertionIndex = bestMatches.firstIndex {
@@ -380,41 +385,40 @@ enum MentionAutocompleteSuggestionFactory {
 
     private static func memberMatchRank(
         _ member: Member,
+        loweredQuery: String,
         normalizedQuery: String
     ) -> MemberMatchRank {
-        guard !normalizedQuery.isEmpty else { return .strong }
-        if member.id.description == normalizedQuery { return .strong }
-        var hasFuzzyMatch = false
-        for candidate in normalizedCandidates(for: member) {
-            if candidate.hasPrefix(normalizedQuery) { return .strong }
-            if isOrderedSubsequence(normalizedQuery, of: candidate) {
-                hasFuzzyMatch = true
+        if member.id.description == normalizedQuery { return .prefix }
+        var rank = MemberMatchRank.none
+        for name in searchNames(for: member) {
+            if name.lowered.hasPrefix(loweredQuery) { return .prefix }
+            if name.folded.hasPrefix(normalizedQuery) {
+                rank = .normalizedPrefix
+            } else if rank == .none, isOrderedSubsequence(normalizedQuery, of: name.folded) {
+                rank = .fuzzy
             }
         }
-        return hasFuzzyMatch ? .fuzzy : .none
+        return rank
     }
 
-    private static func normalizedCandidates(for member: Member) -> [String] {
+    private static func searchNames(for member: Member) -> [MemberSearchName] {
         let signature = MemberSearchSignature(
             username: member.user.username,
             displayName: member.user.displayName,
             globalDisplayName: member.globalDisplayName
         )
         if let cached = memberSearchCache[member.id], cached.signature == signature {
-            return cached.candidates
+            return cached.names
         }
 
-        var candidates: [String] = []
-        candidates.reserveCapacity(6)
-        for value in [signature.username, signature.displayName] + [signature.globalDisplayName].compactMap({ $0 }) {
-            let lowered = value.lowercased()
-            candidates.append(lowered)
-            guard !lowered.utf8.allSatisfy({ $0 < 0x80 }) else { continue }
-            let folded = normalized(value)
-            if folded != lowered {
-                candidates.append(folded)
+        let names = ([signature.username, signature.displayName] + [signature.globalDisplayName].compactMap { $0 })
+            .map { value in
+                let lowered = value.lowercased()
+                return MemberSearchName(
+                    lowered: lowered,
+                    folded: lowered.utf8.allSatisfy { $0 < 0x80 } ? lowered : normalized(value)
+                )
             }
-        }
         if memberSearchCache.count >= memberSearchCacheLimit,
            memberSearchCache[member.id] == nil
         {
@@ -422,9 +426,9 @@ enum MentionAutocompleteSuggestionFactory {
         }
         memberSearchCache[member.id] = MemberSearchCacheEntry(
             signature: signature,
-            candidates: candidates
+            names: names
         )
-        return candidates
+        return names
     }
 
     /// Match-sorter's ranking ladder used by Discord for role autocomplete.

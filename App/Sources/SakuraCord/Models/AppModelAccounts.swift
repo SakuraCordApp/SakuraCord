@@ -530,7 +530,6 @@ extension AppModel {
         mentionMemberSearchTask = nil
         mentionMemberSearchQuery = nil
         mentionMemberSearchCache = [:]
-        mentionMemberResults = []
         mentionAutocompleteMembers = []
         knownMentionMembers = [:]
         roleMemberTask?.cancel()
