@@ -123,6 +123,18 @@ extension World {
     /// time while unchanged, and new or changed ones get fresh ones.
     func saveProfileWidgets(_ userID: Snowflake, body: JSON) throws -> JSON {
         let previous = profileWidgets[userID] ?? []
+        // All or nothing: a rejected save leaves every upload it would have used in place for a retry.
+        let (uploads, stored) = (pendingUploads, media)
+        do {
+            profileWidgets[userID] = try savedWidgets(body, of: userID, previous: previous)
+        } catch {
+            (pendingUploads, media) = (uploads, stored)
+            throw error
+        }
+        return .object(JSONObject([("widgets", .array(profileWidgets[userID] ?? []))]))
+    }
+
+    private func savedWidgets(_ body: JSON, of userID: Snowflake, previous: [JSON]) throws -> [JSON] {
         var saved: [JSON] = []
         for widget in body["widgets"]?.arrayValue ?? [] {
             guard var data = widget["data"]?.objectValue, let type = data["type"]?.stringValue else { throw WorldError.invalidBody("widgets: data.type") }
@@ -140,8 +152,7 @@ extension World {
                 saved.append(.object(JSONObject([("id", nextID().json), ("updated_at", World.timestamp(clock.now)), ("data", .object(data))])))
             }
         }
-        profileWidgets[userID] = saved
-        return .object(JSONObject([("widgets", .array(saved))]))
+        return saved
     }
 
     // MARK: Images
@@ -164,7 +175,7 @@ extension World {
                     let fileID = nextID(), contentType = Self.contentType(forFilename: name, data: data)
                     media["/widget-assets/\(userID)/\(fileID)"] = (data, contentType)
                     saved[key] = .object(JSONObject([("file_id", fileID.json), ("width", .int(Int64(image.width))),
-                                                     ("height", .int(Int64(image.height))), ("is_animated", .bool(contentType == "image/gif"))]))
+                                                     ("height", .int(Int64(image.height))), ("is_animated", .bool(Self.isAnimated(data)))]))
                 } else {
                     saved[key] = try saveWidgetImages(element, of: userID)
                 }

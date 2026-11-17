@@ -65,12 +65,17 @@ public extension ShapeCatalog {
 
     /// The catalog bundled with the simulator, with the fields taken from the official client's code.
     static func bundled() throws -> ShapeCatalog {
+        var catalog = try captured()
+        try catalog.addClientCodeShapes()
+        return catalog
+    }
+
+    /// Only what captures saw.
+    static func captured() throws -> ShapeCatalog {
         guard let directory = Bundle.module.url(forResource: "Shapes", withExtension: nil) else {
             throw ShapeError.malformed("bundled Shapes directory is missing")
         }
-        var catalog = try load(from: directory)
-        try catalog.addClientCodeShapes()
-        return catalog
+        return try load(from: directory)
     }
 
     static func load(from directory: URL) throws -> ShapeCatalog {

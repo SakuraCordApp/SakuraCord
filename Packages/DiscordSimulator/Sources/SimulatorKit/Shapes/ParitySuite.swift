@@ -101,7 +101,8 @@ struct ParityRun {
     init(simulator: DiscordSimulator, mutate: ParitySuite.Mutation?) {
         self.simulator = simulator
         self.mutate = mutate
-        elsewhere = FieldIndex(simulator.catalog)
+        // Captured shapes only: a field from the client's code mustn't make a missing field elsewhere look merely unverified.
+        elsewhere = FieldIndex((try? ShapeCatalog.captured()) ?? simulator.catalog)
     }
 
     struct SignedIn {

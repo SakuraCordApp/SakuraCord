@@ -82,6 +82,11 @@ public extension World {
         return (width, height)
     }
 
+    /// More than one frame: an animated GIF, WebP or PNG.
+    internal nonisolated static func isAnimated(_ data: Data) -> Bool {
+        CGImageSourceCreateWithData(data as CFData, nil).map { CGImageSourceGetCount($0) > 1 } ?? false
+    }
+
     internal nonisolated static func contentType(forFilename filename: String, data: Data) -> String {
         let ext = (filename as NSString).pathExtension.lowercased()
         switch ext {
