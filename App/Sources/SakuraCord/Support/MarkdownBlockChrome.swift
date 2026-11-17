@@ -21,6 +21,13 @@ enum MarkdownBlockChrome {
         NSBezierPath(roundedRect: bar, xRadius: bar.width / 2, yRadius: bar.width / 2).fill()
     }
 
+    /// Discord centers its 5.5 px list disc 12 px before the item text,
+    /// which starts one 16 px gutter after the marker's `frame`.
+    nonisolated static func listMarkerDisc(for frame: CGRect, em: CGFloat) -> CGRect {
+        let diameter = 5.5 * em
+        return CGRect(x: frame.minX + 4 * em - diameter / 2, y: frame.midY - diameter / 2, width: diameter, height: diameter)
+    }
+
     /// Discord's list marker: a disc, or a 1 px ring once nested.
     nonisolated static func drawListMarker(in disc: CGRect, color: NSColor, isHollow: Bool) {
         color.set()

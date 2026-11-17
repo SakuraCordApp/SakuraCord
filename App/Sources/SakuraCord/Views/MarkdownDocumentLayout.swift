@@ -422,8 +422,8 @@ nonisolated final class MarkdownQuoteBox: NSTextTableBlock {
 }
 
 /// Draws Markdown's chrome behind its glyphs, as the timeline does: code
-/// blocks, quote bars and inline code, which a text view's square
-/// background colour can't round or outline.
+/// blocks, quote bars, list markers and inline code, which a text view's
+/// square background colour can't round or outline.
 nonisolated class MarkdownLayoutManager: NSLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         let blocks = blockRects().map { ($0.rect.offsetBy(dx: origin.x, dy: origin.y), $0.isCode) }
@@ -433,6 +433,7 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
                 if isCode { MarkdownBlockChrome.drawCode(in: rect) } else { MarkdownBlockChrome.drawQuoteBar(in: rect) }
             }
         }
+        drawListMarkers(at: origin)
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         let rects = rects(of: .discordMarkdownInlineCode, forGlyphRange: glyphsToShow, padding: DiscordMarkdown.inlineCodePadding)
             .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
@@ -449,6 +450,8 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             guard let name = value as? String, name != "fence" else { return }
             var extent: NSRect?
             enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) { rect, used, _, _, _ in
+                // A line cut off by a line limit has an empty fragment.
+                guard !rect.isEmpty else { return }
                 let line = NSRect(x: rect.minX, y: used.minY, width: rect.width, height: used.height)
                 extent = extent?.union(line) ?? line
             }
@@ -462,6 +465,23 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             }
         }
         return result
+    }
+
+    /// List markers' text is clear, so their discs are drawn as the
+    /// timeline draws them.
+    private func drawListMarkers(at origin: NSPoint) {
+        guard let textStorage, let container = textContainers.first else { return }
+        textStorage.enumerateAttribute(.discordMarkdownListMarker, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
+            guard let level = value as? NSNumber else { return }
+            let frame = boundingRect(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
+            guard !frame.isEmpty else { return }
+            let em = NativeTimelineMarkdownChromeMetrics.em(in: textStorage, at: range.location)
+            let isQuoted = textStorage.attribute(.discordMarkdownBlock, at: range.location, effectiveRange: nil) as? String == "quote"
+            MarkdownBlockChrome.drawListMarker(
+                in: MarkdownBlockChrome.listMarkerDisc(for: frame.offsetBy(dx: origin.x, dy: origin.y), em: em),
+                color: isQuoted ? .secondaryLabelColor : .labelColor, isHollow: level.intValue > 0
+            )
+        }
     }
 
     /// Each line's run of text marked with `key`, as tall as its line, as the
@@ -479,7 +499,8 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             let runGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             enumerateLineFragments(forGlyphRange: runGlyphs) { _, line, container, lineGlyphs, _ in
                 let glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
-                guard glyphs.length > 0 else { return }
+                // A line cut off by a line limit has an empty fragment.
+                guard glyphs.length > 0, !line.isEmpty else { return }
                 let bounds = self.boundingRect(forGlyphRange: glyphs, in: container)
                 let start = self.characterIndexForGlyph(at: glyphs.location)
                 let isWrapped = glyphs.location == lineGlyphs.location

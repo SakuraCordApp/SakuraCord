@@ -531,19 +531,11 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    /// Discord centers its 5.5 px disc 12 px before the item text, which
-    /// starts one 16 px gutter after the marker, and hollows nested ones.
     private static func drawListMarkerDecorations(_ markers: [ListMarker]) {
         for marker in markers {
-            let diameter = 5.5 * marker.em
-            let disc = CGRect(
-                x: marker.frame.minX + 4 * marker.em - diameter / 2,
-                y: marker.frame.midY - diameter / 2,
-                width: diameter,
-                height: diameter
-            )
             MarkdownBlockChrome.drawListMarker(
-                in: disc, color: marker.isQuoted ? .secondaryLabelColor : .labelColor, isHollow: marker.isNested
+                in: MarkdownBlockChrome.listMarkerDisc(for: marker.frame, em: marker.em),
+                color: marker.isQuoted ? .secondaryLabelColor : .labelColor, isHollow: marker.isNested
             )
         }
     }
