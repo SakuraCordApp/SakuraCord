@@ -384,7 +384,6 @@ enum MentionAutocompleteSuggestionFactory {
         _ member: Member,
         normalizedQuery: String
     ) -> MemberMatchRank {
-        guard !normalizedQuery.isEmpty else { return .strong }
         if member.id.description == normalizedQuery { return .strong }
         var hasFuzzyMatch = false
         for candidate in normalizedCandidates(for: member) {
