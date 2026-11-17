@@ -64,6 +64,7 @@ struct ProfilePresentationContent<Footer: View>: View {
                     maximumPopoverHeight: maximumPopoverHeight,
                     showsRoles: showsRoles,
                     bottomPadding: showsQuickMessage ? ProfileQuickMessageMetrics.cardInset : InterfaceScale.metric(14),
+                    guildID: presentation.guildID,
                     footer: VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
                         footer
                         if showsQuickMessage, let sendMessage {
@@ -167,6 +168,7 @@ struct MemberProfilePopover<Footer: View>: View {
     var maximumPopoverHeight: CGFloat = InterfaceScale.metric(560)
     var showsRoles = true
     var bottomPadding: CGFloat = InterfaceScale.metric(14)
+    var guildID: GuildID?
     let footer: Footer
     var openProfile: (() -> Void)?
     var userMenu: (() -> NSMenu?)?
@@ -174,6 +176,7 @@ struct MemberProfilePopover<Footer: View>: View {
     var openEditorPicker: ((ProfileEditorPicker) -> Void)?
     var showsDetails = true
 
+    @Environment(\.serverTagCardModel) private var model
     @Environment(\.stablePopoverPresentationContext)
     private var popoverPresentationContext
     @Environment(\.colorScheme) private var colorScheme
@@ -338,7 +341,12 @@ struct MemberProfilePopover<Footer: View>: View {
                         CompactProfileWidgets(widgets: widgets, resources: profile.widgetResources, animates: animatesRemoteMedia, open: expandProfile)
                             .padding(.horizontal, InterfaceScale.metric(16))
                     }
-                    ProfileMembershipSection(createdAt: profile.id.createdAt)
+                    ProfileMembershipSection(
+                        createdAt: profile.id.createdAt,
+                        guildJoinedAt: serverJoinedAt,
+                        guildName: currentGuild?.name,
+                        guildIconURL: currentGuild?.iconURL
+                    )
                     if showsRoles, !profile.roles.isEmpty {
                         ProfileRolesSection(roles: profile.roles, keepsExpanded: layout == .expanded)
                             .id(profile.id)
@@ -424,6 +432,16 @@ struct MemberProfilePopover<Footer: View>: View {
         } else {
             fallback
         }
+    }
+
+    private var currentGuild: Guild? {
+        guard let guildID else { return nil }
+        return model?.serverRailGuildsByID[guildID] ?? model?.snapshot?.guilds.first(where: { $0.id == guildID })
+    }
+
+    private var serverJoinedAt: Date? {
+        guard guildID != nil else { return nil }
+        return profile?.guildJoinedAt ?? member.joinedAt ?? (isCurrentUser ? currentGuild?.joinedAt : nil)
     }
 
     private var profileThemeHexes: [UInt32] {

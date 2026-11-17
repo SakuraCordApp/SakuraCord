@@ -19,6 +19,7 @@ struct ProfileEditorExpandedPreview: View {
             MemberProfilePopover(member: Member(user: profile.user, roleName: "", status: model.currentStatus),
                                  isCurrentUser: true, profile: profile,
                                  isLoading: false, errorMessage: nil, layout: .expanded, maximumPopoverHeight: InterfaceScale.metric(720), showsRoles: false,
+                                 guildID: editor.scope.guildID,
                                  footer: EmptyView(), editor: editor, openEditorPicker: open)
                 .disabled(editor.isSaving || editor.requiresReload)
         }, widgets: {

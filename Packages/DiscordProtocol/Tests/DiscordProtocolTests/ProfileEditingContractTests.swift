@@ -395,3 +395,19 @@ import Testing
         #expect(!experiments.widgetEligibility(for: user).canEditPersonalWidget)
     }
 }
+
+@Test func `user profile maps server joined date from guild member payload`() throws {
+    let payload = Data("""
+    {
+      "user": {"id": "42", "username": "alice", "discriminator": "0"},
+      "guild_member": {
+        "joined_at": "2026-07-21T15:30:00.000000+00:00",
+        "nick": "AliceInServer"
+      }
+    }
+    """.utf8)
+    let dto = try JSONDecoder().decode(UserProfileDTO.self, from: payload)
+    let domain = try dto.domain(guildID: GuildID(rawValue: 100), guilds: [:], guildRoles: [], effectConfig: nil)
+    #expect(domain.guildJoinedAt == DiscordDate.parse("2026-07-21T15:30:00.000000+00:00"))
+    #expect(domain.displayName == "AliceInServer")
+}

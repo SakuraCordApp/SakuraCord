@@ -340,12 +340,14 @@ struct ProfileGuildMemberDTO: Decodable {
     var avatar: String?
     var banner: String?
     var bio: String?
+    var joinedAt: String?
     var avatarDecorationData: UserDTO.AvatarDecorationDTO?
     var collectibles: UserCollectiblesDTO?
     var displayNameStyles: UserDTO.DisplayNameStyleDTO?
 
     enum CodingKeys: String, CodingKey {
         case nick, roles, avatar, banner, bio, collectibles
+        case joinedAt = "joined_at"
         case avatarDecorationData = "avatar_decoration_data"
         case displayNameStyles = "display_name_styles"
     }
@@ -548,7 +550,8 @@ struct UserProfileDTO: Decodable {
             connectedAccounts: (connectedAccounts?.elements ?? []).map(\.domain),
             premiumSince: premiumSince.flatMap(DiscordDate.parse),
             premiumGuildSince: premiumGuildSince.flatMap(DiscordDate.parse),
-            legacyUsername: legacyUsername
+            legacyUsername: legacyUsername,
+            guildJoinedAt: guildMember?.joinedAt.flatMap(DiscordDate.parse)
         )
     }
 
