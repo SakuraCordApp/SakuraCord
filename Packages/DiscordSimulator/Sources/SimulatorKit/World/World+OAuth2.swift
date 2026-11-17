@@ -94,6 +94,16 @@ extension World {
         throw WorldError.unauthorized
     }
 
+    /// `GET /oauth2/tokens`: the applications the user authorized, oldest first.
+    func renderOAuthTokens(_ userID: Snowflake) -> JSON {
+        .array((servers.oauthGrants[userID] ?? [:]).sorted { $0.value.id < $1.value.id }.compactMap { appID, grant in
+            guard let app = users[appID] else { return nil }
+            return .object(JSONObject([
+                ("id", grant.id.json), ("scopes", .array(grant.scopes.map(JSON.string))), ("application", renderOAuthApplication(app)),
+            ]))
+        })
+    }
+
     func renderOAuthApplication(_ bot: User) -> JSON {
         let install = JSON.object(JSONObject([("scopes", ["applications.commands"]), ("permissions", "0")]))
         return .object(JSONObject([

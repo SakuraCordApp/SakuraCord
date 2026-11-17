@@ -1,7 +1,7 @@
 import Foundation
 
-/// Agent controls for what other members do: moderators acting on members,
-/// role edits, and someone scheduling an event.
+/// Agent controls for what other members do: moderators acting on members and
+/// messages, role edits, and someone scheduling or running an event.
 extension ControlAPI {
     func moderationRoute(_ request: HTTPRequest, _ route: [String], _ body: JSON) async throws -> HTTPResponse? {
         switch (request.method, route.first ?? "", route.count) {
@@ -29,6 +29,30 @@ extension ControlAPI {
             return try await moderate(body)
         case ("POST", "roles", 1), ("PATCH", "roles", 2), ("DELETE", "roles", 2):
             return try await saveRole(request.method, route, body)
+        case ("POST", "messages", 2) where route[1] == "bulk-delete":
+            // `moderator` (default: the owner) deletes `message_ids` in `channel` at once.
+            let channel = try await resolveChannel(body)
+            let ids = (body["message_ids"]?.arrayValue ?? []).compactMap { $0.stringValue.flatMap(Snowflake.init) }
+            try await world.bulkDeleteMessages(ids, in: channel, by: try await moderator(body, channel: channel))
+            return ok([:])
+        case ("DELETE", "reactions", _):
+            // Clears every reaction on `message_id`, or only those with `emoji`.
+            let channel = try await resolveChannel(body)
+            let key = try body["emoji"]?.stringValue.map { emoji -> String in
+                let (name, id) = try MessageRoutes.emoji(emoji)
+                return id.map { "\(name):\($0)" } ?? name
+            }
+            try await world.clearReactions(try snowflake(body["message_id"]?.stringValue ?? ""), in: channel, emojiKey: key,
+                                           by: try await moderator(body, channel: channel))
+            return ok([:])
+        case ("PATCH", "events", 2):
+            // `status` 2 starts, 3 ends, 4 cancels; `name` renames. Acts as `author` (default: the creator).
+            let id = try snowflake(route[1])
+            guard let event = await world.servers.scheduledEvents[id] else { throw WorldError.unknown("Guild Scheduled Event", code: 10070) }
+            let author = try await body["author"].asyncMap { try await resolveUser($0) } ?? event.creatorID
+            try await world.updateScheduledEvent(id, in: event.guildID, by: author, status: body["status"]?.intValue.map(Int.init),
+                                                 name: body["name"]?.stringValue)
+            return ok([:])
         case ("POST", "events", _):
             let guildID = try await guild(body)
             let start = world.clock.now.addingTimeInterval((body["starts_in_minutes"]?.doubleValue ?? 60) * 60)
@@ -85,6 +109,13 @@ extension ControlAPI {
         guard !rule.keywords.isEmpty else { throw WorldError.invalidBody("keywords: at least one") }
         await world.saveAutoModRule(rule)
         return ok(["id": rule.id.json])
+    }
+
+    /// `moderator`, or the owner of the channel's server.
+    private func moderator(_ body: JSON, channel: Snowflake) async throws -> Snowflake {
+        if let given = body["moderator"] { return try await resolveUser(given) }
+        guard let guildID = try await world.channel(channel).guildID else { throw WorldError.wrongChannelType }
+        return try await world.guild(guildID).ownerID
     }
 
     /// `action`: kick, timeout (`minutes`, default 10) or untimeout, by `moderator` (default: the owner).

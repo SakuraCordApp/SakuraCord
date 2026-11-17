@@ -4,7 +4,8 @@ import Foundation
 public struct PendingUpload: Sendable {
     public var filename: String
     public var owner: Snowflake
-    public var channel: Snowflake
+    /// The channel the file will be posted in; nil for a profile widget image.
+    public var channel: Snowflake?
     public var data: Data?
 }
 
@@ -89,14 +90,20 @@ public actor World {
     public private(set) var primaryUserID: Snowflake?
     /// Messages users scheduled, keyed by scheduled message ID.
     public var scheduledMessages: [Snowflake: ScheduledMessage] = [:]
-    /// Notification settings per user and guild, wire-shaped.
-    public var guildSettings: [Snowflake: [Snowflake: JSONObject]] = [:]
+    /// Notification settings per user and guild (nil for direct messages), wire-shaped.
+    public var guildSettings: [Snowflake: [Snowflake?: JSONObject]] = [:]
     /// Each user's past avatars (`id`, `storage_hash`, `description`), newest first.
     public var avatarHistory: [Snowflake: [JSONObject]] = [:]
     /// Each user's profile widgets, wire-shaped, in display order.
     public var profileWidgets: [Snowflake: [JSON]] = [:]
     /// Messages each user cleared from their inbox's Mentions tab.
     public var dismissedMentions: [Snowflake: Set<Snowflake>] = [:]
+    /// Group DMs where each user dismissed the warning about a blocked or ignored member.
+    public var dismissedBlockedUserWarnings: [Snowflake: Set<Snowflake>] = [:]
+    /// Discord's game catalogue, in the order games were added.
+    public var games: [Game] = []
+    /// The collectibles shop and what each user bought there.
+    public var collectibles = CollectiblesShop()
     /// Voice states, private calls and voice server grants.
     var voice = VoiceRegistry()
     /// Files the client uploaded to the attachment host, keyed by `upload_filename`.

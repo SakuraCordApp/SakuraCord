@@ -234,7 +234,8 @@ public actor GatewayHub: WorldEventSink {
         }
     }
 
-    /// Op 37 subscriptions: member-list ranges per channel get a GUILD_MEMBER_LIST_UPDATE SYNC.
+    /// Op 37 subscriptions: member-list ranges per channel get a GUILD_MEMBER_LIST_UPDATE SYNC,
+    /// and each thread in `thread_member_lists` a THREAD_MEMBER_LIST_UPDATE.
     private func subscribe(_ session: Session, _ data: JSON) async {
         for (guildText, subscription) in data["subscriptions"]?.objectValue ?? JSONObject() {
             guard let guildID = Snowflake(guildText) else { continue }
@@ -253,6 +254,11 @@ public actor GatewayHub: WorldEventSink {
                 if let update = await world.renderMemberList(guildID: guildID, channelID: channelID, ranges: pairs) {
                     await dispatch("GUILD_MEMBER_LIST_UPDATE", update, to: session)
                 }
+            }
+            for thread in subscription["thread_member_lists"]?.arrayValue ?? [] {
+                guard let threadID = thread.stringValue.flatMap(Snowflake.init),
+                      let update = await world.renderThreadMemberList(threadID, guildID: guildID, viewer: session.userID) else { continue }
+                await dispatch("THREAD_MEMBER_LIST_UPDATE", update, to: session)
             }
         }
     }

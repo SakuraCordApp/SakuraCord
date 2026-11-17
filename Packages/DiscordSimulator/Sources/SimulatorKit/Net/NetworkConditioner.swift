@@ -1,33 +1,55 @@
 import Foundation
 import Synchronization
 
-/// The delays every host adds: one profile everywhere, or Discord as measured.
+/// The delays every host adds: Discord's measured answer time plus a connection's round trip,
+/// or one custom profile everywhere.
 public enum SimulatedNetwork: Sendable, Equatable {
     case uniform(NetworkConditioner.Profile)
-    /// Each host's delay as a signed-in session saw Discord from a home connection (Nov 2026),
-    /// drawn per request from a log-normal curve so delays vary and sometimes run long.
-    case realistic
+    /// Each host's measured answer time plus `roundTripMilliseconds`, drawn per request from a
+    /// log-normal curve of `spread` (0 for fixed delays).
+    case connection(roundTripMilliseconds: Double, spread: Double, downloadBytesPerSecond: Double?, uploadBytesPerSecond: Double?)
+
+    /// The home connection the measurement was made on, with Discord's variance.
+    public static let realistic = connection(roundTripMilliseconds: 30, spread: 0.3,
+                                             downloadBytesPerSecond: 12_500_000, uploadBytesPerSecond: 2_500_000)
+    /// The same connection with every delay fixed at its median, so benchmark runs compare.
+    public static let standard = connection(roundTripMilliseconds: 30, spread: 0,
+                                            downloadBytesPerSecond: 12_500_000, uploadBytesPerSecond: 2_500_000)
+    /// A connection right next to Discord: only Discord's own time and variance.
+    public static let lan = connection(roundTripMilliseconds: 2, spread: 0.25, downloadBytesPerSecond: nil, uploadBytesPerSecond: nil)
+    /// Mobile data: a longer, less steady round trip and slow transfers.
+    public static let mobile = connection(roundTripMilliseconds: 100, spread: 0.45,
+                                          downloadBytesPerSecond: 1_500_000, uploadBytesPerSecond: 400_000)
+    public static let instant = uniform(.instant)
 
     public static func named(_ name: String) -> SimulatedNetwork? {
-        name.lowercased() == "realistic" ? .realistic : NetworkConditioner.Profile.named(name).map(SimulatedNetwork.uniform)
-    }
-
-    func profile(for port: DiscordSimulator.Port) -> NetworkConditioner.Profile {
-        guard case let .uniform(profile) = self else { return Self.measured(port) }
-        return profile
-    }
-
-    /// Measured: REST answers took a median 275 ms (240–780 ms), almost all of it Discord's
-    /// servers; CDN images about 33 ms (30–90 ms). Not measured, so estimated: the Gateway and
-    /// voice hosts at about half a 15 ms round trip, uploads and Activities like the CDN, and the bandwidth.
-    private static func measured(_ port: DiscordSimulator.Port) -> NetworkConditioner.Profile {
-        let (median, spread): (Double, Double) = switch port {
-        case .api: (275, 0.3)
-        case .cdn, .media, .upload, .activity: (33, 0.3)
-        case .gateway, .voice, .voiceMedia, .control: (10, 0.5)
+        switch name.lowercased() {
+        case "realistic": .realistic
+        case "standard": .standard
+        case "lan": .lan
+        case "mobile": .mobile
+        case "instant": .instant
+        default: nil
         }
-        return NetworkConditioner.Profile(latencyMilliseconds: median, jitterMilliseconds: 0, latencySpread: spread,
-                                          downloadBytesPerSecond: 12_500_000, uploadBytesPerSecond: 2_500_000)
+    }
+
+    /// Measured from a signed-in session (Nov 2026): REST answers took a median 275 ms (240–780 ms) over a
+    /// ~30 ms round trip, so about 245 ms is Discord's servers; CDN images about 33 ms, nearly all round trip.
+    /// Estimated: about 10 ms of storage time for uploads, and half a round trip for Gateway and voice messages.
+    func profile(for port: DiscordSimulator.Port) -> NetworkConditioner.Profile {
+        switch self {
+        case let .uniform(profile):
+            return profile
+        case let .connection(roundTrip, spread, download, upload):
+            let median: Double = switch port {
+            case .api: 245 + roundTrip
+            case .cdn, .media, .activity: 3 + roundTrip
+            case .upload: 10 + roundTrip
+            case .gateway, .voice, .voiceMedia, .control: roundTrip / 2
+            }
+            return NetworkConditioner.Profile(latencyMilliseconds: median, jitterMilliseconds: 0, latencySpread: spread,
+                                              downloadBytesPerSecond: download, uploadBytesPerSecond: upload)
+        }
     }
 }
 
@@ -58,31 +80,6 @@ public final class NetworkConditioner: Sendable {
         }
 
         public static let instant = Profile(latencyMilliseconds: 0, jitterMilliseconds: 0)
-        /// The benchmarks' network: a fixed delay with no jitter, so every run sees the same timings.
-        public static let standard = Profile(
-            latencyMilliseconds: 35, jitterMilliseconds: 0,
-            downloadBytesPerSecond: 12_500_000, uploadBytesPerSecond: 2_500_000
-        )
-        public static let lan = Profile(latencyMilliseconds: 2, jitterMilliseconds: 0.5)
-        public static let broadband = Profile(
-            latencyMilliseconds: 35, jitterMilliseconds: 8,
-            downloadBytesPerSecond: 12_500_000, uploadBytesPerSecond: 2_500_000
-        )
-        public static let mobile = Profile(
-            latencyMilliseconds: 120, jitterMilliseconds: 40,
-            downloadBytesPerSecond: 1_500_000, uploadBytesPerSecond: 400_000
-        )
-
-        public static func named(_ name: String) -> Profile? {
-            switch name.lowercased() {
-            case "instant": .instant
-            case "standard": .standard
-            case "lan": .lan
-            case "broadband": .broadband
-            case "mobile": .mobile
-            default: nil
-            }
-        }
     }
 
     /// One injected HTTP delay, for checking that runs repeat.

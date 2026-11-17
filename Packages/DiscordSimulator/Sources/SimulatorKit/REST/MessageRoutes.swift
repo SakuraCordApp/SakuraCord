@@ -187,14 +187,18 @@ enum MessageRoutes {
             for (index, file) in (body["files"]?.arrayValue ?? []).enumerated() {
                 let filename = file["filename"]?.stringValue ?? "file"
                 let uploadName = await context.world.reserveUpload(filename: filename, owner: context.userID, channel: try context.id(0))
-                let path = "/discord-attachments-uploads-prd/\(uploadName)?upload_id=\(uploadName.split(separator: "/").first ?? "")"
                 slots.append(.object(JSONObject([
                     ("id", file["id"].flatMap { $0.intValue }.map { .int($0) } ?? .int(Int64(index))),
-                    ("upload_url", .string("https://discord-attachments-uploads-prd.storage.googleapis.com\(path)")),
-                    ("upload_filename", .string(uploadName)),
+                    ("upload_url", .string(World.uploadURL(for: uploadName))), ("upload_filename", .string(uploadName)),
                 ])))
             }
             return .json(.object(JSONObject([("attachments", .array(slots))])))
+        }
+        routes["POST /api/v9/attachments/refresh-urls"] = { context in
+            let urls = (try context.json["attachment_urls"]?.arrayValue ?? []).compactMap(\.stringValue)
+            var refreshed: [JSON] = []
+            for url in urls { refreshed.append(await context.world.refreshAttachmentURL(url)) }
+            return .json(.object(JSONObject([("refreshed_urls", .array(refreshed))])))
         }
         // The client discards an upload it won't send. Its `<uuid>%2F<filename>` name is one path segment.
         routes["DELETE /api/v9/attachments/{id}"] = { context in

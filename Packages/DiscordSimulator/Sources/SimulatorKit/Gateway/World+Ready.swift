@@ -98,7 +98,7 @@ public extension World {
             ("last_message_id", channel.lastMessageID?.json ?? .null),
             ("recipient_ids", .array(channel.recipients.filter { $0 != userID }.map(\.json))),
             ("recipient_flags", 0), ("is_spam", false), ("is_message_request", false),
-            ("is_message_request_timestamp", .null), ("blocked_user_warning_dismissed", false), ("safety_warnings", []),
+            ("is_message_request_timestamp", .null), ("blocked_user_warning_dismissed", .bool(dismissedBlockedUserWarnings[userID]?.contains(channel.id) == true)), ("safety_warnings", []),
         ])
         if let pinned = channel.lastPinTimestamp { object["last_pin_timestamp"] = World.timestamp(pinned) }
         if channel.type == .groupDM {

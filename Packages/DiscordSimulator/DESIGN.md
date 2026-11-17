@@ -11,7 +11,7 @@ never from SakuraCord's protocol code, so the app's mistakes aren't mirrored.
 ## Running it
 
 ```sh
-script/simulator.sh start [--scenario demo] [--seed 1] [--network realistic|standard|instant|lan|broadband|mobile] [--epoch ISO8601] [--freeze-clock]
+script/simulator.sh start [--scenario demo] [--seed 1] [--network realistic|standard|lan|mobile|instant] [--epoch ISO8601] [--freeze-clock]
 script/run.sh --simulator [SCENARIO]      # starts the simulator if needed, launches the debug app signed in
 script/run.sh --simulator-sign-in         # launches signed out; sign in with the email and password `world` prints
 script/simulator.sh ctl world             # accounts, guilds, channels
@@ -125,15 +125,21 @@ runs that must be identical on any day.
 | `captcha <route-substring> [count]` | Discord's captcha-required 400 on that route until retried with hCaptcha's test token |
 | `log [LEVEL]` / `routes` / `world` | Loud failures (unknown routes and assets), implemented routes, world summary |
 
-Demo accounts default to `realistic`: each host's delay as a signed-in session
-saw Discord from a home connection (REST about 275 ms, almost all of it
-Discord's servers; CDN about 33 ms), drawn per request from a log-normal curve
-so delays vary and sometimes run long. The Gateway, voice, upload and Activity
-delays and the bandwidth are estimates. Benchmark scenarios default to
-`standard`, a fixed 35 ms per request and per Gateway message plus broadband
-transfer time with no jitter, so every run sees the same timings. `instant`
-turns delay off; `lan`, `broadband` and `mobile` add jitter. Both defaults are
-seeded, so the same seed and requests give the same delays.
+Every named network is Discord's measured answer time for each host plus a
+connection's round trip. A signed-in session measured REST answers at a median
+275 ms (240–780 ms) over a ~30 ms round trip, so about 245 ms is Discord's
+servers, and CDN images at about 33 ms; upload storage time, Gateway and voice
+delays and the bandwidth are estimates.
+
+| Network | Round trip | Variance | Bandwidth down/up | Default for |
+| --- | --- | --- | --- | --- |
+| `realistic` | 30 ms (the measured home connection) | log-normal per request | 12.5 / 2.5 MB/s | demo accounts |
+| `standard` | 30 ms | none: every delay at its median | 12.5 / 2.5 MB/s | benchmark scenarios, benchmark launches, parity |
+| `lan` | 2 ms | Discord's own | unlimited | |
+| `mobile` | 100 ms | wider | 1.5 / 0.4 MB/s | |
+| `instant` | no delay at all | | unlimited | |
+
+All are seeded, so the same seed and requests give the same delays.
 
 `GET /control/network` lists every injected delay; two runs with the same seed
 and requests list the same delays.
@@ -210,6 +216,26 @@ Inferred, not captured:
 - A stream's group ID is its `rtc_channel_id`, which viewers identify with.
 - Media: simulated speech and video are generated (Opus, H.264 with a keyframe
   every second) and sent at 50 and 15 packets/frames per second.
+- REST routes with no capture: `GET /users/@me/guilds` (Discord's documented
+  partial servers and paging); a widget image's upload slot (like a message
+  attachment's); removing a past avatar (204, unknown 404); `POST
+  /attachments/refresh-urls` (the official client's body; only stored
+  attachments are signed afresh); `PATCH /users/@me/guilds/@me/settings` (DMs,
+  `guild_id` null); accepting a message request (204; no simulated DM is one,
+  so nothing changes) and ignoring one (closes the DM for that user); the
+  blocked-member warning dismissal (200, empty body, as the official client
+  expects).
+- Captured routes, inferred behavior: the game catalogue is the games people
+  play; game search ranks prefix matches first; unknown game IDs are left
+  out; every other game is "similar"; suggested games are what the user and
+  their friends play; announcements are a bare 404, as no simulated game has
+  an official server; no simulated application publishes a widget config; the
+  shop is one category holding what the account wears, bought 90 days ago and
+  never expiring, with made-up euro prices.
+- Gateway: THREAD_MEMBER_LIST_UPDATE lists every thread member in join order;
+  MESSAGE_REACTION_REMOVE_EMOJI's `burst` and `type`; MESSAGE_REACTION_REMOVE_ALL,
+  GUILD_SOUNDBOARD_SOUND_UPDATE and event status changes follow Discord's
+  documentation.
 
 ### Vendored sources
 

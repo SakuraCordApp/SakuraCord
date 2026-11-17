@@ -1,6 +1,6 @@
 import Foundation
 
-/// Group DMs (rename, add or remove people, leave) and closing a DM.
+/// Group DMs (rename, add or remove people, leave), closing a DM, and message requests.
 extension World {
     /// `PATCH /channels/{id}` on a group DM: any member may rename it or change its icon.
     func editGroupDM(_ channelID: Snowflake, by userID: Snowflake, patch: JSON) async throws -> Channel {
@@ -65,6 +65,26 @@ extension World {
         return rendered
     }
 
+    /// `PUT /channels/{id}/recipients/@me` with `consent_status` 2 (accepted). No simulated DM is a
+    /// message request, so accepting one changes nothing and sends no event.
+    func acceptMessageRequest(_ channelID: Snowflake, by userID: Snowflake, consent: JSON?) throws {
+        _ = try directMessage(channelID, member: userID)
+        guard consent?.intValue == 2 else { throw WorldError.invalidBody("consent_status") }
+    }
+
+    /// `DELETE /channels/{id}/recipients/@me`: ignoring a request closes the DM for this user only.
+    func ignoreMessageRequest(_ channelID: Snowflake, by userID: Snowflake) async throws {
+        _ = try directMessage(channelID, member: userID)
+        _ = try await closePrivateChannel(channelID, by: userID)
+    }
+
+    /// "Don't leave" on a group's blocked-member warning; READY then carries `blocked_user_warning_dismissed`.
+    func dismissBlockedUserWarning(in channelID: Snowflake, by userID: Snowflake) throws {
+        let channel = try channel(channelID)
+        guard channel.type.isPrivate else { throw WorldError.wrongChannelType }
+        dismissedBlockedUserWarnings[userID, default: []].insert(channelID)
+    }
+
     /// The person leaves the group: they get CHANNEL_DELETE and an ack of the last message;
     /// the rest see them go, and a new owner if the owner left.
     private func dropRecipient(_ removed: Snowflake, from channel: Channel, by userID: Snowflake) async throws {
@@ -89,6 +109,13 @@ extension World {
     private func groupDM(_ channelID: Snowflake, member userID: Snowflake) throws -> Channel {
         let channel = try channel(channelID)
         guard channel.type == .groupDM else { throw WorldError.wrongChannelType }
+        guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
+        return channel
+    }
+
+    private func directMessage(_ channelID: Snowflake, member userID: Snowflake) throws -> Channel {
+        let channel = try channel(channelID)
+        guard channel.type == .dm else { throw WorldError.wrongChannelType }
         guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
         return channel
     }

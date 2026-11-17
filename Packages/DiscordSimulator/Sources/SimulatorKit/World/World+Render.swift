@@ -246,11 +246,15 @@ public extension World {
     // MARK: Messages
 
     func attachmentURL(_ attachment: Attachment, host: String) -> String {
-        // Real attachment links are signed with expiry and hash parameters.
+        attachmentURL(path: attachment.cdnPath, id: attachment.id, host: host)
+    }
+
+    /// Real attachment links are signed with expiry and hash parameters.
+    func attachmentURL(path: String, id: Snowflake, host: String) -> String {
         let issued = UInt64(clock.now.timeIntervalSince1970)
         let expires = issued + 86_400
-        let signature = String(format: "%016llx%016llx", attachment.id.rawValue &* 0x9e37_79b9_7f4a_7c15, expires)
-        return "https://\(host)\(attachment.cdnPath)?ex=\(String(expires, radix: 16))&is=\(String(issued, radix: 16))&hm=\(signature)&"
+        let signature = String(format: "%016llx%016llx", id.rawValue &* 0x9e37_79b9_7f4a_7c15, expires)
+        return "https://\(host)\(path)?ex=\(String(expires, radix: 16))&is=\(String(issued, radix: 16))&hm=\(signature)&"
     }
 
     func renderAttachment(_ attachment: Attachment) -> JSON {

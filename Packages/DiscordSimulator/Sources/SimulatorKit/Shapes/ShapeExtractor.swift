@@ -23,7 +23,8 @@ public struct ShapeExtractor {
     private var startup: Startup?
 
     static let apiHosts: Set<String> = ["discord.com", "canary.discord.com", "ptb.discord.com", "discordapp.com"]
-    /// Steps that occur in every interval regardless of the user's action.
+    /// Steps that occur in every interval regardless of the user's action. Their
+    /// shapes are still extracted; only flow sequences leave them out.
     static let noiseRoutes = ["/science", "/metrics", "/quests", "/promotions", "/billing", "/entitlements",
                               "/store/", "/collectibles", "/content-inventory", "/games", "/oauth2/tokens",
                               "/partner-sdk", "/widget-configs", "/referrals", "/library", "/unclaimed-games"]
@@ -72,8 +73,7 @@ public struct ShapeExtractor {
     private mutating func absorbHTTP(_ record: JSON) {
         guard let host = record["host"]?.stringValue, Self.apiHosts.contains(host),
               let method = record["method"]?.stringValue, let path = record["path"]?.stringValue,
-              path.hasPrefix("/api/v"), !Self.noiseRoutes.contains(where: path.contains),
-              let status = record["status"]?.intValue
+              path.hasPrefix("/api/v"), let status = record["status"]?.intValue
         else { return }
         let route = RouteTemplate.template(method: method, path: path)
         var entry = catalog.routes[route] ?? ShapeCatalog.Route()

@@ -1,7 +1,8 @@
 import Foundation
 
 extension ParityRun {
-    /// Command catalogues, the command behind a bot reply, OAuth2 consent, and member requests by ID.
+    /// Command catalogues, the command behind a bot reply, OAuth2 consent and authorized apps, member
+    /// requests by ID, and widget configs.
     mutating func applications(_ target: Targets) async throws {
         let world = simulator.world
         let bot = try await targetBot(target)
@@ -24,5 +25,9 @@ extension ParityRun {
             ("user_ids", [.string(target.otherUser.description), .string(Snowflake(date: Date(), increment: 1).description)]), ("presences", false),
         ])))])))
         await flowEnd(nil)
+        _ = try await rest("GET", "/api/v9/oauth2/tokens")
+        _ = try await rest("GET", "/api/v9/widget-configs/featured")
+        _ = try await rest("GET", "/api/v9/widget-configs/developer")
+        _ = try await rest("GET", "/api/v9/applications/\(bot)/widget-configs")
     }
 }

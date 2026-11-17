@@ -5,14 +5,20 @@ import UniformTypeIdentifiers
 /// Uploads, stored attachments and link unfurling.
 public extension World {
     /// Reserves a slot on the attachment host. Discord's names are `<uuid>/<filename>`.
-    /// The slot belongs to `owner` posting in `channel`; nobody else can attach it.
-    func reserveUpload(filename: String, owner: Snowflake, channel: Snowflake) -> String {
+    /// The slot belongs to `owner` posting in `channel` (nil for a profile widget image);
+    /// nobody else can attach it.
+    func reserveUpload(filename: String, owner: Snowflake, channel: Snowflake?) -> String {
         let uuid = String(format: "%08x-%04x-4%03x-a%03x-%012llx", UInt32(truncatingIfNeeded: random.next()),
                           UInt16(truncatingIfNeeded: random.next()), UInt16(truncatingIfNeeded: random.next()) & 0xFFF,
                           UInt16(truncatingIfNeeded: random.next()) & 0xFFF, random.next() & 0xFFFF_FFFF_FFFF)
         let name = "\(uuid)/\(filename)"
         pendingUploads[name] = PendingUpload(filename: filename, owner: owner, channel: channel)
         return name
+    }
+
+    /// Where the client PUTs the file for a reserved slot.
+    nonisolated static func uploadURL(for name: String) -> String {
+        "https://discord-attachments-uploads-prd.storage.googleapis.com/discord-attachments-uploads-prd/\(name)?upload_id=\(name.split(separator: "/").first ?? "")"
     }
 
     /// The upload host received the bytes for a reserved slot.
@@ -31,6 +37,18 @@ public extension World {
         guard let upload = pendingUploads[name], upload.owner == owner, upload.channel == channel, let data = upload.data else { return nil }
         pendingUploads[name] = nil
         return data
+    }
+
+    /// `POST /attachments/refresh-urls`, per URL: a stored attachment's link signed afresh on the
+    /// same host. Not captured: any other URL comes back without `refreshed` (inferred).
+    func refreshAttachmentURL(_ original: String) -> JSON {
+        var object = JSONObject([("original", .string(original))])
+        if let url = URL(string: original), let host = url.host(), ["cdn.discordapp.com", "media.discordapp.net"].contains(host),
+           media[url.path(percentEncoded: false)] != nil, url.pathComponents.count > 3, url.pathComponents[1] == "attachments",
+           let id = Snowflake(url.pathComponents[3]) {
+            object["refreshed"] = .string(attachmentURL(path: url.path(percentEncoded: false), id: id, host: host))
+        }
+        return .object(object)
     }
 
     /// Stores bytes as an attachment on the CDN and reads image dimensions like Discord does.

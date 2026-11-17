@@ -178,7 +178,7 @@ public final class ControlAPI: Sendable {
         return .json(404, .object(JSONObject([("error", .string("unknown control route \(request.method) \(request.path)"))])))
     }
 
-    private func snowflake(_ text: String) throws -> Snowflake {
+    func snowflake(_ text: String) throws -> Snowflake {
         guard let id = Snowflake(text) else { throw WorldError.invalidBody("not an ID: \(text)") }
         return id
     }

@@ -63,6 +63,21 @@ extension World {
         ]))
     }
 
+    /// A thread's members with their server membership and presence, for op 37's `thread_member_lists`.
+    /// Captured only by shape: every member is listed, in the order they joined (inferred).
+    func renderThreadMemberList(_ threadID: Snowflake, guildID: Snowflake, viewer: Snowflake) -> JSON? {
+        guard let guild = guilds[guildID], let thread = channels[threadID], thread.type.isThread, thread.guildID == guildID,
+              canView(viewer, thread) else { return nil }
+        let members = thread.threadMembers.compactMap { guild.members[$0] }.map { member in
+            var presence = renderPresence(member.userID, guildID: nil).objectValue ?? JSONObject()
+            presence["game"] = presence["activities"]?.arrayValue?.first ?? .null
+            return JSON.object(JSONObject([
+                ("member", renderMember(member, guildID: guildID, includeUser: true)), ("presence", .object(presence)), ("user_id", member.userID.json),
+            ]))
+        }
+        return .object(JSONObject([("guild_id", guildID.json), ("members", .array(members)), ("thread_id", threadID.json)]))
+    }
+
     /// Op 8's GUILD_MEMBERS_CHUNK for one server; nil when the server is unknown.
     func renderMembersChunk(guildID: Snowflake, query: String?, limit: Int, requested: Set<Snowflake>,
                             nonce: String?, presences: Bool) -> JSON? {

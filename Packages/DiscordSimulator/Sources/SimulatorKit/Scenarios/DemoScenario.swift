@@ -138,26 +138,43 @@ struct DemoConverter {
                 token = builder.token(for: user.id)
             }
             await world.addUser(user, token: token, presence: presence(person.presence))
+            if case let .playing(game)? = person.presence.activity { await world.addGame(named: game, releasedAt: world.epoch.addingTimeInterval(-2 * 365 * 86_400)) }
             if isSelf { await world.setPrimaryUser(user.id) }
             people[person.key] = user.id
         }
     }
 
-    /// The signed-in Nitro user wears an avatar decoration, a nameplate and the
-    /// Garden's server tag, so those render paths have data.
+    /// The signed-in Nitro user wears an avatar decoration and a nameplate bought
+    /// from the shop, and the Garden's server tag, so those render paths have data.
     mutating func dressSelf(_ me: Snowflake) async throws {
-        let sku = await world.nextID(at: world.epoch.addingTimeInterval(-90 * 86_400))
+        let bought = world.epoch.addingTimeInterval(-90 * 86_400)
         let decoration = "a_" + builder.hash(seed: 0xDEC0)
         let nameplate = "nameplates/nameplates/\(builder.hash(seed: 0x9A3E))/"
         guard let garden = DemoContent.guilds.max(by: { $0.boostCount < $1.boostCount }),
               let gardenID = guildKeys.first(where: { $0.value == garden.key })?.key else { return }
         let badge = builder.hash(seed: 0xBAD6E)
         let nameplateHash = nameplate.split(separator: "/").last.map(String.init) ?? nameplate
-        for asset in [decoration, nameplateHash, badge, sku.description] { await world.registerAsset(asset) }
+        let category = await world.addCollectibleCategory(name: "Evening Garden", summary: "Dusk settles over the flower beds.", at: bought)
+        let decorationSKU = await world.nextID(at: bought), nameplateSKU = await world.nextID(at: bought)
+        for asset in [decoration, nameplateHash, badge, decorationSKU.description, nameplateSKU.description] { await world.registerAsset(asset) }
+        let products = [
+            CollectibleProduct(skuID: decorationSKU, name: "Garden Lantern", summary: "Give your avatar a new look.", type: 0, items: [
+                .object(JSONObject([("type", 0), ("sku_id", decorationSKU.json), ("asset", .string(decoration)),
+                                    ("label", "A paper lantern glowing among climbing roses around the avatar.")])),
+            ], categorySKU: category, price: 499, nitroPrice: 399),
+            CollectibleProduct(skuID: nameplateSKU, name: "Evening Garden", summary: "Give your name a new look.", type: 2, items: [
+                .object(JSONObject([("type", 2), ("sku_id", nameplateSKU.json), ("asset", .string(nameplate)),
+                                    ("label", "Fireflies drifting over a violet garden at dusk."), ("palette", "violet")])),
+            ], categorySKU: category, price: 399, nitroPrice: 299),
+        ]
+        for product in products {
+            await world.addCollectibleProduct(product)
+            await world.recordPurchase(product.skuID, by: me, at: bought)
+        }
         try await world.updateUserQuietly(me) { user in
-            user.avatarDecoration = .object(JSONObject([("asset", .string(decoration)), ("sku_id", sku.json), ("expires_at", .null)]))
+            user.avatarDecoration = .object(JSONObject([("asset", .string(decoration)), ("sku_id", decorationSKU.json), ("expires_at", .null)]))
             user.collectibles = .object(JSONObject([("nameplate", .object(JSONObject([
-                ("asset", .string(nameplate)), ("label", "Evening Garden"), ("palette", "violet"), ("sku_id", sku.json), ("expires_at", .null),
+                ("asset", .string(nameplate)), ("label", "Evening Garden"), ("palette", "violet"), ("sku_id", nameplateSKU.json), ("expires_at", .null),
             ])))]))
             user.primaryGuild = .object(JSONObject([
                 ("identity_guild_id", gardenID.json), ("identity_enabled", true), ("tag", "LNDN"), ("badge", .string(badge)),

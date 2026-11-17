@@ -2,7 +2,7 @@ import Foundation
 
 /// Agent controls for what other people do to the user's social graph and
 /// servers' expressions: friend requests from someone else, and members
-/// adding or removing emoji, stickers and soundboard sounds.
+/// adding or removing emoji and stickers, and adding, editing or removing soundboard sounds.
 extension ControlAPI {
     func expressionRoute(_ request: HTTPRequest, _ route: [String], _ body: JSON) async throws -> HTTPResponse? {
         let adding = request.method == "POST"
@@ -21,6 +21,10 @@ extension ControlAPI {
         case ("POST", "soundboard", _):
             try await world.addSoundboardSound(try name(body), emoji: body["emoji"]?.stringValue, in: try await guild(body),
                                                by: try await resolveUser(body["user"]))
+            return ok([:])
+        case ("PATCH", "soundboard", _):
+            try await world.updateSoundboardSound(try name(body), in: try await guild(body), newName: body["new_name"]?.stringValue,
+                                                  emoji: body["emoji"]?.stringValue, volume: body["volume"]?.doubleValue)
             return ok([:])
         case ("DELETE", "soundboard", _):
             try await world.removeSoundboardSound(try name(body), in: try await guild(body))

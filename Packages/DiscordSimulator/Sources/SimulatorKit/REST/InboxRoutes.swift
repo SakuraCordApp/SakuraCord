@@ -26,11 +26,13 @@ enum InboxRoutes {
             guard let guilds = try context.json["guilds"]?.objectValue else { throw WorldError.invalidBody("guilds") }
             return .json(.array(try await context.world.patchGuildSettings(context.userID, guilds: guilds)))
         }
-        // The per-server form takes one server's fields and answers with its settings.
-        routes["PATCH /api/v9/users/@me/guilds/{id}/settings"] = { context in
-            let guildID = try context.id(0)
-            let results = try await context.world.patchGuildSettings(context.userID, guilds: JSONObject([(guildID.description, try context.json)]))
-            return .json(results.first ?? .null)
+        // The per-server form takes one server's fields and answers with its settings; `@me` is direct messages.
+        for scoped in ["{id}", "@me"] {
+            routes["PATCH /api/v9/users/@me/guilds/\(scoped)/settings"] = { context in
+                guard let fields = try context.json.objectValue else { throw WorldError.invalidBody("not an object") }
+                let scope = scoped == "@me" ? nil : try context.id(0)
+                return .json(try await context.world.patchGuildSettings(context.userID, scope: scope, fields: fields))
+            }
         }
     }
 }

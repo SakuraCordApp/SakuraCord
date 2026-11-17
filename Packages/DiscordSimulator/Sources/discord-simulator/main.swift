@@ -2,14 +2,14 @@ import Foundation
 import SimulatorKit
 
 /// `discord-simulator [--port 47100] [--seed 1] [--scenario demo] [--param key=value]...
-///   [--network realistic|standard|instant|lan|broadband|mobile] [--freeze-clock] [--no-rate-limits] [--verbose]`
+///   [--network realistic|standard|lan|mobile|instant] [--freeze-clock] [--no-rate-limits] [--verbose]`
 var configuration = DiscordSimulator.Configuration()
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
 
 func usage() -> Never {
     print("""
     usage: discord-simulator [--port N] [--seed N] [--scenario NAME] [--param key=value]...
-                             [--network realistic|standard|instant|lan|broadband|mobile] [--freeze-clock] [--no-rate-limits] [--verbose]
+                             [--network realistic|standard|lan|mobile|instant] [--freeze-clock] [--no-rate-limits] [--verbose]
            discord-simulator --list-scenarios
     """)
     exit(2)

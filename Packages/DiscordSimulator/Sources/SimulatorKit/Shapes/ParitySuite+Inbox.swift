@@ -47,6 +47,9 @@ extension ParityRun {
         else { throw WorldError.invalidBody("no thread under the target channel") }
         let path = "/api/v9/channels/\(thread)"
         await flowStart()
+        try await gateway?.send(.object(JSONObject([("op", 37), ("d", .object(JSONObject([("subscriptions", .object(JSONObject([
+            (target.guild.description, .object(JSONObject([("thread_member_lists", [.string(thread.description)])]))),
+        ])))])))])))
         _ = try await rest("PATCH", "\(path)/thread-members/@me/settings", body: ["muted": true])
         _ = try await rest("DELETE", "\(path)/thread-members/@me?location=Context%20Menu")
         _ = try await rest("POST", "\(path)/thread-members/@me?location=Banner")

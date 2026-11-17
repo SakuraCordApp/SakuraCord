@@ -137,7 +137,7 @@ struct NetTests {
     }
 
     @Test func webSocketKeepsOrderUnderJitter() async throws {
-        let server = try await Self.startServer(profile: .mobile) { socket in
+        let server = try await Self.startServer(profile: SimulatedNetwork.mobile.profile(for: .gateway)) { socket in
             for index in 0 ..< 20 { socket.send(text: String(index)) }
             for await _ in socket.messages {}
         }
@@ -166,7 +166,7 @@ struct NetTests {
 
     @Test func sameSeedGivesSameDelays() {
         func delays(seed: UInt64, path: String) -> [Duration] {
-            let conditioner = NetworkConditioner(seed: seed, profile: .mobile)
+            let conditioner = NetworkConditioner(seed: seed, profile: SimulatedNetwork.mobile.profile(for: .api))
             return (0 ..< 10).map { _ in conditioner.requestDelay("rest GET \(path)", uploadBytes: 1000) }
         }
         #expect(delays(seed: 42, path: "/a") == delays(seed: 42, path: "/a"))
@@ -176,7 +176,7 @@ struct NetTests {
     }
 
     @Test func profilesByName() {
-        #expect(NetworkConditioner.Profile.named("Mobile") == .mobile)
-        #expect(NetworkConditioner.Profile.named("satellite") == nil)
+        #expect(SimulatedNetwork.named("Mobile") == .mobile)
+        #expect(SimulatedNetwork.named("satellite") == nil)
     }
 }

@@ -8,7 +8,7 @@ import Testing
 struct RemoteAuthTests {
     @Test func phoneApprovalSignsTheQRCodeIn() async throws {
         var configuration = DiscordSimulator.Configuration()
-        configuration.network = .uniform(.instant)
+        configuration.network = .instant
         configuration.epoch = Date(timeIntervalSince1970: 1_794_778_200)
         configuration.basePort = UInt16(42_000 + Int(ProcessInfo.processInfo.processIdentifier % 1_000) * 10)
         let simulator = try await DiscordSimulator.make(configuration: configuration)

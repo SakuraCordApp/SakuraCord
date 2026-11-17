@@ -60,6 +60,21 @@ enum ChannelEditRoutes {
             return .empty
         }
 
+        // Message requests: accepting keeps the DM (not captured: 204 and no event when it was
+        // no request); ignoring closes it for this user only, without telling the sender.
+        routes["PUT /api/v9/channels/{id}/recipients/@me"] = { context in
+            try await context.world.acceptMessageRequest(try context.id(0), by: context.userID, consent: try context.json["consent_status"])
+            return .empty
+        }
+        routes["DELETE /api/v9/channels/{id}/recipients/@me"] = { context in
+            try await context.world.ignoreMessageRequest(try context.id(0), by: context.userID)
+            return .empty
+        }
+        routes["POST /api/v9/channels/{id}/blocked-user-warning-dismissal"] = { context in
+            try await context.world.dismissBlockedUserWarning(in: try context.id(0), by: context.userID)
+            return .emptyOK
+        }
+
         routes["POST /api/v9/channels/{id}/thread-members/@me"] = { context in
             try await context.world.joinThread(try context.id(0), by: context.userID)
             return .empty

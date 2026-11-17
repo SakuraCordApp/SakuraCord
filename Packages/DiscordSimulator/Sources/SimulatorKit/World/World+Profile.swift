@@ -163,6 +163,11 @@ extension World {
         ]), at: 0)
     }
 
+    func deleteAvatarHistoryEntry(_ id: Snowflake, of userID: Snowflake) throws {
+        guard let index = avatarHistory[userID]?.firstIndex(where: { $0["id"]?.stringValue == id.description }) else { throw WorldError.notFound }
+        avatarHistory[userID]?.remove(at: index)
+    }
+
     /// Decodes a `data:<type>;base64,…` upload and serves it at `path(hash)` in every extension the client may ask for.
     func storeUploadedImage(_ dataURI: String, path: (String) -> String) throws -> String {
         guard dataURI.hasPrefix("data:"), let comma = dataURI.firstIndex(of: ","),

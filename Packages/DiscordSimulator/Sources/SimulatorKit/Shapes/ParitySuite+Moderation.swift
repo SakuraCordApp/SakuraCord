@@ -1,7 +1,8 @@
 import Foundation
 
 extension ParityRun {
-    /// Scheduled events (one somewhere else; no capture has a voice-channel event) in a server the account owns, a moderator nickname, and role events.
+    /// Scheduled events (one somewhere else; no capture has a voice-channel event) in a server the account owns, a moderator nickname,
+    /// role events, and a moderator clearing reactions, deleting messages in bulk and renaming a sound.
     mutating func eventsAndModeration(_ target: Targets, me: Snowflake) async throws {
         let world = simulator.world
         let guild = try await world.guild(target.guild)
@@ -22,6 +23,7 @@ extension ParityRun {
         _ = try await rest("POST", "\(base)/ack/1/\(eventID)", body: .object(JSONObject()))
         _ = try await rest("DELETE", "\(base)/scheduled-events/\(eventID)/users/@me")
         _ = try await rest("PUT", "\(base)/scheduled-events/\(eventID)/users/@me", body: ["response": 1])
+        if let id = Snowflake(eventID) { try await world.updateScheduledEvent(id, in: target.guild, by: me, status: 2, name: nil) }
         _ = try await rest("DELETE", "\(base)/scheduled-events/\(eventID)")
         await flowEnd(nil)
 
@@ -36,6 +38,23 @@ extension ParityRun {
         renamed.name = "parity role (renamed)"
         try await world.saveRole(renamed, in: target.guild)
         try await world.saveRole(nil, deleting: role.id, in: target.guild)
+        await flowEnd(nil)
+
+        // A moderator clearing one emoji's reactions, then all of them, then deleting messages in bulk.
+        await flowStart()
+        var posted: [Snowflake] = []
+        for text in ["parity purge one", "parity purge two"] {
+            posted.append(try await world.sendMessage(MessageDraft(content: text), as: target.otherUser, in: target.channel, checkPermissions: false).id)
+        }
+        for emoji in ["👍", "🎉"] {
+            try await world.react(posted[0], in: target.channel, by: target.otherUser, emojiName: emoji, emojiID: nil, burst: false)
+        }
+        try await world.clearReactions(posted[0], in: target.channel, emojiKey: "👍", by: me)
+        try await world.clearReactions(posted[0], in: target.channel, emojiKey: nil, by: me)
+        try await world.bulkDeleteMessages(posted, in: target.channel, by: me)
+        if let sound = guild.soundboardSounds.first {
+            try await world.updateSoundboardSound(sound.name, in: target.guild, newName: "parity sound", emoji: nil, volume: nil)
+        }
         await flowEnd(nil)
     }
 }

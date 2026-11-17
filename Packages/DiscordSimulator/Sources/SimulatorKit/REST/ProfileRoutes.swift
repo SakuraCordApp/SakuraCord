@@ -1,6 +1,7 @@
 import Foundation
 
-/// Profile editing: identity, profile details, server profile and nickname, server tag, avatar history and widgets.
+/// Profile editing: identity, profile details, server profile and nickname, server tag, avatar history,
+/// the collectibles shop and widgets.
 enum ProfileRoutes {
     static func register(into routes: inout [String: RouteHandler]) {
         routes["PATCH /api/v9/users/@me"] = { context in
@@ -28,6 +29,16 @@ enum ProfileRoutes {
         routes["GET /api/v9/users/@me/avatars"] = { context in
             .json(.object(JSONObject([("avatars", .array((await context.world.avatarHistory[context.userID] ?? []).map(JSON.object)))])))
         }
+        // Not captured: removing a past avatar answers 204, and an unknown one Discord's bare 404.
+        routes["DELETE /api/v9/users/@me/avatars/{id}"] = { context in
+            try await context.world.deleteAvatarHistoryEntry(try context.id(0), of: context.userID)
+            return .empty
+        }
+        routes["GET /api/v9/collectibles-categories/v2"] = { context in .json(await context.world.renderCollectibleCategories()) }
+        routes["GET /api/v9/collectibles-products/{id}"] = { context in
+            .json(await context.world.renderProduct(try await context.world.collectibleProduct(try context.id(0)), withPrices: false))
+        }
+        routes["GET /api/v9/users/@me/collectibles-purchases"] = { context in .json(await context.world.renderPurchases(context.userID)) }
         routes["PUT /api/v9/users/@me/widgets"] = { context in
             .json(try await context.world.saveProfileWidgets(context.userID, body: try context.json))
         }

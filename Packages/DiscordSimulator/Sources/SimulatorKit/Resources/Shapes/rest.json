@@ -2672,6 +2672,286 @@
       }
     }
   },
+  "GET /api/v9/applications/{id}/widget-configs": {
+    "samples": 5,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "config_id": {"t": "snowflake"},
+            "application_id": {"t": "snowflake"},
+            "display_name": {"t": "string"},
+            "status": {"t": "string"},
+            "surfaces": {
+              "t": "object",
+              "f": {
+                "widget_bottom": {
+                  "t": "object",
+                  "f": {
+                    "layout": {"t": "string"},
+                    "components": {
+                      "t": "object",
+                      "f": {
+                        "progress": {
+                          "t": "object",
+                          "f": {
+                            "fields": {
+                              "t": "object",
+                              "f": {
+                                "current": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "objective": {
+                          "t": "object",
+                          "f": {
+                            "fields": {
+                              "t": "object",
+                              "f": {
+                                "description": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                },
+                                "image": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                },
+                                "name": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "add_widget_preview": {
+                  "t": "object",
+                  "f": {
+                    "layout": {"t": "string"},
+                    "components": {
+                      "t": "object",
+                      "f": {
+                        "hero_image": {
+                          "t": "object",
+                          "f": {
+                            "fields": {
+                              "t": "object",
+                              "f": {
+                                "image": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "widget_top": {
+                  "t": "object",
+                  "f": {
+                    "layout": {"t": "string"},
+                    "components": {
+                      "t": "object",
+                      "f": {
+                        "title": {
+                          "t": "object",
+                          "f": {
+                            "fields": {
+                              "t": "object",
+                              "f": {
+                                "text": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "hero_image": {
+                          "t": "object",
+                          "f": {
+                            "fields": {
+                              "t": "object",
+                              "f": {
+                                "image": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "mini_profile": {
+                  "t": "object",
+                  "f": {
+                    "layout": {"t": "string"},
+                    "components": {
+                      "t": "object",
+                      "f": {
+                        "stat": {
+                          "t": "object",
+                          "f": {
+                            "fields": {
+                              "t": "object",
+                              "f": {
+                                "text": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "hero_image": {
+                          "t": "object",
+                          "f": {
+                            "fields": {
+                              "t": "object",
+                              "f": {
+                                "image": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "activity_accessory": {
+                  "t": "object",
+                  "f": {
+                    "layout": {"t": "string"},
+                    "components": {
+                      "t": "object",
+                      "f": {
+                        "stat": {
+                          "t": "object",
+                          "f": {
+                            "fields": {
+                              "t": "object",
+                              "f": {
+                                "text": {
+                                  "t": "object",
+                                  "f": {
+                                    "value_type": {"t": "string"},
+                                    "presentation_type": {"t": "string"},
+                                    "value": {"t": "string"}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "updated_at": {"t": "timestamp"},
+            "published_at": {"t": "timestamp"},
+            "resolved_assets": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "key": {"t": "string"},
+                  "asset_id": {"t": "snowflake"},
+                  "asset_type": {"t": "string"},
+                  "metadata": {
+                    "t": "object",
+                    "f": {
+                      "width": {"t": "int"},
+                      "height": {"t": "int"},
+                      "content_type": {"t": "string"},
+                      "is_animated": {"t": "bool"}
+                    }
+                  },
+                  "updated_at": {"t": "timestamp"},
+                  "visibility": {"t": "string"}
+                }
+              }
+            },
+            "application": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "icon": {"t": "string"},
+                "description": {"t": "string"},
+                "type": {"t": "null"},
+                "summary": {"t": "string"},
+                "is_monetized": {"t": "bool"},
+                "is_verified": {"t": "bool"},
+                "is_discoverable": {"t": "bool"},
+                "flags": {"t": "int"},
+                "flags_new": {"t": "string"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "GET /api/v9/auth/location-metadata": {
     "samples": 55,
     "headers": [
@@ -5089,6 +5369,1045 @@
                 "banner_color": {"t": "null"},
                 "clan": {"t": "null"},
                 "primary_guild": {"t": "null"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/collectibles-categories/v2": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "categories": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "sku_id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "summary": {"t": "string"},
+                "store_listing_id": {"t": "snowflake"},
+                "unpublished_at": {"t": "timestamp", "opt": true},
+                "styles": {
+                  "t": "object",
+                  "f": {
+                    "background_colors": {
+                      "t": "array",
+                      "i": {"t": "int"}
+                    },
+                    "button_colors": {
+                      "t": "array",
+                      "i": {"t": "int"}
+                    },
+                    "confetti_colors": {
+                      "t": "array",
+                      "i": {"t": "int"}
+                    }
+                  },
+                  "opt": true
+                },
+                "hero_ranking": {
+                  "t": "array",
+                  "i": {"t": "snowflake"}
+                },
+                "featured_block_body": {"t": "string", "opt": true},
+                "hero_block_title": {"t": "string", "opt": true},
+                "mobile_hero_block_title": {"t": "string", "opt": true},
+                "mobile_products_title": {"t": "string", "opt": true},
+                "mobile_summary": {"t": "string", "opt": true},
+                "wide_banner_title": {"t": "string", "opt": true},
+                "wide_banner_body": {"t": "string", "opt": true},
+                "banner_text_color": {"t": "string", "opt": true},
+                "products": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "sku_id": {"t": "snowflake"},
+                      "name": {"t": "string"},
+                      "summary": {"t": "string"},
+                      "store_listing_id": {"t": "snowflake"},
+                      "unpublished_at": {"t": "timestamp", "opt": true},
+                      "styles": {
+                        "t": "object",
+                        "f": {
+                          "background_colors": {
+                            "t": "array",
+                            "i": {"t": "int"}
+                          },
+                          "button_colors": {
+                            "t": "array",
+                            "i": {"t": "int"}
+                          },
+                          "confetti_colors": {
+                            "t": "array",
+                            "i": {"t": "int"}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "prices": {
+                        "t": "map",
+                        "v": {
+                          "t": "object",
+                          "f": {
+                            "country_prices": {
+                              "t": "object",
+                              "f": {
+                                "country_code": {"t": "string"},
+                                "prices": {
+                                  "t": "array",
+                                  "i": {
+                                    "t": "object",
+                                    "f": {
+                                      "amount": {"t": "int"},
+                                      "currency": {"t": "string"},
+                                      "exponent": {"t": "int"}
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "preview_assets": {
+                        "t": "null|object",
+                        "f": {
+                          "fg_static": {"t": "string"},
+                          "fg_video": {"t": "string", "opt": true},
+                          "bg_static": {"t": "string"}
+                        }
+                      },
+                      "items": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "type": {"t": "int"},
+                            "sku_id": {"t": "snowflake"},
+                            "title": {"t": "string", "opt": true},
+                            "description": {"t": "string", "opt": true},
+                            "accessibilityLabel": {"t": "string", "opt": true},
+                            "animationType": {"t": "int", "opt": true},
+                            "staticFrameSrc": {"t": "string", "opt": true},
+                            "thumbnailPreviewSrc": {"t": "string", "opt": true},
+                            "reducedMotionSrc": {"t": "string", "opt": true},
+                            "effects": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "src": {"t": "string"},
+                                  "loop": {"t": "bool"},
+                                  "height": {"t": "int", "opt": true},
+                                  "width": {"t": "int", "opt": true},
+                                  "duration": {"t": "int"},
+                                  "start": {"t": "int"},
+                                  "loopDelay": {"t": "int"},
+                                  "position": {
+                                    "t": "object",
+                                    "f": {
+                                      "x": {"t": "int"},
+                                      "y": {"t": "int"}
+                                    },
+                                    "opt": true
+                                  },
+                                  "zIndex": {"t": "int"},
+                                  "randomizedSources": {
+                                    "t": "array",
+                                    "i": {
+                                      "t": "object",
+                                      "f": {
+                                        "src": {"t": "string"}
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "opt": true
+                            },
+                            "asset": {"t": "string", "opt": true},
+                            "label": {"t": "string", "opt": true},
+                            "layers": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "id": {"t": "snowflake"},
+                                  "type": {"t": "string"},
+                                  "order": {"t": "string"},
+                                  "anchor": {"t": "string"},
+                                  "responsive": {"t": "bool"}
+                                }
+                              },
+                              "opt": true
+                            },
+                            "inner_width": {"t": "int", "opt": true},
+                            "overflow_top": {"t": "int", "opt": true},
+                            "overflow_bottom": {"t": "int", "opt": true},
+                            "overflow_horizontal": {"t": "int", "opt": true},
+                            "palette": {"t": "string", "opt": true}
+                          }
+                        }
+                      },
+                      "type": {"t": "int"},
+                      "premium_type": {"t": "int"},
+                      "category_sku_id": {"t": "snowflake"},
+                      "description": {"t": "string", "opt": true},
+                      "variants": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "sku_id": {"t": "snowflake"},
+                            "name": {"t": "string"},
+                            "name_localizations": {"t": "null"},
+                            "summary": {"t": "string"},
+                            "summary_localizations": {"t": "null"},
+                            "type": {"t": "int"},
+                            "store_listing_id": {"t": "snowflake"},
+                            "category_sku_id": {"t": "snowflake"},
+                            "premium_type": {"t": "int"},
+                            "items": {
+                              "t": "array",
+                              "i": {
+                                "t": "object",
+                                "f": {
+                                  "type": {"t": "int"},
+                                  "sku_id": {"t": "snowflake"},
+                                  "title": {"t": "string", "opt": true},
+                                  "description": {"t": "string", "opt": true},
+                                  "accessibilityLabel": {"t": "string", "opt": true},
+                                  "animationType": {"t": "int", "opt": true},
+                                  "staticFrameSrc": {"t": "string", "opt": true},
+                                  "thumbnailPreviewSrc": {"t": "string", "opt": true},
+                                  "reducedMotionSrc": {"t": "string", "opt": true},
+                                  "effects": {
+                                    "t": "array",
+                                    "i": {
+                                      "t": "object",
+                                      "f": {
+                                        "src": {"t": "string"},
+                                        "loop": {"t": "bool"},
+                                        "height": {"t": "int", "opt": true},
+                                        "width": {"t": "int", "opt": true},
+                                        "duration": {"t": "int"},
+                                        "start": {"t": "int"},
+                                        "loopDelay": {"t": "int"},
+                                        "position": {
+                                          "t": "object",
+                                          "f": {
+                                            "x": {"t": "int"},
+                                            "y": {"t": "int"}
+                                          },
+                                          "opt": true
+                                        },
+                                        "zIndex": {"t": "int"},
+                                        "randomizedSources": {"t": "array"}
+                                      }
+                                    },
+                                    "opt": true
+                                  },
+                                  "asset": {"t": "string", "opt": true},
+                                  "label": {"t": "string", "opt": true},
+                                  "layers": {
+                                    "t": "array",
+                                    "i": {
+                                      "t": "object",
+                                      "f": {
+                                        "id": {"t": "snowflake"},
+                                        "type": {"t": "string"},
+                                        "order": {"t": "string"},
+                                        "anchor": {"t": "string"},
+                                        "responsive": {"t": "bool"}
+                                      }
+                                    },
+                                    "opt": true
+                                  },
+                                  "inner_width": {"t": "int", "opt": true},
+                                  "overflow_top": {"t": "int", "opt": true},
+                                  "overflow_bottom": {"t": "int", "opt": true},
+                                  "overflow_horizontal": {"t": "int", "opt": true},
+                                  "palette": {"t": "string", "opt": true}
+                                }
+                              }
+                            },
+                            "prices": {
+                              "t": "map",
+                              "v": {
+                                "t": "object",
+                                "f": {
+                                  "country_prices": {
+                                    "t": "object",
+                                    "f": {
+                                      "country_code": {"t": "string"},
+                                      "prices": {
+                                        "t": "array",
+                                        "i": {
+                                          "t": "object",
+                                          "f": {
+                                            "amount": {"t": "int"},
+                                            "currency": {"t": "string"},
+                                            "exponent": {"t": "int"}
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "variant_label": {"t": "string"},
+                            "variant_value": {"t": "string"},
+                            "base_variant_sku_id": {"t": "snowflake"},
+                            "base_variant_name": {"t": "string"},
+                            "styles": {"t": "null"},
+                            "google_sku_ids": {
+                              "t": "map",
+                              "v": {"t": "string"}
+                            },
+                            "badge_override": {"t": "null"},
+                            "hide_badge": {"t": "null"},
+                            "is_first_party": {"t": "bool"}
+                          }
+                        },
+                        "opt": true
+                      },
+                      "bundled_products": {
+                        "t": "array",
+                        "i": {
+                          "t": "object",
+                          "f": {
+                            "sku_id": {"t": "snowflake"},
+                            "name": {"t": "string"},
+                            "summary": {"t": "string"},
+                            "type": {"t": "int"},
+                            "premium_type": {"t": "int"},
+                            "prices": {
+                              "t": "map",
+                              "v": {
+                                "t": "object",
+                                "f": {
+                                  "country_prices": {
+                                    "t": "object",
+                                    "f": {
+                                      "country_code": {"t": "string"},
+                                      "prices": {
+                                        "t": "array",
+                                        "i": {
+                                          "t": "object",
+                                          "f": {
+                                            "amount": {"t": "int"},
+                                            "currency": {"t": "string"},
+                                            "exponent": {"t": "int"}
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "opt": true
+                      },
+                      "google_sku_ids": {
+                        "t": "object|map",
+                        "v": {"t": "string"}
+                      },
+                      "is_first_party": {"t": "bool"}
+                    }
+                  }
+                },
+                "hero_banner_url": {"t": "string", "opt": true},
+                "hero_rive_url": {"t": "string", "opt": true},
+                "hero_banner_animated_url": {"t": "string", "opt": true},
+                "hero_logo_url": {"t": "string", "opt": true},
+                "catalog_banner_url": {"t": "string"},
+                "catalog_banner_rive_url": {"t": "string", "opt": true},
+                "catalog_banner_animated_url": {"t": "string", "opt": true},
+                "featured_block_url": {"t": "string"},
+                "logo_url": {"t": "string"},
+                "pdp_bg_url": {"t": "string"},
+                "wide_banner_url": {"t": "string", "opt": true},
+                "mobile_hero_url": {"t": "string", "opt": true},
+                "mobile_banner_url": {"t": "string"},
+                "mobile_bg_url": {"t": "string"},
+                "hero_banner_display_config": {
+                  "t": "object",
+                  "f": {
+                    "desktop_max_height": {"t": "null|int"},
+                    "mobile_max_height": {"t": "null"},
+                    "responsive": {"t": "null|bool"},
+                    "background_style": {"t": "string"}
+                  },
+                  "opt": true
+                },
+                "hero_logo_display_config": {
+                  "t": "object",
+                  "f": {
+                    "desktop_max_height": {"t": "int"},
+                    "mobile_max_height": {"t": "null"},
+                    "responsive": {"t": "null|bool"},
+                    "background_style": {"t": "null"}
+                  },
+                  "opt": true
+                }
+              }
+            }
+          },
+          "collections": {"t": "array"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/collectibles-products/{id}": {
+    "samples": 90,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "sku_id": {"t": "snowflake"},
+          "name": {"t": "string"},
+          "summary": {"t": "string"},
+          "store_listing_id": {"t": "snowflake"},
+          "styles": {
+            "t": "object",
+            "f": {
+              "background_colors": {
+                "t": "array",
+                "i": {"t": "int"}
+              },
+              "button_colors": {
+                "t": "array",
+                "i": {"t": "int"}
+              },
+              "confetti_colors": {
+                "t": "array",
+                "i": {"t": "int"}
+              }
+            }
+          },
+          "preview_assets": {"t": "null"},
+          "items": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "type": {"t": "int"},
+                "sku_id": {"t": "snowflake"},
+                "asset": {"t": "string", "opt": true},
+                "label": {"t": "string", "opt": true},
+                "palette": {"t": "string", "opt": true},
+                "layers": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "snowflake"},
+                      "type": {"t": "string"},
+                      "order": {"t": "string"},
+                      "anchor": {"t": "string"},
+                      "responsive": {"t": "bool"}
+                    }
+                  },
+                  "opt": true
+                },
+                "inner_width": {"t": "int", "opt": true},
+                "overflow_top": {"t": "int", "opt": true},
+                "overflow_bottom": {"t": "int", "opt": true},
+                "overflow_horizontal": {"t": "int", "opt": true},
+                "title": {"t": "string", "opt": true},
+                "description": {"t": "string", "opt": true},
+                "accessibilityLabel": {"t": "string", "opt": true},
+                "animationType": {"t": "int", "opt": true},
+                "staticFrameSrc": {"t": "string", "opt": true},
+                "thumbnailPreviewSrc": {"t": "string", "opt": true},
+                "reducedMotionSrc": {"t": "string", "opt": true},
+                "effects": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "src": {"t": "string"},
+                      "loop": {"t": "bool"},
+                      "height": {"t": "int"},
+                      "width": {"t": "int"},
+                      "duration": {"t": "int"},
+                      "start": {"t": "int"},
+                      "loopDelay": {"t": "int"},
+                      "position": {
+                        "t": "object",
+                        "f": {
+                          "x": {"t": "int"},
+                          "y": {"t": "int"}
+                        }
+                      },
+                      "zIndex": {"t": "int"},
+                      "randomizedSources": {"t": "array"}
+                    }
+                  },
+                  "opt": true
+                }
+              }
+            }
+          },
+          "type": {"t": "int"},
+          "premium_type": {"t": "int"},
+          "category_sku_id": {"t": "snowflake"},
+          "google_sku_ids": {
+            "t": "map",
+            "v": {"t": "string"}
+          },
+          "is_first_party": {"t": "bool"}
+        }
+      }
+    }
+  },
+  "GET /api/v9/content-inventory/users/@me/similar-games/{id}": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "game_id": {"t": "snowflake"},
+          "similar_games": {
+            "t": "array",
+            "i": {"t": "snowflake"}
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/games": {
+    "samples": 284,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "id": {"t": "snowflake"},
+            "name": {"t": "string"},
+            "aliases": {
+              "t": "array",
+              "i": {"t": "string"}
+            },
+            "description": {"t": "string", "opt": true},
+            "icon_hash": {"t": "null|string"},
+            "executables": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "os": {"t": "string"},
+                  "name": {"t": "string"},
+                  "arguments": {"t": "string", "opt": true},
+                  "is_launcher": {"t": "bool"}
+                }
+              }
+            },
+            "third_party_skus": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "distributor": {"t": "string"},
+                  "id": {"t": "null|string|snowflake"}
+                }
+              }
+            },
+            "overlay": {"t": "bool"},
+            "overlay_warn": {"t": "bool"},
+            "overlay_compatibility_hook": {"t": "bool"},
+            "overlay_methods": {"t": "null|int"},
+            "hook": {"t": "bool"},
+            "themes": {
+              "t": "array",
+              "i": {"t": "string"}
+            },
+            "linked_applications": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "type": {"t": "int"}
+                }
+              }
+            },
+            "media": {
+              "t": "object",
+              "f": {
+                "cover_hash": {"t": "string", "opt": true},
+                "cover_url": {"t": "string", "opt": true},
+                "artwork_hashes": {
+                  "t": "array",
+                  "i": {"t": "string"},
+                  "opt": true
+                },
+                "artwork_urls": {
+                  "t": "array",
+                  "i": {"t": "string"},
+                  "opt": true
+                },
+                "icon": {
+                  "t": "object",
+                  "f": {
+                    "type": {"t": "string"},
+                    "value": {"t": "string"}
+                  },
+                  "opt": true
+                },
+                "banner": {
+                  "t": "object",
+                  "f": {
+                    "type": {"t": "string"},
+                    "value": {"t": "string"}
+                  },
+                  "opt": true
+                },
+                "cover": {
+                  "t": "object",
+                  "f": {
+                    "type": {"t": "string"},
+                    "value": {"t": "string"}
+                  },
+                  "opt": true
+                },
+                "artwork": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "type": {"t": "string"},
+                      "value": {"t": "string"}
+                    }
+                  },
+                  "opt": true
+                }
+              }
+            },
+            "first_release_date": {"t": "timestamp", "opt": true},
+            "genres": {
+              "t": "array",
+              "i": {"t": "int"},
+              "opt": true
+            },
+            "platforms": {
+              "t": "array",
+              "i": {"t": "int"},
+              "opt": true
+            },
+            "platform_availability": {
+              "t": "array",
+              "i": {"t": "string"}
+            },
+            "cover_image_hash": {"t": "string", "opt": true},
+            "banner_hash": {"t": "string", "opt": true},
+            "screenshot_hashes": {
+              "t": "array",
+              "i": {"t": "string"},
+              "opt": true
+            },
+            "screenshot_urls": {
+              "t": "array",
+              "i": {"t": "string"},
+              "opt": true
+            },
+            "trailers": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "id": {"t": "snowflake"},
+                  "application_id": {"t": "snowflake"},
+                  "width": {"t": "int"},
+                  "height": {"t": "int"},
+                  "mime_type": {"t": "string"},
+                  "size": {"t": "int"}
+                }
+              },
+              "opt": true
+            },
+            "websites": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "url": {"t": "string"},
+                  "category": {"t": "int"}
+                }
+              },
+              "opt": true
+            },
+            "companies": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "name": {"t": "string"},
+                  "roles": {
+                    "t": "array",
+                    "i": {"t": "int"}
+                  }
+                }
+              },
+              "opt": true
+            },
+            "steam_release_status": {"t": "int", "opt": true},
+            "reviews": {
+              "t": "object",
+              "f": {
+                "steam": {
+                  "t": "object",
+                  "f": {
+                    "rating": {"t": "int", "opt": true},
+                    "rating_count": {"t": "int", "opt": true},
+                    "recent_rating": {"t": "int", "opt": true},
+                    "recent_rating_count": {"t": "int", "opt": true},
+                    "localized_rating": {"t": "int", "opt": true},
+                    "localized_rating_count": {"t": "int", "opt": true}
+                  },
+                  "opt": true
+                },
+                "opencritic": {
+                  "t": "object",
+                  "f": {
+                    "top_critic_rating": {"t": "int|float", "opt": true},
+                    "top_critic_rating_count": {"t": "int"},
+                    "tier": {"t": "int", "opt": true}
+                  },
+                  "opt": true
+                },
+                "app_store": {
+                  "t": "object",
+                  "f": {
+                    "rating": {"t": "int|float"},
+                    "rating_count": {"t": "int"},
+                    "global_rating_count": {"t": "int"}
+                  },
+                  "opt": true
+                },
+                "google_play": {
+                  "t": "object",
+                  "f": {
+                    "rating": {"t": "int|float"},
+                    "rating_count": {"t": "int"}
+                  },
+                  "opt": true
+                }
+              },
+              "opt": true
+            },
+            "opencritic_url": {"t": "string", "opt": true},
+            "shop_collection_ids": {
+              "t": "array",
+              "i": {"t": "snowflake"},
+              "opt": true
+            },
+            "l30_rank": {"t": "int", "opt": true},
+            "community_guild_ids": {
+              "t": "array",
+              "i": {"t": "snowflake"},
+              "opt": true
+            },
+            "game_flags": {"t": "int"},
+            "content_classification": {
+              "t": "object",
+              "f": {
+                "agency_ratings": {
+                  "t": "object",
+                  "f": {
+                    "esrb": {
+                      "t": "object",
+                      "f": {
+                        "rating": {"t": "int"},
+                        "descriptors": {
+                          "t": "array",
+                          "i": {"t": "int"}
+                        }
+                      }
+                    },
+                    "pegi": {
+                      "t": "object",
+                      "f": {
+                        "rating": {"t": "int"},
+                        "descriptors": {"t": "array"}
+                      },
+                      "opt": true
+                    },
+                    "apple": {
+                      "t": "object",
+                      "f": {
+                        "rating": {"t": "int"},
+                        "descriptors": {
+                          "t": "array",
+                          "i": {"t": "int"}
+                        }
+                      },
+                      "opt": true
+                    }
+                  }
+                }
+              },
+              "opt": true
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/games/autocomplete": {
+    "samples": 21,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "id": {"t": "snowflake"},
+            "name": {"t": "string"},
+            "icon": {
+              "t": "object",
+              "f": {
+                "type": {"t": "string"},
+                "value": {"t": "string"}
+              },
+              "opt": true
+            },
+            "platform_availability": {
+              "t": "array",
+              "i": {"t": "string"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/games/{id}/announcements": {
+    "samples": 1,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "guild_id": {"t": "snowflake"},
+          "channel_id": {"t": "snowflake"},
+          "messages": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "type": {"t": "int"},
+                "content": {"t": "string"},
+                "mentions": {"t": "array"},
+                "mention_roles": {
+                  "t": "array",
+                  "i": {"t": "snowflake"}
+                },
+                "attachments": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "snowflake"},
+                      "filename": {"t": "string"},
+                      "size": {"t": "int"},
+                      "url": {"t": "string"},
+                      "proxy_url": {"t": "string"},
+                      "width": {"t": "int"},
+                      "height": {"t": "int"},
+                      "content_type": {"t": "string"},
+                      "original_content_type": {"t": "string"},
+                      "content_scan_version": {"t": "int"},
+                      "placeholder": {"t": "string"},
+                      "placeholder_version": {"t": "int"}
+                    }
+                  }
+                },
+                "embeds": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "type": {"t": "string"},
+                      "url": {"t": "string"},
+                      "title": {"t": "string"},
+                      "description": {"t": "string"},
+                      "color": {"t": "int"},
+                      "author": {
+                        "t": "object",
+                        "f": {
+                          "name": {"t": "string"},
+                          "url": {"t": "string"}
+                        }
+                      },
+                      "provider": {
+                        "t": "object",
+                        "f": {
+                          "name": {"t": "string"},
+                          "url": {"t": "string"}
+                        }
+                      },
+                      "thumbnail": {
+                        "t": "object",
+                        "f": {
+                          "url": {"t": "string"},
+                          "proxy_url": {"t": "string"},
+                          "width": {"t": "int"},
+                          "height": {"t": "int"},
+                          "content_type": {"t": "string"},
+                          "placeholder": {"t": "string"},
+                          "placeholder_version": {"t": "int"},
+                          "flags": {"t": "int"}
+                        }
+                      },
+                      "video": {
+                        "t": "object",
+                        "f": {
+                          "url": {"t": "string"},
+                          "width": {"t": "int"},
+                          "height": {"t": "int"},
+                          "placeholder": {"t": "string"},
+                          "placeholder_version": {"t": "int"},
+                          "flags": {"t": "int"}
+                        }
+                      },
+                      "content_scan_version": {"t": "int"}
+                    }
+                  }
+                },
+                "timestamp": {"t": "timestamp"},
+                "edited_timestamp": {"t": "null|timestamp"},
+                "flags": {"t": "int"},
+                "components": {"t": "array"},
+                "id": {"t": "snowflake"},
+                "channel_id": {"t": "snowflake"},
+                "author": {
+                  "t": "object",
+                  "f": {
+                    "id": {"t": "snowflake"},
+                    "username": {"t": "string"},
+                    "avatar": {"t": "string"},
+                    "discriminator": {"t": "string"},
+                    "public_flags": {"t": "int"},
+                    "flags": {"t": "int"},
+                    "banner": {"t": "null"},
+                    "accent_color": {"t": "null"},
+                    "global_name": {"t": "string"},
+                    "avatar_decoration_data": {
+                      "t": "object",
+                      "f": {
+                        "asset": {"t": "string"},
+                        "sku_id": {"t": "snowflake"},
+                        "expires_at": {"t": "null"}
+                      }
+                    },
+                    "collectibles": {
+                      "t": "object",
+                      "f": {
+                        "nameplate": {
+                          "t": "object",
+                          "f": {
+                            "sku_id": {"t": "snowflake"},
+                            "asset": {"t": "string"},
+                            "label": {"t": "string"},
+                            "palette": {"t": "string"}
+                          }
+                        }
+                      }
+                    },
+                    "display_name_styles": {
+                      "t": "object",
+                      "f": {
+                        "font_id": {"t": "int"},
+                        "effect_id": {"t": "int"},
+                        "colors": {
+                          "t": "array",
+                          "i": {"t": "int"}
+                        }
+                      }
+                    },
+                    "banner_color": {"t": "null"},
+                    "clan": {
+                      "t": "object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    },
+                    "primary_guild": {
+                      "t": "object",
+                      "f": {
+                        "identity_guild_id": {"t": "snowflake"},
+                        "identity_enabled": {"t": "bool"},
+                        "tag": {"t": "string"},
+                        "badge": {"t": "string"}
+                      }
+                    }
+                  }
+                },
+                "pinned": {"t": "bool"},
+                "mention_everyone": {"t": "bool"},
+                "tts": {"t": "bool"},
+                "reactions": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "emoji": {
+                        "t": "object",
+                        "f": {
+                          "id": {"t": "null|snowflake"},
+                          "name": {"t": "string"},
+                          "animated": {"t": "bool", "opt": true}
+                        }
+                      },
+                      "count": {"t": "int"},
+                      "count_details": {
+                        "t": "object",
+                        "f": {
+                          "burst": {"t": "int"},
+                          "normal": {"t": "int"}
+                        }
+                      },
+                      "burst_colors": {
+                        "t": "array",
+                        "i": {"t": "string"}
+                      },
+                      "me_burst": {"t": "bool"},
+                      "burst_me": {"t": "bool"},
+                      "me": {"t": "bool"},
+                      "burst_count": {"t": "int"}
+                    }
+                  }
+                }
               }
             }
           }
@@ -7854,6 +9173,169 @@
       }
     }
   },
+  "GET /api/v9/oauth2/tokens": {
+    "samples": 176,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "id": {"t": "snowflake"},
+            "scopes": {
+              "t": "array",
+              "i": {"t": "string"}
+            },
+            "application": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "icon": {"t": "null|string"},
+                "description": {"t": "string"},
+                "summary": {"t": "string"},
+                "type": {"t": "null|int"},
+                "is_monetized": {"t": "bool"},
+                "is_verified": {"t": "bool"},
+                "is_discoverable": {"t": "bool"},
+                "cover_image": {"t": "string", "opt": true},
+                "third_party_skus": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "string"},
+                      "sku": {"t": "string"},
+                      "distributor": {"t": "string"}
+                    }
+                  },
+                  "opt": true
+                },
+                "deeplink_uri": {"t": "string", "opt": true},
+                "splash": {"t": "string", "opt": true},
+                "primary_sku_id": {"t": "snowflake", "opt": true},
+                "bot": {
+                  "t": "object",
+                  "f": {
+                    "id": {"t": "snowflake"},
+                    "username": {"t": "string"},
+                    "global_name": {"t": "null"},
+                    "avatar": {"t": "null|string"},
+                    "avatar_decoration_data": {"t": "null"},
+                    "collectibles": {"t": "null"},
+                    "discriminator": {"t": "string"},
+                    "display_name_styles": {"t": "null"},
+                    "vad_colors": {"t": "null", "opt": true},
+                    "public_flags": {"t": "int"},
+                    "primary_guild": {"t": "null"},
+                    "clan": {"t": "null"},
+                    "bot": {"t": "bool"},
+                    "banner": {"t": "null|string"},
+                    "banner_color": {"t": "null"},
+                    "accent_color": {"t": "null"}
+                  }
+                },
+                "connection_entrypoint_url": {"t": "string", "opt": true},
+                "linked_games": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "id": {"t": "snowflake"},
+                      "type": {"t": "int"}
+                    }
+                  },
+                  "opt": true
+                },
+                "flags": {"t": "int"},
+                "flags_new": {"t": "string"},
+                "hook": {"t": "bool"},
+                "aliases": {
+                  "t": "array",
+                  "i": {"t": "string"},
+                  "opt": true
+                },
+                "rpc_origins": {
+                  "t": "array",
+                  "i": {"t": "string"},
+                  "opt": true
+                },
+                "slug": {"t": "string", "opt": true},
+                "guild_id": {"t": "snowflake", "opt": true},
+                "executables": {
+                  "t": "array",
+                  "i": {
+                    "t": "object",
+                    "f": {
+                      "os": {"t": "string"},
+                      "name": {"t": "string"},
+                      "is_launcher": {"t": "bool"}
+                    }
+                  },
+                  "opt": true
+                },
+                "storefront_available": {"t": "bool"},
+                "bot_public": {"t": "bool"},
+                "bot_require_code_grant": {"t": "bool"},
+                "terms_of_service_url": {"t": "string", "opt": true},
+                "privacy_policy_url": {"t": "string", "opt": true},
+                "custom_install_url": {"t": "string", "opt": true},
+                "install_params": {
+                  "t": "object",
+                  "f": {
+                    "scopes": {
+                      "t": "array",
+                      "i": {"t": "string"}
+                    },
+                    "permissions": {"t": "string|snowflake"}
+                  },
+                  "opt": true
+                },
+                "integration_types_config": {
+                  "t": "map",
+                  "v": {
+                    "t": "object",
+                    "f": {
+                      "oauth2_install_params": {
+                        "t": "object",
+                        "f": {
+                          "scopes": {
+                            "t": "array",
+                            "i": {"t": "string"}
+                          },
+                          "permissions": {"t": "string|snowflake"}
+                        },
+                        "opt": true
+                      }
+                    }
+                  }
+                },
+                "verify_key": {"t": "string"},
+                "embedded_surfaces": {
+                  "t": "array",
+                  "i": {"t": "int"}
+                },
+                "max_participants": {"t": "null|int", "opt": true},
+                "tags": {
+                  "t": "array",
+                  "i": {"t": "string"},
+                  "opt": true
+                }
+              }
+            },
+            "disclosures": {
+              "t": "array",
+              "i": {"t": "int"},
+              "opt": true
+            }
+          }
+        }
+      }
+    }
+  },
   "GET /api/v9/safety-hub/@me": {
     "samples": 10,
     "headers": [
@@ -8779,6 +10261,117 @@
                 }
               }
             }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/users/@me/collectibles-purchases": {
+    "samples": 5,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "array",
+        "i": {
+          "t": "object",
+          "f": {
+            "sku_id": {"t": "snowflake"},
+            "name": {"t": "string"},
+            "summary": {"t": "string"},
+            "store_listing_id": {"t": "snowflake"},
+            "unpublished_at": {"t": "null"},
+            "styles": {
+              "t": "object",
+              "f": {
+                "background_colors": {
+                  "t": "array",
+                  "i": {"t": "int"}
+                },
+                "button_colors": {
+                  "t": "array",
+                  "i": {"t": "int"}
+                },
+                "confetti_colors": {
+                  "t": "array",
+                  "i": {"t": "int"}
+                }
+              }
+            },
+            "items": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "type": {"t": "int"},
+                  "sku_id": {"t": "snowflake"},
+                  "title": {"t": "string", "opt": true},
+                  "description": {"t": "string", "opt": true},
+                  "accessibilityLabel": {"t": "string", "opt": true},
+                  "animationType": {"t": "int", "opt": true},
+                  "staticFrameSrc": {"t": "string", "opt": true},
+                  "thumbnailPreviewSrc": {"t": "string", "opt": true},
+                  "reducedMotionSrc": {"t": "string", "opt": true},
+                  "effects": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "src": {"t": "string"},
+                        "loop": {"t": "bool"},
+                        "height": {"t": "int"},
+                        "width": {"t": "int"},
+                        "duration": {"t": "int"},
+                        "start": {"t": "int"},
+                        "loopDelay": {"t": "int"},
+                        "position": {
+                          "t": "object",
+                          "f": {
+                            "x": {"t": "int"},
+                            "y": {"t": "int"}
+                          }
+                        },
+                        "zIndex": {"t": "int"},
+                        "randomizedSources": {"t": "array"}
+                      }
+                    },
+                    "opt": true
+                  },
+                  "asset": {"t": "string", "opt": true},
+                  "label": {"t": "string", "opt": true},
+                  "palette": {"t": "string", "opt": true},
+                  "layers": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "id": {"t": "snowflake"},
+                        "type": {"t": "string"},
+                        "order": {"t": "string"},
+                        "anchor": {"t": "string"},
+                        "responsive": {"t": "bool"}
+                      }
+                    },
+                    "opt": true
+                  },
+                  "inner_width": {"t": "int", "opt": true},
+                  "overflow_top": {"t": "int", "opt": true},
+                  "overflow_bottom": {"t": "int", "opt": true},
+                  "overflow_horizontal": {"t": "int", "opt": true}
+                }
+              }
+            },
+            "type": {"t": "int"},
+            "premium_type": {"t": "int"},
+            "category_sku_id": {"t": "snowflake"},
+            "purchase_type": {"t": "int"},
+            "purchased_at": {"t": "timestamp"},
+            "expires_at": {"t": "null|timestamp"},
+            "variant_label": {"t": "string", "opt": true},
+            "variant_value": {"t": "string", "opt": true},
+            "base_variant_sku_id": {"t": "snowflake", "opt": true},
+            "base_variant_name": {"t": "string", "opt": true}
           }
         }
       }
@@ -10685,6 +12278,1056 @@
             "custom": {"t": "bool"},
             "deprecated": {"t": "bool"},
             "optimal": {"t": "bool"}
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/widget-configs/developer": {
+    "samples": 129,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "applications": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "icon": {"t": "string"},
+                "description": {"t": "string"},
+                "type": {"t": "null"},
+                "summary": {"t": "string"},
+                "is_monetized": {"t": "bool"},
+                "is_verified": {"t": "bool"},
+                "is_discoverable": {"t": "bool"},
+                "flags": {"t": "int"},
+                "flags_new": {"t": "string"}
+              }
+            }
+          },
+          "configs": {
+            "t": "object|map",
+            "v": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "config_id": {"t": "snowflake"},
+                  "application_id": {"t": "snowflake"},
+                  "display_name": {"t": "string"},
+                  "status": {"t": "string"},
+                  "surfaces": {
+                    "t": "object",
+                    "f": {
+                      "widget_bottom": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "progress": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "current": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "objective": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "description": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "name": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "add_widget_preview": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "hero_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "widget_top": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "title": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "hero_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "mini_profile": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "stat": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "hero_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "activity_accessory": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "stat": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "updated_at": {"t": "timestamp"},
+                  "published_at": {"t": "timestamp"},
+                  "resolved_assets": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "key": {"t": "string"},
+                        "asset_id": {"t": "snowflake"},
+                        "asset_type": {"t": "string"},
+                        "metadata": {
+                          "t": "object",
+                          "f": {
+                            "width": {"t": "int"},
+                            "height": {"t": "int"},
+                            "content_type": {"t": "string"},
+                            "is_animated": {"t": "bool"}
+                          }
+                        },
+                        "updated_at": {"t": "timestamp"},
+                        "visibility": {"t": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "GET /api/v9/widget-configs/featured": {
+    "samples": 129,
+    "headers": [
+      "content-type"
+    ],
+    "responses": {
+      "200": {
+        "t": "object",
+        "f": {
+          "applications": {
+            "t": "array",
+            "i": {
+              "t": "object",
+              "f": {
+                "id": {"t": "snowflake"},
+                "name": {"t": "string"},
+                "icon": {"t": "string"},
+                "description": {"t": "string"},
+                "type": {"t": "null"},
+                "cover_image": {"t": "string", "opt": true},
+                "summary": {"t": "string"},
+                "deeplink_uri": {"t": "string", "opt": true},
+                "connection_entrypoint_url": {"t": "string"},
+                "is_monetized": {"t": "bool"},
+                "is_verified": {"t": "bool"},
+                "is_discoverable": {"t": "bool"},
+                "flags": {"t": "int"},
+                "flags_new": {"t": "string"}
+              }
+            }
+          },
+          "configs": {
+            "t": "map",
+            "v": {
+              "t": "array",
+              "i": {
+                "t": "object",
+                "f": {
+                  "config_id": {"t": "snowflake"},
+                  "application_id": {"t": "snowflake"},
+                  "display_name": {"t": "string"},
+                  "status": {"t": "string"},
+                  "surfaces": {
+                    "t": "object",
+                    "f": {
+                      "widget_bottom": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "item_2": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "description": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "name": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "item_3": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "description": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "name": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "item_1": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "description": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "name": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "item_4": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "description": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "name": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "stat_5": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "value": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "stat_1": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "value": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "icon": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        },
+                                        "opt": true
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "stat_3": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "value": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "stat_2": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "value": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "stat_4": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "value": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "stat_6": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "value": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "mini_profile": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "stat": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "icon": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        },
+                                        "opt": true
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        },
+                                        "opt": true
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "contained_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "hero_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"},
+                                          "fallback": {
+                                            "t": "object",
+                                            "f": {
+                                              "value_type": {"t": "string"},
+                                              "presentation_type": {"t": "string"},
+                                              "value": {"t": "string"}
+                                            },
+                                            "opt": true
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "widget_top": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "title": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "subtitle_3": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "icon": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "subtitle_1": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "icon": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        },
+                                        "opt": true
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        },
+                                        "opt": true
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "contained_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "hero_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"},
+                                          "fallback": {
+                                            "t": "object",
+                                            "f": {
+                                              "value_type": {"t": "string"},
+                                              "presentation_type": {"t": "string"},
+                                              "value": {"t": "string"}
+                                            },
+                                            "opt": true
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "subtitle_2": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "add_widget_preview": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "contained_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              },
+                              "hero_image": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "image": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "opt": true
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "activity_accessory": {
+                        "t": "object",
+                        "f": {
+                          "layout": {"t": "string"},
+                          "components": {
+                            "t": "object",
+                            "f": {
+                              "stat": {
+                                "t": "object",
+                                "f": {
+                                  "fields": {
+                                    "t": "object",
+                                    "f": {
+                                      "text": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        }
+                                      },
+                                      "icon": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        },
+                                        "opt": true
+                                      },
+                                      "label": {
+                                        "t": "object",
+                                        "f": {
+                                          "value_type": {"t": "string"},
+                                          "presentation_type": {"t": "string"},
+                                          "value": {"t": "string"}
+                                        },
+                                        "opt": true
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "updated_at": {"t": "timestamp"},
+                  "published_at": {"t": "timestamp"},
+                  "resolved_assets": {
+                    "t": "array",
+                    "i": {
+                      "t": "object",
+                      "f": {
+                        "key": {"t": "string"},
+                        "asset_id": {"t": "snowflake"},
+                        "asset_type": {"t": "string"},
+                        "metadata": {
+                          "t": "object",
+                          "f": {
+                            "width": {"t": "int"},
+                            "height": {"t": "int"},
+                            "content_type": {"t": "string"},
+                            "is_animated": {"t": "bool"}
+                          }
+                        },
+                        "updated_at": {"t": "timestamp"},
+                        "visibility": {"t": "string"}
+                      }
+                    },
+                    "opt": true
+                  }
+                }
+              }
+            }
           }
         }
       }

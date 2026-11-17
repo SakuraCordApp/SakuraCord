@@ -51,6 +51,10 @@ enum AccountRoutes {
             return .json(await context.world.renderChannel(channel, viewer: context.userID))
         }
 
+        routes["GET /api/v9/users/@me/guilds"] = { context in
+            .json(await context.world.renderGuildList(context.userID, request: context.request))
+        }
+
         routes["GET /api/v9/guilds/{id}/members/{id}"] = { context in
             let guild = try await context.world.guild(try context.id(0))
             guard let member = guild.members[try context.id(1)] else { throw WorldError.unknown("Member", code: 10007) }
@@ -116,6 +120,32 @@ extension World {
             await emit("CHANNEL_CREATE", renderChannel(channel, viewer: member), to: .users([member]))
         }
         return channel
+    }
+
+    /// `GET /users/@me/guilds`. Not captured: partial servers in ID order, paged by
+    /// `before`/`after`/`limit` and with counts on request, as Discord documents.
+    func renderGuildList(_ userID: Snowflake, request: HTTPRequest) -> JSON {
+        let query = { (name: String) in request.query[name]?.first }
+        let before = query("before").flatMap(Snowflake.init), after = query("after").flatMap(Snowflake.init)
+        let limit = min(200, max(1, Int(query("limit") ?? "200") ?? 200))
+        var list = guilds(of: userID).sorted { $0.id < $1.id }.filter { guild in
+            (before.map { guild.id < $0 } ?? true) && (after.map { guild.id > $0 } ?? true)
+        }
+        // Paging backwards takes the servers just before the cursor.
+        list = before != nil && after == nil ? Array(list.suffix(limit)) : Array(list.prefix(limit))
+        let withCounts = query("with_counts") == "true"
+        return .array(list.map { guild in
+            var object = JSONObject([
+                ("id", guild.id.json), ("name", .string(guild.name)), ("icon", .optional(guild.icon)), ("banner", .optional(guild.banner)),
+                ("owner", .bool(guild.ownerID == userID)), ("permissions", .string(guild.permissions(of: userID, at: clock.now).wireString)),
+                ("features", .array(guild.features.map(JSON.string))),
+            ])
+            if withCounts {
+                object["approximate_member_count"] = .int(guild.memberCount)
+                object["approximate_presence_count"] = .int(onlineCount(guild))
+            }
+            return .object(object)
+        })
     }
 
     /// `POST /auth/login`. The response shape follows Discord's documented

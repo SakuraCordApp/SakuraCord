@@ -5,6 +5,15 @@ extension ParityRun {
     mutating func profileEditing(_ target: Targets, me: Snowflake) async throws {
         let world = simulator.world
         _ = try await rest("GET", "/api/v9/users/@me/avatars")
+        _ = try await rest("GET", "/api/v9/users/@me/collectibles-purchases?variants_return_style=2")
+        _ = try await rest("GET", "/api/v9/collectibles-categories/v2?include_bundles=true&variants_return_style=2&skip_num_categories=0")
+        if let sku = await world.collectibles.products.keys.min() { _ = try await rest("GET", "/api/v9/collectibles-products/\(sku)?locale=en-GB") }
+        _ = try await rest("GET", "/api/v9/users/@me/widgets/suggested-games")
+        if let game = await world.games.first {
+            _ = try await rest("GET", "/api/v9/games?game_ids=\(game.id)")
+            _ = try await rest("GET", "/api/v9/games/autocomplete?q=\(game.name.prefix(3).lowercased())&filter_group=default")
+            _ = try await rest("GET", "/api/v9/content-inventory/users/@me/similar-games/\(game.id)")
+        }
         await flowStart()
         _ = try await rest("PATCH", "/api/v9/users/@me", body: ["global_name": "Wren ✿"])
         _ = try await rest("PATCH", "/api/v9/users/%40me/profile", body: ["pronouns": "they/them"])

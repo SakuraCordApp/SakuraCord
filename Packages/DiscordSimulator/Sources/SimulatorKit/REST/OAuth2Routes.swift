@@ -16,5 +16,6 @@ enum OAuth2Routes {
         routes["POST /api/v9/oauth2/authorize"] = { context in
             .json(try await context.world.oauthAuthorize(context.request, body: try context.json, viewer: context.userID))
         }
+        routes["GET /api/v9/oauth2/tokens"] = { context in .json(await context.world.renderOAuthTokens(context.userID)) }
     }
 }

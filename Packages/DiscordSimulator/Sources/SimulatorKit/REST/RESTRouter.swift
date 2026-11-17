@@ -29,6 +29,8 @@ public typealias RouteHandler = @Sendable (RouteContext) async throws -> RouteRe
 public enum RouteResult: Sendable {
     case json(JSON, status: Int = 200)
     case empty
+    /// 200 with no body, which some acknowledgements answer instead of 204.
+    case emptyOK
 }
 
 /// Routes Discord REST requests. Unmatched routes fail loudly: 404 plus a log line.
@@ -99,6 +101,8 @@ public final class RESTRouter: Sendable {
                 return .json(status, conform(body, route: template, status: status))
             case .empty:
                 return .empty(204)
+            case .emptyOK:
+                return .empty(200)
             }
         } catch let error as WorldError {
             return .discordError(error.status, error.message, code: error.code)

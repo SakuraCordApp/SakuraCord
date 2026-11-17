@@ -100,6 +100,41 @@ extension World {
         return .object(object)
     }
 
+    // MARK: Messages
+
+    /// A moderator deletes 2–100 of a server channel's messages at once, as Discord documents (MESSAGE_DELETE_BULK).
+    func bulkDeleteMessages(_ ids: [Snowflake], in channelID: Snowflake, by userID: Snowflake) async throws {
+        let channel = try channel(channelID)
+        guard let guildID = channel.guildID else { throw WorldError.wrongChannelType }
+        try require(.manageMessages, userID, channel)
+        guard (2 ... 100).contains(ids.count) else { throw WorldError.invalidBody("messages: Must be between 2 and 100 in length.") }
+        let deleted = ids.filter { id in channel.messages.contains { $0.id == id } }
+        guard !deleted.isEmpty else { throw WorldError.unknown("Message", code: 10008) }
+        channels[channelID]?.messages.removeAll { deleted.contains($0.id) }
+        await emit("MESSAGE_DELETE_BULK", .object(JSONObject([
+            ("ids", .array(deleted.map(\.json))), ("channel_id", channelID.json), ("guild_id", guildID.json),
+        ])), to: audience(for: channel))
+    }
+
+    /// A moderator removes every reaction from a message (MESSAGE_REACTION_REMOVE_ALL, as Discord documents),
+    /// or every reaction with one emoji (MESSAGE_REACTION_REMOVE_EMOJI; its `burst` and `type` are inferred).
+    func clearReactions(_ messageID: Snowflake, in channelID: Snowflake, emojiKey: String?, by userID: Snowflake) async throws {
+        let channel = try channel(channelID)
+        try require(.manageMessages, userID, channel)
+        let existing = try message(messageID, in: channelID)
+        let cleared = existing.reactions.filter { emojiKey == nil || $0.key == emojiKey }
+        guard !cleared.isEmpty else { return }
+        _ = try updateMessage(messageID, in: channelID) { message in message.reactions.removeAll { emojiKey == nil || $0.key == emojiKey } }
+        var payload = JSONObject([("channel_id", channelID.json), ("message_id", messageID.json)])
+        if let guildID = channel.guildID { payload["guild_id"] = guildID.json }
+        if emojiKey != nil, let reaction = cleared.first {
+            payload["emoji"] = renderReactionEmoji(reaction)
+            payload["burst"] = false
+            payload["type"] = 0
+        }
+        await emit(emojiKey == nil ? "MESSAGE_REACTION_REMOVE_ALL" : "MESSAGE_REACTION_REMOVE_EMOJI", .object(payload), to: audience(for: channel))
+    }
+
     /// GUILD_AUDIT_LOG_ENTRY_CREATE goes only to members who can view the audit log.
     func emitAuditLog(_ guildID: Snowflake, action: Int, target: Snowflake?, by userID: Snowflake, changes: [JSON],
                       options: JSONObject? = nil) async {

@@ -71,8 +71,9 @@ public final class DiscordSimulator: Sendable {
         ProfileRoutes.register(into: &routes)
         RelationshipRoutes.register(into: &routes)
         ExpressionRoutes.register(into: &routes)
+        WidgetRoutes.register(into: &routes)
         let network = configuration.network
-            ?? (BenchmarkScenarios.all.contains { $0.name == scenario.name } ? .uniform(.standard) : .realistic)
+            ?? (BenchmarkScenarios.all.contains { $0.name == scenario.name } ? .standard : .realistic)
         var conditioners: [Port: NetworkConditioner] = [:]
         for port in Port.allCases where port != .control {
             conditioners[port] = NetworkConditioner(seed: configuration.seed ^ UInt64(port.rawValue), profile: network.profile(for: port))

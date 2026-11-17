@@ -85,6 +85,32 @@ extension World {
         await emitAuditLog(guildID, action: 102, target: event.id, by: userID, changes: eventAuditChanges(event, created: false))
     }
 
+    /// The creator, or anyone with Manage Events, starts (2), ends (3) or cancels (4) an event, or
+    /// renames it. Status moves only forward, as Discord documents: scheduled to active or
+    /// canceled, active to completed.
+    func updateScheduledEvent(_ id: Snowflake, in guildID: Snowflake, by userID: Snowflake, status: Int?, name: String?) async throws {
+        var event = try scheduledEvent(id, in: guildID)
+        let permissions = try guild(guildID).permissions(of: userID, at: clock.now)
+        guard permissions.contains(.manageEvents) || event.creatorID == userID && permissions.contains(.createEvents) else {
+            throw WorldError.missingPermissions
+        }
+        var changes: [JSON] = []
+        if let status, status != event.status {
+            guard [1: [2, 4], 2: [3]][event.status]?.contains(status) == true else { throw WorldError.invalidBody("status: Invalid transition") }
+            changes.append(auditChange("status", old: .int(event.status), new: .int(status)))
+            event.status = status
+        }
+        if let name, name != event.name {
+            guard (1 ... 100).contains(name.count) else { throw WorldError.invalidBody("name: Must be between 1 and 100 in length.") }
+            changes.append(auditChange("name", old: .string(event.name), new: .string(name)))
+            event.name = name
+        }
+        guard !changes.isEmpty else { return }
+        servers.scheduledEvents[id] = event
+        await emit("GUILD_SCHEDULED_EVENT_UPDATE", renderScheduledEvent(event), to: eventAudience(event))
+        await emitAuditLog(guildID, action: 101, target: event.id, by: userID, changes: changes)
+    }
+
     /// `PUT`/`DELETE .../users/@me`: marks or clears interest. Repeating either changes nothing.
     func setEventInterest(_ id: Snowflake, in guildID: Snowflake, userID: Snowflake, interested: Bool) async throws {
         var event = try scheduledEvent(id, in: guildID)
