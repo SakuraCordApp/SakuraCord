@@ -38,7 +38,6 @@ extension DiscordRESTProvider {
             ), let guildID = GuildID(deleted.id)
         else { return }
         invalidateApplicationCommandCatalog(.guild(guildID))
-        continuation?.yield(.guildMembershipReset(guildID: guildID))
         if deleted.unavailable == true {
             if var guild = cachedGuilds[guildID] {
                 guild.isUnavailable = true
@@ -67,7 +66,6 @@ extension DiscordRESTProvider {
         {
             guild.isUnavailable = false
             cachedGuilds[guildID] = guild
-            continuation?.yield(.guildMembershipReset(guildID: guildID))
             if !gatewayGuildIDs.contains(guildID) { gatewayGuildIDs.append(guildID) }
             insertGuildIntoRailIfNeeded(guildID)
             publishGuildLayout()

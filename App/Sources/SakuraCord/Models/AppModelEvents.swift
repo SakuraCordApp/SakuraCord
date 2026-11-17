@@ -308,8 +308,6 @@ extension AppModel {
             } else if !isMember, !hasLeft {
                 removedMemberIDsByGuildID[guildID, default: []].insert(userID)
             }
-        case let .guildMembershipReset(guildID):
-            if removedMemberIDsByGuildID[guildID] != nil { removedMemberIDsByGuildID[guildID] = nil }
         case let .profileChanged(userID, scope, profile):
             consumeProfileChanged(userID: userID, scope: scope, value: profile)
         case let .profileCustomStatusChanged(userID, status):
@@ -712,8 +710,6 @@ extension AppModel {
         let previousGuildsByID = serverRailGuildsByID
         let previousAccessEvidence = readState.authoritativeAccessEvidenceChannelIDs()
         snapshot = value
-        // A replacement READY replaces every server's membership.
-        if !removedMemberIDsByGuildID.isEmpty { removedMemberIDsByGuildID = [:] }
         friends.replaceRelationships(value.relationships)
         ignoredUsers.replaceRelationships(value.relationships)
         // A replacement READY also removes timeout evidence for omitted self

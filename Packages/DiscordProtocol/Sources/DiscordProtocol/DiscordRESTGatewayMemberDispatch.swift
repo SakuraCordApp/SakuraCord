@@ -240,8 +240,7 @@ extension DiscordRESTProvider {
         if name == "GUILD_MEMBER_ADD" {
             continuation?.yield(.guildMembershipChanged(guildID: guildID, userID: member.id, isMember: true))
         }
-        // A rejoin must not show the roles cached from before the member left.
-        invalidateGatewayProfile(for: member.id)
+        if name == "GUILD_MEMBER_UPDATE" { invalidateGatewayProfile(for: member.id) }
         let isJoined = quickSwitcherJoinedMemberIDsByGuildID[guildID]?.contains(member.id) == true
         // A global profile edit fans out to every guild. Avatar-only updates
         // do not change the account-wide membership or nickname indexes.
