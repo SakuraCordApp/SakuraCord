@@ -69,6 +69,11 @@ extension AppModel {
             guard var presentation = profilePresentation(for: destination), presentation.member.id == userID,
                   presentation.guildID == guildID else { continue }
             presentation.member.joinedAt = nil
+            if presentation.isLoading {
+                // Restart the load; the one in flight can still carry the old membership.
+                presentProfile(for: presentation.member, in: guildID, destination: destination)
+                continue
+            }
             presentation.profile?.guildJoinedAt = nil
             presentation.profile?.roles = []
             setProfilePresentation(presentation, for: destination)
