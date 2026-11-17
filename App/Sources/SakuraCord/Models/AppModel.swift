@@ -308,7 +308,6 @@ final class AppModel {
     @ObservationIgnored var guildRolesByGuildID: [GuildID: [GuildRole]] = [:] {
         didSet { if oldValue != guildRolesByGuildID { emojiEligibilityRevision &+= 1 } }
     }
-    var mentionMemberResults: [Member] = []
     var mentionAutocompleteMembers: [Member] = []
     var knownMentionMembers: [UserID: Member] = [:] {
         didSet {
