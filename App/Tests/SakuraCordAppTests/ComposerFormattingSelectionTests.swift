@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import AppKit
+import SakuraCordModels
 import Testing
 
 @MainActor
@@ -92,4 +93,22 @@ func `channel mention autocomplete covers the whole quoted token`(
     let text = "check #\"Release\n Notes\" now"
     let caret = ("check #\"Release\n" as NSString).length
     #expect(MentionAutocompleteContext(text: text, selection: NSRange(location: caret, length: 0)) == nil)
+}
+
+// Once opcode 8 answers with other members, a cached member matched only by
+// nickname or global name must stay in the `@` menu, as it does in Discord.
+@MainActor
+@Test func `member mention autocomplete keeps cached name matches after opcode 8 answers`() {
+    func member(_ id: UInt64, _ username: String, nickname: String? = nil, globalName: String? = nil) -> Member {
+        let user = User(id: UserID(rawValue: id), username: username, displayName: nickname ?? globalName ?? username)
+        return Member(user: user, roleName: "Member", status: .online, globalDisplayName: globalName)
+    }
+    let suggestions = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "john",
+        recentMessages: [],
+        localMembers: [member(1, "jsm1th", globalName: "John Smith"), member(2, "x_9", nickname: "Johnny")],
+        remoteMembers: [member(3, "johnathan")],
+        roles: []
+    )
+    #expect(Set(suggestions.map(\.id)) == ["user:1", "user:2", "user:3"])
 }

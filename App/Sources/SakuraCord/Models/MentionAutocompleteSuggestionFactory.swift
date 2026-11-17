@@ -74,13 +74,9 @@ enum MentionAutocompleteSuggestionFactory {
     ) -> [MentionAutocompleteSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedQuery = normalized(trimmedQuery)
-        // A completed opcode-8 query is the official client's narrowed result
-        // set. Keep its order and do not re-introduce fuzzy local members that
-        // Discord omitted. Before it arrives, the local GuildMemberStore still
-        // makes the menu responsive immediately.
-        let memberStore = normalizedQuery.isEmpty || remoteMembers.isEmpty
-            ? mergingMemberStore(localMembers, updates: remoteMembers)
-            : remoteMembers
+        // Discord re-searches its whole GuildMemberStore after an opcode-8
+        // reply, so cached members matched by nickname or global name stay.
+        let memberStore = mergingMemberStore(localMembers, updates: remoteMembers)
 
         let orderedMembers: [Member]
         if normalizedQuery.isEmpty {
