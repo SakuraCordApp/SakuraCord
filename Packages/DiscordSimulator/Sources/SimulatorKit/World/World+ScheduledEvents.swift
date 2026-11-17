@@ -43,7 +43,7 @@ extension World {
     /// `POST /guilds/{id}/scheduled-events`. The creator is marked interested, as on Discord.
     func createScheduledEvent(in guildID: Snowflake, by userID: Snowflake, body: JSON) async throws -> ScheduledEvent {
         let guild = try memberGuild(guildID, of: userID)
-        guard !guild.permissions(of: userID).isDisjoint(with: [.manageEvents, .createEvents]) else { throw WorldError.missingPermissions }
+        guard !guild.permissions(of: userID, at: clock.now).isDisjoint(with: [.manageEvents, .createEvents]) else { throw WorldError.missingPermissions }
         guard let name = body["name"]?.stringValue, (1 ... 100).contains(name.count) else { throw WorldError.invalidBody("name: required") }
         guard let type = body["entity_type"]?.intValue.flatMap({ ScheduledEvent.EntityType(rawValue: Int($0)) }) else {
             throw WorldError.invalidBody("entity_type: required")
@@ -76,7 +76,7 @@ extension World {
     /// The creator, or anyone with Manage Events, may delete an event.
     func deleteScheduledEvent(_ id: Snowflake, in guildID: Snowflake, by userID: Snowflake) async throws {
         let event = try scheduledEvent(id, in: guildID)
-        let permissions = try guild(guildID).permissions(of: userID)
+        let permissions = try guild(guildID).permissions(of: userID, at: clock.now)
         guard permissions.contains(.manageEvents) || event.creatorID == userID && permissions.contains(.createEvents) else {
             throw WorldError.missingPermissions
         }

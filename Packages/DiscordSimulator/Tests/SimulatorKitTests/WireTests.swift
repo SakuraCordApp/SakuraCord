@@ -14,6 +14,13 @@ struct WireTests {
         #expect(ProtobufMerge.merge(stored, Data([0x5A, 0x09])) == nil)
     }
 
+    /// A lone surrogate in a request body once crashed the whole simulator.
+    @Test func loneSurrogatesAreRejectedNotFatal() throws {
+        #expect(throws: (any Error).self) { try JSON.parse(#""\uD800\u0041""#) }
+        #expect(throws: (any Error).self) { try JSON.parse(#""\uDC00""#) }
+        #expect(try JSON.parse(#""\uD83C\uDF38""#) == .string("🌸"))
+    }
+
     @Test func etfRoundTripsThroughDecoder() throws {
         let value: JSON = [
             "op": 0, "s": 300, "big": 4_294_967_296, "negative": -70_000, "ratio": 0.25,

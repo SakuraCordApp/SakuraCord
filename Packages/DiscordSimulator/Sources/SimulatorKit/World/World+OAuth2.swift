@@ -40,9 +40,9 @@ extension World {
         ])
         if scopes(request).contains("bot") {
             object["bot"] = renderUser(app.id).merging(["approximate_guild_count": .int(guilds.values.count { $0.members[app.id] != nil })])
-            object["guilds"] = .array(guilds(of: viewer).filter { $0.permissions(of: viewer).contains(.manageGuild) }.map { guild in
+            object["guilds"] = .array(guilds(of: viewer).filter { $0.permissions(of: viewer, at: clock.now).contains(.manageGuild) }.map { guild in
                 .object(JSONObject([("id", guild.id.json), ("name", .string(guild.name)), ("icon", .optional(guild.icon)), ("mfa_level", 0),
-                                    ("permissions", .string(guild.permissions(of: viewer).wireString))]))
+                                    ("permissions", .string(guild.permissions(of: viewer, at: clock.now).wireString))]))
             })
         } else {
             object["redirect_uri"] = .string(try oauthRedirect(app.id, request: request))

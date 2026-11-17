@@ -80,7 +80,7 @@ extension RealisticWorld {
         if let reported = guild.approximateMemberCount {
             // Directories never overlap: each server's people start a million indices apart.
             await world.addMemberDirectory(guildID, MemberDirectory(firstIndex: 1_000_000 * (index + 1), size: min(reported - members.count, 2_000),
-                                                                    founded: founded, roles: Array(roles.dropFirst(3).map(\.id))))
+                                                                    founded: founded, roles: roles.filter { !$0.hoist }.map(\.id)))
         }
     }
 

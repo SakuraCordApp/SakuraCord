@@ -128,7 +128,7 @@ public actor RemoteAuthGateway {
     // MARK: Wire
 
     private func send(_ payload: JSON, to session: Session) async {
-        await session.connection.send(text: payload.serialized(spaced: false))
+        session.connection.send(text: payload.serialized(spaced: false))
     }
 
     static func base64URL(_ data: Data) -> String {

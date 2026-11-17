@@ -8,9 +8,6 @@ extension World {
         materializeMembers(guildID, onlineUpTo: (ranges.map(\.upperBound).max() ?? 0) + 1)
         guard let guild = guilds[guildID], let channel = channels[channelID] else { return nil }
         let viewers = guild.memberOrder.compactMap { guild.members[$0] }.filter { canView($0.userID, channel) }
-        func name(_ member: Member) -> String {
-            (member.nick ?? users[member.userID]?.globalName ?? users[member.userID]?.username ?? "").lowercased()
-        }
         let hoisted = guild.roles.filter(\.hoist).sorted { $0.position > $1.position }
         struct Group {
             var id: String
@@ -21,11 +18,11 @@ extension World {
         var groups: [Group] = []
         var placed: Set<Snowflake> = []
         for role in hoisted {
-            let members = viewers.filter { isOnline($0.userID) && $0.roles.contains(role.id) && !placed.contains($0.userID) }.sorted { name($0) < name($1) }
+            let members = viewers.filter { isOnline($0.userID) && $0.roles.contains(role.id) && !placed.contains($0.userID) }.sorted(by: listsBefore)
             placed.formUnion(members.map(\.userID))
             if !members.isEmpty { groups.append(Group(id: role.id.description, members: members, count: members.count)) }
         }
-        let online = viewers.filter { isOnline($0.userID) && !placed.contains($0.userID) }.sorted { name($0) < name($1) }
+        let online = viewers.filter { isOnline($0.userID) && !placed.contains($0.userID) }.sorted(by: listsBefore)
         let listID = memberListID(channel, in: guild)
         // The everyone list of a server too big to hold every member counts all the members it
         // reports, though only the rows asked for exist; a channel's own list groups who can see it.
@@ -35,7 +32,7 @@ extension World {
         // Discord lists only groups that have members.
         if othersOnline > 0 { groups.append(Group(id: "online", members: online, count: othersOnline)) }
         if guild.listsOfflineMembers {
-            let offline = viewers.filter { !isOnline($0.userID) }.sorted { name($0) < name($1) }
+            let offline = viewers.filter { !isOnline($0.userID) }.sorted(by: listsBefore)
             if !offline.isEmpty { groups.append(Group(id: "offline", members: offline, count: offline.count)) }
         }
 
@@ -97,6 +94,16 @@ extension World {
         hash ^= hash >> 13
         hash &*= 0xc2b2_ae35
         return hash ^ (hash >> 16)
+    }
+
+    /// The name a member list sorts by.
+    func memberListName(_ member: Member) -> String {
+        (member.nick ?? users[member.userID]?.globalName ?? users[member.userID]?.username ?? "").lowercased()
+    }
+
+    /// Member-list order: by name, then by ID, so people with the same name keep their rows.
+    func listsBefore(_ lhs: Member, _ rhs: Member) -> Bool {
+        (memberListName(lhs), lhs.userID) < (memberListName(rhs), rhs.userID)
     }
 
     func isOnline(_ userID: Snowflake) -> Bool { ![.offline, .invisible].contains(presences[userID]?.status ?? .offline) }

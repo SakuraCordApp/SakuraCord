@@ -82,7 +82,7 @@ extension World {
             rendered = renderMember(member, guildID: guildID, includeUser: true)
             await emit("GUILD_MEMBER_UPDATE", rendered.merging(["guild_id": guildID.json]), to: .guild(guildID, channel: nil))
         }
-        return rendered.merging(["bio": .string(member.bio ?? ""), "permissions": .string(guild.permissions(of: userID).wireString)])
+        return rendered.merging(["bio": .string(member.bio ?? ""), "permissions": .string(guild.permissions(of: userID, at: clock.now).wireString)])
     }
 
     /// `PATCH /guilds/{id}/profile/@me`: the per-server bio, pronouns, banner and theme.

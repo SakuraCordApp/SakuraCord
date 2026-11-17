@@ -110,8 +110,8 @@ struct NetTests {
             for await message in socket.messages {
                 switch message {
                 case .text("bye"): await socket.close(code: 4004, reason: "Authentication failed.")
-                case let .text(text): await socket.send(text: text)
-                case let .binary(data): await socket.send(binary: data)
+                case let .text(text): socket.send(text: text)
+                case let .binary(data): socket.send(binary: data)
                 case .close: break
                 }
             }
@@ -138,7 +138,7 @@ struct NetTests {
 
     @Test func webSocketKeepsOrderUnderJitter() async throws {
         let server = try await Self.startServer(profile: .mobile) { _, socket in
-            for index in 0 ..< 20 { await socket.send(text: String(index)) }
+            for index in 0 ..< 20 { socket.send(text: String(index)) }
             for await _ in socket.messages {}
         }
         defer { server.stop() }

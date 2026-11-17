@@ -192,6 +192,9 @@ H.264 frames libdave encrypts.
 
 Inferred, not captured:
 
+- Main Gateway: a session dropped without a normal close stays resumable for
+  60 s; after that, like an invalidated session, it ends and its voice state
+  is left (VOICE_STATE_UPDATE with no channel).
 - Values: hello's `heartbeat_interval` (13,750 ms), op 18 `flags` and op 20
   `platform` of 0, a simulated camera's op 12 stream limits (1280×720, 30 fps),
   SSRCs (audio, then video and RTX at +1 and +2), a 200-message resume buffer.

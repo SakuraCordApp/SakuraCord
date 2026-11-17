@@ -62,7 +62,7 @@ public actor VoiceGateway: VoiceMediaHost {
     // MARK: Connections
 
     public func handle(_ connection: WebSocketConnection) async {
-        await connection.send(text: Self.frame(op: 8, ["v": 8, "heartbeat_interval": .int(Self.heartbeatIntervalMilliseconds)]))
+        connection.send(text: Self.frame(op: 8, ["v": 8, "heartbeat_interval": .int(Self.heartbeatIntervalMilliseconds)]))
         var client: Client?
         for await message in connection.messages {
             guard case let .text(text) = message else {
@@ -91,7 +91,7 @@ public actor VoiceGateway: VoiceMediaHost {
     /// Returns false when the connection was closed.
     private func route(op: Int64, data: JSON, client: inout Client?, connection: WebSocketConnection) async -> Bool {
         if op == 3 {
-            await connection.send(text: Self.frame(op: 6, ["t": data["t"] ?? .null]))
+            connection.send(text: Self.frame(op: 6, ["t": data["t"] ?? .null]))
             return true
         }
         if op == 0 || op == 7 {
@@ -106,7 +106,7 @@ public actor VoiceGateway: VoiceMediaHost {
         case 5:
             let speaking = JSONObject([("user_id", .string(client.grant.userID.description)), ("ssrc", .int(Int64(client.ssrc))),
                                        ("speaking", data["speaking"] ?? 0)])
-            for peer in connectedClients(in: client.grant.room) where peer !== client { await send(5, .object(speaking), to: peer) }
+            for peer in connectedClients(in: client.grant.room) where peer !== client { send(5, .object(speaking), to: peer) }
         case 12:
             client.video = data
             await media.addAliases([data["video_ssrc"], data["rtx_ssrc"]].compactMap { $0?.intValue.map(UInt32.init) }, to: client.ssrc)
@@ -146,7 +146,7 @@ public actor VoiceGateway: VoiceMediaHost {
             ]))
         }
         await media.addAliases(streams.flatMap { [$0["ssrc"], $0["rtx_ssrc"]] }.compactMap { $0?.intValue.map(UInt32.init) }, to: client.ssrc)
-        await send(2, .object(JSONObject([
+        send(2, .object(JSONObject([
             ("ssrc", .int(Int64(client.ssrc))), ("ip", "127.0.0.1"), ("port", .int(Int64(media.port))),
             ("modes", .array(VoiceCrypto.Mode.allCases.map { .string($0.rawValue) })), ("experiments", []), ("streams", .array(streams)),
         ])), to: client)
@@ -165,8 +165,8 @@ public actor VoiceGateway: VoiceMediaHost {
         }
         let acknowledged = data["seq_ack"]?.intValue ?? 0
         client.connection = connection
-        for (sequence, message) in client.sent where sequence > acknowledged { await Self.transmit(message, over: connection) }
-        await send(9, .null, to: client)
+        for (sequence, message) in client.sent where sequence > acknowledged { Self.transmit(message, over: connection) }
+        send(9, .null, to: client)
         await syncPeers(in: client.grant.room)
         return client
     }
@@ -177,7 +177,7 @@ public actor VoiceGateway: VoiceMediaHost {
             return await reject(connection, 4016, "Unknown encryption mode.")
         }
         client.secretKey = (0 ..< 32).map { _ in UInt8(truncatingIfNeeded: random.next()) }
-        await send(4, .object(JSONObject([
+        send(4, .object(JSONObject([
             ("audio_codec", "opus"), ("video_codec", "H264"),
             ("media_session_id", .string(String(format: "%016llx%016llx", random.next(), random.next()))),
             ("mode", .string(mode.rawValue)), ("secret_key", .array(client.secretKey.map { .int(Int64($0)) })),
@@ -221,19 +221,19 @@ public actor VoiceGateway: VoiceMediaHost {
         for client in connectedClients(in: channelID) {
             let others = present.filter { $0.userID != client.grant.userID }
             let joined = others.filter { client.peers[$0.userID] == nil }
-            if !joined.isEmpty { await send(11, .object(JSONObject([("user_ids", .array(joined.map { .string($0.userID.description) }))])), to: client) }
+            if !joined.isEmpty { send(11, .object(JSONObject([("user_ids", .array(joined.map { .string($0.userID.description) }))])), to: client) }
             for state in joined {
-                await send(18, .object(JSONObject([("user_id", .string(state.userID.description)), ("flags", 0)])), to: client)
-                await send(20, .object(JSONObject([("user_id", .string(state.userID.description)), ("platform", 0)])), to: client)
+                send(18, .object(JSONObject([("user_id", .string(state.userID.description)), ("flags", 0)])), to: client)
+                send(20, .object(JSONObject([("user_id", .string(state.userID.description)), ("platform", 0)])), to: client)
             }
             for state in others {
                 let current = mediaState(of: state)
-                if client.peers[state.userID] != current { await send(12, current, to: client) }
+                if client.peers[state.userID] != current { send(12, current, to: client) }
                 client.peers[state.userID] = current
             }
             for gone in client.peers.keys.sorted() where !others.contains(where: { $0.userID == gone }) {
                 client.peers[gone] = nil
-                await send(13, .object(JSONObject([("user_id", .string(gone.description))])), to: client)
+                send(13, .object(JSONObject([("user_id", .string(gone.description))])), to: client)
             }
         }
     }
@@ -244,7 +244,7 @@ public actor VoiceGateway: VoiceMediaHost {
         guard !speaking || !state.selfMute else { throw WorldError.invalidBody("user is muted") }
         let payload = JSON.object(JSONObject([("user_id", .string(userID.description)), ("ssrc", .int(Int64(ssrc(for: userID, in: state.channelID)))),
                                               ("speaking", .int(speaking ? 1 : 0))]))
-        for client in connectedClients(in: state.channelID) { await send(5, payload, to: client) }
+        for client in connectedClients(in: state.channelID) { send(5, payload, to: client) }
         if speaking { await media.startTalking(userID, ssrc: ssrc(for: userID, in: state.channelID), channelID: state.channelID) } else { await media.stopTalking(userID) }
     }
 
@@ -291,29 +291,29 @@ public actor VoiceGateway: VoiceMediaHost {
     // MARK: Frames
 
     /// Sends a sequenced server message, kept for a buffered resume.
-    func send(_ op: Int64, _ data: JSON, to client: Client) async {
+    func send(_ op: Int64, _ data: JSON, to client: Client) {
         client.sequence += 1
         let text = JSON.object(JSONObject([("op", .int(op)), ("d", data), ("seq", .int(client.sequence))])).serialized(spaced: false)
-        await deliver(.text(text), to: client)
+        deliver(.text(text), to: client)
     }
 
     /// A binary DAVE message: sequence number (big-endian), opcode, payload.
-    func sendBinary(_ op: UInt8, _ payload: Data, to client: Client) async {
+    func sendBinary(_ op: UInt8, _ payload: Data, to client: Client) {
         client.sequence += 1
         let sequence = UInt16(truncatingIfNeeded: client.sequence)
-        await deliver(.binary(Data([UInt8(sequence >> 8), UInt8(sequence & 0xFF), op]) + payload), to: client)
+        deliver(.binary(Data([UInt8(sequence >> 8), UInt8(sequence & 0xFF), op]) + payload), to: client)
     }
 
-    private func deliver(_ message: WebSocketMessage, to client: Client) async {
+    private func deliver(_ message: WebSocketMessage, to client: Client) {
         client.sent.append((client.sequence, message))
         if client.sent.count > Self.resumeBuffer { client.sent.removeFirst(client.sent.count - Self.resumeBuffer) }
-        if let connection = client.connection { await Self.transmit(message, over: connection) }
+        if let connection = client.connection { Self.transmit(message, over: connection) }
     }
 
-    private static func transmit(_ message: WebSocketMessage, over connection: WebSocketConnection) async {
+    private static func transmit(_ message: WebSocketMessage, over connection: WebSocketConnection) {
         switch message {
-        case let .text(text): await connection.send(text: text)
-        case let .binary(data): await connection.send(binary: data)
+        case let .text(text): connection.send(text: text)
+        case let .binary(data): connection.send(binary: data)
         case .close: break
         }
     }

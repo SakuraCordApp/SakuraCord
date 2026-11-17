@@ -10,6 +10,8 @@ public final class ScriptRunner: Sendable {
     let log: SimulatorLog
     private let scripts: [String: Script]
     private let running = Mutex<[String: Task<Void, Never>]>([:])
+    /// Start IDs only ever count up, so a stopped script's ID is never handed out again.
+    private let started = Atomic<Int>(0)
 
     init(world: World, log: SimulatorLog, scripts: [String: Script]) {
         self.world = world
@@ -23,7 +25,7 @@ public final class ScriptRunner: Sendable {
         guard let script = scripts[name] else {
             throw WorldError.invalidBody("unknown script \(name); available: \(names.joined(separator: ", "))")
         }
-        let id = "\(name)-\(running.withLock { $0.count + 1 })"
+        let id = "\(name)-\(started.add(1, ordering: .relaxed).newValue)"
         let world = world, log = log
         let task = Task {
             do { try await script(world, params) } catch is CancellationError {} catch { log.error("script", "\(name) failed: \(error)") }

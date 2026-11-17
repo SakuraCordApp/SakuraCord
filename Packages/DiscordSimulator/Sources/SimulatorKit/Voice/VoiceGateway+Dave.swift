@@ -45,7 +45,7 @@ extension VoiceGateway {
     func daveJoined(_ client: Client) async {
         let groupID = await world.stream(rtcServerID: client.grant.room)?.rtcChannelID ?? client.grant.channelID
         guard let room = daveRoom(client.grant.room, groupID: groupID) else { return }
-        await sendBinary(25, room.externalSender.package, to: client)
+        sendBinary(25, room.externalSender.package, to: client)
         await syncDave(in: client.grant.room)
     }
 
@@ -126,7 +126,7 @@ extension VoiceGateway {
                 let commit = member.commit(proposals: proposals)
                 if winner == nil, !commit.isEmpty { winner = commit }
             } else {
-                for client in daveClients(in: roomID) where client.grant.userID == userID { await sendBinary(27, proposals, to: client) }
+                for client in daveClients(in: roomID) where client.grant.userID == userID { sendBinary(27, proposals, to: client) }
             }
         }
         if let winner { await finish(round, commitWelcome: winner, in: roomID, room: room) }
@@ -149,7 +149,7 @@ extension VoiceGateway {
         let header = withUnsafeBytes(of: transition.bigEndian) { Data($0) }
         for client in daveClients(in: roomID) where room.members.contains(client.grant.userID) {
             let joining = round.adds.contains { $0.userID == client.grant.userID }
-            await sendBinary(joining ? 30 : 29, header + (joining ? welcome : commit), to: client)
+            sendBinary(joining ? 30 : 29, header + (joining ? welcome : commit), to: client)
             waiting.insert(client.grant.userID)
         }
         for (userID, member) in room.simulated {
@@ -173,7 +173,7 @@ extension VoiceGateway {
         room.removals = []
         room.keyPackages = []
         for client in daveClients(in: roomID) where remaining.contains(client.grant.userID) {
-            await send(24, .object(JSONObject([("protocol_version", 1), ("epoch", 1)])), to: client)
+            send(24, .object(JSONObject([("protocol_version", 1), ("epoch", 1)])), to: client)
         }
         for userID in remaining where room.simulated[userID] != nil { enlist(userID, in: room, recognizing: remaining) }
         await media.setDave(room.simulated, in: roomID)
@@ -201,7 +201,7 @@ extension VoiceGateway {
         }
         room.transition = nil
         for client in daveClients(in: roomID) where room.members.contains(client.grant.userID) {
-            await send(22, .object(JSONObject([("transition_id", .int(Int64(transition.id)))])), to: client)
+            send(22, .object(JSONObject([("transition_id", .int(Int64(transition.id)))])), to: client)
         }
         for (userID, member) in room.simulated where room.members.contains(userID) { member.useCurrentKey() }
         await advanceDave(in: roomID)

@@ -61,7 +61,8 @@ enum MessageRoutes {
             let body = try context.json
             let message = try await context.world.editMessage(
                 try context.id(1), in: try context.id(0), by: context.userID,
-                content: body["content"]?.stringValue, embeds: body["embeds"]?.arrayValue, flags: body["flags"]?.intValue.map { Int($0) }
+                content: body["content"]?.stringValue, embeds: body["embeds"]?.arrayValue, flags: body["flags"]?.intValue.map { Int($0) },
+                allowedMentions: body["allowed_mentions"]
             )
             return .json(await context.world.renderMessage(message, viewer: context.userID))
         }
@@ -198,7 +199,12 @@ enum MessageRoutes {
             }
             return .json(.object(JSONObject([("attachments", .array(slots))])))
         }
-        routes["DELETE /api/v9/attachments/{upload_filename}"] = { _ in .empty }
+        // The client discards an upload it won't send. Its `<uuid>%2F<filename>` name is one path segment.
+        routes["DELETE /api/v9/attachments/{id}"] = { context in
+            let segment = context.request.path.split(separator: "/").last.map(String.init) ?? ""
+            await context.world.discardUpload(segment.removingPercentEncoding ?? segment, owner: context.userID)
+            return .empty
+        }
     }
 
     /// `👍`, `name:123`, or `name%3A123` in a reaction path.
@@ -214,10 +220,9 @@ enum MessageRoutes {
                       uploader: Snowflake) async throws -> MessageDraft {
         var draft = MessageDraft(content: body["content"]?.stringValue ?? "")
         draft.tts = body["tts"]?.boolValue ?? false
-        if let allowed = body["allowed_mentions"]?.objectValue {
-            draft.allowedMentionsParse = Set((allowed["parse"]?.arrayValue ?? []).compactMap(\.stringValue))
-            draft.mentionsRepliedUser = allowed["replied_user"]?.boolValue ?? true
-        }
+        let allowed = World.allowedMentions(body["allowed_mentions"])
+        draft.allowedMentionsParse = allowed.parse
+        draft.mentionsRepliedUser = allowed.repliedUser ?? true
         draft.flags = Int(body["flags"]?.intValue ?? 0)
         draft.embeds = body["embeds"]?.arrayValue ?? []
         draft.stickerIDs = (body["sticker_ids"]?.arrayValue ?? []).compactMap { $0.stringValue.flatMap(Snowflake.init) }

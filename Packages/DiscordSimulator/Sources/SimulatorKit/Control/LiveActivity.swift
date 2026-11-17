@@ -16,6 +16,13 @@ struct LiveActivityPlan: Sendable {
 
 extension World {
     func addLiveActivity(_ plan: LiveActivityPlan) { liveActivity.append(plan) }
+
+    /// Whether someone is still a member who may talk: not kicked or banned since the plan was made,
+    /// and not timed out.
+    func canTalk(_ userID: Snowflake, in guildID: Snowflake) -> Bool {
+        guard let member = guilds[guildID]?.members[userID] else { return false }
+        return (member.communicationDisabledUntil ?? .distantPast) <= clock.now
+    }
 }
 
 /// The demo modes' constant background life: messages, replies, typing,
@@ -64,6 +71,9 @@ enum LiveActivity {
         guard !plan.channels.isEmpty else { return }
         let person = random.pick(plan.members)
         let channel = pickChannel(plan, &random)
+        // The plan lists who was a member at build time; only current members act, and only those who may talk do more than change presence.
+        guard kind == .presence ? await world.guilds[plan.guildID]?.members[person] != nil : await world.canTalk(person, in: plan.guildID)
+        else { return }
         switch kind {
         case .message:
             var draft = MessageDraft(content: DemoText.communityMessage(plan.kind, &random))
@@ -71,7 +81,7 @@ enum LiveActivity {
                 draft.type = 19
                 draft.reference = MessageReference(type: 0, messageID: recent.id, channelID: channel, guildID: plan.guildID)
             }
-            _ = try await world.sendMessage(draft, as: person, in: channel, checkPermissions: false)
+            _ = try await world.sendMessage(draft, as: person, in: channel)
         case .typing:
             try await world.startTyping(person, in: channel)
         case .reaction:
@@ -79,8 +89,8 @@ enum LiveActivity {
             try await world.react(message.id, in: channel, by: person, emojiName: random.pick(["👍", "😂", "❤️", "🔥", "👀", "🎉", "💯"]),
                                   emojiID: nil, burst: false)
         case .edit, .delete:
-            guard let message = try await world.channel(channel).messages.suffix(10).last(where: { plan.members.contains($0.authorID) })
-            else { return }
+            guard let message = try await world.channel(channel).messages.suffix(10).last(where: { plan.members.contains($0.authorID) }),
+                  await world.canTalk(message.authorID, in: plan.guildID) else { return }
             if kind == .edit {
                 try await world.editMessage(message.id, in: channel, by: message.authorID,
                                             content: message.content + " " + random.pick(["(edit: typo)", "*", "!!", "lol"]), embeds: nil, flags: nil)

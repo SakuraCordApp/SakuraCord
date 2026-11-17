@@ -174,7 +174,7 @@ extension World {
             object["approximate_presence_count"] = .int(onlineCount(guild))
         }
         if withPermissions {
-            let permissions = guild.members[viewer] != nil ? guild.permissions(of: viewer) : guild.everyoneRole?.permissions ?? []
+            let permissions = guild.members[viewer] != nil ? guild.permissions(of: viewer, at: clock.now) : guild.everyoneRole?.permissions ?? []
             object["is_nickname_changeable"] = .bool(permissions.contains(.changeNickname))
         }
         if let inviter = invite.inviterID { object["inviter"] = renderUser(inviter) }

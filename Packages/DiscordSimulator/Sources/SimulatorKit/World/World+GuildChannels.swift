@@ -34,7 +34,7 @@ extension World {
     /// `POST /guilds/{id}/channels`: needs Manage Channels; the new channel goes last.
     func createGuildChannel(in guildID: Snowflake, by userID: Snowflake, body: JSON) async throws -> Channel {
         let guild = try guild(guildID)
-        guard guild.permissions(of: userID).contains(.manageChannels) else { throw WorldError.missingPermissions }
+        guard guild.permissions(of: userID, at: clock.now).contains(.manageChannels) else { throw WorldError.missingPermissions }
         guard let type = ChannelType(rawValue: Int(body["type"]?.intValue ?? 0)), Self.creatableTypes.contains(type) else {
             throw WorldError.invalidBody("type: Value is not a valid channel type")
         }
@@ -151,7 +151,7 @@ extension World {
     /// first, and further reorders by the same moderator within a few minutes fold into it, as captured.
     func reorderChannels(in guildID: Snowflake, by userID: Snowflake, body: JSON) async throws {
         let guild = try guild(guildID)
-        guard guild.permissions(of: userID).contains(.manageChannels) else { throw WorldError.missingPermissions }
+        guard guild.permissions(of: userID, at: clock.now).contains(.manageChannels) else { throw WorldError.missingPermissions }
         guard let entries = body.arrayValue, !entries.isEmpty else { throw WorldError.invalidBody("expected an array of channel positions") }
         var moved: [Channel] = []
         for entry in entries {

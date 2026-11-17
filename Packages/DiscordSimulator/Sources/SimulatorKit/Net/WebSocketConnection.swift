@@ -56,9 +56,11 @@ public final class WebSocketConnection: Sendable {
 
     public var isOpen: Bool { open.withLock { $0 } }
 
-    public func send(binary: Data) async { enqueue(.binary, binary) }
+    /// Queues a message without suspending, so a caller that numbers or compresses
+    /// frames (a Gateway's sequence and zstd stream) queues them in that same order.
+    public func send(binary: Data) { enqueue(.binary, binary) }
 
-    public func send(text: String) async { enqueue(.text, Data(text.utf8)) }
+    public func send(text: String) { enqueue(.text, Data(text.utf8)) }
 
     /// Sends a close frame after anything already queued, then closes TCP.
     public func close(code: UInt16, reason: String) async {
@@ -93,9 +95,9 @@ public final class WebSocketConnection: Sendable {
     }
 
     private func enqueue(_ opcode: Opcode, _ payload: Data, last: Bool = false) {
-        let frame = Self.frame(opcode, payload)
         open.withLock { isOpen in
             guard isOpen else { return }
+            let frame = Self.frame(opcode, payload)
             outgoing.yield(Outgoing(frame: frame, start: shaper.messageStart(bytes: frame.count)))
             if last {
                 isOpen = false

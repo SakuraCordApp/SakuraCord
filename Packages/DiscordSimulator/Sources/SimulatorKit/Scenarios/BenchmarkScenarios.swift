@@ -188,8 +188,12 @@ struct BenchWorld {
     }
 
     /// Fills `channelID` with `count` messages ending just before the epoch.
+    /// `content=media` cycles twelve messages through a looping video embed, a Lottie sticker and an
+    /// animated GIF, with a photo every 97th message: the animated workloads the media scroll measures.
     mutating func fillChannel(_ channelID: Snowflake, count: Int, content: String, pins: Int) async throws {
         let authors = Array(people.prefix(40))
+        let lottie = await world.standardStickers.first { $0.formatType == 3 }?.id
+        let converter = await DemoConverter(world: world)
         let start = world.epoch.addingTimeInterval(-Double(count) * 37)
         for index in 0 ..< count {
             let author = index % 9 == 4 ? me : authors[(index * 7) % authors.count]
@@ -197,6 +201,16 @@ struct BenchWorld {
             var draft = MessageDraft(content: DemoText.message(&random))
             switch content {
             case "media" where index % 12 == 0:
+                draft.embeds = [await converter.embed(DemoEmbed(
+                    .gifv, url: "https://tenor.com/view/loop-\(index)", provider: "Tenor",
+                    thumbnail: DemoEmbedMedia(.photo(seed: UInt64(index), scene: .landscape), width: 320, height: 180),
+                    video: DemoEmbedMedia(.bundled("benchmark-video.mp4"), width: 320, height: 180)
+                ))]
+            case "media" where index % 12 == 1:
+                draft.stickerIDs = lottie.map { [$0] } ?? []
+            case "media" where index % 12 == 2:
+                draft.attachments = [await loopingGIF(channelID: channelID, at: at, index: index)]
+            case "media" where index % 97 == 3:
                 draft.attachments = [await lazyPhoto(channelID: channelID, at: at, index: index)]
             case "voice" where index % 5 == 2:
                 draft.content = ""
@@ -273,6 +287,8 @@ struct BenchWorld {
         message.type = draft.type
         message.flags = draft.flags
         message.attachments = draft.attachments
+        message.embeds = draft.embeds
+        message.stickerIDs = draft.stickerIDs
         message.mentions = await world.parseMentions(draft.content, in: try await world.channel(channel)).users
         await world.seedMessage(message)
         return message
@@ -291,6 +307,14 @@ struct BenchWorld {
         await world.storeLazyMedia(path) { (MediaGenerator.photoJPEG(seed: seed, width: width, height: height), "image/jpeg") }
         return Attachment(id: id, filename: "IMG_\(4_000 + index).jpg", size: width * height / 9, contentType: "image/jpeg",
                           width: width, height: height, cdnPath: path)
+    }
+
+    func loopingGIF(channelID: Snowflake, at date: Date, index: Int) async -> Attachment {
+        let id = await world.nextID(at: date)
+        let name = "loop-\(index).gif"
+        let path = "/attachments/\(channelID)/\(id)/\(name)"
+        await world.storeLazyMedia(path) { (MediaGenerator.animatedGIF(seed: UInt64(index), size: 320), "image/gif") }
+        return Attachment(id: id, filename: name, size: 180_000, contentType: "image/gif", width: 320, height: 320, cdnPath: path)
     }
 
     func voiceMessage(channelID: Snowflake, at date: Date) async -> Attachment {

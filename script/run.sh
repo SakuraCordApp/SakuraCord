@@ -67,12 +67,7 @@ if [[ "$SIMULATOR" == "1" ]]; then
   fi
   LAUNCH_ARGS=()
   if [[ "$SIMULATOR_SIGN_IN" == "1" ]]; then
-    # Start signed out with first-run onboarding: clear the app's simulator
-    # accounts, data and session defaults (never the real ones).
-    sakuracord_stop_scoped_app || exit 1
-    container="$HOME/Library/Containers/$SAKURACORD_BUNDLE_ID/Data/Library"
-    rm -rf "$container/Application Support/SakuraCord/DiscordSimulator"
-    defaults delete "$container/Preferences/dev.sakuracord.SakuraCord.discord-simulator" >/dev/null 2>&1 || true
+    sakuracord_reset_simulator_account || exit 1
   else
     LAUNCH_ARGS+=(--env "SAKURACORD_SIMULATOR_TOKEN=$("$CONTROL_ROOT/script/simulator.sh" token)")
   fi

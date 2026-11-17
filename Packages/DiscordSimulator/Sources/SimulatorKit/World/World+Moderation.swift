@@ -18,7 +18,7 @@ extension World {
 
     /// Moderators act only on members ranked below them.
     func requireModeration(_ permission: Permissions, by moderator: Snowflake, on target: Snowflake, in guild: Guild) throws {
-        guard guild.permissions(of: moderator).contains(permission) else { throw WorldError.missingPermissions }
+        guard guild.permissions(of: moderator, at: clock.now).contains(permission) else { throw WorldError.missingPermissions }
         guard target == moderator || rank(moderator, in: guild) > rank(target, in: guild) else { throw WorldError.missingPermissions }
     }
 
@@ -45,7 +45,7 @@ extension World {
         }
         if let until = body["communication_disabled_until"] {
             try requireModeration(.moderateMembers, by: moderator, on: target, in: guild)
-            guard target != guild.ownerID, !guild.permissions(of: target).contains(.administrator) else { throw WorldError.missingPermissions }
+            guard target != guild.ownerID, !guild.permissions(of: target, at: clock.now).contains(.administrator) else { throw WorldError.missingPermissions }
             member.communicationDisabledUntil = until.stringValue.flatMap(World.parseTimestamp)
         }
         guilds[guildID]?.members[target] = member
@@ -104,7 +104,7 @@ extension World {
     func emitAuditLog(_ guildID: Snowflake, action: Int, target: Snowflake?, by userID: Snowflake, changes: [JSON],
                       options: JSONObject? = nil) async {
         guard let guild = guilds[guildID] else { return }
-        let viewers = Set(guild.members.keys.filter { guild.permissions(of: $0).contains(.viewAuditLog) })
+        let viewers = Set(guild.members.keys.filter { guild.permissions(of: $0, at: clock.now).contains(.viewAuditLog) })
         var entry = JSONObject([("guild_id", guildID.json), ("action_type", .int(action))])
         if !changes.isEmpty { entry["changes"] = .array(changes) }
         entry["id"] = nextID().json

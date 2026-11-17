@@ -101,8 +101,8 @@ case "$TARGET" in
     # The simulator imports nothing from the app, so a pull request that leaves
     # it and the test tooling alone cannot change its results.
     if [[ -n "${SAKURACORD_CHANGES_BASE:-}" ]] \
-      && ! git -C "$ROOT_DIR" diff --name-only "$SAKURACORD_CHANGES_BASE...HEAD" \
-        | grep -qE '^(Packages/DiscordSimulator/|script/(test|ci|simulator)\.sh$|\.github/workflows/ci\.yml$)'; then
+      && changed="$(git -C "$ROOT_DIR" diff --name-only "$SAKURACORD_CHANGES_BASE...HEAD")" \
+      && ! grep -qE '^(Packages/DiscordSimulator/|script/(test|ci|simulator)\.sh$|\.github/workflows/ci\.yml$)' <<<"$changed"; then
       echo "=== DiscordSimulator: unchanged since $SAKURACORD_CHANGES_BASE, skipped ==="
     else
       run_tests "$ROOT_DIR/Packages/DiscordSimulator"

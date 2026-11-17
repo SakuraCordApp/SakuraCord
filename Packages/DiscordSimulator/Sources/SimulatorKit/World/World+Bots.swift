@@ -74,13 +74,13 @@ extension World {
     // MARK: Installing and removing bots
 
     private func integrationAudience(_ guild: Guild) -> WorldEvent.Audience {
-        .users(Set(guild.members.keys.filter { guild.permissions(of: $0).contains(.manageGuild) }))
+        .users(Set(guild.members.keys.filter { guild.permissions(of: $0, at: clock.now).contains(.manageGuild) }))
     }
 
     /// `POST /oauth2/authorize` with the `bot` scope and a `guild_id`: needs Manage Server there.
     func installBot(_ bot: User, in guildID: Snowflake, by userID: Snowflake, scopes: [String]) async throws {
         let guild = try memberGuild(guildID, of: userID)
-        guard guild.permissions(of: userID).contains(.manageGuild) else { throw WorldError.missingPermissions }
+        guard guild.permissions(of: userID, at: clock.now).contains(.manageGuild) else { throw WorldError.missingPermissions }
         guard guild.members[bot.id] == nil else { return }
         let integrationID = nextID()
         bots.integrations[guildID, default: [:]][bot.id] = integrationID

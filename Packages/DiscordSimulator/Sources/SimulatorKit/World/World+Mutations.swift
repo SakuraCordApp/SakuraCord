@@ -36,6 +36,11 @@ public extension World {
     func sendMessage(_ draft: MessageDraft, as authorID: Snowflake, in channelID: Snowflake, checkPermissions: Bool = true) async throws -> Message {
         var channel = try channel(channelID)
         guard channel.type.holdsMessages else { throw WorldError(status: 400, code: 50008, message: "Cannot send messages in a non-text channel") }
+        // Documented, not captured: only thread managers can post in (and so reopen) an archived locked thread.
+        if checkPermissions, let metadata = channel.thread, metadata.archived, metadata.locked,
+           !permissions(of: authorID, in: channel).contains(.manageThreads) {
+            throw WorldError(status: 400, code: 50083, message: "Operation cannot be performed on an archived thread")
+        }
         let autoModAlert = checkPermissions ? try await checkSend(draft, by: authorID, in: channel) : nil
         let trimmed = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty, draft.attachments.isEmpty, draft.embeds.isEmpty, draft.poll == nil, draft.stickerIDs.isEmpty,
@@ -58,29 +63,24 @@ public extension World {
         message.applicationID = draft.applicationID
         message.webhookID = draft.applicationID
         message.interaction = draft.interaction
-        let mentions = parseMentions(draft.content, in: channel)
-        mentions.apply(to: &message)
-        if let parse = draft.allowedMentionsParse {
-            if !parse.contains("users") { message.mentions = [] }
-            if !parse.contains("roles") { message.mentionRoles = [] }
-            if !parse.contains("everyone") { message.mentionEveryone = false }
-        }
-        if checkPermissions, message.mentionEveryone, !permissions(of: authorID, in: channel).contains(.mentionEveryone) {
-            message.mentionEveryone = false
-        }
-        if draft.mentionsRepliedUser, let reference = draft.reference, reference.type == 0, let repliedID = reference.messageID,
-           let replied = channels[reference.channelID]?.messages.first(where: { $0.id == repliedID }),
-           !message.mentions.contains(replied.authorID), replied.authorID != authorID {
-            message.mentions.append(replied.authorID)
-        }
+        resolveMentions(draft.content, parse: draft.allowedMentionsParse, pingsRepliedUser: draft.mentionsRepliedUser,
+                        reference: draft.reference, author: authorID, in: channel, checkPermissions: checkPermissions).apply(to: &message)
         // Ephemeral interaction replies reach only the user who interacted and never join the history.
         if message.flags & 64 != 0, let viewer = draft.interaction?.userID {
             await emit("MESSAGE_CREATE", renderMessageEvent(message), to: .users([viewer]))
             return message
         }
+        if channel.type.isThread, !channel.threadMembers.contains(authorID) { channel.threadMembers.append(authorID) }
+        // Posting reopens an archived thread; captured, THREAD_UPDATE and the author's membership come before the message.
+        if channel.thread?.archived == true {
+            channel.thread?.archived = false
+            channel.thread?.archiveTimestamp = clock.now
+            channels[channelID] = channel
+            await emit("THREAD_UPDATE", renderThread(channel, viewer: nil), to: audience(for: channels[channel.parentID ?? channelID] ?? channel))
+            await emitThreadMemberUpdate(channel, userID: authorID)
+        }
         channel.messages.append(message)
         channel.totalMessageSent += 1
-        if channel.type.isThread, !channel.threadMembers.contains(authorID) { channel.threadMembers.append(authorID) }
         channels[channelID] = channel
         // The author has read their own message.
         readStates[authorID, default: [:]][channelID] = ReadState(lastAckedID: message.id, mentionCount: 0)
@@ -115,6 +115,31 @@ public extension World {
             message.mentionRoles = roles
             message.mentionEveryone = everyone
         }
+    }
+
+    /// Who a message pings, on send and edit: mentions in the content, narrowed by `allowed_mentions.parse`,
+    /// @everyone only with Mention Everyone, and the replied-to author when the reply pings them.
+    internal func resolveMentions(_ content: String, parse: Set<String>?, pingsRepliedUser: Bool, reference: MessageReference?,
+                                  author: Snowflake, in channel: Channel, checkPermissions: Bool) -> Mentions {
+        var mentions = parseMentions(content, in: channel)
+        if let parse {
+            if !parse.contains("users") { mentions.users = [] }
+            if !parse.contains("roles") { mentions.roles = [] }
+            if !parse.contains("everyone") { mentions.everyone = false }
+        }
+        if checkPermissions, mentions.everyone, !permissions(of: author, in: channel).contains(.mentionEveryone) { mentions.everyone = false }
+        if pingsRepliedUser, let reference, reference.type == 0, let repliedID = reference.messageID,
+           let replied = channels[reference.channelID]?.messages.first(where: { $0.id == repliedID }),
+           !mentions.users.contains(replied.authorID), replied.authorID != author {
+            mentions.users.append(replied.authorID)
+        }
+        return mentions
+    }
+
+    /// `allowed_mentions` as sent: an object without `parse` allows no parsed mentions; nil fields mean it wasn't sent.
+    internal nonisolated static func allowedMentions(_ value: JSON?) -> (parse: Set<String>?, repliedUser: Bool?) {
+        guard let allowed = value?.objectValue else { return (nil, nil) }
+        return (Set((allowed["parse"]?.arrayValue ?? []).compactMap(\.stringValue)), allowed["replied_user"]?.boolValue)
     }
 
     /// Everyone a message pings: direct mentions, members of mentioned roles,
@@ -171,11 +196,17 @@ public extension World {
 
     @discardableResult
     func editMessage(_ messageID: Snowflake, in channelID: Snowflake, by userID: Snowflake,
-                     content: String?, embeds: [JSON]?, flags: Int?) async throws -> Message {
+                     content: String?, embeds: [JSON]?, flags: Int?, allowedMentions: JSON? = nil) async throws -> Message {
         let existing = try message(messageID, in: channelID)
         guard existing.authorID == userID else { throw WorldError(status: 403, code: 50005, message: "Cannot edit a message authored by another user") }
         let channel = try channel(channelID)
-        let mentions = content.map { parseMentions($0, in: channel) }
+        // Edits resolve mentions like a send. Not captured: without `replied_user`, a reply keeps pinging only if it did before.
+        let allowed = Self.allowedMentions(allowedMentions)
+        let repliedAuthor = existing.reference.flatMap { ref in ref.messageID.flatMap { id in channels[ref.channelID]?.messages.first { $0.id == id }?.authorID } }
+        let mentions = content.map { content in
+            resolveMentions(content, parse: allowed.parse, pingsRepliedUser: allowed.repliedUser ?? repliedAuthor.map(existing.mentions.contains) ?? false,
+                            reference: existing.reference, author: userID, in: channel, checkPermissions: true)
+        }
         let updated = try updateMessage(messageID, in: channelID) { message in
             if let content { message.content = content }
             if let embeds { message.embeds = embeds }

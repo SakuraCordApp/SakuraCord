@@ -388,7 +388,10 @@ case "$MODE" in
     sakuracord_is_scoped_app_running
     ;;
   --simulator) launch_on_simulator --scenario "${SIMULATOR_SCENARIO:-demo}" ;;
-  --simulator-sign-in) SIGNS_IN=0 launch_on_simulator --scenario demo ;;
+  --simulator-sign-in)
+    sakuracord_reset_simulator_account
+    SIGNS_IN=0 launch_on_simulator --scenario demo
+    ;;
   --benchmark-*) launch_on_simulator "${BENCHMARK_SIMULATOR_ARGS[@]}" -- "${BENCHMARK_APP_ARGS[@]}" ;;
   --media-viewer-benchmark) sakuracord_launch_scoped_app --env SAKURACORD_MEDIA_VIEWER_BENCHMARK=1 ;;
 esac

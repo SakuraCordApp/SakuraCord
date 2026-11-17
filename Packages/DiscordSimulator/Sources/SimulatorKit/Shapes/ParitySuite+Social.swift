@@ -2,6 +2,15 @@ import Foundation
 
 /// Friends, group DMs, the Mentions tab, the server profile and expression changes, as captured.
 extension ParityRun {
+    /// What the signed-in person does to their own account: profile, pickers, friends and groups, settings, mentions.
+    mutating func accountFlows(_ target: Targets, me: Snowflake) async throws {
+        try await profileEditing(target, me: me)
+        try await expressionPickers(target)
+        try await friendsAndGroups(target, me: me)
+        try await privacySettingRoundTrip()
+        try await mentionsAndServerProfile(target, me: me)
+    }
+
     mutating func friendsAndGroups(_ target: Targets, me: Snowflake) async throws {
         let world = simulator.world
         let friends = (await world.relationships[me] ?? [:]).values.filter { $0.type == .friend }.map(\.userID).sorted()

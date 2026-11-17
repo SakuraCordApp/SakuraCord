@@ -201,7 +201,8 @@ extension World {
         let channelFilter = Set((request.query["channel_id"] ?? []).compactMap(Snowflake.init))
         let offset = Int(request.query["offset"]?.first ?? "0") ?? 0
         var hits: [Message] = []
-        for channel in guild.channelIDs.compactMap({ channels[$0] }) where canView(viewer, channel) {
+        // Looked up through `channel(_:)`, so history not yet generated is searched too.
+        for channel in try guild.channelIDs.map(channel) where canView(viewer, channel) {
             if !channelFilter.isEmpty, !channelFilter.contains(channel.id) { continue }
             hits += channel.messages.filter { message in
                 (text.isEmpty || message.content.lowercased().contains(text)) && (authors.isEmpty || authors.contains(message.authorID))

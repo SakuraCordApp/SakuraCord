@@ -9,23 +9,40 @@ struct MemberDirectory: Sendable {
     var firstIndex: Int
     /// How many people the directory can make (capped well below the reported count).
     var size: Int
-    var made: Set<Int> = []
+    /// People made so far, by offset.
+    var made: [Int: Snowflake] = [:]
     var founded: Date
-    /// Roles members may hold (none of the staff roles).
+    /// Roles members may hold: none hoisted, so made people always list under Online.
     var roles: [Snowflake]
+    /// The directory's online people in member-list order (by name), worked out on the first scroll.
+    var onlineByName: [(offset: Int, name: String)]?
 }
 
 extension World {
     func addMemberDirectory(_ guildID: Snowflake, _ directory: MemberDirectory) { memberDirectories[guildID] = directory }
 
-    /// Makes members until the server holds `count` online ones, for the member list's rows.
+    /// Makes the people the member list's first `count` rows need. Rows sort by name, so people are
+    /// made in name order, interleaved with the members the server already holds: rows already sent
+    /// never move when a later page makes more people.
     func materializeMembers(_ guildID: Snowflake, onlineUpTo count: Int) {
-        guard var directory = memberDirectories[guildID] else { return }
-        var online = guilds[guildID]?.members.keys.count(where: isOnline) ?? count
-        var offset = 0
-        while online < count, offset < directory.size {
-            if !directory.made.contains(offset), isOnline(makeMember(guildID, &directory, offset)) { online += 1 }
-            offset += 1
+        guard var directory = memberDirectories[guildID], let guild = guilds[guildID] else { return }
+        let order = directory.onlineByName ?? (0 ..< directory.size).compactMap { offset in
+            let person = DemoText.person(index: directory.firstIndex + offset)
+            return person.presence.status == .offline ? nil : (offset, person.displayName.lowercased())
+            // Later people get earlier-dated IDs, so same-name ties follow the list's ID order.
+        }.sorted { ($0.name, -$0.offset) < ($1.name, -$1.offset) }
+        directory.onlineByName = order
+        let made = Set(directory.made.values)
+        var held = guild.members.values.filter { !made.contains($0.userID) && isOnline($0.userID) }.map(memberListName).sorted()[...]
+        var rows = 0
+        for entry in order where rows < count {
+            while let first = held.first, first <= entry.name, rows < count {
+                held.removeFirst()
+                rows += 1
+            }
+            guard rows < count else { break }
+            if directory.made[entry.offset] == nil { makeMember(guildID, &directory, entry.offset) }
+            rows += 1
         }
         memberDirectories[guildID] = directory
     }
@@ -38,7 +55,7 @@ extension World {
             let person = DemoText.person(index: directory.firstIndex + offset)
             guard person.username.hasPrefix(query) || person.displayName.lowercased().hasPrefix(query) else { continue }
             found += 1
-            if !directory.made.contains(offset) { makeMember(guildID, &directory, offset) }
+            if directory.made[offset] == nil { makeMember(guildID, &directory, offset) }
         }
         memberDirectories[guildID] = directory
     }
@@ -54,7 +71,7 @@ extension World {
         if !directory.roles.isEmpty, offset % 3 == 0 { member.roles = [directory.roles[offset % directory.roles.count]] }
         guilds[guildID]?.members[userID] = member
         guilds[guildID]?.memberOrder.append(userID)
-        directory.made.insert(offset)
+        directory.made[offset] = userID
         return userID
     }
 

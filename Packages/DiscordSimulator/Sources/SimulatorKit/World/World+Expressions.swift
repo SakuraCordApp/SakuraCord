@@ -42,7 +42,7 @@ extension World {
     func guildEmojis(_ guildID: Snowflake, viewer: Snowflake) throws -> [JSON] {
         let guild = try guild(guildID)
         guard guild.members[viewer] != nil else { throw WorldError.missingAccess }
-        let manages = guild.permissions(of: viewer).contains(.manageGuildExpressions)
+        let manages = guild.permissions(of: viewer, at: clock.now).contains(.manageGuildExpressions)
         // Expression managers also see who uploaded each emoji.
         return guild.emojis.map { emoji in
             guard manages, let creator = emoji.creatorID else { return renderEmoji(emoji) }

@@ -260,9 +260,12 @@ private struct JSONParser {
                        bytes[index] == UInt8(ascii: "\\"), bytes[index + 1] == UInt8(ascii: "u") {
                         index += 2
                         let low = try parseHex4()
+                        guard (0xDC00 ... 0xDFFF).contains(low) else { throw error("unpaired surrogate") }
                         code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
                     }
-                    scalars.append(Unicode.Scalar(code) ?? "\u{FFFD}")
+                    // A lone surrogate is no scalar; the body is rejected as malformed.
+                    guard let scalar = Unicode.Scalar(code) else { throw error("unpaired surrogate") }
+                    scalars.append(scalar)
                 default: scalars.append(Unicode.Scalar(escaped))
                 }
                 continue

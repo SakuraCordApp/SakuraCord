@@ -32,7 +32,16 @@ extension ParityRun {
         await flowEnd(nil)
     }
 
-    /// Mute, leave, rejoin, rename, archive, reopen and delete a thread under the target channel.
+    /// The client reserves an upload slot, then discards it unsent; the slot must be gone afterwards.
+    mutating func discardedUpload(_ target: Targets) async throws {
+        let slots = try await rest("POST", "/api/v9/channels/\(target.channel)/attachments",
+                                   body: ["files": [["filename": "discarded.png", "file_size": 70, "id": "0", "is_clip": false]]])
+        guard let name = slots["attachments"]?.arrayValue?.first?["upload_filename"]?.stringValue else { return }
+        _ = try await rest("DELETE", "/api/v9/attachments/\(name.replacingOccurrences(of: "/", with: "%2F"))")
+        if await simulator.world.pendingUploads[name] != nil { report.sequenceFailures.append("discarded upload \(name) is still reserved") }
+    }
+
+    /// Mute, leave, rejoin, rename and archive a thread; a reply reopens it (captured); then delete it.
     mutating func threadMembership(_ target: Targets) async throws {
         guard let thread = await simulator.world.channels.values.filter({ $0.parentID == target.channel && $0.type.isThread }).map(\.id).max()
         else { throw WorldError.invalidBody("no thread under the target channel") }
@@ -43,8 +52,29 @@ extension ParityRun {
         _ = try await rest("POST", "\(path)/thread-members/@me?location=Banner")
         _ = try await rest("PATCH", path, body: ["name": "parity thread renamed", "type": 11, "locked": false, "invitable": true])
         _ = try await rest("PATCH", path, body: ["archived": true])
-        _ = try await rest("PATCH", path, body: ["archived": false])
+        _ = try await rest("POST", "\(path)/messages", body: .object(JSONObject([("content", "parity reopen"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0)])))
+        if await simulator.world.channels[thread]?.thread?.archived != false { report.sequenceFailures.append("a reply did not reopen the archived thread") }
         _ = try await rest("DELETE", path)
         await flowEnd(nil)
+    }
+
+    /// Editing a reply keeps or drops its ping on the replied-to author as `allowed_mentions.replied_user` says.
+    mutating func editedReplyMentions(_ target: Targets) async throws {
+        let path = "/api/v9/channels/\(target.channel)/messages"
+        let original = try await simulator.world.sendMessage(MessageDraft(content: "parity original"), as: target.otherUser, in: target.channel,
+                                                             checkPermissions: false)
+        let reply = try await rest("POST", path, body: .object(JSONObject([
+            ("content", "parity reply"), ("nonce", .string(nonce())), ("tts", false), ("flags", 0),
+            ("message_reference", .object(JSONObject([("channel_id", .string(target.channel.description)), ("message_id", original.id.json)]))),
+        ])))
+        guard let replyID = reply["id"]?.stringValue else { return }
+        for pings in [false, true] {
+            let edited = try await rest("PATCH", "\(path)/\(replyID)", body: .object(JSONObject([
+                ("content", "parity reply edited"),
+                ("allowed_mentions", .object(JSONObject([("parse", ["users", "roles", "everyone"]), ("replied_user", .bool(pings))]))),
+            ])))
+            let mentioned = edited["mentions"]?.arrayValue?.contains { $0["id"]?.stringValue == target.otherUser.description } ?? false
+            if mentioned != pings { report.sequenceFailures.append("edited reply ping is \(mentioned), replied_user was \(pings)") }
+        }
     }
 }

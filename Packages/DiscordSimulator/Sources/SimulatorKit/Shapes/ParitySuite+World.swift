@@ -41,9 +41,15 @@ extension ParityRun {
             _ = try await rest("GET", "/api/v9/channels/\(forum)/threads/search?sort_by=last_message_time&sort_order=desc&limit=25&offset=0")
         }
 
-        // Scrolling the member list and searching members make people on demand.
+        // Scrolling the member list and searching members make people on demand; rows already sent must not move.
+        let firstPage = try await memberList(probe, guild: guild.id, channel: channel)
         let everyone = try await memberList(probe, guild: guild.id, channel: channel, ranges: [[0, 99], [100, 199]])
         expectList(everyone, "huge server's everyone list", everyone: true, offline: false)
+        func firstRows(_ update: JSON) -> [String] {
+            (update["ops"]?.arrayValue?.first?["items"]?.arrayValue ?? []).compactMap { $0["member"]?["user"]?["id"]?.stringValue }
+        }
+        report.checked.append("LIST rows stay put when scrolling")
+        if firstRows(firstPage) != firstRows(everyone) { report.sequenceFailures.append("huge server's member list: the first page changed after scrolling") }
         try await checkListRules(probe)
         try await probe.send(.object(JSONObject([("op", 8), ("d", .object(JSONObject([
             ("guild_id", .array([guild.id.json])), ("query", "a"), ("limit", 10), ("presences", true),

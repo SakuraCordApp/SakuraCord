@@ -22,6 +22,11 @@ public extension World {
         return true
     }
 
+    /// Not captured: Discord's answer for an unknown or someone else's name; it stays 204 here.
+    func discardUpload(_ name: String, owner: Snowflake) {
+        if pendingUploads[name]?.owner == owner { pendingUploads[name] = nil }
+    }
+
     func takeUpload(_ name: String, owner: Snowflake, channel: Snowflake) -> Data? {
         guard let upload = pendingUploads[name], upload.owner == owner, upload.channel == channel, let data = upload.data else { return nil }
         pendingUploads[name] = nil

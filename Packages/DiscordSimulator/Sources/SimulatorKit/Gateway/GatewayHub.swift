@@ -5,6 +5,8 @@ import Foundation
 /// encoded the way the client asked for in its connection URL.
 public actor GatewayHub: WorldEventSink {
     public static let heartbeatIntervalMilliseconds: Int64 = 41_250
+    /// How long a dropped session stays resumable before Discord ends it (not captured; see DESIGN.md).
+    static let resumeWindow: Duration = .seconds(60)
 
     final class Session {
         let id: String
@@ -15,6 +17,8 @@ public actor GatewayHub: WorldEventSink {
         var threadSyncedGuilds: Set<Snowflake> = []
         /// Dispatches kept for Resume, oldest first.
         var buffer: [Dispatch] = []
+        /// Counts drops, so a resume window only ends the drop it was started for.
+        var drops = 0
 
         struct Dispatch {
             let sequence: Int64
@@ -56,7 +60,7 @@ public actor GatewayHub: WorldEventSink {
         if query["v"]?.first == "2" { return await remoteAuth.handle(connection) }
         let codec = GatewayFrameCodec(encoding: query["encoding"]?.first ?? "json", compression: query["compress"]?.first)
         var session: Session?
-        await send(frame(op: 10, data: .object(JSONObject([
+        send(frame(op: 10, data: .object(JSONObject([
             ("heartbeat_interval", .int(Self.heartbeatIntervalMilliseconds)),
             ("_trace", .array([.string("[\"gateway-sim\",{\"micros\":0.0}]")])),
         ]))), shapeKey: "op10", over: connection, codec: codec)
@@ -64,10 +68,7 @@ public actor GatewayHub: WorldEventSink {
         for await message in connection.messages {
             if case let .close(code, _) = message {
                 // A normal close ends the session; Discord won't resume it.
-                if let session, code == 1000 || code == 1001 {
-                    sessions[session.id] = nil
-                    await world.leaveVoice(session: session.id)
-                }
+                if let session, code == 1000 || code == 1001 { await end(session) }
                 break
             }
             guard let payload = await decodeClientMessage(message, connection: connection, codec: codec) else { return }
@@ -75,8 +76,31 @@ public actor GatewayHub: WorldEventSink {
             checkSent(op: op, payload: payload)
             guard await route(op: op, data: payload["d"] ?? .null, session: &session, connection: connection, codec: codec) else { return }
         }
-        // A resumed session may already belong to a newer connection.
-        if session?.connection === connection { session?.connection = nil }
+        // A dropped session waits for a Resume; one already resumed belongs to a newer connection.
+        if let session, sessions[session.id] === session, session.connection === connection || session.connection == nil {
+            drop(session)
+        }
+    }
+
+    private func drop(_ session: Session) {
+        session.connection = nil
+        session.drops += 1
+        let (id, mark) = (session.id, session.drops)
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.resumeWindow)
+            await self?.expire(id, drop: mark)
+        }
+    }
+
+    private func expire(_ id: String, drop mark: Int) async {
+        guard let session = sessions[id], session.connection == nil, session.drops == mark else { return }
+        await end(session)
+    }
+
+    /// The session is gone for good, and the voice state it held with it.
+    private func end(_ session: Session) async {
+        sessions[session.id] = nil
+        await world.leaveVoice(session: session.id)
     }
 
     /// Closes the connection with 4002 and returns nil when the frame cannot be decoded.
@@ -99,7 +123,7 @@ public actor GatewayHub: WorldEventSink {
     private func route(op: Int64, data: JSON, session: inout Session?, connection: WebSocketConnection, codec: GatewayFrameCodec) async -> Bool {
         switch op {
         case 1, 40:
-            await send(frame(op: 11, data: .null), shapeKey: "op11", over: connection, codec: codec)
+            send(frame(op: 11, data: .null), shapeKey: "op11", over: connection, codec: codec)
         case 2:
             session = await identify(data, connection: connection, codec: codec)
             return session != nil
@@ -146,13 +170,13 @@ public actor GatewayHub: WorldEventSink {
         guard let sessionID = data["session_id"]?.stringValue, let session = sessions[sessionID],
               let token = data["token"]?.stringValue, await world.userID(forToken: token) == session.userID
         else {
-            await send(frame(op: 9, data: false), shapeKey: "op9", over: connection, codec: codec)
+            send(frame(op: 9, data: false), shapeKey: "op9", over: connection, codec: codec)
             return nil
         }
         let last = data["seq"]?.intValue ?? 0
         guard last >= (session.buffer.first?.sequence ?? 1) - 1 else {
-            await send(frame(op: 9, data: false), shapeKey: "op9", over: connection, codec: codec)
-            sessions[sessionID] = nil
+            send(frame(op: 9, data: false), shapeKey: "op9", over: connection, codec: codec)
+            await end(session)
             return nil
         }
         // Replay with no live connection attached, so dispatches arriving meanwhile
@@ -160,7 +184,7 @@ public actor GatewayHub: WorldEventSink {
         session.connection = nil
         var replayed = last
         while let next = session.buffer.first(where: { $0.sequence > replayed }) {
-            await send(next.frame, shape: next.shape, over: connection, codec: codec)
+            send(next.frame, shape: next.shape, over: connection, codec: codec)
             replayed = next.sequence
         }
         session.connection = connection
@@ -278,20 +302,20 @@ public actor GatewayHub: WorldEventSink {
         if session.buffer.count > 2_000 { session.buffer.removeFirst(session.buffer.count - 2_000) }
         sentDispatches.append((session.userID, name))
         guard let connection = session.connection, let codec = session.codec else { return }
-        await send(conformed, shape: shape, over: connection, codec: codec)
+        send(conformed, shape: shape, over: connection, codec: codec)
     }
 
     private func frame(op: Int64, data: JSON) -> JSON {
         .object(JSONObject([("t", .null), ("s", .null), ("op", .int(op)), ("d", data)]))
     }
 
-    private func send(_ frame: JSON, shapeKey: String, over connection: WebSocketConnection, codec: GatewayFrameCodec) async {
-        await send(frame, shape: catalog.gateway[shapeKey], over: connection, codec: codec)
+    private func send(_ frame: JSON, shapeKey: String, over connection: WebSocketConnection, codec: GatewayFrameCodec) {
+        send(frame, shape: catalog.gateway[shapeKey], over: connection, codec: codec)
     }
 
-    private func send(_ frame: JSON, shape: ShapeNode?, over connection: WebSocketConnection, codec: GatewayFrameCodec) async {
+    private func send(_ frame: JSON, shape: ShapeNode?, over connection: WebSocketConnection, codec: GatewayFrameCodec) {
         let encoded = codec.encode(frame, shape: shape)
-        if encoded.isBinary { await connection.send(binary: encoded.data) } else { await connection.send(text: String(bytes: encoded.data, encoding: .utf8) ?? "") }
+        if encoded.isBinary { connection.send(binary: encoded.data) } else { connection.send(text: String(bytes: encoded.data, encoding: .utf8) ?? "") }
     }
 
     private func checkSent(op: Int64, payload: JSON) {
@@ -327,10 +351,10 @@ public actor GatewayHub: WorldEventSink {
                 session.connection = nil
                 connection.drop()
             case .reconnect:
-                await send(frame(op: 7, data: .null), shapeKey: "op7", over: connection, codec: codec)
+                send(frame(op: 7, data: .null), shapeKey: "op7", over: connection, codec: codec)
             case .invalidSession:
-                await send(frame(op: 9, data: false), shapeKey: "op9", over: connection, codec: codec)
-                sessions[session.id] = nil
+                send(frame(op: 9, data: false), shapeKey: "op9", over: connection, codec: codec)
+                await end(session)
                 await connection.close(code: 4000, reason: "Session invalidated.")
             case .closeResumable:
                 session.connection = nil

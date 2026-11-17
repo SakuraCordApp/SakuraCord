@@ -183,6 +183,7 @@ struct ParityRun {
             ])))
         }
         await flowEnd("upload")
+        try await discardedUpload(target)
 
         await flowStart()
         _ = try await rest("POST", "\(messagesPath)/\(sentID)/threads", body: ["name": "parity thread", "type": 11, "auto_archive_duration": 4320, "location": "Message"])
@@ -201,11 +202,8 @@ struct ParityRun {
         try await voice(target, me: me)
         try await activities(target)
         try await threadMembership(target)
-        try await profileEditing(target, me: me)
-        try await expressionPickers(target)
-        try await friendsAndGroups(target, me: me)
-        try await privacySettingRoundTrip()
-        try await mentionsAndServerProfile(target, me: me)
+        try await editedReplyMentions(target)
+        try await accountFlows(target, me: me)
 
         await flowStart()
         _ = try await rest("DELETE", "\(messagesPath)/\(sentID)")

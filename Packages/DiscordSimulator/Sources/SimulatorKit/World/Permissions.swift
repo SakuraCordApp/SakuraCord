@@ -63,13 +63,16 @@ public struct Permissions: OptionSet, Sendable, Hashable {
 public extension Guild {
     /// Discord's permission algorithm: base from roles (owner and administrator
     /// get everything), then channel overwrites for @everyone, roles, member.
-    func permissions(of userID: Snowflake, in channel: Channel? = nil) -> Permissions {
+    func permissions(of userID: Snowflake, in channel: Channel? = nil, at now: Date) -> Permissions {
         if userID == ownerID { return .all }
         guard let member = members[userID] else { return [] }
         var base = everyoneRole?.permissions ?? []
         for role in roles where member.roles.contains(role.id) { base.formUnion(role.permissions) }
         if base.contains(.administrator) { return .all }
-        guard let channel else { return base }
+        // Discord's documented timeout rule (no capture yet): until it ends, a member keeps only
+        // View Channel and Read Message History.
+        let allowed: Permissions = (member.communicationDisabledUntil ?? .distantPast) > now ? [.viewChannel, .readMessageHistory] : .all
+        guard let channel else { return base.intersection(allowed) }
         var result = base
         if let everyone = channel.overwrites.first(where: { $0.kind == .role && $0.id == id }) {
             result.subtract(everyone.deny)
@@ -87,6 +90,6 @@ public extension Guild {
             result.formUnion(own.allow)
         }
         if !result.contains(.viewChannel) { return [] }
-        return result
+        return result.intersection(allowed)
     }
 }

@@ -187,7 +187,7 @@ public actor World {
     public func permissions(of userID: Snowflake, in channel: Channel) -> Permissions {
         if channel.type.isPrivate { return channel.recipients.contains(userID) || channel.ownerID == userID ? .all : [] }
         guard let guildID = channel.guildID, let guild = guilds[guildID] else { return [] }
-        return guild.permissions(of: userID, in: permissionChannel(channel))
+        return guild.permissions(of: userID, in: permissionChannel(channel), at: clock.now)
     }
 
     public func canView(_ userID: Snowflake, _ channel: Channel) -> Bool {
