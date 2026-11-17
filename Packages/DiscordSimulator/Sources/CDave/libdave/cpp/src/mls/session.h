@@ -1,0 +1,139 @@
+#pragma once
+
+#include <functional>
+#include <list>
+#include <memory>
+#include <optional>
+#include <set>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include <dave/dave_interfaces.h>
+#include <dave/version.h>
+
+#include "mls/persisted_key_pair.h"
+#include "mls_key_ratchet.h"
+
+namespace mlspp {
+struct AuthenticatedContent;
+struct Credential;
+struct ExternalSender;
+struct HPKEPrivateKey;
+struct KeyPackage;
+struct LeafNode;
+struct MLSMessage;
+struct SignaturePrivateKey;
+class State;
+} // namespace mlspp
+
+namespace discord {
+namespace dave {
+namespace mls {
+
+struct QueuedProposal;
+struct OutboundCommit;
+
+class Session final : public ISession {
+public:
+    Session(KeyPairContextType context,
+            std::string authSessionId,
+            MLSFailureCallback callback) noexcept;
+
+    virtual ~Session() noexcept;
+
+    static constexpr size_t kMaxRetainedOutboundCommits = 16;
+
+    virtual void Init(
+      ProtocolVersion version,
+      uint64_t groupId,
+      std::string const& selfUserId,
+      std::shared_ptr<::mlspp::SignaturePrivateKey>& transientKey) noexcept override;
+    virtual void Reset() noexcept override;
+
+    virtual void SetProtocolVersion(ProtocolVersion version) noexcept override;
+    virtual ProtocolVersion GetProtocolVersion() const noexcept override
+    {
+        return protocolVersion_;
+    }
+
+    virtual std::vector<uint8_t> GetLastEpochAuthenticator() const noexcept override;
+
+    virtual void SetExternalSender(
+      std::vector<uint8_t> const& externalSenderPackage) noexcept override;
+
+    virtual void AddRecognizedUser(std::string const& userId) noexcept override;
+    virtual void RemoveRecognizedUser(std::string const& userId) noexcept override;
+
+    virtual std::optional<std::vector<uint8_t>> ProcessProposals(
+      std::vector<uint8_t> proposals) noexcept override;
+
+    virtual RosterVariant ProcessCommit(std::vector<uint8_t> commit) noexcept override;
+
+    virtual std::optional<RosterMap> ProcessWelcome(std::vector<uint8_t> welcome) noexcept override;
+
+    virtual std::vector<uint8_t> GetMarshalledKeyPackage() noexcept override;
+
+    virtual std::unique_ptr<IKeyRatchet> GetKeyRatchet(
+      std::string const& userId) const noexcept override;
+
+    using PairwiseFingerprintCallback = std::function<void(std::vector<uint8_t> const&)>;
+
+    virtual void GetPairwiseFingerprint(
+      uint16_t version,
+      std::string const& userId,
+      PairwiseFingerprintCallback callback) const noexcept override;
+
+private:
+    void InitLeafNode(std::string const& selfUserId,
+                      std::shared_ptr<::mlspp::SignaturePrivateKey>& transientKey) noexcept;
+    void ResetJoinKeyPackage() noexcept;
+
+    void CreatePendingGroup() noexcept;
+
+    bool IsRecognizedUserID(const ::mlspp::Credential& cred) const;
+    bool ValidateProposalMessage(::mlspp::AuthenticatedContent const& message,
+                                 ::mlspp::State const& targetState) const;
+    bool ValidateQueuedProposals(std::list<QueuedProposal> const& queue,
+                                 ::mlspp::State const& targetState) const;
+    bool VerifyWelcomeState(::mlspp::State const& state) const;
+
+    RosterMap ReplaceState(std::unique_ptr<::mlspp::State>&& state);
+
+    void ClearPendingState();
+    void ClearNextEpochState();
+
+    static constexpr std::string_view USER_MEDIA_KEY_BASE_LABEL = "Discord Secure Frames v0";
+
+    ProtocolVersion protocolVersion_{kDisabledVersion};
+    std::vector<uint8_t> groupId_;
+    std::string signingKeyId_;
+    std::string selfUserId_;
+    std::set<std::string> recognizedUserIDs_;
+    KeyPairContextType keyPairContext_{nullptr};
+
+    std::unique_ptr<::mlspp::LeafNode> selfLeafNode_;
+    std::shared_ptr<::mlspp::SignaturePrivateKey> selfSigPrivateKey_;
+    std::unique_ptr<::mlspp::HPKEPrivateKey> selfHPKEPrivateKey_;
+
+    std::unique_ptr<::mlspp::HPKEPrivateKey> joinInitPrivateKey_;
+    std::unique_ptr<::mlspp::KeyPackage> joinKeyPackage_;
+
+    std::unique_ptr<::mlspp::ExternalSender> externalSender_;
+
+    std::unique_ptr<::mlspp::State> pendingGroupState_;
+
+    std::list<OutboundCommit> outboundCommits_;
+
+    std::unique_ptr<::mlspp::State> currentState_;
+    RosterMap roster_;
+
+    std::unique_ptr<::mlspp::State> stateWithProposals_;
+    std::list<QueuedProposal> proposalQueue_;
+
+    MLSFailureCallback onMLSFailureCallback_{};
+};
+
+} // namespace mls
+} // namespace dave
+} // namespace discord

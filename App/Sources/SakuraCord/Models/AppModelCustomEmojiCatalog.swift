@@ -22,7 +22,7 @@ extension AppModel {
                   !Task.isCancelled,
                   self.orderedCustomEmojiUpdateGeneration == generation
             else { return }
-            if self.launchMode == .normal, AppScrollActivity.isActive {
+            if !self.isEphemeral, AppScrollActivity.isActive {
                 self.orderedCustomEmojiUpdateTask = nil
                 self.requestOrderedCustomEmojiUpdate()
                 return
@@ -36,7 +36,7 @@ extension AppModel {
             }
             let previousOrderedEmojis = self.orderedCustomEmojis
             let previousImageURLsByID = self.customEmojiURLsByID
-            let observesAppScrollWorkGate = self.launchMode == .normal
+            let observesAppScrollWorkGate = !self.isEphemeral
             let worker = Task.detached(priority: .utility) {
                 let signposter = AppPerformanceSignposts.signposter
                 let interval = signposter.beginInterval(

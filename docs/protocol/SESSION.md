@@ -22,6 +22,16 @@ Installation identity and fingerprint are issued by Discord, never synthesized.
 Authentication clears its fingerprint before Gateway and later production REST;
 the issued installation ID can remain. Staff routing overrides are not fabricated.
 
+Identify sends capabilities `1734653`. The official client sends `1767421`
+(adding bit 15) only when the user experiment `2026-02-private-channel-hiding`
+enables obfuscation (variants `1` and `2`). That mode also handles
+`CHANNEL_SYNC` and sends opcode 38 `GUILD_CHANNELS_RESYNC` with
+`obfuscated_channel_ids`; SakuraCord implements neither, so it does not send the
+bit. All 154 official Identify payloads captured from both saved accounts
+between 13 October and 17 November 2026 sent `1734653` (latest web build
+`673919`). Without bit 15, Discord still replaces channels the user cannot view
+with [placeholders](GUILDS.md#channels-the-user-cannot-view).
+
 READY is the live bootstrap authority. Private channels and deduplicated users
 are hydrated from READY/READY_SUPPLEMENTAL, without a cold
 `GET /users/@me/channels`. Production accepts the observed nested guild identity

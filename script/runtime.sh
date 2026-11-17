@@ -117,6 +117,15 @@ sakuracord_launch_scoped_app() {
   fi
 }
 
+# Signs the app out of the Discord simulator for a first-run sign-in: stops it
+# and clears its simulator accounts, data and session defaults (never the real ones).
+sakuracord_reset_simulator_account() {
+  sakuracord_stop_scoped_app || return
+  local container="$HOME/Library/Containers/$SAKURACORD_BUNDLE_ID/Data/Library"
+  rm -rf "$container/Application Support/SakuraCord/DiscordSimulator"
+  defaults delete "$container/Preferences/$SAKURACORD_BUNDLE_ID.discord-simulator" >/dev/null 2>&1 || true
+}
+
 sakuracord_release_operation_lock() {
   if [[ -f "$SAKURACORD_OPERATION_LOCK/pid" ]] \
     && [[ "$(cat "$SAKURACORD_OPERATION_LOCK/pid" 2>/dev/null || true)" == "$$" ]]; then

@@ -1,20 +1,24 @@
+#if DEBUG
 import AppKit
-import DiscordProtocol
 import Foundation
 import OSLog
 import SakuraCordModels
 
-/// Offline channel-open benchmark: opens a long channel from a short one,
-/// timing each open from selection to the timeline's first drawn frame of
-/// loaded history. The first open is cold; later ones reuse cached rows.
-/// Read-only against the offline fixture.
+/// Channel-open benchmark: opens the simulator scenario's long `#general`
+/// from its short `#welcome`, timing each open from selection to the
+/// timeline's first drawn frame of loaded history. The first open is cold;
+/// later ones reuse cached rows. Read-only.
 @MainActor
 enum ChannelOpenBenchmark {
     private static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "ChannelOpenBenchmark")
-    private static let start = MockChatProvider.welcomeChannelID
-    private static let channelID = MockChatProvider.generalChannelID
 
     static func run(model: AppModel) async {
+        guard let channelID = SimulatorBenchmarkControl.channel(named: "general", in: model)?.id,
+              let start = await SimulatorBenchmarkControl.open(named: "welcome", in: model)?.id
+        else {
+            logger.error("Channel-open benchmark could not find #welcome and #general")
+            return
+        }
         let clock = ContinuousClock()
         var opens: [Double] = []
         for _ in 0 ..< 11 {
@@ -34,3 +38,4 @@ enum ChannelOpenBenchmark {
         )
     }
 }
+#endif

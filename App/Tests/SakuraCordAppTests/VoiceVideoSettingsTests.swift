@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import CoreAudio
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 import MediaPipeline
 import Observation
@@ -82,7 +83,7 @@ import Testing
     preferences.playsFeedbackSounds = false
     let sounds = RecordingAppSoundPlayer()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         soundPlayer: sounds,
         voiceVideoPreferences: preferences
@@ -116,7 +117,7 @@ import Testing
     preferences.joinsDeafened = true
     preferences.playsFeedbackSounds = false
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         voiceVideoPreferences: preferences
     )
@@ -150,7 +151,7 @@ import Testing
     let preferences = VoiceVideoPreferences(defaults: defaults)
     preferences.cameraUID = "camera-a"
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         voiceVideoPreferences: preferences
     )
 
@@ -169,7 +170,7 @@ import Testing
     let preferences = VoiceVideoPreferences(defaults: InMemoryPreferences())
     preferences.cameraUID = "disconnected-camera"
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true, provider: MockChatProvider(),
         voiceVideoPreferences: preferences
     )
     let availableCamera = CameraDeviceInfo(uniqueID: "available-camera", name: "Camera")

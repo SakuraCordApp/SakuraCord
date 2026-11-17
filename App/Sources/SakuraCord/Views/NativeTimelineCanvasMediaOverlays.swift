@@ -356,10 +356,9 @@ extension NativeTimelineCanvasView {
     ) {
         let author = model?.authorPresentation(for: row.message).user ?? row.message.author
         if let frame = layout.avatarFrame {
-            if let url = author.avatarURL ?? row.message.author.avatarURL,
-               UserAvatarPresentation.shouldDecodeAnimation(for: url) {
+            if UserAvatarPresentation.shouldDecodeAnimation(for: author.avatarURL) {
                 accumulator.append(
-                    row: identifier, role: .authorAvatar, media: .avatar(url), frame: frame,
+                    row: identifier, role: .authorAvatar, media: .avatar(author.avatarURL), frame: frame,
                     cornerRadius: frame.width / 2, isLooping: true, fillsFrame: true
                 )
             }
@@ -375,8 +374,7 @@ extension NativeTimelineCanvasView {
                 )
             }
         }
-        if let preview = row.replyPreview,
-           let url = preview.author.avatarURL,
+        if let url = row.replyPreview?.author.avatarURL,
            let replyContentFrame = layout.replyContentFrame,
            UserAvatarPresentation.shouldDecodeAnimation(for: url) {
             let frame = NativeTimelineReplyMetrics.avatarFrame(in: replyContentFrame)
@@ -402,9 +400,8 @@ extension NativeTimelineCanvasView {
         }
         for reaction in layout.reactionRegions where accumulator.walksReactions(in: identifier) {
             for (avatarIndex, avatar) in reaction.avatarRegions.enumerated() {
-                guard let url = avatar.reactor.avatarURL,
-                      UserAvatarPresentation.shouldDecodeAnimation(for: url)
-                else { continue }
+                let url = avatar.reactor.avatarURL
+                guard UserAvatarPresentation.shouldDecodeAnimation(for: url) else { continue }
                 accumulator.append(
                     row: identifier,
                     role: .reactionAvatar(reaction.reaction.id, avatarIndex),

@@ -93,7 +93,7 @@ struct VoiceVideoGrid: View {
             values[userID] = VoiceTileParticipant(
                 id: userID,
                 name: user?.displayName ?? "User \(userID)",
-                avatarURL: user?.avatarURL,
+                avatarURL: user?.avatarURL ?? User.defaultAvatarURL(id: state.userID),
                 frame: usesLocalVoiceSession
                     && (state.isVideoEnabled || cameraByID[userID] == true)
                     ? model.voiceVideoFrames[userID] : nil,
@@ -114,12 +114,12 @@ struct VoiceVideoGrid: View {
         }
 
         for participant in localParticipants where values[participant.userID] == nil {
-            let numericID = UserID(participant.userID)
-            let user = numericID.flatMap { model.knownUser($0) }
+            guard let numericID = UserID(participant.userID) else { continue }
+            let user = model.knownUser(numericID)
             values[participant.userID] = VoiceTileParticipant(
                 id: participant.userID,
                 name: user?.displayName ?? "User \(participant.userID)",
-                avatarURL: user?.avatarURL,
+                avatarURL: user?.avatarURL ?? User.defaultAvatarURL(id: numericID),
                 frame: participant.isCameraEnabled
                     ? model.voiceVideoFrames[participant.userID] : nil,
                 isLocal: participant.userID == currentUserID,
@@ -128,9 +128,9 @@ struct VoiceVideoGrid: View {
                 isSpeaking: (participant.userID == currentUserID
                     ? model.isLocallySpeaking : participant.isSpeaking)
                     || model.isNativeSoundboardEmitting(userID: participant.userID),
-                isStreaming: numericID.flatMap { model.voiceStates[$0] }?.isStreaming ?? false,
+                isStreaming: model.voiceStates[numericID]?.isStreaming ?? false,
                 volume: participant.volume,
-                isRinging: numericID.map(ringingUserIDs.contains) ?? false,
+                isRinging: ringingUserIDs.contains(numericID),
                 soundboardAnimations: model.soundboardCardAnimations(
                     userID: participant.userID
                 )
@@ -332,7 +332,7 @@ struct VoiceVideoGrid: View {
 private struct VoiceTileParticipant: Identifiable {
     let id: String
     let name: String
-    let avatarURL: URL?
+    let avatarURL: URL
     let frame: VoiceVideoFrame?
     let isLocal: Bool
     let isMuted: Bool
@@ -902,7 +902,7 @@ private struct SoundboardCardEffectIcon: View {
 
     var body: some View {
         if let url = emoji.imageURL(size: 128) {
-            AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+            AsyncImage(url: DiscordNetworkRedirect.resolve(url), transaction: Transaction(animation: nil)) { phase in
                 if case .success(let image) = phase {
                     image
                         .resizable()
@@ -922,7 +922,7 @@ private struct SoundboardCardEffectIcon: View {
 
 private struct RingingParticipantAvatar: View {
     let name: String
-    let avatarURL: URL?
+    let avatarURL: URL
     let size: CGFloat
     let maximumPixelDimension: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

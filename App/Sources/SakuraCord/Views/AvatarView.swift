@@ -36,6 +36,8 @@ struct AvatarView: View {
             } else if showsFallback {
                 Circle().fill(SakuraCordAccentColor.color.gradient)
                 fallback.foregroundStyle(SakuraCordAccentColor.labelOnFill)
+            } else {
+                Circle().fill(Color(nsColor: UserAvatarPresentation.placeholderColor))
             }
             if let url {
                 if animates,
@@ -65,6 +67,8 @@ struct AvatarView: View {
         .accessibilityLabel("\(name) avatar")
     }
 
+    /// Users always have an avatar URL, so only things without a picture,
+    /// such as a server or group without an icon, show an initial.
     private var fallback: some View {
         Text(name.prefix(1).uppercased()).font(.system(size: size * 0.42, weight: .semibold))
     }

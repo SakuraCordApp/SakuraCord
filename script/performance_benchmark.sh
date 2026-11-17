@@ -24,7 +24,7 @@ usage() {
 #       Rebuild and launch the canonical authenticated debug app with the
 #       local insecure-debug credential mode required for profiling.
 #   package
-#       Stage the same debug app without launching it, for offline scenarios.
+#       Stage the same debug app without launching it, for simulator scenarios.
 #   record <scenario> [seconds] [template]
 #       Attach to the exact running app. Simultaneously captures the chosen
 #       Instruments template, CPU/RSS samples, macOS per-process energy and
@@ -46,22 +46,21 @@ usage() {
 #       nominal 24,000-point path, and quality ratio are recorded separately.
 #       Before measurement the app read-only loads up to five older pages until
 #       the native timeline has at least 100 messages. This never synthesizes user
-#       interaction, marks content read, sends a message, or enables an offline
-#       fixture. Set SAKURACORD_PERFORMANCE_ACCOUNT_ID to a stored debug account
+#       interaction, marks content read, sends a message, or connects to the
+#       Discord simulator. Set SAKURACORD_PERFORMANCE_ACCOUNT_ID to a stored debug account
 #       ID to compare accounts; otherwise the most recently selected account is
 #       used. Defaults: 35 seconds.
-#   offline-pins-scroll [seconds]
-#       Relaunch the packaged offline pins fixture and run the same deterministic
-#       20-second display-link workload through a 5,000-message pinned timeline.
-#       Captures popover open, paginated loading, rendering, and scrolling without
-#       credentials, network access, acknowledgements, or account mutations.
-#       Defaults: 35 seconds.
-#   offline-chat-scroll [seconds]
-#   offline-chat-voice-scroll [seconds]
-#       Relaunch the packaged offline 5,000-message chat fixture and run the same
-#       deterministic 20-second display-link workload. The voice variant makes
-#       every fifth message a voice message of varied length, so comparing the
-#       two isolates the cost of voice-message rows. Defaults: 35 seconds.
+#   simulator-pins-scroll [seconds]
+#       Start the local Discord simulator with 5,000 pinned messages, relaunch
+#       the packaged app signed in to it, and run the same deterministic 20-second
+#       display-link workload through the pinned timeline. Captures popover open,
+#       paginated loading, rendering, and scrolling without a Discord credential,
+#       acknowledgements, or account mutations. Defaults: 35 seconds.
+#   simulator-chat-scroll [seconds]
+#   simulator-chat-voice-scroll [seconds]
+#       The same on the simulator's 5,000-message #general. The voice variant
+#       mixes in voice messages of varied length, so comparing the two isolates
+#       the cost of voice-message rows. Defaults: 35 seconds.
 #   authenticated-member-list-scroll [seconds]
 #       Relaunch the authenticated debug app and run the same deterministic
 #       20-second display-link workload through the native member list. The
@@ -460,21 +459,22 @@ export_trace_tables() {
 # Launched scenarios; "-" marks an empty field. The resource window bounds the
 # app-published process-resource window and the profile interval bounds the
 # Time Profiler summary. Traits: scroll drives a timeline or member-list
-# auto-scroll, authenticated requires a stored debug credential, interactive
-# needs an operable LaunchServices window, and gestures enables scroll input
-# telemetry.
+# auto-scroll, authenticated requires a stored debug credential, simulator
+# signs in to the local Discord simulator started with simulator_options,
+# interactive needs an operable LaunchServices window, and gestures enables
+# scroll input telemetry.
 # name|launch argument|default seconds|resource window|profile interval|traits
 scenario_table='startup|-|12|-|StartupToWorkspace|-
-authenticated-scroll|--debug-authenticated-chat-performance-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll,authenticated
-offline-pins-scroll|--offline-pins-performance-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll
-offline-chat-scroll|--offline-chat-performance-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll
-offline-chat-voice-scroll|--offline-chat-voice-performance-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll
-authenticated-member-list-scroll|--debug-authenticated-member-list-performance-autoscroll|70|MemberListAutoScrollBenchmark|MemberListAutoScrollBenchmark|scroll,authenticated,interactive
-authenticated-gesture-scroll|--debug-authenticated-gesture-scroll-performance|40|AuthenticatedGestureScrollBenchmark|AuthenticatedGestureScrollBenchmark|authenticated,interactive,gestures
-authenticated-loading-scroll-overlap|--debug-authenticated-loading-scroll-overlap-performance|55|AuthenticatedLoadingScrollOverlapBenchmark|AuthenticatedLoadingScrollOverlapBenchmark|authenticated,interactive,gestures
-authenticated-navigation|--debug-authenticated-navigation-performance|45|AuthenticatedNavigationBenchmark|AuthenticatedNavigationBenchmark|authenticated
-authenticated-account-switch|--debug-authenticated-account-switch-performance|45|AuthenticatedAccountSwitchBenchmark|AuthenticatedAccountSwitchBenchmark|authenticated
-authenticated-history-pagination|--debug-authenticated-history-pagination-performance|45|AuthenticatedHistoryPaginationBenchmark|AuthenticatedHistoryPaginationBenchmark|authenticated
+authenticated-scroll|--benchmark-chat-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll,authenticated
+simulator-pins-scroll|--benchmark-pins-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll,simulator
+simulator-chat-scroll|--benchmark-chat-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll,simulator
+simulator-chat-voice-scroll|--benchmark-chat-autoscroll|35|MessageTimelineAutoScrollBenchmark|MessageTimelineAutoScrollBenchmark|scroll,simulator
+authenticated-member-list-scroll|--benchmark-member-list-autoscroll|70|MemberListAutoScrollBenchmark|MemberListAutoScrollBenchmark|scroll,authenticated,interactive
+authenticated-gesture-scroll|--benchmark-gesture-scroll|40|AuthenticatedGestureScrollBenchmark|AuthenticatedGestureScrollBenchmark|authenticated,interactive,gestures
+authenticated-loading-scroll-overlap|--benchmark-loading-scroll-overlap|55|AuthenticatedLoadingScrollOverlapBenchmark|AuthenticatedLoadingScrollOverlapBenchmark|authenticated,interactive,gestures
+authenticated-navigation|--benchmark-navigation|45|AuthenticatedNavigationBenchmark|AuthenticatedNavigationBenchmark|authenticated
+authenticated-account-switch|--benchmark-account-switch|45|AuthenticatedAccountSwitchBenchmark|AuthenticatedAccountSwitchBenchmark|authenticated
+authenticated-history-pagination|--benchmark-history-pagination|45|AuthenticatedHistoryPaginationBenchmark|AuthenticatedHistoryPaginationBenchmark|authenticated
 authenticated-search|-|45|MessageSearchBenchmark|MessageSearchRequestToResults|authenticated
 authenticated-search-pagination|-|50|MessageSearchPaginationBenchmark|MessageSearchPaginationToResults|authenticated
 authenticated-search-scroll|-|50|MessageSearchScrollBenchmark|MessageSearchUserScroll|authenticated'
@@ -489,6 +489,16 @@ scenario_field() {
         }
         $1 == name && $(columns[column]) != "-" { print $(columns[column]) }
     ' <<<"$scenario_table"
+}
+
+# The Discord simulator scenario and parameters a simulator-trait scenario
+# measures, as script/simulator.sh start options.
+simulator_options() {
+    case "$1" in
+        simulator-pins-scroll) echo "--scenario chat-performance --param messages=5000 --param pins=5000" ;;
+        simulator-chat-scroll) echo "--scenario chat-performance --param messages=5000 --param content=text" ;;
+        simulator-chat-voice-scroll) echo "--scenario chat-performance --param messages=5000 --param content=voice" ;;
+    esac
 }
 
 scenario_has_trait() {
@@ -689,6 +699,11 @@ record_launch() (
             fi
         fi
     fi
+    if scenario_has_trait "$scenario" simulator; then
+        # shellcheck disable=SC2046 # simulator_options prints separate options.
+        "$root/script/simulator.sh" start $(simulator_options "$scenario") >&2
+        set -- "$@" --discord-simulator "${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}"
+    fi
     write_recording_metadata \
         "$output" "$scenario" "Time Profiler" "$performance_account_id"
     sandbox_directory="$HOME/Library/Containers/$bundle_id/Data/tmp"
@@ -704,6 +719,9 @@ record_launch() (
         "SAKURACORD_SCROLL_INPUT_TELEMETRY=$scroll_input_telemetry"
         "SAKURACORD_PERFORMANCE_SCROLL_SURFACE=$scroll_surface"
     )
+    if scenario_has_trait "$scenario" simulator; then
+        launch_environment+=("SAKURACORD_SIMULATOR_TOKEN=$("$root/script/simulator.sh" token)")
+    fi
     if (( requires_interactive_window )); then
         # Computer Use resolves windows through LaunchServices. A raw executable
         # launch is profileable but exposes no operable app window, so scenarios

@@ -29,7 +29,7 @@ final class ForumViewMemory {
     /// The position to restore on the current visit, once its posts arrive.
     private var pendingRestore: (channelID: ChannelID, position: ScrollPosition)?
 
-    /// `defaults` nil keeps everything in memory (offline and test sessions).
+    /// `defaults` nil keeps everything in memory, as ephemeral models do.
     init(defaults: (any PreferenceStoring)?) {
         self.defaults = defaults
         preferences = defaults?.data(forKey: Self.key)

@@ -254,7 +254,7 @@ enum SelectionFieldRenderer {
                     in: rect.insetBy(dx: InterfaceScale.metric(3), dy: InterfaceScale.metric(3))
                 )
             }
-        case .remoteImage(_, let fallback, let shape):
+        case .remoteImage(let url, let fallback, let shape):
             let path = switch shape {
             case .circle:
                 NSBezierPath(ovalIn: rect)
@@ -272,6 +272,9 @@ enum SelectionFieldRenderer {
                     respectFlipped: false,
                     hints: [.interpolation: NSImageInterpolation.high]
                 )
+            } else if url != nil {
+                UserAvatarPresentation.placeholderColor.setFill()
+                path.fill()
             } else {
                 NSColor.sakuraCordAccentColor.withAlphaComponent(0.65).setFill()
                 path.fill()

@@ -58,7 +58,7 @@ struct RoleMembersPopover: View {
                                 HStack(spacing: InterfaceScale.metric(9)) {
                                     AvatarView(
                                         name: member.user.displayName,
-                                        url: member.guildAvatarURL ?? member.user.avatarURL,
+                                        url: member.avatarURL,
                                         size: InterfaceScale.metric(28)
                                     )
                                     VStack(alignment: .leading, spacing: 1) {

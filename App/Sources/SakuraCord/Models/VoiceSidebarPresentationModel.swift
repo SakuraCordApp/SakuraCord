@@ -5,7 +5,7 @@ import SakuraCordModels
 struct VoiceSidebarParticipant: Identifiable, Equatable {
     let id: UserID
     let name: String
-    let avatarURL: URL?
+    let avatarURL: URL
     let isCurrentUser: Bool
     let isMuted: Bool
     let isDeafened: Bool
@@ -101,7 +101,7 @@ final class VoiceSidebarPresentationStore {
                     return VoiceSidebarParticipant(
                         id: userID,
                         name: user?.displayName ?? "User \(userID.rawValue)",
-                        avatarURL: user?.avatarURL,
+                        avatarURL: user?.avatarURL ?? User.defaultAvatarURL(id: userID),
                         isCurrentUser: userID == currentUserID,
                         isMuted: state.isMuted || state.isSelfMuted,
                         isDeafened: state.isDeafened || state.isSelfDeafened,

@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import AppKit
 import Foundation
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 
@@ -15,7 +16,7 @@ func `bubble reactions flow in one line beyond a short bubble`(isOutgoing: Bool)
     let channel = Channel(
         id: ChannelID(rawValue: 99_503), guildID: nil, name: "group", kind: .groupDirectMessage
     )
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.snapshot = BootstrapSnapshot(currentUser: you, guilds: [], channels: [channel], members: [])
     model.appearanceSettings.groupMessageAppearance = .bubbles
 

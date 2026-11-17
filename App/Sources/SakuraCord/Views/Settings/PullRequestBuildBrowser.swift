@@ -12,23 +12,18 @@ struct PullRequestBuildBrowser: View {
     let onInstall: (PullRequestBuild) -> Void
 
     init(
-        isPreview: Bool = false,
         installedBuildID: String? = nil,
         updateController: AppUpdateController,
         onInstall: @escaping (PullRequestBuild) -> Void
     ) {
-        _store = State(initialValue: PullRequestBuildStore(isPreview: isPreview))
+        _store = State(initialValue: PullRequestBuildStore())
         self.installedBuildID = installedBuildID
         self.updateController = updateController
         self.onInstall = onInstall
     }
 
-    private var canConfirmInstallation: Bool {
-        (store.isPreview || updateController.canSwitchBuilds) && store.selectedBuild != nil && !store.isLoading && store.error == nil
-    }
-
     private var canInstall: Bool {
-        canConfirmInstallation && !store.isPreview
+        updateController.canSwitchBuilds && store.selectedBuild != nil && !store.isLoading && store.error == nil
     }
 
     var body: some View {
@@ -243,17 +238,15 @@ struct PullRequestBuildBrowser: View {
     private var footer: some View {
         HStack {
             Spacer(minLength: InterfaceScale.metric(12))
-            ModalGlassButton(symbol: "arrow.down.circle", label: "Install…", primary: canConfirmInstallation) { confirmingBuild = store.selectedBuild }
-                .disabled(!canConfirmInstallation)
+            ModalGlassButton(symbol: "arrow.down.circle", label: "Install…", primary: canInstall) { confirmingBuild = store.selectedBuild }
+                .disabled(!canInstall)
                 .help(installHelp)
         }
         .padding(InterfaceScale.metric(12))
     }
 
     private var installHelp: LocalizedStringResource {
-        if store.isPreview {
-            "Preview the installation warning. Sample builds can’t be installed."
-        } else if !updateController.canSwitchBuilds {
+        if !updateController.canSwitchBuilds {
             "Updates are disabled or busy."
         } else {
             "Install the selected build"

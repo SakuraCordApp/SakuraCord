@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 import AppKit
 import MessageRendering
 @testable import SakuraCord
@@ -64,7 +65,7 @@ private func timestampAttachment(in text: NSAttributedString) -> MentionTextAtta
                               content: content, timestamp: timestamp)
         messages.append(message)
     }
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     model.selectedChannelID = channelID
     model.replaceSelectedMessages(with: messages)
     let timeline = NativeMessageTimelineView(

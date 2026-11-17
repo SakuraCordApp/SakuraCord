@@ -4,7 +4,7 @@ extension AppModel {
     func clearLocalDestinationHistory() {
         conversationDestinationHistory = []
         workspaceNavigationOverlay = nil
-        guard launchMode == .normal else { return }
+        guard !isEphemeral else { return }
         UserDefaults.standard.removeObject(
             forKey: destinationHistoryDefaultsKey
         )

@@ -42,42 +42,27 @@ struct RootView: View {
                     IssueReportView(model: model)
                 }
             case .signedOut:
-                if model.launchMode == .normal || model.includesOfflineSignIn {
-                    if model.savedAccounts.isEmpty {
-                        DiscordLoginView(
-                            showsCancel: false,
-                            networkingEnabled: !model.isDiscordNetworkingDisabled,
-                            offlineSignIn: model.includesOfflineSignIn,
-                            playsWelcome: model.hasPendingLaunchWelcome,
-                            showsOnboarding: showsInitialOnboarding,
-                            onEntranceStarted: { model.hasPendingLaunchWelcome = false },
-                            onOnboardingCompleted: {
-                                if model.launchMode == .normal {
-                                    SakuraCordOnboardingStore.complete()
-                                }
-                            },
-                            onConnected: { credential in
-                                if model.includesOfflineSignIn {
-                                    return await model.completeOfflineSignIn()
-                                }
-                                return await model.connectPendingAuthenticatedAccount(
-                                    credential,
-                                    preservesInteractivePresentation: true
-                                )
-                                    ? nil
-                                    : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
-                            }
-                        )
-                        .interfaceScaleRoot()
-                    } else {
-                        AccountSwitcherView(model: model, showsCancel: false)
-                            .interfaceScaleRoot()
-                    }
-                } else {
-                    SakuraCordSessionLoadingView(
-                        state: model.sessionState,
-                        isOfflineTesting: model.isOfflineTesting
+                if model.savedAccounts.isEmpty {
+                    DiscordLoginView(
+                        showsCancel: false,
+                        networkingEnabled: !model.isDiscordNetworkingDisabled,
+                        playsWelcome: model.hasPendingLaunchWelcome,
+                        showsOnboarding: showsInitialOnboarding,
+                        onEntranceStarted: { model.hasPendingLaunchWelcome = false },
+                        onOnboardingCompleted: { SakuraCordOnboardingStore.complete() },
+                        onConnected: { credential in
+                            await model.connectPendingAuthenticatedAccount(
+                                credential,
+                                preservesInteractivePresentation: true
+                            )
+                                ? nil
+                                : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
+                        }
                     )
+                    .interfaceScaleRoot()
+                } else {
+                    AccountSwitcherView(model: model, showsCancel: false)
+                        .interfaceScaleRoot()
                 }
             case .restoring:
                 // Credentials have not resolved yet; the destination may be
@@ -93,7 +78,6 @@ struct RootView: View {
             case .connecting:
                 SakuraCordSessionLoadingView(
                     state: model.sessionState,
-                    isOfflineTesting: model.isOfflineTesting,
                     isAccountSwitch: model.isSwitchingAccounts
                 )
             }
@@ -142,8 +126,7 @@ struct RootView: View {
             model.invalidateTimelinePresentation()
         }
         .onChange(of: model.sessionState) { _, state in
-            if model.launchMode == .normal,
-               state == .workspace || !model.savedAccounts.isEmpty {
+            if state == .workspace || !model.savedAccounts.isEmpty {
                 SakuraCordOnboardingStore.complete()
             }
         }
@@ -168,21 +151,17 @@ struct RootView: View {
     }
 
     private var showsInitialOnboarding: Bool {
-        model.hasPendingLaunchWelcome
-            && (model.includesOfflineSignIn
-                || (model.launchMode == .normal && SakuraCordOnboardingStore.needsThemeSetup))
+        model.hasPendingLaunchWelcome && SakuraCordOnboardingStore.needsThemeSetup
     }
 
     private var showsMessageSearchToolbar: Bool {
         switch model.sessionState {
-        case .restoring:
+        case .restoring, .signedOut:
             false
         case .connecting:
             true
         case .workspace:
             model.showsWorkspaceMessageSearch
-        case .signedOut:
-            model.launchMode != .normal && !model.includesOfflineSignIn
         }
     }
 
@@ -193,14 +172,12 @@ struct RootView: View {
 
     private var showsSessionLoadingChrome: Bool {
         switch model.sessionState {
-        case .restoring:
+        case .restoring, .signedOut:
             false
         case .connecting:
             true
         case .workspace:
             model.isSwitchingAccounts
-        case .signedOut:
-            model.launchMode != .normal && !model.includesOfflineSignIn
         }
     }
 }
@@ -246,13 +223,8 @@ private struct ChatRootView: View {
                     connectionState: model.connectionState,
                     currentStatus: model.currentStatus,
                     isAuthenticated: model.isAuthenticated,
-                    isOfflineTesting: model.isOfflineTesting,
                     activeVoiceChannelID: model.activeVoiceChannel?.id,
-                    connectAccount: {
-                        if !model.isOfflineTesting {
-                            showAccountSwitcher = true
-                        }
-                    },
+                    connectAccount: { showAccountSwitcher = true },
                     updateStatus: { await model.updateStatus($0) }
                 )
             }
@@ -383,7 +355,6 @@ private struct ChatRootView: View {
             if model.isSwitchingAccounts {
                 SakuraCordSessionLoadingView(
                     state: .connecting,
-                    isOfflineTesting: false,
                     isAccountSwitch: true,
                     isEmbeddedInWorkspace: true,
                     embeddedSidebarWidth: sidebarWidth

@@ -1,4 +1,5 @@
 import DiscordProtocol
+@testable import DiscordProtocolTestSupport
 import Foundation
 @testable import SakuraCord
 import SakuraCordModels
@@ -19,7 +20,7 @@ struct QuickReactionPolicyTests {
     }
 
     @Test func emptyHistoryUsesDiscordsSeededReactionRanking() {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         model.applyDiscordEmojiSettings(EmojiUserSettings(dataVersion: 1))
         let reactions = QuickReactionPolicy.reactions(
             rankedKeys: model.discordFrequentlyUsedReactionKeys, customEmojisByID: [:],

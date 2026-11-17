@@ -230,7 +230,7 @@ struct MemberAvatar: View {
         ) {
             DecoratedAvatarView(
                 name: member.user.displayName,
-                avatarURL: member.guildAvatarURL ?? member.user.avatarURL,
+                avatarURL: member.avatarURL,
                 decorationURL: member.user.avatarDecorationURL,
                 size: InterfaceScale.metric(34),
                 playback: .hover(isHovered)

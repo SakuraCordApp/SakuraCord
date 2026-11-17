@@ -139,7 +139,6 @@ extension AppModel {
             if groups.contains(where: { group in
                 group.channels.contains { channel in
                     channel.guildID == selectedGuildID && channel.id != selectedID
-                        && !hiddenChannelIDs.contains(channel.id)
                         && !checkingChannelIDs.contains(channel.id)
                 }
             }) { return true }

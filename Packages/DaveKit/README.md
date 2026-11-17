@@ -16,7 +16,8 @@ files under `Sources/CLibdave` and `Sources/CMLS`.
 
 ## Vendored sources
 
-- libdave: `v1.2.1/cpp` from `discord/libdave`.
+- libdave: `v1.3.0/cpp` from `discord/libdave`, unmodified apart from the
+  trimming below.
 - MLS++ (including HPKE, bytes, and TLS helpers):
   `fc724c3100ce3b5d8565dbd6d93648a440991a8c` from `cisco/mlspp`.
 
@@ -29,25 +30,6 @@ update, drop everything else (build systems, CI, tests, fuzzing, tools,
 bindings, and unused libraries) and delete files in the kept directories that
 the integration does not build: libdave's BoringSSL cryptor, WASM bindings,
 and every persisted key-pair store except `src/mls/persisted_key_pair_null.cpp`.
-
-### Local divergences from libdave
-
-Replay protection for repeated key ratchets adds these changes under
-`Sources/CLibdave/libdave/cpp`. Reapply them when importing an upstream update.
-
-- `includes/dave/dave_interfaces.h`: `IKeyRatchet::GetDomainIdentity()` lets
-  the encryptor and decryptor recognise a reinstall of the same MLS key domain.
-- `src/mls_key_ratchet.h` and `src/mls_key_ratchet.cpp`:
-  `MlsKeyRatchet::domainIdentity_` keeps the base secret, which is derived per
-  epoch and user, as that identity.
-- `src/cryptor_manager.h`: `CryptorManager::GetDomainIdentity()` exposes its
-  ratchet's identity to the decryptor.
-- `src/decryptor.cpp`: `Decryptor::TransitionToKeyRatchet` ignores a ratchet
-  whose domain already has a live cryptor manager, so processed frames do not
-  get a fresh replay window and expiries are not extended.
-- `src/encryptor.cpp`: `Encryptor::SetKeyRatchet` keeps the current ratchet and
-  nonce sequence when the same domain is installed again during a protocol
-  transition, so AES-GCM nonces are not reused.
 
 ### Local divergences from MLS++
 

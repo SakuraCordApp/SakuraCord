@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import AppKit
 import Foundation
+@testable import DiscordProtocolTestSupport
 import SakuraCordModels
 import Testing
 
@@ -120,7 +121,7 @@ import Testing
 
 @MainActor
 @Test func `Always underlined links share hover styling without changing timeline geometry`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let message = Message(
         id: MessageID(rawValue: 10),
         channelID: ChannelID(rawValue: 11),

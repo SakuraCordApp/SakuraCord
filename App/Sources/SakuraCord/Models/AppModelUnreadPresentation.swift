@@ -145,7 +145,7 @@ private extension Guild {
 
 extension AppModel {
     var isAppScrollDeferringUnread: Bool {
-        launchMode == .normal && AppScrollActivity.isActive
+        !isEphemeral && AppScrollActivity.isActive
     }
 
     /// Bootstrap may expose the workspace before this finishes, but its async
@@ -292,7 +292,7 @@ extension AppModel {
                     guilds: value.guilds,
                     selectedGuildID: sourceSelectedGuildID,
                     visibleChannelCapacity: self.visibleChannels.count,
-                    observesAppScrollWorkGate: self.launchMode == .normal
+                    observesAppScrollWorkGate: !self.isEphemeral
                 )
             }
             self.activeUnreadPreparationGeneration = generation

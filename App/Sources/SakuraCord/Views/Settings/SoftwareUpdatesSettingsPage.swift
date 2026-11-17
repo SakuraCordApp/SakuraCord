@@ -97,7 +97,6 @@ struct SoftwareUpdatesSettingsPage: View {
         .settingsNavigationPathResetOnReveal($navigationPath, page: .softwareUpdates, state: state)
         .windowModal(isPresented: $presentsBuildBrowser, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             PullRequestBuildBrowser(
-                isPreview: AppLaunchConfiguration.current.includesOfflineFlag,
                 installedBuildID: updateController.installedPullRequestBuildID,
                 updateController: updateController
             ) { build in
