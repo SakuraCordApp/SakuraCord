@@ -59,6 +59,22 @@ extension AppModel {
         }
     }
 
+    /// Stored members stay for message history, but a missing join date marks
+    /// them as no longer in the server, so profiles drop the server badge and roles.
+    func consumeGuildMemberRemoved(guildID: GuildID, userID: UserID) {
+        membersByGuildID[guildID]?[userID]?.joinedAt = nil
+        if guildID == selectedGuildID { membersByID[userID]?.joinedAt = nil }
+        profileCache[ProfileCacheKey(userID: userID, guildID: guildID)] = nil
+        for destination in [ProfilePresentationDestination.inspector, .contextual, .expanded] {
+            guard var presentation = profilePresentation(for: destination), presentation.member.id == userID,
+                  presentation.guildID == guildID else { continue }
+            presentation.member.joinedAt = nil
+            presentation.profile?.guildJoinedAt = nil
+            presentation.profile?.roles = []
+            setProfilePresentation(presentation, for: destination)
+        }
+    }
+
     func updateStatus(_ status: PresenceStatus) async {
         let session = accountSession()
         do {

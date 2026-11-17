@@ -5,8 +5,8 @@ struct ProfileMembershipSection: View {
     private static let dateFormat = Date.FormatStyle.dateTime.day().month(.abbreviated).year()
 
     let createdAt: Date
-    var guild: Guild?
-    var guildJoinedAt: Date?
+    let guild: Guild?
+    let guildJoinedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
@@ -15,7 +15,7 @@ struct ProfileMembershipSection: View {
             if let guild, let guildJoinedAt {
                 HStack(spacing: InterfaceScale.metric(8)) {
                     badge(date: createdAt) {
-                        Image("discord.fill", bundle: .module)
+                        Image("DiscordClydeIcon", bundle: .module)
                             .resizable()
                             .foregroundStyle(.secondary)
                             .help("Discord")

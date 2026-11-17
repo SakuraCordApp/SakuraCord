@@ -655,7 +655,7 @@ notices. Its inclusion does not imply affiliation or endorsement.
 
 ## Discord Clyde icon
 
-`discord.fill.svg` is the unmodified `ClydeIcon` vector path (24×24 viewBox)
+`DiscordClydeIcon.svg` is the unmodified `ClydeIcon` vector path (24×24 viewBox)
 from Discord Official Fresh 0.0.411, inspected on 2026-11-17.
 
 - Source: https://discord.com/assets/web.8b3b2b6ffeb3e3cf.js, module `111159`
