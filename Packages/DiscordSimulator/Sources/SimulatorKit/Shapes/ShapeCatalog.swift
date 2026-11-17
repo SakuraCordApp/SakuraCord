@@ -63,12 +63,14 @@ public enum RouteTemplate {
 public extension ShapeCatalog {
     static let fileNames = (rest: "rest.json", gateway: "gateway.json", sequences: "sequences.json")
 
-    /// The catalog bundled with the simulator.
+    /// The catalog bundled with the simulator, with the fields taken from the official client's code.
     static func bundled() throws -> ShapeCatalog {
         guard let directory = Bundle.module.url(forResource: "Shapes", withExtension: nil) else {
             throw ShapeError.malformed("bundled Shapes directory is missing")
         }
-        return try load(from: directory)
+        var catalog = try load(from: directory)
+        try catalog.addClientCodeShapes()
+        return catalog
     }
 
     static func load(from directory: URL) throws -> ShapeCatalog {

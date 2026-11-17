@@ -158,7 +158,8 @@ and requests list the same delays.
   agent controls live on the control port.
 - Unknown routes and assets fail loudly: an error status and an `ERROR` log line.
 - Payloads are rendered, then conformed to the captured shape for that route or
-  event (captured field order; uncaptured fields are dropped).
+  event (captured field order; uncaptured fields are dropped unless the
+  official client's code supplies them, as listed under inferred behavior).
 - The Gateway encodes as the client asks (`encoding=etf|json`,
   `compress=zstd-stream|zlib-stream`), choosing ETF term types from the
   captured `etf` tags.
@@ -245,7 +246,11 @@ Inferred, not captured:
   /guilds/{id}/members/@me/nick` (the client uses `PATCH /members/@me`),
   `PATCH /users/@me/guilds/{id}/settings` (it uses the bulk route),
   settings-proto 3, `GET /experiments`, `GET /applications/{id}/widget-configs`,
-  widget image uploads (Nitro-only), `POST /attachments/refresh-urls`, and
+  personal widgets and their image uploads (Nitro-only: the bodies, the saved
+  image, its `/widget-assets/{user}/{file_id}` CDN path and the widget's
+  `header` and `sections` in the save and profile responses follow the official
+  client's code, added to the captured shapes by `ShapeCatalog+ClientCode`;
+  `file_id` being a snowflake is inferred), `POST /attachments/refresh-urls`, and
   accepting or ignoring a message request.
 - Captured routes, inferred behavior: the game catalogue is the games people
   play, ranked by catalogue order where Discord ranks by popularity; unknown

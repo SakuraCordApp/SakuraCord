@@ -35,16 +35,16 @@ extension World {
         })
     }
 
-    /// `GET /games/autocomplete`: up to ten games, as captured. Names starting with the query rank
-    /// before names containing it (inferred ranking).
+    /// `GET /games/autocomplete`: up to ten games, as captured. Captured: names where the query starts
+    /// at a word, ranked by popularity rather than by where that word falls ("mine" puts "This War of
+    /// Mine" first); catalogue order stands in for popularity.
     func autocompleteGames(_ query: String) -> JSON {
-        // Captured: names with a word starting with the query, ranked by popularity rather than by where the
-        // word falls ("mine" puts "This War of Mine" first); catalogue order stands in for popularity.
-        let needle = query.trimmingCharacters(in: .whitespaces).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-        let matches = games.filter { game in
-            !needle.isEmpty && game.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-                .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains { $0.hasPrefix(needle) }
+        func words(_ text: String) -> String {
+            text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(separator: " ")
         }
+        let needle = " " + words(query)
+        let matches = needle.count > 1 ? games.filter { (" " + words($0.name)).contains(needle) } : []
         return .array(matches.prefix(10).map { game in
             .object(JSONObject([
                 ("id", game.id.json), ("name", .string(game.name)),

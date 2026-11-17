@@ -87,6 +87,7 @@ extension World {
     func dismissBlockedUserWarning(in channelID: Snowflake, by userID: Snowflake) async throws {
         let channel = try channel(channelID)
         guard channel.type.isPrivate else { throw WorldError.wrongChannelType }
+        guard channel.recipients.contains(userID) else { throw WorldError.missingAccess }
         dismissedBlockedUserWarnings[userID, default: []].insert(channelID)
         await emit("CHANNEL_UPDATE", renderChannel(channel, viewer: userID), to: .users([userID]))
     }

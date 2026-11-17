@@ -369,20 +369,16 @@ final class UDPProbe: @unchecked Sendable {
         return (address, UInt16(answer[72]) << 8 | UInt16(answer[73]))
     }
 
+    /// The next datagram, or nil after `timeout`. A pending receive can't be withdrawn, so a timeout
+    /// cancels the connection, which ends that receive; later ones return nil instead of losing a datagram to it.
     func receive(timeout: Duration = .seconds(5)) async -> Data? {
-        await withTaskGroup(of: Data?.self) { group in
-            group.addTask { [connection] in
-                await withCheckedContinuation { continuation in
-                    connection.receiveMessage { data, _, _, _ in continuation.resume(returning: data) }
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+        let timer = Task { [connection] in
+            try await Task.sleep(for: timeout)
+            connection.cancel()
+        }
+        defer { timer.cancel() }
+        return await withCheckedContinuation { continuation in
+            connection.receiveMessage { data, _, _, _ in continuation.resume(returning: data) }
         }
     }
 

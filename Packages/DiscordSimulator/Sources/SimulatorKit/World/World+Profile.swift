@@ -131,6 +131,7 @@ extension World {
                     .object(JSONObject([("game_id", game["game_id"] ?? .null), ("comment", game["comment"] ?? .null), ("tags", game["tags"] ?? [])]))
                 })
             }
+            if let sections = data["sections"] { data["sections"] = try saveWidgetImages(sections, of: userID) }
             if type == "application", data["application_id"] == nil { throw WorldError.invalidBody("widgets: data.application_id") }
             let existing = previous.first { $0["id"] != nil && $0["id"] == widget["id"] }
             if let existing, existing["data"] == .object(data) {
@@ -144,6 +145,35 @@ extension World {
     }
 
     // MARK: Images
+
+    /// A personal widget's sections with each newly uploaded image saved. From the official client's code: an
+    /// image is sent as `{"filename": <upload_filename>, "original_hash"}`, saved as `{"file_id", "width",
+    /// "height", "is_animated"}` and served from `/widget-assets/{user}/{file_id}`. Inferred: `file_id` is a
+    /// snowflake, and the error for an upload that's missing, unfinished or not an image.
+    private func saveWidgetImages(_ value: JSON, of userID: Snowflake) throws -> JSON {
+        switch value {
+        case let .array(items):
+            return .array(try items.map { try saveWidgetImages($0, of: userID) })
+        case let .object(object):
+            var saved = JSONObject()
+            for (key, element) in object {
+                if key == "image", let name = element["filename"]?.stringValue {
+                    guard let data = takeUpload(name, owner: userID, channel: nil), let image = Self.imageSize(data) else {
+                        throw WorldError.invalidBody("image: Invalid image data")
+                    }
+                    let fileID = nextID(), contentType = Self.contentType(forFilename: name, data: data)
+                    media["/widget-assets/\(userID)/\(fileID)"] = (data, contentType)
+                    saved[key] = .object(JSONObject([("file_id", fileID.json), ("width", .int(Int64(image.width))),
+                                                     ("height", .int(Int64(image.height))), ("is_animated", .bool(contentType == "image/gif"))]))
+                } else {
+                    saved[key] = try saveWidgetImages(element, of: userID)
+                }
+            }
+            return .object(saved)
+        default:
+            return value
+        }
+    }
 
     /// Stores an uploaded avatar and records it in the user's avatar history.
     private func storeAvatar(_ dataURI: String, of userID: Snowflake, description: String?) throws -> String {

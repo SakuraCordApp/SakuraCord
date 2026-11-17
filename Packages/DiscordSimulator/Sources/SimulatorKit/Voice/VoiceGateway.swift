@@ -2,9 +2,11 @@ import Foundation
 
 /// Discord's voice server: the voice gateway (JSON text frames, binary for DAVE)
 /// that a client reaches through the endpoint in VOICE_SERVER_UPDATE. The handshake,
-/// heartbeats, speaking, video and stream frames follow captures of the official client
-/// (`Resources/Shapes`); close codes and resuming follow Discord's documented voice protocol
-/// (discord.com/developers/docs/topics/voice-connections); DESIGN.md lists what is inferred.
+/// heartbeats and the client's own speaking, video and stream frames follow captures of the
+/// official client (`Resources/Shapes`); what the server sends about other people (ops 5,
+/// 11, 12 and 13) follows the client's voice-gateway parser. Close codes and resuming follow
+/// Discord's documented voice protocol (discord.com/developers/docs/topics/voice-connections);
+/// DESIGN.md lists what is inferred.
 ///
 /// Simulated people in a channel have no connection of their own; the server
 /// announces them like any other client.

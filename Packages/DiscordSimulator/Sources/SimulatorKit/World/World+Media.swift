@@ -33,7 +33,8 @@ public extension World {
         if pendingUploads[name]?.owner == owner { pendingUploads[name] = nil }
     }
 
-    func takeUpload(_ name: String, owner: Snowflake, channel: Snowflake) -> Data? {
+    /// Consumes a completed slot reserved by `owner` for `channel` (nil for a profile widget image).
+    func takeUpload(_ name: String, owner: Snowflake, channel: Snowflake?) -> Data? {
         guard let upload = pendingUploads[name], upload.owner == owner, upload.channel == channel, let data = upload.data else { return nil }
         pendingUploads[name] = nil
         return data
@@ -63,14 +64,22 @@ public extension World {
         attachment.waveform = waveform
         attachment.flags = flags
         attachment.spoiler = filename.hasPrefix("SPOILER_")
-        if contentType.hasPrefix("image/"), let source = CGImageSourceCreateWithData(data as CFData, nil),
-           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-            attachment.width = properties[kCGImagePropertyPixelWidth] as? Int
-            attachment.height = properties[kCGImagePropertyPixelHeight] as? Int
+        if contentType.hasPrefix("image/"), let image = Self.imageSize(data) {
+            attachment.width = image.width
+            attachment.height = image.height
             attachment.placeholder = ThumbHash.placeholder(for: data)
         }
         media[attachment.cdnPath] = (data, contentType)
         return attachment
+    }
+
+    /// Pixel size of an image ImageIO can read.
+    internal nonisolated static func imageSize(_ data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        return (width, height)
     }
 
     internal nonisolated static func contentType(forFilename filename: String, data: Data) -> String {

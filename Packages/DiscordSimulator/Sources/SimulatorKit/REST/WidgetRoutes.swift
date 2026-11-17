@@ -40,7 +40,8 @@ enum WidgetRoutes {
             return .json([])
         }
 
-        // Not captured: a widget image reserves a slot on the attachment host like a message attachment.
+        // The body and answer follow the official client's code; not captured: the slot is on the
+        // attachment host like a message attachment's, and saving a personal widget consumes it.
         routes["POST /api/v9/users/@me/widgets/assets/upload"] = { context in
             guard let filename = try context.json["filename"]?.stringValue, !filename.isEmpty else { throw WorldError.invalidBody("filename") }
             let name = await context.world.reserveUpload(filename: filename, owner: context.userID, channel: nil)
