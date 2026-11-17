@@ -18,10 +18,17 @@ struct MentionAutocompleteSuggestion: Identifiable {
 enum MentionAutocompleteSuggestionFactory {
     private static let resultLimit = 10
 
-    private enum MemberMatchRank: Int {
+    private enum MemberMatchRank: Int, Comparable {
         case none = 0
         case fuzzy = 1
-        case strong = 2
+        case substring = 2
+        case wordPrefix = 3
+        case strong = 4
+        case exact = 5
+
+        static func < (lhs: MemberMatchRank, rhs: MemberMatchRank) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
     }
 
     private struct RankedMember {
@@ -43,6 +50,7 @@ enum MentionAutocompleteSuggestionFactory {
         let username: String
         let displayName: String
         let globalDisplayName: String?
+        let guildNickname: String?
     }
 
     private struct MemberSearchCacheEntry {
@@ -387,35 +395,87 @@ enum MentionAutocompleteSuggestionFactory {
         normalizedQuery: String
     ) -> MemberMatchRank {
         guard !normalizedQuery.isEmpty else { return .strong }
-        if member.id.description == normalizedQuery { return .strong }
-        var hasFuzzyMatch = false
+        if member.id.description == normalizedQuery { return .exact }
+
+        let queryTerms = normalizedQuery.split(whereSeparator: \.isWhitespace).map(String.init)
+        var bestRank: MemberMatchRank = .none
+
         for candidate in normalizedCandidates(for: member) {
-            if candidate.hasPrefix(normalizedQuery) { return .strong }
-            if isOrderedSubsequence(normalizedQuery, of: candidate) {
-                hasFuzzyMatch = true
+            let rank = candidateMatchRank(candidate, normalizedQuery: normalizedQuery, queryTerms: queryTerms)
+            if rank > bestRank {
+                bestRank = rank
+            }
+            if bestRank == .exact { break }
+        }
+
+        return bestRank
+    }
+
+    private static func candidateMatchRank(
+        _ candidate: String,
+        normalizedQuery: String,
+        queryTerms: [String]
+    ) -> MemberMatchRank {
+        if candidate == normalizedQuery {
+            return .exact
+        }
+        if candidate.hasPrefix(normalizedQuery) {
+            return .strong
+        }
+        if candidate.contains(" \(normalizedQuery)")
+            || candidate.contains("-\(normalizedQuery)")
+            || candidate.contains("_\(normalizedQuery)")
+            || candidate.contains(".\(normalizedQuery)")
+        {
+            return .wordPrefix
+        }
+        if queryTerms.count > 1 {
+            let allTermsWordPrefix = queryTerms.allSatisfy { term in
+                candidate.hasPrefix(term)
+                    || candidate.contains(" \(term)")
+                    || candidate.contains("-\(term)")
+                    || candidate.contains("_\(term)")
+                    || candidate.contains(".\(term)")
+            }
+            if allTermsWordPrefix {
+                return .wordPrefix
+            }
+            if queryTerms.allSatisfy({ candidate.contains($0) }) {
+                return .substring
             }
         }
-        return hasFuzzyMatch ? .fuzzy : .none
+        if candidate.contains(normalizedQuery) {
+            return .substring
+        }
+        if isOrderedSubsequence(normalizedQuery, of: candidate) {
+            return .fuzzy
+        }
+        return .none
     }
 
     private static func normalizedCandidates(for member: Member) -> [String] {
         let signature = MemberSearchSignature(
             username: member.user.username,
             displayName: member.user.displayName,
-            globalDisplayName: member.globalDisplayName
+            globalDisplayName: member.globalDisplayName,
+            guildNickname: member.guildNickname
         )
         if let cached = memberSearchCache[member.id], cached.signature == signature {
             return cached.candidates
         }
 
         var candidates: [String] = []
-        candidates.reserveCapacity(6)
-        for value in [signature.username, signature.displayName] + [signature.globalDisplayName].compactMap({ $0 }) {
+        candidates.reserveCapacity(8)
+        let values = [signature.username, signature.displayName]
+            + [signature.globalDisplayName, signature.guildNickname].compactMap { $0 }
+        for value in values {
             let lowered = value.lowercased()
-            candidates.append(lowered)
+            if !candidates.contains(lowered) {
+                candidates.append(lowered)
+            }
             guard !lowered.utf8.allSatisfy({ $0 < 0x80 }) else { continue }
             let folded = normalized(value)
-            if folded != lowered {
+            if folded != lowered, !candidates.contains(folded) {
                 candidates.append(folded)
             }
         }

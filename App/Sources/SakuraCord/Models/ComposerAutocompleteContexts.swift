@@ -69,7 +69,7 @@ struct ClosedColonAutocompleteContext {
     }
 }
 
-struct MentionAutocompleteContext {
+struct MentionAutocompleteContext: Equatable {
     // Discord's `#"…"` channel mention escapes quotes and backslashes with a
     // backslash. Both token expressions end at `\z`, not `$`, which also
     // matches before a trailing line break and would let a suggestion replace
@@ -80,8 +80,11 @@ struct MentionAutocompleteContext {
     private static let quotedSuffixExpression = RegularExpressionFactory.make(
         #"^(?:\\.|[^"“”\\\v])*["“”]"#
     )
-    private static let expression = RegularExpressionFactory.make(
-        #"(?:^|\s)([@#]([^\s@#]*))\z"#
+    private static let channelExpression = RegularExpressionFactory.make(
+        #"(?:^|\s)(#([^\s@#]*))\z"#
+    )
+    private static let memberExpression = RegularExpressionFactory.make(
+        #"(?:^|\s)(@(?!(?:time|game)\s)([^\s\v@#][^\v@#]{0,31}|))\z"#
     )
 
     enum Kind: Equatable { case member, channel }
@@ -120,10 +123,13 @@ struct MentionAutocompleteContext {
             kind = .channel
             query = prefix.substring(with: match.range(at: 2))
                 .replacingOccurrences(of: #"\\(.)"#, with: "$1", options: .regularExpression)
-        } else if let match = prefix.firstMatch(Self.expression) {
+        } else if let match = prefix.firstMatch(Self.channelExpression) {
             range = match.range(at: 1)
-            let token = prefix.substring(with: range)
-            kind = token.first == "@" ? .member : .channel
+            kind = .channel
+            query = prefix.substring(with: match.range(at: 2))
+        } else if let match = prefix.firstMatch(Self.memberExpression) {
+            range = match.range(at: 1)
+            kind = .member
             query = prefix.substring(with: match.range(at: 2))
         } else {
             return nil
@@ -142,7 +148,7 @@ struct KeywordMentionContext {
     private static let expressions = Dictionary(uniqueKeysWithValues: Keyword.allCases.map { keyword in
         let anyKeyword = Keyword.allCases.map(\.rawValue).joined(separator: "|")
         return (keyword, RegularExpressionFactory.make(
-            #"(?:^|\s)(@\#(keyword.rawValue) ((?:(?!(?<=\s)@(?:\#(anyKeyword)) )[^\v])*))\z"#
+            #"(?:^|\s)(@\#(keyword.rawValue) ((?:(?!(?<=\s)@(?:\#(anyKeyword)) )[^\\v])*))\z"#
         ))
     })
 

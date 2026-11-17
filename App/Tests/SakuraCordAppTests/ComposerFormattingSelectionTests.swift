@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import AppKit
+import SakuraCordModels
 import Testing
 
 @MainActor
@@ -92,4 +93,101 @@ func `channel mention autocomplete covers the whole quoted token`(
     let text = "check #\"Release\n Notes\" now"
     let caret = ("check #\"Release\n" as NSString).length
     #expect(MentionAutocompleteContext(text: text, selection: NSRange(location: caret, length: 0)) == nil)
+}
+
+@MainActor
+@Test(arguments: [
+    ("hello @Jane Doe", nil, "Jane Doe", "@Jane Doe"),
+    ("hello @Jane ", nil, "Jane ", "@Jane "),
+    ("hello @Jane", nil, "Jane", "@Jane"),
+    ("hello @", nil, "", "@"),
+    ("hello @Jane Doe today", 15, "Jane Doe", "@Jane Doe"),
+    ("@Doctor Who", nil, "Doctor Who", "@Doctor Who"),
+    ("ask @Alice In Wonderland", nil, "Alice In Wonderland", "@Alice In Wonderland"),
+] as [(String, Int?, String, String)])
+func `member mention autocomplete covers display names with spaces`(
+    _ text: String, _ cursor: Int?, _ query: String, _ token: String
+) throws {
+    let context = try #require(MentionAutocompleteContext(
+        text: text, selection: cursor.map { NSRange(location: $0, length: 0) }
+    ))
+    #expect(context.kind == .member)
+    #expect(context.query == query)
+    #expect((text as NSString).substring(with: context.range) == token)
+}
+
+@MainActor
+@Test func `member mention autocomplete rejects space right after at and keywords with trailing space`() {
+    #expect(MentionAutocompleteContext(text: "hello @ ", selection: nil) == nil)
+    #expect(MentionAutocompleteContext(text: "email@example.com", selection: nil) == nil)
+    #expect(MentionAutocompleteContext(text: "meet @time ", selection: nil) == nil)
+    #expect(MentionAutocompleteContext(text: "play @game ", selection: nil) == nil)
+}
+
+@MainActor
+@Test func `member mention suggestions match by profile name, nickname and word boundary`() {
+    let member1 = Member(
+        user: User(id: UserID(rawValue: 101), username: "janedoe99", displayName: "Jane Doe"),
+        roleName: "Member",
+        status: .online,
+        globalDisplayName: "Jane Doe"
+    )
+    let member2 = Member(
+        user: User(id: UserID(rawValue: 102), username: "superstar", displayName: "Johnny"),
+        roleName: "Member",
+        status: .online,
+        globalDisplayName: "Johnathan Smith",
+        guildNickname: "Johnny"
+    )
+    let members = [member1, member2]
+
+    // Search by full profile name with space
+    let fullProfileMatches = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "Jane Doe",
+        recentMessages: [],
+        localMembers: members,
+        remoteMembers: [],
+        roles: []
+    )
+    #expect(fullProfileMatches.first?.id == "user:101")
+
+    // Search by word in profile name
+    let wordMatches = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "Doe",
+        recentMessages: [],
+        localMembers: members,
+        remoteMembers: [],
+        roles: []
+    )
+    #expect(wordMatches.first?.id == "user:101")
+
+    // Search by global profile name when nickname is set
+    let globalNameMatches = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "Smith",
+        recentMessages: [],
+        localMembers: members,
+        remoteMembers: [],
+        roles: []
+    )
+    #expect(globalNameMatches.first?.id == "user:102")
+
+    // Search by guild nickname
+    let nicknameMatches = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "Johnny",
+        recentMessages: [],
+        localMembers: members,
+        remoteMembers: [],
+        roles: []
+    )
+    #expect(nicknameMatches.first?.id == "user:102")
+
+    // Search by username
+    let usernameMatches = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "superstar",
+        recentMessages: [],
+        localMembers: members,
+        remoteMembers: [],
+        roles: []
+    )
+    #expect(usernameMatches.first?.id == "user:102")
 }
