@@ -137,7 +137,7 @@ func `member mention autocomplete covers display names with spaces`(
         roleName: "Member",
         status: .online,
         globalDisplayName: "Johnathan Smith",
-        guildNickname: "Johnny"
+        guildNickname: "Guild Alias"
     )
     let members = [member1, member2]
 
@@ -173,7 +173,7 @@ func `member mention autocomplete covers display names with spaces`(
 
     // Search by guild nickname
     let nicknameMatches = MentionAutocompleteSuggestionFactory.memberSuggestions(
-        query: "Johnny",
+        query: "Guild Alias",
         recentMessages: [],
         localMembers: members,
         remoteMembers: [],
@@ -190,4 +190,51 @@ func `member mention autocomplete covers display names with spaces`(
         roles: []
     )
     #expect(usernameMatches.first?.id == "user:102")
+}
+
+@MainActor
+@Test func `keyword mention context matches queries and closes on newline`() {
+    let gameContext = KeywordMentionContext(.game, text: "@game Civilization", selection: nil)
+    #expect(gameContext != nil)
+    #expect(gameContext?.query == "Civilization")
+
+    let timeContext = KeywordMentionContext(.time, text: "@time November", selection: nil)
+    #expect(timeContext != nil)
+    #expect(timeContext?.query == "November")
+
+    #expect(KeywordMentionContext(.game, text: "@game Civilization\n", selection: nil) == nil)
+    #expect(KeywordMentionContext(.time, text: "@time November\n", selection: nil) == nil)
+}
+
+@MainActor
+@Test func `member suggestions preserve local candidates matching query words when remote members are present`() {
+    let local1 = Member(
+        user: User(id: UserID(rawValue: 201), username: "local_user", displayName: "Local Alice"),
+        roleName: "Member",
+        status: .online,
+        globalDisplayName: "Alice Wonder"
+    )
+    let local2 = Member(
+        user: User(id: UserID(rawValue: 202), username: "unrelated", displayName: "Bob"),
+        roleName: "Member",
+        status: .online
+    )
+    let remote1 = Member(
+        user: User(id: UserID(rawValue: 301), username: "remote_alice", displayName: "Remote Alice"),
+        roleName: "Member",
+        status: .online
+    )
+
+    let suggestions = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "Alice",
+        recentMessages: [],
+        localMembers: [local1, local2],
+        remoteMembers: [remote1],
+        roles: []
+    )
+
+    let suggestedIDs = suggestions.map(\.id)
+    #expect(suggestedIDs.contains("user:201"))
+    #expect(suggestedIDs.contains("user:301"))
+    #expect(!suggestedIDs.contains("user:202"))
 }

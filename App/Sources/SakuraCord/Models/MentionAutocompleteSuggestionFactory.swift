@@ -86,9 +86,16 @@ enum MentionAutocompleteSuggestionFactory {
         // set. Keep its order and do not re-introduce fuzzy local members that
         // Discord omitted. Before it arrives, the local GuildMemberStore still
         // makes the menu responsive immediately.
-        let memberStore = normalizedQuery.isEmpty || remoteMembers.isEmpty
-            ? mergingMemberStore(localMembers, updates: remoteMembers)
-            : remoteMembers
+        let memberStore: [Member]
+        if normalizedQuery.isEmpty || remoteMembers.isEmpty {
+            memberStore = mergingMemberStore(localMembers, updates: remoteMembers)
+        } else {
+            let matchingLocals = localMembers.filter { member in
+                let rank = memberMatchRank(member, normalizedQuery: normalizedQuery)
+                return rank >= .wordPrefix
+            }
+            memberStore = mergingMemberStore(matchingLocals, updates: remoteMembers)
+        }
 
         let orderedMembers: [Member]
         if normalizedQuery.isEmpty {
