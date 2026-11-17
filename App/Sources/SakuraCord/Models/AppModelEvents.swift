@@ -300,8 +300,12 @@ extension AppModel {
                 preparedProfileEditingSnapshot = nil
                 profileInvalidationRevision = UUID()
             }
-        case let .guildMemberRemoved(guildID, userID):
-            consumeGuildMemberRemoved(guildID: guildID, userID: userID)
+        case let .guildMembershipChanged(guildID, userID, isMember):
+            if isMember {
+                removedMemberIDsByGuildID[guildID]?.remove(userID)
+            } else {
+                removedMemberIDsByGuildID[guildID, default: []].insert(userID)
+            }
         case let .profileChanged(userID, scope, profile):
             consumeProfileChanged(userID: userID, scope: scope, value: profile)
         case let .profileCustomStatusChanged(userID, status):

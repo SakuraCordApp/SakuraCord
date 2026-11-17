@@ -17,7 +17,7 @@ struct ProfileEditorExpandedPreview: View {
     var body: some View {
         ProfileExpandedSurface(profile: profile, allowsTheme: editor.isNitro, profileContent: {
             MemberProfilePopover(member: Member(user: profile.user, roleName: "", status: model.currentStatus,
-                                                joinedAt: editor.scope.guildID.flatMap { model.profileMember(profile.id, in: $0)?.joinedAt }),
+                                                joinedAt: editor.scope.guildID.flatMap { model.profileMember(profile.id, in: $0).map(\.joinedAt) ?? profile.guildJoinedAt }),
                                  isCurrentUser: true, profile: profile,
                                  isLoading: false, errorMessage: nil, layout: .expanded, maximumPopoverHeight: InterfaceScale.metric(720), showsRoles: false,
                                  guild: editor.scope.guildID.flatMap { model.serverRailGuildsByID[$0] },

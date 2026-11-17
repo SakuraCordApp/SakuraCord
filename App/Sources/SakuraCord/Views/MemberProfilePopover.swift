@@ -340,7 +340,7 @@ struct MemberProfilePopover<Footer: View>: View {
                             .padding(.horizontal, InterfaceScale.metric(16))
                     }
                     ProfileMembershipSection(createdAt: profile.id.createdAt, guild: guild, guildJoinedAt: member.joinedAt)
-                    if showsRoles, member.joinedAt != nil, !profile.roles.isEmpty {
+                    if showsRoles, !profile.roles.isEmpty {
                         ProfileRolesSection(roles: profile.roles, keepsExpanded: layout == .expanded)
                             .id(profile.id)
                     }

@@ -61,6 +61,6 @@ extension DiscordRESTProvider {
         if userID == currentUser?.id {
             continuation?.yield(.currentUserRolesChanged(guildID: guildID, roleIDs: []))
         }
-        continuation?.yield(.guildMemberRemoved(guildID: guildID, userID: userID))
+        continuation?.yield(.guildMembershipChanged(guildID: guildID, userID: userID, isMember: false))
     }
 }
