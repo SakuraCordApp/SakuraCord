@@ -24,8 +24,15 @@ extension RealisticWorld {
         // Huge servers report their real size but hold only the members the account meets.
         let held = min(profile.memberCount, 20 + Int(rng.next() % 40))
         let members = [me] + people.shuffledPrefix(max(1, held - 1), using: &rng)
-        var guild = Guild(id: guildID, name: DemoText.communityName(kind, &rng),
-                          ownerID: members.count > 1 ? members[1] : me)
+        // Each server gets a name of its own, as people tell their servers apart by name.
+        var name = DemoText.communityName(kind, &rng)
+        var attempt = 1
+        while serverNames.contains(name) {
+            attempt += 1
+            name = attempt > 8 ? "\(DemoText.communityName(kind, &rng)) \(attempt)" : DemoText.communityName(kind, &rng)
+        }
+        serverNames.insert(name)
+        var guild = Guild(id: guildID, name: name, ownerID: members.count > 1 ? members[1] : me)
         // About one server in thirty has no icon and shows its initials, as in captured READYs.
         if !rng.chance(0.03) {
             let icon = bench.builder.hash(seed: rng.next())
@@ -142,6 +149,7 @@ extension RealisticWorld {
             return DemoText.numbered(names, used[key, default: 0])
         }
         var restricted = profile.restrictedChannels
+        var hasPrivateChannel = false
         for (position, layout) in profile.categories.enumerated() {
             var parentID: Snowflake?
             if position > 0 {
@@ -167,11 +175,11 @@ extension RealisticWorld {
                     channel.position = index
                     channel.parentID = parentID
                     if restricted > 0 {
-                        // Announcements are read-only for @everyone; other restricted channels only stop @everyone pings, so the account can still use them.
                         restricted -= 1
-                        channel.overwrites = [type == .announcement
-                            ? PermissionOverwrite(id: draft.guildID, kind: .role, allow: [], deny: .sendMessages)
-                            : PermissionOverwrite(id: draft.guildID, kind: .role, allow: [], deny: .mentionEveryone)]
+                        // Never one of the first text channels: #general and its neighbours stay open to all.
+                        let hidden = type == .text && draft.textChannels >= 2 && !hasPrivateChannel && profile.restrictedChannels >= 3
+                        hasPrivateChannel = hasPrivateChannel || hidden
+                        channel.overwrites = restrictedOverwrites(type, hidden: hidden, draft)
                     }
                     if type == .forum || type == .media {
                         for tag in ["question", "solved", "discussion", "showcase"] {
@@ -179,10 +187,12 @@ extension RealisticWorld {
                         }
                     }
                     await world.addChannel(channel)
-                    if type == .text {
+                    // The hidden room stays quiet: the people who chat everywhere else can't see it.
+                    let hidden = channel.overwrites.contains { $0.deny.contains(.viewChannel) }
+                    if type == .text, !hidden {
                         draft.messageChannels.insert(channel.id, at: draft.textChannels)
                         draft.textChannels += 1
-                    } else if type.holdsMessages, type != .stage {
+                    } else if type.holdsMessages, type != .stage, type != .text {
                         draft.messageChannels.append(channel.id)
                     }
                     if type == .voice { draft.voiceChannels.append(channel.id) }
@@ -191,6 +201,17 @@ extension RealisticWorld {
                 }
             }
         }
+    }
+
+    /// Announcements are read-only for @everyone and other restricted channels only stop @everyone pings,
+    /// so the account can still use them. A server with several restricted channels also has one hidden
+    /// room for the owner, a few regulars and the account, whose member list is its own.
+    private func restrictedOverwrites(_ type: ChannelType, hidden: Bool, _ draft: ServerDraft) -> [PermissionOverwrite] {
+        if hidden {
+            return [PermissionOverwrite(id: draft.guildID, kind: .role, allow: [], deny: .viewChannel)]
+                + Set(draft.members.prefix(6)).sorted().map { PermissionOverwrite(id: $0, kind: .member, allow: .viewChannel, deny: []) }
+        }
+        return [PermissionOverwrite(id: draft.guildID, kind: .role, allow: [], deny: type == .announcement ? .sendMessages : .mentionEveryone)]
     }
 
     /// Each channel gets its latest message now (so READY carries real last-message IDs

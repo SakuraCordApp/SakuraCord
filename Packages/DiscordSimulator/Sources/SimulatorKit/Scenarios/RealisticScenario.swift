@@ -120,6 +120,7 @@ struct RealisticWorld {
     let me: Snowflake
     /// Generated servers in rail order.
     var servers: [Snowflake] = []
+    var serverNames: Set<String> = []
 
     init(world: World, profile: AccountProfile) async {
         self.world = world

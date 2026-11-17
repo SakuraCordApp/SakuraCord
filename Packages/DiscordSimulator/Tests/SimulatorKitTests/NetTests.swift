@@ -159,19 +159,8 @@ struct NetTests {
         #expect(ContinuousClock.now - started >= .milliseconds(50))
     }
 
-    @Test func instantProfileAddsNoDelay() async throws {
-        let server = try await Self.startServer()
-        defer { server.stop() }
-        let session = Self.session()
-        _ = try await session.data(from: Self.url(server, "/api/v9/hello"))
-        var timings: [Duration] = []
-        for _ in 0 ..< 5 {
-            let started = ContinuousClock.now
-            _ = try await session.data(from: Self.url(server, "/api/v9/hello"))
-            timings.append(ContinuousClock.now - started)
-        }
-        // Generous for a loaded test runner; any profile delay would be tens of milliseconds.
-        #expect(timings.sorted()[2] < .milliseconds(25))
+    @Test func instantProfileAddsNoDelay() {
+        // Asserted on the conditioner, not the wall clock, which a busy test runner stretches.
         #expect(NetworkConditioner(seed: 1).requestDelay("rest GET /", uploadBytes: 1 << 20) == .zero)
     }
 

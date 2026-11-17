@@ -46,6 +46,16 @@ run_checks() {
     echo "Potential credential material found." >&2
     exit 1
   fi
+
+  # The simulator is built from captures, so it must never reuse the app's
+  # protocol code and repeat its mistakes.
+  if grep -REn --include='*.swift' \
+    '^[[:space:]]*(@testable[[:space:]]+)?import[[:space:]]+(SakuraCord[A-Za-z]*|DiscordProtocol|MessageRendering|DaveKit|MediaPipeline)\b' \
+    "$ROOT_DIR/Packages/DiscordSimulator" --exclude-dir=.build \
+    || grep -En '\.package\(path:' "$ROOT_DIR/Packages/DiscordSimulator/Package.swift"; then
+    echo "The Discord simulator must not depend on app packages." >&2
+    exit 1
+  fi
 }
 
 case "$MODE" in

@@ -26,12 +26,15 @@ extension World {
             if !members.isEmpty { groups.append(Group(id: role.id.description, members: members, count: members.count)) }
         }
         let online = viewers.filter { isOnline($0.userID) && !placed.contains($0.userID) }.sorted { name($0) < name($1) }
-        // A server too big to hold every member lists only who is online, as Discord does for large
-        // servers, and counts everyone it reports though only the rows asked for exist.
-        let reported = guild.approximateMemberCount != nil
+        let listID = memberListID(channel, in: guild)
+        // The everyone list of a server too big to hold every member counts all the members it
+        // reports, though only the rows asked for exist; a channel's own list groups who can see it.
+        let reported = guild.approximateMemberCount != nil && listID == "everyone"
         let staff = groups.reduce(0) { $0 + $1.count }
-        groups.append(Group(id: "online", members: online, count: reported ? max(online.count, onlineCount(guild) - staff) : online.count))
-        if !reported {
+        let othersOnline = reported ? max(online.count, onlineCount(guild) - staff) : online.count
+        // Discord lists only groups that have members.
+        if othersOnline > 0 { groups.append(Group(id: "online", members: online, count: othersOnline)) }
+        if guild.listsOfflineMembers {
             let offline = viewers.filter { !isOnline($0.userID) }.sorted { name($0) < name($1) }
             if !offline.isEmpty { groups.append(Group(id: "offline", members: offline, count: offline.count)) }
         }
@@ -49,11 +52,11 @@ extension World {
             let slice = items.indices.contains(range.lowerBound) ? Array(items[range.lowerBound ... min(range.upperBound, items.count - 1)]) : []
             return .object(JSONObject([("op", "SYNC"), ("range", .array([.int(range.lowerBound), .int(range.upperBound)])), ("items", .array(slice))]))
         }
-        let listID = memberListID(channel, in: guild)
         return .object(JSONObject([
             ("ops", .array(ops)),
-            ("online_count", .int(reported ? onlineCount(guild) : viewers.count { isOnline($0.userID) })),
-            ("member_count", .int(reported ? guild.memberCount : viewers.count)),
+            // Both counts are the whole server's, even for a private channel's list (as captured).
+            ("online_count", .int(onlineCount(guild))),
+            ("member_count", .int(guild.memberCount)),
             ("id", .string(listID)), ("guild_id", guildID.json),
             ("groups", .array(groups.map { group in .object(JSONObject([("id", .string(group.id)), ("count", .int(group.count))])) })),
         ]))
@@ -127,6 +130,15 @@ extension World {
         }
         return .object(JSONObject([("threads", .object(threads))]))
     }
+}
+
+extension Guild {
+    /// Discord's server decides this, so the client has no threshold to copy. Discord support-forum
+    /// posts say offline members are hidden "once a server has more than 1,000 members", in every list,
+    /// private channels included. Captures agree: a 784-member server lists offline members, a
+    /// 1,463-member one doesn't (not even in a small private channel), and neither does a small private
+    /// channel in a 500k server.
+    var listsOfflineMembers: Bool { memberCount <= 1_000 }
 }
 
 private extension UInt32 {

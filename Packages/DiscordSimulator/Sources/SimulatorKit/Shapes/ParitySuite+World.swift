@@ -42,14 +42,9 @@ extension ParityRun {
         }
 
         // Scrolling the member list and searching members make people on demand.
-        try await probe.send(.object(JSONObject([("op", 37), ("d", .object(JSONObject([("subscriptions", .object(JSONObject([
-            (guild.id.description, .object(JSONObject([
-                ("typing", true), ("threads", true), ("activities", true), ("member_updates", true),
-                ("channels", .object(JSONObject([(channel.description, [[0, 99], [100, 199]])]))),
-            ]))),
-        ])))])))])))
-        for frame in try await probe.waitFor("GUILD_MEMBER_LIST_UPDATE") where frame.op == 0 { checkFrame(frame) }
-        try await checkReadOnlyListID(probe)
+        let everyone = try await memberList(probe, guild: guild.id, channel: channel, ranges: [[0, 99], [100, 199]])
+        expectList(everyone, "huge server's everyone list", everyone: true, offline: false)
+        try await checkListRules(probe)
         try await probe.send(.object(JSONObject([("op", 8), ("d", .object(JSONObject([
             ("guild_id", .array([guild.id.json])), ("query", "a"), ("limit", 10), ("presences", true),
         ])))])))
@@ -61,21 +56,74 @@ extension ParityRun {
         for frame in await probe.drain(settle: .seconds(2)) where frame.op == 0 { checkFrame(frame) }
     }
 
-    /// A channel whose @everyone overwrite only stops sending is still everyone's list: the official
-    /// client names it `everyone` and ignores updates for any other ID.
-    private mutating func checkReadOnlyListID(_ probe: GatewayProbe) async throws {
-        let channels = await simulator.world.channels.values.sorted { $0.id < $1.id }
-        guard let channel = channels.first(where: { channel in
+    /// Discord's list rules: a channel whose @everyone overwrite only stops sending is still everyone's
+    /// list (the official client ignores updates for any other ID); only servers of up to 1,000 members
+    /// show an offline group, so a hidden room in a huge server has none while a small server's list does;
+    /// every list carries the server's member count; and only groups with members are listed.
+    private mutating func checkListRules(_ probe: GatewayProbe) async throws {
+        let world = simulator.world
+        let channels = await world.channels.values.sorted { $0.id < $1.id }
+        guard let readOnly = channels.first(where: { channel in
             !channel.overwrites.isEmpty && channel.overwrites.allSatisfy { $0.id == channel.guildID && $0.deny == .sendMessages }
-        }), let guildID = channel.guildID else { throw WorldError.invalidBody("scenario has no read-only channel") }
+        }), let readOnlyGuild = readOnly.guildID else { throw WorldError.invalidBody("scenario has no read-only channel") }
+        expectList(try await memberList(probe, guild: readOnlyGuild, channel: readOnly.id), "read-only channel", everyone: true, offline: nil)
+
+        var hiddenRoom: (guild: Guild, viewers: Int)?
+        var hiddenChannel = Snowflake(0)
+        for channel in channels where hiddenRoom == nil && channel.overwrites.contains(where: { $0.deny.contains(.viewChannel) }) {
+            guard let guildID = channel.guildID, let guild = await world.guilds[guildID], guild.approximateMemberCount != nil else { continue }
+            var viewers = 0, someoneOffline = false
+            for id in guild.members.keys where await world.canView(id, channel) {
+                viewers += 1
+                if await !world.isOnline(id) { someoneOffline = true }
+            }
+            if someoneOffline { (hiddenRoom, hiddenChannel) = ((guild, viewers), channel.id) }
+        }
+        guard let hiddenRoom else { throw WorldError.invalidBody("scenario has no hidden room in a huge server") }
+        let hidden = try await memberList(probe, guild: hiddenRoom.guild.id, channel: hiddenChannel)
+        expectList(hidden, "hidden room in a huge server", everyone: false, offline: false)
+        let counts = (hidden["groups"]?.arrayValue ?? []).compactMap { $0["count"]?.intValue }
+        if hidden["member_count"]?.intValue != Int64(hiddenRoom.guild.memberCount) || counts.contains(0) || counts.reduce(0, +) > hiddenRoom.viewers {
+            report.sequenceFailures.append("hidden room in a huge server: member_count \(hidden["member_count"]?.intValue ?? -1) for a server of "
+                + "\(hiddenRoom.guild.memberCount), group counts \(counts) for \(hiddenRoom.viewers) members who can see it")
+        }
+
+        var smallList: (guild: Snowflake, channel: Snowflake)?
+        let me = await world.primaryUserID
+        for guild in await world.guilds.values.sorted(by: { $0.id < $1.id }) where smallList == nil && guild.listsOfflineMembers
+            && guild.members.keys.contains(where: { $0 == me }) {
+            for id in guild.members.keys where await !world.isOnline(id) {
+                let channel = channels.first { $0.guildID == guild.id && $0.type == .text && $0.overwrites.isEmpty }
+                smallList = channel.map { (guild.id, $0.id) }
+            }
+        }
+        guard let smallList else { throw WorldError.invalidBody("scenario has no small server with someone offline") }
+        expectList(try await memberList(probe, guild: smallList.guild, channel: smallList.channel), "small server's list", everyone: true, offline: true)
+    }
+
+    /// Subscribes to a channel's member list (op 37) and returns the GUILD_MEMBER_LIST_UPDATE it gets.
+    private mutating func memberList(_ probe: GatewayProbe, guild: Snowflake, channel: Snowflake, ranges: JSON = [[0, 99]]) async throws -> JSON {
         try await probe.send(.object(JSONObject([("op", 37), ("d", .object(JSONObject([("subscriptions", .object(JSONObject([
-            (guildID.description, .object(JSONObject([("channels", .object(JSONObject([(channel.id.description, [[0, 99]])])))]))),
+            (guild.description, .object(JSONObject([
+                ("typing", true), ("threads", true), ("activities", true), ("member_updates", true),
+                ("channels", .object(JSONObject([(channel.description, ranges)]))),
+            ]))),
         ])))])))])))
-        report.checked.append("LIST ID read-only channel")
-        for frame in try await probe.waitFor("GUILD_MEMBER_LIST_UPDATE") where frame.name == "GUILD_MEMBER_LIST_UPDATE" {
+        var update = JSON.null
+        for frame in try await probe.waitFor("GUILD_MEMBER_LIST_UPDATE") where frame.op == 0 {
             checkFrame(frame)
-            let id = frame.payload["d"]?["id"]?.stringValue ?? "none"
-            if id != "everyone" { report.sequenceFailures.append("member list of read-only channel \(channel.id) is \(id), expected everyone") }
+            if frame.name == "GUILD_MEMBER_LIST_UPDATE" { update = frame.payload["d"] ?? .null }
+        }
+        return update
+    }
+
+    /// `offline` nil skips the offline-group check.
+    private mutating func expectList(_ update: JSON, _ subject: String, everyone: Bool, offline: Bool?) {
+        report.checked.append("LIST \(subject)")
+        let id = update["id"]?.stringValue ?? "none"
+        let hasOffline = update["groups"]?.arrayValue?.contains { $0["id"]?.stringValue == "offline" } == true
+        if (id == "everyone") != everyone || offline.map({ $0 != hasOffline }) == true {
+            report.sequenceFailures.append("\(subject): list \(id) \(hasOffline ? "with" : "without") an offline group")
         }
     }
 
