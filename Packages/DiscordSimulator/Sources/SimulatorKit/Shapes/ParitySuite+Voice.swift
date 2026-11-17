@@ -35,6 +35,8 @@ extension ParityRun {
         // Leaving voice while streaming, as captured: the leave, the channel's clean-up, STREAM_DELETE; then op 19 gets another.
         await flowStart()
         try await probe.send(Self.goLive(guild: target.guild, channel: voiceChannel.id))
+        // Wait for the stream to start, so a slow runner doesn't count its events as the leave's.
+        _ = try await probe.waitFor("STREAM_SERVER_UPDATE")
         await flowStart()
         try await probe.send(Self.voiceStateUpdate(guild: target.guild, channel: nil))
         await voiceFlow("voice-leave-streaming",
