@@ -940,8 +940,9 @@ extension NativeTimelineCanvasView {
         if rowFrame.height > Self.wholeRowBitmapMaximumHeight {
             // Tiles only meet cleanly on whole backing pixels. Off the grid,
             // each join is half-covered by both tiles and shows as a line.
+            let scale = rowBitmapScale
             var rowFrame = rowFrame
-            rowFrame.origin.y = bounds.minY + ((rowFrame.minY - bounds.minY) * rowBitmapScale).rounded() / rowBitmapScale
+            rowFrame.origin.y = bounds.minY + ((rowFrame.minY - bounds.minY) * scale).rounded() / scale
             let exposed = rowFrame.intersection(dirtyRect)
             guard !exposed.isEmpty else { return }
             let firstTile = max(0, Int(floor((exposed.minY - rowFrame.minY) / Self.bitmapTileHeight)))
