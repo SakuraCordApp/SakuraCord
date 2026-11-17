@@ -38,7 +38,7 @@ struct ProfileMembershipSection: View {
 
     private var discordBadge: some View {
         HStack(spacing: InterfaceScale.metric(6)) {
-            Image("discord", bundle: .module)
+            Image("discord.fill", bundle: .module)
                 .resizable()
                 .renderingMode(.template)
                 .scaledToFit()
