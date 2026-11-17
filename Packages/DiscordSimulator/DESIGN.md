@@ -11,7 +11,7 @@ never from SakuraCord's protocol code, so the app's mistakes aren't mirrored.
 ## Running it
 
 ```sh
-script/simulator.sh start [--scenario demo] [--seed 1] [--network standard|instant|lan|broadband|mobile] [--epoch ISO8601] [--freeze-clock]
+script/simulator.sh start [--scenario demo] [--seed 1] [--network realistic|standard|instant|lan|broadband|mobile] [--epoch ISO8601] [--freeze-clock]
 script/run.sh --simulator [SCENARIO]      # starts the simulator if needed, launches the debug app signed in
 script/run.sh --simulator-sign-in         # launches signed out; sign in with the email and password `world` prints
 script/simulator.sh ctl world             # accounts, guilds, channels
@@ -125,10 +125,15 @@ runs that must be identical on any day.
 | `captcha <route-substring> [count]` | Discord's captcha-required 400 on that route until retried with hCaptcha's test token |
 | `log [LEVEL]` / `routes` / `world` | Loud failures (unknown routes and assets), implemented routes, world summary |
 
-The default `standard` profile adds a fixed 35 ms per request and per Gateway
-message plus broadband transfer time, with no jitter, so every run, benchmarks
-included, sees the same timings. `instant` turns delay off; `lan`, `broadband`
-and `mobile` add jitter.
+Demo accounts default to `realistic`: each host's delay as a signed-in session
+saw Discord from a home connection (REST about 275 ms, almost all of it
+Discord's servers; CDN about 33 ms), drawn per request from a log-normal curve
+so delays vary and sometimes run long. The Gateway, voice, upload and Activity
+delays and the bandwidth are estimates. Benchmark scenarios default to
+`standard`, a fixed 35 ms per request and per Gateway message plus broadband
+transfer time with no jitter, so every run sees the same timings. `instant`
+turns delay off; `lan`, `broadband` and `mobile` add jitter. Both defaults are
+seeded, so the same seed and requests give the same delays.
 
 `GET /control/network` lists every injected delay; two runs with the same seed
 and requests list the same delays.

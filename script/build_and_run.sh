@@ -392,6 +392,7 @@ case "$MODE" in
     sakuracord_reset_simulator_account
     SIGNS_IN=0 launch_on_simulator --scenario demo
     ;;
-  --benchmark-*) launch_on_simulator "${BENCHMARK_SIMULATOR_ARGS[@]}" -- "${BENCHMARK_APP_ARGS[@]}" ;;
+  # A fixed delay, so runs compare, whichever scenario the benchmark uses.
+  --benchmark-*) launch_on_simulator --network standard "${BENCHMARK_SIMULATOR_ARGS[@]}" -- "${BENCHMARK_APP_ARGS[@]}" ;;
   --media-viewer-benchmark) sakuracord_launch_scoped_app --env SAKURACORD_MEDIA_VIEWER_BENCHMARK=1 ;;
 esac

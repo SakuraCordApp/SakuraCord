@@ -1,6 +1,36 @@
 import Foundation
 import Synchronization
 
+/// The delays every host adds: one profile everywhere, or Discord as measured.
+public enum SimulatedNetwork: Sendable, Equatable {
+    case uniform(NetworkConditioner.Profile)
+    /// Each host's delay as a signed-in session saw Discord from a home connection (Nov 2026),
+    /// drawn per request from a log-normal curve so delays vary and sometimes run long.
+    case realistic
+
+    public static func named(_ name: String) -> SimulatedNetwork? {
+        name.lowercased() == "realistic" ? .realistic : NetworkConditioner.Profile.named(name).map(SimulatedNetwork.uniform)
+    }
+
+    func profile(for port: DiscordSimulator.Port) -> NetworkConditioner.Profile {
+        guard case let .uniform(profile) = self else { return Self.measured(port) }
+        return profile
+    }
+
+    /// Measured: REST answers took a median 275 ms (240–780 ms), almost all of it Discord's
+    /// servers; CDN images about 33 ms (30–90 ms). Not measured, so estimated: the Gateway and
+    /// voice hosts at about half a 15 ms round trip, uploads and Activities like the CDN, and the bandwidth.
+    private static func measured(_ port: DiscordSimulator.Port) -> NetworkConditioner.Profile {
+        let (median, spread): (Double, Double) = switch port {
+        case .api: (275, 0.3)
+        case .cdn, .media, .upload, .activity: (33, 0.3)
+        case .gateway, .voice, .voiceMedia, .control: (10, 0.5)
+        }
+        return NetworkConditioner.Profile(latencyMilliseconds: median, jitterMilliseconds: 0, latencySpread: spread,
+                                          downloadBytesPerSecond: 12_500_000, uploadBytesPerSecond: 2_500_000)
+    }
+}
+
 /// Adds reproducible latency and bandwidth limits so the app sees a realistic
 /// network. Every connection draws from its own seeded stream, so the same
 /// seed and request order give the same delays.
@@ -8,24 +38,27 @@ public final class NetworkConditioner: Sendable {
     public struct Profile: Sendable, Equatable, Codable {
         public var latencyMilliseconds: Double
         public var jitterMilliseconds: Double
+        /// Spread of a log-normal curve around `latencyMilliseconds` (its median); 0 for a fixed delay.
+        public var latencySpread: Double
         public var downloadBytesPerSecond: Double?
         public var uploadBytesPerSecond: Double?
 
         public init(
             latencyMilliseconds: Double,
             jitterMilliseconds: Double,
+            latencySpread: Double = 0,
             downloadBytesPerSecond: Double? = nil,
             uploadBytesPerSecond: Double? = nil
         ) {
             self.latencyMilliseconds = latencyMilliseconds
             self.jitterMilliseconds = jitterMilliseconds
+            self.latencySpread = latencySpread
             self.downloadBytesPerSecond = downloadBytesPerSecond
             self.uploadBytesPerSecond = uploadBytesPerSecond
         }
 
         public static let instant = Profile(latencyMilliseconds: 0, jitterMilliseconds: 0)
-        /// The default: a home connection with a fixed delay and no jitter, so
-        /// every run, benchmarks included, sees the same timings.
+        /// The benchmarks' network: a fixed delay with no jitter, so every run sees the same timings.
         public static let standard = Profile(
             latencyMilliseconds: 35, jitterMilliseconds: 0,
             downloadBytesPerSecond: 12_500_000, uploadBytesPerSecond: 2_500_000
@@ -146,11 +179,13 @@ final class ConnectionShaper: Sendable {
         }
     }
 
-    /// Always consumes one draw, so a connection's sequence stays aligned even
+    /// Always consumes three draws, so a connection's sequence stays aligned even
     /// when the profile changes mid-run.
     static func latency(_ random: inout SeededRandom, _ profile: NetworkConditioner.Profile) -> Duration {
         let jitter = (random.unit() * 2 - 1) * profile.jitterMilliseconds
-        return .milliseconds(max(0, profile.latencyMilliseconds + jitter))
+        // Box–Muller: a standard normal draw, for the log-normal spread.
+        let normal = (-2 * log(1 - random.unit())).squareRoot() * cos(2 * .pi * random.unit())
+        return .milliseconds(max(0, profile.latencyMilliseconds * exp(profile.latencySpread * normal) + jitter))
     }
 
     static func transfer(_ bytes: Int, at rate: Double?) -> Duration {

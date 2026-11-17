@@ -65,6 +65,8 @@ public enum ParitySuite {
         var configuration = DiscordSimulator.Configuration()
         configuration.seed = seed
         configuration.enforcesRateLimits = false
+        // Parity checks shapes and order, not timing, so a short fixed delay keeps it quick.
+        configuration.network = .uniform(.standard)
         configuration.scenario = scenario
         configuration.parameters = parameters
         configuration.epoch = Date(timeIntervalSince1970: 1_794_778_200) // a Sunday, 21:30 UTC

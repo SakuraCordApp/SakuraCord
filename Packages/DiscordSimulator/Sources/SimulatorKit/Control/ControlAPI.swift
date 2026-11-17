@@ -139,9 +139,10 @@ public final class ControlAPI: Sendable {
     private func simulationRoute(_ request: HTTPRequest, _ route: [String], _ body: JSON) async throws -> HTTPResponse? {
         switch (request.method, route.first ?? "", route.count) {
         case ("PUT", "network", _):
-            let profile = try networkProfile(body)
-            simulator.setNetworkProfile(profile)
-            return ok(["latency_ms": .double(profile.latencyMilliseconds), "jitter_ms": .double(profile.jitterMilliseconds)])
+            let network = try network(body)
+            simulator.setNetwork(network)
+            let api = network.profile(for: .api)
+            return ok(["latency_ms": .double(api.latencyMilliseconds), "jitter_ms": .double(api.jitterMilliseconds)])
         case ("POST", "faults", _):
             return try await injectFault(body)
         case ("DELETE", "faults", _):
@@ -239,17 +240,17 @@ public final class ControlAPI: Sendable {
         return try await world.sendMessage(draft, as: author, in: channel, checkPermissions: false)
     }
 
-    private func networkProfile(_ body: JSON) throws -> NetworkConditioner.Profile {
+    private func network(_ body: JSON) throws -> SimulatedNetwork {
         if let name = body["profile"]?.stringValue {
-            guard let profile = NetworkConditioner.Profile.named(name) else { throw WorldError.invalidBody("unknown profile \(name)") }
-            return profile
+            guard let network = SimulatedNetwork.named(name) else { throw WorldError.invalidBody("unknown profile \(name)") }
+            return network
         }
-        return NetworkConditioner.Profile(
+        return .uniform(NetworkConditioner.Profile(
             latencyMilliseconds: try body["latency_ms"].map(doubleValue) ?? 0,
             jitterMilliseconds: try body["jitter_ms"].map(doubleValue) ?? 0,
             downloadBytesPerSecond: try body["download_bytes_per_second"].map(doubleValue),
             uploadBytesPerSecond: try body["upload_bytes_per_second"].map(doubleValue)
-        )
+        ))
     }
 
     private func injectFault(_ body: JSON) async throws -> HTTPResponse {

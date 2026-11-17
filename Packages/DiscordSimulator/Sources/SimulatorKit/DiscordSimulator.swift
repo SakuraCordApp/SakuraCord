@@ -9,7 +9,9 @@ public final class DiscordSimulator: Sendable {
         public var seed: UInt64 = 1
         public var scenario = "demo"
         public var parameters: [String: String] = [:]
-        public var network: NetworkConditioner.Profile = .standard
+        /// Nil gives the scenario's network: fixed for benchmarks, so runs compare, and Discord's
+        /// measured variance for everything else.
+        public var network: SimulatedNetwork?
         public var freezeClock = false
         /// The world's "now"; nil means the most recent Sunday evening.
         public var epoch: Date?
@@ -69,9 +71,11 @@ public final class DiscordSimulator: Sendable {
         ProfileRoutes.register(into: &routes)
         RelationshipRoutes.register(into: &routes)
         ExpressionRoutes.register(into: &routes)
+        let network = configuration.network
+            ?? (BenchmarkScenarios.all.contains { $0.name == scenario.name } ? .uniform(.standard) : .realistic)
         var conditioners: [Port: NetworkConditioner] = [:]
         for port in Port.allCases where port != .control {
-            conditioners[port] = NetworkConditioner(seed: configuration.seed ^ UInt64(port.rawValue), profile: configuration.network)
+            conditioners[port] = NetworkConditioner(seed: configuration.seed ^ UInt64(port.rawValue), profile: network.profile(for: port))
         }
         let router = RESTRouter(world: world, catalog: resolvedCatalog, log: log, faults: faults, routes: routes,
                                 unauthenticated: SignInRoutes.unauthenticated.union(OAuth2Routes.unauthenticated).union([
@@ -101,8 +105,8 @@ public final class DiscordSimulator: Sendable {
 
     public func port(_ port: Port) -> UInt16 { configuration.basePort + port.rawValue }
 
-    public func setNetworkProfile(_ profile: NetworkConditioner.Profile) {
-        conditioners.values.forEach { $0.setProfile(profile) }
+    public func setNetwork(_ network: SimulatedNetwork) {
+        for (port, conditioner) in conditioners { conditioner.setProfile(network.profile(for: port)) }
     }
 
     public func start() async throws {

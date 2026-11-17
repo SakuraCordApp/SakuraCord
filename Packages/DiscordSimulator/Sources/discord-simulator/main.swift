@@ -2,14 +2,14 @@ import Foundation
 import SimulatorKit
 
 /// `discord-simulator [--port 47100] [--seed 1] [--scenario demo] [--param key=value]...
-///   [--network standard|instant|lan|broadband|mobile] [--freeze-clock] [--no-rate-limits] [--verbose]`
+///   [--network realistic|standard|instant|lan|broadband|mobile] [--freeze-clock] [--no-rate-limits] [--verbose]`
 var configuration = DiscordSimulator.Configuration()
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
 
 func usage() -> Never {
     print("""
     usage: discord-simulator [--port N] [--seed N] [--scenario NAME] [--param key=value]...
-                             [--network standard|instant|lan|broadband|mobile] [--freeze-clock] [--no-rate-limits] [--verbose]
+                             [--network realistic|standard|instant|lan|broadband|mobile] [--freeze-clock] [--no-rate-limits] [--verbose]
            discord-simulator --list-scenarios
     """)
     exit(2)
@@ -30,7 +30,7 @@ while let argument = arguments.next() {
         let pair = value { $0 }.split(separator: "=", maxSplits: 1).map(String.init)
         guard pair.count == 2 else { usage() }
         configuration.parameters[pair[0]] = pair[1]
-    case "--network": configuration.network = value { NetworkConditioner.Profile.named($0) }
+    case "--network": configuration.network = value { SimulatedNetwork.named($0) }
     case "--freeze-clock": configuration.freezeClock = true
     case "--epoch": configuration.epoch = value { ISO8601DateFormatter().date(from: $0) }
     case "--no-rate-limits": configuration.enforcesRateLimits = false

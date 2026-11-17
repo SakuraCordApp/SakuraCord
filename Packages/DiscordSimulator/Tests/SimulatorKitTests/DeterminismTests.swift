@@ -13,7 +13,7 @@ struct DeterminismTests {
         configuration.seed = 42
         configuration.parameters = ["activity": "off"]
         configuration.epoch = Self.epoch
-        configuration.network = NetworkConditioner.Profile(latencyMilliseconds: 40, jitterMilliseconds: 15)
+        configuration.network = .realistic
         let simulator = try await DiscordSimulator.make(configuration: configuration)
         try await simulator.start()
         defer { simulator.stop() }

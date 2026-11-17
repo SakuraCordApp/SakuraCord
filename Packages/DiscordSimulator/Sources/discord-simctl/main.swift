@@ -13,7 +13,7 @@ import SimulatorKit
 ///   discord-simctl nitro <user> none|basic|nitro|classic
 ///   discord-simctl boosts <guild> <count>
 ///   discord-simctl presence <user> online|idle|dnd|offline [activity text]
-///   discord-simctl network instant|lan|broadband|mobile | network <latency-ms> <jitter-ms> [down-Bps] [up-Bps]
+///   discord-simctl network realistic|standard|instant|lan|broadband|mobile | network <latency-ms> <jitter-ms> [down-Bps] [up-Bps]
 ///   discord-simctl fault 429|500|502|503 [route-substring] [count] | fault gateway-drop|gateway-reconnect|gateway-invalid-session|gateway-close-resumable
 ///   discord-simctl faults-clear
 ///   discord-simctl clock freeze|unfreeze|advance <seconds>
