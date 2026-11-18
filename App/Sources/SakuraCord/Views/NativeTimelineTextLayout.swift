@@ -208,7 +208,7 @@ nonisolated final class NativeTimelineResolvedTextCache: Sendable {
         let emojiSize: CGFloat
         let baseFontSize: CGFloat
         let mentions: [MentionPresentation]
-        var link: URL?
+        let link: URL?
         /// The interface size when the key was prepared.
         var interfaceScale = InterfaceScale.factor
     }
