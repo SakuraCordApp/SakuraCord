@@ -4,6 +4,33 @@ import MessageRendering
 import SakuraCordModels
 
 enum NativeTimelineEmbedLayout {
+    /// Discord's embed grid, in its CSS pixels.
+    private enum Metrics {
+        /// The 2-pixel grid padding plus the first part's 8-pixel margin, with
+        /// the colour bar on the leading side.
+        static var padding: NSEdgeInsets {
+            NSEdgeInsets(top: px(10), left: px(12) + DiscordRichMessageMetrics.accentBarWidth, bottom: px(16), right: px(16))
+        }
+        /// The 516-pixel grid with its bar and border.
+        static var maximumWidth: CGFloat { px(520) }
+        static var sectionSpacing: CGFloat { px(8) }
+        static var fieldSpacing: CGFloat { px(8) }
+        static var fieldNameSpacing: CGFloat { px(2) }
+        static var authorIconSize: CGFloat { px(24) }
+        static var authorTextInset: CGFloat { authorIconSize + iconSpacing }
+        static var footerIconSize: CGFloat { px(20) }
+        static var footerTextInset: CGFloat { footerIconSize + iconSpacing }
+        static var iconSpacing: CGFloat { px(8) }
+        static var thumbnailSize: CGFloat { px(80) }
+        static var thumbnailSpacing: CGFloat { px(16) }
+        static var mediaMaximumWidth: CGFloat { px(400) }
+        static var mediaSpacing: CGFloat { px(16) }
+        /// The 18-pixel emoji as `resolvedTextBox` takes it.
+        static var emojiSize: CGFloat { InterfaceTypographyMetrics.message(DiscordRichMessageMetrics.textSize(18)) }
+
+        private static func px(_ value: CGFloat) -> CGFloat { DiscordRichMessageMetrics.px(value) }
+    }
+
     private struct PreparedField {
         let field: MessageEmbedField
         let name: NativeTimelineAttributedTextBox
@@ -54,9 +81,11 @@ enum NativeTimelineEmbedLayout {
             return NativeTimelineMediaPlaceholder(poster) ?? NativeTimelineMediaPlaceholder(mainMedia)
         }
 
+        private var isYouTube: Bool {
+            embed.video?.url.flatMap(YouTubeEmbedPlayback.init(url:)) != nil
+        }
+
         var region: NativeTimelineRowLayout.EmbedRegion? {
-            let isYouTube = embed.video?.url.flatMap(YouTubeEmbedPlayback.init(url:)) != nil
-            let maximumWidth = min(self.maximumWidth, isYouTube ? InterfaceScale.metric(432) : self.maximumWidth)
             switch MessageEmbedPresentation.kind(for: embed) {
             case .hidden:
                 return nil
@@ -83,14 +112,18 @@ enum NativeTimelineEmbedLayout {
                     drawsTopSeparator: false
                 )
             case .card:
-                let cardPadding: CGFloat = integratesWithBubble ? 0 : 12
-                let stripeWidth: CGFloat = integratesWithBubble ? 0 : InterfaceScale.metric(4)
-                let innerChrome = stripeWidth + cardPadding * 2
+                let padding = integratesWithBubble ? NSEdgeInsets() : Metrics.padding
+                let innerChrome = padding.left + padding.right
+                // A video card fits its player.
+                let maximumWidth = min(
+                    integratesWithBubble ? self.maximumWidth : min(self.maximumWidth, Metrics.maximumWidth),
+                    isYouTube ? Metrics.mediaMaximumWidth + innerChrome : .infinity
+                )
                 let maximumContentWidth = max(InterfaceScale.metric(80), maximumWidth - innerChrome)
                 let author = embed.author.map {
                     NativeTimelineAttributedTextBox.plain(
                         $0.name,
-                        font: .messageSystemFont(ofSize: 14, weight: .medium),
+                        font: DiscordRichMessageMetrics.font(14, weight: .semibold),
                         color: .labelColor,
                         link: $0.url
                     )
@@ -102,7 +135,7 @@ enum NativeTimelineEmbedLayout {
                     guard let titleRules else {
                         return NativeTimelineAttributedTextBox.plain(
                             text,
-                            font: .messageSystemFont(ofSize: fontSize, weight: .semibold),
+                            font: DiscordRichMessageMetrics.font(fontSize, weight: .semibold),
                             color: link == nil ? .labelColor : .linkColor,
                             link: link
                         )
@@ -111,20 +144,20 @@ enum NativeTimelineEmbedLayout {
                         prepared: RichMessageAttributedText.prepare(source: text, rules: titleRules),
                         scope: scope,
                         fontSize: fontSize,
-                        emojiSize: InterfaceTypographyMetrics.message(18),
+                        emojiSize: Metrics.emojiSize,
                         link: link,
                         embed: embed,
                         message: message,
                         source: source
                     )
                 }
-                let title = embed.title.map { titleBox($0, fontSize: 14, scope: "title", link: embed.url) }
+                let title = embed.title.map { titleBox($0, fontSize: 16, scope: "title", link: embed.url) }
                 let description = (["image", "video", "gifv"].contains(embed.type?.lowercased() ?? "") ? nil : embed.description).map {
                     NativeTimelineEmbedLayout.resolvedTextBox(
                         prepared: RichMessageAttributedText.prepare(source: $0),
                         scope: "description",
                         fontSize: 14,
-                        emojiSize: InterfaceTypographyMetrics.message(18),
+                        emojiSize: Metrics.emojiSize,
                         embed: embed,
                         message: message,
                         source: source
@@ -133,13 +166,14 @@ enum NativeTimelineEmbedLayout {
                 let fields = embed.fields.enumerated().map { index, field in
                     PreparedField(
                         field: field,
-                        name: titleBox(field.name, fontSize: 11, scope: "field:name:\(index)"),
+                        name: titleBox(field.name, fontSize: 14, scope: "field:name:\(index)"),
                         value: NativeTimelineEmbedLayout.resolvedTextBox(
                             prepared: RichMessageAttributedText.prepare(
                                 source: field.value
                             ),
                             scope: "field:\(index)",
-                            emojiSize: InterfaceTypographyMetrics.message(16),
+                            fontSize: 14,
+                            emojiSize: Metrics.emojiSize,
                             embed: embed,
                             message: message,
                             source: source
@@ -149,7 +183,7 @@ enum NativeTimelineEmbedLayout {
                 let provider = embed.provider?.name.map {
                     NativeTimelineAttributedTextBox.plain(
                         $0,
-                        font: .messageSystemFont(ofSize: 11),
+                        font: DiscordRichMessageMetrics.font(12),
                         color: .secondaryLabelColor,
                         link: embed.provider?.url
                     )
@@ -162,7 +196,7 @@ enum NativeTimelineEmbedLayout {
                 let footer = footerText.map {
                     NativeTimelineAttributedTextBox.plain(
                         $0,
-                        font: .messageSystemFont(ofSize: 11),
+                        font: DiscordRichMessageMetrics.font(12, weight: .medium),
                         color: .secondaryLabelColor
                     )
                 }
@@ -171,18 +205,13 @@ enum NativeTimelineEmbedLayout {
                 let thumbnailURL = showsSideThumbnail ? embed.thumbnail.flatMap {
                     NativeTimelineEmbedLayout.resolvedURL($0, attachments: attachments)
                 } : nil
-                let thumbnailSize: CGFloat = thumbnailURL == nil ? 0 : InterfaceScale.metric(80)
-                // Text and thumbnail keep 12 points of spacing on each side of the
-                // collapsed gap between them; inside a bubble only one applies.
-                let thumbnailAllowance: CGFloat =
-                    thumbnailSize > 0
-                        ? thumbnailSize + (integratesWithBubble ? 12 : 24)
-                        : 0
+                let thumbnailSize: CGFloat = thumbnailURL == nil ? 0 : Metrics.thumbnailSize
+                let thumbnailAllowance: CGFloat = thumbnailSize > 0 ? thumbnailSize + Metrics.thumbnailSpacing : 0
 
+                let authorIconURL = embed.author?.proxyIconURL ?? embed.author?.iconURL
                 let naturalTextWidth = NativeTimelineEmbedLayout.textColumnIdealWidth(
                     author: author,
-                    authorHasIcon:
-                        (embed.author?.proxyIconURL ?? embed.author?.iconURL) != nil,
+                    authorTextInset: authorIconURL == nil ? 0 : Metrics.authorTextInset,
                     title: title,
                     description: description,
                     fields: fields,
@@ -191,13 +220,11 @@ enum NativeTimelineEmbedLayout {
                 let naturalTopWidth = naturalTextWidth + thumbnailAllowance
                 let mainMedia = self.mainMedia
                 let naturalMediaSize = mainMedia.map {
-                    mediaSize($0, maximumWidth: maximumContentWidth)
+                    cardMediaSize($0, maximumWidth: maximumContentWidth)
                 }
-                let naturalFooterWidth = footer.map {
-                    NativeTimelineEmbedLayout.idealWidth($0)
-                        + ((embed.footer?.proxyIconURL ?? embed.footer?.iconURL) == nil
-                            ? 0 : 23)
-                } ?? 0
+                let footerIconURL = embed.footer?.proxyIconURL ?? embed.footer?.iconURL
+                let footerTextInset = footerIconURL == nil ? 0 : Metrics.footerTextInset
+                let naturalFooterWidth = footer.map { NativeTimelineEmbedLayout.idealWidth($0) + footerTextInset } ?? 0
                 let naturalContentWidth = max(
                     naturalTopWidth,
                     naturalMediaSize?.width ?? 0,
@@ -210,33 +237,32 @@ enum NativeTimelineEmbedLayout {
                         maximumWidth,
                         max(InterfaceScale.metric(120), ceil(naturalContentWidth + innerChrome))
                     )
-                let contentX = origin.x + stripeWidth + cardPadding
+                let contentX = origin.x + padding.left
+                let contentY = origin.y + padding.top
                 let contentWidth = max(InterfaceScale.metric(80), width - innerChrome)
                 let textWidth = max(InterfaceScale.metric(40), contentWidth - thumbnailAllowance)
                 var textRegions: [NativeTimelineRowLayout.EmbedRegion.TextRegion] = []
                 var imageRegions: [NativeTimelineRowLayout.EmbedRegion.ImageRegion] = []
 
-                var textY = origin.y + cardPadding
+                var textY = contentY
                 var hasTextSection = false
-                func appendText(
-                    _ box: NativeTimelineAttributedTextBox?,
-                    x horizontalPosition: CGFloat = contentX,
-                    width: CGFloat = textWidth,
-                    spacing: CGFloat = 7,
-                    isSelectable: Bool = false
-                ) {
-                    guard let box else { return }
+                func startSection() {
                     if hasTextSection {
-                        textY += spacing
+                        textY += Metrics.sectionSpacing
                     }
+                    hasTextSection = true
+                }
+                func appendText(_ box: NativeTimelineAttributedTextBox?, isSelectable: Bool = false) {
+                    guard let box else { return }
+                    startSection()
                     textY += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: box.value)
-                    let height = NativeTimelineEmbedLayout.measuredHeight(box, width: width)
+                    let height = NativeTimelineEmbedLayout.measuredHeight(box, width: textWidth)
                     textRegions.append(
                         .init(
                             frame: CGRect(
-                                x: horizontalPosition,
+                                x: contentX,
                                 y: textY,
-                                width: width,
+                                width: textWidth,
                                 height: height
                             ),
                             text: box,
@@ -244,30 +270,26 @@ enum NativeTimelineEmbedLayout {
                         )
                     )
                     textY += height
-                    hasTextSection = true
                 }
 
                 appendText(provider)
                 if let author {
-                    if let iconURL = embed.author?.proxyIconURL
-                        ?? embed.author?.iconURL
-                    {
-                        if hasTextSection {
-                            textY += InterfaceScale.metric(7)
-                        }
-                        let authorWidth = max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(28))
+                    if let authorIconURL {
+                        startSection()
+                        let iconSize = Metrics.authorIconSize
+                        let authorWidth = max(InterfaceScale.metric(20), textWidth - Metrics.authorTextInset)
                         let authorHeight = NativeTimelineEmbedLayout.measuredHeight(author, width: authorWidth)
-                        let lineHeight = max(InterfaceScale.metric(22), authorHeight)
+                        let lineHeight = max(iconSize, authorHeight)
                         imageRegions.append(
                             .init(
                                 frame: CGRect(
                                     x: contentX,
-                                    y: textY + (lineHeight - InterfaceScale.metric(22)) / 2,
-                                    width: InterfaceScale.metric(22),
-                                    height: InterfaceScale.metric(22)
+                                    y: textY + (lineHeight - iconSize) / 2,
+                                    width: iconSize,
+                                    height: iconSize
                                 ),
-                                url: iconURL,
-                                cornerRadius: InterfaceScale.metric(11),
+                                url: authorIconURL,
+                                cornerRadius: iconSize / 2,
                                 fallbackSystemImage: "person.crop.circle",
                                 maximumPixelDimension: 64,
                                 placeholder: nil
@@ -276,7 +298,7 @@ enum NativeTimelineEmbedLayout {
                         textRegions.append(
                             .init(
                                 frame: CGRect(
-                                    x: contentX + InterfaceScale.metric(28),
+                                    x: contentX + Metrics.authorTextInset,
                                     y: textY + (lineHeight - authorHeight) / 2,
                                     width: authorWidth,
                                     height: authorHeight
@@ -286,7 +308,6 @@ enum NativeTimelineEmbedLayout {
                             )
                         )
                         textY += lineHeight
-                        hasTextSection = true
                     } else {
                         appendText(author)
                     }
@@ -295,9 +316,7 @@ enum NativeTimelineEmbedLayout {
                 appendText(description, isSelectable: true)
 
                 if !fields.isEmpty {
-                    if hasTextSection {
-                        textY += InterfaceScale.metric(7)
-                    }
+                    startSection()
                     NativeTimelineEmbedLayout.layoutFields(
                         fields,
                         x: contentX,
@@ -305,25 +324,21 @@ enum NativeTimelineEmbedLayout {
                         width: textWidth,
                         into: &textRegions
                     )
-                    hasTextSection = true
                 }
 
-                let textHeight = hasTextSection
-                    ? textY - (origin.y + cardPadding)
-                    : 0
-                let topHeight = max(textHeight, thumbnailSize)
+                let topHeight = max(textY - contentY, thumbnailSize)
 
                 if let thumbnailURL {
                     imageRegions.append(
                         .init(
                             frame: CGRect(
-                                x: origin.x + width - cardPadding - thumbnailSize,
-                                y: origin.y + cardPadding,
+                                x: origin.x + width - padding.right - thumbnailSize,
+                                y: contentY,
                                 width: thumbnailSize,
                                 height: thumbnailSize
                             ),
                             url: thumbnailURL,
-                            cornerRadius: InterfaceScale.metric(4),
+                            cornerRadius: DiscordRichMessageMetrics.embedCornerRadius,
                             fallbackSystemImage: "photo",
                             maximumPixelDimension: 256,
                             placeholder: .init(embed.thumbnail)
@@ -336,52 +351,37 @@ enum NativeTimelineEmbedLayout {
                 }
                 let mediaSize = mainMedia.flatMap { media -> CGSize? in
                     guard mediaURL != nil else { return nil }
-                    return self.mediaSize(media, maximumWidth: min(contentWidth, InterfaceScale.metric(500)))
+                    return cardMediaSize(media, maximumWidth: contentWidth)
                 }
                 let mediaGap: CGFloat =
-                    mediaSize == nil ? 0 : (topHeight > 0 ? InterfaceScale.metric(9) : 0)
-                let mediaFrame = mediaSize.map {
-                    CGRect(
-                        x: contentX,
-                        y: origin.y + cardPadding + topHeight + mediaGap,
-                        width: $0.width,
-                        height: $0.height
-                    )
-                }
+                    mediaSize == nil ? 0 : (topHeight > 0 ? Metrics.mediaSpacing : 0)
+                let mediaY = contentY + topHeight + mediaGap
+                let mediaFrame = mediaSize.map { CGRect(origin: CGPoint(x: contentX, y: mediaY), size: $0) }
 
-                var bottomY =
-                    origin.y + cardPadding + topHeight + mediaGap
-                    + (mediaSize?.height ?? 0)
+                var bottomY = mediaY + (mediaSize?.height ?? 0)
                 if let footer {
                     if topHeight > 0 || mediaSize != nil {
-                        bottomY += InterfaceScale.metric(9)
+                        bottomY += Metrics.sectionSpacing
                     }
-                    let footerIconURL =
-                        embed.footer?.proxyIconURL ?? embed.footer?.iconURL
-                    let footerTextX = contentX + (footerIconURL == nil ? 0 : InterfaceScale.metric(23))
-                    let footerTextWidth = max(
-                        30,
-                        contentWidth - (footerIconURL == nil ? 0 : InterfaceScale.metric(23))
-                    )
+                    let footerTextX = contentX + footerTextInset
+                    let footerTextWidth = max(30, contentWidth - footerTextInset)
                     let footerTextHeight = NativeTimelineEmbedLayout.measuredHeight(
                         footer,
                         width: footerTextWidth
                     )
-                    let footerHeight = max(
-                        footerTextHeight,
-                        footerIconURL == nil ? 0 : 18
-                    )
+                    let iconSize = Metrics.footerIconSize
+                    let footerHeight = max(footerTextHeight, footerIconURL == nil ? 0 : iconSize)
                     if let footerIconURL {
                         imageRegions.append(
                             .init(
                                 frame: CGRect(
                                     x: contentX,
-                                    y: bottomY + (footerHeight - InterfaceScale.metric(18)) / 2,
-                                    width: InterfaceScale.metric(18),
-                                    height: InterfaceScale.metric(18)
+                                    y: bottomY + (footerHeight - iconSize) / 2,
+                                    width: iconSize,
+                                    height: iconSize
                                 ),
                                 url: footerIconURL,
-                                cornerRadius: InterfaceScale.metric(9),
+                                cornerRadius: iconSize / 2,
                                 fallbackSystemImage: "photo.circle",
                                 maximumPixelDimension: 64,
                                 placeholder: nil
@@ -402,12 +402,12 @@ enum NativeTimelineEmbedLayout {
                     )
                     bottomY += footerHeight
                 }
-                let cardHeight = bottomY - origin.y + cardPadding
+                let cardHeight = bottomY - origin.y + padding.bottom
                 let frame = CGRect(
                     x: origin.x,
                     y: origin.y,
                     width: width,
-                    height: max(integratesWithBubble ? InterfaceScale.metric(18) : InterfaceScale.metric(58), cardHeight)
+                    height: integratesWithBubble ? max(InterfaceScale.metric(18), cardHeight) : cardHeight
                 )
                 return .init(
                     embedID: embed.id,
@@ -437,6 +437,24 @@ enum NativeTimelineEmbedLayout {
                     .reduce(CGRect.null) { $0.union($1) }.size
             }
             return NativeTimelineEmbedLayout.mediaSize(media, maximumWidth: maximumWidth)
+        }
+
+        /// Discord fits a card's lone image or video in 400 × 300 pixels, or
+        /// 400 × 450 for a portrait YouTube or TikTok video.
+        private func cardMediaSize(_ media: MessageEmbedMedia, maximumWidth: CGFloat) -> CGSize {
+            guard mediaCount == 1 else {
+                return mediaSize(media, maximumWidth: min(maximumWidth, InterfaceScale.metric(500)))
+            }
+            let knownSize = NativeTimelineEmbedLayout.knownSize(of: media)
+            let isTall = embed.provider?.name == "TikTok" || knownSize.map { $0.height > $0.width } == true && isYouTube
+            return MediaGalleryPlan.frames(
+                count: 1,
+                width: min(maximumWidth, Metrics.mediaMaximumWidth),
+                aspectRatios: [RichMediaItem.aspectRatio(width: media.width, height: media.height)],
+                intrinsicSizes: knownSize.map { [$0] } ?? [],
+                spacing: 0,
+                maximumHeight: DiscordRichMessageMetrics.px(isTall ? 450 : 300)
+            )[0].size
         }
     }
 
@@ -515,10 +533,11 @@ enum NativeTimelineEmbedLayout {
         )
     }
 
+    /// `fontSize` is in Discord pixels, as `DiscordRichMessageMetrics.font` takes it.
     static func resolvedTextBox(
         prepared: RichMessageAttributedText.Prepared,
         scope: String,
-        fontSize: CGFloat = InterfaceTypographyMetrics.defaultMessageTextSize,
+        fontSize: CGFloat = 16,
         emojiSize: CGFloat,
         link: URL? = nil,
         embed: MessageEmbed,
@@ -526,7 +545,7 @@ enum NativeTimelineEmbedLayout {
         source: AppModel?
     ) -> NativeTimelineAttributedTextBox {
         let mentions = MessageMentionResolver.presentations(for: prepared, model: source, message: message)
-        let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.message(fontSize))
+        let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.message(DiscordRichMessageMetrics.textSize(fontSize)))
         let emojiSize = InterfaceScale.metric(emojiSize)
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
@@ -553,21 +572,18 @@ enum NativeTimelineEmbedLayout {
 
     private static func textColumnIdealWidth(
         author: NativeTimelineAttributedTextBox?,
-        authorHasIcon: Bool,
+        authorTextInset: CGFloat,
         title: NativeTimelineAttributedTextBox?,
         description: NativeTimelineAttributedTextBox?,
         fields: [PreparedField],
         provider: NativeTimelineAttributedTextBox?
     ) -> CGFloat {
         var width = max(
-            author.map(idealWidth) ?? 0,
+            author.map { idealWidth($0) + authorTextInset } ?? 0,
             title.map(idealWidth) ?? 0,
             description.map(idealWidth) ?? 0,
             provider.map(idealWidth) ?? 0
         )
-        if author != nil, authorHasIcon {
-            width = max(width, (author.map(idealWidth) ?? 0) + InterfaceScale.metric(28))
-        }
         for row in fieldRows(fields) {
             if row.count == 1, row[0].field.isInline == false {
                 width = max(
@@ -580,7 +596,7 @@ enum NativeTimelineEmbedLayout {
                 }
                 width = max(
                     width,
-                    fieldsWidth + CGFloat(max(0, row.count - 1)) * 14
+                    fieldsWidth + CGFloat(max(0, row.count - 1)) * Metrics.fieldSpacing
                 )
             }
         }
@@ -596,19 +612,19 @@ enum NativeTimelineEmbedLayout {
             NativeTimelineRowLayout.EmbedRegion.TextRegion
         ]
     ) {
-        let columnGap: CGFloat = InterfaceScale.metric(14)
-        let rowGap: CGFloat = InterfaceScale.metric(8)
+        let spacing = Metrics.fieldSpacing
+        let nameSpacing = Metrics.fieldNameSpacing
         let rows = fieldRows(fields)
         for (rowIndex, row) in rows.enumerated() {
             if rowIndex > 0 {
-                verticalOffset += rowGap
+                verticalOffset += spacing
             }
             let inlineColumnCount = max(1, min(3, row.count))
             let columnWidth = max(
                 20,
                 (
                     width
-                        - columnGap * CGFloat(inlineColumnCount - 1)
+                        - spacing * CGFloat(inlineColumnCount - 1)
                 ) / CGFloat(inlineColumnCount)
             )
             var rowHeight: CGFloat = 0
@@ -618,7 +634,7 @@ enum NativeTimelineEmbedLayout {
                 let fieldWidth = spansAllColumns ? width : columnWidth
                 let fieldX = spansAllColumns
                     ? horizontalPosition
-                    : horizontalPosition + CGFloat(columnIndex) * (columnWidth + columnGap)
+                    : horizontalPosition + CGFloat(columnIndex) * (columnWidth + spacing)
                 let nameHeight = measuredHeight(
                     field.name,
                     width: fieldWidth
@@ -644,7 +660,7 @@ enum NativeTimelineEmbedLayout {
                     .init(
                         frame: CGRect(
                             x: fieldX,
-                            y: verticalOffset + nameHeight + InterfaceScale.metric(2) + valueInset,
+                            y: verticalOffset + nameHeight + nameSpacing + valueInset,
                             width: fieldWidth,
                             height: valueHeight
                         ),
@@ -652,7 +668,7 @@ enum NativeTimelineEmbedLayout {
                         isSelectable: true
                     )
                 )
-                rowHeight = max(rowHeight, nameHeight + 2 + valueInset + valueHeight)
+                rowHeight = max(rowHeight, nameHeight + nameSpacing + valueInset + valueHeight)
             }
             verticalOffset += rowHeight
         }

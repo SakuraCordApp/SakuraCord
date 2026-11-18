@@ -10,6 +10,8 @@ enum DiscordRichMessageMetrics {
     static var componentsMaximumWidth: CGFloat { px(600) }
     static var cardCornerRadius: CGFloat { px(8) }
     static var embedCornerRadius: CGFloat { px(4) }
+    /// The colour bar on an embed's or a container's leading edge.
+    static var accentBarWidth: CGFloat { px(4) }
     /// A container's 16-pixel padding inside its 1-point border.
     static var cardPadding: CGFloat { px(16) + InterfaceScale.metric(1) }
 
@@ -18,6 +20,16 @@ enum DiscordRichMessageMetrics {
     /// so every Discord length keeps its proportion to the text.
     nonisolated static func px(_ value: CGFloat) -> CGFloat {
         InterfaceScale.metric((value * InterfaceTypographyMetrics.messageTextSize / 16 * 2).rounded() / 2)
+    }
+
+    /// A Discord font size in pixels, as a message-content size at the
+    /// default message text, so it scales with Message Font Size like `px`.
+    nonisolated static func textSize(_ value: CGFloat) -> CGFloat {
+        value * InterfaceTypographyMetrics.defaultMessageTextSize / 16
+    }
+
+    nonisolated static func font(_ value: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        .messageSystemFont(ofSize: textSize(value), weight: weight)
     }
 }
 
@@ -413,11 +425,10 @@ nonisolated enum MediaGalleryPlan {
 
     static func frames(
         count: Int, width: CGFloat, aspectRatios: [CGFloat], intrinsicSizes: [CGSize] = [],
-        spacing: CGFloat, equalWidthColumns: Bool = false
+        spacing: CGFloat, equalWidthColumns: Bool = false, maximumHeight: CGFloat = InterfaceScale.metric(350)
     ) -> [CGRect]
     {
         guard count > 0 else { return [] }
-        let maximumHeight = InterfaceScale.metric(350)
         if count == 1 {
             if let intrinsicSize = intrinsicSizes.first,
                intrinsicSize.width > 0, intrinsicSize.height > 0

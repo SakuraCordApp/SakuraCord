@@ -306,7 +306,7 @@ extension NativeTimelineRowPainter {
         DiscordEmbedPalette.cardFill.setFill()
         frame.fill()
         if let accent {
-            let barWidth = InterfaceScale.metric(4)
+            let barWidth = DiscordRichMessageMetrics.accentBarWidth
             accent.setFill()
             CGRect(x: frame.minX, y: frame.minY, width: barWidth, height: frame.height).fill()
             // The 1 pt border runs along the other three sides only.
