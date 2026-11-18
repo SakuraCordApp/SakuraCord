@@ -260,7 +260,7 @@ extension DemoContent {
         Msg("oskar", at(-5, 22, 35), "we sound like a real band!!!"),
         Msg("sam", at(-5, 22, 35), "we ARE a real band"),
         Msg("oskar", at(-4, 13, 0), "final setlist 📝", label: "setlist",
-          attachments: [.file("setlist.txt", bundled: "demo-notes.txt", contentType: "text/plain; charset=utf-8", size: 371)], pinned: true),
+          attachments: [.file("setlist.txt", bundled: "demo-notes.txt", contentType: "text/plain; charset=utf-8", size: 364)], pinned: true),
         Msg("oskar", at(-4, 13, 1), system: .pinned("setlist")),
         Msg("sam", at(-4, 13, 5), "don't forget ||the surprise cover at the end||", replyTo: "setlist"),
         Msg("oskar", at(-2, 23, 58), "rough mix from tonight, someone recorded it from the bar",

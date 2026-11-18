@@ -42,7 +42,7 @@ extension DemoConverter {
         guard let couch = channels["couch-vc"], let nico = people["nico"], let marisol = people["marisol"], let me = people[DemoContent.selfKey]
         else { return }
         let hour = 3_600.0
-        var gameNight = ScheduledEvent(id: await world.nextID(at: date(DemoTime(day: -3, 19, 30))), guildID: porch,
+        var gameNight = ScheduledEvent(id: await world.nextID(at: date(DemoTime(day: -2, 19, 30))), guildID: porch,
                                        name: "Board game night", creatorID: nico,
                                        start: date(DemoTime(day: 4, 19, 30)), entityType: .voice)
         gameNight.description = "Bring snacks. Wingspan if the birthday frog allows it."

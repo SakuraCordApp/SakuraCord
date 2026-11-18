@@ -98,8 +98,9 @@ the card.
 The default epoch ("now") is the Mac's current time, so simulated timestamps
 agree with the app's clock. The demo conversation is written for an evening and
 keeps its times of day: its last moment is the latest 21:30 at or before the
-epoch, and its weekday words are filled in from the dates. Pass `--epoch` for
-runs that must be identical whenever they run.
+epoch in the Mac's time zone, and its weekday words are filled in from the
+dates. Pass `--epoch` for runs that must be identical whenever they run on
+Macs in the same time zone.
 
 ## Control API and CLI
 

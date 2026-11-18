@@ -9,9 +9,9 @@ import Foundation
 
 // MARK: - Time
 
-/// A wall-clock moment relative to the scenario epoch's day. Day 0 is the
-/// epoch's day and earlier days are negative; the epoch itself is
-/// `DemoContent.now`, and nothing in the history happens after it.
+/// A wall-clock moment relative to the demo's day 0, the day of the latest
+/// 21:30 at or before the world's epoch; earlier days are negative. That
+/// 21:30 is `DemoContent.now`, and nothing in the history happens after it.
 public struct DemoTime: Sendable, Hashable, Comparable {
     public var day: Int
     public var hour: Int
