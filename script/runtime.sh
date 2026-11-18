@@ -109,6 +109,8 @@ sakuracord_launch_scoped_app() {
   for argument in "$@"; do
     [[ "$previous" == --discord-simulator ]] && simulator_port="$argument"
     [[ "$argument" == --discord-simulator=* ]] && simulator_port="${argument#*=}"
+    # Any simulator flag keeps a record, even when its port is missing.
+    [[ "$argument" == --discord-simulator* ]] && simulator_port="${simulator_port:-47100}"
     previous="$argument"
   done
   sakuracord_record_simulator_launch "$SAKURACORD_APP_BUNDLE" "$simulator_port" || return
