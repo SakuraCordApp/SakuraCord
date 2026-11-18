@@ -108,6 +108,7 @@ sakuracord_launch_scoped_app() {
   local argument previous="" simulator_port=""
   for argument in "$@"; do
     [[ "$previous" == --discord-simulator ]] && simulator_port="$argument"
+    [[ "$argument" == --discord-simulator=* ]] && simulator_port="${argument#*=}"
     previous="$argument"
   done
   sakuracord_record_simulator_launch "$SAKURACORD_APP_BUNDLE" "$simulator_port" || return

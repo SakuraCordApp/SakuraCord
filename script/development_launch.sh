@@ -101,7 +101,7 @@ sakuracord_record_simulator_launch() {
     xattr -d "$attribute" "$bundle" 2>/dev/null || true
     return
   fi
-  executable="$(plutil -extract CFBundleExecutable raw -o - "$bundle/Contents/Info.plist")"
+  executable="$(plutil -extract CFBundleExecutable raw -o - "$bundle/Contents/Info.plist")" || return
   if ! grep -qaF "$attribute" "$bundle/Contents/MacOS/$executable"; then
     echo "Refusing a simulator launch: $bundle cannot read launch records, so reopening it by path would reach the real account. Rebuild it from current sources." >&2
     return 2
