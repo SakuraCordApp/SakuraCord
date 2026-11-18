@@ -31,8 +31,8 @@ public enum MessageLinkPolicy {
 
     /// The text Discord shows for a bare or `<…>` link: the link as `new URL`
     /// reads it, without credentials, with a lowercase or punycode host, no
-    /// default port and at least a `/` path. Escapes are decoded unless the
-    /// character could hide or fake part of the address.
+    /// default port, and its `.` and `..` path segments resolved. Escapes are
+    /// decoded unless the character could hide or fake part of the address.
     static func displayText(_ link: Substring, url: URL) -> String {
         guard let schemeEnd = link.range(of: "://"),
               let host = URLComponents(url: url, resolvingAgainstBaseURL: false)?.encodedHost
@@ -42,8 +42,7 @@ public enum MessageLinkPolicy {
         let rest = link[schemeEnd.upperBound...].drop { !"/?#".contains($0) }
         let fragmentStart = rest.firstIndex(of: "#") ?? rest.endIndex
         let queryStart = rest[..<fragmentStart].firstIndex(of: "?") ?? fragmentStart
-        let path = rest[..<queryStart]
-        text += path.isEmpty ? "/" : displayed(path, encoding: "`{}")
+        text += displayed(resolvingDotSegments(rest[..<queryStart])[...], encoding: "`{}")
         // An empty query or fragment shows neither its `?` nor its `#`.
         if rest[queryStart ..< fragmentStart].count > 1 {
             text += "?" + displayed(rest[rest.index(after: queryStart) ..< fragmentStart], encoding: "'")
@@ -52,11 +51,26 @@ public enum MessageLinkPolicy {
         return text
     }
 
-    /// A path, query or fragment as `new URL` encodes it and Discord then
-    /// decodes it, walking the decoded text beside the source: `encoding` and
-    /// hidden characters stay escaped, as do escaped ASCII characters other
-    /// than letters, digits and `"-<>_~`. Where the escapes don't decode,
-    /// Discord shows them as they are.
+    /// A path as `new URL` resolves it: `.` and `..` segments, also written
+    /// with `%2e`, are dropped, a `..` with the segment before it, and an
+    /// empty path is `/`.
+    private static func resolvingDotSegments(_ path: Substring) -> String {
+        var segments: [Substring] = []
+        let parts = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+        for (index, part) in parts.enumerated() {
+            let dots = part.lowercased().replacingOccurrences(of: "%2e", with: ".")
+            if dots == ".." { _ = segments.popLast() } else if dots != "." { segments.append(part) }
+            if dots == "." || dots == "..", index == parts.count - 1 { segments.append("") }
+        }
+        return "/" + segments.joined(separator: "/")
+    }
+
+    /// A path, query or fragment as `new URL` escapes `encoding` in it and
+    /// Discord then decodes it, walking the decoded text beside the source.
+    /// Hidden characters stay escaped, as does escaped ASCII other than what
+    /// `encodeURIComponent` leaves as it is or Discord decodes: letters,
+    /// digits and `"-<>_~!'()*.`. Where the escapes don't decode, Discord
+    /// shows them as they are.
     private static func displayed(_ component: Substring, encoding: String) -> String {
         func escaped(_ scalar: Unicode.Scalar) -> String {
             String(scalar).utf8.map { String(format: "%%%02X", $0) }.joined()
@@ -69,14 +83,15 @@ public enum MessageLinkPolicy {
         var source = component.unicodeScalars[...]
         var result = ""
         for scalar in decoded.unicodeScalars {
-            let wasEscaped = source.first != scalar
-            source = source.dropFirst(wasEscaped ? 3 * String(scalar).utf8.count : 1)
+            // Once the escapes decode, every `%` in the source starts one.
+            let isSourceEscape = source.first == "%" || source.first != scalar
+            source = source.dropFirst(isSourceEscape ? 3 * String(scalar).utf8.count : 1)
             let staysEscaped = if !scalar.isASCII {
                 hiddenScalars.contains { $0.contains(scalar.value) }
-            } else if wasEscaped {
-                !scalar.properties.isAlphabetic && !("0" ... "9").contains(scalar) && !#""-<>_~"#.unicodeScalars.contains(scalar)
             } else {
-                encoding.unicodeScalars.contains(scalar)
+                (isSourceEscape || encoding.unicodeScalars.contains(scalar))
+                    && !scalar.properties.isAlphabetic && !("0" ... "9").contains(scalar)
+                    && !#""-<>_~!'()*."#.unicodeScalars.contains(scalar)
             }
             result += staysEscaped ? escaped(scalar) : String(scalar)
         }

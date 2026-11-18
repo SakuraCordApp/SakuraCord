@@ -201,7 +201,8 @@ public struct MessageDocument: Hashable, Sendable {
                 result.append(.markdown(String(source[cursor ..< range.lowerBound])))
             }
             let token = String(source[range])
-            if let emoji = RenderedEmoji(rawToken: token), !isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) {
+            if let emoji = RenderedEmoji(rawToken: token),
+               !isInCode(range, in: source, rules: rules, codeRanges: &codeRanges), !isEscaped(range, in: source) {
                 result.append(.customEmoji(emoji))
             } else if !rules.contains(.maskedLinks) || !isMaskedLinkTarget(range, in: source),
                       let mention = RenderedMention(rawToken: token), rules.renders(mention.kind),
@@ -260,7 +261,11 @@ public struct MessageDocument: Hashable, Sendable {
             if urls.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
         }
         // A backslash escapes punctuation only, so a link after one still links.
-        guard ![.channelLink, .message].contains(mention.kind) else { return false }
+        return ![.channelLink, .message].contains(mention.kind) && isEscaped(range, in: source)
+    }
+
+    /// Whether an odd run of backslashes escapes the token's first character.
+    private static func isEscaped(_ range: Range<String.Index>, in source: String) -> Bool {
         var cursor = range.lowerBound
         var escaped = false
         while cursor > source.startIndex {

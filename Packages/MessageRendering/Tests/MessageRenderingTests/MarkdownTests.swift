@@ -267,6 +267,7 @@ import Testing
     // Code keeps a custom emoji token as text, as Discord's inline code does.
     for rules in [DiscordMarkdown.Rules.message, .profileBio] {
         #expect(MessageDocument(source: "`<:x:1>`", rules: rules).segments == [.markdown("`<:x:1>`")])
+        #expect(MessageDocument(source: #"\<:x:1>"#, rules: rules).segments == [.markdown(#"\<:x:1>"#)])
     }
 
     // A fence is inline code across lines, its Markdown kept literal.
@@ -476,8 +477,9 @@ import Testing
     let cases = [
         "https://example.com": "https://example.com/",
         "<https://user:pw@EXAMPLE.com:443?#>": "https://example.com/",
-        "https://bücher.de:8080/Caf%C3%A9?q=it's#`x`": "https://xn--bcher-kva.de:8080/Café?q=it%27s#%60x%60",
-        "https://example.com/%41%2F\u{202E}gpj.exe": "https://example.com/A%2F%E2%80%AEgpj.exe",
+        "https://bücher.de:8080/a/../Caf%C3%A9?q=it's#`x`": "https://xn--bcher-kva.de:8080/Café?q=it's#%60x%60",
+        "https://example.com/%41%2F%E2%80%AEgpj.exe": "https://example.com/A%2F%E2%80%AEgpj.exe",
+        "https://example.com/100%25%2E": "https://example.com/100%25.",
         "https://example.com/100%": "https://example.com/100%",
     ]
     for (source, text) in cases {

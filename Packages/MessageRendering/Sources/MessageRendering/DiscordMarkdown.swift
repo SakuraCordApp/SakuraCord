@@ -1090,7 +1090,7 @@ public enum DiscordMarkdown {
             }
             output.append(
                 AppKitPlan.InlineRun(
-                    text: String(remainder[match.range]),
+                    text: MessageLinkPolicy.displayText(remainder[match.range], url: match.url),
                     traits: traits,
                     link: match.url,
                     color: nil
