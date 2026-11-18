@@ -99,6 +99,11 @@ sakuracord_record_simulator_launch() {
   local plist="$bundle/Contents/Info.plist"
   [[ -z "$port" || "$port" =~ ^[0-9]+$ ]] || { echo "Invalid simulator port: $port" >&2; return 2; }
   [[ "$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null)" == "$port" ]] && return 0
+  if [[ -n "$port" ]] && ! grep -qaF "$key" \
+    "$bundle/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")"; then
+    echo "Refusing a simulator launch: $bundle was built without launch records, so reopening it by path would reach the real account. Rebuild it with --build." >&2
+    return 2
+  fi
   sakuracord_resolve_code_sign_identity 1 || return
   /usr/libexec/PlistBuddy -c "Delete :$key" "$plist" >/dev/null 2>&1 || true
   if [[ -n "$port" ]]; then
