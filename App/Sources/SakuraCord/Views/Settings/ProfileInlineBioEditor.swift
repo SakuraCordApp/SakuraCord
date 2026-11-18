@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Editing uses the same native text storage, layout and emoji renderer as the
-/// saved bio. Only focus and the floating accessories change when editing starts.
+/// The editor shows the bio's source with its emoji in one native text view.
+/// Only focus and the floating accessories change when editing starts.
 struct ProfileInlineBioEditor: View {
     @Binding var value: String
     let displayValue: String?
@@ -16,7 +16,7 @@ struct ProfileInlineBioEditor: View {
     @State private var pickedEmoji: String?
 
     var body: some View {
-        ProfileRichTextView(source: visibleValue, editing: ProfileBioTextEditing(
+        ProfileBioEditorText(source: visibleValue, editing: ProfileBioTextEditing(
             interaction: interaction, isActive: isEditing,
             onChange: { hasTyped = true; value = $0 },
             onBegin: {
@@ -109,7 +109,7 @@ final class ProfileBioTextInteraction {
         if let emoji {
             let attributed = ProfileInlineAttributedText.make(
                 source: emoji, font: .interfaceSystemFont(ofSize: 14), color: .labelColor,
-                emojiImages: [:], stylesLinks: false
+                emojiImages: [:]
             )
             textView.insertText(attributed, replacementRange: range)
         }

@@ -347,6 +347,7 @@ extension AppModel {
         threadPreviewMessages = [:]
         threadPreviewParentIDs = [:]
         membersByGuildID = [:]
+        removedMemberIDsByGuildID = [:]
         profileCustomStatus = nil
         profileCustomStatusUserID = nil
         presentedProfileGame = nil
@@ -530,7 +531,6 @@ extension AppModel {
         mentionMemberSearchTask = nil
         mentionMemberSearchQuery = nil
         mentionMemberSearchCache = [:]
-        mentionMemberResults = []
         mentionAutocompleteMembers = []
         knownMentionMembers = [:]
         roleMemberTask?.cancel()

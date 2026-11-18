@@ -210,8 +210,11 @@ extension AppModel {
                     // Keep the pre-subscription GuildMemberStore snapshot for
                     // composer search. Full member-list subscriptions feed the
                     // inspector, but Discord does not use their visual list order
-                    // as autocomplete's candidate store.
-                    mentionAutocompleteMembers = value
+                    // as autocomplete's candidate store. Members op 8 found
+                    // before the snapshot landed stay searchable.
+                    mentionAutocompleteMembers = MentionAutocompleteSuggestionFactory.appendingMissingMembers(
+                        mentionAutocompleteMembers, to: value
+                    )
                 }
                 if let guildID {
                     await replayMemberListViewportIfNeeded(

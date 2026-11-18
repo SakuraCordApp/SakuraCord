@@ -15,15 +15,15 @@ nonisolated enum RichMessageTextMeasurement {
 }
 
 nonisolated enum RichMessageAttributedText {
+    private struct PreparedKey: Hashable, Sendable {
+        let source: String
+        let rules: DiscordMarkdown.Rules
+    }
+
     private struct PreparedCacheState: Sendable {
         var values: [PreparedKey: Prepared] = [:]
         var insertionOrder: [PreparedKey] = []
         var evictionIndex = 0
-    }
-
-    private struct PreparedKey: Hashable, Sendable {
-        let source: String
-        let rules: Rules
     }
 
     private static let maximumPreparedCacheEntries = 2_048
@@ -40,13 +40,7 @@ nonisolated enum RichMessageAttributedText {
         let isEmojiOnly: Bool
     }
 
-    enum Rules: Hashable, Sendable {
-        case message
-        /// Discord's embed-title rules, without bare links when the embed itself links.
-        case embedTitle(allowsLinks: Bool)
-    }
-
-    nonisolated static func prepare(source: String, rules: Rules = .message) -> Prepared {
+    nonisolated static func prepare(source: String, rules: DiscordMarkdown.Rules = .message) -> Prepared {
         let key = PreparedKey(source: source, rules: rules)
         if let cached = preparedCache.withLock({ $0.values[key] }) {
             return cached
@@ -58,7 +52,7 @@ nonisolated enum RichMessageAttributedText {
         defer {
             AppPerformanceSignposts.signposter.endInterval("RichTextParse", signpost)
         }
-        let document = MessageDocument(source: source)
+        let document = MessageDocument(source: source, rules: rules)
         var transformed = ""
         var tokens: [InlineToken] = []
 
@@ -70,22 +64,16 @@ nonisolated enum RichMessageAttributedText {
                 transformed.append("\u{FFFC}")
                 tokens.append(.customEmoji(emoji))
             case let .mention(mention):
-                // Embed titles have no user, role or game mention rules, so
-                // Discord shows those tokens as typed.
-                if case .embedTitle = rules, [.user, .role, .broadcast, .game].contains(mention.kind) {
-                    transformed += mention.rawToken
-                } else {
-                    transformed.append("\u{FFFC}")
-                    tokens.append(.mention(mention))
-                }
+                transformed.append("\u{FFFC}")
+                tokens.append(.mention(mention))
             }
         }
-        let markdownPlan = switch rules {
-        case .message: DiscordMarkdown.appKitPlan(transformed)
-        case let .embedTitle(allowsLinks): DiscordMarkdown.appKitEmbedTitlePlan(transformed, allowsLinks: allowsLinks)
-        }
-        // Embed emoji keep one size, never jumbo.
-        let prepared = Prepared(markdownPlan: markdownPlan, tokens: tokens, isEmojiOnly: rules == .message && document.isEmojiOnly)
+        let prepared = Prepared(
+            markdownPlan: DiscordMarkdown.appKitPlan(transformed, rules: rules),
+            tokens: tokens,
+            // Embed emoji keep one size, never jumbo.
+            isEmojiOnly: !rules.contains(.title) && document.isEmojiOnly
+        )
         return preparedCache.withLock { state in
             if let existing = state.values[key] {
                 return existing
@@ -112,12 +100,13 @@ nonisolated enum RichMessageAttributedText {
     @MainActor
     static func make(
         source: String,
+        rules: DiscordMarkdown.Rules = .message,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
         mentionPresentations: [String: MentionPresentation]
     ) -> NSAttributedString {
         make(
-            prepared: prepare(source: source),
+            prepared: prepare(source: source, rules: rules),
             emojiSize: emojiSize,
             baseFontSize: baseFontSize,
             mentionPresentations: mentionPresentations

@@ -108,7 +108,7 @@ struct GuildCustomizationView: View {
                 Text(member?.guildNickname ?? user.displayName).font(.interface(.title2).weight(.semibold))
             }
             if let bio = model.onboarding.profiles[guildID]?.bio, !bio.isEmpty {
-                ProfileRichTextView(source: bio).frame(maxWidth: .infinity, alignment: .leading)
+                ProfileBioText(source: bio).frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()
             Text("Roles").font(.interface(.caption).weight(.semibold)).foregroundStyle(.secondary)

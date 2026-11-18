@@ -421,16 +421,69 @@ nonisolated final class MarkdownQuoteBox: NSTextTableBlock {
     }
 }
 
-/// Draws inline code's chrome behind its glyphs, which a text view's
+/// Draws Markdown's chrome behind its glyphs, as the timeline does: code
+/// blocks, quote bars, list markers and inline code, which a text view's
 /// square background colour can't round or outline.
 nonisolated class MarkdownLayoutManager: NSLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        let blocks = blockRects().map { ($0.rect.offsetBy(dx: origin.x, dy: origin.y), $0.isCode) }
+        // AppKit draws text on the main thread.
+        MainActor.assumeIsolated {
+            for (rect, isCode) in blocks {
+                if isCode { MarkdownBlockChrome.drawCode(in: rect) } else { MarkdownBlockChrome.drawQuoteBar(in: rect) }
+            }
+        }
+        drawListMarkers(at: origin)
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         let rects = rects(of: .discordMarkdownInlineCode, forGlyphRange: glyphsToShow, padding: DiscordMarkdown.inlineCodePadding)
             .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
         guard !rects.isEmpty else { return }
-        // AppKit draws text on the main thread.
         MainActor.assumeIsolated { rects.forEach(MarkdownBlockChrome.drawCode(in:)) }
+    }
+
+    /// Each code block's padded background and each quote's bar, as wide
+    /// as their lines and as tall as their text, without its paragraph spacing.
+    private func blockRects() -> [(rect: NSRect, isCode: Bool)] {
+        guard let textStorage else { return [] }
+        var result: [(NSRect, Bool)] = []
+        textStorage.enumerateAttribute(.discordMarkdownBlock, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
+            guard let name = value as? String, name != "fence" else { return }
+            var extent: NSRect?
+            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) { rect, used, _, _, _ in
+                // A line cut off by a line limit has an empty fragment at the
+                // origin, which would stretch the block to the top.
+                guard !rect.isEmpty else { return }
+                let line = NSRect(x: rect.minX, y: used.minY, width: rect.width, height: used.height)
+                extent = extent?.union(line) ?? line
+            }
+            guard let extent else { return }
+            if name == "code" {
+                let inset = NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location)
+                result.append((extent.insetBy(dx: 0, dy: -inset), true))
+            } else {
+                let width = NativeTimelineMarkdownChromeMetrics.quoteBarWidth(in: textStorage, at: range.location)
+                result.append((NSRect(x: extent.minX, y: extent.minY, width: width, height: extent.height), false))
+            }
+        }
+        return result
+    }
+
+    /// List markers' text is clear, so their discs are drawn as the
+    /// timeline draws them.
+    private func drawListMarkers(at origin: NSPoint) {
+        guard let textStorage, let container = textContainers.first else { return }
+        textStorage.enumerateAttribute(.discordMarkdownListMarker, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
+            guard let level = value as? NSNumber else { return }
+            let frame = boundingRect(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
+            // A marker cut off by a line limit has no frame to draw beside.
+            guard !frame.isEmpty else { return }
+            MarkdownBlockChrome.drawListMarker(
+                beside: frame.offsetBy(dx: origin.x, dy: origin.y),
+                em: NativeTimelineMarkdownChromeMetrics.em(in: textStorage, at: range.location),
+                isQuoted: textStorage.attribute(.discordMarkdownBlock, at: range.location, effectiveRange: nil) as? String == "quote",
+                isNested: level.intValue > 0
+            )
+        }
     }
 
     /// Each line's run of text marked with `key`, as tall as its line, as the
@@ -447,16 +500,25 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             let padding = padding(font)
             let runGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             enumerateLineFragments(forGlyphRange: runGlyphs) { _, line, container, lineGlyphs, _ in
-                let glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
+                var glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
                 guard glyphs.length > 0 else { return }
-                let bounds = self.boundingRect(forGlyphRange: glyphs, in: container)
+                // A line break's glyph spans the rest of its line; the box
+                // ends at the line's last character, as Discord's does.
+                if (textStorage.string as NSString).character(at: self.characterIndexForGlyph(at: NSMaxRange(glyphs) - 1)) == 0x0A {
+                    glyphs.length -= 1
+                }
+                // Code that opens with a line break still shows its opening
+                // edge on that line, as Discord's does; later empty lines show none.
+                let isOpeningEdge = glyphs.length == 0
+                guard !isOpeningEdge || (glyphs.location == runGlyphs.location && padding > 0) else { return }
+                let bounds = self.boundingRect(forGlyphRange: NSRange(location: glyphs.location, length: max(glyphs.length, 1)), in: container)
                 let start = self.characterIndexForGlyph(at: glyphs.location)
                 let isWrapped = glyphs.location == lineGlyphs.location
                     && (textStorage.string as NSString).paragraphRange(for: NSRange(location: start, length: 0)).location != start
                 let leading = isWrapped ? 0 : padding
                 // The timeline's text rect for the line, half a point beyond
                 // its bounds, inset by its inline code's point.
-                rects.append(NSRect(x: bounds.minX - leading, y: line.minY - 0.5, width: bounds.width + leading, height: line.height + 1)
+                rects.append(NSRect(x: bounds.minX - leading, y: line.minY - 0.5, width: (isOpeningEdge ? 0 : bounds.width) + leading, height: line.height + 1)
                     .insetBy(dx: 0, dy: InterfaceScale.metric(1)))
             }
         }

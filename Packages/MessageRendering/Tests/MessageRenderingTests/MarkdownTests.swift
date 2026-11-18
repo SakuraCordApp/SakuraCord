@@ -45,18 +45,18 @@ import Testing
 // block syntax as text in embed titles and field names.
 @Test func `embed titles parse inline markdown without lists headings or subtext`() throws {
     for source in ["1. Alice", "- Daily", "# Weekly", "-# beta"] {
-        let plan = DiscordMarkdown.appKitEmbedTitlePlan(source, allowsLinks: true)
+        let plan = DiscordMarkdown.appKitPlan(source, rules: .embedTitle(allowsLinks: true))
         let rendered = DiscordMarkdown.appKitAttributed(plan)
         #expect(rendered.string == source)
         #expect(rendered.attribute(.discordMarkdownListMarker, at: 0, effectiveRange: nil) == nil)
         let font = try #require(rendered.attribute(.font, at: rendered.length - 1, effectiveRange: nil) as? NSFont)
         #expect(font.pointSize == 15)
     }
-    let linked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitEmbedTitlePlan("[x](https://a.example) *Level*", allowsLinks: false))
+    let linked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[x](https://a.example) *Level*", rules: .embedTitle(allowsLinks: false)))
     #expect(linked.string == "[x](https://a.example) Level")
     #expect(linked.attribute(.link, at: 5, effectiveRange: nil) == nil)
     // Titles never parse masked links; their URLs still link when the embed doesn't.
-    let unlinked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitEmbedTitlePlan("[x](https://a.example)", allowsLinks: true))
+    let unlinked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[x](https://a.example)", rules: .embedTitle(allowsLinks: true)))
     #expect(unlinked.string == "[x](https://a.example)")
     #expect(unlinked.attribute(.link, at: 0, effectiveRange: nil) == nil)
     #expect(unlinked.attribute(.link, at: 5, effectiveRange: nil) != nil)
@@ -82,7 +82,7 @@ import Testing
     #expect(code("``a` c") == ["inline:`a", "text: c"])
     #expect(code("```code```\nhello") == ["code:code", "text:\nhello"])
     #expect(code("```\ncode```after") == ["code:code", "text:\nafter"])
-    let title = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitEmbedTitlePlan("```x``` ``y``", allowsLinks: true))
+    let title = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("```x``` ``y``", rules: .embedTitle(allowsLinks: true)))
     #expect(title.string == "x y")
     // An unclosed fence stays where it opened, after an earlier one-line block.
     #expect(code("a\n```x```\n```\nunclosed") == ["text:a\n", "code:x", "text:\n```\n", "code:unclosed"])
@@ -315,6 +315,97 @@ import Testing
         Issue.record("Bare message link should remain a pill")
         return
     }
+}
+
+@Test func `profile bios use Discord's bio rules for code and mentions`() {
+    let source = "```swift\nlet **x** = 1 <#9>\n``` <@1> <@&2> <#3> @here <t:0:R> <:wave:4>\nhttps://discord.com/channels/1/2 ``` <t:1:R>"
+    let bio = MessageDocument(source: source, rules: .profileBio)
+    let mentionKinds = bio.segments.compactMap { segment -> RenderedMention.Kind? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention.kind
+    }
+    // Code holds no mentions; an unclosed fence is plain text, so the last
+    // timestamp renders.
+    #expect(mentionKinds == [.channel, .timestamp, .channelLink, .timestamp])
+    #expect(bio.segments.contains { if case .customEmoji = $0 { true } else { false } })
+    // Code keeps a custom emoji token as text, as Discord's inline code does.
+    #expect(MessageDocument(source: "`<:x:1>`", rules: .profileBio).segments == [.markdown("`<:x:1>`")])
+
+    // A fence is inline code across lines, its Markdown kept literal.
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
+    let string = value.string as NSString
+    let code = string.range(of: "swift\nlet **x** = 1 <#9>\n")
+    #expect(code.location != NSNotFound)
+    #expect(value.attribute(.discordMarkdownInlineCode, at: code.location, effectiveRange: nil) != nil)
+    #expect(value.attribute(.discordMarkdownInlineCode, at: NSMaxRange(code) - 2, effectiveRange: nil) != nil)
+    #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) == nil)
+    // Only the unclosed fence stays as literal backticks.
+    #expect(value.string.components(separatedBy: "```").count == 2)
+
+    // Discord retries a shorter opening run, so the extra backtick is code.
+    let shorter = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("``x`", rules: .profileBio))
+    #expect(shorter.string == "`x")
+    #expect(shorter.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil)
+}
+
+@Test func `bio inline code matches Discord's rule in linear time and spans a quote's lines`() {
+    // A regex scan of this bio backtracked for over half a second per pass,
+    // freezing the profile popover.
+    let backticks = String(repeating: "`", count: 190)
+    let clock = ContinuousClock()
+    let elapsed = clock.measure { _ = DiscordMarkdown.appKitPlan(backticks, rules: .profileBio) }
+    #expect(elapsed < .milliseconds(250))
+    // The longest opening run with a close of its length wins.
+    #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("``a`b``", rules: .profileBio)).string == "a`b")
+
+    // Discord merges consecutive `> ` lines and parses code across them.
+    let quote = "> a `b https://discord.com/channels/1/2\n> c` d"
+    #expect(!MessageDocument(source: quote, rules: .profileBio).segments.contains {
+        if case .mention = $0 { true } else { false }
+    })
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(quote, rules: .profileBio))
+    let code = (value.string as NSString).range(of: "b https://discord.com/channels/1/2\nc")
+    #expect(code.location != NSNotFound)
+    #expect(value.attribute(.discordMarkdownInlineCode, at: code.location, effectiveRange: nil) != nil)
+    #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) as? String == "quote")
+    #expect(!value.string.contains("`"))
+
+    // Within a `>>>` quote, `>` lines are text; a quote marker may be indented.
+    for (source, expected) in [
+        (">>> x\n> a `b\n> c`", "b\n> c"), (">>> x\n> a `b\nc`", "b\nc"), ("  > a `b\n  > c`", "b\nc"),
+    ] {
+        let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
+        let code = (value.string as NSString).range(of: expected)
+        #expect(code.location != NSNotFound, "\(source)")
+        #expect(value.attribute(.discordMarkdownInlineCode, at: code.location, effectiveRange: nil) != nil, "\(source)")
+        #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) as? String == "quote", "\(source)")
+    }
+
+    // A `>>>` inside code opens no quote, so the later `> ` lines stay their
+    // own quote and `d`'s backtick finds no close in it.
+    let inCode = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("x `a\n>>> b`\n> c `d\n> e\nf `g`", rules: .profileBio))
+    let string = inCode.string as NSString
+    #expect(inCode.attribute(.discordMarkdownInlineCode, at: string.range(of: "a\n>>> b").location, effectiveRange: nil) != nil)
+    #expect(inCode.attribute(.discordMarkdownInlineCode, at: string.range(of: "`d").location, effectiveRange: nil) == nil)
+    #expect(inCode.attribute(.discordMarkdownInlineCode, at: string.range(of: "g", options: .backwards).location, effectiveRange: nil) != nil)
+
+    // Each line loses its own marker once; a second `>` is text.
+    let nested = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("> > a `b\n> c`", rules: .profileBio))
+    #expect(nested.string.hasPrefix("> a "))
+    #expect(nested.attribute(.discordMarkdownInlineCode, at: (nested.string as NSString).range(of: "b\nc").location, effectiveRange: nil) != nil)
+}
+
+@Test func `bios keep headings, lists and masked links literal as Discord's bio parser does`() {
+    // parseBioReact never sets allowHeading, allowList or allowLinks.
+    let source = "# h\n- item\n[label](https://x.y)"
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
+    #expect(value.string == source)
+    #expect(value.attribute(.discordMarkdownBlock, at: 0, effectiveRange: nil) == nil)
+    #expect(value.attribute(.discordMarkdownListMarker, at: (value.string as NSString).range(of: "- item").location, effectiveRange: nil) == nil)
+    #expect(value.attribute(.link, at: (value.string as NSString).range(of: "label").location, effectiveRange: nil) == nil)
+    let url = (value.string as NSString).range(of: "https://x.y")
+    #expect(value.attribute(.link, at: url.location, effectiveRange: nil) as? URL == URL(string: "https://x.y"))
+    #expect(value.attribute(.link, at: NSMaxRange(url), effectiveRange: nil) == nil)
 }
 
 @Test func `message document detects jumbo custom emoji`() {

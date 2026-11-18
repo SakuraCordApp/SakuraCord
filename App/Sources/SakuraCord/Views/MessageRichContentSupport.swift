@@ -60,7 +60,7 @@ nonisolated enum MessageEmbedPresentationKind: Equatable {
 nonisolated enum MessageEmbedPresentation {
     /// How Discord parses an embed's title and field names: only in rich
     /// embeds, and without bare links when the embed itself links.
-    static func titleRules(for embed: MessageEmbed) -> RichMessageAttributedText.Rules? {
+    static func titleRules(for embed: MessageEmbed) -> DiscordMarkdown.Rules? {
         guard embed.type?.lowercased() == "rich" else { return nil }
         return .embedTitle(allowsLinks: embed.url == nil)
     }
