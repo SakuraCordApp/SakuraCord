@@ -16,6 +16,8 @@ enum NativeTimelineEmbedLayout {
         static var sectionSpacing: CGFloat { px(8) }
         static var fieldSpacing: CGFloat { px(8) }
         static var fieldNameSpacing: CGFloat { px(2) }
+        /// The narrowest an inline field column gets.
+        static let fieldMinimumWidth: CGFloat = 20
         static var authorIconSize: CGFloat { px(24) }
         static var authorTextInset: CGFloat { authorIconSize + iconSpacing }
         static var footerIconSize: CGFloat { px(20) }
@@ -592,7 +594,7 @@ enum NativeTimelineEmbedLayout {
                 )
             } else {
                 let fieldsWidth = row.reduce(CGFloat.zero) {
-                    $0 + max(idealWidth($1.name), idealWidth($1.value))
+                    $0 + max(Metrics.fieldMinimumWidth, idealWidth($1.name), idealWidth($1.value))
                 }
                 width = max(
                     width,
@@ -621,7 +623,7 @@ enum NativeTimelineEmbedLayout {
             }
             let inlineColumnCount = max(1, min(3, row.count))
             let columnWidth = max(
-                20,
+                Metrics.fieldMinimumWidth,
                 (
                     width
                         - spacing * CGFloat(inlineColumnCount - 1)
