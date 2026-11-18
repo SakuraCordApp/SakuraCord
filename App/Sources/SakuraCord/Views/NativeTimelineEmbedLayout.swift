@@ -30,7 +30,9 @@ enum NativeTimelineEmbedLayout {
         /// The 18-pixel emoji as `resolvedTextBox` takes it.
         static var emojiSize: CGFloat { InterfaceTypographyMetrics.message(DiscordRichMessageMetrics.textSize(18)) }
 
-        /// Discord keeps an embed's lengths when its text grows; only the text scales.
+        /// Discord keeps an embed's lengths when its text grows; only the text
+        /// scales. The accent bar and corner radius, shared with Components V2
+        /// cards, still follow the text.
         private static func px(_ value: CGFloat) -> CGFloat { DiscordRichMessageMetrics.fixedPx(value) }
     }
 

@@ -1520,7 +1520,7 @@ public extension DiscordMarkdown {
         var line = AppKitPlan.Line(runs: [], block: .paragraph)
         var linkLabel: NSRange?
         var fences: [NSRange] = []
-        /// Whether the previous source line was code, inside a fence.
+        /// Whether the previous source line kept a code block's chrome.
         var followsCode = false
         /// Whether the previous source line was a blank line Discord trims
         /// from a block, which the block's chrome already starts above.
@@ -1559,8 +1559,6 @@ public extension DiscordMarkdown {
                 markSyntax(NSRange(location: span.location, length: 1), of: span)
                 markSyntax(NSRange(location: NSMaxRange(labelRange), length: NSMaxRange(span) - NSMaxRange(labelRange)), of: span)
             }
-            // Until its closing fence is typed, a code block is plain text, as
-            // Discord shows it.
             forEachSourceLine(source) { rawLine, pieces in
                 styleLine(rawLine, pieces: pieces, collector: collector)
             }
