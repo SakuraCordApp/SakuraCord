@@ -63,9 +63,11 @@ public enum DiscordMarkdown {
         /// A `>` marker after spaces, as Discord's blockQuote rule allows.
         /// Message rendering reads markers at the line start.
         static let indentedQuotes = Self(rawValue: 1 << 7)
+        /// `:name:` emoji shortcodes.
+        static let emoji = Self(rawValue: 1 << 8)
 
         public static let message: Self = [
-            .codeBlocks, .code, .strikethroughAndSpoilers, .maskedLinks, .headings, .lists, .mentions,
+            .codeBlocks, .code, .strikethroughAndSpoilers, .maskedLinks, .headings, .lists, .mentions, .emoji,
         ]
         /// `PROFILE_BIO_RULES`, parsed as `parseBioReact` does: without code
         /// blocks or user and role mentions, and without the headings, lists
@@ -783,7 +785,7 @@ public enum DiscordMarkdown {
                 continue
             }
 
-            let text = plainText(in: source, at: cursor, readsEmoji: sourceCollector == nil)
+            let text = plainText(in: source, at: cursor, readsEmoji: sourceCollector == nil && rules.contains(.emoji))
             if sourceCollector == nil { plain += text.text }
             cursor = text.end
         }

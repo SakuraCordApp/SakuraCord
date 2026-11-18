@@ -813,4 +813,6 @@ private func spoilerOutline(_ source: String) -> String {
     // a symbol shows as emoji.
     let plan = DiscordMarkdown.appKitPlan("snake_case :heart_eyes: x_y <:fire:1> <t:1234:R> :tm:")
     #expect(DiscordMarkdown.appKitAttributed(plan).string == "snake_case 😍 x_y <:fire:1> <t:1234:R> ™\u{FE0F}")
+    // Profile widgets parse no emoji.
+    #expect(String(DiscordMarkdown.profileWidgetAttributed(":sparkles:").characters) == ":sparkles:")
 }
