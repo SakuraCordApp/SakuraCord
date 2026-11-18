@@ -567,6 +567,7 @@ import Testing
         "<https://user:pw@EXAMPLE.com:443?#>": "https://example.com/",
         "https://bücher.de:8080/a/../Caf%C3%A9?q=it's#`x`": "https://xn--bcher-kva.de:8080/Café?q=it's#%60x%60",
         "https://example.com/%41%2F%E2%80%AEgpj.exe": "https://example.com/A%2F%E2%80%AEgpj.exe",
+        "<https://example.com/\u{FE0F}secret>": "https://example.com/%EF%B8%8Fsecret",
         "https://example.com/100%25%2E": "https://example.com/100%25.",
         "https://example.com/100%": "https://example.com/100%",
     ]

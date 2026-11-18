@@ -181,7 +181,7 @@ public struct MessageDocument: Hashable, Sendable {
     public init(source: String, rules: DiscordMarkdown.Rules = .message) {
         self.source = source
         segments = Self.tokenize(source, rules: rules)
-        isEmojiOnly = Self.detectEmojiOnly(source: source, segments: segments)
+        isEmojiOnly = Self.detectEmojiOnly(source: source, segments: segments, rules: rules)
     }
 
     /// The end of the custom emoji or mention token at `index`, if one starts there.
@@ -314,7 +314,7 @@ public struct MessageDocument: Hashable, Sendable {
         source[..<range.lowerBound].hasSuffix("](") && source[range.upperBound...].hasPrefix(")")
     }
 
-    private static func detectEmojiOnly(source: String, segments: [Segment]) -> Bool {
+    private static func detectEmojiOnly(source: String, segments: [Segment], rules: DiscordMarkdown.Rules) -> Bool {
         var emojiCount = 0
         for segment in segments {
             switch segment {
@@ -322,7 +322,7 @@ public struct MessageDocument: Hashable, Sendable {
                 var rest = value[...]
                 while let character = rest.first {
                     // A `:name:` Discord turns into an emoji counts as one.
-                    if let shortcode = DiscordEmojiNames.shortcode(in: rest, at: rest.startIndex) {
+                    if rules.contains(.emoji), let shortcode = DiscordEmojiNames.shortcode(in: rest, at: rest.startIndex) {
                         rest = rest[shortcode.end...]
                     } else {
                         rest = rest.dropFirst()

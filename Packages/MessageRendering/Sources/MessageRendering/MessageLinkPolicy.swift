@@ -39,24 +39,26 @@ public enum MessageLinkPolicy {
         else { return String(link) }
         var text = link[..<schemeEnd.lowerBound].lowercased() + "://" + host.lowercased()
         if let port = url.port, port != (url.scheme?.lowercased() == "https" ? 443 : 80) { text += ":\(port)" }
-        let rest = link[schemeEnd.upperBound...].drop { !"/?#".contains($0) }
+        // Separators are found by scalar: a mark such as U+FE0F joins the `/`
+        // before it into one character, which would hide the path after it.
+        let rest = link.unicodeScalars[schemeEnd.upperBound...].drop { !"/?#".unicodeScalars.contains($0) }
         let fragmentStart = rest.firstIndex(of: "#") ?? rest.endIndex
         let queryStart = rest[..<fragmentStart].firstIndex(of: "?") ?? fragmentStart
         text += displayed(resolvingDotSegments(rest[..<queryStart])[...], encoding: "`{}")
         // An empty query or fragment shows neither its `?` nor its `#`.
         let query = rest[queryStart ..< fragmentStart].dropFirst()
-        if !query.isEmpty { text += "?" + displayed(query, encoding: "'") }
+        if !query.isEmpty { text += "?" + displayed(Substring(query), encoding: "'") }
         let fragment = rest[fragmentStart...].dropFirst()
-        if !fragment.isEmpty { text += "#" + displayed(fragment, encoding: "`") }
+        if !fragment.isEmpty { text += "#" + displayed(Substring(fragment), encoding: "`") }
         return text
     }
 
     /// A path as `new URL` resolves it: `.` and `..` segments, also written
     /// with `%2e`, are dropped, a `..` with the segment before it, and an
     /// empty path is `/`.
-    private static func resolvingDotSegments(_ path: Substring) -> String {
+    private static func resolvingDotSegments(_ path: Substring.UnicodeScalarView) -> String {
         var segments: [Substring] = []
-        let parts = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+        let parts = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map(Substring.init)
         for (index, part) in parts.enumerated() {
             let dots = part.lowercased().replacingOccurrences(of: "%2e", with: ".")
             if dots == ".." { _ = segments.popLast() } else if dots != "." { segments.append(part) }
