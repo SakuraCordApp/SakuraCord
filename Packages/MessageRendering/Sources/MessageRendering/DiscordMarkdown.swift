@@ -86,7 +86,7 @@ public enum DiscordMarkdown {
         }
 
         struct InlineRun: Hashable, Sendable {
-            var text: String
+            let text: String
             let traits: InlineTraits
             let link: URL?
             let color: SemanticColor?
@@ -287,12 +287,6 @@ public enum DiscordMarkdown {
                     list = ListNesting()
                 }
                 var line = planLine(content, rules: rules, list: &list)
-                if !rules.parsesCodeBlocks, isQuoteLine(rawLine), content.contains("\n") {
-                    // Code across a quote's lines holds their text without its markers.
-                    for index in line.runs.indices where line.runs[index].traits.contains(.inlineCode) {
-                        line.runs[index].text = line.runs[index].text.replacingOccurrences(of: "\n> ", with: "\n")
-                    }
-                }
                 line.isQuoted = isQuoted
                 lines.append(line)
             }
@@ -353,22 +347,25 @@ public enum DiscordMarkdown {
             } else if isInCodeFence {
                 body(rawLine, .code(language: codeLanguage, isFirstLine: startsCodeFence))
                 startsCodeFence = false
-            } else {
-                // `>>>` quotes the rest of the message, blank lines included.
-                var content = rawLine
-                var isQuoted = isInMultilineQuote
-                if !isQuoted, content.hasPrefix(">>> ") {
-                    isInMultilineQuote = true
-                    isQuoted = true
-                    content = content.dropFirst(4)
-                } else if !isQuoted, content.hasPrefix("> ") {
-                    isQuoted = true
-                    content = content.dropFirst(2)
-                } else if !isQuoted, let quoted = quoteContent(content) {
-                    isQuoted = true
-                    content = quoted
+            } else if isInMultilineQuote {
+                // Within a `>>>` quote, later `>` lines are text.
+                body(rawLine, .text(rawLine, isQuoted: true))
+            } else if let quote = quote(rawLine, rules: rules) {
+                isInMultilineQuote = quote.isMultiline
+                var content = quote.content
+                // A bio line that inline code joins to the next lines of its
+                // quote drops their markers too, as Discord parses the
+                // quote's content without them.
+                if !quote.isMultiline, content.contains("\n") {
+                    content = content.split(separator: "\n", omittingEmptySubsequences: false)
+                        .map { Self.quote($0, rules: rules)?.content ?? $0 }
+                        .joined(separator: "\n")[...]
                 }
-                body(rawLine, .text(content, isQuoted: isQuoted))
+                body(rawLine, .text(content, isQuoted: true))
+            } else if let quoted = quoteContent(rawLine) {
+                body(rawLine, .text(quoted, isQuoted: true))
+            } else {
+                body(rawLine, .text(rawLine, isQuoted: false))
             }
         }
     }
@@ -1844,9 +1841,20 @@ public extension DiscordMarkdown {
     }
 }
 
-/// Discord's inline code in rules without code blocks, such as a bio's,
-/// where it is the only code and may span lines.
+/// Discord's block quotes, and its inline code in rules without code
+/// blocks, such as a bio's, where it is the only code and may span lines.
 extension DiscordMarkdown {
+    /// A line's quote, as Discord's blockQuote rule reads it: `>>> ` quotes
+    /// the rest of the text and `> ` its line, each without its marker and
+    /// one space. A bio's marker may follow spaces, as the rule allows;
+    /// message rendering reads markers at the line start.
+    private static func quote(_ line: Substring, rules: Rules) -> (content: Substring, isMultiline: Bool)? {
+        let marker = rules.parsesCodeBlocks ? line : line.drop { $0 == " " }
+        if marker.hasPrefix(">>> ") { return (marker.dropFirst(4), true) }
+        if marker.hasPrefix("> ") { return (marker.dropFirst(2), false) }
+        return nil
+    }
+
     /// Discord's inline code at `start`, `` ^(`+)([\s\S]*?[^`])\1(?!`) ``, in
     /// linear time: fenced by a run of backticks and closed by the first later
     /// run of exactly its length, free to span lines. The regex retries a
@@ -1863,6 +1871,8 @@ extension DiscordMarkdown {
             let runEnd = source[runStart...].firstIndex { $0 != "`" } ?? source.endIndex
             let length = source.distance(from: runStart, to: runEnd)
             if firstRuns[length] == nil { firstRuns[length] = runStart ..< runEnd }
+            // The opening's own length is tried first, so nothing later matters.
+            if length == opening { break }
             cursor = runEnd
         }
         for length in stride(from: opening, through: 1, by: -1) {
@@ -1880,11 +1890,13 @@ extension DiscordMarkdown {
     private static func inlineCodeSpans(_ source: String) -> [Range<String.Index>] {
         var spans: [Range<String.Index>] = []
         var cursor = source.startIndex
+        let multilineQuote = source.split(separator: "\n", omittingEmptySubsequences: false)
+            .first { quote($0, rules: .profileBio)?.isMultiline == true }?.startIndex ?? source.endIndex
         while cursor < source.endIndex {
             if source[cursor] == "\\" {
                 cursor = source.index(cursor, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
             } else if source[cursor] == "`",
-                      let code = inlineCode(in: source[..<blockEnd(source, containing: cursor)], at: cursor) {
+                      let code = inlineCode(in: source[..<blockEnd(source, containing: cursor, multilineQuote: multilineQuote)], at: cursor) {
                 spans.append(cursor ..< code.end)
                 cursor = code.end
             } else {
@@ -1896,20 +1908,21 @@ extension DiscordMarkdown {
 
     /// Where the block holding `index` ends: a heading's line, or the last
     /// of a quote's consecutive `> ` lines, which Discord's blockQuote rule
-    /// merges. Other text runs to the end.
-    private static func blockEnd(_ source: String, containing index: String.Index) -> String.Index {
+    /// merges. Other text, and anything in the `>>>` quote starting at
+    /// `multilineQuote`, runs to the end.
+    private static func blockEnd(
+        _ source: String, containing index: String.Index, multilineQuote: String.Index
+    ) -> String.Index {
         let lineStart = source[..<index].lastIndex(of: "\n").map(source.index(after:)) ?? source.startIndex
         var lineEnd = source[index...].firstIndex(of: "\n") ?? source.endIndex
-        if ["# ", "## ", "### ", "-# "].contains(where: source[lineStart...].hasPrefix) { return lineEnd }
-        guard isQuoteLine(source[lineStart...]) else { return source.endIndex }
-        while lineEnd < source.endIndex, isQuoteLine(source[source.index(after: lineEnd)...]) {
+        func isLineQuote(_ line: Substring) -> Bool { quote(line, rules: .profileBio)?.isMultiline == false }
+        if multilineQuote <= lineStart { return source.endIndex }
+        if blockPrefixes.contains(where: { source[lineStart...].hasPrefix($0.prefix) }) { return lineEnd }
+        guard isLineQuote(source[lineStart...]) else { return source.endIndex }
+        while lineEnd < source.endIndex, isLineQuote(source[source.index(after: lineEnd)...]) {
             lineEnd = source[source.index(after: lineEnd)...].firstIndex(of: "\n") ?? source.endIndex
         }
         return lineEnd
-    }
-
-    private static func isQuoteLine(_ line: Substring) -> Bool {
-        line.hasPrefix("> ") && !line.hasPrefix(">>> ")
     }
 
     /// Source lines, except that inline code spanning lines stays in the

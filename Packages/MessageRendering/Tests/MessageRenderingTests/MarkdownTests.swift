@@ -303,6 +303,17 @@ import Testing
     #expect(value.attribute(.discordMarkdownInlineCode, at: code.location, effectiveRange: nil) != nil)
     #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) as? String == "quote")
     #expect(!value.string.contains("`"))
+
+    // Within a `>>>` quote, `>` lines are text; a quote marker may be indented.
+    for (source, expected) in [
+        (">>> x\n> a `b\n> c`", "b\n> c"), (">>> x\n> a `b\nc`", "b\nc"), ("  > a `b\n  > c`", "b\nc"),
+    ] {
+        let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
+        let code = (value.string as NSString).range(of: expected)
+        #expect(code.location != NSNotFound, "\(source)")
+        #expect(value.attribute(.discordMarkdownInlineCode, at: code.location, effectiveRange: nil) != nil, "\(source)")
+        #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) as? String == "quote", "\(source)")
+    }
 }
 
 @Test func `message document detects jumbo custom emoji`() {

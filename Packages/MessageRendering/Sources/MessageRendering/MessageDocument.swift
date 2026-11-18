@@ -328,19 +328,15 @@ public struct MessageDocument: Hashable, Sendable {
 @MainActor
 public final class MessageDocumentCache {
     public static let shared = MessageDocumentCache()
-    private var caches: [DiscordMarkdown.Rules: NSCache<NSString, MessageDocumentBox>] = [:]
+    private let values = NSCache<NSString, MessageDocumentBox>()
 
-    private init() {}
+    private init() {
+        values.countLimit = 2000
+        values.totalCostLimit = 12 * 1024 * 1024
+    }
 
     public func document(for source: String, rules: DiscordMarkdown.Rules = .message) -> MessageDocument {
-        let values = caches[rules] ?? {
-            let values = NSCache<NSString, MessageDocumentBox>()
-            values.countLimit = 2000
-            values.totalCostLimit = 12 * 1024 * 1024
-            caches[rules] = values
-            return values
-        }()
-        let key = source as NSString
+        let key = (rules == .message ? source : "\(rules)\u{0}\(source)") as NSString
         if let cached = values.object(forKey: key) {
             return cached.value
         }

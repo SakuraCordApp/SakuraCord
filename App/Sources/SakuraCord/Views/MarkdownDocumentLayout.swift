@@ -477,11 +477,11 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             let frame = boundingRect(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
             // A marker cut off by a line limit has no frame to draw beside.
             guard !frame.isEmpty else { return }
-            let em = NativeTimelineMarkdownChromeMetrics.em(in: textStorage, at: range.location)
-            let isQuoted = textStorage.attribute(.discordMarkdownBlock, at: range.location, effectiveRange: nil) as? String == "quote"
             MarkdownBlockChrome.drawListMarker(
-                in: MarkdownBlockChrome.listMarkerDisc(for: frame.offsetBy(dx: origin.x, dy: origin.y), em: em),
-                color: isQuoted ? .secondaryLabelColor : .labelColor, isHollow: level.intValue > 0
+                beside: frame.offsetBy(dx: origin.x, dy: origin.y),
+                em: NativeTimelineMarkdownChromeMetrics.em(in: textStorage, at: range.location),
+                isQuoted: textStorage.attribute(.discordMarkdownBlock, at: range.location, effectiveRange: nil) as? String == "quote",
+                isNested: level.intValue > 0
             )
         }
     }

@@ -101,14 +101,9 @@ struct SelectableMessageTextView: NSViewRepresentable {
             )
         )
         if let foregroundColor {
-            rendered.addAttribute(
-                .foregroundColor,
-                value: foregroundColor,
-                range: NSRange(location: 0, length: rendered.length)
-            )
             // A list marker's text stays clear; its disc is drawn instead.
             rendered.enumerateAttribute(.discordMarkdownListMarker, in: NSRange(location: 0, length: rendered.length)) { value, range, _ in
-                if value != nil { rendered.addAttribute(.foregroundColor, value: NSColor.clear, range: range) }
+                rendered.addAttribute(.foregroundColor, value: value == nil ? foregroundColor : NSColor.clear, range: range)
             }
         }
         RichMessageAttributedText.concealSpoilers(
@@ -412,14 +407,13 @@ final class RichMessageNSTextView: NSTextView {
     /// label, as the timeline's do. A press dismisses it until another
     /// target is hovered.
     private func updateTimestampLabel(at point: NSPoint?) {
-        let hovered = point.flatMap(anyMentionAttachment(at:)).flatMap { index, attachment in
-            DiscordTimestampToken(rawToken: attachment.presentation.rawToken).map { (index, attachment.presentation.rawToken, $0) }
-        }
+        let hovered = point.flatMap(anyMentionAttachment(at:))
         guard hovered?.0 != hoveredTimestampLocation else { return }
         hoveredTimestampLocation = hovered?.0
         if hovered?.0 != dismissedTimestampLocation { dismissedTimestampLocation = nil }
-        guard dismissedTimestampLocation == nil, let (index, rawToken, token) = hovered,
-              let anchor = mentionPopoverAnchor(at: index, rawToken: rawToken)
+        guard dismissedTimestampLocation == nil, let (index, attachment) = hovered,
+              let token = DiscordTimestampToken(rawToken: attachment.presentation.rawToken),
+              let anchor = mentionPopoverAnchor(at: index, rawToken: attachment.presentation.rawToken)
         else {
             timestampLabel.close()
             return

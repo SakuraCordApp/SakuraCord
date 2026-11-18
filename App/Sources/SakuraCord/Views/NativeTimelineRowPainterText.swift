@@ -533,10 +533,7 @@ extension NativeTimelineRowPainter {
 
     private static func drawListMarkerDecorations(_ markers: [ListMarker]) {
         for marker in markers {
-            MarkdownBlockChrome.drawListMarker(
-                in: MarkdownBlockChrome.listMarkerDisc(for: marker.frame, em: marker.em),
-                color: marker.isQuoted ? .secondaryLabelColor : .labelColor, isHollow: marker.isNested
-            )
+            MarkdownBlockChrome.drawListMarker(beside: marker.frame, em: marker.em, isQuoted: marker.isQuoted, isNested: marker.isNested)
         }
     }
 

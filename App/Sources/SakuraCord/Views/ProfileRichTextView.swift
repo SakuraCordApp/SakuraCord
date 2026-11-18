@@ -164,7 +164,6 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> ProfileBioNSTextView {
         let textView = ProfileBioNSTextView()
         textView.delegate = context.coordinator
-        textView.isEditable = true
         textView.isRichText = true
         textView.importsGraphics = false
         textView.allowsUndo = true
