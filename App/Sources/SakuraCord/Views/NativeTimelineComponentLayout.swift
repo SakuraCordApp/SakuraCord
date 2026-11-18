@@ -13,11 +13,7 @@ enum NativeTimelineComponentButtonMetrics {
     static var linkIconSize: CGFloat { DiscordRichMessageMetrics.px(16) }
     static var linkIconAdvance: CGFloat { DiscordRichMessageMetrics.px(8) + linkIconSize }
 
-    /// Discord's 14-pixel medium label, on the scale that draws its 16-pixel
-    /// message text at `messageTextSize`.
-    static var font: NSFont {
-        .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize * 14 / 16, weight: .medium)
-    }
+    static var font: NSFont { DiscordRichMessageMetrics.font(14, weight: .medium) }
 }
 
 enum NativeTimelineComponentSelectPolicy {

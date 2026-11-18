@@ -36,21 +36,21 @@ extension DemoConverter {
         try await buildBookClub()
     }
 
-    /// Thursday's game night in the porch's voice channel (Wren already acknowledged it)
+    /// The week's game night in the porch's voice channel (Wren already acknowledged it)
     /// and the garden's planting day, announced an hour ago and still unread.
     private func addEvents(porch: Snowflake, garden: Snowflake) async {
         guard let couch = channels["couch-vc"], let nico = people["nico"], let marisol = people["marisol"], let me = people[DemoContent.selfKey]
         else { return }
         let hour = 3_600.0
-        var gameNight = ScheduledEvent(id: await world.nextID(at: world.epoch.addingTimeInterval(-50 * hour)), guildID: porch,
+        var gameNight = ScheduledEvent(id: await world.nextID(at: date(DemoContent.at(-2, 19, 30))), guildID: porch,
                                        name: "Board game night", creatorID: nico,
-                                       start: world.epoch.addingTimeInterval(94 * hour), entityType: .voice)
+                                       start: date(DemoContent.at(4, 19, 30)), entityType: .voice)
         gameNight.description = "Bring snacks. Wingspan if the birthday frog allows it."
         gameNight.channelID = couch
         gameNight.interested = [nico, me] + ["oskar", "hana"].compactMap { people[$0] }
         var planting = ScheduledEvent(id: await world.nextID(at: world.epoch.addingTimeInterval(-hour)), guildID: garden,
                                       name: "Spring planting day", creatorID: marisol,
-                                      start: world.epoch.addingTimeInterval(132.5 * hour), entityType: .external)
+                                      start: date(DemoContent.at(6, 10, 0)), entityType: .external)
         planting.description = "Seedlings go in the long beds. Gloves and tea provided."
         planting.end = planting.start.addingTimeInterval(3 * hour)
         planting.location = "Linden Street Garden, north gate"
@@ -178,10 +178,11 @@ extension DemoConverter {
             ])),
         ]))
         await world.setCommandReply("signup", CommandReply(modal: modal))
+        let seeYou = resolve("See you <day:4:L>!")
         await world.setModalResponder(customID: "gamenight_signup") { values in
             let snacks = values["snacks"].map { $0.isEmpty ? "nothing" : $0.joined(separator: ", ") } ?? "nothing"
             let host = values["host"]?.first == "yes" ? "and you're hosting 🏠" : "and someone else is hosting"
-            return "You're in for **\(values["game"]?.first ?? "a game")**, bringing \(snacks), \(host). See you Thursday!"
+            return "You're in for **\(values["game"]?.first ?? "a game")**, bringing \(snacks), \(host). \(seeYou)"
         }
     }
 

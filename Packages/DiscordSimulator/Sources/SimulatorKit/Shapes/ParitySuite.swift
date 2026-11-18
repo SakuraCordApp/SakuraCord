@@ -69,7 +69,7 @@ public enum ParitySuite {
         configuration.network = .instant
         configuration.scenario = scenario
         configuration.parameters = parameters
-        configuration.epoch = Date(timeIntervalSince1970: 1_794_778_200) // a Sunday, 21:30 UTC
+        configuration.epoch = Date(timeIntervalSince1970: 1_794_778_200) // 21:30 UTC
         configuration.basePort = UInt16(40_000 + Int(ProcessInfo.processInfo.processIdentifier % 2_000) * 10)
         var report = Report()
         do {

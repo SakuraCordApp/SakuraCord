@@ -76,23 +76,25 @@ extension DemoContent {
         be kind, share snacks 💛
         """, label: "welcome", reactions: [React(":porchlove:", "tomas", "hana", "june", "nico", "sam")], pinned: true),
         Msg("wren", at(-13, 10, 1), system: .pinned("welcome")),
-        Msg("pip", at(-13, 18, 0), embeds: [digest(week: 1, top: "Tomás signed a lease 🔑", newFaces: "nobody yet", next: "Game night (Thu) · June's half (Sun)", at: at(-13, 18, 0))]),
+        Msg("pip", at(-13, 18, 0), embeds: [digest(week: 1, top: "Tomás signed a lease 🔑", newFaces: "nobody yet", next: "Game night (<day:-10:S>) · June's half (<day:-7:S>)", at: at(-13, 18, 0))]),
         Msg("wren", at(-10, 10, 15), "@everyone please welcome <@felix> (and Biscuit, his dog, who is the real member here) 🐕",
           reactions: [React("👋", "june", "hana", "tomas", "rafi"), React("🐕", "nico")]),
         Msg("wren", at(-9, 16, 0), system: .channelFollowAdded("Linden Street Garden #notice-board")),
         Msg("wren", at(-6, 9, 30), """
         ## Move day crew 📦
-        **Saturday, 9am** at Tomás's old place.
+        **<day:-1:L>, 9am** at Tomás's old place.
         1. bring gloves
         2. bring snacks
         3. do *not* bring opinions about the couch
 
         __lunch is on tomás__ — ~~pizza~~ dumplings, the people have spoken
         """, label: "moveday", reactions: [React("📦", "tomas", "oskar", "rafi"), React(":couch:", "sam", "hana")], edited: 3_100),
-        Msg("pip", at(-6, 18, 0), embeds: [digest(week: 2, top: "June's sub-2 half marathon 🏅", newFaces: "<@felix> and Biscuit", next: "Move day (Sat) · café gig (Fri)", at: at(-6, 18, 0))]),
+        Msg("pip", at(-6, 18, 0), embeds: [digest(week: 2, top: "June's sub-2 half marathon 🏅", newFaces: "<@felix> and Biscuit",
+                                                  next: "Move day (<day:-1:S>) · café gig (<day:-2:S>)", at: at(-6, 18, 0))]),
         Msg("wren", at(-2, 12, 5), "@here Quiet Neighbours play the Corner Café **tonight at 8** 🎸 go be loud for them",
           reactions: [React("🎸", "hana", "tomas", "june", "nico"), React("🥁", "priya")]),
-        Msg("pip", at(0, 18, 0), embeds: [digest(week: 3, top: "The couch fit 🛋️", newFaces: "none, but Nico is a year older", next: "Game night (Thu) · pancakes at Tomás's (Sat)", at: at(0, 18, 0))]),
+        Msg("pip", at(0, 18, 0), embeds: [digest(week: 3, top: "The couch fit 🛋️", newFaces: "none, but Nico is a year older",
+                                                 next: "Game night (<day:4:S>) · pancakes at Tomás's (<day:6:S>)", at: at(0, 18, 0))]),
     ])
 
     static func digest(week: Int, top: String, newFaces: String, next: String, at time: DemoTime) -> DemoEmbed {
@@ -142,14 +144,14 @@ extension DemoContent {
         Msg("hana", at(-13, 8, 52), "does the new place have an oven that works or is it another \"decorative\" oven", label: "oven"),
         Msg("tomas", at(-13, 8, 55), "it has an oven that WORKS. gas. i might cry", replyTo: "oven", reactions: [React("🥹", "hana")]),
         Msg("june", at(-13, 9, 10), "when's the move?"),
-        Msg("tomas", at(-13, 9, 12), "saturday after next. so like 12 days. totally fine 🙂"),
+        Msg("tomas", at(-13, 9, 12), "<day:-1:l> after next. so like 12 days. totally fine 🙂"),
         Msg("oskar", at(-13, 9, 30), "i can help carry stuff. i cannot help with stairs. nobody can help with stairs"),
         Msg("tomas", at(-13, 9, 31), "ground floor! the only problem is the couch", label: "couch"),
         Msg("sam", at(-13, 9, 33), "oh no. not The Couch"),
         Msg("wren", at(-13, 9, 34), "the couch has survived two moves and a flood. it will survive this"),
         Msg("tomas", at(-13, 9, 35), "the couch is 2.4m long and the new door is... let's not talk about the new door",
           reactions: [React("💀", "june", "sam"), React(":couch:", "wren", "hana")]),
-        Msg("priya", at(-13, 21, 40), "sorry, just seeing this. congrats tomás!! 🥹 i'm in a flashcard cave until next wednesday but i'll come see it after"),
+        Msg("priya", at(-13, 21, 40), "sorry, just seeing this. congrats tomás!! 🥹 i'm in a flashcard cave until next <day:-4:l> but i'll come see it after"),
         // Day -12
         Msg("lou", at(-12, 7, 58), system: .boost),
         Msg("hana", at(-12, 8, 3), "lou 💖"),
@@ -160,11 +162,11 @@ extension DemoContent {
         Msg("rafi", at(-12, 12, 30), "the sock tax is real"),
         Msg("oskar", at(-12, 19, 2), "bike update: chain snapped on the way home. walked 3km pushing it like a sad shopping trolley", label: "chain",
           reactions: [React("😭", "june"), React("🫡", "sam")]),
-        Msg("rafi", at(-12, 19, 5), "bring it over sunday. i have a chain tool and a frankly unreasonable amount of spare parts", replyTo: "chain"),
+        Msg("rafi", at(-12, 19, 5), "bring it over <day:-7:l>. i have a chain tool and a frankly unreasonable amount of spare parts", replyTo: "chain"),
         Msg("oskar", at(-12, 19, 6), "you are a saint"),
         Msg("rafi", at(-12, 19, 6), "i am a chemistry teacher with a garage. same thing", reactions: [React("😂", "oskar", "wren")]),
         // Day -11
-        Msg("june", at(-11, 6, 45), "last tempo run before sunday ✅ legs are jelly but the sunrise was worth it",
+        Msg("june", at(-11, 6, 45), "last tempo run before <day:-7:l> ✅ legs are jelly but the sunrise was worth it",
           reactions: [React("🌅", "wren", "hana"), React("💪", "tomas", "oskar", "rafi")],
           attachments: [.photo("sunrise-loop.jpg", seed: 0x5e15, .landscape, alt: "Sunrise over green hills along a running path")]),
         Msg("wren", at(-11, 7, 30), "june gets up at 5 voluntarily. i will never understand"),
@@ -200,7 +202,7 @@ extension DemoContent {
           attachments: [.photo("gerald-new-leaf.jpg", seed: 0x6e2b, .plant, width: 960, height: 1_280, alt: "A monstera in a terracotta pot with a new leaf just starting to unroll")]),
         Msg("sam", at(-9, 14, 5), "go gerald go"),
         Msg("priya", at(-9, 14, 20), "this is the content i needed between cardiology and renal"),
-        Msg("oskar", at(-9, 20, 15), "<@&band> practice moved to tuesday, sam's got a late shift monday"),
+        Msg("oskar", at(-9, 20, 15), "<@&band> practice moved to <day:-5:l>, sam's got a late shift <day:-6:l>"),
         // Day -8
         Msg("hana", at(-8, 9, 10), "miso update: she stole an entire bread roll off the cooling rack and carried it under the bed. found it this morning. untouched. just... kept",
           reactions: [React("😭", "wren"), React("🍞", "tomas", "june"), React(":miso:", "nico")]),
@@ -261,10 +263,10 @@ extension DemoContent {
         Msg("rafi", at(-5, 8, 34), "new chain, new cassette, trued the back wheel. told you it was a positive hm", replyTo: "lazarus",
           reactions: [React("😂", "oskar", "sam", "wren")]),
         Msg("sam", at(-5, 8, 40), "the hm saga concludes"),
-        Msg("june", at(-5, 12, 0), "anyone want to join a recovery jog thursday morning? like, actually slow. conversational pace. <@&runners>"),
+        Msg("june", at(-5, 12, 0), "anyone want to join a recovery jog <day:-3:l> morning? like, actually slow. conversational pace. <@&runners>"),
         Msg("felix", at(-5, 12, 5), "biscuit and i are in"),
         Msg("wren", at(-5, 19, 30), forward: DemoMessageRef("garden-notice", "seedlings")),
-        Msg("wren", at(-5, 19, 31), "free seedlings at the community garden sunday morning if anyone wants tomatoes for a windowsill 🍅 <a:busybee:>"),
+        Msg("wren", at(-5, 19, 31), "free seedlings at the community garden <day:0:l> morning if anyone wants tomatoes for a windowsill 🍅 <a:busybee:>"),
         Msg("hana", at(-5, 19, 35), "oh i want basil"),
         Msg("tomas", at(-5, 19, 36), "i want everything for the new balcony. wait. do i have a balcony", label: "balcony"),
         Msg("tomas", at(-5, 19, 37), "i have a balcony!!", replyTo: "balcony", reactions: [React("🌿", "wren", "hana")], edited: 1),
@@ -273,7 +275,7 @@ extension DemoContent {
           reactions: [React("🍀", "wren", "hana", "june", "tomas", "sam", "rafi", "oskar", "nico"), React("💪", "felix"), React(":froggo:", "nico")]),
         Msg("nico", at(-4, 7, 5), "<:froggo:> good luck frog has been dispatched", replyTo: "examday"),
         Msg("tomas", at(-4, 18, 0), "priya how did it go??"),
-        Msg("priya", at(-4, 18, 45), "i don't know. fine? i think fine? results saturday. i'm going to eat something and lie on the floor"),
+        Msg("priya", at(-4, 18, 45), "i don't know. fine? i think fine? results <day:-1:l>. i'm going to eat something and lie on the floor"),
         Msg("hana", at(-4, 18, 46), "the floor is a valid study tool"),
         Msg("wren", at(-4, 21, 10), "settling this democratically", label: "poll",
           poll: DemoPoll("Where are we eating after the move? 🍽️", hours: 48, finalized: true, [
@@ -324,7 +326,7 @@ extension DemoContent {
           attachments: [.photo("its-in.jpg", seed: 0xc0c5, .couch, alt: "A green couch inside a living room next to a doorway with the door taken off")]),
         Msg("tomas", at(-1, 15, 21), "full story in the thread. we did not have to pivot", replyTo: "pivot"),
         Msg("hana", at(-1, 19, 30), "dumplings were perfect and tomás's new place is SO nice"),
-        Msg("tomas", at(-1, 19, 45), "thank you all so much. seriously. pancakes next saturday, everyone's invited 🥞",
+        Msg("tomas", at(-1, 19, 45), "thank you all so much. seriously. pancakes next <day:6:l>, everyone's invited 🥞",
           reactions: [React("❤️", "wren", "hana", "oskar", "rafi", "june", "sam", "priya"), React("🥞", "june")], edited: 2),
         // Day 0
         Msg("pip", at(0, 8, 0), label: "birthday", reactions: [React("🎂", "wren", "hana", "tomas", "june", "sam", "oskar"), React(":froggo:", "hana", "wren")],
