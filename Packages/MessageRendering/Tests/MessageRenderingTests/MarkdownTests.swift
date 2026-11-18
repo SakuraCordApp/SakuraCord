@@ -800,3 +800,13 @@ private func spoilerOutline(_ source: String) -> String {
     #expect(code.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil)
     #expect(code.attribute(.discordMarkdownSpoiler, at: 0, effectiveRange: nil) != nil)
 }
+
+@Test func `known emoji names show as emoji, as Discord's emoji rule reads them`() {
+    // Code, escapes and links keep the name; an unknown name stays text.
+    let source = #"hi:wave: :+1::skin-tone-2: :nope: `:wave:` \:wave: https://x.y/:wave:"#
+    for rules in [DiscordMarkdown.Rules.message, .profileBio] {
+        let rendered = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: rules)).string
+        #expect(rendered == "hi👋 👍🏼 :nope: :wave: :wave: https://x.y/:wave:")
+    }
+    #expect(MessageDocument(source: ":sparkles: :thumbsup::skin-tone-1:").isEmojiOnly)
+}

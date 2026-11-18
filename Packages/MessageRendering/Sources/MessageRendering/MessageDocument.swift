@@ -312,8 +312,16 @@ public struct MessageDocument: Hashable, Sendable {
         for segment in segments {
             switch segment {
             case let .markdown(value):
-                for character in value where !character.isWhitespace {
-                    guard isDisplayedEmoji(character) else { return false }
+                var rest = value[...]
+                while let character = rest.first {
+                    // A `:name:` Discord turns into an emoji counts as one.
+                    if let shortcode = DiscordEmojiNames.shortcode(in: rest, at: rest.startIndex) {
+                        rest = rest[shortcode.end...]
+                    } else {
+                        rest = rest.dropFirst()
+                        if character.isWhitespace { continue }
+                        guard isDisplayedEmoji(character) else { return false }
+                    }
                     emojiCount += 1
                     guard emojiCount <= maximumJumboEmojiCount else { return false }
                 }

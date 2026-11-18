@@ -792,6 +792,12 @@ public enum DiscordMarkdown {
                 continue
             }
 
+            if let shortcode = DiscordEmojiNames.shortcode(in: source, at: cursor) {
+                plain += shortcode.emoji
+                cursor = shortcode.end
+                continue
+            }
+
             if sourceCollector == nil { plain.append(source[cursor]) }
             cursor = source.index(after: cursor)
         }
