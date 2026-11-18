@@ -1585,6 +1585,8 @@ public extension DiscordMarkdown {
                 fences.append(NSRange(code.endIndex ..< after.startIndex, in: source))
                 line = AppKitPlan.Line(runs: [], block: .paragraph)
                 _ = inlineRuns(after, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+                // A line that holds code keeps its block chrome, as message rendering gives it.
+                if !code.isEmpty { line = AppKitPlan.Line(runs: [], block: .code(language: language, isFirstLine: isFirstLine)) }
             case let .code(language, isFirstLine):
                 line = AppKitPlan.Line(runs: codeRuns(String(rawLine), language: language), block: .code(language: language, isFirstLine: isFirstLine))
                 style(range)

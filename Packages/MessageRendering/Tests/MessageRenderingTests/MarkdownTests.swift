@@ -90,6 +90,8 @@ import Testing
     let font = styled.attribute(.font, at: (closed as NSString).range(of: "hi").location, effectiveRange: nil) as? NSFont
     #expect(font?.fontDescriptor.symbolicTraits.contains(.monoSpace) == false)
     #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+    let oneLine = DiscordMarkdown.appKitSourceAttributed("```x```", attributes: [:], baseFontSize: 14, usesMessageLineHeight: false)
+    #expect(oneLine.attribute(.discordMarkdownBlock, at: 3, effectiveRange: nil) as? String == "code")
 }
 
 @Test func `angle bracket masked links match discord rendering`() throws {
