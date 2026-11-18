@@ -12,12 +12,14 @@ extension DiscordMarkdown {
     /// Message code blocks, which Discord's codeBlock rule,
     /// `` ^```(?:([a-z0-9_+\-.#]+?)\n)?\n*([^\n][^]*?)\n*``` ``, opens at
     /// any three backticks outside inline code, spoilers and masked links,
-    /// even mid-line,
-    /// and closes at the next three. A fence that nothing closes is text.
-    /// Quote lines keep their code inline, and a `>>>` quote opens blocks
-    /// only at a line's start, as message rendering reads them.
+    /// even mid-line, and closes at the next three. A fence that nothing
+    /// closes is text. Quote lines keep their code inline, and a `>>>`
+    /// quote opens blocks only at a line's start, as message rendering
+    /// reads them.
     static func codeBlocks(in source: String) -> [CodeBlock] {
         guard source.contains("```") else { return [] }
+        // Indexes the terminators once, so each `[` or backtick finds its close directly.
+        let terminators = SourceFormatCollector(source: source, matchesComposerDelimiters: false) { _, _, _ in }
         var blocks: [CodeBlock] = []
         var cursor = source.startIndex
         var lineStart = cursor
@@ -36,6 +38,7 @@ extension DiscordMarkdown {
             case "\n":
                 cursor = source.index(after: cursor)
                 lineStart = cursor
+                continue
             case "\\":
                 // An escape keeps the next mark, but not a letter, digit or space, literal.
                 let next = source.index(after: cursor)
@@ -50,13 +53,13 @@ extension DiscordMarkdown {
                 cursor = close?.upperBound ?? contentStart
             case "[":
                 // Discord reads a masked link before the code in its label.
-                cursor = markdownLinkTarget(in: source[..<lineEnd], at: cursor, collector: nil)?.end ?? source.index(after: cursor)
+                cursor = markdownLinkTarget(in: source[..<lineEnd], at: cursor, collector: terminators)?.end ?? source.index(after: cursor)
             case "`":
                 if !isQuoteLine, !isInMultilineQuote || cursor == lineStart, let block = codeBlock(in: source, at: cursor) {
                     blocks.append(block)
                     cursor = block.range.upperBound
                 } else {
-                    cursor = inlineCode(in: source[..<lineEnd], at: cursor, collector: nil).end
+                    cursor = inlineCode(in: source[..<lineEnd], at: cursor, collector: terminators).end
                 }
             default:
                 cursor = source.index(after: cursor)

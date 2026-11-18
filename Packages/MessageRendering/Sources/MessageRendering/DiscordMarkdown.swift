@@ -1630,6 +1630,9 @@ public extension DiscordMarkdown {
         ) {
             let hasText = pieces.contains { if case .text = $0 { true } else { false } }
             line = hasText ? AppKitPlan.Line(runs: [], block: .paragraph) : DiscordMarkdown.codeLine("", language: nil, isFirstLine: startsBlock)
+            // Text on a closing fence's line sits right below the block, as messages show it.
+            let startsWithText = if case .text = pieces[0] { true } else { false }
+            line.followsBlockOnItsLine = hasText && !startsWithText
             for piece in pieces {
                 switch piece {
                 case let .fence(fence):
