@@ -567,6 +567,7 @@ import Testing
         "<https://user:pw@EXAMPLE.com:443?#>": "https://example.com/",
         "https://bücher.de:8080/a/../Caf%C3%A9?q=it's#`x`": "https://xn--bcher-kva.de:8080/Café?q=it's#%60x%60",
         "https://example.com/%41%2F%E2%80%AEgpj.exe": "https://example.com/A%2F%E2%80%AEgpj.exe",
+        "<https://example.com/\u{FE0F}secret>": "https://example.com/%EF%B8%8Fsecret",
         "https://example.com/100%25%2E": "https://example.com/100%25.",
         "https://example.com/100%": "https://example.com/100%",
     ]
@@ -887,4 +888,20 @@ private func spoilerOutline(_ source: String) -> String {
     let code = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("||`x`||"))
     #expect(code.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil)
     #expect(code.attribute(.discordMarkdownSpoiler, at: 0, effectiveRange: nil) != nil)
+}
+
+@Test func `known emoji names show as emoji, as Discord's emoji rule reads them`() {
+    // Code, escapes and links keep the name; an unknown name stays text.
+    let source = #"hi:wave: :+1::skin-tone-2: :nope: `:wave:` \:wave: https://x.y/:wave:"#
+    for rules in [DiscordMarkdown.Rules.message, .profileBio] {
+        let rendered = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: rules)).string
+        #expect(rendered == "hi👋 👍🏼 :nope: :wave: :wave: https://x.y/:wave:")
+    }
+    #expect(MessageDocument(source: ":sparkles: :thumbsup::skin-tone-1:").isEmojiOnly)
+    // Underscores in a name close no emphasis; a token keeps its `:name:`;
+    // a symbol shows as emoji.
+    let plan = DiscordMarkdown.appKitPlan("snake_case :heart_eyes: x_y <:fire:1> <t:1234:R> :tm:")
+    #expect(DiscordMarkdown.appKitAttributed(plan).string == "snake_case 😍 x_y <:fire:1> <t:1234:R> ™\u{FE0F}")
+    // Profile widgets parse no emoji.
+    #expect(String(DiscordMarkdown.profileWidgetAttributed(":sparkles:").characters) == ":sparkles:")
 }

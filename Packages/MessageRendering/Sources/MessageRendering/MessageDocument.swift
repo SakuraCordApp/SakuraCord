@@ -181,7 +181,14 @@ public struct MessageDocument: Hashable, Sendable {
     public init(source: String, rules: DiscordMarkdown.Rules = .message) {
         self.source = source
         segments = Self.tokenize(source, rules: rules)
-        isEmojiOnly = Self.detectEmojiOnly(source: source, segments: segments)
+        isEmojiOnly = Self.detectEmojiOnly(source: source, segments: segments, rules: rules)
+    }
+
+    /// The end of the custom emoji or mention token at `index`, if one starts there.
+    static func tokenEnd(in source: Substring, at index: String.Index) -> String.Index? {
+        let range = NSRange(index ..< source.endIndex, in: source.base)
+        return tokenExpression.firstMatch(in: source.base, options: .anchored, range: range)
+            .flatMap { Range($0.range, in: source.base)?.upperBound }
     }
 
     private static func tokenize(_ source: String, rules: DiscordMarkdown.Rules) -> [Segment] {
@@ -307,13 +314,21 @@ public struct MessageDocument: Hashable, Sendable {
         source[..<range.lowerBound].hasSuffix("](") && source[range.upperBound...].hasPrefix(")")
     }
 
-    private static func detectEmojiOnly(source: String, segments: [Segment]) -> Bool {
+    private static func detectEmojiOnly(source: String, segments: [Segment], rules: DiscordMarkdown.Rules) -> Bool {
         var emojiCount = 0
         for segment in segments {
             switch segment {
             case let .markdown(value):
-                for character in value where !character.isWhitespace {
-                    guard isDisplayedEmoji(character) else { return false }
+                var rest = value[...]
+                while let character = rest.first {
+                    // A `:name:` Discord turns into an emoji counts as one.
+                    if rules.contains(.emoji), let shortcode = DiscordEmojiNames.shortcode(in: rest, at: rest.startIndex) {
+                        rest = rest[shortcode.end...]
+                    } else {
+                        rest = rest.dropFirst()
+                        if character.isWhitespace { continue }
+                        guard isDisplayedEmoji(character) else { return false }
+                    }
                     emojiCount += 1
                     guard emojiCount <= maximumJumboEmojiCount else { return false }
                 }

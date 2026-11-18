@@ -71,10 +71,12 @@ public enum DiscordMarkdown {
         /// Embed title and field-name text, which Discord sets semibold and
         /// whose emoji are never jumbo.
         public static let title = Self(rawValue: 1 << 11)
+        /// `:name:` emoji shortcodes.
+        static let emoji = Self(rawValue: 1 << 12)
 
         public static let message: Self = [
             .codeBlocks, .code, .strikethroughAndSpoilers, .maskedLinks, .headings, .lists, .mentions, .autolinks, .subtext,
-            .gameMentions,
+            .gameMentions, .emoji,
         ]
         /// `PROFILE_BIO_RULES`, parsed as `parseBioReact` does: without code
         /// blocks or user and role mentions, and without the headings, lists
@@ -88,7 +90,7 @@ public enum DiscordMarkdown {
         /// An embed title or field name: inline formatting, code and quotes,
         /// and URLs only when the embed itself doesn't link.
         public static func embedTitle(allowsLinks: Bool) -> Self {
-            let rules: Self = [.code, .strikethroughAndSpoilers, .title]
+            let rules: Self = [.code, .strikethroughAndSpoilers, .title, .emoji]
             return allowsLinks ? rules.union(.autolinks) : rules
         }
 
@@ -728,15 +730,6 @@ public enum DiscordMarkdown {
                 guard let candidate = source[cursor...].firstIndex(where: isComposerSyntaxCharacter) else { break }
                 cursor = candidate
             }
-            if source[cursor] == "\\" {
-                let next = source.index(after: cursor)
-                if next < source.endIndex, escapes(source[next]) {
-                    plain.append(source[next])
-                    cursor = source.index(after: next)
-                    continue
-                }
-            }
-
             if rules.contains(.code), source[cursor] == "`" {
                 let match = inlineCode(in: source, at: cursor, collector: sourceCollector)
                 if let code = match.code {
@@ -811,8 +804,9 @@ public enum DiscordMarkdown {
                 continue
             }
 
-            if sourceCollector == nil { plain.append(source[cursor]) }
-            cursor = source.index(after: cursor)
+            let text = plainText(in: source, at: cursor, readsEmoji: sourceCollector == nil && rules.contains(.emoji))
+            if sourceCollector == nil { plain += text.text }
+            cursor = text.end
         }
 
         flushPlain()
@@ -975,6 +969,8 @@ public enum DiscordMarkdown {
                         range: source.index(after: contentStart) ..< source.endIndex
                     )
                     : nil
+            } else if delimiter.marker == "_" {
+                underscoreEmphasisClose(in: source, after: contentStart)
             } else {
                 source.range(of: delimiter.marker, range: contentStart ..< source.endIndex)
             }
