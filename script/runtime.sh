@@ -106,14 +106,20 @@ sakuracord_launch_scoped_app() {
   # another launcher races this final check instead of forcing a duplicate.
   sakuracord_stop_scoped_app || return
   local argument previous="" simulator_port=""
-  # Any simulator flag keeps a record; only a numeric port changes it.
+  # The first simulator flag decides, as in DiscordNetworkRedirect.basePort: its
+  # numeric port, or 47100 when it has none.
   for argument in "$@"; do
-    if [[ "$previous" == --discord-simulator && "$argument" =~ ^[0-9]+$ ]]; then
-      simulator_port="$argument"
-    elif [[ "$argument" =~ ^--discord-simulator=([0-9]+)$ ]]; then
+    if [[ "$previous" == --discord-simulator ]]; then
+      [[ "$argument" =~ ^[+]?[0-9]+$ ]] && simulator_port="$argument"
+      break
+    elif [[ "$argument" =~ ^--discord-simulator=([+]?[0-9]+)$ ]]; then
       simulator_port="${BASH_REMATCH[1]}"
-    elif [[ "$argument" == --discord-simulator || "$argument" == --discord-simulator=* ]]; then
-      simulator_port="${simulator_port:-47100}"
+      break
+    elif [[ "$argument" == --discord-simulator=* ]]; then
+      simulator_port=47100
+      break
+    elif [[ "$argument" == --discord-simulator ]]; then
+      simulator_port=47100
     fi
     previous="$argument"
   done
