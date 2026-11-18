@@ -201,8 +201,7 @@ public struct MessageDocument: Hashable, Sendable {
                 result.append(.markdown(String(source[cursor ..< range.lowerBound])))
             }
             let token = String(source[range])
-            if let emoji = RenderedEmoji(rawToken: token),
-               rules.contains(.codeBlocks) || !isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) {
+            if let emoji = RenderedEmoji(rawToken: token), !isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) {
                 result.append(.customEmoji(emoji))
             } else if !rules.contains(.maskedLinks) || !isMaskedLinkTarget(range, in: source),
                       let mention = RenderedMention(rawToken: token), rules.renders(mention.kind),
@@ -253,16 +252,15 @@ public struct MessageDocument: Hashable, Sendable {
         _ mention: RenderedMention, range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules,
         codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
     ) -> Bool {
-        let isTokenOnly = [.game, .broadcast, .timestamp, .command].contains(mention.kind)
-        // Code read by Discord's full rule holds no mention of any kind.
-        guard isTokenOnly || !rules.contains(.codeBlocks) else { return false }
-        let tokenRange = NSRange(range, in: source)
         if isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) { return true }
-        if isTokenOnly {
+        let tokenRange = NSRange(range, in: source)
+        if [.game, .broadcast, .timestamp, .command].contains(mention.kind) {
             let urls = urlRanges ?? Self.urlRanges(in: source)
             urlRanges = urls
             if urls.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
         }
+        // A backslash escapes punctuation only, so a link after one still links.
+        guard ![.channelLink, .message].contains(mention.kind) else { return false }
         var cursor = range.lowerBound
         var escaped = false
         while cursor > source.startIndex {

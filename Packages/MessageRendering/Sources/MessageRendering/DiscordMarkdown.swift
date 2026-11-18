@@ -50,8 +50,8 @@ public enum DiscordMarkdown {
         public let rawValue: UInt16
         public init(rawValue: UInt16) { self.rawValue = rawValue }
 
-        /// Fenced code blocks. Without them, inline code is Discord's rule in
-        /// full: any fence length, across lines, holding no mentions.
+        /// Fenced code blocks. Without them, inline code is the only code and
+        /// spans lines, as Discord's rule does.
         static let codeBlocks = Self(rawValue: 1 << 0)
         static let code = Self(rawValue: 1 << 1)
         static let strikethroughAndSpoilers = Self(rawValue: 1 << 2)
@@ -391,17 +391,6 @@ public enum DiscordMarkdown {
         }
     }
 
-    /// Inline code at `start` under `rules`. Beside code blocks, message
-    /// rendering closes it at the next backtick.
-    private static func inlineCode(
-        in source: Substring, at start: String.Index, rules: Rules, collector: SourceFormatCollector?
-    ) -> (content: Range<String.Index>, end: String.Index)? {
-        guard rules.contains(.code) else { return nil }
-        guard rules.contains(.codeBlocks) else { return inlineCode(in: source, at: start) }
-        let open = source.index(after: start)
-        return nextInlineTerminator("`", in: source, from: open, collector: collector).map { (open ..< $0, source.index(after: $0)) }
-    }
-
     /// The text after a `>` quote marker that Swift reads as part of a
     /// larger character. Embed providers put invisible variation selectors
     /// beside the marker, which merge with it, so it is read by scalar. A line
@@ -729,10 +718,11 @@ public enum DiscordMarkdown {
                 }
             }
 
-            if source[cursor] == "`", let code = inlineCode(in: source, at: cursor, rules: rules, collector: sourceCollector) {
+            if source[cursor] == "`", rules.contains(.code), let code = inlineCode(in: source, at: cursor) {
                 flushPlain()
                 result.append(inlineCodeRun(
-                    source[code.content], traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
+                    source[code.content], fence: source[cursor ..< code.content.lowerBound],
+                    traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
                 ))
                 cursor = code.end
                 continue
@@ -820,9 +810,7 @@ public enum DiscordMarkdown {
 
         return (
             AppKitPlan.InlineRun(
-                text: String(
-                    source[source.index(after: cursor) ..< close]
-                ),
+                text: MessageLinkPolicy.displayText(source[source.index(after: cursor) ..< close], url: url),
                 traits: traits,
                 link: url,
                 color: nil,
@@ -925,7 +913,7 @@ public enum DiscordMarkdown {
 
         return (
             AppKitPlan.InlineRun(
-                text: String(source[match.range]),
+                text: MessageLinkPolicy.displayText(source[match.range], url: match.url),
                 traits: traits,
                 link: match.url,
                 color: nil
@@ -998,8 +986,8 @@ public enum DiscordMarkdown {
         if source[cursor] == "\\", next < source.endIndex {
             return source.index(after: next)
         }
-        if source[cursor] == "`", let close = collector.next("`", from: next, before: source.endIndex) {
-            return source.index(after: close)
+        if source[cursor] == "`", let code = inlineCode(in: source, at: cursor) {
+            return code.end
         }
         if let link = markdownLinkTarget(in: source, at: cursor, collector: collector) {
             return link.end
@@ -1680,10 +1668,20 @@ public extension DiscordMarkdown.AppKitPlan.Line {
 
 private extension DiscordMarkdown {
     static func inlineCodeRun(
-        _ source: Substring, traits: AppKitPlan.InlineTraits, link: URL?, sourceCollector: SourceFormatCollector?
+        _ source: Substring, fence: Substring, traits: AppKitPlan.InlineTraits, link: URL?,
+        sourceCollector: SourceFormatCollector?
     ) -> AppKitPlan.InlineRun {
-        sourceCollector?.collect(source.startIndex ..< source.endIndex, traits.union(.inlineCode), "`")
-        return AppKitPlan.InlineRun(text: String(source), traits: traits.union(.inlineCode), link: link, color: nil)
+        sourceCollector?.collect(source.startIndex ..< source.endIndex, traits.union(.inlineCode), String(fence))
+        return AppKitPlan.InlineRun(text: String(trimmingCodePadding(source)), traits: traits.union(.inlineCode), link: link, color: nil)
+    }
+
+    /// Discord drops one space of padding beside a backtick, so `` `` `x` `` ``
+    /// shows `` `x` ``, as simple-markdown's `/^ (?= *`)|(` *) $/g` does.
+    static func trimmingCodePadding(_ code: Substring) -> Substring {
+        var code = code
+        if code.first == " ", code.dropFirst().drop(while: { $0 == " " }).first == "`" { code = code.dropFirst() }
+        if code.last == " ", code.dropLast().reversed().drop(while: { $0 == " " }).first == "`" { code = code.dropLast() }
+        return code
     }
 
     static func isComposerSyntaxCharacter(_ character: Character) -> Bool {
@@ -1709,7 +1707,7 @@ private extension DiscordMarkdown {
     }
 
     /// Per-parse lookup table: unfinished syntax must not repeatedly search the
-    /// remainder of the draft for the same closing bracket or backtick.
+    /// remainder of the draft for the same closing bracket.
     final class SourceFormatCollector {
         let collect: (Range<String.Index>, AppKitPlan.InlineTraits, String) -> Void
         /// A masked link's label and the end of its target.
@@ -1723,7 +1721,7 @@ private extension DiscordMarkdown {
             for index in source.indices {
                 let character = source[index]
                 switch character {
-                case "]", ")", ">", "`": terminators[character, default: []].append(index)
+                case "]", ")", ">": terminators[character, default: []].append(index)
                 default: break
                 }
             }
@@ -1862,8 +1860,8 @@ public extension DiscordMarkdown {
     }
 }
 
-/// Discord's block quotes, and its inline code in rules without code
-/// blocks, such as a bio's, where it is the only code and may span lines.
+/// Discord's block quotes and inline code. In rules without code blocks,
+/// such as a bio's, inline code is the only code and may span lines.
 extension DiscordMarkdown {
     /// A line's quote, as Discord's blockQuote rule reads it: `>>> ` quotes
     /// the rest of the text and `> ` its line, each without its marker and
