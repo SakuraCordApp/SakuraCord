@@ -106,11 +106,15 @@ sakuracord_launch_scoped_app() {
   # another launcher races this final check instead of forcing a duplicate.
   sakuracord_stop_scoped_app || return
   local argument previous="" simulator_port=""
+  # Any simulator flag keeps a record; only a numeric port changes it.
   for argument in "$@"; do
-    [[ "$previous" == --discord-simulator ]] && simulator_port="$argument"
-    [[ "$argument" == --discord-simulator=* ]] && simulator_port="${argument#*=}"
-    # Any simulator flag keeps a record, even when its port is missing.
-    [[ "$argument" == --discord-simulator* ]] && simulator_port="${simulator_port:-47100}"
+    if [[ "$previous" == --discord-simulator && "$argument" =~ ^[0-9]+$ ]]; then
+      simulator_port="$argument"
+    elif [[ "$argument" =~ ^--discord-simulator=([0-9]+)$ ]]; then
+      simulator_port="${BASH_REMATCH[1]}"
+    elif [[ "$argument" == --discord-simulator || "$argument" == --discord-simulator=* ]]; then
+      simulator_port="${simulator_port:-47100}"
+    fi
     previous="$argument"
   done
   sakuracord_record_simulator_launch "$SAKURACORD_APP_BUNDLE" "$simulator_port" || return
