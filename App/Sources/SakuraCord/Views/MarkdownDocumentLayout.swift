@@ -500,7 +500,13 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             let padding = padding(font)
             let runGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             enumerateLineFragments(forGlyphRange: runGlyphs) { _, line, container, lineGlyphs, _ in
-                let glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
+                var glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
+                // A line break's glyph spans the rest of its line; the box
+                // ends at the line's last character, as Discord's does.
+                if glyphs.length > 0,
+                   (textStorage.string as NSString).character(at: self.characterIndexForGlyph(at: NSMaxRange(glyphs) - 1)) == 0x0A {
+                    glyphs.length -= 1
+                }
                 guard glyphs.length > 0 else { return }
                 let bounds = self.boundingRect(forGlyphRange: glyphs, in: container)
                 let start = self.characterIndexForGlyph(at: glyphs.location)
