@@ -377,6 +377,53 @@ struct AppleMusicPresenceMonitorTests {
         #expect(decorated.memberListActivityIconType == .game)
     }
 
+    @Test("Current user account subtitle and short activity text match Discord client presentation")
+    @MainActor
+    func testCurrentUserAccountSubtitleAndShortActivity() async {
+        let model = AppModel(launchMode: .offlineTesting)
+        await model.start()
+        guard model.currentUser != nil else { return }
+
+        // 1. No activity, no custom status -> presence status
+        #expect(model.currentUserShortActivityText == nil)
+        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "Online")
+        #expect(model.currentUserAccountSubtitle(currentStatus: .idle) == "Idle")
+
+        // 2. Game activity -> short title without Playing prefix
+        let roblox = OutgoingActivityPayload(
+            name: "Roblox",
+            type: .playing
+        )
+        model.applyCurrentUserActivity(roblox)
+        #expect(model.currentUserShortActivityText == "Roblox")
+        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "Roblox")
+
+        // 3. Game activity with multiple activities -> appends +N count
+        model.currentUserPermittedActivitiesCount = 2
+        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "Roblox +1")
+
+        model.currentUserPermittedActivitiesCount = 1
+
+        // 4. Listening activity -> prioritizes artist / state then details
+        let spotify = OutgoingActivityPayload(
+            name: "Spotify",
+            type: .listening,
+            details: "TRUE ADVENTURE",
+            state: "Xizt, TRUE ADAM"
+        )
+        model.applyCurrentUserActivity(spotify)
+        #expect(model.currentUserShortActivityText == "Xizt, TRUE ADAM")
+        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "Xizt, TRUE ADAM")
+
+        // 5. Custom status takes precedence over activity text
+        model.profileCustomStatus = ProfileCustomStatus(text: "Chilling")
+        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "Chilling")
+
+        // 6. Custom status cleared -> returns to activity
+        model.profileCustomStatus = nil
+        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "Xizt, TRUE ADAM")
+    }
+
     @Test("Extreme or non-finite duration does not cause integer overflow or crash")
     func testExtremeDurationDoesNotOverflow() async {
         let provider = MockChatProvider()

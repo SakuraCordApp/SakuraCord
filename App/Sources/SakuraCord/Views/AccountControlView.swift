@@ -87,7 +87,7 @@ struct AccountControlView: View {
 
     private var accountSubtitle: String {
         if user != nil {
-            return currentStatus.label
+            return voiceModel.currentUserAccountSubtitle(currentStatus: currentStatus)
         }
         return isOfflineTesting
             ? "Mock data • networking disabled"
@@ -529,17 +529,5 @@ private struct AccountSelectionPopover: View {
         .disabled(switchingAccountID != nil)
         .authenticationLoading(switchingAccountID == account.accountID, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(8)))
         .accessibilityValue(switchingAccountID == account.accountID ? "Switching account" : "")
-    }
-}
-
-private extension PresenceStatus {
-    var label: String {
-        switch self {
-        case .online: "Online"
-        case .idle: "Idle"
-        case .dnd: "Do Not Disturb"
-        case .invisible: "Invisible"
-        case .offline: "Offline"
-        }
     }
 }

@@ -819,6 +819,48 @@ final class AppModel {
         currentUserActivity?.type == .listening
     }
 
+    var currentUserShortActivityText: String? {
+        guard let activity = currentUserActivity else { return nil }
+        if activity.type == .listening {
+            let state = activity.state?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let details = activity.details?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = (state?.isEmpty == false ? state : nil)
+                ?? (details?.isEmpty == false ? details : nil)
+                ?? activity.name
+            if value.lowercased().hasPrefix("listening to ") {
+                return String(value.dropFirst("listening to ".count)).trimmingCharacters(in: .whitespaces)
+            }
+            return value
+        } else {
+            let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let prefixes = ["playing ", "streaming ", "watching ", "competing in "]
+            var stripped = name
+            for prefix in prefixes where stripped.lowercased().hasPrefix(prefix) {
+                stripped = String(stripped.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+                break
+            }
+            if !stripped.isEmpty {
+                return stripped
+            }
+            return activity.details ?? activity.state ?? activity.name
+        }
+    }
+
+    func currentUserAccountSubtitle(currentStatus: PresenceStatus? = nil) -> String {
+        let status = currentStatus ?? self.currentStatus
+        let customStatus = profileCustomStatus?.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let customStatus, !customStatus.isEmpty {
+            return customStatus
+        }
+        if let activityText = currentUserShortActivityText {
+            if currentUserPermittedActivitiesCount >= 2 {
+                return "\(activityText) +\(currentUserPermittedActivitiesCount - 1)"
+            }
+            return activityText
+        }
+        return status.label
+    }
+
     @ObservationIgnored var provider: any ChatProvider
     @ObservationIgnored let activityCoordinator: ActivityCoordinator
     @ObservationIgnored let ipcServer: DiscordIPCServer

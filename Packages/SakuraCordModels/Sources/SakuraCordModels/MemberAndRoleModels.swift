@@ -6,6 +6,16 @@ public enum PresenceStatus: String, Codable, CaseIterable, Hashable, Sendable {
     public var isVisibleOnline: Bool {
         self == .online || self == .idle || self == .dnd
     }
+
+    public var label: String {
+        switch self {
+        case .online: "Online"
+        case .idle: "Idle"
+        case .dnd: "Do Not Disturb"
+        case .invisible: "Invisible"
+        case .offline: "Offline"
+        }
+    }
 }
 
 public struct GuildRole: Identifiable, Codable, Hashable, Sendable {
