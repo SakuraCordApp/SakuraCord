@@ -264,6 +264,8 @@ import Testing
     // timestamp renders.
     #expect(mentionKinds == [.channel, .timestamp, .channelLink, .timestamp])
     #expect(bio.segments.contains { if case .customEmoji = $0 { true } else { false } })
+    // Code keeps a custom emoji token as text, as Discord's inline code does.
+    #expect(MessageDocument(source: "`<:x:1>`", rules: .profileBio).segments == [.markdown("`<:x:1>`")])
 
     // A fence is inline code across lines, its Markdown kept literal.
     let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
