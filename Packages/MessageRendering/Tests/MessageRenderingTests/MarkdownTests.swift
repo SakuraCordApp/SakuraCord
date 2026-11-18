@@ -55,9 +55,10 @@ import Testing
     let linked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[x](https://a.example) *Level*", rules: .embedTitle(allowsLinks: false)))
     #expect(linked.string == "[x](https://a.example) Level")
     #expect(linked.attribute(.link, at: 5, effectiveRange: nil) == nil)
-    // Titles never parse masked links; their URLs still link when the embed doesn't.
+    // Titles never parse masked links; their URLs still link, with Discord's
+    // link text, when the embed doesn't.
     let unlinked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[x](https://a.example)", rules: .embedTitle(allowsLinks: true)))
-    #expect(unlinked.string == "[x](https://a.example)")
+    #expect(unlinked.string == "[x](https://a.example/)")
     #expect(unlinked.attribute(.link, at: 0, effectiveRange: nil) == nil)
     #expect(unlinked.attribute(.link, at: 5, effectiveRange: nil) != nil)
     // Italic keeps the title's semibold weight.
@@ -339,7 +340,10 @@ import Testing
     #expect(mentionKinds == [.channel, .timestamp, .channelLink, .timestamp])
     #expect(bio.segments.contains { if case .customEmoji = $0 { true } else { false } })
     // Code keeps a custom emoji token as text, as Discord's inline code does.
-    #expect(MessageDocument(source: "`<:x:1>`", rules: .profileBio).segments == [.markdown("`<:x:1>`")])
+    for rules in [DiscordMarkdown.Rules.message, .profileBio] {
+        #expect(MessageDocument(source: "`<:x:1>`", rules: rules).segments == [.markdown("`<:x:1>`")])
+        #expect(MessageDocument(source: #"\<:x:1>"#, rules: rules).segments == [.markdown(#"\<:x:1>"#)])
+    }
 
     // A fence is inline code across lines, its Markdown kept literal.
     let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
@@ -366,7 +370,11 @@ import Testing
     let elapsed = clock.measure { _ = DiscordMarkdown.appKitPlan(backticks, rules: .profileBio) }
     #expect(elapsed < .milliseconds(250))
     // The longest opening run with a close of its length wins.
-    #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("``a`b``", rules: .profileBio)).string == "a`b")
+    for rules in [DiscordMarkdown.Rules.message, .profileBio] {
+        #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("``a`b``", rules: rules)).string == "a`b")
+        // Discord drops a space of padding beside a backtick.
+        #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("`` `x` ``", rules: rules)).string == "`x`")
+    }
 
     // Discord merges consecutive `> ` lines and parses code across them.
     let quote = "> a `b https://discord.com/channels/1/2\n> c` d"
@@ -409,11 +417,12 @@ import Testing
     // parseBioReact never sets allowHeading, allowList or allowLinks.
     let source = "# h\n- item\n[label](https://x.y)"
     let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
-    #expect(value.string == source)
+    // The bare URL shows the text Discord normalizes it to.
+    #expect(value.string == "# h\n- item\n[label](https://x.y/)")
     #expect(value.attribute(.discordMarkdownBlock, at: 0, effectiveRange: nil) == nil)
     #expect(value.attribute(.discordMarkdownListMarker, at: (value.string as NSString).range(of: "- item").location, effectiveRange: nil) == nil)
     #expect(value.attribute(.link, at: (value.string as NSString).range(of: "label").location, effectiveRange: nil) == nil)
-    let url = (value.string as NSString).range(of: "https://x.y")
+    let url = (value.string as NSString).range(of: "https://x.y/")
     #expect(value.attribute(.link, at: url.location, effectiveRange: nil) as? URL == URL(string: "https://x.y"))
     #expect(value.attribute(.link, at: NSMaxRange(url), effectiveRange: nil) == nil)
 }
@@ -502,13 +511,13 @@ import Testing
     #expect(mentions.first?.rawToken == token)
 }
 
-@Test func `custom emoji and new mention types stay literal in code and escaped text`() {
-    let tokens = ["@everyone", "<t:1000000:R>", "<@$356875221078245376>", "</role add:1234>"]
+@Test func `custom emoji and mentions stay literal in code and escaped text`() {
+    let tokens = ["@everyone", "<t:1000000:R>", "<@$356875221078245376>", "</role add:1234>", "<@1234>", "<#1234>"]
     let raw = tokens.joined(separator: " ") + " <:x:1> <a:y:2>"
     for source in [
         "🌸 `\(raw)`", "``\(raw)``", "``a`\(raw)``", "**`\(raw)`**", "```swift\n\(raw)\n```", "```\(raw)```",
         "* `**\(raw)**`", ">>> quote\n\n* `**\(raw)**`",
-        #"\@everyone \<t:1000000:R> \<@$356875221078245376> \</role add:1234> \<:x:1> \<a:y:2>"#,
+        #"\@everyone \<t:1000000:R> \<@$356875221078245376> \</role add:1234> \<@1234> \<#1234> \<:x:1> \<a:y:2>"#,
         "[open](https://example.com/@here) https://example.com/@everyone",
     ] {
         #expect(MessageDocument(source: source).segments == [.markdown(source)])
@@ -531,16 +540,39 @@ import Testing
         return mention
     }
     #expect(mentions.map(\.rawToken) == tokens)
-    #expect(mentions.map(\.kind) == [.broadcast, .timestamp, .game, .command])
+    #expect(mentions.map(\.kind) == [.broadcast, .timestamp, .game, .command, .user, .channel])
     #expect(mixed.segments.filter { if case .customEmoji = $0 { true } else { false } }.count == 2)
     // A block that closes on its own line, or mid-line, leaves the text after it.
     for source in ["```code``` <:x:1>", "```code```\n<:x:1>", "```\ncode```\n<:x:1>", "``a`` <:x:1>"] {
         #expect(MessageDocument(source: source).segments.last == .customEmoji(RenderedEmoji(rawToken: "<:x:1>")!))
     }
-    #expect(mentions.last?.id == "1234")
-    #expect(mentions.last?.commandName == "role add")
+    #expect(mentions[3].commandName == "role add")
     let afterLink = MessageDocument(source: "[read](https://example.com)@here").segments
     #expect(afterLink.last == .mention(RenderedMention(rawToken: "@here")!))
+}
+
+@Test func `a backslash escapes punctuation only, as Discord's escape rule does`() {
+    // A letter after a backslash keeps it, and a link after one still links in full.
+    let rendered = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(#"C:\Users \https://example.com/foo_bar_baz \*x\*"#))
+    #expect(rendered.string == #"C:\Users \https://example.com/foo_bar_baz *x*"#)
+    let link = MessageDocument(source: #"\https://discord.com/channels/1/2/3"#).segments.last
+    #expect(link == .mention(RenderedMention(rawToken: "https://discord.com/channels/1/2/3")!))
+}
+
+@Test func `links show the text Discord normalizes them to`() {
+    // Hidden and bidirectional characters stay escaped, so a link's text
+    // can't disguise where it goes.
+    let cases = [
+        "https://example.com": "https://example.com/",
+        "<https://user:pw@EXAMPLE.com:443?#>": "https://example.com/",
+        "https://bücher.de:8080/a/../Caf%C3%A9?q=it's#`x`": "https://xn--bcher-kva.de:8080/Café?q=it's#%60x%60",
+        "https://example.com/%41%2F%E2%80%AEgpj.exe": "https://example.com/A%2F%E2%80%AEgpj.exe",
+        "https://example.com/100%25%2E": "https://example.com/100%25.",
+        "https://example.com/100%": "https://example.com/100%",
+    ]
+    for (source, text) in cases {
+        #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source)).string == text)
+    }
 }
 
 @Test func `message document recognizes discord message links as structured mentions`() throws {

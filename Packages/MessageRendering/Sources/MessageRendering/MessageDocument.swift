@@ -246,8 +246,6 @@ public struct MessageDocument: Hashable, Sendable {
         codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
     ) -> Bool {
         let isTokenOnly = [.game, .broadcast, .timestamp, .command].contains(mention.kind)
-        // Code read by Discord's full rule holds no mention of any kind.
-        guard isTokenOnly || !rules.contains(.codeBlocks) else { return false }
         return isLiteral(range, in: source, rules: rules, inURLs: isTokenOnly, codeRanges: &codeRanges, urlRanges: &urlRanges)
     }
 
@@ -266,6 +264,8 @@ public struct MessageDocument: Hashable, Sendable {
             urlRanges = urls
             if urls.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
         }
+        // A backslash escapes punctuation only, so a link after one still links.
+        guard !source[range.lowerBound].isLetter else { return false }
         var cursor = range.lowerBound
         var escaped = false
         while cursor > source.startIndex {
