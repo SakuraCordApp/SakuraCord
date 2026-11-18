@@ -767,6 +767,8 @@ public struct DemoMessage: Sendable {
 /// - `<@key>` user mention, `<@&key>` role mention, `<#key>` channel mention
 /// - `<:name:>` and `<a:name:>` custom emoji by guild emoji name
 /// - `<t:DAY@HH:MM:STYLE>` timestamp, e.g. `<t:+2@19:00:F>`
+/// - `<day:DAY:STYLE>` that day's weekday name: `l` "saturday", `L` "Saturday",
+///   `s` "sat", `S` "Sat". Day 0 can be any weekday, so chat never names one literally.
 ///
 /// `@everyone` and `@here` are written literally.
 public enum DemoMarkup {
@@ -776,6 +778,7 @@ public enum DemoMarkup {
         case channel(String)
         case emoji(name: String, animated: Bool)
         case timestamp(DemoTime, style: String)
+        case weekday(day: Int, style: Character)
     }
 
     /// Tokens in order of appearance.
@@ -798,9 +801,15 @@ public enum DemoMarkup {
                 case .channel: "<#\(id(token))>"
                 case .emoji(let name, let animated): "<\(animated ? "a" : ""):\(name):\(id(token))>"
                 case .timestamp(let time, let style): "<t:\(unix(time)):\(style)>"
+                case .weekday(let day, let style): weekday(Date(timeIntervalSince1970: Double(unix(DemoTime(day: day, 12, 0)))), style: style)
                 }
             }
         }.joined()
+    }
+
+    private static func weekday(_ date: Date, style: Character) -> String {
+        let name = date.formatted(.dateTime.weekday(style.lowercased() == "s" ? .abbreviated : .wide).locale(Locale(identifier: "en_US_POSIX")))
+        return style.isLowercase ? name.lowercased() : name
     }
 
     private enum Segment { case text(String), token(Token) }
@@ -833,6 +842,7 @@ public enum DemoMarkup {
         if body.hasPrefix("@") { return isKey(body.dropFirst()) ? .user(String(body.dropFirst())) : nil }
         if body.hasPrefix("#") { return isKey(body.dropFirst()) ? .channel(String(body.dropFirst())) : nil }
         if body.hasPrefix("t:") { return timestamp(body.dropFirst(2)) }
+        if body.hasPrefix("day:") { return weekday(body.dropFirst(4)) }
         for (prefix, animated) in [(":", false), ("a:", true)] where body.hasPrefix(prefix) && body.hasSuffix(":") {
             let name = body.dropFirst(prefix.count).dropLast()
             return isKey(name) && !name.contains(":") ? .emoji(name: String(name), animated: animated) : nil
@@ -847,5 +857,12 @@ public enum DemoMarkup {
               let minute = Int(parts[1])
         else { return nil }
         return .timestamp(DemoTime(day: day, hour, minute), style: String(parts[2]))
+    }
+
+    private static func weekday(_ body: Substring) -> Token? {
+        let parts = body.split(separator: ":")
+        guard parts.count == 2, let day = Int(parts[0]), let style = parts[1].first, parts[1].count == 1, "lLsS".contains(style)
+        else { return nil }
+        return .weekday(day: day, style: style)
     }
 }

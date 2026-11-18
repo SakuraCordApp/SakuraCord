@@ -33,13 +33,20 @@ struct DemoConverter {
     /// Message labels to IDs, scoped by channel key (labels are unique per channel).
     var labels: [String: (channel: Snowflake, message: Snowflake)] = [:]
 
+    /// Where `DemoContent.now` lands: the latest 21:30 at or before the world's
+    /// epoch, so each line keeps the time of day it was written for.
+    let now: Date
+
     init(world: World) async {
         self.world = world
         builder = await WorldBuilder(world: world, label: "demo")
+        let written = DemoContent.now, calendar = Calendar.current
+        let today = calendar.date(bySettingHour: written.hour, minute: written.minute, second: written.second, of: world.epoch)!
+        now = today <= world.epoch ? today : calendar.date(byAdding: .day, value: -1, to: today)!
     }
 
     func date(_ time: DemoTime) -> Date {
-        world.epoch.addingTimeInterval(Double(time.secondsFromNow))
+        now.addingTimeInterval(Double(time.secondsFromNow))
     }
 
     mutating func build() async throws {
@@ -76,7 +83,7 @@ struct DemoConverter {
         await world.setCommandReply("gamenight", CommandReply(
             embeds: [await embed(nextGameNight)], components: DemoContent.gameNightButtons.map(Self.component)))
         let digest = DemoContent.digest(week: 4, top: "Nico turned a year older 🐸", newFaces: "nobody yet",
-                                        next: "Game night (Thu)", at: DemoContent.at(0, 21, 0))
+                                        next: "Game night (<day:4:S>)", at: DemoContent.at(0, 21, 0))
         await world.setCommandReply("digest", CommandReply(embeds: [await embed(digest)]))
         await world.setComponentResponder(prefix: "gamenight:", Self.rsvp)
     }
@@ -681,7 +688,7 @@ struct DemoConverter {
             case let .role(key): roles.first { $0.key.hasSuffix("/\(key)") }?.value.description ?? "0"
             case let .channel(key): channels[key]?.description ?? "0"
             case let .emoji(name, _): emojis[name]?.id.description ?? "0"
-            case .timestamp: "0"
+            case .timestamp, .weekday: "0"
             }
         }, unix: { time in Int(date(time).timeIntervalSince1970) })
     }

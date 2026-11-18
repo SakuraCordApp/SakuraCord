@@ -57,11 +57,11 @@ extension DemoContent {
         Msg("hana", at(-5, 9, 31), "FOUR"),
         Msg("lou", at(-5, 9, 31), "it's research"),
         Msg("hana", at(-3, 16, 0), "miso would like to state she has no further comment on the croissant", stickers: ["Miso Loaf"]),
-        Msg("tomas", at(0, 11, 0), "first meal in the new kitchen: pancakes for one. practice run for saturday 🥞", label: "pancakes",
+        Msg("tomas", at(0, 11, 0), "first meal in the new kitchen: pancakes for one. practice run for <day:6:l> 🥞", label: "pancakes",
           reactions: [React("🥞", "june", "hana", "wren"), React(":porchlove:", "wren")],
           attachments: [.photo("pancakes.jpg", seed: 0x9a2c, .food, alt: "A stack of pancakes with berries on a white plate")]),
         Msg("hana", at(0, 11, 5), "いただきます 🙏"),
-        Msg("june", at(0, 11, 10), "i was promised pancakes and i see them. on saturday they will be mine", replyTo: "pancakes"),
+        Msg("june", at(0, 11, 10), "i was promised pancakes and i see them. on <day:6:l> they will be mine", replyTo: "pancakes"),
     ])
 
     // MARK: #pets-and-plants
@@ -170,10 +170,10 @@ extension DemoContent {
           thread: DemoThread("lisbon plans 🗺️", [
               Msg("lou", at(-8, 13, 11), """
               ### the plan
-              - **tue**: tram, castle, get lost in alfama
-              - **wed**: sintra day trip
-              - **thu**: belém + more nata
-              - **fri**: nothing. sit by the river. eat.
+              - **<day:-5:s>**: tram, castle, get lost in alfama
+              - **<day:-4:s>**: sintra day trip
+              - **<day:-3:s>**: belém + more nata
+              - **<day:-2:s>**: nothing. sit by the river. eat.
               """),
               Msg("tomas", at(-8, 13, 20), "go to a tasca for lunch. the tiny ones with a handwritten menu"),
               Msg("lou", at(-8, 13, 22), "noted!!"),
@@ -191,7 +191,7 @@ extension DemoContent {
         Msg("lou", at(-2, 14, 0), "home. jet lag-ish. nata delivered to hana as promised 📦", label: "home"),
         Msg("hana", at(-2, 14, 20), "can confirm. they survived the flight. they did not survive me", replyTo: "home"),
         Msg("nico", at(-2, 14, 30), "where's MY nata"),
-        Msg("lou", at(-2, 14, 31), "you're getting something better. sunday 🤫"),
+        Msg("lou", at(-2, 14, 31), "you're getting something better. <day:0:l> 🤫"),
     ])
 
     // MARK: #running
@@ -226,14 +226,14 @@ extension DemoContent {
           attachments: [.photo("slow-crew.jpg", seed: 0x51c4, .landscape, alt: "A riverside path on a misty morning")]),
         Msg("felix", at(-3, 8, 5), "biscuit led the whole way"),
         Msg("june", at(0, 7, 0), "first run since the race. everything hurts. would recommend"),
-        Msg("felix", at(0, 7, 30), "<@&runners> canal loop next sunday? 8am. coffee after"),
+        Msg("felix", at(0, 7, 30), "<@&runners> canal loop next <day:7:l>? 8am. coffee after"),
         Msg("wren", at(0, 7, 45), "in for the coffee", reactions: [React("☕", "felix", "june")]),
     ])
 
     // MARK: #band-room
 
-    static let porchBand = DemoChannel("band-room", "band-room", topic: "Quiet Neighbours: practice tuesdays, loud always 🎸", messages: [
-        Msg("oskar", at(-13, 21, 0), "<@&band> café gig confirmed!! friday after next, 8pm at the Corner Café. 45 minute set", label: "gig",
+    static let porchBand = DemoChannel("band-room", "band-room", topic: "Quiet Neighbours: weekly practice, loud always 🎸", messages: [
+        Msg("oskar", at(-13, 21, 0), "<@&band> café gig confirmed!! <day:-2:l> after next, 8pm at the Corner Café. 45 minute set", label: "gig",
           reactions: [React("🎸", "sam", "wren"), React("🥁", "sam")]),
         Msg("sam", at(-13, 21, 2), "45 minutes. we have 38 minutes of songs"),
         Msg("oskar", at(-13, 21, 3), "we play slower"),
@@ -293,7 +293,7 @@ extension DemoContent {
               .button(label: "Add 5 min", style: .primary, customID: "focus:extend", disabled: true),
           ])], interaction: DemoInteraction("priya", "focus")),
         Msg("priya", at(-6, 21, 0), "> you don't have to be brilliant, you just have to be consistent\nwho said this. i need to thank them", label: "quote"),
-        Msg("rafi", at(-6, 21, 2), "me, last tuesday", replyTo: "quote"),
+        Msg("rafi", at(-6, 21, 2), "me, last <day:-12:l>", replyTo: "quote"),
         Msg("priya", at(-6, 21, 2), "oh. thank you rafi 🥲"),
         Msg("priya", at(-4, 6, 30), "leaving for the exam. this channel kept me going 💛", reactions: [React("💛", "sam", "rafi", "wren")]),
         Msg("sam", at(-4, 6, 45), "go get it"),

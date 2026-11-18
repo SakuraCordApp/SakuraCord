@@ -174,7 +174,7 @@ struct DemoContentTests {
                     case .emoji(let name, _): #expect(emojiNames.contains(name), "unknown emoji \(name)")
                     case .role(let key): #expect(roleKeys.contains(key), "unknown role \(key)")
                     case .channel(let key): #expect(channelKeys.contains(key), "unknown channel \(key)")
-                    case .user, .timestamp: break
+                    case .user, .timestamp, .weekday: break
                     }
                 }
             }
@@ -229,10 +229,15 @@ struct DemoContentTests {
             case .channel: "2"
             case .role: "3"
             case .emoji: "4"
-            case .timestamp: "x"
+            case .timestamp, .weekday: "x"
             }
         }, unix: { $0.secondsFromStartOfDayZero })
         #expect(resolved == "hi <@1> in <#2> <@&3> <a:busybee:4> <t:\(-86_400 + 34_200):R> <3 a<b")
+        let sundayNoon = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 15, hour: 12))!
+        let days = DemoMarkup.resolve("<day:-1:l> <day:0:S> <day:1:L> <day:2:s> <day:3:x>", id: { _ in "" }, unix: {
+            Int(sundayNoon.timeIntervalSince1970) + $0.secondsFromStartOfDayZero - 43_200
+        })
+        #expect(days == "saturday Sun Monday tue <day:3:x>")
         #expect(DemoTime(day: -1, 23, 50).adding(minutes: 20) == DemoTime(day: 0, 0, 10))
     }
 }
