@@ -314,6 +314,32 @@ import Testing
         #expect(value.attribute(.discordMarkdownInlineCode, at: code.location, effectiveRange: nil) != nil, "\(source)")
         #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) as? String == "quote", "\(source)")
     }
+
+    // A `>>>` inside code opens no quote, so the later `> ` lines stay their
+    // own quote and `d`'s backtick finds no close in it.
+    let inCode = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("x `a\n>>> b`\n> c `d\n> e\nf `g`", rules: .profileBio))
+    let string = inCode.string as NSString
+    #expect(inCode.attribute(.discordMarkdownInlineCode, at: string.range(of: "a\n>>> b").location, effectiveRange: nil) != nil)
+    #expect(inCode.attribute(.discordMarkdownInlineCode, at: string.range(of: "`d").location, effectiveRange: nil) == nil)
+    #expect(inCode.attribute(.discordMarkdownInlineCode, at: string.range(of: "g", options: .backwards).location, effectiveRange: nil) != nil)
+
+    // Each line loses its own marker once; a second `>` is text.
+    let nested = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("> > a `b\n> c`", rules: .profileBio))
+    #expect(nested.string.hasPrefix("> a "))
+    #expect(nested.attribute(.discordMarkdownInlineCode, at: (nested.string as NSString).range(of: "b\nc").location, effectiveRange: nil) != nil)
+}
+
+@Test func `bios keep headings, lists and masked links literal as Discord's bio parser does`() {
+    // parseBioReact never sets allowHeading, allowList or allowLinks.
+    let source = "# h\n- item\n[label](https://x.y)"
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source, rules: .profileBio))
+    #expect(value.string == source)
+    #expect(value.attribute(.discordMarkdownBlock, at: 0, effectiveRange: nil) == nil)
+    #expect(value.attribute(.discordMarkdownListMarker, at: (value.string as NSString).range(of: "- item").location, effectiveRange: nil) == nil)
+    #expect(value.attribute(.link, at: (value.string as NSString).range(of: "label").location, effectiveRange: nil) == nil)
+    let url = (value.string as NSString).range(of: "https://x.y")
+    #expect(value.attribute(.link, at: url.location, effectiveRange: nil) as? URL == URL(string: "https://x.y"))
+    #expect(value.attribute(.link, at: NSMaxRange(url), effectiveRange: nil) == nil)
 }
 
 @Test func `message document detects jumbo custom emoji`() {

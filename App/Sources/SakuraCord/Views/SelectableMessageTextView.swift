@@ -237,7 +237,7 @@ final class RichMessageNSTextView: NSTextView {
     var onURLClick: (URL) -> Bool = { _ in false }
     var onRevealSpoiler: (Int) -> Void = { _ in }
     private var hoveredMentionLocation: Int?
-    private var hoveredTimestampLocation: Int?
+    private var hoveredAttachmentLocation: Int?
     private var dismissedTimestampLocation: Int?
     let timestampLabel = StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
     private var hoveredLinkRange: NSRange?
@@ -355,7 +355,7 @@ final class RichMessageNSTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        dismissedTimestampLocation = hoveredTimestampLocation
+        dismissedTimestampLocation = hoveredAttachmentLocation
         timestampLabel.close()
         claimSelectionOwnership()
         let point = convert(event.locationInWindow, from: nil)
@@ -408,8 +408,8 @@ final class RichMessageNSTextView: NSTextView {
     /// target is hovered.
     private func updateTimestampLabel(at point: NSPoint?) {
         let hovered = point.flatMap(anyMentionAttachment(at:))
-        guard hovered?.0 != hoveredTimestampLocation else { return }
-        hoveredTimestampLocation = hovered?.0
+        guard hovered?.0 != hoveredAttachmentLocation else { return }
+        hoveredAttachmentLocation = hovered?.0
         if hovered?.0 != dismissedTimestampLocation { dismissedTimestampLocation = nil }
         guard dismissedTimestampLocation == nil, let (index, attachment) = hovered,
               let token = DiscordTimestampToken(rawToken: attachment.presentation.rawToken),

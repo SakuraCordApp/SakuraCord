@@ -203,10 +203,10 @@ public struct MessageDocument: Hashable, Sendable {
             let token = String(source[range])
             if let emoji = RenderedEmoji(rawToken: token) {
                 result.append(.customEmoji(emoji))
-            } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token),
-                      rules.renders(mention.kind),
+            } else if !rules.contains(.maskedLinks) || !isMaskedLinkTarget(range, in: source),
+                      let mention = RenderedMention(rawToken: token), rules.renders(mention.kind),
                       !isLiteralMention(mention, range: range, in: source, rules: rules, codeRanges: &codeRanges, urlRanges: &urlRanges),
-                      !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
+                      !rules.contains(.maskedLinks) || !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
                 result.append(.mention(mention))
             } else {
                 result.append(.markdown(token))
@@ -244,8 +244,8 @@ public struct MessageDocument: Hashable, Sendable {
         codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
     ) -> Bool {
         let isTokenOnly = [.game, .broadcast, .timestamp, .command].contains(mention.kind)
-        // A bio's code, like Discord's, holds no mention of any kind.
-        guard isTokenOnly || rules == .profileBio else { return false }
+        // Code read by Discord's full rule holds no mention of any kind.
+        guard isTokenOnly || !rules.contains(.codeBlocks) else { return false }
         let tokenRange = NSRange(range, in: source)
         let code = codeRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules)
         codeRanges = code
@@ -328,7 +328,7 @@ public struct MessageDocument: Hashable, Sendable {
 @MainActor
 public final class MessageDocumentCache {
     public static let shared = MessageDocumentCache()
-    private let values = NSCache<NSString, MessageDocumentBox>()
+    private let values = NSCache<MessageDocumentKey, MessageDocumentBox>()
 
     private init() {
         values.countLimit = 2000
@@ -336,13 +336,34 @@ public final class MessageDocumentCache {
     }
 
     public func document(for source: String, rules: DiscordMarkdown.Rules = .message) -> MessageDocument {
-        let key = (rules == .message ? source : "\(rules)\u{0}\(source)") as NSString
+        let key = MessageDocumentKey(source: source, rules: rules)
         if let cached = values.object(forKey: key) {
             return cached.value
         }
         let document = MessageDocument(source: source, rules: rules)
         values.setObject(MessageDocumentBox(document), forKey: key, cost: source.utf8.count)
         return document
+    }
+}
+
+private final class MessageDocumentKey: NSObject {
+    let source: String
+    let rules: DiscordMarkdown.Rules
+
+    init(source: String, rules: DiscordMarkdown.Rules) {
+        self.source = source
+        self.rules = rules
+    }
+
+    override var hash: Int {
+        var hasher = Hasher()
+        hasher.combine(source)
+        hasher.combine(rules)
+        return hasher.finalize()
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        (object as? MessageDocumentKey).map { $0.source == source && $0.rules == rules } ?? false
     }
 }
 
