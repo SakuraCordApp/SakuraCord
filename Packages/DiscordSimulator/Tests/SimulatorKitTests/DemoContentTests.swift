@@ -233,7 +233,7 @@ struct DemoContentTests {
             }
         }, date: { Date(timeIntervalSince1970: Double($0.secondsFromStartOfDayZero)) })
         #expect(resolved == "hi <@1> in <#2> <@&3> <a:busybee:4> <t:\(-86_400 + 34_200):R> <3 a<b")
-        let sunday = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 15))!
+        let sunday = Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 11, day: 15))!
         let days = DemoMarkup.resolve("<day:-1:l> <day:0:S> <day:1:L> <day:2:s> <day:3:x>", id: { _ in "" },
                                       date: { sunday.addingTimeInterval(Double($0.secondsFromStartOfDayZero)) })
         #expect(days == "saturday Sun Monday tue <day:3:x>")
