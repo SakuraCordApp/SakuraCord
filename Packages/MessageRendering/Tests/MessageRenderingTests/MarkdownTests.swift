@@ -79,6 +79,17 @@ import Testing
     #expect(code("```\ncode```after") == ["code:code", "text:\nafter"])
     let title = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitEmbedTitlePlan("```x``` ``y``", allowsLinks: true))
     #expect(title.string == "x y")
+    // An unclosed fence stays where it opened, after an earlier one-line block.
+    #expect(code("a\n```x```\n```\nunclosed") == ["text:a\n", "code:x", "text:\n```\n", "code:unclosed"])
+    // The composer reads bold after a one-line block, and text after a
+    // mid-line close, as message rendering does.
+    let draft = "```code```\n**bold**\n```\nx\n```"
+    #expect(DiscordMarkdown.sourceFormats(draft).map(\.range) == [(draft as NSString).range(of: "bold")])
+    let closed = "```\nc\n```**hi**"
+    let styled = DiscordMarkdown.appKitSourceAttributed(closed, attributes: [:], baseFontSize: 14, usesMessageLineHeight: false)
+    let font = styled.attribute(.font, at: (closed as NSString).range(of: "hi").location, effectiveRange: nil) as? NSFont
+    #expect(font?.fontDescriptor.symbolicTraits.contains(.monoSpace) == false)
+    #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
 }
 
 @Test func `angle bracket masked links match discord rendering`() throws {

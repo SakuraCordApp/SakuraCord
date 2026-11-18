@@ -144,8 +144,6 @@ public enum DiscordMarkdown {
         var source = source
         source.makeContiguousUTF8()
         var formats: [SourceFormat] = []
-        var segmentStart = source.startIndex
-        var inCodeFence = false
         let collect: (Range<String.Index>, AppKitPlan.InlineTraits, String) -> Void = { range, traits, delimiter in
             guard !traits.isDisjoint(with: [.bold, .italic, .underline]), !traits.contains(.inlineCode) else { return }
             formats.append(SourceFormat(
@@ -157,16 +155,31 @@ public enum DiscordMarkdown {
             ))
         }
         let collector = SourceFormatCollector(source: source, collect: collect)
-        for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            guard line.hasPrefix("```") else { continue }
-            if !inCodeFence {
-                _ = inlineRuns(source[segmentStart ..< line.startIndex], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+        // Formats span consecutive text lines, as in a message, so each run of
+        // text between code is read as one.
+        var segmentStart: String.Index? = source.startIndex
+        var unclosedFenceEnd: String.Index?
+        forEachSourceLine(source) { rawLine, kind in
+            switch kind {
+            case .text:
+                segmentStart = segmentStart ?? rawLine.startIndex
+                return
+            case let .fence(opening):
+                unclosedFenceEnd = opening == nil ? nil : rawLine.endIndex
+            case .closingCode:
+                unclosedFenceEnd = nil
+            case .code:
+                break
             }
-            inCodeFence.toggle()
-            segmentStart = line.endIndex
+            if let start = segmentStart {
+                _ = inlineRuns(source[start ..< rawLine.startIndex], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+            }
+            if case let .closingCode(_, _, _, after) = kind { segmentStart = after.startIndex } else { segmentStart = nil }
         }
         // Text after a fence that never closes is text, as Discord shows it.
-        _ = inlineRuns(source[segmentStart...], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+        if let start = segmentStart ?? unclosedFenceEnd {
+            _ = inlineRuns(source[start...], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+        }
         return formats
     }
 
@@ -265,13 +278,13 @@ public enum DiscordMarkdown {
 
     public static func appKitPlan(_ source: String) -> AppKitPlan {
         var lines: [AppKitPlan.Line] = []
-        var unclosedFence: String?
+        var unclosedFence: (text: String, index: Int)?
         var list = ListNesting()
 
         forEachSourceLine(source) { rawLine, kind in
             switch kind {
             case let .fence(opening):
-                unclosedFence = opening
+                unclosedFence = opening.map { ($0, lines.count) }
                 list = ListNesting()
             case let .code(language, isFirstLine):
                 lines.append(AppKitPlan.Line(
@@ -304,21 +317,10 @@ public enum DiscordMarkdown {
         // it. Keep malformed input visible instead of silently discarding it.
         if let unclosedFence {
             let fence = AppKitPlan.Line(
-                runs: [
-                    AppKitPlan.InlineRun(
-                        text: unclosedFence,
-                        traits: [],
-                        link: nil,
-                        color: nil
-                    )
-                ],
+                runs: [AppKitPlan.InlineRun(text: unclosedFence.text, traits: [], link: nil, color: nil)],
                 block: .paragraph
             )
-            let firstCodeIndex = lines.lastIndex {
-                if case .code = $0.block { return false }
-                return true
-            }.map { $0 + 1 } ?? 0
-            lines.insert(fence, at: firstCodeIndex)
+            lines.insert(fence, at: unclosedFence.index)
         }
 
         alignOrderedMarkers(&lines)
@@ -1573,9 +1575,16 @@ public extension DiscordMarkdown {
                 closingFenceHeight = metrics.codeInset
                 setParagraph(spacing: closingFenceHeight, for: paragraphRange)
                 return
-            case let .closingCode(_, language, isFirstLine, _):
-                // The draft keeps the line's backticks and text as code.
-                return styleLine(rawLine, kind: .code(language: language, isFirstLine: isFirstLine), collector: collector)
+            case let .closingCode(code, language, isFirstLine, after):
+                // Code and its closing fence keep code styling; the text after
+                // the fence is read as text, as message rendering reads it.
+                line = AppKitPlan.Line(runs: [], block: .code(language: language, isFirstLine: isFirstLine))
+                style(NSRange(rawLine.startIndex ..< after.startIndex, in: source))
+                // A block opened on this line has its opening fence before the code.
+                if code.startIndex > rawLine.startIndex { fences.append(NSRange(rawLine.startIndex ..< code.startIndex, in: source)) }
+                fences.append(NSRange(code.endIndex ..< after.startIndex, in: source))
+                line = AppKitPlan.Line(runs: [], block: .paragraph)
+                _ = inlineRuns(after, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
             case let .code(language, isFirstLine):
                 line = AppKitPlan.Line(runs: codeRuns(String(rawLine), language: language), block: .code(language: language, isFirstLine: isFirstLine))
                 style(range)
