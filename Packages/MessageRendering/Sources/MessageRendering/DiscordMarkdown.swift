@@ -313,10 +313,6 @@ public enum DiscordMarkdown {
                     list = ListNesting()
                 case let .code(code, language, isFirstLine):
                     lines.append(codeLine(code, language: language, isFirstLine: isFirstLine))
-                // A code block takes its own lines, so text beside it on its
-                // source line is a line of its own.
-                case let .text(content, _) where content.isEmpty && pieces.count > 1:
-                    break
                 case let .text(content, isQuoted):
                     if lines.last.map({ $0.isQuoted != isQuoted }) == true {
                         list = ListNesting()
@@ -1574,7 +1570,7 @@ public extension DiscordMarkdown {
             // A paragraph's newline carries its paragraph's attributes.
             let paragraphRange = NSRange(location: range.location, length: min(range.length + 1, text.length - range.location))
             let previousFollowsCode = followsCode
-            followsCode = if case .code = pieces.last { true } else { false }
+            followsCode = false
             if pieces.count == 1, case let .text(content, isQuoted) = pieces[0] {
                 let item = listItemContent(content)
                 let prefix = item == nil ? blockPrefixes.first(where: { content.hasPrefix($0.prefix) }) : nil
@@ -1585,7 +1581,7 @@ public extension DiscordMarkdown {
                 let syntax = NSRange(rawLine.startIndex ..< (item == nil ? body : content).startIndex, in: source)
                 if syntax.length > 0 { markSyntax(syntax, of: syntax) }
                 _ = inlineRuns(body, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
-            } else if pieces.allSatisfy({ if case .fence = $0 { true } else { false } }) {
+            } else if pieces.allSatisfy({ if case let .fence(fence) = $0 { !fence.isEmpty } else { false } }) {
                 styleFence(range)
                 // Hidden, a fence's line takes no room; message rendering
                 // has no line for it.
@@ -1597,26 +1593,7 @@ public extension DiscordMarkdown {
                 setParagraph(spacing: closingFenceHeight, for: paragraphRange)
                 return
             } else {
-                // Code and its fences keep code styling; text beside them is
-                // read as text, as message rendering reads it.
-                var codeLine: AppKitPlan.Line?
-                var textPrecedesCode = false
-                for piece in pieces {
-                    switch piece {
-                    case let .fence(fence):
-                        styleFence(NSRange(fence.startIndex ..< fence.endIndex, in: source))
-                    case let .code(code, language, isFirstLine):
-                        let styled = styleCode(code, language: language, isFirstLine: isFirstLine)
-                        if codeLine == nil, !code.isEmpty { codeLine = styled }
-                    case let .text(content, _):
-                        textPrecedesCode = textPrecedesCode || codeLine == nil && !content.isEmpty
-                        line = AppKitPlan.Line(runs: [], block: .paragraph)
-                        _ = inlineRuns(content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
-                    }
-                }
-                // A line whose code comes first keeps its block chrome, as
-                // message rendering gives that code its own line.
-                line = textPrecedesCode ? AppKitPlan.Line(runs: [], block: .paragraph) : codeLine ?? AppKitPlan.Line(runs: [], block: .paragraph)
+                styleBlockLine(pieces, collector: collector)
             }
             lines.append(line)
             let spacing = metrics.spacingBefore(lines.count - 1, in: lines) - closingFenceHeight
@@ -1633,13 +1610,35 @@ public extension DiscordMarkdown {
             }
         }
 
+        /// A line that holds part of a code block. A source line can't
+        /// split, so code beside text reads as inline code, where message
+        /// rendering gives it its own lines. Otherwise the code, its fences
+        /// and the blank lines Discord trims beside it keep the block's chrome.
+        private func styleBlockLine(_ pieces: [SourceLine], collector: SourceFormatCollector) {
+            let hasText = pieces.contains { if case .text = $0 { true } else { false } }
+            line = hasText ? AppKitPlan.Line(runs: [], block: .paragraph) : DiscordMarkdown.codeLine("", language: nil, isFirstLine: false)
+            for piece in pieces {
+                switch piece {
+                case let .fence(fence):
+                    styleFence(NSRange(fence.startIndex ..< fence.endIndex, in: source))
+                case let .code(code, _, _) where hasText:
+                    style(NSRange(code.startIndex ..< code.endIndex, in: source), as: .inlineCode)
+                case let .code(code, language, isFirstLine):
+                    styleCode(code, language: language, isFirstLine: isFirstLine)
+                case let .text(content, _):
+                    _ = inlineRuns(content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+                }
+            }
+            followsCode = !hasText
+        }
+
         private func styleFence(_ range: NSRange) {
             text.addAttribute(.font, value: appKitFont(block: .code(language: nil, isFirstLine: false), traits: [], metrics: metrics), range: range)
             fences.append(range)
         }
 
         /// Styles `code` as a code line, its syntax coloured, and makes that line current.
-        private func styleCode(_ code: Substring, language: String?, isFirstLine: Bool) -> AppKitPlan.Line {
+        private func styleCode(_ code: Substring, language: String?, isFirstLine: Bool) {
             line = DiscordMarkdown.codeLine(code, language: language, isFirstLine: isFirstLine)
             let range = NSRange(code.startIndex ..< code.endIndex, in: source)
             style(range)
@@ -1649,7 +1648,6 @@ public extension DiscordMarkdown {
                 if run.color != nil { style(NSRange(location: location, length: length), color: run.color) }
                 location += length
             }
-            return line
         }
 
         private func style(_ range: NSRange, as traits: AppKitPlan.InlineTraits = [], color: AppKitPlan.SemanticColor? = nil) {

@@ -91,6 +91,8 @@ import Testing
     #expect(code("One ```x``` fence") == ["text:One \n", "code:x", "text:\n fence"])
     #expect(code("Mid-line: ```\nlet a = 1```after") == ["text:Mid-line: \n", "code:let a = 1", "text:\nafter"])
     #expect(code("```swift\n\nlet a = 1\n\n```") == ["code:let a = 1"])
+    // Discord reads a spoiler before the code in it, which stays hidden.
+    #expect(code("||```secret```||") == ["inline:secret"])
     // The composer reads bold after a one-line block, and text after a
     // mid-line close, as message rendering does.
     let draft = "```code```\n**bold**\n```\nx\n```"

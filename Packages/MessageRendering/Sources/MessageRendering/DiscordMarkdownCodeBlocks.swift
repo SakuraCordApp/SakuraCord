@@ -11,20 +11,25 @@ extension DiscordMarkdown {
 
     /// Message code blocks, which Discord's codeBlock rule,
     /// `` ^```(?:([a-z0-9_+\-.#]+?)\n)?\n*([^\n][^]*?)\n*``` ``, opens at
-    /// any three backticks outside inline code, even mid-line, and closes
-    /// at the next three. A fence that nothing closes is text. Quote lines
-    /// keep their code inline, as message rendering reads them.
+    /// any three backticks outside inline code and spoilers, even mid-line,
+    /// and closes at the next three. A fence that nothing closes is text.
+    /// Quote lines keep their code inline, and a `>>>` quote opens blocks
+    /// only at a line's start, as message rendering reads them.
     static func codeBlocks(in source: String) -> [CodeBlock] {
         guard source.contains("```") else { return [] }
         var blocks: [CodeBlock] = []
         var cursor = source.startIndex
-        var lineStart: String.Index? = cursor
+        var lineStart = cursor
         var lineEnd = cursor
         var isQuoteLine = false
+        var isInMultilineQuote = false
         while cursor < source.endIndex {
             if cursor == lineStart {
                 lineEnd = source[cursor...].firstIndex(of: "\n") ?? source.endIndex
-                isQuoteLine = quote(source[cursor ..< lineEnd], rules: .message) != nil || quoteContent(source[cursor ..< lineEnd]) != nil
+                let line = source[cursor ..< lineEnd]
+                let quote = quote(line, rules: .message)
+                isQuoteLine = quote != nil || quoteContent(line) != nil
+                isInMultilineQuote = isInMultilineQuote || quote?.isMultiline == true
             }
             switch source[cursor] {
             case "\n":
@@ -35,11 +40,20 @@ extension DiscordMarkdown {
                 let next = source.index(after: cursor)
                 let isEscape = next < lineEnd && !source[next].isWhitespace && !(source[next].isASCII && (source[next].isLetter || source[next].isNumber))
                 cursor = source.index(cursor, offsetBy: isEscape ? 2 : 1)
+            case "|" where source[cursor...].hasPrefix("||"):
+                // Discord reads a spoiler, `\|\|([\s\S]+?)\|\|`, before the code in it,
+                // which stays hidden.
+                let contentStart = source.index(cursor, offsetBy: 2)
+                let close = contentStart < source.endIndex
+                    ? source.range(of: "||", range: source.index(after: contentStart) ..< source.endIndex)
+                    : nil
+                cursor = close?.upperBound ?? contentStart
+                if cursor > lineEnd { lineEnd = source[cursor...].firstIndex(of: "\n") ?? source.endIndex }
             case "`":
-                if !isQuoteLine, let block = codeBlock(in: source, at: cursor) {
+                if !isQuoteLine, !isInMultilineQuote || cursor == lineStart, let block = codeBlock(in: source, at: cursor) {
                     blocks.append(block)
                     cursor = block.range.upperBound
-                    lineEnd = source[cursor...].firstIndex(of: "\n") ?? source.endIndex
+                    if cursor > lineEnd { lineEnd = source[cursor...].firstIndex(of: "\n") ?? source.endIndex }
                 } else {
                     cursor = inlineCode(in: source[..<lineEnd], at: cursor, collector: nil).end
                 }
