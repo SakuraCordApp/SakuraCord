@@ -351,7 +351,7 @@ enum NativeTimelineEmbedLayout {
                 }
                 let mediaSize = mainMedia.flatMap { media -> CGSize? in
                     guard mediaURL != nil else { return nil }
-                    return cardMediaSize(media, maximumWidth: min(contentWidth, InterfaceScale.metric(500)))
+                    return cardMediaSize(media, maximumWidth: contentWidth)
                 }
                 let mediaGap: CGFloat =
                     mediaSize == nil ? 0 : (topHeight > 0 ? Metrics.mediaSpacing : 0)
@@ -442,7 +442,9 @@ enum NativeTimelineEmbedLayout {
         /// Discord fits a card's lone image or video in 400 × 300 pixels, or
         /// 400 × 450 for a portrait YouTube or TikTok video.
         private func cardMediaSize(_ media: MessageEmbedMedia, maximumWidth: CGFloat) -> CGSize {
-            guard mediaCount == 1 else { return mediaSize(media, maximumWidth: maximumWidth) }
+            guard mediaCount == 1 else {
+                return mediaSize(media, maximumWidth: min(maximumWidth, InterfaceScale.metric(500)))
+            }
             let knownSize = NativeTimelineEmbedLayout.knownSize(of: media)
             let isTall = embed.provider?.name == "TikTok" || knownSize.map { $0.height > $0.width } == true && isYouTube
             return MediaGalleryPlan.frames(
