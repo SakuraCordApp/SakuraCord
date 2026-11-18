@@ -90,25 +90,22 @@ PY
   echo "Launch verified: credential mode $credential_mode; signing identity $SAKURACORD_RESOLVED_CODE_SIGN_IDENTITY"
 }
 
-# Records in a debug bundle the Discord simulator port it is launched with, and
+# Records on a debug bundle the Discord simulator port it is launched with, and
 # removes the record for every other launch, so launching the bundle later by
 # path alone (LaunchServices, Computer Use) keeps it on the simulator instead
-# of the real account. Editing Info.plist breaks the seal, so this re-signs.
+# of the real account. An extended attribute leaves the signature intact.
 sakuracord_record_simulator_launch() {
-  local bundle="$1" port="${2:-}" key=SakuraCordDiscordSimulatorPort
-  local plist="$bundle/Contents/Info.plist"
-  [[ -z "$port" || "$port" =~ ^[0-9]+$ ]] || { echo "Invalid simulator port: $port" >&2; return 2; }
-  [[ "$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null)" == "$port" ]] && return 0
-  if [[ -n "$port" ]] && ! grep -qaF "$key" \
-    "$bundle/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")"; then
-    echo "Refusing a simulator launch: $bundle was built without launch records, so reopening it by path would reach the real account. Rebuild it with --build." >&2
+  local bundle="$1" port="${2:-}" attribute=dev.sakuracord.DiscordSimulatorPort
+  if [[ -z "$port" ]]; then
+    xattr -d "$attribute" "$bundle" 2>/dev/null || true
+    return
+  fi
+  [[ "$port" =~ ^[0-9]+$ ]] || { echo "Invalid simulator port: $port" >&2; return 2; }
+  if ! grep -qaF "$attribute" "$bundle/Contents/MacOS/$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist"
+  )"; then
+    echo "Refusing a simulator launch: $bundle cannot read launch records, so reopening it by path would reach the real account. Rebuild it from current sources." >&2
     return 2
   fi
-  sakuracord_resolve_code_sign_identity 1 || return
-  /usr/libexec/PlistBuddy -c "Delete :$key" "$plist" >/dev/null 2>&1 || true
-  if [[ -n "$port" ]]; then
-    /usr/libexec/PlistBuddy -c "Add :$key string $port" "$plist" || return
-  fi
-  codesign --force --sign "$SAKURACORD_RESOLVED_CODE_SIGN_IDENTITY" \
-    --preserve-metadata=identifier,entitlements,requirements,flags,runtime "$bundle" >/dev/null
+  xattr -w "$attribute" "$port" "$bundle"
 }

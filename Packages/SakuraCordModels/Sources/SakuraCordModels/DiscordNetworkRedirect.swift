@@ -11,13 +11,22 @@ public nonisolated enum DiscordNetworkRedirect {
     public static let simulatorBasePort: UInt16? = basePort(
         arguments: ProcessInfo.processInfo.arguments,
         environment: ProcessInfo.processInfo.environment,
-        recordedPort: Bundle.main.object(forInfoDictionaryKey: recordedPortKey).map { "\($0)" }
+        recordedPort: recordedPort(of: Bundle.main.bundleURL)
     )
 
-    /// Written into the bundle by the launch scripts for a simulator launch, so a
-    /// later launch by path alone (LaunchServices, Computer Use) still reaches the
-    /// simulator instead of the real account. Other launches remove it.
-    static let recordedPortKey = "SakuraCordDiscordSimulatorPort"
+    /// An extended attribute the launch scripts set on the bundle for a simulator
+    /// launch, so a later launch by path alone (LaunchServices, Computer Use)
+    /// still reaches the simulator instead of the real account. Other launches
+    /// remove it. Unlike Info.plist, it leaves the code signature intact.
+    static let recordedPortAttribute = "dev.sakuracord.DiscordSimulatorPort"
+
+    /// An attribute that exists but cannot be read still counts as recorded.
+    static func recordedPort(of bundle: URL) -> String? {
+        var value = [UInt8](repeating: 0, count: 16)
+        let length = getxattr(bundle.path, recordedPortAttribute, &value, value.count, 0, 0)
+        if length < 0 { return errno == ENOATTR ? nil : "" }
+        return String(bytes: value.prefix(length), encoding: .utf8) ?? ""
+    }
 
     /// `script/run.sh --simulator-sign-in` clears this suite for a fresh start.
     public static let simulatorDefaultsSuite = "dev.sakuracord.SakuraCord.discord-simulator"

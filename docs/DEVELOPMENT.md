@@ -67,8 +67,8 @@ first-run onboarding and the production sign-in flow against it. Simulator
 sessions keep accounts, client identity, onboarding and the last conversation
 apart from real ones.
 
-A simulator launch records its port in the debug bundle's `Info.plist`
-(`SakuraCordDiscordSimulatorPort`) and re-signs it, so opening that bundle
+A simulator launch records its port on the debug bundle as the extended
+attribute `dev.sakuracord.DiscordSimulatorPort`, so opening that bundle
 again by path alone (Finder, `open`, Computer Use) stays on the simulator, even
 when the simulator is not running; it then fails to connect rather than
 reaching Discord. Repackaging keeps the record; any other launch through the

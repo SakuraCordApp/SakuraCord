@@ -367,19 +367,6 @@ verify_build_provenance() {
     printf '%s\n' "$source_state_hash"
 }
 
-# Recording the launch mode re-signs the app, which changes the executable's
-# hash but not the source it was built from, so its provenance carries over.
-record_simulator_launch() {
-    local before after
-    before="$(shasum -a 256 "$executable" | awk '{print $1}')"
-    sakuracord_record_simulator_launch "$app" "$1"
-    after="$(shasum -a 256 "$executable" | awk '{print $1}')"
-    if [[ "$after" != "$before" && -f "$provenance_directory/$before.tsv" ]]; then
-        awk -F '\t' -v OFS='\t' -v hash="$after" '$1 == "executable_sha256" { $2 = hash } 1' \
-            "$provenance_directory/$before.tsv" >"$provenance_directory/$after.tsv"
-    fi
-}
-
 write_recording_metadata() {
     local output="$1" scenario="$2" template="$3"
     local performance_account_id="${4:-}"
@@ -721,7 +708,7 @@ record_launch() (
         simulator_port="${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}"
         set -- "$@" --discord-simulator "$simulator_port"
     fi
-    record_simulator_launch "$simulator_port"
+    sakuracord_record_simulator_launch "$app" "$simulator_port"
     write_recording_metadata \
         "$output" "$scenario" "Time Profiler" "$performance_account_id"
     sandbox_directory="$HOME/Library/Containers/$bundle_id/Data/tmp"

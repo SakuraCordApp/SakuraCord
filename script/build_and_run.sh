@@ -199,8 +199,7 @@ BIN_DIR="$(swift build \
 
 # Repackaging keeps a simulator launch record, so the rebuilt bundle still
 # reopens on the simulator by path (see sakuracord_record_simulator_launch).
-SIMULATOR_LAUNCH_RECORD="$(/usr/libexec/PlistBuddy -c \
-  "Print :SakuraCordDiscordSimulatorPort" "$CONTENTS/Info.plist" 2>/dev/null || true)"
+SIMULATOR_LAUNCH_RECORD="$(xattr -p dev.sakuracord.DiscordSimulatorPort "$APP_BUNDLE" 2>/dev/null || true)"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$MACOS" "$FRAMEWORKS" "$RESOURCES"
 cp "$BIN_DIR/$PRODUCT_NAME" "$MACOS/$APP_NAME"
@@ -332,11 +331,6 @@ if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" ]]; then
     "Add :SakuraCordInsecureDebugCredentialsEnabled bool true" \
     "$CONTENTS/Info.plist"
 fi
-if [[ -n "$SIMULATOR_LAUNCH_RECORD" ]]; then
-  /usr/libexec/PlistBuddy -c \
-    "Add :SakuraCordDiscordSimulatorPort string $SIMULATOR_LAUNCH_RECORD" \
-    "$CONTENTS/Info.plist"
-fi
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
 ENTITLEMENTS_STAGING="$(mktemp "$DIST_DIR/SakuraCord.entitlements.XXXXXX")"
@@ -352,6 +346,8 @@ codesign --force --sign "$CODE_SIGN_IDENTITY" \
   --entitlements "$ENTITLEMENTS_STAGING" "$APP_BUNDLE" >/dev/null
 if [[ "$BUILD_CONFIGURATION" == release ]]; then
   "$ROOT_DIR/script/check_release_redirect.sh" "$APP_BUNDLE"
+elif [[ -n "$SIMULATOR_LAUNCH_RECORD" ]]; then
+  sakuracord_record_simulator_launch "$APP_BUNDLE" "$SIMULATOR_LAUNCH_RECORD"
 fi
 
 # Starts the Discord simulator with the options before `--` and launches the
