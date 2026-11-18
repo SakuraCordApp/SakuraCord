@@ -709,15 +709,6 @@ public enum DiscordMarkdown {
                 guard let candidate = source[cursor...].firstIndex(where: isComposerSyntaxCharacter) else { break }
                 cursor = candidate
             }
-            if source[cursor] == "\\" {
-                let next = source.index(after: cursor)
-                if next < source.endIndex {
-                    plain.append(source[next])
-                    cursor = source.index(after: next)
-                    continue
-                }
-            }
-
             if source[cursor] == "`", rules.contains(.code) {
                 let code = inlineCode(in: source, at: cursor)
                 if let content = code.content {
@@ -792,14 +783,9 @@ public enum DiscordMarkdown {
                 continue
             }
 
-            if let shortcode = DiscordEmojiNames.shortcode(in: source, at: cursor) {
-                plain += shortcode.emoji
-                cursor = shortcode.end
-                continue
-            }
-
-            if sourceCollector == nil { plain.append(source[cursor]) }
-            cursor = source.index(after: cursor)
+            let text = plainText(in: source, at: cursor, readsEmoji: sourceCollector == nil)
+            if sourceCollector == nil { plain += text.text }
+            cursor = text.end
         }
 
         flushPlain()
@@ -962,6 +948,8 @@ public enum DiscordMarkdown {
                         range: source.index(after: contentStart) ..< source.endIndex
                     )
                     : nil
+            } else if delimiter.marker == "_" {
+                underscoreEmphasisClose(in: source, after: contentStart)
             } else {
                 source.range(of: delimiter.marker, range: contentStart ..< source.endIndex)
             }

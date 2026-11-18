@@ -809,4 +809,8 @@ private func spoilerOutline(_ source: String) -> String {
         #expect(rendered == "hi👋 👍🏼 :nope: :wave: :wave: https://x.y/:wave:")
     }
     #expect(MessageDocument(source: ":sparkles: :thumbsup::skin-tone-1:").isEmojiOnly)
+    // Underscores in a name close no emphasis; a token keeps its `:name:`;
+    // a symbol shows as emoji.
+    let plan = DiscordMarkdown.appKitPlan("snake_case :heart_eyes: x_y <:fire:1> <t:1234:R> :tm:")
+    #expect(DiscordMarkdown.appKitAttributed(plan).string == "snake_case 😍 x_y <:fire:1> <t:1234:R> ™\u{FE0F}")
 }

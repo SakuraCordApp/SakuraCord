@@ -24,7 +24,7 @@ public enum DiscordEmojiNames {
     /// The `:name:` at `start` that Discord's emoji rule,
     /// `/^:([^\s:]+?(?:::skin-tone-\d)?):/`, turns into an emoji, and where
     /// it ends. An unknown name stays text.
-    static func shortcode(in source: Substring, at start: String.Index) -> (emoji: String, end: String.Index)? {
+    static func shortcode(in source: Substring, at start: String.Index) -> (text: String, end: String.Index)? {
         guard source[start] == ":" else { return nil }
         let nameStart = source.index(after: start)
         guard let nameEnd = source[nameStart...].firstIndex(where: { $0 == ":" || $0.isWhitespace }),
@@ -42,7 +42,10 @@ public enum DiscordEmojiNames {
         }
         let key = String(name)
         guard let emoji = table.entries[key]?.first ?? table.aliases[key] else { return nil }
+        // ©, ® and a few others draw as text unless asked for as emoji.
+        let presented = emoji.unicodeScalars.count == 1 && emoji.unicodeScalars.first?.properties.isEmojiPresentation == false
+            ? emoji + "\u{FE0F}" : emoji
         // Past the closing colon.
-        return (emoji, source.index(after: name.endIndex))
+        return (presented, source.index(after: name.endIndex))
     }
 }

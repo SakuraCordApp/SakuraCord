@@ -184,6 +184,13 @@ public struct MessageDocument: Hashable, Sendable {
         isEmojiOnly = Self.detectEmojiOnly(source: source, segments: segments)
     }
 
+    /// The end of the custom emoji or mention token at `index`, if one starts there.
+    static func tokenEnd(in source: Substring, at index: String.Index) -> String.Index? {
+        let range = NSRange(index ..< source.endIndex, in: source.base)
+        return tokenExpression.firstMatch(in: source.base, options: .anchored, range: range)
+            .flatMap { Range($0.range, in: source.base)?.upperBound }
+    }
+
     private static func tokenize(_ source: String, rules: DiscordMarkdown.Rules) -> [Segment] {
         let matches = tokenExpression.matches(
             in: source, range: NSRange(source.startIndex ..< source.endIndex, in: source)
