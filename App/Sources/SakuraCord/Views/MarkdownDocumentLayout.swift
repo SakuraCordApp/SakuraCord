@@ -450,7 +450,8 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             guard let name = value as? String, name != "fence" else { return }
             var extent: NSRect?
             enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) { rect, used, _, _, _ in
-                // A line cut off by a line limit has an empty fragment.
+                // A line cut off by a line limit has an empty fragment at the
+                // origin, which would stretch the block to the top.
                 guard !rect.isEmpty else { return }
                 let line = NSRect(x: rect.minX, y: used.minY, width: rect.width, height: used.height)
                 extent = extent?.union(line) ?? line
@@ -474,6 +475,7 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
         textStorage.enumerateAttribute(.discordMarkdownListMarker, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
             guard let level = value as? NSNumber else { return }
             let frame = boundingRect(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
+            // A marker cut off by a line limit has no frame to draw beside.
             guard !frame.isEmpty else { return }
             let em = NativeTimelineMarkdownChromeMetrics.em(in: textStorage, at: range.location)
             let isQuoted = textStorage.attribute(.discordMarkdownBlock, at: range.location, effectiveRange: nil) as? String == "quote"
@@ -499,8 +501,7 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             let runGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             enumerateLineFragments(forGlyphRange: runGlyphs) { _, line, container, lineGlyphs, _ in
                 let glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
-                // A line cut off by a line limit has an empty fragment.
-                guard glyphs.length > 0, !line.isEmpty else { return }
+                guard glyphs.length > 0 else { return }
                 let bounds = self.boundingRect(forGlyphRange: glyphs, in: container)
                 let start = self.characterIndexForGlyph(at: glyphs.location)
                 let isWrapped = glyphs.location == lineGlyphs.location

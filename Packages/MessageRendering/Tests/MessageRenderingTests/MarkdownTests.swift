@@ -282,6 +282,29 @@ import Testing
     #expect(shorter.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil)
 }
 
+@Test func `bio inline code matches Discord's rule in linear time and spans a quote's lines`() {
+    // A regex scan of this bio backtracked for over half a second per pass,
+    // freezing the profile popover.
+    let backticks = String(repeating: "`", count: 190)
+    let clock = ContinuousClock()
+    let elapsed = clock.measure { _ = DiscordMarkdown.appKitPlan(backticks, rules: .profileBio) }
+    #expect(elapsed < .milliseconds(250))
+    // The longest opening run with a close of its length wins.
+    #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("``a`b``", rules: .profileBio)).string == "a`b")
+
+    // Discord merges consecutive `> ` lines and parses code across them.
+    let quote = "> a `b https://discord.com/channels/1/2\n> c` d"
+    #expect(!MessageDocument(source: quote, rules: .profileBio).segments.contains {
+        if case .mention = $0 { true } else { false }
+    })
+    let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(quote, rules: .profileBio))
+    let code = (value.string as NSString).range(of: "b https://discord.com/channels/1/2\nc")
+    #expect(code.location != NSNotFound)
+    #expect(value.attribute(.discordMarkdownInlineCode, at: code.location, effectiveRange: nil) != nil)
+    #expect(value.attribute(.discordMarkdownBlock, at: code.location, effectiveRange: nil) as? String == "quote")
+    #expect(!value.string.contains("`"))
+}
+
 @Test func `message document detects jumbo custom emoji`() {
     #expect(MessageDocument(source: "<:one:1> <:two:2>").isEmojiOnly)
     #expect(!MessageDocument(source: "text <:one:1>").isEmojiOnly)

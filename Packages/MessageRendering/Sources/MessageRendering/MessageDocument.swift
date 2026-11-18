@@ -189,7 +189,7 @@ public struct MessageDocument: Hashable, Sendable {
             in: source, range: NSRange(source.startIndex ..< source.endIndex, in: source)
         )
         guard !matches.isEmpty else { return source.isEmpty ? [] : [.markdown(source)] }
-        // Only the token-only mention kinds need these scans; most matches are not.
+        // Computed only for the mentions that need them; most matches don't.
         var codeRanges: [NSRange]?
         var urlRanges: [NSRange]?
         var linkLabels: [NSRange]?
@@ -251,8 +251,9 @@ public struct MessageDocument: Hashable, Sendable {
         codeRanges = code
         var ranges = code
         if isTokenOnly {
-            ranges += urlRanges ?? Self.urlRanges(in: source)
-            urlRanges = Array(ranges.dropFirst(code.count))
+            let urls = urlRanges ?? Self.urlRanges(in: source)
+            urlRanges = urls
+            ranges += urls
         }
         if ranges.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
         var cursor = range.lowerBound

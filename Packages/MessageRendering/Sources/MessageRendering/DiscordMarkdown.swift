@@ -86,7 +86,7 @@ public enum DiscordMarkdown {
         }
 
         struct InlineRun: Hashable, Sendable {
-            let text: String
+            var text: String
             let traits: InlineTraits
             let link: URL?
             let color: SemanticColor?
@@ -287,6 +287,12 @@ public enum DiscordMarkdown {
                     list = ListNesting()
                 }
                 var line = planLine(content, rules: rules, list: &list)
+                if !rules.parsesCodeBlocks, isQuoteLine(rawLine), content.contains("\n") {
+                    // Code across a quote's lines holds their text without its markers.
+                    for index in line.runs.indices where line.runs[index].traits.contains(.inlineCode) {
+                        line.runs[index].text = line.runs[index].text.replacingOccurrences(of: "\n> ", with: "\n")
+                    }
+                }
                 line.isQuoted = isQuoted
                 lines.append(line)
             }
@@ -381,62 +387,6 @@ public enum DiscordMarkdown {
         case .profileWidget:
             return nil
         }
-    }
-
-    /// Discord's inline code rule, anchored where it is tried: fenced by a
-    /// run of backticks, closed by a run of the same length, and free to span
-    /// lines. A shorter opening run is tried when a longer one finds no close.
-    private nonisolated(unsafe) static let inlineCodeExpression = #/(`+)([\s\S]*?[^`])\1(?!`)/#
-
-    /// Discord's inline code at `start`. Where it doesn't match, the backtick
-    /// is text.
-    private static func inlineCode(
-        in source: Substring, at start: String.Index
-    ) -> (content: Range<String.Index>, end: String.Index)? {
-        guard let match = source[start...].prefixMatch(of: inlineCodeExpression) else { return nil }
-        return (match.output.2.startIndex ..< match.output.2.endIndex, match.range.upperBound)
-    }
-
-    /// Each `` `code` `` span in rules without code blocks, backticks
-    /// included, skipping escaped characters as inline parsing does. A
-    /// heading or `>` quote is one line, so code it opens ends with it.
-    private static func inlineCodeSpans(_ source: String) -> [Range<String.Index>] {
-        var spans: [Range<String.Index>] = []
-        var cursor = source.startIndex
-        while cursor < source.endIndex {
-            if source[cursor] == "\\" {
-                cursor = source.index(cursor, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
-            } else if source[cursor] == "`", let code = inlineCode(in: source[...], at: cursor),
-                      !source[cursor ..< code.end].contains("\n") || !isSingleLineBlock(source, containing: cursor) {
-                spans.append(cursor ..< code.end)
-                cursor = code.end
-            } else {
-                cursor = source.index(after: cursor)
-            }
-        }
-        return spans
-    }
-
-    private static func isSingleLineBlock(_ source: String, containing index: String.Index) -> Bool {
-        let lineStart = source[..<index].lastIndex(of: "\n").map(source.index(after:)) ?? source.startIndex
-        let line = source[lineStart...]
-        return ["# ", "## ", "### ", "-# "].contains(where: line.hasPrefix) || (line.hasPrefix("> ") && !line.hasPrefix(">>> "))
-    }
-
-    /// Source lines, except that inline code spanning lines stays in the
-    /// line it starts on, as Discord parses it before line breaks.
-    private static func linesOutsideInlineCode(_ source: String) -> [Substring] {
-        var lines: [Substring] = []
-        var lineStart = source.startIndex
-        var spans = inlineCodeSpans(source)[...]
-        for newline in source.indices where source[newline] == "\n" {
-            while let span = spans.first, span.upperBound <= newline { spans.removeFirst() }
-            if let span = spans.first, span.contains(newline) { continue }
-            lines.append(source[lineStart ..< newline])
-            lineStart = source.index(after: newline)
-        }
-        lines.append(source[lineStart...])
-        return lines
     }
 
     /// The text after a `>` quote marker that Swift reads as part of a
@@ -1891,5 +1841,90 @@ public extension DiscordMarkdown {
             }
         }
         return result
+    }
+}
+
+/// Discord's inline code in rules without code blocks, such as a bio's,
+/// where it is the only code and may span lines.
+extension DiscordMarkdown {
+    /// Discord's inline code at `start`, `` ^(`+)([\s\S]*?[^`])\1(?!`) ``, in
+    /// linear time: fenced by a run of backticks and closed by the first later
+    /// run of exactly its length, free to span lines. The regex retries a
+    /// shorter opening when a longer one finds no close. Where none closes,
+    /// the backtick is text.
+    private static func inlineCode(
+        in source: Substring, at start: String.Index
+    ) -> (content: Range<String.Index>, end: String.Index)? {
+        let opening = source[start...].prefix { $0 == "`" }.count
+        guard opening > 0 else { return nil }
+        var firstRuns: [Int: Range<String.Index>] = [:]
+        var cursor = source.index(start, offsetBy: opening)
+        while let runStart = source[cursor...].firstIndex(of: "`") {
+            let runEnd = source[runStart...].firstIndex { $0 != "`" } ?? source.endIndex
+            let length = source.distance(from: runStart, to: runEnd)
+            if firstRuns[length] == nil { firstRuns[length] = runStart ..< runEnd }
+            cursor = runEnd
+        }
+        for length in stride(from: opening, through: 1, by: -1) {
+            if let close = firstRuns[length] {
+                return (source.index(start, offsetBy: length) ..< close.lowerBound, close.upperBound)
+            }
+        }
+        return nil
+    }
+
+    /// Each `` `code` `` span in rules without code blocks, backticks
+    /// included, skipping escaped characters as inline parsing does. Code
+    /// closes within the block it opens in, as Discord parses a block's
+    /// content on its own.
+    private static func inlineCodeSpans(_ source: String) -> [Range<String.Index>] {
+        var spans: [Range<String.Index>] = []
+        var cursor = source.startIndex
+        while cursor < source.endIndex {
+            if source[cursor] == "\\" {
+                cursor = source.index(cursor, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
+            } else if source[cursor] == "`",
+                      let code = inlineCode(in: source[..<blockEnd(source, containing: cursor)], at: cursor) {
+                spans.append(cursor ..< code.end)
+                cursor = code.end
+            } else {
+                cursor = source.index(after: cursor)
+            }
+        }
+        return spans
+    }
+
+    /// Where the block holding `index` ends: a heading's line, or the last
+    /// of a quote's consecutive `> ` lines, which Discord's blockQuote rule
+    /// merges. Other text runs to the end.
+    private static func blockEnd(_ source: String, containing index: String.Index) -> String.Index {
+        let lineStart = source[..<index].lastIndex(of: "\n").map(source.index(after:)) ?? source.startIndex
+        var lineEnd = source[index...].firstIndex(of: "\n") ?? source.endIndex
+        if ["# ", "## ", "### ", "-# "].contains(where: source[lineStart...].hasPrefix) { return lineEnd }
+        guard isQuoteLine(source[lineStart...]) else { return source.endIndex }
+        while lineEnd < source.endIndex, isQuoteLine(source[source.index(after: lineEnd)...]) {
+            lineEnd = source[source.index(after: lineEnd)...].firstIndex(of: "\n") ?? source.endIndex
+        }
+        return lineEnd
+    }
+
+    private static func isQuoteLine(_ line: Substring) -> Bool {
+        line.hasPrefix("> ") && !line.hasPrefix(">>> ")
+    }
+
+    /// Source lines, except that inline code spanning lines stays in the
+    /// line it starts on, as Discord parses it before line breaks.
+    private static func linesOutsideInlineCode(_ source: String) -> [Substring] {
+        var lines: [Substring] = []
+        var lineStart = source.startIndex
+        var spans = inlineCodeSpans(source)[...]
+        for newline in source.indices where source[newline] == "\n" {
+            while let span = spans.first, span.upperBound <= newline { spans.removeFirst() }
+            if let span = spans.first, span.contains(newline) { continue }
+            lines.append(source[lineStart ..< newline])
+            lineStart = source.index(after: newline)
+        }
+        lines.append(source[lineStart...])
+        return lines
     }
 }

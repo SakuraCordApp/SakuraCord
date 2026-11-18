@@ -8,7 +8,7 @@ enum MarkdownBlockChrome {
     /// rect too small to outline, such as a wrapped zero-width joiner's, has
     /// no border path to draw.
     static func drawCode(in rect: CGRect) {
-        guard rect.width > 1, rect.height > 1, [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite) else { return }
+        guard rect.width > 1, rect.height > 1 else { return }
         let radius = NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
         codeBackgroundColor.setFill()
         NSBezierPath(concentricRoundedRect: rect, cornerRadius: radius).fill()
