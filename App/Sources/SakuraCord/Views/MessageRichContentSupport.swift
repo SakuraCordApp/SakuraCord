@@ -19,7 +19,18 @@ enum DiscordRichMessageMetrics {
     /// 16-pixel message text, which SakuraCord draws at `messageTextSize`,
     /// so every Discord length keeps its proportion to the text.
     nonisolated static func px(_ value: CGFloat) -> CGFloat {
-        InterfaceScale.metric((value * InterfaceTypographyMetrics.messageTextSize / 16 * 2).rounded() / 2)
+        px(value, textSize: InterfaceTypographyMetrics.messageTextSize)
+    }
+
+    /// One of Discord's CSS pixels at the default message text, for the
+    /// lengths Discord keeps when its text grows, such as an embed's card
+    /// and media.
+    nonisolated static func fixedPx(_ value: CGFloat) -> CGFloat {
+        px(value, textSize: InterfaceTypographyMetrics.defaultMessageTextSize)
+    }
+
+    private nonisolated static func px(_ value: CGFloat, textSize: CGFloat) -> CGFloat {
+        InterfaceScale.metric((value * textSize / 16 * 2).rounded() / 2)
     }
 
     /// A Discord font size in pixels, as a message-content size at the

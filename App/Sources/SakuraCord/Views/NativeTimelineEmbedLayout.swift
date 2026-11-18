@@ -30,7 +30,8 @@ enum NativeTimelineEmbedLayout {
         /// The 18-pixel emoji as `resolvedTextBox` takes it.
         static var emojiSize: CGFloat { InterfaceTypographyMetrics.message(DiscordRichMessageMetrics.textSize(18)) }
 
-        private static func px(_ value: CGFloat) -> CGFloat { DiscordRichMessageMetrics.px(value) }
+        /// Discord keeps an embed's lengths when its text grows; only the text scales.
+        private static func px(_ value: CGFloat) -> CGFloat { DiscordRichMessageMetrics.fixedPx(value) }
     }
 
     private struct PreparedField {
@@ -455,7 +456,7 @@ enum NativeTimelineEmbedLayout {
                 aspectRatios: [RichMediaItem.aspectRatio(width: media.width, height: media.height)],
                 intrinsicSizes: knownSize.map { [$0] } ?? [],
                 spacing: 0,
-                maximumHeight: DiscordRichMessageMetrics.px(isTall ? 450 : 300)
+                maximumHeight: DiscordRichMessageMetrics.fixedPx(isTall ? 450 : 300)
             )[0].size
         }
     }
