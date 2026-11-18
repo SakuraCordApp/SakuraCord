@@ -89,3 +89,21 @@ PY
     }
   echo "Launch verified: credential mode $credential_mode; signing identity $SAKURACORD_RESOLVED_CODE_SIGN_IDENTITY"
 }
+
+# Records in a debug bundle the Discord simulator port it is launched with, and
+# removes the record for every other launch, so launching the bundle later by
+# path alone (LaunchServices, Computer Use) keeps it on the simulator instead
+# of the real account. Editing Info.plist breaks the seal, so this re-signs.
+sakuracord_record_simulator_launch() {
+  local bundle="$1" port="${2:-}" key=SakuraCordDiscordSimulatorPort
+  local plist="$bundle/Contents/Info.plist"
+  [[ -z "$port" || "$port" =~ ^[0-9]+$ ]] || { echo "Invalid simulator port: $port" >&2; return 2; }
+  [[ "$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null)" == "$port" ]] && return 0
+  sakuracord_resolve_code_sign_identity 1 || return
+  /usr/libexec/PlistBuddy -c "Delete :$key" "$plist" >/dev/null 2>&1 || true
+  if [[ -n "$port" ]]; then
+    /usr/libexec/PlistBuddy -c "Add :$key string $port" "$plist" || return
+  fi
+  codesign --force --sign "$SAKURACORD_RESOLVED_CODE_SIGN_IDENTITY" \
+    --preserve-metadata=identifier,entitlements,requirements,flags,runtime "$bundle" >/dev/null
+}

@@ -245,6 +245,7 @@ fi
     --param "threads=$((cycles + 1))" --param "thread_messages=$thread_messages"
 "$root/script/simulator.sh" ctl network "$history_delay" 0
 simulator_token="$("$root/script/simulator.sh" token)"
+sakuracord_record_simulator_launch "$app" "${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}"
 
 for run in $(seq 1 "$runs"); do
     stop_app

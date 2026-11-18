@@ -370,6 +370,7 @@ case "$MODE" in
   --debug)
     sakuracord_verify_development_launch
     sakuracord_stop_scoped_app
+    sakuracord_record_simulator_launch "$APP_BUNDLE"
     lldb -- "$MACOS/$APP_NAME"
     ;;
   --logs)

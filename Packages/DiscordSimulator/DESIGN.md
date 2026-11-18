@@ -18,7 +18,8 @@ script/simulator.sh ctl world             # accounts, guilds, channels
 script/simulator.sh stop
 ```
 
-Debug builds launched with `--discord-simulator [PORT]` rewrite Discord hosts
+Debug builds launched with `--discord-simulator [PORT]`, or relaunched from a
+bundle the launch scripts recorded as a simulator launch, rewrite Discord hosts
 to the simulator when a request is made (`DiscordNetworkRedirect`); data keeps
 real URLs. Simulator accounts, tokens and caches live apart from real ones
 (`SimulatorAccountStorage`), so a real token is never sent to the simulator.

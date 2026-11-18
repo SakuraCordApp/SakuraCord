@@ -105,6 +105,12 @@ sakuracord_launch_scoped_app() {
   # Check again at launch time, and let LaunchServices reuse an instance if
   # another launcher races this final check instead of forcing a duplicate.
   sakuracord_stop_scoped_app || return
+  local argument previous="" simulator_port=""
+  for argument in "$@"; do
+    [[ "$previous" == --discord-simulator ]] && simulator_port="$argument"
+    previous="$argument"
+  done
+  sakuracord_record_simulator_launch "$SAKURACORD_APP_BUNDLE" "$simulator_port" || return
   /usr/bin/open "$SAKURACORD_APP_BUNDLE" "$@" || return
   sakuracord_wait_for_scoped_app || return
 
