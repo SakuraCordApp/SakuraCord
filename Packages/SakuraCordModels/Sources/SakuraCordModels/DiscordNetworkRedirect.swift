@@ -16,16 +16,15 @@ public nonisolated enum DiscordNetworkRedirect {
 
     /// An extended attribute the launch scripts set on the bundle for a simulator
     /// launch, so a later launch by path alone (LaunchServices, Computer Use)
-    /// still reaches the simulator instead of the real account. Other launches
-    /// remove it. Unlike Info.plist, it leaves the code signature intact.
+    /// still reaches the simulator instead of the real account.
     static let recordedPortAttribute = "dev.sakuracord.DiscordSimulatorPort"
 
-    /// An attribute that exists but cannot be read still counts as recorded.
-    static func recordedPort(of bundle: URL) -> String? {
+    /// A recorded launch never falls back to the real account, even if unreadable.
+    static func recordedPort(of bundle: URL) -> UInt16? {
         var value = [UInt8](repeating: 0, count: 16)
         let length = getxattr(bundle.path, recordedPortAttribute, &value, value.count, 0, 0)
-        if length < 0 { return errno == ENOATTR ? nil : "" }
-        return String(bytes: value.prefix(length), encoding: .utf8) ?? ""
+        guard length >= 0 else { return errno == ENOATTR ? nil : defaultBasePort }
+        return String(bytes: value.prefix(length), encoding: .utf8).flatMap(UInt16.init) ?? defaultBasePort
     }
 
     /// `script/run.sh --simulator-sign-in` clears this suite for a fresh start.
@@ -33,7 +32,7 @@ public nonisolated enum DiscordNetworkRedirect {
 
     static let defaultBasePort: UInt16 = 47100
 
-    static func basePort(arguments: [String], environment: [String: String], recordedPort: String?) -> UInt16? {
+    static func basePort(arguments: [String], environment: [String: String], recordedPort: UInt16?) -> UInt16? {
         for (index, argument) in arguments.enumerated() {
             if argument == "--discord-simulator" {
                 let next = index + 1 < arguments.count ? UInt16(arguments[index + 1]) : nil
@@ -43,9 +42,7 @@ public nonisolated enum DiscordNetworkRedirect {
                 return UInt16(argument.dropFirst("--discord-simulator=".count)) ?? defaultBasePort
             }
         }
-        if let port = environment["SAKURACORD_DISCORD_SIMULATOR"].flatMap(UInt16.init) { return port }
-        // A recorded launch never falls back to the real account, even if unreadable.
-        return recordedPort.map { UInt16($0) ?? defaultBasePort }
+        return environment["SAKURACORD_DISCORD_SIMULATOR"].flatMap(UInt16.init) ?? recordedPort
     }
 
     /// The simulator listens on one port per Discord host, at these offsets.

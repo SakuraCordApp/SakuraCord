@@ -245,7 +245,8 @@ fi
     --param "threads=$((cycles + 1))" --param "thread_messages=$thread_messages"
 "$root/script/simulator.sh" ctl network "$history_delay" 0
 simulator_token="$("$root/script/simulator.sh" token)"
-sakuracord_record_simulator_launch "$app" "${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}"
+simulator_port="${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}"
+sakuracord_record_simulator_launch "$app" "$simulator_port"
 
 for run in $(seq 1 "$runs"); do
     stop_app
@@ -256,7 +257,7 @@ for run in $(seq 1 "$runs"); do
     stream_pid=$!
     sleep 1
     /usr/bin/open -n -F "$app" --env "SAKURACORD_SIMULATOR_TOKEN=$simulator_token" \
-        --args --discord-simulator "${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}" --benchmark-side-chat-motion \
+        --args --discord-simulator "$simulator_port" --benchmark-side-chat-motion \
         "--motion-cycles=$cycles" \
         "--motion-history-delay-ms=$history_delay" \
         "--motion-thread-messages=$thread_messages" ${app_arguments[@]+"${app_arguments[@]}"}
