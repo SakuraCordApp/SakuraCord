@@ -551,6 +551,14 @@ import Testing
     #expect(afterLink.last == .mention(RenderedMention(rawToken: "@here")!))
 }
 
+@Test func `a backslash escapes punctuation only, as Discord's escape rule does`() {
+    // A letter after a backslash keeps it, and a link after one still links in full.
+    let rendered = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(#"C:\Users \https://example.com/foo_bar_baz \*x\*"#))
+    #expect(rendered.string == #"C:\Users \https://example.com/foo_bar_baz *x*"#)
+    let link = MessageDocument(source: #"\https://discord.com/channels/1/2/3"#).segments.last
+    #expect(link == .mention(RenderedMention(rawToken: "https://discord.com/channels/1/2/3")!))
+}
+
 @Test func `links show the text Discord normalizes them to`() {
     // Hidden and bidirectional characters stay escaped, so a link's text
     // can't disguise where it goes.
