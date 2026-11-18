@@ -92,6 +92,12 @@ import Testing
     #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
     let oneLine = DiscordMarkdown.appKitSourceAttributed("```x```", attributes: [:], baseFontSize: 14, usesMessageLineHeight: false)
     #expect(oneLine.attribute(.discordMarkdownBlock, at: 3, effectiveRange: nil) as? String == "code")
+    // Code on a block's closing line keeps its syntax colours.
+    let swift = "```swift\nlet a = 1\nlet b = 2```"
+    let coloured = DiscordMarkdown.appKitSourceAttributed(swift, attributes: [:], baseFontSize: 14, usesMessageLineHeight: false)
+    let keyword = { (location: Int) in coloured.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor }
+    #expect(keyword((swift as NSString).range(of: "let b").location) == keyword((swift as NSString).range(of: "let a").location))
+    #expect(keyword((swift as NSString).range(of: "let b").location) != keyword((swift as NSString).range(of: "b = 2").location))
 }
 
 @Test func `angle bracket masked links match discord rendering`() throws {

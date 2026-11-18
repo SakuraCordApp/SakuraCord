@@ -160,21 +160,19 @@ public enum DiscordMarkdown {
         var segmentStart: String.Index? = source.startIndex
         var unclosedFenceEnd: String.Index?
         forEachSourceLine(source) { rawLine, kind in
-            switch kind {
-            case .text:
+            if case .text = kind {
                 segmentStart = segmentStart ?? rawLine.startIndex
                 return
-            case let .fence(opening):
-                unclosedFenceEnd = opening == nil ? nil : rawLine.endIndex
-            case .closingCode:
-                unclosedFenceEnd = nil
-            case .code:
-                break
             }
             if let start = segmentStart {
                 _ = inlineRuns(source[start ..< rawLine.startIndex], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
             }
-            if case let .closingCode(_, _, _, after) = kind { segmentStart = after.startIndex } else { segmentStart = nil }
+            segmentStart = nil
+            switch kind {
+            case let .fence(opening): unclosedFenceEnd = opening == nil ? nil : rawLine.endIndex
+            case let .closingCode(_, _, _, after): (unclosedFenceEnd, segmentStart) = (nil, after.startIndex)
+            case .code, .text: break
+            }
         }
         // Text after a fence that never closes is text, as Discord shows it.
         if let start = segmentStart ?? unclosedFenceEnd {
@@ -269,10 +267,7 @@ public enum DiscordMarkdown {
     ) -> AppKitPlan {
         let language = language?.lowercased()
         return AppKitPlan(lines: source.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map {
-            AppKitPlan.Line(
-                runs: codeRuns(String($1), language: language),
-                block: .code(language: language, isFirstLine: $0 == 0)
-            )
+            codeLine($1, language: language, isFirstLine: $0 == 0)
         }, codeBackground: background)
     }
 
@@ -287,18 +282,12 @@ public enum DiscordMarkdown {
                 unclosedFence = opening.map { ($0, lines.count) }
                 list = ListNesting()
             case let .code(language, isFirstLine):
-                lines.append(AppKitPlan.Line(
-                    runs: codeRuns(String(rawLine), language: language),
-                    block: .code(language: language, isFirstLine: isFirstLine)
-                ))
+                lines.append(codeLine(rawLine, language: language, isFirstLine: isFirstLine))
             case let .closingCode(code, language, isFirstLine, after):
                 unclosedFence = nil
                 list = ListNesting()
                 if !code.isEmpty {
-                    lines.append(AppKitPlan.Line(
-                        runs: codeRuns(String(code), language: language),
-                        block: .code(language: language, isFirstLine: isFirstLine)
-                    ))
+                    lines.append(codeLine(code, language: language, isFirstLine: isFirstLine))
                 }
                 if !after.isEmpty {
                     lines.append(planLine(after, list: &list))
@@ -340,6 +329,10 @@ public enum DiscordMarkdown {
             lines.append(line)
         }
         return AppKitPlan(lines: qualifyingSpoilerIDs(lines), isSemibold: true)
+    }
+
+    private static func codeLine(_ code: Substring, language: String?, isFirstLine: Bool) -> AppKitPlan.Line {
+        AppKitPlan.Line(runs: codeRuns(String(code), language: language), block: .code(language: language, isFirstLine: isFirstLine))
     }
 
     /// How message rendering reads one line of source.
@@ -1576,26 +1569,21 @@ public extension DiscordMarkdown {
                 setParagraph(spacing: closingFenceHeight, for: paragraphRange)
                 return
             case let .closingCode(code, language, isFirstLine, after):
-                // Code and its closing fence keep code styling; the text after
-                // the fence is read as text, as message rendering reads it.
-                line = AppKitPlan.Line(runs: [], block: .code(language: language, isFirstLine: isFirstLine))
-                style(NSRange(rawLine.startIndex ..< after.startIndex, in: source))
+                // Code and its fences keep code styling; the text after the
+                // closing fence is read as text, as message rendering reads it.
+                let codeLine = styleCode(code, language: language, isFirstLine: isFirstLine)
                 // A block opened on this line has its opening fence before the code.
-                if code.startIndex > rawLine.startIndex { fences.append(NSRange(rawLine.startIndex ..< code.startIndex, in: source)) }
-                fences.append(NSRange(code.endIndex ..< after.startIndex, in: source))
+                for fence in [rawLine.startIndex ..< code.startIndex, code.endIndex ..< after.startIndex] where !fence.isEmpty {
+                    let fenceRange = NSRange(fence, in: source)
+                    style(fenceRange)
+                    fences.append(fenceRange)
+                }
                 line = AppKitPlan.Line(runs: [], block: .paragraph)
                 _ = inlineRuns(after, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
                 // A line that holds code keeps its block chrome, as message rendering gives it.
-                if !code.isEmpty { line = AppKitPlan.Line(runs: [], block: .code(language: language, isFirstLine: isFirstLine)) }
+                if !code.isEmpty { line = codeLine }
             case let .code(language, isFirstLine):
-                line = AppKitPlan.Line(runs: codeRuns(String(rawLine), language: language), block: .code(language: language, isFirstLine: isFirstLine))
-                style(range)
-                var location = range.location
-                for run in line.runs {
-                    let length = run.text.utf16.count
-                    if run.color != nil { style(NSRange(location: location, length: length), color: run.color) }
-                    location += length
-                }
+                _ = styleCode(rawLine, language: language, isFirstLine: isFirstLine)
             case .text where isLiteral:
                 line = AppKitPlan.Line(runs: [], block: .paragraph)
             case let .text(content, isQuoted):
@@ -1622,6 +1610,20 @@ public extension DiscordMarkdown {
             if let blockName = blockName(for: line) {
                 text.addAttributes([.discordMarkdownBlock: blockName, .discordMarkdownEm: NSNumber(value: metrics.em)], range: paragraphRange)
             }
+        }
+
+        /// Styles `code` as a code line, its syntax coloured, and makes that line current.
+        private func styleCode(_ code: Substring, language: String?, isFirstLine: Bool) -> AppKitPlan.Line {
+            line = DiscordMarkdown.codeLine(code, language: language, isFirstLine: isFirstLine)
+            let range = NSRange(code.startIndex ..< code.endIndex, in: source)
+            style(range)
+            var location = range.location
+            for run in line.runs {
+                let length = run.text.utf16.count
+                if run.color != nil { style(NSRange(location: location, length: length), color: run.color) }
+                location += length
+            }
+            return line
         }
 
         private func style(_ range: NSRange, as traits: AppKitPlan.InlineTraits = [], color: AppKitPlan.SemanticColor? = nil) {

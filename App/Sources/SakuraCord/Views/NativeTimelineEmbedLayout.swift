@@ -118,8 +118,7 @@ enum NativeTimelineEmbedLayout {
                         source: source
                     )
                 }
-                // The link is not part of the text cache key, so it scopes the title.
-                let title = embed.title.map { titleBox($0, fontSize: 14, scope: "title:\(embed.url?.absoluteString ?? "")", link: embed.url) }
+                let title = embed.title.map { titleBox($0, fontSize: 14, scope: "title", link: embed.url) }
                 let description = (["image", "video", "gifv"].contains(embed.type?.lowercased() ?? "") ? nil : embed.description).map {
                     NativeTimelineEmbedLayout.resolvedTextBox(
                         prepared: RichMessageAttributedText.prepare(source: $0),
@@ -535,7 +534,8 @@ enum NativeTimelineEmbedLayout {
             prepared: prepared,
             emojiSize: emojiSize,
             baseFontSize: baseFontSize,
-            presentations: mentions
+            presentations: mentions,
+            link: link
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
             NativeTimelineAttributedTextBox(

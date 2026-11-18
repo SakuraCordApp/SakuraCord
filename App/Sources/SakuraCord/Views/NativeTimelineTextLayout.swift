@@ -208,6 +208,7 @@ nonisolated final class NativeTimelineResolvedTextCache: Sendable {
         let emojiSize: CGFloat
         let baseFontSize: CGFloat
         let mentions: [MentionPresentation]
+        var link: URL?
         /// The interface size when the key was prepared.
         var interfaceScale = InterfaceScale.factor
     }
@@ -272,7 +273,8 @@ nonisolated extension NativeTimelineResolvedTextCache.Key {
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
         baseFontSize: CGFloat,
-        presentations: [String: MentionPresentation]
+        presentations: [String: MentionPresentation],
+        link: URL? = nil
     ) {
         self.init(
             messageID: messageID,
@@ -280,7 +282,8 @@ nonisolated extension NativeTimelineResolvedTextCache.Key {
             prepared: prepared,
             emojiSize: emojiSize,
             baseFontSize: baseFontSize,
-            mentions: presentations.values.sorted { $0.rawToken < $1.rawToken }
+            mentions: presentations.values.sorted { $0.rawToken < $1.rawToken },
+            link: link
         )
     }
 }

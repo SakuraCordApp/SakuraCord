@@ -80,17 +80,12 @@ nonisolated enum RichMessageAttributedText {
                 }
             }
         }
-        let prepared = switch rules {
-        case .message:
-            Prepared(markdownPlan: DiscordMarkdown.appKitPlan(transformed), tokens: tokens, isEmojiOnly: document.isEmojiOnly)
-        case let .embedTitle(allowsLinks):
-            // Embed emoji keep one size, never jumbo.
-            Prepared(
-                markdownPlan: DiscordMarkdown.appKitEmbedTitlePlan(transformed, allowsLinks: allowsLinks),
-                tokens: tokens,
-                isEmojiOnly: false
-            )
+        let markdownPlan = switch rules {
+        case .message: DiscordMarkdown.appKitPlan(transformed)
+        case let .embedTitle(allowsLinks): DiscordMarkdown.appKitEmbedTitlePlan(transformed, allowsLinks: allowsLinks)
         }
+        // Embed emoji keep one size, never jumbo.
+        let prepared = Prepared(markdownPlan: markdownPlan, tokens: tokens, isEmojiOnly: rules == .message && document.isEmojiOnly)
         return preparedCache.withLock { state in
             if let existing = state.values[key] {
                 return existing
