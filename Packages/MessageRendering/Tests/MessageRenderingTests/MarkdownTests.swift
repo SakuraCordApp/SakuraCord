@@ -55,6 +55,11 @@ import Testing
     let linked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitEmbedTitlePlan("[x](https://a.example) *Level*", allowsLinks: false))
     #expect(linked.string == "[x](https://a.example) Level")
     #expect(linked.attribute(.link, at: 5, effectiveRange: nil) == nil)
+    // Titles never parse masked links; their URLs still link when the embed doesn't.
+    let unlinked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitEmbedTitlePlan("[x](https://a.example)", allowsLinks: true))
+    #expect(unlinked.string == "[x](https://a.example)")
+    #expect(unlinked.attribute(.link, at: 0, effectiveRange: nil) == nil)
+    #expect(unlinked.attribute(.link, at: 5, effectiveRange: nil) != nil)
     // Italic keeps the title's semibold weight.
     let italic = try #require(linked.attribute(.font, at: linked.length - 1, effectiveRange: nil) as? NSFont)
     #expect(italic.fontName.contains("SemiboldItalic"))

@@ -192,9 +192,12 @@ public enum DiscordMarkdown {
 
         static let code = Self(rawValue: 1 << 0)
         static let strikethroughAndSpoilers = Self(rawValue: 1 << 1)
-        static let links = Self(rawValue: 1 << 2)
+        /// `[label](url)`, which Discord parses only where a surface allows links.
+        static let maskedLinks = Self(rawValue: 1 << 2)
+        /// Bare and `<…>` URLs.
+        static let autolinks = Self(rawValue: 1 << 3)
 
-        static let message: Self = [.code, .strikethroughAndSpoilers, .links]
+        static let message: Self = [.code, .strikethroughAndSpoilers, .maskedLinks, .autolinks]
     }
 
     private static let delimiters: [Delimiter] = [
@@ -245,7 +248,7 @@ public enum DiscordMarkdown {
     /// Personal profile widgets allow emphasis, underline and links, but no
     /// message-only blocks, code, spoilers, strike-through or emoji parsing.
     public static func profileWidgetAttributed(_ source: String, font: Font = .body, links: Bool = true) -> AttributedString {
-        let runs = inlineRuns(source[...], inheritedTraits: [], inheritedLink: nil, rules: .links)
+        let runs = inlineRuns(source[...], inheritedTraits: [], inheritedLink: nil, rules: [.maskedLinks, .autolinks])
         var output = AttributedString()
         for run in runs {
             var value = AttributedString(run.text)
@@ -317,14 +320,14 @@ public enum DiscordMarkdown {
     }
 
     /// An embed title or field name, under Discord's embed-title rules:
-    /// inline formatting and quotes, but no lists, headings, subtext or code
-    /// blocks, and no links when the embed itself links.
+    /// inline formatting and quotes, but no lists, headings, subtext, code
+    /// blocks or masked links, and no bare links when the embed itself links.
     public static func appKitEmbedTitlePlan(_ source: String, allowsLinks: Bool) -> AppKitPlan {
         var lines: [AppKitPlan.Line] = []
         forEachSourceLine(source, parsesFences: false) { _, kind in
             // Without fences every line is text.
             guard case let .text(content, isQuoted) = kind else { preconditionFailure("fence outside fence parsing") }
-            var line = line(content, block: .paragraph, rules: allowsLinks ? .message : InlineRules.message.subtracting(.links))
+            var line = line(content, block: .paragraph, rules: InlineRules.message.subtracting(allowsLinks ? .maskedLinks : [.maskedLinks, .autolinks]))
             line.isQuoted = isQuoted
             lines.append(line)
         }
@@ -695,7 +698,7 @@ public enum DiscordMarkdown {
         var result: [AppKitPlan.InlineRun] = []
         var plain = ""
         var cursor = source.startIndex
-        let parsesLinks = rules.contains(.links)
+        let parsesLinks = rules.contains(.autolinks)
 
         func flushPlain() {
             guard !plain.isEmpty else { return }
@@ -751,7 +754,7 @@ public enum DiscordMarkdown {
                 continue
             }
 
-            if parsesLinks, let link = markdownLink(
+            if rules.contains(.maskedLinks), let link = markdownLink(
                 in: source,
                 at: cursor,
                 inheritedTraits: inheritedTraits,

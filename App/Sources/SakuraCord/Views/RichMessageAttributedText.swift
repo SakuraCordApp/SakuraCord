@@ -42,7 +42,7 @@ nonisolated enum RichMessageAttributedText {
 
     enum Rules: Hashable, Sendable {
         case message
-        /// Discord's embed-title rules, without links when the embed itself links.
+        /// Discord's embed-title rules, without bare links when the embed itself links.
         case embedTitle(allowsLinks: Bool)
     }
 
