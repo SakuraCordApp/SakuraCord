@@ -127,14 +127,10 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
     }
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        let blocks = blockRects().map { ($0.rect.offsetBy(dx: origin.x, dy: origin.y), $0.isCode) }
         let spoilers = rects(of: .discordMarkdownSpoiler, forGlyphRange: glyphsToShow)
             .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
         // AppKit draws text on the main thread.
         MainActor.assumeIsolated {
-            for (rect, isCode) in blocks {
-                if isCode { MarkdownBlockChrome.drawCode(in: rect) } else { MarkdownBlockChrome.drawQuoteBar(in: rect) }
-            }
             // A draft's spoilers stay readable, as a revealed one does.
             SpoilerAppearance.revealedTextColor.setFill()
             for rect in spoilers {
@@ -142,29 +138,5 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
             }
         }
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
-    }
-
-    /// Each code block's padded background and each quote's bar, as wide
-    /// as their lines and as tall as their text, without its paragraph spacing.
-    private func blockRects() -> [(rect: NSRect, isCode: Bool)] {
-        guard let textStorage else { return [] }
-        var result: [(NSRect, Bool)] = []
-        textStorage.enumerateAttribute(.discordMarkdownBlock, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
-            guard let name = value as? String, name != "fence" else { return }
-            var extent: NSRect?
-            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) { rect, used, _, _, _ in
-                let line = NSRect(x: rect.minX, y: used.minY, width: rect.width, height: used.height)
-                extent = extent?.union(line) ?? line
-            }
-            guard let extent else { return }
-            if name == "code" {
-                let inset = NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location)
-                result.append((extent.insetBy(dx: 0, dy: -inset), true))
-            } else {
-                let width = NativeTimelineMarkdownChromeMetrics.quoteBarWidth(in: textStorage, at: range.location)
-                result.append((NSRect(x: extent.minX, y: extent.minY, width: width, height: extent.height), false))
-            }
-        }
-        return result
     }
 }

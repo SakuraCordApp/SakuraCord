@@ -178,19 +178,20 @@ public struct MessageDocument: Hashable, Sendable {
     public var segments: [Segment]
     public var isEmojiOnly: Bool
 
-    public init(source: String) {
+    public init(source: String, rules: DiscordMarkdown.Rules = .message) {
         self.source = source
-        segments = Self.tokenize(source)
+        segments = Self.tokenize(source, rules: rules)
         isEmojiOnly = Self.detectEmojiOnly(source: source, segments: segments)
     }
 
-    private static func tokenize(_ source: String) -> [Segment] {
+    private static func tokenize(_ source: String, rules: DiscordMarkdown.Rules) -> [Segment] {
         let matches = tokenExpression.matches(
             in: source, range: NSRange(source.startIndex ..< source.endIndex, in: source)
         )
         guard !matches.isEmpty else { return source.isEmpty ? [] : [.markdown(source)] }
-        // Only the token-only mention kinds need these scans; most matches are not.
-        var literalRanges: [NSRange]?
+        // Computed only for the mentions that need them; most matches don't.
+        var codeRanges: [NSRange]?
+        var urlRanges: [NSRange]?
         var linkLabels: [NSRange]?
         var result: [Segment] = []
         var cursor = source.startIndex
@@ -200,11 +201,13 @@ public struct MessageDocument: Hashable, Sendable {
                 result.append(.markdown(String(source[cursor ..< range.lowerBound])))
             }
             let token = String(source[range])
-            if let emoji = RenderedEmoji(rawToken: token) {
+            if let emoji = RenderedEmoji(rawToken: token),
+               rules.contains(.codeBlocks) || !isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) {
                 result.append(.customEmoji(emoji))
-            } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token),
-                      !isLiteralMention(mention, range: range, in: source, literalRanges: &literalRanges),
-                      !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
+            } else if !rules.contains(.maskedLinks) || !isMaskedLinkTarget(range, in: source),
+                      let mention = RenderedMention(rawToken: token), rules.renders(mention.kind),
+                      !isLiteralMention(mention, range: range, in: source, rules: rules, codeRanges: &codeRanges, urlRanges: &urlRanges),
+                      !rules.contains(.maskedLinks) || !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
                 result.append(.mention(mention))
             } else {
                 result.append(.markdown(token))
@@ -237,14 +240,29 @@ public struct MessageDocument: Hashable, Sendable {
         return ranges
     }
 
-    private static func isLiteralMention(
-        _ mention: RenderedMention, range: Range<String.Index>, in source: String, literalRanges: inout [NSRange]?
+    private static func isInCode(
+        _ range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules, codeRanges: inout [NSRange]?
     ) -> Bool {
-        guard [.game, .broadcast, .timestamp, .command].contains(mention.kind) else { return false }
+        let code = codeRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules)
+        codeRanges = code
         let tokenRange = NSRange(range, in: source)
-        let ranges = literalRanges ?? DiscordMarkdown.sourceCodeRanges(source) + urlRanges(in: source)
-        literalRanges = ranges
-        if ranges.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
+        return code.contains { NSIntersectionRange($0, tokenRange).length > 0 }
+    }
+
+    private static func isLiteralMention(
+        _ mention: RenderedMention, range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules,
+        codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
+    ) -> Bool {
+        let isTokenOnly = [.game, .broadcast, .timestamp, .command].contains(mention.kind)
+        // Code read by Discord's full rule holds no mention of any kind.
+        guard isTokenOnly || !rules.contains(.codeBlocks) else { return false }
+        let tokenRange = NSRange(range, in: source)
+        if isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) { return true }
+        if isTokenOnly {
+            let urls = urlRanges ?? Self.urlRanges(in: source)
+            urlRanges = urls
+            if urls.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
+        }
         var cursor = range.lowerBound
         var escaped = false
         while cursor > source.startIndex {
@@ -317,21 +335,42 @@ public struct MessageDocument: Hashable, Sendable {
 @MainActor
 public final class MessageDocumentCache {
     public static let shared = MessageDocumentCache()
-    private let values = NSCache<NSString, MessageDocumentBox>()
+    private let values = NSCache<MessageDocumentKey, MessageDocumentBox>()
 
     private init() {
         values.countLimit = 2000
         values.totalCostLimit = 12 * 1024 * 1024
     }
 
-    public func document(for source: String) -> MessageDocument {
-        let key = source as NSString
+    public func document(for source: String, rules: DiscordMarkdown.Rules = .message) -> MessageDocument {
+        let key = MessageDocumentKey(source: source, rules: rules)
         if let cached = values.object(forKey: key) {
             return cached.value
         }
-        let document = MessageDocument(source: source)
+        let document = MessageDocument(source: source, rules: rules)
         values.setObject(MessageDocumentBox(document), forKey: key, cost: source.utf8.count)
         return document
+    }
+}
+
+private final class MessageDocumentKey: NSObject {
+    let source: String
+    let rules: DiscordMarkdown.Rules
+
+    init(source: String, rules: DiscordMarkdown.Rules) {
+        self.source = source
+        self.rules = rules
+    }
+
+    override var hash: Int {
+        var hasher = Hasher()
+        hasher.combine(source)
+        hasher.combine(rules)
+        return hasher.finalize()
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        (object as? MessageDocumentKey).map { $0.source == source && $0.rules == rules } ?? false
     }
 }
 

@@ -3,9 +3,11 @@ import MessageRendering
 import SakuraCordModels
 
 nonisolated enum TimestampMentionPresentation {
-    static func tokens(in source: String) -> [DiscordTimestampToken] {
+    static func tokens(
+        in source: String, rules: DiscordMarkdown.Rules = .message
+    ) -> [DiscordTimestampToken] {
         guard source.contains("<t:") else { return [] }
-        return RichMessageAttributedText.prepare(source: source).tokens.compactMap { token in
+        return RichMessageAttributedText.prepare(source: source, rules: rules).tokens.compactMap { token in
             guard case let .mention(mention) = token, mention.kind == .timestamp else { return nil }
             return DiscordTimestampToken(rawToken: mention.rawToken)
         }
@@ -39,11 +41,12 @@ nonisolated enum TimestampMentionPresentation {
     static func refreshed(
         _ presentations: [String: MentionPresentation],
         source: String,
+        rules: DiscordMarkdown.Rules = .message,
         at date: Date
     ) -> [String: MentionPresentation] {
         guard source.contains("<t:") else { return presentations }
         var result = presentations
-        for case let .mention(mention) in RichMessageAttributedText.prepare(source: source).tokens {
+        for case let .mention(mention) in RichMessageAttributedText.prepare(source: source, rules: rules).tokens {
             guard mention.kind == .timestamp, DiscordTimestampToken(rawToken: mention.rawToken) != nil else { continue }
             result[mention.rawToken] = .timestamp(mention, at: date)
         }
