@@ -54,12 +54,12 @@ extension DemoContent {
     static let gardenNotice = DemoChannel("garden-notice", "notice-board", kind: .announcement, topic: "news from the garden 🌻", messages: [
         Msg("marisol", at(-13, 9, 0), "@everyone plot rotation for next season is up. check the list on the shed door, or ask me 💛"),
         Msg("marisol", at(-6, 18, 0), """
-        ## 🌱 Free seedlings, Sunday 10–12
+        ## 🌱 Free seedlings, <day:0:L> 10–12
         we over-sowed (again). tomatoes, basil, chard, marigolds.
         bring a box, take what you'll love. neighbours very welcome!
         """, label: "seedlings", reactions: [React(":sprout:", "ada", "kofi", "wren", "hana")],
           attachments: [.photo("seedlings-table.jpg", seed: 0x5eee, .garden, alt: "Trays of seedlings on a long table in the garden")]),
-        Msg("kofi", at(-4, 12, 0), "honey harvest is in! 🍯 jars at the shed on sunday, pay what you like, it all goes to the new water butt",
+        Msg("kofi", at(-4, 12, 0), "honey harvest is in! 🍯 jars at the shed on <day:0:l>, pay what you like, it all goes to the new water butt",
           reactions: [React("🍯", "marisol", "ada", "wren"), React(":busybee:", "hana")],
           attachments: [.photo("honey.jpg", seed: 0x401e, .food, alt: "Jars of golden honey lined up on a shelf")]),
         Msg("marisol", at(-1, 19, 30), "Monthly meeting <t:3@19:00:F> on the stage (or in person at the shed). Agenda: compost, the new shed sign (thank you <@wren>!) and the spring bed."),
@@ -84,7 +84,7 @@ extension DemoContent {
         Msg("ada", at(-11, 10, 40), "Welcome! I'm on plot 14, right next to you. I have far too many courgettes and will be giving you some whether you like it or not."),
         Msg("wren", at(-11, 10, 41), "i will gladly accept courgettes"),
         Msg("ada", at(-11, 10, 42), "You say that now.", label: "saynow"),
-        Msg("felix", at(-10, 8, 0), "<@&compost-crew> the bins are full again. turning them saturday morning if anyone wants a workout"),
+        Msg("felix", at(-10, 8, 0), "<@&compost-crew> the bins are full again. turning them <day:-8:l> morning if anyone wants a workout"),
         Msg("marisol", at(-10, 8, 10), "thank you felix 💚"),
         Msg("kofi", at(-9, 15, 0), "PSA: if you see a swarm, don't panic, call me. they're just house hunting"),
         Msg("hana", at(-8, 11, 0), "is it ok to bring miso to the garden or will she terrorise the bees"),
