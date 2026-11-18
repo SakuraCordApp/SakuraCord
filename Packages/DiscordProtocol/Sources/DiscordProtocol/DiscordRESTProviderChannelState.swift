@@ -7,6 +7,21 @@ extension DiscordRESTProvider {
         cachedChannels.values.lazy.flatMap(\.self).first { $0.id == id }
     }
 
+    /// The guild of a cached channel, joined thread, or forum post.
+    func cachedGuildID(ofChannel id: ChannelID) -> GuildID? {
+        cachedJoinedThreads[id]?.guildID
+            ?? cachedForumPost(threadID: id)?.thread.guildID
+            ?? cachedChannel(id)?.guildID
+    }
+
+    /// A message from a REST response. Those omit `guild_id`, which role
+    /// mentions and member styling resolve against.
+    func restMessage(_ dto: MessageDTO) throws -> Message {
+        var message = try dto.domain()
+        message.guildID = message.guildID ?? cachedGuildID(ofChannel: message.channelID)
+        return message
+    }
+
     public func dismissIgnoredGroupWarning(in channelID: ChannelID) async throws {
         guard let account = currentUser?.id else { throw ChatProviderError.unauthenticated }
         try await requestEmpty("/channels/\(channelID)/blocked-user-warning-dismissal", method: "POST")

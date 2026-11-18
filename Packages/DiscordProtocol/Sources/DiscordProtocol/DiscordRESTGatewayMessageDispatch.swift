@@ -94,10 +94,7 @@ extension DiscordRESTProvider {
             if message.poll != nil, message.poll?.results == nil { message.poll?.results = PollResults() }
             // Ephemeral interaction responses can omit guild_id; their channel
             // still identifies the guild that later component actions need.
-            if message.guildID == nil {
-                message.guildID = cachedJoinedThreads[message.channelID]?.guildID
-                    ?? cachedChannel(message.channelID)?.guildID
-            }
+            message.guildID = message.guildID ?? cachedGuildID(ofChannel: message.channelID)
             attachKnownThread(to: &message)
             attachKnownStarterPreview(to: &message)
             cacheMessageSearchUsers(dto.searchIndexUsers)
@@ -202,10 +199,7 @@ extension DiscordRESTProvider {
               let messageID = MessageID(dto.id), let channelID = ChannelID(dto.channelID)
         else { return }
         if let mentions = dto.mentions?.elements { cacheMessageSearchUsers(mentions.map(\.searchIndexUser)) }
-        let guildID = cachedMessages[messageID]?.guildID
-            ?? cachedJoinedThreads[channelID]?.guildID
-            ?? cachedForumPost(threadID: channelID)?.thread.guildID
-            ?? cachedChannel(channelID)?.guildID
+        let guildID = cachedMessages[messageID]?.guildID ?? cachedGuildID(ofChannel: channelID)
         guard var update = dto.domain(guildID: guildID) else { return }
         attachKnownStartedThread(to: &update)
         if var message = cachedMessages[messageID] {
