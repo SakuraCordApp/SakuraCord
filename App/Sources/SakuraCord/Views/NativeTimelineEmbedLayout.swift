@@ -407,7 +407,7 @@ enum NativeTimelineEmbedLayout {
                     x: origin.x,
                     y: origin.y,
                     width: width,
-                    height: max(integratesWithBubble ? InterfaceScale.metric(18) : InterfaceScale.metric(58), cardHeight)
+                    height: integratesWithBubble ? max(InterfaceScale.metric(18), cardHeight) : cardHeight
                 )
                 return .init(
                     embedID: embed.id,
