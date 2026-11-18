@@ -189,7 +189,7 @@ public struct MessageDocument: Hashable, Sendable {
             in: source, range: NSRange(source.startIndex ..< source.endIndex, in: source)
         )
         guard !matches.isEmpty else { return source.isEmpty ? [] : [.markdown(source)] }
-        // Computed only for the mentions that need them; most matches don't.
+        // Computed only for the tokens that need them; most matches don't.
         var codeRanges: [NSRange]?
         var urlRanges: [NSRange]?
         var linkLabels: [NSRange]?
@@ -201,9 +201,10 @@ public struct MessageDocument: Hashable, Sendable {
                 result.append(.markdown(String(source[cursor ..< range.lowerBound])))
             }
             let token = String(source[range])
-            if let emoji = RenderedEmoji(rawToken: token),
-               rules.contains(.codeBlocks) || !isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) {
-                result.append(.customEmoji(emoji))
+            // Code, links and escapes keep custom emoji as the text they were typed as.
+            if let emoji = RenderedEmoji(rawToken: token) {
+                let isLiteral = isLiteral(range, in: source, rules: rules, inURLs: true, codeRanges: &codeRanges, urlRanges: &urlRanges)
+                result.append(isLiteral ? .markdown(token) : .customEmoji(emoji))
             } else if !rules.contains(.maskedLinks) || !isMaskedLinkTarget(range, in: source),
                       let mention = RenderedMention(rawToken: token), rules.renders(mention.kind),
                       !isLiteralMention(mention, range: range, in: source, rules: rules, codeRanges: &codeRanges, urlRanges: &urlRanges),
@@ -240,15 +241,6 @@ public struct MessageDocument: Hashable, Sendable {
         return ranges
     }
 
-    private static func isInCode(
-        _ range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules, codeRanges: inout [NSRange]?
-    ) -> Bool {
-        let code = codeRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules)
-        codeRanges = code
-        let tokenRange = NSRange(range, in: source)
-        return code.contains { NSIntersectionRange($0, tokenRange).length > 0 }
-    }
-
     private static func isLiteralMention(
         _ mention: RenderedMention, range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules,
         codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
@@ -256,9 +248,20 @@ public struct MessageDocument: Hashable, Sendable {
         let isTokenOnly = [.game, .broadcast, .timestamp, .command].contains(mention.kind)
         // Code read by Discord's full rule holds no mention of any kind.
         guard isTokenOnly || !rules.contains(.codeBlocks) else { return false }
+        return isLiteral(range, in: source, rules: rules, inURLs: isTokenOnly, codeRanges: &codeRanges, urlRanges: &urlRanges)
+    }
+
+    /// Whether the token at `range` is text: in code, after an escape, or,
+    /// when `inURLs`, in a link's own text.
+    private static func isLiteral(
+        _ range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules, inURLs: Bool,
+        codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
+    ) -> Bool {
         let tokenRange = NSRange(range, in: source)
-        if isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) { return true }
-        if isTokenOnly {
+        let code = codeRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules)
+        codeRanges = code
+        if code.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
+        if inURLs {
             let urls = urlRanges ?? Self.urlRanges(in: source)
             urlRanges = urls
             if urls.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
