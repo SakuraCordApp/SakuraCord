@@ -13,7 +13,7 @@ public final class DiscordSimulator: Sendable {
         /// measured variance for everything else.
         public var network: SimulatedNetwork?
         public var freezeClock = false
-        /// The world's "now"; nil means the most recent Sunday evening.
+        /// The world's "now"; nil means the real time.
         public var epoch: Date?
         public var enforcesRateLimits = true
         public var verbose = false
@@ -45,7 +45,7 @@ public final class DiscordSimulator: Sendable {
         }
         let resolvedCatalog = try catalog ?? ShapeCatalog.bundled()
         let log = SimulatorLog(verbose: configuration.verbose)
-        let world = World(seed: configuration.seed, epoch: configuration.epoch ?? ScenarioEpoch.recentSundayEvening(),
+        let world = World(seed: configuration.seed, epoch: configuration.epoch ?? Date(),
                           freezeClock: configuration.freezeClock)
         try await scenario.build(into: world, parameters: configuration.parameters)
         let faults = FaultInjector(enforcesRateLimits: configuration.enforcesRateLimits)

@@ -6,6 +6,8 @@ runtime="$("$root/script/runtime.sh")"
 canonical_app="$(sed -n 's/^App:  *//p' <<<"$runtime")"
 app="${SAKURACORD_PERFORMANCE_APP_OVERRIDE:-$canonical_app}"
 bundle_id="$(sed -n 's/^Bundle ID:  *//p' <<<"$runtime")"
+# shellcheck source=development_launch.sh
+source "$root/script/development_launch.sh"
 executable_name="$(plutil -extract CFBundleExecutable raw -o - "$app/Contents/Info.plist" 2>/dev/null || basename "$app" .app)"
 executable="${SAKURACORD_PERFORMANCE_EXECUTABLE_OVERRIDE:-$app/Contents/MacOS/$executable_name}"
 provenance_directory="${SAKURACORD_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE:-$root/.build/performance-tools/build-provenance}"
@@ -699,11 +701,14 @@ record_launch() (
             fi
         fi
     fi
+    simulator_port=""
     if scenario_has_trait "$scenario" simulator; then
         # shellcheck disable=SC2046 # simulator_options prints separate options.
         "$root/script/simulator.sh" start $(simulator_options "$scenario") >&2
-        set -- "$@" --discord-simulator "${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}"
+        simulator_port="${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}"
+        set -- "$@" --discord-simulator "$simulator_port"
     fi
+    sakuracord_record_simulator_launch "$app" "$simulator_port"
     write_recording_metadata \
         "$output" "$scenario" "Time Profiler" "$performance_account_id"
     sandbox_directory="$HOME/Library/Containers/$bundle_id/Data/tmp"
