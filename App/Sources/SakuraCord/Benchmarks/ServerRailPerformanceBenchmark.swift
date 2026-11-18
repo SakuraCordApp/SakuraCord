@@ -3,10 +3,10 @@ import Foundation
 import OSLog
 import SakuraCordModels
 
-/// Offline server rail benchmark over a 150-server fixture: display-link
-/// scrolling with and without mention badge churn, badge churn on a still
-/// rail, a pointer sweep over the icons and repeated server selection.
-/// Read-only against the offline fixture.
+/// Server rail benchmark over the simulator's 150-server `server-rail`
+/// scenario: display-link scrolling with and without mention badge churn,
+/// badge churn on a still rail, a pointer sweep over the icons and repeated
+/// server selection. Read-only.
 @MainActor
 enum ServerRailPerformanceBenchmark {
     static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "ServerRailPerformanceBenchmark")

@@ -2,17 +2,38 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-# The reaction storm scenes are the live timeline benchmark carrying only
-# reaction traffic, still or scrolling.
-LIVE_TIMELINE_ARGS=()
-case "$MODE" in
-  --offline-chat-reaction-storm-autoscroll) LIVE_TIMELINE_ARGS=(--offline-chat-performance-live-reactions-only) ;;
-  --offline-chat-reaction-storm-idle)
-    LIVE_TIMELINE_ARGS=(--offline-chat-performance-live-reactions-only --offline-chat-performance-idle) ;;
-esac
-if [[ ${#LIVE_TIMELINE_ARGS[@]} -gt 0 ]]; then
-  MODE=--offline-chat-performance-live-autoscroll
+SIMULATOR_SCENARIO=""
+if [[ "$MODE" == --simulator=* ]]; then
+  SIMULATOR_SCENARIO="${MODE#--simulator=}"
+  MODE=--simulator
 fi
+# Each benchmark runs signed in to the local Discord simulator on the
+# scenario it measures: the scenario, its parameters and the app's flags.
+BENCHMARK_SIMULATOR_ARGS=()
+BENCHMARK_APP_ARGS=("$MODE")
+case "$MODE" in
+  --benchmark-chat-autoscroll|--benchmark-chat-live-autoscroll)
+    BENCHMARK_SIMULATOR_ARGS=(--scenario chat-performance --param messages=5000 --param content=text) ;;
+  --benchmark-chat-media-autoscroll|--benchmark-chat-voice-autoscroll|--benchmark-chat-files-autoscroll)
+    CONTENT="${MODE#--benchmark-chat-}"
+    BENCHMARK_SIMULATOR_ARGS=(--scenario chat-performance --param messages=5000 --param "content=${CONTENT%-autoscroll}")
+    BENCHMARK_APP_ARGS=(--benchmark-chat-autoscroll) ;;
+  # The reaction storms are the live timeline benchmark carrying only
+  # reaction traffic, scrolling or still.
+  --benchmark-chat-reaction-storm-autoscroll|--benchmark-chat-reaction-storm-idle)
+    BENCHMARK_SIMULATOR_ARGS=(--scenario chat-performance --param messages=5000 --param content=text)
+    BENCHMARK_APP_ARGS=(--benchmark-chat-live-autoscroll --benchmark-chat-live-reactions-only)
+    [[ "$MODE" == *-idle ]] && BENCHMARK_APP_ARGS+=(--benchmark-chat-idle) ;;
+  --benchmark-channel-open)
+    BENCHMARK_SIMULATOR_ARGS=(--scenario chat-performance --param messages=5000 --param content=files) ;;
+  --benchmark-pins-autoscroll)
+    BENCHMARK_SIMULATOR_ARGS=(--scenario chat-performance --param messages=5000 --param pins=5000) ;;
+  --benchmark-forum-autoscroll|--benchmark-forum-gallery-resize)
+    BENCHMARK_SIMULATOR_ARGS=(--scenario forum-performance --param posts=5000) ;;
+  --benchmark-friends) BENCHMARK_SIMULATOR_ARGS=(--scenario friends-performance) ;;
+  --benchmark-server-rail) BENCHMARK_SIMULATOR_ARGS=(--scenario server-rail) ;;
+  --benchmark-unread-churn) BENCHMARK_SIMULATOR_ARGS=(--scenario long-server-list) ;;
+esac
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=runtime.sh
 source "$ROOT_DIR/script/runtime.sh"
@@ -26,28 +47,22 @@ MODES=(
   package-release
   run
   run-release
-  --offline
-  --offline-sign-in
-  --offline-long-server-list
-  --offline-forum-performance
-  --offline-forum-performance-autoscroll
-  --offline-forum-gallery-resize
-  --offline-chat-performance
-  --offline-chat-performance-autoscroll
-  --offline-chat-performance-live-autoscroll
-  --offline-chat-reaction-storm-autoscroll
-  --offline-chat-reaction-storm-idle
-  --offline-chat-media-performance-autoscroll
-  --offline-chat-voice-performance
-  --offline-chat-voice-performance-autoscroll
-  --offline-chat-files-performance
-  --offline-chat-files-performance-autoscroll
-  --offline-chat-files-performance-open
-  --offline-pins-performance-autoscroll
-  --offline-friends-performance
-  --offline-server-rail-performance
-  --offline-unread-churn
-  --offline-incoming-private-call
+  --simulator
+  --simulator-sign-in
+  --benchmark-chat-autoscroll
+  --benchmark-chat-live-autoscroll
+  --benchmark-chat-reaction-storm-autoscroll
+  --benchmark-chat-reaction-storm-idle
+  --benchmark-chat-media-autoscroll
+  --benchmark-chat-voice-autoscroll
+  --benchmark-chat-files-autoscroll
+  --benchmark-channel-open
+  --benchmark-pins-autoscroll
+  --benchmark-forum-autoscroll
+  --benchmark-forum-gallery-resize
+  --benchmark-friends
+  --benchmark-server-rail
+  --benchmark-unread-churn
   --media-viewer-benchmark
   --verify
   --debug
@@ -327,6 +342,28 @@ fi
 plutil -lint "$ENTITLEMENTS_STAGING" >/dev/null
 codesign --force --sign "$CODE_SIGN_IDENTITY" \
   --entitlements "$ENTITLEMENTS_STAGING" "$APP_BUNDLE" >/dev/null
+if [[ "$BUILD_CONFIGURATION" == release ]]; then
+  "$ROOT_DIR/script/check_release_redirect.sh" "$APP_BUNDLE"
+fi
+
+# Starts the Discord simulator with the options before `--` and launches the
+# packaged debug app connected to it, signed in to the scenario's account
+# unless SIGNS_IN=0, with the app arguments after `--`.
+launch_on_simulator() {
+  local simulator_arguments=() launch_arguments=()
+  while [[ $# -gt 0 && "$1" != -- ]]; do simulator_arguments+=("$1"); shift; done
+  [[ $# -gt 0 ]] && shift
+  "$ROOT_DIR/script/simulator.sh" start "${simulator_arguments[@]}"
+  if [[ "${SIGNS_IN:-1}" == 1 ]]; then
+    launch_arguments+=(--env "SAKURACORD_SIMULATOR_TOKEN=$("$ROOT_DIR/script/simulator.sh" token)")
+  fi
+  # Forward the result path, which `open` does not pass on by itself.
+  if [[ -n "${SAKURACORD_PERFORMANCE_RESULT_PATH:-}" ]]; then
+    launch_arguments+=(--env "SAKURACORD_PERFORMANCE_RESULT_PATH=$SAKURACORD_PERFORMANCE_RESULT_PATH")
+  fi
+  sakuracord_launch_scoped_app ${launch_arguments[@]+"${launch_arguments[@]}"} \
+    --args --discord-simulator "${SAKURACORD_DISCORD_SIMULATOR_PORT:-47100}" "$@"
+}
 
 case "$MODE" in
   package|package-release) ;;
@@ -345,14 +382,18 @@ case "$MODE" in
     /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\""
     ;;
   --verify)
-    # Verification must never touch a stored Discord credential or the live API.
-    sakuracord_launch_scoped_app --args --offline
+    # Verification must never touch a stored Discord credential or the live
+    # API: the simulator launch keeps its own accounts.
+    launch_on_simulator --scenario demo
     sleep 2
     sakuracord_is_scoped_app_running
     ;;
-  --offline*)
-    # Forward the result path, which `open` does not pass on by itself.
-    sakuracord_launch_scoped_app ${SAKURACORD_PERFORMANCE_RESULT_PATH:+--env "SAKURACORD_PERFORMANCE_RESULT_PATH=$SAKURACORD_PERFORMANCE_RESULT_PATH"} \
-      --args "$MODE" ${LIVE_TIMELINE_ARGS[@]+"${LIVE_TIMELINE_ARGS[@]}"} ;;
+  --simulator) launch_on_simulator --scenario "${SIMULATOR_SCENARIO:-demo}" ;;
+  --simulator-sign-in)
+    sakuracord_reset_simulator_account
+    SIGNS_IN=0 launch_on_simulator --scenario demo
+    ;;
+  # A fixed delay, so runs compare, whichever scenario the benchmark uses.
+  --benchmark-*) launch_on_simulator --network standard "${BENCHMARK_SIMULATOR_ARGS[@]}" -- "${BENCHMARK_APP_ARGS[@]}" ;;
   --media-viewer-benchmark) sakuracord_launch_scoped_app --env SAKURACORD_MEDIA_VIEWER_BENCHMARK=1 ;;
 esac

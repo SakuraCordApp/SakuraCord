@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 import DiscordProtocol
 import Foundation
 import SakuraCordModels
@@ -33,7 +34,7 @@ struct AppleMusicPresenceMonitorTests {
         let activity = await monitor.handlePlayerInfo(payload)
         #expect(activity != nil)
         #expect(activity?.name == "Apple Music")
-        #expect(activity?.type == .listening)
+        #expect(activity?.type == ActivityType.listening)
         #expect(activity?.details == "Blinding Lights")
         #expect(activity?.state == "The Weeknd")
         #expect(activity?.assets?.largeImage == "apple_music" || activity?.assets?.largeImage?.hasPrefix("https://") == true)
@@ -295,7 +296,7 @@ struct AppleMusicPresenceMonitorTests {
     @Test("Current user activity is properly injected into member list rows and cached stores")
     @MainActor
     func testCurrentUserActivityInMemberList() async {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         guard model.currentUser?.id != nil else {
             #expect(Bool(false), "Current user must be present in offline testing")
@@ -353,7 +354,7 @@ struct AppleMusicPresenceMonitorTests {
     @Test("Game rich presence displays game name in member list instead of party state")
     @MainActor
     func testGameRichPresenceDisplayTextPrioritizesGameName() async {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         guard model.currentUser != nil else { return }
 
@@ -380,7 +381,7 @@ struct AppleMusicPresenceMonitorTests {
     @Test("Current user account subtitle and short activity text match Discord client presentation")
     @MainActor
     func testCurrentUserAccountSubtitleAndShortActivity() async {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         guard model.currentUser != nil else { return }
 

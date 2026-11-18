@@ -170,8 +170,7 @@ private struct ScheduledMessageCard: View {
             GuildIconView(name: guildName, iconURL: destination.guildIconURL, size: size,
                           cornerRadius: InterfaceScale.metric(9), animates: false)
         } else {
-            let recipient = channel.recipients.first
-            AvatarView(name: recipient?.displayName ?? channel.name, url: channel.iconURL ?? recipient?.avatarURL, size: size)
+            DirectMessageAvatar(channel: channel, size: size, status: nil, animates: false)
         }
     }
 

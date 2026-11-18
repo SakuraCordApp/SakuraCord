@@ -25,8 +25,10 @@ struct MessageMentionDTO: Decodable {
         {
             value.displayName = nickname
         }
-        if let guildID, let avatarHash = member?.avatar {
-            value.avatarURL = DiscordCDN.guildMemberAvatar(guildID, userID: value.id, hash: avatarHash)
+        if let guildID, let avatarHash = member?.avatar,
+           let guildAvatarURL = DiscordCDN.guildMemberAvatar(guildID, userID: value.id, hash: avatarHash)
+        {
+            value.avatarURL = guildAvatarURL
         }
         return value
     }

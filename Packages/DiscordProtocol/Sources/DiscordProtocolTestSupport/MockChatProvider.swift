@@ -1,0 +1,353 @@
+import DiscordProtocol
+import Foundation
+import SakuraCordModels
+
+/// A fictional account for unit tests. Domain extensions implement the same
+/// provider contract using this actor-isolated state and event stream.
+public actor MockChatProvider: ChatProvider {
+    let currentUser: User
+    var snapshot: BootstrapSnapshot
+    var membersByGuild: [GuildID: [Member]]
+    var emojisByGuild: [GuildID: [DiscordEmoji]]
+    var messagesByChannel: [ChannelID: [Message]]
+    var pinnedAtByMessageID: [MessageID: Date]
+    let pinMutationFailureStatus: Int?
+    var forumPostsByChannel: [ChannelID: [ForumPost]]
+    private var profilesByUser: [UserID: UserProfile]
+    var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
+    var inboxSettingsValue = InboxSettings()
+    var dismissedInboxMentions: Set<MessageID> = []
+    var favoriteGIFValues: [GIFSearchResult] = []
+    var favoriteEmojiKeys: [String]?
+    var savedEmojiFrecency: (messages: DiscordFrecencyHistory, reactions: DiscordFrecencyHistory)?
+    var soundboardSoundsByGuild: [GuildID: [SoundboardSound]] = [:]
+    var soundboardSettings = SoundboardUserSettings()
+    var continuation: AsyncStream<ClientEvent>.Continuation?
+    var nextMessageID: UInt64
+    public internal(set) var pinMutationRequests: [PinMutationRequest] = []
+    public internal(set) var attachmentURLRefreshRequests: [URL] = []
+    public internal(set) var voiceJoinRequests: [VoiceJoinRequest] = []
+    public internal(set) var soundboardSendRequests: [SoundboardSendRequest] = []
+    public internal(set) var acknowledgementRequests: [AcknowledgementRequest] = []
+    public internal(set) var bulkAcknowledgementRequests:
+        [[BulkReadStateAcknowledgement]] = []
+    var failsBulkAcknowledgement = false
+    public internal(set) var guildNotificationRequests: [GuildNotificationRequest] = []
+    public internal(set) var channelNotificationRequests: [ChannelNotificationRequest] = []
+    public internal(set) var categoryNotificationRequests: [CategoryNotificationRequest] = []
+    public internal(set) var threadNotificationRequests: [ThreadNotificationRequest] = []
+    public internal(set) var groupLeaveRequests: [(channelID: ChannelID, silently: Bool)] = []
+    var relationshipPresences: [UserID: UserPresence]?
+    var presenceChurnTask: Task<Void, Never>?
+    public var activeActivities: [String: OutgoingActivityPayload] = [:]
+    public var activityCategoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder
+#if SAKURACORD_MOTION_BENCHMARK
+    /// Threads seeded for the side-chat animation benchmark, and the latency
+    /// simulated before their history is served.
+    var motionThreadIDs: Set<ChannelID> = []
+    var motionThreadHistoryDelay: Duration = .zero
+#endif
+
+    public init(
+        timelineMessageCount: Int? = nil,
+        pinnedMessageCount: Int? = nil,
+        pinMutationFailureStatus: Int? = nil
+    ) {
+        let fixture = MockChatFixture.make(timelineMessageCount: timelineMessageCount)
+        currentUser = fixture.currentUser
+        self.pinMutationFailureStatus = pinMutationFailureStatus
+        nextMessageID = UInt64(ClientNonce.make()) ?? 9000
+        snapshot = fixture.snapshot
+        for (index, guild) in fixture.snapshot.guilds.enumerated() {
+            soundboardSoundsByGuild[guild.id] = (0 ..< 9).map { soundIndex in
+                SoundboardSound(
+                    id: String(70_000 + index * 100 + soundIndex),
+                    name: ["Cherry Pop", "Rain Bell", "Tiny Drum", "Night Bloom"][soundIndex % 4],
+                    volume: 0.9,
+                    emojiID: soundIndex.isMultiple(of: 2)
+                        ? fixture.snapshot.guilds.first?.id.description
+                        : nil,
+                    emojiName: soundIndex.isMultiple(of: 2) ? "sakura" : "🌸",
+                    guildID: guild.id,
+                    userID: fixture.currentUser.id
+                )
+            }
+        }
+        membersByGuild = fixture.membersByGuild
+        emojisByGuild = fixture.emojisByGuild
+        messagesByChannel = fixture.messagesByChannel
+        if let pinnedMessageCount,
+           var messages = messagesByChannel[MockChatProvider.generalChannelID]
+        {
+            for index in messages.indices.suffix(max(0, pinnedMessageCount)) {
+                messages[index].isPinned = true
+            }
+            messagesByChannel[MockChatProvider.generalChannelID] = messages
+        }
+        pinnedAtByMessageID = Dictionary(
+            uniqueKeysWithValues: messagesByChannel.values.flatMap { messages in
+                messages.filter(\.isPinned).map { ($0.id, $0.timestamp) }
+            }
+        )
+        let guildAuthors = fixture.membersByGuild[GuildID(rawValue: 100)]?.map(\.user) ?? [fixture.currentUser]
+        let forumFixture = Self.makeForumPosts(
+            channelID: MockChatProvider.feedbackForumID, authors: guildAuthors
+        )
+        let bugForumFixture = Self.makeForumPosts(channelID: ChannelID(rawValue: 221), authors: guildAuthors)
+        forumPostsByChannel = [
+            MockChatProvider.feedbackForumID: forumFixture,
+            ChannelID(rawValue: 221): bugForumFixture,
+        ]
+        for post in forumFixture + bugForumFixture {
+            if let message = post.firstMessage {
+                messagesByChannel[post.id] = [message]
+            }
+        }
+        Self.seedThreadCatalogue(
+            forumPosts: &forumPostsByChannel, messages: &messagesByChannel,
+            channels: fixture.snapshot.channels, owner: fixture.currentUser
+        )
+        profilesByUser = fixture.profilesByUser
+    }
+
+    /// A self-contained local conversation for interactive previews.
+    public init(snapshot: BootstrapSnapshot, messages: [Message]) {
+        currentUser = snapshot.currentUser
+        self.snapshot = snapshot
+        membersByGuild = [:]
+        emojisByGuild = [:]
+        messagesByChannel = Dictionary(grouping: messages, by: \.channelID)
+        pinnedAtByMessageID = Dictionary(
+            uniqueKeysWithValues: messages.filter(\.isPinned).map { ($0.id, $0.timestamp) }
+        )
+        pinMutationFailureStatus = nil
+        forumPostsByChannel = [:]
+        profilesByUser = Dictionary(uniqueKeysWithValues: snapshot.knownUsers.map {
+            ($0.id, UserProfile(user: $0))
+        })
+        nextMessageID = (messages.map { $0.id.rawValue }.max() ?? 9000) + 1
+    }
+
+    public func accountDetails() async throws -> AccountDetails {
+        AccountDetails(
+            userID: currentUser.id, username: currentUser.username,
+            email: "nova@example.com", phoneNumber: nil, isMFAEnabled: true
+        )
+    }
+
+    public func accountDevices() async throws -> [AccountDevice] {
+        [
+            AccountDevice(id: "demo-mac", operatingSystem: "Mac OS X", platform: "SakuraCord", location: "Kyiv, Ukraine", lastUsedAt: .now, isCurrentSession: true),
+            AccountDevice(id: "demo-phone", operatingSystem: "iOS", platform: "Discord iOS", location: "Kyiv, Ukraine", lastUsedAt: .now.addingTimeInterval(-7200), isCurrentSession: false),
+            AccountDevice(id: "demo-browser", operatingSystem: "Mac OS X", platform: "Chrome", location: "Kyiv, Ukraine", lastUsedAt: .now.addingTimeInterval(-86400), isCurrentSession: false),
+        ]
+    }
+
+    public func bootstrap() async throws -> BootstrapSnapshot {
+        continuation?.yield(.connectionChanged(.connecting))
+        try await Task.sleep(for: .milliseconds(180))
+        continuation?.yield(.connectionChanged(.ready))
+        let referenceMembers = Dictionary(
+            (membersByGuild[GuildID(rawValue: 100)] ?? []).map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        let presences = Dictionary(uniqueKeysWithValues: snapshot.relationships.map { relationship in
+            let member = referenceMembers[relationship.id]
+            return (relationship.id, UserPresence(
+                status: member?.status ?? .offline,
+                customStatus: member?.customStatus, activityText: member?.activityText,
+                isListeningToMusic: member?.isListeningToMusic ?? false, isMobileOnly: member?.isMobileOnly ?? false
+            ))
+        })
+        continuation?.yield(.relationshipPresencesChanged(presences, isComplete: true))
+        // Discord's READY carries every guild's emoji, which the live
+        // provider publishes as these events.
+        for (guildID, emojis) in emojisByGuild {
+            continuation?.yield(.emojisChanged(guildID: guildID, emojis: emojis))
+        }
+        return snapshot
+    }
+
+    public func channels(in guildID: GuildID?) async throws -> [Channel] {
+        snapshot.channels.filter { $0.guildID == guildID }
+    }
+
+    private var privateChannels: [Channel] {
+        snapshot.channels.filter { $0.guildID == nil }
+    }
+
+    public func members(in guildID: GuildID?) async throws -> [Member] {
+        guard let guildID else {
+            var usersByID = Dictionary(
+                privateChannels.flatMap(\.recipients).map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+            usersByID[currentUser.id] = currentUser
+            let referenceMembersByID = Dictionary(
+                (membersByGuild[GuildID(rawValue: 100)] ?? []).map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+            return usersByID.values.map {
+                let reference = referenceMembersByID[$0.id]
+                var member = Member(
+                    user: $0,
+                    roleName: $0.id == currentUser.id ? "You" : "Direct Message",
+                    status: $0.id == currentUser.id ? .online : reference?.status ?? .offline,
+                    activityText: reference?.activityText,
+                    customStatus: reference?.customStatus,
+                    isListeningToMusic: reference?.isListeningToMusic ?? false,
+                    richActivity: reference?.richActivity
+                )
+                if let nickname = snapshot.relationshipNicknamesByUserID[$0.id] {
+                    member.globalDisplayName = $0.displayName
+                    member.user.displayName = nickname
+                }
+                return member
+            }
+        }
+        return membersByGuild[guildID] ?? []
+    }
+
+    public func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        guard let profile = profilesByUser[userID] else {
+            throw ChatProviderError.invalidRequest("That demo profile is unavailable.")
+        }
+        return profile
+    }
+
+    public func profileEditingSnapshot(in scope: ProfileEditingScope) async throws -> ProfileEditingSnapshot {
+        let presentation = try await profile(for: currentUser.id, in: scope.guildID)
+        let identity = ProfileIdentityFields(
+            name: .value(presentation.user.displayName),
+            displayNameStyle: presentation.user.displayNameStyle.map { .value($0) } ?? .null
+        )
+        let colors = presentation.themeHexes
+        let metadata = ProfileMetadataFields(
+            bio: .value(presentation.bio ?? ""),
+            pronouns: .value(presentation.pronouns ?? ""),
+            accentColor: presentation.accentHex.map { .value($0) } ?? .null,
+            themeColors: colors.count == 2
+                ? .value(ProfileThemeColors(primary: colors[0], accent: colors[1])) : .null
+        )
+        return ProfileEditingSnapshot(
+            scope: scope,
+            mainIdentity: identity,
+            mainMetadata: metadata,
+            serverIdentity: scope.guildID.map { _ in ProfileIdentityFields() },
+            serverMetadata: scope.guildID.map { _ in ProfileMetadataFields() },
+            presentation: presentation,
+            widgetEligibility: ProfileWidgetEligibility(
+                hasFullNitro: currentUser.premiumType == DiscordPremiumType.nitro, hasPersonalWidgetAccess: false
+            )
+        )
+    }
+
+    public func currentStatus() async -> PresenceStatus {
+        .online
+    }
+
+    public func currentActivities() async -> [String: OutgoingActivityPayload] {
+        activeActivities
+    }
+
+    public func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws {
+        if let activity {
+            activeActivities[sourceID] = activity
+        } else {
+            activeActivities.removeValue(forKey: sourceID)
+        }
+    }
+
+    public func clearActivities(sourceID: String? = nil) async throws {
+        if let sourceID {
+            activeActivities.removeValue(forKey: sourceID)
+        } else {
+            activeActivities.removeAll()
+        }
+    }
+
+    public func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws {
+        activityCategoryOrder = ActivityCategory.normalizedOrder(order)
+    }
+
+    public func updateStatus(_ status: PresenceStatus) async throws {
+        for guildID in Array(membersByGuild.keys) {
+            membersByGuild[guildID] = membersByGuild[guildID]?.map { member in
+                guard member.user.id == snapshot.currentUser.id else { return member }
+                var updatedMember = member
+                updatedMember.status = status
+                return updatedMember
+            }
+        }
+        snapshot.members =
+            membersByGuild[snapshot.guilds.first?.id ?? GuildID(rawValue: 0)] ?? snapshot.members
+        continuation?.yield(.snapshotChanged(snapshot))
+        continuation?.yield(.currentUserStatusChanged(status))
+    }
+
+    public func emit(_ event: ClientEvent) {
+        continuation?.yield(event)
+    }
+
+    public func supports(_ capability: ChatCapability) async -> Bool {
+        capability == .forums || capability == .gifs || capability == .stickers
+            || capability == .stickerSending
+            || capability == .components || capability == .modals
+            || capability == .remoteComponentChoices
+            || capability == .slashCommands || capability == .messageForwarding
+            || capability == .soundboard
+    }
+
+    public func eventStream() async -> AsyncStream<ClientEvent> {
+        let stream = AsyncStream<ClientEvent>.makeStream(bufferingPolicy: .bufferingNewest(500))
+        continuation = stream.continuation
+        for call in privateCallsByChannel.values {
+            stream.continuation.yield(.privateCallChanged(call))
+        }
+        return stream.stream
+    }
+
+    public func disconnect() async {
+        continuation?.yield(.connectionChanged(.disconnected))
+        continuation?.finish()
+        continuation = nil
+    }
+
+    public func updateGuildRailLayout(_ items: [GuildRailItem]) async throws {
+        let guildsByID = Dictionary(snapshot.guilds.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        snapshot.guildRailItems = items
+        snapshot.guilds = items.flattenedGuildIDs.compactMap { guildsByID[$0] }
+    }
+
+    public func serverInvite(_ reference: ServerInviteReference) async throws -> ServerInvite {
+        guard reference.code == "offline-showcase" || reference.code == "offline-activity",
+              let guild = snapshot.guilds.first(where: { $0.id == GuildID(rawValue: 100) })
+        else { throw ServerInviteError.unavailable }
+        if reference.code == "offline-activity" {
+            return ServerInvite(
+                reference: reference, guildID: guild.id, channelID: ChannelID(rawValue: 230), channelType: 2,
+                name: guild.name, iconURL: guild.iconURL, inviter: currentUser, requiresSpecialAcceptance: true,
+                activity: .init(applicationID: ApplicationID(rawValue: 880_218_394_199_220_334), name: "Watch Together",
+                                channelName: "Studio Lounge")
+            )
+        }
+        return ServerInvite(
+            reference: reference, guildID: guild.id, channelID: ChannelID(rawValue: 216), channelType: 0,
+            name: guild.name, iconURL: guild.iconURL, inviter: currentUser, brandColor: guild.accentHex,
+            description: "A fictional community for native-app design and development.",
+            traits: [.init(label: "Design", emoji: "🎨"), .init(label: "Development", emoji: "💻")],
+            memberCount: 42, onlineCount: 5
+        )
+    }
+
+    public func createServerInvite(in channelID: ChannelID, guildID: GuildID, settings: ServerInviteSettings) async throws -> CreatedServerInvite {
+        let alphabet = Array("abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        let code = String((0 ..< 8).map { _ in alphabet.randomElement()! })
+        let now = Date.now
+        return CreatedServerInvite(
+            reference: ServerInviteReference(code)!, guildID: guildID, channelID: channelID, createdAt: now,
+            expiresAt: settings.maxAge == .never ? nil : now.addingTimeInterval(TimeInterval(settings.maxAge.rawValue)),
+            maxAge: settings.maxAge.rawValue, maxUses: settings.maxUses.rawValue
+        )
+    }
+}

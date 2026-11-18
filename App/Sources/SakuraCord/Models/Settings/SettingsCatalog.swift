@@ -196,7 +196,6 @@ nonisolated extension SettingsControlID {
     static let emojiSkinTone = Self(rawValue: "chat.emoji-skin-tone")
     static let channelManagement = Self(rawValue: "features.channel-management")
     static let readAllButton = Self(rawValue: "features.read-all-button")
-    static let showHiddenChannels = Self(rawValue: "features.show-hidden-channels")
     static let showFavoritesServer = Self(rawValue: "features.show-favorites-server")
     static let fakeNitroEmojis = Self(rawValue: "features.fake-nitro-emojis")
     static let fakeNitroStickers = Self(rawValue: "features.fake-nitro-stickers")

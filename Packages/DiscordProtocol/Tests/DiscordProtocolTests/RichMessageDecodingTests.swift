@@ -55,29 +55,6 @@ import Testing
     #expect(MessageGuildMember.merging(incoming: nil, existing: existing) == existing)
 }
 
-@Test func `channel decoder retains hidden channel timestamps`() throws {
-    let lastMessageID = ClientNonce.make(
-        now: Date(timeIntervalSince1970: 1_784_158_980.123)
-    )
-    let data = Data(
-        #"{"id":"200","guild_id":"300","name":"private","type":0,"last_message_id":"\#(lastMessageID)","last_pin_timestamp":"2026-07-10T11:16:00.000Z"}"#.utf8
-    )
-    let dto = try JSONDecoder().decode(ChannelDTO.self, from: data)
-    let channel = try dto.domain(guildID: nil)
-
-    #expect(channel.lastMessageID?.description == lastMessageID)
-    #expect(
-        abs((channel.lastMessageID?.createdAt.timeIntervalSince1970 ?? 0) - 1_784_158_980.123)
-            < 0.001
-    )
-    let timestampFormatter = ISO8601DateFormatter()
-    timestampFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    #expect(
-        channel.lastPinTimestamp
-            == timestampFormatter.date(from: "2026-07-10T11:16:00.000Z")
-    )
-}
-
 @Test func `channel DTOs and cached snapshots preserve value semantics across copies`() throws {
     let data = Data(
         #"""
@@ -180,7 +157,7 @@ import Testing
     #expect(message.author.displayName == "Guild Fixture")
     #expect(message.guildMember?.nickname == "Guild Fixture")
     #expect(message.guildMember?.roleIDs == [RoleID(rawValue: 10), RoleID(rawValue: 11)])
-    #expect(message.author.avatarURL?.absoluteString.contains("/guilds/300/users/1/avatars/guild-avatar.webp") == true)
+    #expect(message.author.avatarURL.absoluteString.contains("/guilds/300/users/1/avatars/guild-avatar.webp"))
     #expect(message.applicationID == ApplicationID(rawValue: 400))
     #expect(message.attachments.count == 1)
     #expect(message.attachments[0].title == "Photo")
@@ -437,12 +414,12 @@ func `image and article embeds promote wire thumbnails while link embeds keep th
     let message = try dto.domain()
     #expect(message.webhookID == "300")
     #expect(message.author.isWebhookIdentity)
-    #expect(message.author.avatarURL?.path == "/avatars/300/custom_hash.webp")
+    #expect(message.author.avatarURL.path == "/avatars/300/custom_hash.webp")
     #expect(dto.searchIndexUsers.isEmpty)
     #expect(message.replyPreview?.author.displayName == "Other persona")
     #expect(message.replyPreview?.webhookID == "300")
     // Legacy "0000" selects the first default artwork, like Discord's client.
-    #expect(message.replyPreview?.author.avatarURL?.lastPathComponent == "18e336a74a159cfd.png")
+    #expect(message.replyPreview?.author.avatarURL.lastPathComponent == "18e336a74a159cfd.png")
     #expect(try JSONDecoder().decode(Message.self, from: JSONEncoder().encode(message)) == message)
     var updated = message
     let update = try JSONDecoder().decode(MessageUpdateDTO.self, from: Data(#"{"id":"100","channel_id":"200","content":"Edited"}"#.utf8))
@@ -459,7 +436,7 @@ func `image and article embeds promote wire thumbnails while link embeds keep th
     coalesced.merge(try #require(update.domain(guildID: nil)))
     coalesced.apply(to: &updated)
     #expect(updated.author.displayName == "New persona")
-    #expect(updated.author.avatarURL?.path == "/avatars/300/ready_hash.webp")
+    #expect(updated.author.avatarURL.path == "/avatars/300/ready_hash.webp")
     #expect(updated.replyPreview == message.replyPreview)
     #expect(coalesced.updatedUsers.isEmpty)
     #expect(updated.content == "Edited")

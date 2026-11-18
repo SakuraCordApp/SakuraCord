@@ -12,8 +12,8 @@ class Decryptor {
         daveDecryptorDestroy(self.decryptorHandle)
     }
 
-    func transitionToKeyRatchet(keyRatchet: KeyRatchet) {
-        daveDecryptorTransitionToKeyRatchet(decryptorHandle, keyRatchet.handle)
+    func transitionToKeyRatchet(keyRatchet: KeyRatchet?) {
+        daveDecryptorTransitionToKeyRatchet(decryptorHandle, keyRatchet?.handle)
     }
 
     func transitionToPassthroughMode(enabled: Bool) {

@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 import DiscordProtocol
 import Foundation
 import SakuraCordModels
@@ -6,7 +7,7 @@ import Testing
 
 @MainActor
 @Test func `profile presentation retains rich activity when opened from message context`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
 
     let guildID = GuildID(rawValue: 101)
@@ -44,7 +45,7 @@ import Testing
 
 @MainActor
 @Test func `direct message profile inspector hydrates rich activity from mutual guild presence`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
 
     // Inside DM: selectedGuildID is nil
@@ -70,16 +71,16 @@ import Testing
     let inspector = try #require(model.inspectorProfilePresentation)
     #expect(inspector.member.richActivity?.name == "OBS Studio")
     #expect(inspector.member.richActivity?.details == "Live on Twitch")
-    #expect(inspector.member.status == .online)
+    #expect(inspector.member.status == PresenceStatus.online)
 
     let liveInspector = try #require(model.liveProfilePresentation(for: .inspector))
     #expect(liveInspector.member.richActivity?.name == "OBS Studio")
-    #expect(liveInspector.member.status == .online)
+    #expect(liveInspector.member.status == PresenceStatus.online)
 }
 
 @MainActor
 @Test func `liveProfilePresentation preserves existing rich activity across live member updates without rich activity`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
 
     let guildID = GuildID(rawValue: 701)

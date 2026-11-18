@@ -66,26 +66,18 @@ enum MentionAutocompleteSuggestionFactory {
     static func memberSuggestions(
         query: String,
         recentMessages: [Message],
-        localMembers: [Member],
-        remoteMembers: [Member],
+        members: [Member],
         roles: [GuildRole],
         isGuildChannel: Bool = false,
         canMentionNonMentionableRoles: Bool = false
     ) -> [MentionAutocompleteSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedQuery = normalized(trimmedQuery)
-        // A completed opcode-8 query is the official client's narrowed result
-        // set. Keep its order and do not re-introduce fuzzy local members that
-        // Discord omitted. Before it arrives, the local GuildMemberStore still
-        // makes the menu responsive immediately.
-        let memberStore = normalizedQuery.isEmpty || remoteMembers.isEmpty
-            ? mergingMemberStore(localMembers, updates: remoteMembers)
-            : remoteMembers
 
         let orderedMembers: [Member]
         if normalizedQuery.isEmpty {
             let resolvedByID = Dictionary(
-                memberStore.map { ($0.id, $0) },
+                members.map { ($0.id, $0) },
                 uniquingKeysWith: { _, rhs in rhs }
             )
             var seen = Set<UserID>()
@@ -101,11 +93,11 @@ enum MentionAutocompleteSuggestionFactory {
             // Discord prefers recent channel authors for a bare @. When the
             // channel has no messages cached, its guild-member store order is
             // the fallback.
-            orderedMembers = recent.isEmpty ? memberStore : recent
+            orderedMembers = recent.isEmpty ? members : recent
         } else {
             var bestMatches: [RankedMember] = []
             bestMatches.reserveCapacity(resultLimit)
-            for (index, member) in memberStore.enumerated() {
+            for (index, member) in members.enumerated() {
                 let rank = memberMatchRank(member, normalizedQuery: normalizedQuery)
                 guard rank != .none else { continue }
                 let candidate = RankedMember(storeIndex: index, rank: rank, member: member)
@@ -136,7 +128,7 @@ enum MentionAutocompleteSuggestionFactory {
                 detail: "@\(member.user.username)",
                 value: "<@\(member.id)>",
                 target: .user(member.id),
-                avatarURL: member.guildAvatarURL ?? member.user.avatarURL,
+                avatarURL: member.avatarURL,
                 colorHex: topColor,
                 member: member
             )
@@ -361,6 +353,12 @@ enum MentionAutocompleteSuggestionFactory {
         return result
     }
 
+    /// Adds only the `members` that `store` lacks; existing entries always win.
+    static func appendingMissingMembers(_ members: [Member], to store: [Member]) -> [Member] {
+        let storeIDs = Set(store.map(\.id))
+        return store + members.filter { !storeIDs.contains($0.id) }
+    }
+
     private static func isPreferred(_ lhs: RankedMember, over rhs: RankedMember) -> Bool {
         if lhs.rank != rhs.rank { return lhs.rank.rawValue > rhs.rank.rawValue }
         // Discord's user comparator is stable for equal scores, so
@@ -386,7 +384,6 @@ enum MentionAutocompleteSuggestionFactory {
         _ member: Member,
         normalizedQuery: String
     ) -> MemberMatchRank {
-        guard !normalizedQuery.isEmpty else { return .strong }
         if member.id.description == normalizedQuery { return .strong }
         var hasFuzzyMatch = false
         for candidate in normalizedCandidates(for: member) {

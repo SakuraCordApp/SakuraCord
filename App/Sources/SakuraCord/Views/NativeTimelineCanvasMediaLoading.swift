@@ -384,13 +384,9 @@ extension NativeTimelineCanvasView {
         into keys: inout [MediaImageKey]
     ) {
         let message = row.message
-        let author = model?.authorPresentation(for: message)
-        if let url = author?.user.avatarURL ?? message.author.avatarURL {
-            keys.append(.avatar(url))
-        }
-        if let url =
-            (author?.user ?? message.author).avatarDecorationURL
-        {
+        let author = model?.authorPresentation(for: message).user ?? message.author
+        keys.append(.avatar(author.avatarURL))
+        if let url = author.avatarDecorationURL {
             keys.append(.avatarDecoration(url))
         }
         if let url = layout.serverTagRegion?.presentation.identity.badgeURL {
@@ -405,13 +401,8 @@ extension NativeTimelineCanvasView {
         if let url = layout.forwardedSourceRegion?.iconURL {
             keys.append(.avatar(url))
         }
-        if let preview = row.replyPreview,
-           let url = model?.authorPresentation(for: preview, in: message).user.avatarURL {
-            keys.append(.avatar(url))
-        } else if let key = NativeTimelineReplyMediaPolicy.avatarKey(
-            for: row.replyPreview
-        ) {
-            keys.append(key)
+        if let preview = row.replyPreview {
+            keys.append(.avatar((model?.authorPresentation(for: preview, in: message).user ?? preview.author).avatarURL))
         }
         // The reply line and the thread card's latest message draw their
         // custom emoji alike.
@@ -530,11 +521,7 @@ extension NativeTimelineCanvasView {
             ) {
                 keys.append(key)
             }
-            for avatar in region.avatarRegions {
-                if let url = avatar.reactor.avatarURL {
-                    keys.append(.avatar(url))
-                }
-            }
+            keys += region.avatarRegions.map { .avatar($0.reactor.avatarURL) }
         }
     }
 

@@ -89,7 +89,7 @@ func threadCommandFailureRestoration(reopen: Bool) async throws {
 @MainActor
 private func commandDestinationFixture(kind: ChannelKindValue) -> (AppModel, CommandDestinationProvider, MessageComposerDestination, ChannelID) {
     let provider = CommandDestinationProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = AppModel(isEphemeral: true, provider: provider)
     let guild = Guild(id: .init(rawValue: 100), name: "Fixture", isOwnedByCurrentUser: true, currentUserPermissions: .max)
     let channel = Channel(id: .init(rawValue: 200), guildID: guild.id, name: "parent", kind: kind)
     model.snapshot = BootstrapSnapshot(currentUser: CommandDestinationProvider.user, guilds: [guild], channels: [channel], members: [])

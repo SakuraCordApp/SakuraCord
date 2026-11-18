@@ -300,6 +300,14 @@ extension AppModel {
                 preparedProfileEditingSnapshot = nil
                 profileInvalidationRevision = UUID()
             }
+        case let .guildMembershipChanged(guildID, userID, isMember):
+            // Every write re-renders open profiles, so member churn that changes nothing skips it.
+            let hasLeft = removedMemberIDsByGuildID[guildID]?.contains(userID) == true
+            if isMember, hasLeft {
+                removedMemberIDsByGuildID[guildID]?.remove(userID)
+            } else if !isMember, !hasLeft {
+                removedMemberIDsByGuildID[guildID, default: []].insert(userID)
+            }
         case let .profileChanged(userID, scope, profile):
             consumeProfileChanged(userID: userID, scope: scope, value: profile)
         case let .profileCustomStatusChanged(userID, status):

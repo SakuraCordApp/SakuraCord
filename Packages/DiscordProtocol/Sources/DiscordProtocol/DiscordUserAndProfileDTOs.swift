@@ -187,7 +187,7 @@ struct UserDTO: Decodable {
             username: username ?? id.description,
             discriminator: discriminator ?? "0",
             displayName: globalName ?? username ?? id.description,
-            avatarURL: avatarURL ?? DiscordProfileImageAssets.defaultAvatarURL(userID: id.description, discriminator: discriminator),
+            avatarURL: avatarURL,
             isBot: bot ?? false,
             isSystem: system ?? false,
             avatarDecorationURL: decorationURL,
@@ -340,12 +340,14 @@ struct ProfileGuildMemberDTO: Decodable {
     var avatar: String?
     var banner: String?
     var bio: String?
+    var joinedAt: String?
     var avatarDecorationData: UserDTO.AvatarDecorationDTO?
     var collectibles: UserCollectiblesDTO?
     var displayNameStyles: UserDTO.DisplayNameStyleDTO?
 
     enum CodingKeys: String, CodingKey {
         case nick, roles, avatar, banner, bio, collectibles
+        case joinedAt = "joined_at"
         case avatarDecorationData = "avatar_decoration_data"
         case displayNameStyles = "display_name_styles"
     }
@@ -478,8 +480,7 @@ struct UserProfileDTO: Decodable {
         let guildAvatarURL = guildID.flatMap { guildID in
             guildMember?.avatar.flatMap { DiscordCDN.guildMemberAvatar(guildID, userID: domainUser.id, hash: $0, size: 256) }
         }
-        let defaultAvatarURL = DiscordProfileImageAssets.defaultAvatarURL(userID: user.id, discriminator: user.discriminator)
-        let avatarURL = guildAvatarURL ?? domainUser.avatarURL ?? defaultAvatarURL
+        let avatarURL = guildAvatarURL ?? domainUser.avatarURL
         domainUser.displayName = displayName
         domainUser.avatarURL = avatarURL
         if let guildMember {
@@ -530,7 +531,6 @@ struct UserProfileDTO: Decodable {
             isPrivate: isPrivate,
             displayName: displayName,
             avatarURL: avatarURL,
-            defaultAvatarURL: defaultAvatarURL,
             bannerURL: bannerURL,
             accentHex: guildMetadata?.accentColor ?? globalMetadata?.accentColor
                 ?? user.accentColor,
@@ -550,7 +550,8 @@ struct UserProfileDTO: Decodable {
             premiumSince: premiumSince.flatMap(DiscordDate.parse),
             premiumGuildSince: premiumGuildSince.flatMap(DiscordDate.parse),
             legacyUsername: legacyUsername,
-            richActivity: activities?.memberListActivity?.asRichActivity
+            richActivity: activities?.memberListActivity?.asRichActivity,
+            guildJoinedAt: guildMember?.joinedAt.flatMap(DiscordDate.parse)
         )
     }
 

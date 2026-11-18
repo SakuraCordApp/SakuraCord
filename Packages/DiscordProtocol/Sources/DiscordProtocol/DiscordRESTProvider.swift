@@ -668,7 +668,7 @@ public extension DiscordRESTProvider {
                 "Discord's installation identity endpoint was invalid."
             )
         }
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: DiscordNetworkRedirect.resolve(url))
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         try clientMetadata.apply(to: &request, includesHeartbeatSession: false)

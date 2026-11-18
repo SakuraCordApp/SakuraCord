@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+@testable import DiscordProtocolTestSupport
 @testable import SakuraCord
 import SakuraCordModels
 import Testing
@@ -557,7 +558,7 @@ struct MediaViewerTests {
     }
 
     @Test func `escape prioritizer dismisses media before reaching the timeline`() throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         let mediaURL = try #require(URL(string: "https://cdn.example/image.png"))
         model.mediaViewerPresentation = MediaViewerPresentation(
             items: [

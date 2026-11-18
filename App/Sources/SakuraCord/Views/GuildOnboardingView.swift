@@ -158,7 +158,7 @@ struct GuildWelcomeArtwork: View {
     let guild: Guild?
     var size: CGFloat = 88
     var body: some View {
-        AsyncImage(url: guild?.iconURL) { image in image.resizable().scaledToFill() } placeholder: {
+        AsyncImage(url: DiscordNetworkRedirect.resolve(guild?.iconURL)) { image in image.resizable().scaledToFill() } placeholder: {
             Image(systemName: "sparkles").font(.system(size: size * 0.4)).foregroundStyle(SakuraCordAccentColor.labelOnFill).frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(SakuraCordAccentColor.color.gradient)
         }

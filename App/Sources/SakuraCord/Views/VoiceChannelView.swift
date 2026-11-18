@@ -147,7 +147,7 @@ struct VoiceChannelView: View {
                 return VoiceChannelPreviewParticipant(
                     id: state.userID,
                     name: user?.displayName ?? "User \(state.userID.rawValue)",
-                    avatarURL: user?.avatarURL,
+                    avatarURL: user?.avatarURL ?? User.defaultAvatarURL(id: state.userID),
                     isLocal: state.userID == currentUser?.id,
                     isMuted: state.isMuted || state.isSelfMuted,
                     isDeafened: state.isDeafened || state.isSelfDeafened,
@@ -167,7 +167,7 @@ struct VoiceChannelView: View {
 private struct VoiceChannelPreviewParticipant: Identifiable {
     let id: UserID
     let name: String
-    let avatarURL: URL?
+    let avatarURL: URL
     let isLocal: Bool
     let isMuted: Bool
     let isDeafened: Bool

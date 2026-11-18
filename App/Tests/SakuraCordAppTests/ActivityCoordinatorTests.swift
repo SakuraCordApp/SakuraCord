@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 @testable import DiscordProtocol
 import Foundation
 @testable import SakuraCord
@@ -171,7 +172,7 @@ struct ActivityCoordinatorTests {
         // Music should be primary because it is ordered first
         let primary = await coordinator.currentPrimaryActivity()
         #expect(primary?.name == "Apple Music")
-        #expect(primary?.type == .listening)
+        #expect(primary?.type == ActivityType.listening)
 
         // Swap order back to games first
         prefs.activityCategoryOrder = [.games, .music, .streaming, .other]
@@ -179,6 +180,6 @@ struct ActivityCoordinatorTests {
 
         let reprioritizedPrimary = await coordinator.currentPrimaryActivity()
         #expect(reprioritizedPrimary?.name == "Minecraft")
-        #expect(reprioritizedPrimary?.type == .playing)
+        #expect(reprioritizedPrimary?.type == ActivityType.playing)
     }
 }

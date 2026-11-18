@@ -1,6 +1,7 @@
 import AppKit
 import MessageRendering
 import SwiftUI
+import SakuraCordModels
 
 /// A text or code file in the media viewer: its first half megabyte, read
 /// when shown, highlighted as a message code block, or rendered when it is
@@ -78,7 +79,7 @@ struct MediaViewerText: View {
             let total = Int(try handle.seekToEnd())
             return (decodeReplacingInvalid(data), max(0, total - data.count))
         }
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: DiscordNetworkRedirect.resolve(url))
         request.setValue("bytes=0-\(byteLimit - 1)", forHTTPHeaderField: "Range")
         let (bytes, response) = try await session.bytes(for: request)
         defer { bytes.task.cancel() }

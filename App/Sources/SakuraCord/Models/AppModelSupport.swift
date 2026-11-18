@@ -1147,7 +1147,7 @@ extension AppModel {
     }
 
     static func makeActivityServices(
-        launchMode: AppLaunchMode,
+        isEphemeral: Bool = false,
         privacyStore: PrivacySafetySettingsStore,
         provider: any ChatProvider,
         coordinator: ActivityCoordinator?,
@@ -1174,7 +1174,7 @@ extension AppModel {
     }
 
     func startActivityServicesIfNeeded() {
-        guard launchMode == .normal else { return }
+        guard !isEphemeral else { return }
         let loadedPrivacy = privacySafetySettingsStore.load()
         guard loadedPrivacy.sharesActivity else { return }
         if loadedPrivacy.allowsLocalRPC {
@@ -1187,11 +1187,6 @@ extension AppModel {
     }
 
     func postInitSetup(coordinator: ActivityCoordinator) {
-        commandComposer.configureFrecencyScope(
-            launchMode == .offlineTesting ? "offline" : "signed-out"
-        )
-        configureEmojiFrecency(scope: launchMode == .offlineTesting ? "offline" : "signed-out")
-        readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
         configureAttachmentMedia()
         Task { [weak self] in
             await coordinator.setOnActivityChanged { [weak self] payload, count in
@@ -1211,7 +1206,7 @@ extension AppModel {
     }
 
     static func makeUploadAndProviderServices(
-        launchMode: AppLaunchMode,
+        isEphemeral: Bool = false,
         usesInsecureDebugCredentials: Bool,
         privacyStore: PrivacySafetySettingsStore,
         uploadPrivacyPreparation: UploadPrivacyPreparation?,
@@ -1225,7 +1220,7 @@ extension AppModel {
             anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
         )
         let resolvedCredentialStore = credentialStore ?? Self.defaultCredentialStore(
-            launchMode: launchMode, usesInsecureDebugCredentials: usesInsecureDebugCredentials
+            isEphemeral: isEphemeral, usesInsecureDebugCredentials: usesInsecureDebugCredentials
         )
         let authenticatedFactory: (CredentialHandle, String?) -> any ChatProvider = { handle, installationID in
             DiscordRESTProvider(

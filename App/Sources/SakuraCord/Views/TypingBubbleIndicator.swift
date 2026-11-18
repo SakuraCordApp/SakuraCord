@@ -184,7 +184,7 @@ struct TypingBubbleIndicatorView: View {
         // Typing events already carry each typist's guild profile.
         let typists = showsAvatars
             ? model.typingState.usersNewestFirst(in: channel.id).map {
-                TypingIndicator.Typist(id: $0.id, name: $0.displayName, avatarURL: $0.avatarURL)
+                TypingIndicator.Typist(id: $0.id, avatarURL: $0.avatarURL)
             }
             : []
         let leadingInset = NativeTimelineBubbleLayout.incomingBubbleMinX(
@@ -219,8 +219,7 @@ private struct TypingIndicatorRepresentable: NSViewRepresentable {
 final class TypingIndicator: NSView {
     struct Typist: Equatable {
         let id: UserID
-        let name: String
-        let avatarURL: URL?
+        let avatarURL: URL
     }
 
     struct State: Equatable {
@@ -284,7 +283,6 @@ final class TypingIndicator: NSView {
         let clips = [CALayer(), CALayer()]
         let picture = CALayer()
         var typist: Typist?
-        var showsFallback = false
         /// A new avatar stays hidden while its picture loads.
         var isWaitingForPicture = false
         var load: Task<Void, Never>?
@@ -389,7 +387,6 @@ final class TypingIndicator: NSView {
         updateCountFont()
         for slot in stack {
             slot.size(diameter: Metrics.avatarDiameter)
-            if slot.showsFallback { showPlaceholder(in: slot, arrives: false) }
         }
         updateStack(state?.typists ?? [], animated: false)
     }
@@ -673,18 +670,10 @@ final class TypingIndicator: NSView {
     private func load(_ typist: Typist, into slot: AvatarSlot, arrives: Bool) {
         let previous = slot.typist
         slot.typist = typist
-        guard previous == nil || previous?.avatarURL != typist.avatarURL else {
-            if slot.showsFallback, previous?.name != typist.name {
-                showPlaceholder(in: slot, arrives: false)
-            }
-            return
-        }
+        guard previous?.avatarURL != typist.avatarURL else { return }
         let isNew = previous == nil
         slot.cancelLoading()
-        guard let url = typist.avatarURL else {
-            showPlaceholder(in: slot, arrives: arrives)
-            return
-        }
+        let url = typist.avatarURL
         // Share the timeline's decoded avatars, so anyone with a visible
         // message shows their picture straight away.
         let dimension = MediaImageKey.avatarPixelDimension
@@ -700,10 +689,10 @@ final class TypingIndicator: NSView {
             slot.wait = Task { @MainActor [weak self, weak slot] in
                 try? await Task.sleep(for: Metrics.pictureWait)
                 guard !Task.isCancelled, let self, let slot else { return }
-                showPlaceholder(in: slot, arrives: true)
+                show(nil, in: slot, arrives: true)
             }
         } else {
-            showPlaceholder(in: slot, arrives: false)
+            show(nil, in: slot, arrives: false)
         }
         slot.load = Task { @MainActor [weak self, weak slot] in
             let image = await SharedDecodedImageLoader.shared.image(
@@ -714,15 +703,12 @@ final class TypingIndicator: NSView {
         }
     }
 
-    private func showPlaceholder(in slot: AvatarSlot, arrives: Bool) {
-        show(slot.typist.flatMap { fallbackImage(name: $0.name) }, in: slot, arrives: arrives, isPlaceholder: true)
-    }
-
-    private func show(_ image: CGImage?, in slot: AvatarSlot, arrives: Bool, isPlaceholder: Bool = false) {
+    /// A nil image shows a neutral circle while the picture loads.
+    private func show(_ image: CGImage?, in slot: AvatarSlot, arrives: Bool) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         slot.picture.contents = image
-        slot.showsFallback = isPlaceholder
+        slot.picture.backgroundColor = image == nil ? placeholderColor : nil
         let wasWaiting = slot.isWaitingForPicture
         if wasWaiting {
             slot.isWaitingForPicture = false
@@ -732,32 +718,6 @@ final class TypingIndicator: NSView {
         if arrives, isShown { arrive(slot) }
         if wasWaiting || arrives { updateRings() }
         CATransaction.commit()
-    }
-
-    private static var fallbackImages: [String: CGImage] = [:]
-    private static var fallbackTheme: SakuraCordGradientTheme?
-
-    private func fallbackImage(name: String) -> CGImage? {
-        let isDark = effectiveAppearance.isDark
-        return Self.fallbackImage(name: name, colorScheme: isDark ? .dark : .light, scale: window?.backingScaleFactor ?? 2)
-    }
-
-    private static func fallbackImage(name: String, colorScheme: ColorScheme, scale: CGFloat) -> CGImage? {
-        let theme = SakuraCordThemeStore.shared.committedTheme
-        if fallbackTheme != theme {
-            fallbackImages.removeAll()
-            fallbackTheme = theme
-        }
-        let key = "\(name.prefix(1).uppercased())@\(scale)-\(colorScheme)-\(Metrics.avatarDiameter)"
-        if let image = fallbackImages[key] { return image }
-        let renderer = ImageRenderer(
-            content: AvatarView(name: name, url: nil, size: Metrics.avatarDiameter)
-                .environment(\.colorScheme, colorScheme)
-        )
-        renderer.scale = scale
-        let image = renderer.cgImage
-        fallbackImages[key] = image
-        return image
     }
 
     /// Shows how many typists the stack leaves out, after the last avatar.
@@ -905,12 +865,19 @@ final class TypingIndicator: NSView {
         bubble.updateColors(for: effectiveAppearance)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for slot in stack where slot.showsFallback {
-            slot.picture.contents = slot.typist.flatMap { fallbackImage(name: $0.name) }
-        }
-        CATransaction.commit()
         effectiveAppearance.performAsCurrentDrawingAppearance {
             countText.foregroundColor = NSColor.secondaryLabelColor.cgColor
+            let placeholder = UserAvatarPresentation.placeholderColor.cgColor
+            for slot in stack where slot.picture.contents == nil {
+                slot.picture.backgroundColor = placeholder
+            }
         }
+        CATransaction.commit()
+    }
+
+    private var placeholderColor: CGColor? {
+        var color: CGColor?
+        effectiveAppearance.performAsCurrentDrawingAppearance { color = UserAvatarPresentation.placeholderColor.cgColor }
+        return color
     }
 }

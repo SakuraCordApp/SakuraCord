@@ -145,8 +145,7 @@ public struct UserProfile: Identifiable, Codable, Hashable, Sendable {
     public var isPrivate: Bool?
     public var user: User
     public var displayName: String
-    public var avatarURL: URL?
-    public var defaultAvatarURL: URL?
+    public var avatarURL: URL
     public var bannerURL: URL?
     public var accentHex: UInt32?
     public var themeHexes: [UInt32]
@@ -167,13 +166,13 @@ public struct UserProfile: Identifiable, Codable, Hashable, Sendable {
     public var legacyUsername: String?
     public var customStatus: String?
     public var richActivity: MemberRichActivity?
+    public var guildJoinedAt: Date?
 
     public init(
         user: User,
         isPrivate: Bool? = nil,
         displayName: String? = nil,
         avatarURL: URL? = nil,
-        defaultAvatarURL: URL? = nil,
         bannerURL: URL? = nil,
         accentHex: UInt32? = nil,
         themeHexes: [UInt32] = [],
@@ -193,13 +192,13 @@ public struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         premiumGuildSince: Date? = nil,
         legacyUsername: String? = nil,
         customStatus: String? = nil,
-        richActivity: MemberRichActivity? = nil
+        richActivity: MemberRichActivity? = nil,
+        guildJoinedAt: Date? = nil
     ) {
         self.user = user
         self.isPrivate = isPrivate
         self.displayName = displayName ?? user.displayName
         self.avatarURL = avatarURL ?? user.avatarURL
-        self.defaultAvatarURL = defaultAvatarURL
         self.bannerURL = bannerURL
         self.accentHex = accentHex
         self.themeHexes = themeHexes
@@ -220,6 +219,7 @@ public struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         self.legacyUsername = legacyUsername
         self.customStatus = customStatus
         self.richActivity = richActivity
+        self.guildJoinedAt = guildJoinedAt
     }
 }
 

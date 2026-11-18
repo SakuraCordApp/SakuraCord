@@ -265,10 +265,9 @@ extension DiscordRESTProvider {
             op: 2,
             data: .object([
                 "token": .string(token),
-                // Discord adds bit 15 only when its channel-obfuscation
-                // experiment is active. Advertising it without the matching
-                // integrity and resync protocol replaces inaccessible channel
-                // names with the server sentinel instead of their real names.
+                // Discord adds bit 15 only for accounts in its
+                // 2026-02-private-channel-hiding experiment, which also
+                // requires CHANNEL_SYNC and opcode 38 resync handling.
                 "capabilities": .number(Double(baseline.defaultCapabilities)),
                 "properties": .object(clientMetadata.gatewayProperties()),
                 "client_state": .object(["guild_versions": .object([:])]),

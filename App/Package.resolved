@@ -1,13 +1,13 @@
 {
-  "originHash" : "551681060685b296e93d773afa3e8a31a3b65a5889b162660104f21db8e2e5b1",
+  "originHash" : "ba983d1abab81b786fb087311c7fff381f7189dab1f860e67a79a93532af6480",
   "pins" : [
     {
       "identity" : "grdb.swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/groue/GRDB.swift.git",
       "state" : {
-        "revision" : "b83108d10f42680d78f23fe4d4d80fc88dab3212",
-        "version" : "7.11.1"
+        "revision" : "92a554cd0d5e8d67cb18993c6054e73fe42c066c",
+        "version" : "7.12.0"
       }
     },
     {
@@ -50,8 +50,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/SakuraCordApp/Sparkle",
       "state" : {
-        "revision" : "6322260c7b2fbe3f2209070ca202d60277fa0399",
-        "version" : "2.10.0-sakuracord.1"
+        "revision" : "d964857d060a7ff5f74d39cdb64dfb3d6b8f1065",
+        "version" : "2.10.1-sakuracord.1"
       }
     },
     {
@@ -59,8 +59,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-log",
       "state" : {
-        "revision" : "c9c6bb9d275ec0d95c3ad16391f3f045dc623104",
-        "version" : "1.16.2"
+        "revision" : "e3da04078777e6a1b72ce19981fbd6539b0847d8",
+        "version" : "1.17.0"
       }
     },
     {

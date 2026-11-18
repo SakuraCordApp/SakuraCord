@@ -63,7 +63,7 @@ final class EmbeddedActivityHost: NSObject {
         #endif
         voiceStates = currentVoiceStates()
         observeVoice()
-        webView.loadHTMLString(hostPage(proxyTicket: proxyTicket), baseURL: Self.hostURL)
+        webView.loadHTMLString(hostPage(proxyTicket: proxyTicket), baseURL: hostPageBaseURL)
     }
 
     func stop() {
@@ -75,6 +75,16 @@ final class EmbeddedActivityHost: NSObject {
     }
 
     private static let hostURL = URL(string: "https://discord.com/activities")!
+
+    /// A debug simulator launch serves the Activity over plain HTTP, which a page
+    /// with an HTTPS base blocks as mixed content, so the base takes its scheme.
+    private var hostPageBaseURL: URL {
+        if DiscordNetworkRedirect.isActive, var components = URLComponents(url: Self.hostURL, resolvingAgainstBaseURL: false) {
+            components.scheme = DiscordNetworkRedirect.resolve(application.activityURL).scheme
+            return components.url ?? Self.hostURL
+        }
+        return Self.hostURL
+    }
 
     /// The Activity iframe with the official client's sandbox, permissions and
     /// launch parameters, and the relay between it and this host.
@@ -97,12 +107,13 @@ final class EmbeddedActivityHost: NSObject {
             parameters["channel_id"] = instance.location.channelID.description
             parameters["guild_id"] = instance.location.guildID?.description
         }
-        var components = URLComponents(url: application.activityURL, resolvingAgainstBaseURL: false)!
+        // The connection target; the same URL outside debug simulator launches.
+        var components = URLComponents(url: DiscordNetworkRedirect.resolve(application.activityURL), resolvingAgainstBaseURL: false)!
         components.queryItems = parameters.sorted { $0.key < $1.key }.map(URLQueryItem.init)
             + [URLQueryItem(name: "discord_proxy_ticket", value: proxyTicket)]
         let literals = (try? JSONSerialization.data(withJSONObject: [
             "source": components.url!.absoluteString,
-            "origin": "https://\(application.activityURL.host() ?? "")",
+            "origin": "\(components.scheme ?? "https")://\(components.host ?? "")" + (components.port.map { ":\($0)" } ?? ""),
             "hello": parameters,
         ])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         return """
@@ -410,7 +421,7 @@ final class EmbeddedActivityHost: NSObject {
             "username": user?.username ?? "",
             "discriminator": user?.discriminator ?? "0",
         ]
-        if let avatar = user?.avatarURL.flatMap(Self.avatarHash) { payload["avatar"] = avatar }
+        if let avatar = user.flatMap({ Self.avatarHash($0.avatarURL) }) { payload["avatar"] = avatar }
         guard includesFlags else { return payload }
         payload["global_name"] = user.map { $0.displayName as Any } ?? NSNull()
         payload["bot"] = user?.isBot ?? false
@@ -449,7 +460,7 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
         // relay page itself never leaves, and links aimed at it open in the
         // browser. Once stopped, it unloads, which ends the Activity's audio.
         guard !isStopped, navigationAction.targetFrame?.isMainFrame == true,
-              let url = navigationAction.request.url, url != Self.hostURL
+              let url = navigationAction.request.url, url != hostPageBaseURL
         else { return decisionHandler(.allow) }
         decisionHandler(.cancel)
         if navigationAction.navigationType == .linkActivated { Task { await openExternally(url) } }

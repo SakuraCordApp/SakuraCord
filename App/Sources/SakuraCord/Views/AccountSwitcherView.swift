@@ -138,7 +138,7 @@ struct AccountSwitcherView: View {
         return HStack(spacing: InterfaceScale.metric(14)) {
             AvatarView(
                 name: account.resolvedDisplayName,
-                url: account.avatarURL,
+                url: account.resolvedAvatarURL,
                 size: InterfaceScale.metric(48),
                 maximumPixelDimension: 96,
                 animates: false

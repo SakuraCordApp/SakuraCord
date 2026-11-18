@@ -2,7 +2,7 @@ import AppKit
 import Darwin
 import OSLog
 
-/// What the offline performance benchmarks share: display-link runs, frame
+/// What the performance benchmarks share: display-link runs, frame
 /// summaries, main-thread CPU time, finding the scroll view under test and
 /// writing results. Each benchmark keeps its own scenario, output and gating.
 @MainActor

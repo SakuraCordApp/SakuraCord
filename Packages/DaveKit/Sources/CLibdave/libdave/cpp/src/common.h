@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 #include <chrono>
 #include <map>
 #include <optional>
@@ -9,6 +10,20 @@
 #include <vector>
 
 #include <dave/dave_interfaces.h>
+#include <dave/logger.h>
+
+// Malformed encoder output is recovered from, so fuzzing must be able to reach past it
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#define DEBUG_ASSERT_MALFORMED(message)
+#else
+#define DEBUG_ASSERT_MALFORMED(message) assert(false && message)
+#endif
+
+#define REPORT_MALFORMED(message)           \
+    do {                                    \
+        DISCORD_LOG(LS_WARNING) << message; \
+        DEBUG_ASSERT_MALFORMED(message);    \
+    } while (0)
 
 namespace discord {
 namespace dave {
@@ -18,7 +33,7 @@ using TruncatedSyncNonce = uint32_t;
 using MagicMarker = uint16_t;
 using SupplementalBytesSize = uint8_t;
 
-constexpr MagicMarker kMarkerBytes = 0xFAFA;
+constexpr std::array<uint8_t, sizeof(MagicMarker)> kMarkerBytes = {0xFA, 0xFA};
 
 // Layout constants
 constexpr size_t kAesGcm128KeyBytes = 16;
@@ -42,6 +57,18 @@ constexpr auto kMaxGenerationGap = 250;
 constexpr auto kMaxMissingNonces = 1000;
 constexpr auto kGenerationWrap = 1 << (8 * kRatchetGenerationBytes);
 constexpr auto kMaxFramesPerSecond = 50 + 2 * 60; // 50 audio frames + 2 * 60fps video streams
+
+// The truncated nonce occupies the trailing bytes of the full nonce in little-endian order
+inline std::array<uint8_t, kAesGcm128NonceBytes> ExpandTruncatedNonce(
+  TruncatedSyncNonce truncatedNonce) noexcept
+{
+    auto nonce = std::array<uint8_t, kAesGcm128NonceBytes>();
+    for (size_t i = 0; i < kAesGcm128TruncatedSyncNonceBytes; ++i) {
+        nonce[kAesGcm128TruncatedSyncNonceOffset + i] =
+          static_cast<uint8_t>(truncatedNonce >> (8 * i));
+    }
+    return nonce;
+}
 
 // Utility routine for variant return types
 template <class T, class V>

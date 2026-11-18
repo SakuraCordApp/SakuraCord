@@ -1,5 +1,6 @@
 import DiscordProtocol
 import Foundation
+import SakuraCordModels
 
 nonisolated enum DiscordMFAMethod: String, CaseIterable, Codable, Sendable {
     case totp
@@ -50,22 +51,21 @@ extension DiscordFingerprintStoring {
 actor UserDefaultsDiscordFingerprintStore: DiscordFingerprintStoring {
     nonisolated static let shared = UserDefaultsDiscordFingerprintStore()
     private nonisolated static let key = "dev.sakuracord.discord-fingerprint"
-    private nonisolated static let installationKey = "dev.sakuracord.discord-installation-id"
 
     func load() -> String? {
-        UserDefaults.standard.string(forKey: Self.key)
+        DiscordNetworkRedirect.sessionDefaults.string(forKey: Self.key)
     }
 
     func save(_ fingerprint: String) {
-        UserDefaults.standard.set(fingerprint, forKey: Self.key)
+        DiscordNetworkRedirect.sessionDefaults.set(fingerprint, forKey: Self.key)
     }
 
     func loadInstallationID() async -> String? {
-        UserDefaults.standard.string(forKey: Self.installationKey)
+        DiscordClientMetadata.persistedInstallationID()
     }
 
     func saveInstallationID(_ installationID: String) async {
-        UserDefaults.standard.set(installationID, forKey: Self.installationKey)
+        DiscordClientMetadata.persistInstallationID(installationID)
     }
 }
 
@@ -423,7 +423,7 @@ actor DiscordSessionAuthenticator {
         guard let url = components.url else { throw AuthenticationError.invalidResponse }
 
         for attempt in retriesAlreadyPerformed ... maximumRetries {
-            var request = URLRequest(url: url)
+            var request = URLRequest(url: DiscordNetworkRedirect.resolve(url))
             request.httpMethod = method
             request.timeoutInterval = 20
             request.httpBody = body

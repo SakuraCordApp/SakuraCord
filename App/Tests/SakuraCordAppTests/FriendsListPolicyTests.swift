@@ -1,3 +1,4 @@
+@testable import DiscordProtocolTestSupport
 @testable import SakuraCord
 import SakuraCordModels
 import Testing
@@ -34,7 +35,7 @@ struct FriendsListPolicyTests {
     }
 
     @Test @MainActor func `replacement snapshots refresh cached Friends and request counts`() async throws {
-        let model = AppModel(launchMode: .offlineTesting)
+        let model = AppModel(isEphemeral: true, provider: MockChatProvider())
         await model.start()
         let user = User(id: UserID(rawValue: 9001), username: "newfriend", displayName: "New Friend")
         model.applyRelationships([Relationship(id: user.id, type: .incomingRequest, user: user)])

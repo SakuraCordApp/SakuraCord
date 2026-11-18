@@ -196,7 +196,7 @@ private struct SettingsAccountIdentityHeader: View {
         HStack(spacing: InterfaceScale.metric(14)) {
             AvatarView(
                 name: account.resolvedDisplayName,
-                url: account.avatarURL,
+                url: account.resolvedAvatarURL,
                 size: InterfaceScale.metric(56),
                 maximumPixelDimension: 140
             )

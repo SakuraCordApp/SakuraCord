@@ -198,7 +198,7 @@ extension DiscordRESTProvider {
                     "Could not construct the Discord API query."
                 )
             }
-            var request = URLRequest(url: requestURL)
+            var request = URLRequest(url: DiscordNetworkRedirect.resolve(requestURL))
             request.httpMethod = method
             request.timeoutInterval = 30
             let token = try await authorizationToken()

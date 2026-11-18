@@ -697,7 +697,7 @@ struct ViewerAVPlayer: NSViewRepresentable {
         view.showsFullScreenToggleButton = showsFullScreenToggleButton
         guard context.coordinator.url != url else { return }
         context.coordinator.player?.pause()
-        let player = AVPlayer(url: url)
+        let player = AVPlayer(url: DiscordNetworkRedirect.resolve(url))
         player.isMuted = mutesOnStart
         context.coordinator.url = url
         context.coordinator.player = player

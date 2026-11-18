@@ -46,7 +46,7 @@ struct URLSessionGatewayTransport: GatewayTransport {
     let session: URLSession
 
     func connect(to url: URL, maximumMessageSize: Int) async throws -> any GatewaySocket {
-        let task = session.webSocketTask(with: url)
+        let task = session.webSocketTask(with: DiscordNetworkRedirect.resolve(url))
         task.maximumMessageSize = maximumMessageSize
         task.resume()
         return URLSessionGatewaySocket(task: task)

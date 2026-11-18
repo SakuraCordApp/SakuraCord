@@ -355,7 +355,7 @@ extension AppModel {
         if wasSendingTypingIndicators, !value.sendsTypingIndicators {
             stopLocalTyping(clearThrottle: false)
         }
-        if launchMode == .normal {
+        if !isEphemeral {
             if !value.sharesActivity || !value.sharesAppleMusicActivity {
                 appleMusicMonitor.stop()
             }
@@ -373,7 +373,7 @@ extension AppModel {
                     activityCategoryOrder: value.activityStackOrder
                 )
             )
-            if launchMode == .normal {
+            if !isEphemeral {
                 guard privacySafetySettings == value else { return }
                 if value.sharesActivity, value.sharesAppleMusicActivity {
                     appleMusicMonitor.start()

@@ -1,12 +1,14 @@
+#if DEBUG
 import AppKit
-import DiscordProtocol
 import Foundation
 import OSLog
 import SakuraCordModels
 
-/// Offline Friends benchmark: a 20-second display-link scroll through All
-/// while presence changes arrive, then repeated section switches, each timed
-/// until a display-link tick after the requested rows have been published. Read-only against the offline fixture.
+/// Friends benchmark: a 20-second display-link scroll through All while the
+/// simulator's `presence-churn` script changes friends' presence, then
+/// repeated section switches, each timed until a display-link tick after the
+/// requested rows have been published. Read-only; run on the simulator's
+/// `friends-performance` scenario.
 @MainActor
 enum FriendsPerformanceBenchmark {
     static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "FriendsPerformanceBenchmark")
@@ -22,7 +24,7 @@ enum FriendsPerformanceBenchmark {
         var switchTimeouts = 0
     }
 
-    static func run(model: AppModel, provider: MockChatProvider?) async {
+    static func run(model: AppModel) async {
         model.openFriends()
         try? await Task.sleep(for: .seconds(1))
         model.selectFriendsSection(.all)
@@ -34,11 +36,11 @@ enum FriendsPerformanceBenchmark {
             logger.error("Friends benchmark could not find the list")
             return
         }
-        await provider?.startRelationshipPresenceChurn(updatesPerSecond: 20)
+        // Churn lasts through the scroll and the section switches after it.
+        await SimulatorBenchmarkControl.startScript("presence-churn", params: ["rate": 20, "duration_s": 35])
         var result = Result()
         await scroll(scrollView, seconds: 20, into: &result)
         await switchSections(model: model, view: scrollView, cycles: 20, into: &result)
-        await provider?.stopRelationshipPresenceChurn()
         PerformanceBenchmarkHarness.writeResult(
             result, fileName: "sakuracord-friends-benchmark.json", logPrefix: "FRIENDS_BENCHMARK", logger: logger
         )
@@ -105,3 +107,4 @@ enum FriendsPerformanceBenchmark {
         result.switchLatenciesMS = PerformanceBenchmarkHarness.Summary(latencies)
     }
 }
+#endif

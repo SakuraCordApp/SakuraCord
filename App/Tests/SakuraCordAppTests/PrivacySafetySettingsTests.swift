@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import DiscordProtocol
 import Foundation
+@testable import DiscordProtocolTestSupport
 import MessageRendering
 import SakuraCordModels
 import Testing
@@ -33,7 +34,7 @@ import Testing
 
 @MainActor
 @Test func `External links require confirmation while resolvable Discord links stay internal`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let channelID = try #require(model.selectedChannelID)
     let internalURL = try #require(
@@ -240,7 +241,7 @@ import Testing
 
 @MainActor
 @Test func `Local activity preserves pending synchronized emoji usage`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
     let channelID = try #require(model.selectedChannelID)
 
@@ -292,7 +293,7 @@ import Testing
 @Test func `Privacy disabling typing cancels pending signals and prevents new ones`() async throws {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let store = PrivacySafetySettingsStore(preferences: preferences)
-    let model = AppModel(launchMode: .offlineTesting, privacySafetySettingsStore: store)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider(), privacySafetySettingsStore: store)
     await model.start()
     model.scheduleLocalTyping(for: "draft")
     let pendingSignal = try #require(model.localTypingTask)
@@ -311,7 +312,7 @@ import Testing
     let masked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[https://dis**cord**.com](\(url.absoluteString))"))
     let label = MessageLinkActivator.safetyDisplayedText(in: masked, at: 12)
     #expect(label == "https://discord.com")
-    let model = AppModel(launchMode: .offlineTesting)
+    let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     let assessment = await withCheckedContinuation { continuation in
         _ = MessageLinkActivator.activate(
             url,
@@ -332,7 +333,7 @@ import Testing
     let privacyStore = PrivacySafetySettingsStore(preferences: preferences)
     let provider = MockChatProvider()
     let model = AppModel(
-        launchMode: .offlineTesting,
+        isEphemeral: true,
         provider: provider,
         privacySafetySettingsStore: privacyStore
     )

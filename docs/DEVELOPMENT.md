@@ -18,26 +18,20 @@ of truth, while `SakuraCord.xcworkspace` is a convenience entry point.
 
 ## Launch modes
 
-Start with the network-disabled demo unless the work specifically needs a live
-session:
+Start with the local Discord simulator unless the work specifically needs a
+live session:
 
 ```sh
-./script/build_and_run.sh --offline
+./script/build_and_run.sh --simulator
 ```
 
 Debug builds are packaged as `dist/SakuraCord Debug.app`. To launch the
 existing debug app without rebuilding, use
-`./script/run.sh`, `./script/run.sh --offline`, or
-`./script/run.sh --offline-sign-in`. These are also available as
-the Codex environment actions **Run**, **Run Offline**, and **Run Offline Sign In**. These restart the
+`./script/run.sh`, `./script/run.sh --simulator [SCENARIO]`, or
+`./script/run.sh --simulator-sign-in`. These are also available as
+the Codex environment actions **Run**, **Run Simulator**, and **Run Simulator Sign In**. These restart the
 checkout's app so the selected mode takes effect, and require a previously
 built bundle.
-
-In the `--offline` demo, **Settings → Updates → Browse Pull Request Builds**
-shows the production build browser with sample data. Search,
-PR selection, build history, and the installation warning work normally;
-Install and Restart stays disabled and
-the build catalog is not fetched. Normal launches load the published catalog.
 
 To develop against an unpublished Sparkle fork, set
 `SAKURACORD_SPARKLE_PACKAGE_PATH` to a local Swift package named `Sparkle` that
@@ -53,46 +47,75 @@ launcher reopened one during a build. They abort if one will not exit and avoid
 forcing a second instance. Debug launches never stop release or Nightly apps. Wait for the
 script to finish before using Computer Use, which can launch an app on its own.
 
-The focused offline scenes exercise larger or specialized UI states without
-contacting Discord:
+### Discord simulator
 
-| Command | Scene |
+The simulator (`Packages/DiscordSimulator`) is a local stand-in for Discord's
+REST, Gateway, CDN and upload hosts, built from captured wire shapes. Debug
+builds launched with `--discord-simulator [PORT]` send every Discord request to
+it and keep simulator accounts, tokens and caches apart from real ones, so no
+real credential is read or sent. The app needs no fixture code of its own.
+
+`./script/simulator.sh start [--scenario NAME] [--param key=value]... [--network PROFILE]`
+starts it (default scenario `demo`, port 47100); `stop`, `status` and `token`
+manage it, and `./script/simulator.sh ctl ...` drives the running world through
+`discord-simctl` (send messages, change presence, inject faults, set the
+network profile, start live scripts). The simulator's
+[design](../Packages/DiscordSimulator/DESIGN.md) lists hosts, ports and the
+control API. `--simulator[=SCENARIO]` launches signed in to the scenario's
+account; `--simulator-sign-in` clears the app's simulator accounts and opens
+first-run onboarding and the production sign-in flow against it. Simulator
+sessions keep accounts, client identity, onboarding and the last conversation
+apart from real ones.
+
+| Scenario | Contents |
 | --- | --- |
-| `./script/build_and_run.sh --offline-sign-in` | Welcome animation and shared native sign-in flow |
-| `./script/build_and_run.sh --offline-long-server-list` | Extended server rail |
-| `./script/build_and_run.sh --offline-forum-performance` | Large forum; post previews arrive 1.2 s after each page |
-| `./script/build_and_run.sh --offline-forum-performance-autoscroll` | Same forum, then a 15-second, 2,000-point/second scroll; writes frame timing and layout-jump counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` and logs a `ForumBenchmark:` line |
-| `./script/build_and_run.sh --offline-forum-gallery-resize` | Same forum in gallery mode while the window narrows by up to 700 points and back twice, then while the channel sidebar hides and shows twice; logs a `FORUM_RESIZE_BENCHMARK` line with frame timing and hitch counts for each |
-| `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
-| `./script/build_and_run.sh --offline-chat-voice-performance` | Large native timeline where every fifth message is a voice message |
-| `./script/build_and_run.sh --offline-chat-files-performance` | Large native timeline where three messages in four upload files of every kind |
-| `./script/build_and_run.sh --offline-chat-files-performance-autoscroll` | Same timeline with the 20-second scroll benchmark |
-| `./script/build_and_run.sh --offline-chat-files-performance-open` | Same timeline opened 11 times from #welcome; writes each open's milliseconds to its first drawn frame to `SAKURACORD_PERFORMANCE_RESULT_PATH` (the first open is cold) |
-| `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
-| `./script/build_and_run.sh --offline-friends-performance` | 1,000 friends plus 200 requests; 20-second scroll with 20 presence updates/second, then 80 category switches |
-| `./script/build_and_run.sh --offline-server-rail-performance` | 150-server rail: 20-second scrolls without and with 10 mention-badge changes/second, 10 seconds of badge changes on a still rail, a pointer sweep, then 15 seconds of server switches; logs a `SERVER_RAIL_BENCHMARK` line with frame timing and main-thread CPU |
-| `./script/build_and_run.sh --offline-unread-churn` | Long server list; 10 quiet seconds, then 10 seconds of five mentions/second arriving in other servers; logs an `UNREAD_BENCHMARK` line with late frames and main-thread milliseconds per mention |
-| `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |
-| `./script/build_and_run.sh --offline-chat-reaction-storm-autoscroll` | Large timeline scroll benchmark with 40 reaction adds and removals per second, mostly on the newest messages; writes frame timing, main-thread CPU and timeline update counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` |
-| `./script/build_and_run.sh --offline-chat-reaction-storm-idle` | The same reaction traffic and measurements on a still timeline pinned to the newest message |
+| `demo` | A medium account: ~60–80 generated servers (many large public ones) around the hand-written ones, ~100 DMs, folders, unreads and mentions, constant live activity |
+| `demo-small` | A small account: ~15–25 servers, few DMs and friends, live activity |
+| `demo-large` | A large Nitro account: 100–200 servers, many huge, peak live activity |
+| `demo-lite` | Only the hand-written servers, DMs and rich messages; no live activity, for quick tests |
+| `long-server-list` | 18 extra servers in the rail |
+| `chat-performance` | A server with `#welcome` and a 5,000-message `#general`; `content=text\|media\|voice\|files`, `pins=0\|5000` |
+| `forum-performance` | A `#feedback` forum with `posts=5000` |
+| `friends-performance` | 1,000 friends, 100 incoming and 100 outgoing requests |
+| `server-rail` | 150 servers |
+| `side-chat-motion` | Threads in `#general` beside a `#feedback` forum |
 
-The offline sign-in fixture uses the production sign-in views and state handling
-with an in-memory authentication service. Use any nonempty email and an 8–72
-character password; `incorrect` exercises the error state. An email beginning
-with `mfa` offers authenticator, backup code, and SMS paths, all using `123456`.
-The preview controls simulate QR scanning/approval, expire the code, or replay
-the welcome. Successful sign-in opens the ordinary offline workspace. No saved
-account is read or changed, and no Discord transport is created. Hosted CAPTCHA
-verification requires Discord and is excluded from this offline fixture.
-**Build & Run Offline Sign In** rebuilds and launches the same mode from Codex.
+### Benchmarks
 
-The side chat motion benchmark is not one of these scenes. Its code compiles
-only when `SAKURACORD_MOTION_BENCHMARK=1` is set at build time, so normal Debug
-and Release builds contain none of it. `./script/motion_benchmark.sh` sets the
-variable, builds that benchmark build, records the open, close, and widen
-motions of fixture threads, and reports them. A benchmark build is a developer
-tool, not a release build; it is packaged to the same `dist/` path as a normal
-build, so package again without the variable before using that app otherwise.
+Each benchmark below packages a debug build, starts its simulator scenario and
+launches the app signed in with the benchmark's launch flag. Benchmarks are
+read-only, write results to `SAKURACORD_PERFORMANCE_RESULT_PATH` when set, and
+log a result line.
+
+| Command | Benchmark |
+| --- | --- |
+| `./script/build_and_run.sh --benchmark-chat-autoscroll` | 20-second display-link scroll through `#general` |
+| `./script/build_and_run.sh --benchmark-chat-media-autoscroll` | The same scroll through animated media (`content=media`) |
+| `./script/build_and_run.sh --benchmark-chat-voice-autoscroll` | The same scroll through voice messages (`content=voice`) |
+| `./script/build_and_run.sh --benchmark-chat-files-autoscroll` | The same scroll through uploaded files of every kind (`content=files`) |
+| `./script/build_and_run.sh --benchmark-chat-live-autoscroll` | The scroll while the simulator's `timeline-stress` script streams arrivals, edits and deletions |
+| `./script/build_and_run.sh --benchmark-chat-reaction-storm-autoscroll` | The scroll with reaction traffic only, mostly on the newest messages |
+| `./script/build_and_run.sh --benchmark-chat-reaction-storm-idle` | The same reaction traffic on a still timeline pinned to the newest message |
+| `./script/build_and_run.sh --benchmark-channel-open` | `#general` opened 11 times from `#welcome`; records each open's milliseconds to its first drawn frame (the first open is cold) |
+| `./script/build_and_run.sh --benchmark-pins-autoscroll` | Paginated 5,000-message pins timeline |
+| `./script/build_and_run.sh --benchmark-forum-autoscroll` | 15-second, 2,000-point/second forum scroll; logs a `ForumBenchmark:` line with frame timing and layout jumps |
+| `./script/build_and_run.sh --benchmark-forum-gallery-resize` | The forum in gallery mode while the window narrows and the channel sidebar hides; logs `FORUM_RESIZE_BENCHMARK` |
+| `./script/build_and_run.sh --benchmark-friends` | 20-second Friends scroll with 20 presence updates/second, then 80 category switches |
+| `./script/build_and_run.sh --benchmark-server-rail` | Rail scrolls with and without badge churn, a pointer sweep and server switches; logs `SERVER_RAIL_BENCHMARK` |
+| `./script/build_and_run.sh --benchmark-unread-churn` | 10 quiet seconds, then 10 seconds of five mentions/second in other servers; logs `UNREAD_BENCHMARK` |
+
+`./script/performance_benchmark.sh` records the simulator scroll scenarios and
+the account-scale `--benchmark-navigation`, `--benchmark-account-switch`,
+`--benchmark-history-pagination`, `--benchmark-gesture-scroll`,
+`--benchmark-loading-scroll-overlap` and `--benchmark-member-list-autoscroll`
+runs, which measure a real signed-in account.
+
+The side chat motion benchmark compiles only into debug builds made with
+`SAKURACORD_MOTION_BENCHMARK=1`. `./script/motion_benchmark.sh` sets the
+variable, builds that benchmark build, starts the `side-chat-motion` scenario,
+records the open, close, and widen motions of its threads, and reports them.
+It is packaged to the same `dist/` path as a normal build, so package again
+without the variable before using that app otherwise.
 
 Use `./script/build_and_run.sh run` to launch the normal app and restore an
 existing SakuraCord session through the configured credential mode. Read-only authenticated verification
@@ -192,7 +215,7 @@ proportion to its risk:
 
 | Command | Purpose |
 | --- | --- |
-| `./script/build_and_run.sh --verify` | Build, launch offline, and verify the scoped app process |
+| `./script/build_and_run.sh --verify` | Build, launch on the Discord simulator, and verify the scoped app process |
 | `./script/build_and_run.sh package` | Stage a signed debug app without launching it |
 | `./script/build_and_run.sh run-release` | Build, stage, and launch an optimized release app |
 | `./script/test.sh protocol` | Run protocol package tests |
@@ -323,7 +346,7 @@ website form with the same values prefilled. Reports and discussion follow the s
 [issue-management flow](README.md#issues-and-roadmap).
 
 1. Record the steps, expected result, actual result, and approximate failure time.
-   Include whether it occurs in a DM, server, thread, call or offline fixture;
+   Include whether it occurs in a DM, server, thread, call or simulator scenario;
    avoid posting private message content or account identifiers unnecessarily.
 2. Open **Settings → Diagnostics**, select **Refresh Status**, then
    **Copy Support Summary** (or **Export Support Summary…**). It includes app,

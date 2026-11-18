@@ -9,9 +9,9 @@ extension AppModel {
         "favorites.localEntries.v1.\(accountID)"
     }
 
-    /// Loads the account's local favourites; signed out or offline, there are none.
+    /// Loads the account's local favourites; signed out or ephemeral, there are none.
     func configureLocalFavorites(accountID: String?) {
-        favorites.localScope = launchMode == .normal ? accountID : nil
+        favorites.localScope = isEphemeral ? nil : accountID
         favorites.localEntries = favorites.localScope
             .flatMap { UserDefaults.standard.data(forKey: Self.localFavoritesKey($0)) }
             .flatMap { try? JSONDecoder().decode([FavoritesSettings.Entry].self, from: $0) } ?? []

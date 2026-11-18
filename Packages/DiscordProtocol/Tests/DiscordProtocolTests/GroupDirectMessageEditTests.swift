@@ -44,7 +44,6 @@ struct GroupDirectMessageEditTests {
         let nameOnly = try await provider.editGroupDirectMessage(groupID, changes: .init(name: .set("Trip")))
         #expect(nameOnly.iconURL == iconOnly.iconURL)
         #expect(await provider.privateChannel(id: groupID)?.blockedUserWarningDismissed == true)
-        #expect(await provider.privateChannel(id: groupID)?.lastPinTimestamp == Date(timeIntervalSince1970: 100))
         #expect(fixture.bodies.withLock { $0 } == [
             .object(["icon": .string("data:image/png;base64,AQ==")]),
             .object(["name": .string("Trip")]),
@@ -92,7 +91,6 @@ struct GroupDirectMessageEditTests {
         #expect(await provider.privateChannel(id: groupID)?.name == "Friend Group")
         #expect(await provider.privateChannel(id: groupID)?.iconURL != nil)
         #expect(await provider.privateChannel(id: groupID)?.blockedUserWarningDismissed == true)
-        #expect(await provider.privateChannel(id: groupID)?.lastPinTimestamp == Date(timeIntervalSince1970: 100))
         await provider.handleGatewayDispatch(name: "CHANNEL_UPDATE", body: .object([
             "id": .string("401"), "type": .number(3), "name": .null, "icon": .null,
         ]))
@@ -202,8 +200,7 @@ private extension DiscordRESTProvider {
         ]
         cachedChannels[nil] = [
             Channel(id: .init(rawValue: 401), guildID: nil, name: "Friend Group", kind: .groupDirectMessage,
-                    recipients: recipients, blockedUserWarningDismissed: true,
-                    lastPinTimestamp: Date(timeIntervalSince1970: 100)),
+                    recipients: recipients, blockedUserWarningDismissed: true),
             Channel(id: .init(rawValue: 402), guildID: nil, name: "Friend", kind: .directMessage,
                     recipients: [recipients[0]]),
         ]

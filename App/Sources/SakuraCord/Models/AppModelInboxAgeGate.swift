@@ -40,7 +40,7 @@ extension AppModel {
     func acceptInboxAgeAgreement() {
         guard currentUser?.allowsAdultContent == true, let guildID = inbox.ageRestrictedGuildID else { return }
         inbox.acceptedAgeRestrictedGuildIDs.insert(guildID)
-        if !isOfflineTesting {
+        if !isEphemeral {
             UserDefaults.standard.set(inbox.acceptedAgeRestrictedGuildIDs.map(\.description), forKey: InboxPreferenceKeys.ageAgreements)
         }
         let action = inbox.ageRestrictedAction

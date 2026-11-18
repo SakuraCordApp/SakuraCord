@@ -49,7 +49,9 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
 
     public var discriminator: String
     public var displayName: String
-    public var avatarURL: URL?
+    /// Like the official client, a user without an avatar shows their default
+    /// avatar, so every user has an image to show.
+    public var avatarURL: URL
     public var isBot: Bool
     public var isSystem: Bool
     public var avatarDecorationURL: URL?
@@ -80,7 +82,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         self.username = username
         self.discriminator = discriminator
         self.displayName = displayName
-        self.avatarURL = avatarURL
+        self.avatarURL = avatarURL ?? Self.defaultAvatarURL(id: id, discriminator: discriminator, isBot: isBot)
         self.isBot = isBot
         self.isSystem = isSystem
         self.avatarDecorationURL = avatarDecorationURL
@@ -103,8 +105,9 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         username = try container.decodeIfPresent(String.self, forKey: .username) ?? id.description
         discriminator = try container.decodeIfPresent(String.self, forKey: .discriminator) ?? "0"
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? username
-        avatarURL = try container.decodeIfPresent(URL.self, forKey: .avatarURL)
         isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot) ?? false
+        avatarURL = try container.decodeIfPresent(URL.self, forKey: .avatarURL)
+            ?? Self.defaultAvatarURL(id: id, discriminator: discriminator, isBot: isBot)
         isSystem = try container.decodeIfPresent(Bool.self, forKey: .isSystem) ?? false
         avatarDecorationURL = try container.decodeIfPresent(URL.self, forKey: .avatarDecorationURL)
         nameplate = try container.decodeIfPresent(Nameplate.self, forKey: .nameplate)
@@ -116,6 +119,27 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         publicFlags = try container.decodeIfPresent(UInt64.self, forKey: .publicFlags) ?? 0
         premiumType = try container.decodeIfPresent(Int.self, forKey: .premiumType) ?? 0
         allowsAdultContent = try container.decodeIfPresent(Bool.self, forKey: .allowsAdultContent)
+    }
+
+    public var defaultAvatarURL: URL {
+        Self.defaultAvatarURL(id: id, discriminator: discriminator, isBot: isBot)
+    }
+
+    /// The official client's bundled default avatars.
+    private static let defaultAvatarURLs = [
+        "18e336a74a159cfd", "788f05731f8aa02e", "9855d7e3b9780976",
+        "2ccd8ae8b2379360", "411d8a698dd15ddf", "320d5a40d309f942",
+    ].map { URL(string: "https://discord.com/assets/\($0).png")! }
+
+    /// Picked as the official client does: a legacy discriminator above zero
+    /// indexes the first five, and anything else, including "0000", indexes
+    /// all six by user ID. A bot with discriminator "0000", such as a webhook,
+    /// always gets the first.
+    public static func defaultAvatarURL(id: UserID, discriminator: String? = nil, isBot: Bool = false) -> URL {
+        if isBot, discriminator == "0000" { return defaultAvatarURLs[0] }
+        let legacy = discriminator.flatMap { UInt64($0) } ?? 0
+        let index = legacy > 0 ? legacy % 5 : id.discordEpochMilliseconds % UInt64(defaultAvatarURLs.count)
+        return defaultAvatarURLs[Int(index)]
     }
 
     public var tag: String {
