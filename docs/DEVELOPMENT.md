@@ -71,8 +71,9 @@ A simulator launch records its port in the debug bundle's `Info.plist`
 (`SakuraCordDiscordSimulatorPort`) and re-signs it, so opening that bundle
 again by path alone (Finder, `open`, Computer Use) stays on the simulator, even
 when the simulator is not running; it then fails to connect rather than
-reaching Discord. Any other launch through the scripts, including `run.sh`
-without `--simulator`, removes the record.
+reaching Discord. Repackaging keeps the record; any other launch through the
+scripts, including `run.sh` without `--simulator`, removes it. Simulator
+launches refuse a build too old to read the record.
 
 | Scenario | Contents |
 | --- | --- |

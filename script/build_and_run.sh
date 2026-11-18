@@ -197,6 +197,10 @@ BIN_DIR="$(swift build \
   ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --show-bin-path)"
 
+# Repackaging keeps a simulator launch record, so the rebuilt bundle still
+# reopens on the simulator by path (see sakuracord_record_simulator_launch).
+SIMULATOR_LAUNCH_RECORD="$(/usr/libexec/PlistBuddy -c \
+  "Print :SakuraCordDiscordSimulatorPort" "$CONTENTS/Info.plist" 2>/dev/null || true)"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$MACOS" "$FRAMEWORKS" "$RESOURCES"
 cp "$BIN_DIR/$PRODUCT_NAME" "$MACOS/$APP_NAME"
@@ -326,6 +330,11 @@ fi
 if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" ]]; then
   /usr/libexec/PlistBuddy -c \
     "Add :SakuraCordInsecureDebugCredentialsEnabled bool true" \
+    "$CONTENTS/Info.plist"
+fi
+if [[ -n "$SIMULATOR_LAUNCH_RECORD" ]]; then
+  /usr/libexec/PlistBuddy -c \
+    "Add :SakuraCordDiscordSimulatorPort string $SIMULATOR_LAUNCH_RECORD" \
     "$CONTENTS/Info.plist"
 fi
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
