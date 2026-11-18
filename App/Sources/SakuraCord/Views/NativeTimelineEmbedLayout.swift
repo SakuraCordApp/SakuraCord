@@ -450,9 +450,17 @@ enum NativeTimelineEmbedLayout {
         /// 400 × 450 for a portrait YouTube or TikTok video.
         private func cardMediaSize(_ media: MessageEmbedMedia, maximumWidth: CGFloat) -> CGSize {
             guard mediaCount == 1 else { return mediaSize(media, maximumWidth: maximumWidth) }
-            let size = mediaSize(media, maximumWidth: min(maximumWidth, DiscordRichMessageMetrics.px(400)))
             let isTall = embed.provider?.name == "TikTok" || isYouTube && (media.height ?? 0) > (media.width ?? 0)
-            let scale = min(1, DiscordRichMessageMetrics.px(isTall ? 450 : 300) / size.height)
+            let box = CGSize(
+                width: min(maximumWidth, DiscordRichMessageMetrics.px(400)),
+                height: DiscordRichMessageMetrics.px(isTall ? 450 : 300)
+            )
+            // Media of unknown size fills a 16:9 frame; known media never grows.
+            guard let size = NativeTimelineEmbedLayout.knownSize(of: media) else {
+                let width = min(box.width, box.height * 16 / 9)
+                return CGSize(width: width, height: width * 9 / 16)
+            }
+            let scale = min(1, box.width / size.width, box.height / size.height)
             return CGSize(width: size.width * scale, height: size.height * scale)
         }
     }
