@@ -9,7 +9,7 @@ enum NativeTimelineEmbedLayout {
         /// The 2-pixel grid padding plus the first part's 8-pixel margin, with
         /// the colour bar on the leading side.
         static var padding: NSEdgeInsets {
-            NSEdgeInsets(top: px(10), left: px(12) + DiscordRichMessageMetrics.accentBarWidth, bottom: px(16), right: px(16))
+            NSEdgeInsets(top: px(10), left: px(12) + DiscordRichMessageMetrics.embedAccentBarWidth, bottom: px(16), right: px(16))
         }
         /// The 516-pixel grid with its bar and border.
         static var maximumWidth: CGFloat { px(520) }
@@ -30,9 +30,7 @@ enum NativeTimelineEmbedLayout {
         /// The 18-pixel emoji as `resolvedTextBox` takes it.
         static var emojiSize: CGFloat { InterfaceTypographyMetrics.message(DiscordRichMessageMetrics.textSize(18)) }
 
-        /// Discord keeps an embed's lengths when its text grows; only the text
-        /// scales. The accent bar and corner radius, shared with Components V2
-        /// cards, still follow the text.
+        /// Discord keeps an embed's lengths when its text grows; only the text scales.
         private static func px(_ value: CGFloat) -> CGFloat { DiscordRichMessageMetrics.fixedPx(value) }
     }
 

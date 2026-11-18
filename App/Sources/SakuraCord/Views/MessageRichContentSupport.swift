@@ -9,9 +9,12 @@ enum DiscordRichMessageMetrics {
     /// Discord lays Components V2 out up to 600 pixels wide.
     static var componentsMaximumWidth: CGFloat { px(600) }
     static var cardCornerRadius: CGFloat { px(8) }
-    static var embedCornerRadius: CGFloat { px(4) }
-    /// The colour bar on an embed's or a container's leading edge.
+    /// An embed keeps its card geometry as its text grows, as Discord's does.
+    static var embedCornerRadius: CGFloat { fixedPx(4) }
+    /// The colour bar on a container's leading edge.
     static var accentBarWidth: CGFloat { px(4) }
+    /// The colour bar on an embed's leading edge, which keeps its width as the text grows.
+    static var embedAccentBarWidth: CGFloat { fixedPx(4) }
     /// A container's 16-pixel padding inside its 1-point border.
     static var cardPadding: CGFloat { px(16) + InterfaceScale.metric(1) }
 
