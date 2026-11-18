@@ -24,7 +24,7 @@ struct ProfileBioText: View {
 
 /// The bio editor, which shows the bio's source with its emoji, as Discord's
 /// bio field does.
-struct ProfileRichTextView: View {
+struct ProfileBioEditorText: View {
     let source: String
     let editing: ProfileBioTextEditing
     @State private var emojiImages: [String: NSImage] = [:]

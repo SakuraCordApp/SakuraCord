@@ -16,7 +16,7 @@ struct ProfileInlineBioEditor: View {
     @State private var pickedEmoji: String?
 
     var body: some View {
-        ProfileRichTextView(source: visibleValue, editing: ProfileBioTextEditing(
+        ProfileBioEditorText(source: visibleValue, editing: ProfileBioTextEditing(
             interaction: interaction, isActive: isEditing,
             onChange: { hasTyped = true; value = $0 },
             onBegin: {

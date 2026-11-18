@@ -383,36 +383,31 @@ public enum DiscordMarkdown {
         }
     }
 
-    /// Discord's inline code, `` ^(`+)([\s\S]*?[^`])\1(?!`) ``, at `start`:
-    /// fenced by any run of backticks, closed by a run of the same length,
-    /// and free to span lines. Where it doesn't match, the backtick is text.
+    /// Discord's inline code rule, anchored where it is tried: fenced by a
+    /// run of backticks, closed by a run of the same length, and free to span
+    /// lines. A shorter opening run is tried when a longer one finds no close.
+    private nonisolated(unsafe) static let inlineCodeExpression = #/(`+)([\s\S]*?[^`])\1(?!`)/#
+
+    /// Discord's inline code at `start`. Where it doesn't match, the backtick
+    /// is text.
     private static func inlineCode(
         in source: Substring, at start: String.Index
     ) -> (content: Range<String.Index>, end: String.Index)? {
-        let contentStart = source[start...].firstIndex { $0 != "`" } ?? source.endIndex
-        let fence = source[start ..< contentStart]
-        guard !fence.isEmpty else { return nil }
-        var cursor = contentStart
-        while let close = source[cursor...].range(of: fence) {
-            let end = close.upperBound
-            if close.lowerBound > contentStart, source[source.index(before: close.lowerBound)] != "`",
-               end == source.endIndex || source[end] != "`" {
-                return (contentStart ..< close.lowerBound, end)
-            }
-            cursor = source.index(after: close.lowerBound)
-        }
-        return nil
+        guard let match = source[start...].prefixMatch(of: inlineCodeExpression) else { return nil }
+        return (match.output.2.startIndex ..< match.output.2.endIndex, match.range.upperBound)
     }
 
     /// Each `` `code` `` span in rules without code blocks, backticks
-    /// included, skipping escaped characters as inline parsing does.
+    /// included, skipping escaped characters as inline parsing does. A
+    /// heading or `>` quote is one line, so code it opens ends with it.
     private static func inlineCodeSpans(_ source: String) -> [Range<String.Index>] {
         var spans: [Range<String.Index>] = []
         var cursor = source.startIndex
         while cursor < source.endIndex {
             if source[cursor] == "\\" {
                 cursor = source.index(cursor, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
-            } else if source[cursor] == "`", let code = inlineCode(in: source[...], at: cursor) {
+            } else if source[cursor] == "`", let code = inlineCode(in: source[...], at: cursor),
+                      !source[cursor ..< code.end].contains("\n") || !isSingleLineBlock(source, containing: cursor) {
                 spans.append(cursor ..< code.end)
                 cursor = code.end
             } else {
@@ -420,6 +415,12 @@ public enum DiscordMarkdown {
             }
         }
         return spans
+    }
+
+    private static func isSingleLineBlock(_ source: String, containing index: String.Index) -> Bool {
+        let lineStart = source[..<index].lastIndex(of: "\n").map(source.index(after:)) ?? source.startIndex
+        let line = source[lineStart...]
+        return ["# ", "## ", "### ", "-# "].contains(where: line.hasPrefix) || (line.hasPrefix("> ") && !line.hasPrefix(">>> "))
     }
 
     /// Source lines, except that inline code spanning lines stays in the

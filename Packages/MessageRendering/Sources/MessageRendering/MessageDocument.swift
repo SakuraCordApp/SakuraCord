@@ -190,7 +190,8 @@ public struct MessageDocument: Hashable, Sendable {
         )
         guard !matches.isEmpty else { return source.isEmpty ? [] : [.markdown(source)] }
         // Only the token-only mention kinds need these scans; most matches are not.
-        var literalRanges: [NSRange]?
+        var codeRanges: [NSRange]?
+        var urlRanges: [NSRange]?
         var linkLabels: [NSRange]?
         var result: [Segment] = []
         var cursor = source.startIndex
@@ -204,7 +205,7 @@ public struct MessageDocument: Hashable, Sendable {
                 result.append(.customEmoji(emoji))
             } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token),
                       rules.renders(mention.kind),
-                      !isLiteralMention(mention, range: range, in: source, rules: rules, literalRanges: &literalRanges),
+                      !isLiteralMention(mention, range: range, in: source, rules: rules, codeRanges: &codeRanges, urlRanges: &urlRanges),
                       !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
                 result.append(.mention(mention))
             } else {
@@ -240,12 +241,19 @@ public struct MessageDocument: Hashable, Sendable {
 
     private static func isLiteralMention(
         _ mention: RenderedMention, range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules,
-        literalRanges: inout [NSRange]?
+        codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
     ) -> Bool {
-        guard [.game, .broadcast, .timestamp, .command].contains(mention.kind) else { return false }
+        let isTokenOnly = [.game, .broadcast, .timestamp, .command].contains(mention.kind)
+        // A bio's code, like Discord's, holds no mention of any kind.
+        guard isTokenOnly || rules == .profileBio else { return false }
         let tokenRange = NSRange(range, in: source)
-        let ranges = literalRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules) + urlRanges(in: source)
-        literalRanges = ranges
+        let code = codeRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules)
+        codeRanges = code
+        var ranges = code
+        if isTokenOnly {
+            ranges += urlRanges ?? Self.urlRanges(in: source)
+            urlRanges = Array(ranges.dropFirst(code.count))
+        }
         if ranges.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
         var cursor = range.lowerBound
         var escaped = false
