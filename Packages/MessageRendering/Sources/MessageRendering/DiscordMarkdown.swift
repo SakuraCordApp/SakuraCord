@@ -50,8 +50,8 @@ public enum DiscordMarkdown {
         public let rawValue: UInt16
         public init(rawValue: UInt16) { self.rawValue = rawValue }
 
-        /// Fenced code blocks. Without them, inline code is Discord's rule in
-        /// full: across lines, holding no mentions.
+        /// Fenced code blocks. Without them, inline code is the only code and
+        /// spans lines, as Discord's rule does.
         static let codeBlocks = Self(rawValue: 1 << 0)
         static let code = Self(rawValue: 1 << 1)
         static let strikethroughAndSpoilers = Self(rawValue: 1 << 2)
@@ -1003,11 +1003,12 @@ public enum DiscordMarkdown {
         in source: Substring, at cursor: String.Index, collector: SourceFormatCollector
     ) -> String.Index? {
         let next = source.index(after: cursor)
-        if source[cursor] == "\\", next < source.endIndex {
+        if source[cursor] == "\\", next < source.endIndex, escapes(source[next]) {
             return source.index(after: next)
         }
-        if source[cursor] == "`", case let match = inlineCode(in: source, at: cursor, collector: collector), match.code != nil {
-            return match.end
+        // An unclosed run is text whole: no shorter opening inside it closes.
+        if source[cursor] == "`" {
+            return inlineCode(in: source, at: cursor, collector: collector).end
         }
         if let link = markdownLinkTarget(in: source, at: cursor, collector: collector) {
             return link.end
@@ -1748,6 +1749,13 @@ extension DiscordMarkdown {
     ) -> AppKitPlan.InlineRun {
         sourceCollector?.collect(source.startIndex ..< source.endIndex, traits.union(.inlineCode), String(repeating: "`", count: delimiter))
         return AppKitPlan.InlineRun(text: String(trimmingCodePadding(source)), traits: traits.union(.inlineCode), link: link, color: nil)
+    }
+
+    /// Whether a backslash escapes `character`, as Discord's
+    /// `^\\([^0-9A-Za-z\s])` does: punctuation and symbols, but not an ASCII
+    /// letter or digit, or whitespace, so `C:\Users` keeps its backslash.
+    static func escapes(_ character: Character) -> Bool {
+        !(character.isASCII && (character.isLetter || character.isNumber)) && !character.isWhitespace
     }
 
     /// Discord drops one space of padding beside a backtick, so `` `` `x` `` ``
