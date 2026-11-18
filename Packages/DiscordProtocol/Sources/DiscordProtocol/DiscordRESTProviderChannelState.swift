@@ -15,10 +15,13 @@ extension DiscordRESTProvider {
     }
 
     /// A message from a REST response. Those omit `guild_id`, which role
-    /// mentions and member styling resolve against.
+    /// mentions and member styling resolve against; a Gateway copy of the
+    /// message, or its channel, supplies it.
     func restMessage(_ dto: MessageDTO) throws -> Message {
         var message = try dto.domain()
-        message.guildID = message.guildID ?? cachedGuildID(ofChannel: message.channelID)
+        message.guildID = message.guildID
+            ?? cachedMessages[message.id]?.guildID
+            ?? cachedGuildID(ofChannel: message.channelID)
         return message
     }
 
