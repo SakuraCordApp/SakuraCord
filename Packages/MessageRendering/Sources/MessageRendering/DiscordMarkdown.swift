@@ -213,28 +213,13 @@ public enum DiscordMarkdown {
         }
         let collector = SourceFormatCollector(source: source, collect: collect)
         // Formats span consecutive text lines, as in a message, so each run of
-        // text between code is read as one.
-        var segmentStart: String.Index? = source.startIndex
-        var unclosedFenceEnd: String.Index?
-        forEachSourceLine(source) { rawLine, kind in
-            if case .text = kind {
-                segmentStart = segmentStart ?? rawLine.startIndex
-                return
-            }
-            if let start = segmentStart {
-                _ = inlineRuns(source[start ..< rawLine.startIndex], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
-            }
-            segmentStart = nil
-            switch kind {
-            case let .fence(opening): unclosedFenceEnd = opening == nil ? nil : rawLine.endIndex
-            case let .closingCode(_, _, _, after): (unclosedFenceEnd, segmentStart) = (nil, after.startIndex)
-            case .code, .text: break
-            }
+        // text between code blocks is read as one.
+        var textStart = source.startIndex
+        for block in codeBlocks(in: source) {
+            _ = inlineRuns(source[textStart ..< block.range.lowerBound], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+            textStart = block.range.upperBound
         }
-        // Text after a fence that never closes is text, as Discord shows it.
-        if let start = segmentStart ?? unclosedFenceEnd {
-            _ = inlineRuns(source[start...], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
-        }
+        _ = inlineRuns(source[textStart...], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
         return formats
     }
 
@@ -319,43 +304,28 @@ public enum DiscordMarkdown {
 
     public static func appKitPlan(_ source: String, rules: Rules = .message) -> AppKitPlan {
         var lines: [AppKitPlan.Line] = []
-        var unclosedFence: (text: String, index: Int)?
         var list = ListNesting()
 
-        forEachSourceLine(source, rules: rules) { rawLine, kind in
-            switch kind {
-            case let .fence(opening):
-                unclosedFence = opening.map { ($0, lines.count) }
-                list = ListNesting()
-            case let .code(language, isFirstLine):
-                lines.append(codeLine(rawLine, language: language, isFirstLine: isFirstLine))
-            case let .closingCode(code, language, isFirstLine, after):
-                unclosedFence = nil
-                list = ListNesting()
-                if !code.isEmpty {
-                    lines.append(codeLine(code, language: language, isFirstLine: isFirstLine))
-                }
-                if !after.isEmpty {
-                    lines.append(planLine(after, rules: rules, list: &list))
-                }
-            case let .text(content, isQuoted):
-                if lines.last.map({ $0.isQuoted != isQuoted }) == true {
+        forEachSourceLine(source, rules: rules) { _, pieces in
+            for piece in pieces {
+                switch piece {
+                case .fence:
                     list = ListNesting()
+                case let .code(code, language, isFirstLine):
+                    lines.append(codeLine(code, language: language, isFirstLine: isFirstLine))
+                // A code block takes its own lines, so text beside it on its
+                // source line is a line of its own.
+                case let .text(content, _) where content.isEmpty && pieces.count > 1:
+                    break
+                case let .text(content, isQuoted):
+                    if lines.last.map({ $0.isQuoted != isQuoted }) == true {
+                        list = ListNesting()
+                    }
+                    var line = planLine(content, rules: rules, list: &list)
+                    line.isQuoted = isQuoted
+                    lines.append(line)
                 }
-                var line = planLine(content, rules: rules, list: &list)
-                line.isQuoted = isQuoted
-                lines.append(line)
             }
-        }
-
-        // Discord shows the literal opening fence when a message never closes
-        // it. Keep malformed input visible instead of silently discarding it.
-        if let unclosedFence {
-            let fence = AppKitPlan.Line(
-                runs: [AppKitPlan.InlineRun(text: unclosedFence.text, traits: [], link: nil, color: nil)],
-                block: .paragraph
-            )
-            lines.insert(fence, at: unclosedFence.index)
         }
 
         alignOrderedMarkers(&lines)
@@ -366,56 +336,59 @@ public enum DiscordMarkdown {
         AppKitPlan.Line(runs: codeRuns(String(code), language: language), block: .code(language: language, isFirstLine: isFirstLine))
     }
 
-    /// How message rendering reads one line of source.
+    /// A part of a source line as message rendering reads it.
     private enum SourceLine {
-        /// A fence that opens a block, as its literal opening with the
-        /// language, or that closes one.
-        case fence(opening: String?)
-        case code(language: String?, isFirstLine: Bool)
-        /// A block's last code, up to the three backticks that close it
-        /// within the line, and the text after them. Discord closes a block
-        /// at the next three backticks, so one line can hold a whole block.
-        case closingCode(Substring, language: String?, isFirstLine: Bool, after: Substring)
         /// Text after any quote prefix.
         case text(Substring, isQuoted: Bool)
+        /// One line of a code block's code.
+        case code(Substring, language: String?, isFirstLine: Bool)
+        /// A code block's fence with its language, or a blank line beside
+        /// its code, which Discord leaves out of the block.
+        case fence(Substring)
     }
 
+    /// Each source line, as the parts `body` reads it in. Code blocks may
+    /// open and close mid-line, so a line can hold text, fences and code.
     private static func forEachSourceLine(
-        _ source: String, rules: Rules = .message, _ body: (Substring, SourceLine) -> Void
+        _ source: String, rules: Rules = .message, _ body: (Substring, [SourceLine]) -> Void
     ) {
-        var codeLanguage: String?
-        var isInCodeFence = false
-        var startsCodeFence = false
         var isInMultilineQuote = false
         let parsesFences = rules.contains(.codeBlocks)
+        var blocks = (parsesFences ? codeBlocks(in: source) : [])[...]
         let lines = parsesFences
             ? source.split(separator: "\n", omittingEmptySubsequences: false)
             : linesOutsideInlineCode(source, rules: rules)
         for rawLine in lines {
-            // Code needs at least one character before its closing fence.
-            if parsesFences, !isInCodeFence, rawLine.hasPrefix("```"),
-               let close = rawLine.dropFirst(4).range(of: "```") {
-                let code = rawLine[rawLine.index(rawLine.startIndex, offsetBy: 3) ..< close.lowerBound]
-                body(rawLine, .closingCode(code, language: nil, isFirstLine: true, after: rawLine[close.upperBound...]))
-            } else if isInCodeFence, let close = rawLine.range(of: "```"),
-                      close.lowerBound != rawLine.startIndex || !rawLine[close.upperBound...].allSatisfy(\.isWhitespace) {
-                isInCodeFence = false
-                body(rawLine, .closingCode(
-                    rawLine[..<close.lowerBound], language: codeLanguage, isFirstLine: startsCodeFence, after: rawLine[close.upperBound...]
-                ))
-                codeLanguage = nil
-            } else if parsesFences, rawLine.hasPrefix("```") {
-                isInCodeFence.toggle()
-                startsCodeFence = isInCodeFence
-                let suffix = rawLine.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
-                codeLanguage = isInCodeFence && !suffix.isEmpty ? suffix.lowercased() : nil
-                body(rawLine, .fence(opening: isInCodeFence ? "```" + (codeLanguage ?? "") : nil))
-            } else if isInCodeFence {
-                body(rawLine, .code(language: codeLanguage, isFirstLine: startsCodeFence))
-                startsCodeFence = false
+            if let block = blocks.first, block.range.lowerBound <= rawLine.endIndex {
+                /// The part of `range` on this line; a blank line inside it belongs to it.
+                func part(_ range: Range<String.Index>) -> Substring? {
+                    let lower = max(range.lowerBound, rawLine.startIndex)
+                    let upper = min(range.upperBound, rawLine.endIndex)
+                    guard lower < upper || lower == upper && rawLine.isEmpty && range.contains(lower) else { return nil }
+                    return source[lower ..< upper]
+                }
+                var pieces: [SourceLine] = []
+                var cursor = rawLine.startIndex
+                while let block = blocks.first, block.range.lowerBound <= rawLine.endIndex {
+                    if cursor < block.range.lowerBound {
+                        pieces.append(.text(rawLine[cursor ..< block.range.lowerBound], isQuoted: isInMultilineQuote))
+                    }
+                    if let fence = part(block.range.lowerBound ..< block.code.lowerBound) { pieces.append(.fence(fence)) }
+                    if let code = part(block.code) {
+                        pieces.append(.code(code, language: block.language, isFirstLine: block.code.lowerBound >= rawLine.startIndex))
+                    }
+                    if let fence = part(block.code.upperBound ..< block.range.upperBound) { pieces.append(.fence(fence)) }
+                    cursor = min(block.range.upperBound, rawLine.endIndex)
+                    guard block.range.upperBound <= rawLine.endIndex else { break }
+                    blocks.removeFirst()
+                }
+                if cursor < rawLine.endIndex {
+                    pieces.append(.text(rawLine[cursor...], isQuoted: isInMultilineQuote))
+                }
+                body(rawLine, pieces)
             } else if isInMultilineQuote {
                 // Within a `>>>` quote, later `>` lines are text.
-                body(rawLine, .text(rawLine, isQuoted: true))
+                body(rawLine, [.text(rawLine, isQuoted: true)])
             } else if let quote = quote(rawLine, rules: rules) {
                 isInMultilineQuote = quote.isMultiline
                 var content = quote.content
@@ -427,11 +400,11 @@ public enum DiscordMarkdown {
                         .map { Self.quote($0, rules: rules)?.content ?? $0 }
                         .joined(separator: "\n")[...]
                 }
-                body(rawLine, .text(content, isQuoted: true))
+                body(rawLine, [.text(content, isQuoted: true)])
             } else if let quoted = quoteContent(rawLine) {
-                body(rawLine, .text(quoted, isQuoted: true))
+                body(rawLine, [.text(quoted, isQuoted: true)])
             } else {
-                body(rawLine, .text(rawLine, isQuoted: false))
+                body(rawLine, [.text(rawLine, isQuoted: false)])
             }
         }
     }
@@ -441,7 +414,7 @@ public enum DiscordMarkdown {
     /// beside the marker, which merge with it, so it is read by scalar. A line
     /// of only the marker and such spacers is a blank line inside the quote.
     /// A lone `>` is not a quote, as in Discord.
-    private static func quoteContent(_ line: Substring) -> Substring? {
+    static func quoteContent(_ line: Substring) -> Substring? {
         let scalars = line.unicodeScalars
         guard scalars.first == ">" else { return nil }
         let marker = scalars.dropFirst()
@@ -1492,15 +1465,12 @@ extension DiscordMarkdown {
         func scanInline(_ content: Substring) {
             _ = inlineRuns(listItemContent(content)?.content ?? content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
         }
-        forEachSourceLine(source) { rawLine, kind in
-            switch kind {
-            case .fence, .code:
-                ranges.append(NSRange(rawLine.startIndex ..< rawLine.endIndex, in: source))
-            case let .closingCode(_, _, _, after):
-                ranges.append(NSRange(rawLine.startIndex ..< after.startIndex, in: source))
-                scanInline(after)
-            case let .text(content, _):
-                scanInline(content)
+        forEachSourceLine(source) { _, pieces in
+            for piece in pieces {
+                switch piece {
+                case let .fence(range), let .code(range, _, _): ranges.append(NSRange(range.startIndex ..< range.endIndex, in: source))
+                case let .text(content, _): scanInline(content)
+                }
             }
         }
         return ranges
@@ -1585,21 +1555,9 @@ public extension DiscordMarkdown {
                 markSyntax(NSRange(location: NSMaxRange(labelRange), length: NSMaxRange(span) - NSMaxRange(labelRange)), of: span)
             }
             // Until its closing fence is typed, a code block is plain text, as
-            // Discord shows it: the open fence literal and the lines after it
-            // as text.
-            var openFence: String.Index?
-            forEachSourceLine(source) { rawLine, kind in
-                switch kind {
-                case let .fence(opening): openFence = opening == nil ? nil : rawLine.startIndex
-                case .closingCode: openFence = nil
-                case .code, .text: break
-                }
-            }
-            forEachSourceLine(source) { rawLine, kind in
-                guard let openFence, rawLine.startIndex >= openFence else {
-                    return styleLine(rawLine, kind: kind, collector: collector)
-                }
-                styleLine(rawLine, kind: .text(rawLine, isQuoted: false), collector: collector, isLiteral: rawLine.startIndex == openFence)
+            // Discord shows it.
+            forEachSourceLine(source) { rawLine, pieces in
+                styleLine(rawLine, pieces: pieces, collector: collector)
             }
             for fence in fences {
                 markSyntax(fence, of: fence)
@@ -1611,44 +1569,13 @@ public extension DiscordMarkdown {
             }
         }
 
-        /// A literal line is a plain paragraph with no syntax, as an open fence is.
-        private func styleLine(_ rawLine: Substring, kind: SourceLine, collector: SourceFormatCollector, isLiteral: Bool = false) {
+        private func styleLine(_ rawLine: Substring, pieces: [SourceLine], collector: SourceFormatCollector) {
             let range = NSRange(rawLine.startIndex ..< rawLine.endIndex, in: source)
             // A paragraph's newline carries its paragraph's attributes.
             let paragraphRange = NSRange(location: range.location, length: min(range.length + 1, text.length - range.location))
-            defer { followsCode = if case .code = kind { true } else { false } }
-            switch kind {
-            case let .fence(opening):
-                fences.append(range)
-                text.addAttribute(.font, value: appKitFont(block: .code(language: nil, isFirstLine: false), traits: [], metrics: metrics), range: range)
-                // Hidden, a fence's line takes no room; message rendering
-                // has no line for it.
-                text.addAttribute(.discordMarkdownBlock, value: "fence" as NSString, range: paragraphRange)
-                // Shown, a closing fence sits below its block's padding; an
-                // empty block has none.
-                guard opening == nil, followsCode else { return }
-                closingFenceHeight = metrics.codeInset
-                setParagraph(spacing: closingFenceHeight, for: paragraphRange)
-                return
-            case let .closingCode(code, language, isFirstLine, after):
-                // Code and its fences keep code styling; the text after the
-                // closing fence is read as text, as message rendering reads it.
-                let codeLine = styleCode(code, language: language, isFirstLine: isFirstLine)
-                // A block opened on this line has its opening fence before the code.
-                for fence in [rawLine.startIndex ..< code.startIndex, code.endIndex ..< after.startIndex] where !fence.isEmpty {
-                    let fenceRange = NSRange(fence, in: source)
-                    style(fenceRange)
-                    fences.append(fenceRange)
-                }
-                line = AppKitPlan.Line(runs: [], block: .paragraph)
-                _ = inlineRuns(after, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
-                // A line that holds code keeps its block chrome, as message rendering gives it.
-                if !code.isEmpty { line = codeLine }
-            case let .code(language, isFirstLine):
-                _ = styleCode(rawLine, language: language, isFirstLine: isFirstLine)
-            case .text where isLiteral:
-                line = AppKitPlan.Line(runs: [], block: .paragraph)
-            case let .text(content, isQuoted):
+            let previousFollowsCode = followsCode
+            followsCode = if case .code = pieces.last { true } else { false }
+            if pieces.count == 1, case let .text(content, isQuoted) = pieces[0] {
                 let item = listItemContent(content)
                 let prefix = item == nil ? blockPrefixes.first(where: { content.hasPrefix($0.prefix) }) : nil
                 let body = item?.content ?? content.dropFirst(prefix?.prefix.count ?? 0)
@@ -1658,6 +1585,38 @@ public extension DiscordMarkdown {
                 let syntax = NSRange(rawLine.startIndex ..< (item == nil ? body : content).startIndex, in: source)
                 if syntax.length > 0 { markSyntax(syntax, of: syntax) }
                 _ = inlineRuns(body, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+            } else if pieces.allSatisfy({ if case .fence = $0 { true } else { false } }) {
+                styleFence(range)
+                // Hidden, a fence's line takes no room; message rendering
+                // has no line for it.
+                text.addAttribute(.discordMarkdownBlock, value: "fence" as NSString, range: paragraphRange)
+                // Shown, a closing fence sits below its block's padding; an
+                // empty block has none.
+                guard previousFollowsCode else { return }
+                closingFenceHeight = metrics.codeInset
+                setParagraph(spacing: closingFenceHeight, for: paragraphRange)
+                return
+            } else {
+                // Code and its fences keep code styling; text beside them is
+                // read as text, as message rendering reads it.
+                var codeLine: AppKitPlan.Line?
+                var textPrecedesCode = false
+                for piece in pieces {
+                    switch piece {
+                    case let .fence(fence):
+                        styleFence(NSRange(fence.startIndex ..< fence.endIndex, in: source))
+                    case let .code(code, language, isFirstLine):
+                        let styled = styleCode(code, language: language, isFirstLine: isFirstLine)
+                        if codeLine == nil, !code.isEmpty { codeLine = styled }
+                    case let .text(content, _):
+                        textPrecedesCode = textPrecedesCode || codeLine == nil && !content.isEmpty
+                        line = AppKitPlan.Line(runs: [], block: .paragraph)
+                        _ = inlineRuns(content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+                    }
+                }
+                // A line whose code comes first keeps its block chrome, as
+                // message rendering gives that code its own line.
+                line = textPrecedesCode ? AppKitPlan.Line(runs: [], block: .paragraph) : codeLine ?? AppKitPlan.Line(runs: [], block: .paragraph)
             }
             lines.append(line)
             let spacing = metrics.spacingBefore(lines.count - 1, in: lines) - closingFenceHeight
@@ -1672,6 +1631,11 @@ public extension DiscordMarkdown {
             if let blockName = blockName(for: line) {
                 text.addAttributes([.discordMarkdownBlock: blockName, .discordMarkdownEm: NSNumber(value: metrics.em)], range: paragraphRange)
             }
+        }
+
+        private func styleFence(_ range: NSRange) {
+            text.addAttribute(.font, value: appKitFont(block: .code(language: nil, isFirstLine: false), traits: [], metrics: metrics), range: range)
+            fences.append(range)
         }
 
         /// Styles `code` as a code line, its syntax coloured, and makes that line current.

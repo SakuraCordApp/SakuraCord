@@ -66,7 +66,8 @@ import Testing
 }
 
 // Discord's code rules: inline code closes at a backtick run of its own
-// length, and a block closes at the next three backticks, even mid-line.
+// length, and a block opens at any three backticks and closes at the next
+// three, even mid-line.
 @Test func `code closes at matching backtick runs and the next fence`() {
     func code(_ source: String) -> [String] {
         let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
@@ -84,8 +85,12 @@ import Testing
     #expect(code("```\ncode```after") == ["code:code", "text:\nafter"])
     let title = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("```x``` ``y``", rules: .embedTitle(allowsLinks: true)))
     #expect(title.string == "x y")
-    // An unclosed fence stays where it opened, after an earlier one-line block.
-    #expect(code("a\n```x```\n```\nunclosed") == ["text:a\n", "code:x", "text:\n```\n", "code:unclosed"])
+    // A fence that nothing closes is text, after an earlier one-line block.
+    #expect(code("a\n```x```\n```\nunclosed") == ["text:a\n", "code:x", "text:\n```\nunclosed"])
+    // A block opens at any three backticks, splitting the sentence around it.
+    #expect(code("One ```x``` fence") == ["text:One \n", "code:x", "text:\n fence"])
+    #expect(code("Mid-line: ```\nlet a = 1```after") == ["text:Mid-line: \n", "code:let a = 1", "text:\nafter"])
+    #expect(code("```swift\n\nlet a = 1\n\n```") == ["code:let a = 1"])
     // The composer reads bold after a one-line block, and text after a
     // mid-line close, as message rendering does.
     let draft = "```code```\n**bold**\n```\nx\n```"
