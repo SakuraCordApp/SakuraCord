@@ -111,6 +111,9 @@ public enum DiscordMarkdown {
             /// The widest number in this item's ordered list, which sizes
             /// the gutter so every item's text shares one column.
             fileprivate var widestMarker = ""
+            /// Text after a code block on its closing fence's line, which
+            /// Discord sets right below the block, with no line break between.
+            fileprivate var followsBlockOnItsLine = false
         }
 
         fileprivate enum Block: Hashable, Sendable {
@@ -307,7 +310,7 @@ public enum DiscordMarkdown {
         var list = ListNesting()
 
         forEachSourceLine(source, rules: rules) { _, pieces in
-            for piece in pieces {
+            for (index, piece) in pieces.enumerated() {
                 switch piece {
                 case .fence:
                     list = ListNesting()
@@ -319,6 +322,7 @@ public enum DiscordMarkdown {
                     }
                     var line = planLine(content, rules: rules, list: &list)
                     line.isQuoted = isQuoted
+                    line.followsBlockOnItsLine = index > 0
                     lines.append(line)
                 }
             }
@@ -896,7 +900,7 @@ public enum DiscordMarkdown {
         return ranges
     }
 
-    private static func markdownLinkTarget(
+    static func markdownLinkTarget(
         in source: Substring, at cursor: String.Index, collector: SourceFormatCollector?
     ) -> MarkdownLinkTarget? {
         guard source[cursor] == "[",
@@ -1250,7 +1254,9 @@ public enum DiscordMarkdown {
             let quoteMargin = previous.isQuoted != line.isQuoted ? px(4) : 0
             if case .code = previous.block {
                 if case .code(_, false) = line.block { return 0 }
-                return codeInset + emptyLineHeight + max(margins(line, isFirst: false).top, quoteMargin) + codeTop
+                // The line break after a closing fence takes a line.
+                let lineBreak = line.followsBlockOnItsLine ? 0 : emptyLineHeight
+                return codeInset + lineBreak + max(margins(line, isFirst: false).top, quoteMargin) + codeTop
             }
             return max(
                 margins(previous, isFirst: false).bottom,
@@ -1516,6 +1522,9 @@ public extension DiscordMarkdown {
         var fences: [NSRange] = []
         /// Whether the previous source line was code, inside a fence.
         var followsCode = false
+        /// Whether the previous source line was a blank line Discord trims
+        /// from a block, which the block's chrome already starts above.
+        var followsBlankCodeLine = false
         /// The room a closing fence keeps for its block's bottom padding,
         /// which the next line's spacing then leaves out.
         var closingFenceHeight: CGFloat = 0
@@ -1570,7 +1579,9 @@ public extension DiscordMarkdown {
             // A paragraph's newline carries its paragraph's attributes.
             let paragraphRange = NSRange(location: range.location, length: min(range.length + 1, text.length - range.location))
             let previousFollowsCode = followsCode
+            let previousFollowsBlankCodeLine = followsBlankCodeLine
             followsCode = false
+            followsBlankCodeLine = false
             if pieces.count == 1, case let .text(content, isQuoted) = pieces[0] {
                 let item = listItemContent(content)
                 let prefix = item == nil ? blockPrefixes.first(where: { content.hasPrefix($0.prefix) }) : nil
@@ -1593,7 +1604,7 @@ public extension DiscordMarkdown {
                 setParagraph(spacing: closingFenceHeight, for: paragraphRange)
                 return
             } else {
-                styleBlockLine(pieces, collector: collector)
+                styleBlockLine(pieces, collector: collector, startsBlock: !previousFollowsCode, followsBlankLine: previousFollowsBlankCodeLine)
             }
             lines.append(line)
             let spacing = metrics.spacingBefore(lines.count - 1, in: lines) - closingFenceHeight
@@ -1614,9 +1625,11 @@ public extension DiscordMarkdown {
         /// split, so code beside text reads as inline code, where message
         /// rendering gives it its own lines. Otherwise the code, its fences
         /// and the blank lines Discord trims beside it keep the block's chrome.
-        private func styleBlockLine(_ pieces: [SourceLine], collector: SourceFormatCollector) {
+        private func styleBlockLine(
+            _ pieces: [SourceLine], collector: SourceFormatCollector, startsBlock: Bool, followsBlankLine: Bool
+        ) {
             let hasText = pieces.contains { if case .text = $0 { true } else { false } }
-            line = hasText ? AppKitPlan.Line(runs: [], block: .paragraph) : DiscordMarkdown.codeLine("", language: nil, isFirstLine: false)
+            line = hasText ? AppKitPlan.Line(runs: [], block: .paragraph) : DiscordMarkdown.codeLine("", language: nil, isFirstLine: startsBlock)
             for piece in pieces {
                 switch piece {
                 case let .fence(fence):
@@ -1624,12 +1637,13 @@ public extension DiscordMarkdown {
                 case let .code(code, _, _) where hasText:
                     style(NSRange(code.startIndex ..< code.endIndex, in: source), as: .inlineCode)
                 case let .code(code, language, isFirstLine):
-                    styleCode(code, language: language, isFirstLine: isFirstLine)
+                    styleCode(code, language: language, isFirstLine: isFirstLine && !followsBlankLine)
                 case let .text(content, _):
                     _ = inlineRuns(content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
                 }
             }
             followsCode = !hasText
+            followsBlankCodeLine = !hasText && !pieces.contains { if case .code = $0 { true } else { false } }
         }
 
         private func styleFence(_ range: NSRange) {

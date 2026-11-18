@@ -227,7 +227,7 @@ enum NativeTimelineEmbedLayout {
                 }
                 let footerIconURL = embed.footer?.proxyIconURL ?? embed.footer?.iconURL
                 let footerTextInset = footerIconURL == nil ? 0 : Metrics.footerTextInset
-                let naturalFooterWidth = footer.map { NativeTimelineEmbedLayout.naturalWidth($0) + footerTextInset } ?? 0
+                let naturalFooterWidth = footer.map { NativeTimelineEmbedLayout.idealWidth($0) + footerTextInset } ?? 0
                 let naturalContentWidth = max(
                     naturalTopWidth,
                     naturalMediaSize?.width ?? 0,
@@ -582,20 +582,20 @@ enum NativeTimelineEmbedLayout {
         provider: NativeTimelineAttributedTextBox?
     ) -> CGFloat {
         var width = max(
-            author.map { naturalWidth($0) + authorTextInset } ?? 0,
-            title.map(naturalWidth) ?? 0,
-            description.map(naturalWidth) ?? 0,
-            provider.map(naturalWidth) ?? 0
+            author.map { idealWidth($0) + authorTextInset } ?? 0,
+            title.map(idealWidth) ?? 0,
+            description.map(idealWidth) ?? 0,
+            provider.map(idealWidth) ?? 0
         )
         for row in fieldRows(fields) {
             if row.count == 1, row[0].field.isInline == false {
                 width = max(
                     width,
-                    max(naturalWidth(row[0].name), naturalWidth(row[0].value))
+                    max(idealWidth(row[0].name), idealWidth(row[0].value))
                 )
             } else {
                 let fieldsWidth = row.reduce(CGFloat.zero) {
-                    $0 + max(Metrics.fieldMinimumWidth, naturalWidth($1.name), naturalWidth($1.value))
+                    $0 + max(Metrics.fieldMinimumWidth, idealWidth($1.name), idealWidth($1.value))
                 }
                 width = max(
                     width,
@@ -720,13 +720,6 @@ enum NativeTimelineEmbedLayout {
         }
         guard !values.isEmpty else { return nil }
         return values.joined(separator: " • ")
-    }
-
-    /// `box`'s width with its text at the default message size: Discord
-    /// sizes a card to its text in pixels, so the card keeps its width as
-    /// Message Font Size grows and larger text wraps inside it.
-    private static func naturalWidth(_ box: NativeTimelineAttributedTextBox) -> CGFloat {
-        idealWidth(box) / InterfaceTypographyMetrics.messageLength(1)
     }
 
     static func idealWidth(

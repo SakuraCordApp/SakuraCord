@@ -93,6 +93,9 @@ import Testing
     #expect(code("```swift\n\nlet a = 1\n\n```") == ["code:let a = 1"])
     // Discord reads a spoiler before the code in it, which stays hidden.
     #expect(code("||```secret```||") == ["inline:secret"])
+    // A spoiler that doesn't close on its line, or a masked link, doesn't hide a block.
+    #expect(code("a || b\n```\nif (a || b) {}\n```") == ["text:a || b\n", "code:if (a || b) {}"])
+    #expect(!code("[```x```](https://example.com)").contains { $0.hasPrefix("code:") })
     // The composer reads bold after a one-line block, and text after a
     // mid-line close, as message rendering does.
     let draft = "```code```\n**bold**\n```\nx\n```"
