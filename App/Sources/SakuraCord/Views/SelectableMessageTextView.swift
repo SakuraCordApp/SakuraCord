@@ -238,7 +238,7 @@ final class RichMessageNSTextView: NSTextView {
     var onRevealSpoiler: (Int) -> Void = { _ in }
     private var hoveredMentionLocation: Int?
     private var hoveredAttachmentLocation: Int?
-    private var dismissedTimestampLocation: Int?
+    private var dismissedAttachmentLocation: Int?
     let timestampLabel = StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
     private var hoveredLinkRange: NSRange?
     private var mentionTrackingArea: NSTrackingArea?
@@ -355,7 +355,7 @@ final class RichMessageNSTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        dismissedTimestampLocation = hoveredAttachmentLocation
+        dismissedAttachmentLocation = hoveredAttachmentLocation
         timestampLabel.close()
         claimSelectionOwnership()
         let point = convert(event.locationInWindow, from: nil)
@@ -410,8 +410,8 @@ final class RichMessageNSTextView: NSTextView {
         let hovered = point.flatMap(anyMentionAttachment(at:))
         guard hovered?.0 != hoveredAttachmentLocation else { return }
         hoveredAttachmentLocation = hovered?.0
-        if hovered?.0 != dismissedTimestampLocation { dismissedTimestampLocation = nil }
-        guard dismissedTimestampLocation == nil, let (index, attachment) = hovered,
+        if hovered?.0 != dismissedAttachmentLocation { dismissedAttachmentLocation = nil }
+        guard dismissedAttachmentLocation == nil, let (index, attachment) = hovered,
               let token = DiscordTimestampToken(rawToken: attachment.presentation.rawToken),
               let anchor = mentionPopoverAnchor(at: index, rawToken: attachment.presentation.rawToken)
         else {

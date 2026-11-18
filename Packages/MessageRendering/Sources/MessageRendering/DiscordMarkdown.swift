@@ -58,29 +58,27 @@ public enum DiscordMarkdown {
         static let maskedLinks = Self(rawValue: 1 << 3)
         static let headings = Self(rawValue: 1 << 4)
         static let lists = Self(rawValue: 1 << 5)
-        /// User, @everyone and @here mentions.
-        static let userMentions = Self(rawValue: 1 << 6)
-        static let roleMentions = Self(rawValue: 1 << 7)
+        /// User, role, @everyone and @here mentions.
+        static let mentions = Self(rawValue: 1 << 6)
         /// A `>` marker after spaces, as Discord's blockQuote rule allows.
         /// Message rendering reads markers at the line start.
-        static let indentedQuotes = Self(rawValue: 1 << 8)
+        static let indentedQuotes = Self(rawValue: 1 << 7)
 
         public static let message: Self = [
-            .codeBlocks, .code, .strikethroughAndSpoilers, .maskedLinks, .headings, .lists, .userMentions, .roleMentions,
+            .codeBlocks, .code, .strikethroughAndSpoilers, .maskedLinks, .headings, .lists, .mentions,
         ]
         /// `PROFILE_BIO_RULES`, parsed as `parseBioReact` does: without code
         /// blocks or user and role mentions, and without the headings, lists
         /// and masked links its parser state never allows.
         public static let profileBio = message
-            .subtracting([.codeBlocks, .headings, .lists, .maskedLinks, .userMentions, .roleMentions])
+            .subtracting([.codeBlocks, .headings, .lists, .maskedLinks, .mentions])
             .union(.indentedQuotes)
         /// Personal profile widgets: emphasis, underline and links only.
         static let profileWidget: Self = .maskedLinks
 
         func renders(_ mention: RenderedMention.Kind) -> Bool {
             switch mention {
-            case .user, .broadcast: contains(.userMentions)
-            case .role: contains(.roleMentions)
+            case .user, .broadcast, .role: contains(.mentions)
             default: true
             }
         }
