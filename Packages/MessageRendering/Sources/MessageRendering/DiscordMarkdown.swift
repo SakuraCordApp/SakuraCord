@@ -718,12 +718,17 @@ public enum DiscordMarkdown {
                 }
             }
 
-            if source[cursor] == "`", rules.contains(.code), let code = inlineCode(in: source, at: cursor) {
-                flushPlain()
-                result.append(inlineCodeRun(
-                    source[code.content], fence: source[cursor ..< code.content.lowerBound],
-                    traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
-                ))
+            if source[cursor] == "`", rules.contains(.code) {
+                let code = inlineCode(in: source, at: cursor)
+                if let content = code.content {
+                    flushPlain()
+                    result.append(inlineCodeRun(
+                        source[content], fence: source[cursor ..< content.lowerBound],
+                        traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
+                    ))
+                } else if sourceCollector == nil {
+                    plain += source[cursor ..< code.end]
+                }
                 cursor = code.end
                 continue
             }
@@ -986,8 +991,8 @@ public enum DiscordMarkdown {
         if source[cursor] == "\\", next < source.endIndex {
             return source.index(after: next)
         }
-        if source[cursor] == "`", let code = inlineCode(in: source, at: cursor) {
-            return code.end
+        if source[cursor] == "`" {
+            return inlineCode(in: source, at: cursor).end
         }
         if let link = markdownLinkTarget(in: source, at: cursor, collector: collector) {
             return link.end
@@ -1878,14 +1883,15 @@ extension DiscordMarkdown {
     /// linear time: fenced by a run of backticks and closed by the first later
     /// run of exactly its length, free to span lines. The regex retries a
     /// shorter opening when a longer one finds no close. Where none closes,
-    /// the backtick is text.
+    /// the run is text, `end` its end: each shorter opening inside it would
+    /// search the same text and find no close either.
     private static func inlineCode(
         in source: Substring, at start: String.Index
-    ) -> (content: Range<String.Index>, end: String.Index)? {
+    ) -> (content: Range<String.Index>?, end: String.Index) {
         let opening = source[start...].prefix { $0 == "`" }.count
-        guard opening > 0 else { return nil }
+        let openingEnd = source.index(start, offsetBy: opening)
         var firstRuns: [Int: Range<String.Index>] = [:]
-        var cursor = source.index(start, offsetBy: opening)
+        var cursor = openingEnd
         while let runStart = source[cursor...].firstIndex(of: "`") {
             let runEnd = source[runStart...].firstIndex { $0 != "`" } ?? source.endIndex
             let length = source.distance(from: runStart, to: runEnd)
@@ -1899,7 +1905,7 @@ extension DiscordMarkdown {
                 return (source.index(start, offsetBy: length) ..< close.lowerBound, close.upperBound)
             }
         }
-        return nil
+        return (nil, openingEnd)
     }
 
     /// Each `` `code` `` span in rules without code blocks, backticks
@@ -1919,11 +1925,11 @@ extension DiscordMarkdown {
             }
             if source[cursor] == "\\" {
                 cursor = source.index(cursor, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
-            } else if source[cursor] == "`",
-                      let code = inlineCode(
-                          in: source[..<blockEnd(source, containing: cursor, rules: rules, multilineQuote: multilineQuote)], at: cursor
-                      ) {
-                spans.append(cursor ..< code.end)
+            } else if source[cursor] == "`" {
+                let code = inlineCode(
+                    in: source[..<blockEnd(source, containing: cursor, rules: rules, multilineQuote: multilineQuote)], at: cursor
+                )
+                if code.content != nil { spans.append(cursor ..< code.end) }
                 cursor = code.end
             } else {
                 cursor = source.index(after: cursor)

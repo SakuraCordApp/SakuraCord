@@ -254,8 +254,8 @@ public struct MessageDocument: Hashable, Sendable {
         codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
     ) -> Bool {
         if isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) { return true }
-        let tokenRange = NSRange(range, in: source)
         if [.game, .broadcast, .timestamp, .command].contains(mention.kind) {
+            let tokenRange = NSRange(range, in: source)
             let urls = urlRanges ?? Self.urlRanges(in: source)
             urlRanges = urls
             if urls.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }

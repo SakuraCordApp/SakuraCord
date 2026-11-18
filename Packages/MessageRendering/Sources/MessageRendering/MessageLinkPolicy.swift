@@ -44,10 +44,10 @@ public enum MessageLinkPolicy {
         let queryStart = rest[..<fragmentStart].firstIndex(of: "?") ?? fragmentStart
         text += displayed(resolvingDotSegments(rest[..<queryStart])[...], encoding: "`{}")
         // An empty query or fragment shows neither its `?` nor its `#`.
-        if rest[queryStart ..< fragmentStart].count > 1 {
-            text += "?" + displayed(rest[rest.index(after: queryStart) ..< fragmentStart], encoding: "'")
-        }
-        if rest[fragmentStart...].count > 1 { text += "#" + displayed(rest[rest.index(after: fragmentStart)...], encoding: "`") }
+        let query = rest[queryStart ..< fragmentStart].dropFirst()
+        if !query.isEmpty { text += "?" + displayed(query, encoding: "'") }
+        let fragment = rest[fragmentStart...].dropFirst()
+        if !fragment.isEmpty { text += "#" + displayed(fragment, encoding: "`") }
         return text
     }
 
