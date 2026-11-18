@@ -425,11 +425,10 @@ nonisolated enum MediaGalleryPlan {
 
     static func frames(
         count: Int, width: CGFloat, aspectRatios: [CGFloat], intrinsicSizes: [CGSize] = [],
-        spacing: CGFloat, equalWidthColumns: Bool = false
+        spacing: CGFloat, equalWidthColumns: Bool = false, maximumHeight: CGFloat = InterfaceScale.metric(350)
     ) -> [CGRect]
     {
         guard count > 0 else { return [] }
-        let maximumHeight = InterfaceScale.metric(350)
         if count == 1 {
             if let intrinsicSize = intrinsicSizes.first,
                intrinsicSize.width > 0, intrinsicSize.height > 0
