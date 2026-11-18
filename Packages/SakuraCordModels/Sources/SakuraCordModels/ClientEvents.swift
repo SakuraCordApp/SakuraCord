@@ -100,6 +100,8 @@ public enum ClientEvent: Equatable, Sendable {
     case currentUserChanged(User)
     case currentUserStatusChanged(PresenceStatus)
     case profileInvalidated(userID: UserID)
+    /// GUILD_MEMBER_ADD or GUILD_MEMBER_REMOVE for that user and server.
+    case guildMembershipChanged(guildID: GuildID, userID: UserID, isMember: Bool)
     case profileChanged(userID: UserID, scope: ProfileEditingScope, profile: UserProfile?)
     case profileCustomStatusChanged(userID: UserID, status: ProfileCustomStatus?)
     case profileWidgetConnectionsChanged(userID: UserID, connections: [String: ProfileWidgetConnection])

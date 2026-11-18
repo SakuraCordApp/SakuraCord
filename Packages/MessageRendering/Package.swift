@@ -7,7 +7,7 @@ let package = Package(
     products: [.library(name: "MessageRendering", targets: ["MessageRendering"])],
     dependencies: [.package(path: "../SakuraCordModels")],
     targets: [
-        .target(name: "MessageRendering", dependencies: ["SakuraCordModels"]),
+        .target(name: "MessageRendering", dependencies: ["SakuraCordModels"], resources: [.process("Resources")]),
         .testTarget(name: "MessageRenderingTests", dependencies: ["MessageRendering"])
     ]
 )

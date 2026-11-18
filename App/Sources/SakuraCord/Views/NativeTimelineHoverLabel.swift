@@ -73,7 +73,7 @@ extension NativeTimelineCanvasView {
     private func hoverLabelTitle(for target: NativeTimelineHoverLabelTarget) -> String? {
         switch target {
         case let .timestamp(hover):
-            DiscordTimestampToken(rawToken: hover.rawToken)?.date.formatted(date: .complete, time: .shortened)
+            DiscordTimestampToken(rawToken: hover.rawToken)?.hoverTitle
         case .silentBadge:
             NativeTimelineSilentBadge.help
         }

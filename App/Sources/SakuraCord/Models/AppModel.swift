@@ -277,6 +277,8 @@ final class AppModel {
 
     var membersByID: [UserID: Member] = [:]
     @ObservationIgnored var membersByGuildID: [GuildID: [UserID: Member]] = [:]
+    /// Users who left each server this session; `membersByGuildID` keeps them for message history.
+    var removedMemberIDsByGuildID: [GuildID: Set<UserID>] = [:]
     var profileCustomStatus: ProfileCustomStatus?
     var profileCustomStatusUserID: UserID?
     var profileWidgetConnectionsRevision = UUID()
@@ -308,7 +310,6 @@ final class AppModel {
     @ObservationIgnored var guildRolesByGuildID: [GuildID: [GuildRole]] = [:] {
         didSet { if oldValue != guildRolesByGuildID { emojiEligibilityRevision &+= 1 } }
     }
-    var mentionMemberResults: [Member] = []
     var mentionAutocompleteMembers: [Member] = []
     var knownMentionMembers: [UserID: Member] = [:] {
         didSet {

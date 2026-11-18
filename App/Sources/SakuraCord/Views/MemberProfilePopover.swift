@@ -64,6 +64,7 @@ struct ProfilePresentationContent<Footer: View>: View {
                     maximumPopoverHeight: maximumPopoverHeight,
                     showsRoles: showsRoles,
                     bottomPadding: showsQuickMessage ? ProfileQuickMessageMetrics.cardInset : InterfaceScale.metric(14),
+                    guild: presentation.guildID.flatMap { model?.serverRailGuildsByID[$0] },
                     footer: VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
                         footer
                         if showsQuickMessage, let sendMessage {
@@ -166,6 +167,7 @@ struct MemberProfilePopover<Footer: View>: View {
     var maximumPopoverHeight: CGFloat = InterfaceScale.metric(560)
     var showsRoles = true
     var bottomPadding: CGFloat = InterfaceScale.metric(14)
+    var guild: Guild?
     let footer: Footer
     var openProfile: (() -> Void)?
     var userMenu: (() -> NSMenu?)?
@@ -337,7 +339,7 @@ struct MemberProfilePopover<Footer: View>: View {
                         CompactProfileWidgets(widgets: widgets, resources: profile.widgetResources, animates: animatesRemoteMedia, open: expandProfile)
                             .padding(.horizontal, InterfaceScale.metric(16))
                     }
-                    ProfileMembershipSection(createdAt: profile.id.createdAt)
+                    ProfileMembershipSection(createdAt: profile.id.createdAt, guild: guild, guildJoinedAt: member.joinedAt)
                     if showsRoles, !profile.roles.isEmpty {
                         ProfileRolesSection(roles: profile.roles, keepsExpanded: layout == .expanded)
                             .id(profile.id)
@@ -689,8 +691,7 @@ struct ProfileStatusBubble: View {
             source: text,
             font: .interfaceSystemFont(ofSize: fontSize),
             color: .labelColor,
-            emojiImages: [:],
-            stylesLinks: false
+            emojiImages: [:]
         )
         return ceil(attributedText.size().width) + 2
     }
@@ -1117,7 +1118,7 @@ private struct ProfileAboutSection: View {
 
     var body: some View {
         if let bio, !bio.isEmpty {
-            ProfileRichTextView(source: bio)
+            ProfileBioText(source: bio)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

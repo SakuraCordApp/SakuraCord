@@ -18,7 +18,8 @@ script/simulator.sh ctl world             # accounts, guilds, channels
 script/simulator.sh stop
 ```
 
-Debug builds launched with `--discord-simulator [PORT]` rewrite Discord hosts
+Debug builds launched with `--discord-simulator [PORT]`, or relaunched from a
+bundle the launch scripts recorded as a simulator launch, rewrite Discord hosts
 to the simulator when a request is made (`DiscordNetworkRedirect`); data keeps
 real URLs. Simulator accounts, tokens and caches live apart from real ones
 (`SimulatorAccountStorage`), so a real token is never sent to the simulator.
@@ -95,9 +96,12 @@ Discord runs them: INTERACTION_CREATE, the bot's reply, INTERACTION_SUCCESS.
 In `demo-lite` and the account modes, Pip answers `/gamenight` and `/digest`, and its RSVP buttons update
 the card.
 
-The default epoch ("now") is the most recent Sunday 21:30 in the Mac's time
-zone, which is what the demo conversation is written for; pass `--epoch` for
-runs that must be identical on any day.
+The default epoch ("now") is the Mac's current time, so simulated timestamps
+agree with the app's clock. The demo conversation is written for an evening and
+keeps its times of day: its last moment is the latest 21:30 at or before the
+epoch in the Mac's time zone, and its weekday words are filled in from the
+dates. Pass `--epoch` for runs that must be identical whenever they run on
+Macs in the same time zone.
 
 ## Control API and CLI
 

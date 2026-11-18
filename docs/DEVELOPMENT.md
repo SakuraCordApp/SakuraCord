@@ -67,6 +67,14 @@ first-run onboarding and the production sign-in flow against it. Simulator
 sessions keep accounts, client identity, onboarding and the last conversation
 apart from real ones.
 
+A simulator launch records its port on the debug bundle as the extended
+attribute `dev.sakuracord.DiscordSimulatorPort`, so opening that bundle
+again by path alone (Finder, `open`, Computer Use) stays on the simulator, even
+when the simulator is not running; it then fails to connect rather than
+reaching Discord. Repackaging keeps the record; any other launch through the
+scripts, including `run.sh` without `--simulator`, removes it. Simulator
+launches refuse a build too old to read the record.
+
 | Scenario | Contents |
 | --- | --- |
 | `demo` | A medium account: ~60–80 generated servers (many large public ones) around the hand-written ones, ~100 DMs, folders, unreads and mentions, constant live activity |

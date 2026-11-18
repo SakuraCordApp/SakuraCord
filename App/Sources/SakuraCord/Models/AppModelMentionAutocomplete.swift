@@ -16,8 +16,7 @@ extension AppModel {
             return MentionAutocompleteSuggestionFactory.memberSuggestions(
                 query: context.query,
                 recentMessages: recentMessages(),
-                localMembers: mentionAutocompleteMembers.filter { !isUserIgnored($0.id) },
-                remoteMembers: mentionMemberResults.filter { !isUserIgnored($0.id) },
+                members: mentionAutocompleteMembers.filter { !isUserIgnored($0.id) },
                 roles: guildRoles,
                 isGuildChannel: selectedChannel?.guildID != nil,
                 canMentionNonMentionableRoles: MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
@@ -45,7 +44,6 @@ extension AppModel {
             mentionMemberSearchTask?.cancel()
             mentionMemberSearchTask = nil
             mentionMemberSearchQuery = nil
-            mentionMemberResults = []
             return
         }
         let key = CommandMemberQuery(guildID: guildID, query: normalized.lowercased())
@@ -55,14 +53,19 @@ extension AppModel {
             mentionMemberSearchTask?.cancel()
             mentionMemberSearchTask = nil
             mentionMemberSearchQuery = nil
-            mentionMemberResults = cached.members
+            // The cached reply can be older than member updates since, so it
+            // only adds members the store doesn't hold. Assigning only on a
+            // change avoids re-rendering the composer on every keystroke.
+            let merged = MentionAutocompleteSuggestionFactory.appendingMissingMembers(
+                cached.members, to: mentionAutocompleteMembers
+            )
+            if merged.count > mentionAutocompleteMembers.count { mentionAutocompleteMembers = merged }
             return
         }
         mentionMemberSearchCache[key] = nil
         guard mentionMemberSearchQuery != key else { return }
         mentionMemberSearchTask?.cancel()
         mentionMemberSearchQuery = key
-        mentionMemberResults = []
         let session = accountSession()
         mentionMemberSearchTask = Task { [weak self] in
             guard let self else { return }
@@ -83,7 +86,8 @@ extension AppModel {
                     members: results,
                     storedAt: Date()
                 )
-                mentionMemberResults = results
+                // Op 8 returns only a server-side prefix subset, so its
+                // members join the cached store and are ranked with it.
                 mergeMentionAutocompleteMembers(results)
                 for member in results { knownMentionMembers[member.id] = member }
                 mentionMemberSearchQuery = nil
@@ -95,7 +99,6 @@ extension AppModel {
                 else { return }
                 DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
                 mentionMemberSearchQuery = nil
-                mentionMemberResults = []
             }
         }
     }

@@ -201,7 +201,7 @@ private let plans = [
     "dinner at the noodle place", "early swim", "long walk by the river", "board games after",
 ]
 private let surprises = [
-    "it's already friday", "the cat learned to open doors", "i finished a whole puzzle", "the shop had my size",
+    "i slept nine hours", "the cat learned to open doors", "i finished a whole puzzle", "the shop had my size",
     "it didn't rain", "my tomatoes are actually growing", "the bus was early",
 ]
 private let reactionsOpeners = ["obsessed with", "not sure about", "thinking about", "still recovering from", "big fan of"]

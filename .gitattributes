@@ -1,5 +1,5 @@
 App/Sources/SakuraCord/Resources/emoji-catalog.json -diff linguist-generated=true
-App/Sources/SakuraCord/Resources/emoji-frecency-keys.json -diff linguist-generated=true
+Packages/MessageRendering/Sources/MessageRendering/Resources/discord-emoji-names.json -diff linguist-generated=true
 Packages/DiscordSimulator/Sources/CDave/** linguist-vendored=true linguist-generated=true
 Packages/DiscordSimulator/Sources/CMLS/** linguist-vendored=true linguist-generated=true
 Packages/DiscordSimulator/Sources/CJSON/** linguist-vendored=true linguist-generated=true

@@ -9,7 +9,12 @@ enum DiscordRichMessageMetrics {
     /// Discord lays Components V2 out up to 600 pixels wide.
     static var componentsMaximumWidth: CGFloat { px(600) }
     static var cardCornerRadius: CGFloat { px(8) }
-    static var embedCornerRadius: CGFloat { px(4) }
+    /// An embed keeps its card geometry as its text grows, as Discord's does.
+    static var embedCornerRadius: CGFloat { fixedPx(4) }
+    /// The colour bar on a container's leading edge.
+    static var accentBarWidth: CGFloat { px(4) }
+    /// The colour bar on an embed's leading edge, which keeps its width as the text grows.
+    static var embedAccentBarWidth: CGFloat { fixedPx(4) }
     /// A container's 16-pixel padding inside its 1-point border.
     static var cardPadding: CGFloat { px(16) + InterfaceScale.metric(1) }
 
@@ -17,7 +22,28 @@ enum DiscordRichMessageMetrics {
     /// 16-pixel message text, which SakuraCord draws at `messageTextSize`,
     /// so every Discord length keeps its proportion to the text.
     nonisolated static func px(_ value: CGFloat) -> CGFloat {
-        InterfaceScale.metric((value * InterfaceTypographyMetrics.messageTextSize / 16 * 2).rounded() / 2)
+        px(value, textSize: InterfaceTypographyMetrics.messageTextSize)
+    }
+
+    /// One of Discord's CSS pixels at the default message text, for the
+    /// lengths Discord keeps when its text grows, such as an embed's card
+    /// and media.
+    nonisolated static func fixedPx(_ value: CGFloat) -> CGFloat {
+        px(value, textSize: InterfaceTypographyMetrics.defaultMessageTextSize)
+    }
+
+    private nonisolated static func px(_ value: CGFloat, textSize: CGFloat) -> CGFloat {
+        InterfaceScale.metric((value * textSize / 16 * 2).rounded() / 2)
+    }
+
+    /// A Discord font size in pixels, as a message-content size at the
+    /// default message text, so it scales with Message Font Size like `px`.
+    nonisolated static func textSize(_ value: CGFloat) -> CGFloat {
+        value * InterfaceTypographyMetrics.defaultMessageTextSize / 16
+    }
+
+    nonisolated static func font(_ value: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        .messageSystemFont(ofSize: textSize(value), weight: weight)
     }
 }
 
@@ -58,6 +84,13 @@ nonisolated enum MessageEmbedPresentationKind: Equatable {
 }
 
 nonisolated enum MessageEmbedPresentation {
+    /// How Discord parses an embed's title and field names: only in rich
+    /// embeds, and without bare links when the embed itself links.
+    static func titleRules(for embed: MessageEmbed) -> DiscordMarkdown.Rules? {
+        guard embed.type?.lowercased() == "rich" else { return nil }
+        return .embedTitle(allowsLinks: embed.url == nil)
+    }
+
     static func visibleEmbeds(
         for message: Message
     ) -> [MessageEmbed] {
@@ -406,11 +439,10 @@ nonisolated enum MediaGalleryPlan {
 
     static func frames(
         count: Int, width: CGFloat, aspectRatios: [CGFloat], intrinsicSizes: [CGSize] = [],
-        spacing: CGFloat, equalWidthColumns: Bool = false
+        spacing: CGFloat, equalWidthColumns: Bool = false, maximumHeight: CGFloat = InterfaceScale.metric(350)
     ) -> [CGRect]
     {
         guard count > 0 else { return [] }
-        let maximumHeight = InterfaceScale.metric(350)
         if count == 1 {
             if let intrinsicSize = intrinsicSizes.first,
                intrinsicSize.width > 0, intrinsicSize.height > 0

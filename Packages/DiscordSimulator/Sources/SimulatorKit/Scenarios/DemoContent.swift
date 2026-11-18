@@ -3,8 +3,9 @@ import Foundation
 /// The demo world: a small server of friends ("The Porch"), a boosted
 /// community-garden server, DMs and a group DM, seen by the signed-in `wren`.
 ///
-/// Day 0 is a Sunday and the scenario epoch is `now` on that day, so weekday
-/// words in the chat ("saturday", "thursday") line up with the timeline.
+/// Lines are written for an evening (`now` is 21:30 on day 0), and day 0 is
+/// whichever weekday the world starts on, so the chat names weekdays with
+/// `<day:…>` placeholders.
 public enum DemoContent {
     public static let selfKey = "wren"
     public static let now = DemoTime(day: 0, 21, 30)
@@ -151,7 +152,7 @@ public enum DemoContent {
         Msg("wren", at(-12, 20, 16), "both. that's what makes it a family heirloom"),
         Msg("tomas", at(-12, 20, 17), "it's from a flea market"),
         Msg("wren", at(-12, 20, 17), "a family heirloom *in progress*"),
-        Msg("tomas", at(-9, 11, 2), "booked the van for saturday 8:30 🚐 can you drive it? i panic on roundabouts"),
+        Msg("tomas", at(-9, 11, 2), "booked the van for <day:-1:l> 8:30 🚐 can you drive it? i panic on roundabouts"),
         Msg("wren", at(-9, 11, 5), "yes, if i get to pick the music", label: "van"),
         Msg("tomas", at(-9, 11, 5), "deal. no sea shanties", replyTo: "van"),
         Msg("wren", at(-9, 11, 6), "no promises"),
@@ -166,7 +167,7 @@ public enum DemoContent {
     ])
 
     static let dmHana = DemoDirectChannel("dm-hana", recipients: ["hana"], messages: [
-        Msg("hana", at(-6, 13, 10), "ok so. nico's birthday is sunday. cake idea. you cannot tell him", label: "idea"),
+        Msg("hana", at(-6, 13, 10), "ok so. nico's birthday is <day:0:l>. cake idea. you cannot tell him", label: "idea"),
         Msg("wren", at(-6, 13, 12), "my lips are sealed 🤐"),
         Msg("hana", at(-6, 13, 13), "||a frog. the whole cake is a frog. little cheeks and everything||", label: "secret"),
         Msg("wren", at(-6, 13, 13), "HANA", replyTo: "secret"),
@@ -204,7 +205,7 @@ public enum DemoContent {
     static let moveCrew = DemoDirectChannel(
         "gdm-move", recipients: ["tomas", "oskar", "rafi"], name: "move crew 📦",
         icon: DemoImageStyle(seed: 0x60e, palette: 4, art: .drawing(.box, background: 0xff8a65)), owner: "tomas", messages: [
-            Msg("tomas", at(-8, 17, 0), "made a chat for saturday logistics. you're here because you have arms"),
+            Msg("tomas", at(-8, 17, 0), "made a chat for <day:-1:l> logistics. you're here because you have arms"),
             Msg("tomas", at(-8, 17, 1), "", system: .recipientAdded("rafi")),
             Msg("rafi", at(-8, 17, 3), "and a chain tool"),
             Msg("tomas", at(-8, 17, 5), "", system: .channelNameChanged("move crew 📦")),

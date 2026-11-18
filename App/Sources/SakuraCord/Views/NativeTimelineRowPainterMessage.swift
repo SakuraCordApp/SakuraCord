@@ -565,7 +565,8 @@ extension NativeTimelineRowPainter {
             discordCard(
                 region.frame,
                 cornerRadius: region.cornerRadius,
-                accent: NSColor(discordColor: region.accentColor) ?? DiscordEmbedPalette.defaultAccent
+                accent: NSColor(discordColor: region.accentColor) ?? DiscordEmbedPalette.defaultAccent,
+                accentWidth: DiscordRichMessageMetrics.embedAccentBarWidth
             )
         } else if region.kind == .bubbleIntegratedCard, let bubbleRegion {
             bubbleIntegratedSection(
