@@ -41,6 +41,81 @@ import Testing
     #expect(DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("**text [label*](https://example.com) end**")).string == "text label* end")
 }
 
+// Leaderboard bots name fields `1. Alice`; Discord shows these and other
+// block syntax as text in embed titles and field names.
+@Test func `embed titles parse inline markdown without lists headings or subtext`() throws {
+    for source in ["1. Alice", "- Daily", "# Weekly", "-# beta"] {
+        let plan = DiscordMarkdown.appKitPlan(source, rules: .embedTitle(allowsLinks: true))
+        let rendered = DiscordMarkdown.appKitAttributed(plan)
+        #expect(rendered.string == source)
+        #expect(rendered.attribute(.discordMarkdownListMarker, at: 0, effectiveRange: nil) == nil)
+        let font = try #require(rendered.attribute(.font, at: rendered.length - 1, effectiveRange: nil) as? NSFont)
+        #expect(font.pointSize == 15)
+    }
+    let linked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[x](https://a.example) *Level*", rules: .embedTitle(allowsLinks: false)))
+    #expect(linked.string == "[x](https://a.example) Level")
+    #expect(linked.attribute(.link, at: 5, effectiveRange: nil) == nil)
+    // Titles never parse masked links; their URLs still link, with Discord's
+    // link text, when the embed doesn't.
+    let unlinked = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("[x](https://a.example)", rules: .embedTitle(allowsLinks: true)))
+    #expect(unlinked.string == "[x](https://a.example/)")
+    #expect(unlinked.attribute(.link, at: 0, effectiveRange: nil) == nil)
+    #expect(unlinked.attribute(.link, at: 5, effectiveRange: nil) != nil)
+    // Italic keeps the title's semibold weight.
+    let italic = try #require(linked.attribute(.font, at: linked.length - 1, effectiveRange: nil) as? NSFont)
+    #expect(italic.fontName.contains("SemiboldItalic"))
+}
+
+// Discord's code rules: inline code closes at a backtick run of its own
+// length, and a block opens at any three backticks and closes at the next
+// three, even mid-line.
+@Test func `code closes at matching backtick runs and the next fence`() {
+    func code(_ source: String) -> [String] {
+        let value = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan(source))
+        var kinds: [(kind: String, text: String)] = []
+        value.enumerateAttributes(in: NSRange(location: 0, length: value.length)) { attributes, range, _ in
+            let kind = attributes[.discordMarkdownInlineCode] != nil ? "inline" : (attributes[.discordMarkdownBlock] as? String ?? "text")
+            let text = (value.string as NSString).substring(with: range)
+            if kinds.last?.kind == kind { kinds[kinds.count - 1].text += text } else { kinds.append((kind, text)) }
+        }
+        return kinds.map { "\($0.kind):\($0.text)" }
+    }
+    #expect(code("``a`b`` c") == ["inline:a`b", "text: c"])
+    #expect(code("``a` c") == ["inline:`a", "text: c"])
+    #expect(code("```code```\nhello") == ["code:code", "text:\nhello"])
+    #expect(code("```\ncode```after") == ["code:code", "text:\nafter"])
+    let title = DiscordMarkdown.appKitAttributed(DiscordMarkdown.appKitPlan("```x``` ``y``", rules: .embedTitle(allowsLinks: true)))
+    #expect(title.string == "x y")
+    // A fence that nothing closes is text, after an earlier one-line block.
+    #expect(code("a\n```x```\n```\nunclosed") == ["text:a\n", "code:x", "text:\n```\nunclosed"])
+    // A block opens at any three backticks, splitting the sentence around it.
+    #expect(code("One ```x``` fence") == ["text:One \n", "code:x", "text:\n fence"])
+    #expect(code("Mid-line: ```\nlet a = 1```after") == ["text:Mid-line: \n", "code:let a = 1", "text:\nafter"])
+    #expect(code("```swift\n\nlet a = 1\n\n```") == ["code:let a = 1"])
+    // Discord reads a spoiler before the code in it, which stays hidden.
+    #expect(code("||```secret```||") == ["inline:secret"])
+    // A spoiler that doesn't close on its line, or a masked link, doesn't hide a block.
+    #expect(code("a || b\n```\nif (a || b) {}\n```") == ["text:a || b\n", "code:if (a || b) {}"])
+    #expect(!code("[```x```](https://example.com)").contains { $0.hasPrefix("code:") })
+    // The composer reads bold after a one-line block, and text after a
+    // mid-line close, as message rendering does.
+    let draft = "```code```\n**bold**\n```\nx\n```"
+    #expect(DiscordMarkdown.sourceFormats(draft).map(\.range) == [(draft as NSString).range(of: "bold")])
+    let closed = "```\nc\n```**hi**"
+    let styled = DiscordMarkdown.appKitSourceAttributed(closed, attributes: [:], baseFontSize: 14, usesMessageLineHeight: false)
+    let font = styled.attribute(.font, at: (closed as NSString).range(of: "hi").location, effectiveRange: nil) as? NSFont
+    #expect(font?.fontDescriptor.symbolicTraits.contains(.monoSpace) == false)
+    #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+    let oneLine = DiscordMarkdown.appKitSourceAttributed("```x```", attributes: [:], baseFontSize: 14, usesMessageLineHeight: false)
+    #expect(oneLine.attribute(.discordMarkdownBlock, at: 3, effectiveRange: nil) as? String == "code")
+    // Code on a block's closing line keeps its syntax colours.
+    let swift = "```swift\nlet a = 1\nlet b = 2```"
+    let coloured = DiscordMarkdown.appKitSourceAttributed(swift, attributes: [:], baseFontSize: 14, usesMessageLineHeight: false)
+    let keyword = { (location: Int) in coloured.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor }
+    #expect(keyword((swift as NSString).range(of: "let b").location) == keyword((swift as NSString).range(of: "let a").location))
+    #expect(keyword((swift as NSString).range(of: "let b").location) != keyword((swift as NSString).range(of: "b = 2").location))
+}
+
 @Test func `angle bracket masked links match discord rendering`() throws {
     let source =
         "[portfolio](<https://exyron.dev>) and [docs](<https://example.com/docs>)"
@@ -436,13 +511,13 @@ import Testing
     #expect(mentions.first?.rawToken == token)
 }
 
-@Test func `new mention types stay literal in code and escaped text`() {
+@Test func `custom emoji and mentions stay literal in code and escaped text`() {
     let tokens = ["@everyone", "<t:1000000:R>", "<@$356875221078245376>", "</role add:1234>", "<@1234>", "<#1234>"]
-    let raw = tokens.joined(separator: " ")
+    let raw = tokens.joined(separator: " ") + " <:x:1> <a:y:2>"
     for source in [
-        "🌸 `\(raw)`", "**`\(raw)`**", "```swift\n\(raw)\n```",
+        "🌸 `\(raw)`", "``\(raw)``", "``a`\(raw)``", "**`\(raw)`**", "```swift\n\(raw)\n```", "```\(raw)```",
         "* `**\(raw)**`", ">>> quote\n\n* `**\(raw)**`",
-        #"\@everyone \<t:1000000:R> \<@$356875221078245376> \</role add:1234> \<@1234> \<#1234>"#,
+        #"\@everyone \<t:1000000:R> \<@$356875221078245376> \</role add:1234> \<@1234> \<#1234> \<:x:1> \<a:y:2>"#,
         "[open](https://example.com/@here) https://example.com/@everyone",
     ] {
         #expect(MessageDocument(source: source).segments == [.markdown(source)])
@@ -466,6 +541,11 @@ import Testing
     }
     #expect(mentions.map(\.rawToken) == tokens)
     #expect(mentions.map(\.kind) == [.broadcast, .timestamp, .game, .command, .user, .channel])
+    #expect(mixed.segments.filter { if case .customEmoji = $0 { true } else { false } }.count == 2)
+    // A block that closes on its own line, or mid-line, leaves the text after it.
+    for source in ["```code``` <:x:1>", "```code```\n<:x:1>", "```\ncode```\n<:x:1>", "``a`` <:x:1>"] {
+        #expect(MessageDocument(source: source).segments.last == .customEmoji(RenderedEmoji(rawToken: "<:x:1>")!))
+    }
     #expect(mentions[3].commandName == "role add")
     let afterLink = MessageDocument(source: "[read](https://example.com)@here").segments
     #expect(afterLink.last == .mention(RenderedMention(rawToken: "@here")!))

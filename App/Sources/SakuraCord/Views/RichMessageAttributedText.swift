@@ -71,7 +71,8 @@ nonisolated enum RichMessageAttributedText {
         let prepared = Prepared(
             markdownPlan: DiscordMarkdown.appKitPlan(transformed, rules: rules),
             tokens: tokens,
-            isEmojiOnly: document.isEmojiOnly
+            // Embed emoji keep one size, never jumbo.
+            isEmojiOnly: !rules.contains(.title) && document.isEmojiOnly
         )
         return preparedCache.withLock { state in
             if let existing = state.values[key] {

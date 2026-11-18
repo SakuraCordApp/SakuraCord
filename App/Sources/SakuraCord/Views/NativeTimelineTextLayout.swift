@@ -208,6 +208,7 @@ nonisolated final class NativeTimelineResolvedTextCache: Sendable {
         let emojiSize: CGFloat
         let baseFontSize: CGFloat
         let mentions: [MentionPresentation]
+        let link: URL?
         /// The interface size when the key was prepared.
         var interfaceScale = InterfaceScale.factor
     }
@@ -272,7 +273,8 @@ nonisolated extension NativeTimelineResolvedTextCache.Key {
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
         baseFontSize: CGFloat,
-        presentations: [String: MentionPresentation]
+        presentations: [String: MentionPresentation],
+        link: URL? = nil
     ) {
         self.init(
             messageID: messageID,
@@ -280,7 +282,8 @@ nonisolated extension NativeTimelineResolvedTextCache.Key {
             prepared: prepared,
             emojiSize: emojiSize,
             baseFontSize: baseFontSize,
-            mentions: presentations.values.sorted { $0.rawToken < $1.rawToken }
+            mentions: presentations.values.sorted { $0.rawToken < $1.rawToken },
+            link: link
         )
     }
 }
@@ -331,7 +334,8 @@ nonisolated enum NativeTimelineCoreText {
         baseFontSize: CGFloat? = nil,
         bodyScale: CGFloat = 1,
         mentionPresentations: [String: MentionPresentation],
-        usesMessageLineHeight: Bool = false
+        usesMessageLineHeight: Bool = false,
+        link: URL? = nil
     ) -> NSAttributedString {
         let resolvedBaseFontSize =
             prepared.isEmojiOnly
@@ -412,15 +416,12 @@ nonisolated enum NativeTimelineCoreText {
             }
             output.replaceCharacters(in: range, with: replacement)
         }
+        if let link {
+            output.addAttribute(.link, value: link, range: fullRange)
+        }
         output.enumerateAttribute(.link, in: fullRange) { value, range, _ in
             guard value != nil else { return }
-            output.addAttributes(
-                [
-                    .foregroundColor: NSColor.linkColor,
-                    .underlineStyle: 0,
-                ],
-                range: range
-            )
+            output.addAttribute(.foregroundColor, value: NSColor.linkColor, range: range)
         }
         normalizeParagraphMetrics(in: output)
         return output

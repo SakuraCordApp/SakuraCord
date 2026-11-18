@@ -65,18 +65,25 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
             : RichMessageAttributedText.prepare(
                 source: linkedPresentation.visibleText
             )
-        // Embed descriptions and field values are parsed again when their
-        // width-dependent Core Text boxes are built. Prime the bounded,
+        // Embed titles, descriptions, and field names/values are parsed again when
+        // their width-dependent Core Text boxes are built. Prime the bounded,
         // process-local parse cache while message rows are already being
         // prepared off-main so a cold rich channel cannot move markdown
         // tokenization back onto the UI thread during first layout.
         for embed in MessageEmbedPresentation.visibleEmbeds(
             for: message
         ) {
+            let titleRules = MessageEmbedPresentation.titleRules(for: embed)
+            if let titleRules, let title = embed.title {
+                _ = RichMessageAttributedText.prepare(source: title, rules: titleRules)
+            }
             if let description = embed.description {
                 _ = RichMessageAttributedText.prepare(source: description)
             }
             for field in embed.fields {
+                if let titleRules {
+                    _ = RichMessageAttributedText.prepare(source: field.name, rules: titleRules)
+                }
                 _ = RichMessageAttributedText.prepare(source: field.value)
             }
         }

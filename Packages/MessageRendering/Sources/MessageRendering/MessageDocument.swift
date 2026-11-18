@@ -189,7 +189,7 @@ public struct MessageDocument: Hashable, Sendable {
             in: source, range: NSRange(source.startIndex ..< source.endIndex, in: source)
         )
         guard !matches.isEmpty else { return source.isEmpty ? [] : [.markdown(source)] }
-        // Computed only for the mentions that need them; most matches don't.
+        // Computed only for the tokens that need them; most matches don't.
         var codeRanges: [NSRange]?
         var urlRanges: [NSRange]?
         var linkLabels: [NSRange]?
@@ -201,9 +201,10 @@ public struct MessageDocument: Hashable, Sendable {
                 result.append(.markdown(String(source[cursor ..< range.lowerBound])))
             }
             let token = String(source[range])
-            if let emoji = RenderedEmoji(rawToken: token),
-               !isInCode(range, in: source, rules: rules, codeRanges: &codeRanges), !isEscaped(range, in: source) {
-                result.append(.customEmoji(emoji))
+            // Code, links and escapes keep custom emoji as the text they were typed as.
+            if let emoji = RenderedEmoji(rawToken: token) {
+                let isLiteral = isLiteral(range, in: source, rules: rules, inURLs: true, codeRanges: &codeRanges, urlRanges: &urlRanges)
+                result.append(isLiteral ? .markdown(token) : .customEmoji(emoji))
             } else if !rules.contains(.maskedLinks) || !isMaskedLinkTarget(range, in: source),
                       let mention = RenderedMention(rawToken: token), rules.renders(mention.kind),
                       !isLiteralMention(mention, range: range, in: source, rules: rules, codeRanges: &codeRanges, urlRanges: &urlRanges),
@@ -240,32 +241,31 @@ public struct MessageDocument: Hashable, Sendable {
         return ranges
     }
 
-    private static func isInCode(
-        _ range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules, codeRanges: inout [NSRange]?
-    ) -> Bool {
-        let code = codeRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules)
-        codeRanges = code
-        let tokenRange = NSRange(range, in: source)
-        return code.contains { NSIntersectionRange($0, tokenRange).length > 0 }
-    }
-
     private static func isLiteralMention(
         _ mention: RenderedMention, range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules,
         codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
     ) -> Bool {
-        if isInCode(range, in: source, rules: rules, codeRanges: &codeRanges) { return true }
-        if [.game, .broadcast, .timestamp, .command].contains(mention.kind) {
-            let tokenRange = NSRange(range, in: source)
+        let isTokenOnly = [.game, .broadcast, .timestamp, .command].contains(mention.kind)
+        return isLiteral(range, in: source, rules: rules, inURLs: isTokenOnly, codeRanges: &codeRanges, urlRanges: &urlRanges)
+    }
+
+    /// Whether the token at `range` is text: in code, after an escape, or,
+    /// when `inURLs`, in a link's own text.
+    private static func isLiteral(
+        _ range: Range<String.Index>, in source: String, rules: DiscordMarkdown.Rules, inURLs: Bool,
+        codeRanges: inout [NSRange]?, urlRanges: inout [NSRange]?
+    ) -> Bool {
+        let tokenRange = NSRange(range, in: source)
+        let code = codeRanges ?? DiscordMarkdown.sourceCodeRanges(source, rules: rules)
+        codeRanges = code
+        if code.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
+        if inURLs {
             let urls = urlRanges ?? Self.urlRanges(in: source)
             urlRanges = urls
             if urls.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
         }
         // A backslash escapes punctuation only, so a link after one still links.
-        return ![.channelLink, .message].contains(mention.kind) && isEscaped(range, in: source)
-    }
-
-    /// Whether an odd run of backslashes escapes the token's first character.
-    private static func isEscaped(_ range: Range<String.Index>, in source: String) -> Bool {
+        guard !source[range.lowerBound].isLetter else { return false }
         var cursor = range.lowerBound
         var escaped = false
         while cursor > source.startIndex {
