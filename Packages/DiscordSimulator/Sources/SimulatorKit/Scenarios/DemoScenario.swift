@@ -34,7 +34,8 @@ struct DemoConverter {
     var labels: [String: (channel: Snowflake, message: Snowflake)] = [:]
 
     /// Where `DemoContent.now` lands: the latest 21:30 at or before the world's
-    /// epoch, so each line keeps the time of day it was written for.
+    /// epoch, so each line keeps the time of day it was written for. The written
+    /// timeline goes through `date(_:)`; live-session state uses `world.epoch`.
     let now: Date
 
     init(world: World) async {
@@ -690,7 +691,7 @@ struct DemoConverter {
             case let .emoji(name, _): emojis[name]?.id.description ?? "0"
             case .timestamp, .weekday: "0"
             }
-        }, unix: { time in Int(date(time).timeIntervalSince1970) })
+        }, date: date)
     }
 
     /// Links the demo's people share unfurl into the embeds their pages would give.

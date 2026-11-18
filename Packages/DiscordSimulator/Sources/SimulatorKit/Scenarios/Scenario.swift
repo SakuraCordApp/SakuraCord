@@ -24,7 +24,6 @@ public enum ScenarioRegistry {
     }
 }
 
-/// The scenario's "now" is the real time unless `--epoch` fixes it.
 public enum ScenarioEpoch {
     /// Accounts date from a fixed day rather than the epoch, so user IDs and
     /// tokens (and the app's saved simulator accounts) survive the epoch

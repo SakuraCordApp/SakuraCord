@@ -42,15 +42,15 @@ extension DemoConverter {
         guard let couch = channels["couch-vc"], let nico = people["nico"], let marisol = people["marisol"], let me = people[DemoContent.selfKey]
         else { return }
         let hour = 3_600.0
-        var gameNight = ScheduledEvent(id: await world.nextID(at: date(DemoTime(day: -2, 19, 30))), guildID: porch,
+        var gameNight = ScheduledEvent(id: await world.nextID(at: date(DemoContent.at(-2, 19, 30))), guildID: porch,
                                        name: "Board game night", creatorID: nico,
-                                       start: date(DemoTime(day: 4, 19, 30)), entityType: .voice)
+                                       start: date(DemoContent.at(4, 19, 30)), entityType: .voice)
         gameNight.description = "Bring snacks. Wingspan if the birthday frog allows it."
         gameNight.channelID = couch
         gameNight.interested = [nico, me] + ["oskar", "hana"].compactMap { people[$0] }
         var planting = ScheduledEvent(id: await world.nextID(at: world.epoch.addingTimeInterval(-hour)), guildID: garden,
                                       name: "Spring planting day", creatorID: marisol,
-                                      start: date(DemoTime(day: 6, 10, 0)), entityType: .external)
+                                      start: date(DemoContent.at(6, 10, 0)), entityType: .external)
         planting.description = "Seedlings go in the long beds. Gloves and tea provided."
         planting.end = planting.start.addingTimeInterval(3 * hour)
         planting.location = "Linden Street Garden, north gate"

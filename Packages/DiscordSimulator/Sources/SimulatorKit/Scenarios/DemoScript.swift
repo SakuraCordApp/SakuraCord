@@ -9,9 +9,8 @@ import Foundation
 
 // MARK: - Time
 
-/// A wall-clock moment relative to the demo's day 0, the day of the latest
-/// 21:30 at or before the world's epoch; earlier days are negative. That
-/// 21:30 is `DemoContent.now`, and nothing in the history happens after it.
+/// A wall-clock moment relative to day 0, the day `DemoContent.now` falls on;
+/// earlier days are negative, and nothing in the history happens after `now`.
 public struct DemoTime: Sendable, Hashable, Comparable {
     public var day: Int
     public var hour: Int
@@ -789,8 +788,8 @@ public enum DemoMarkup {
     }
 
     /// `text` with every placeholder replaced; `id` returns the snowflake for a
-    /// user, role, channel or emoji token, `unix` the seconds for a time.
-    public static func resolve(_ text: String, id: (Token) -> String, unix: (DemoTime) -> Int) -> String {
+    /// user, role, channel or emoji token, `date` the moment for a time.
+    public static func resolve(_ text: String, id: (Token) -> String, date: (DemoTime) -> Date) -> String {
         segments(text).map { segment in
             switch segment {
             case .text(let text): text
@@ -800,8 +799,8 @@ public enum DemoMarkup {
                 case .role: "<@&\(id(token))>"
                 case .channel: "<#\(id(token))>"
                 case .emoji(let name, let animated): "<\(animated ? "a" : ""):\(name):\(id(token))>"
-                case .timestamp(let time, let style): "<t:\(unix(time)):\(style)>"
-                case .weekday(let day, let style): weekday(Date(timeIntervalSince1970: Double(unix(DemoTime(day: day, 12, 0)))), style: style)
+                case .timestamp(let time, let style): "<t:\(Int(date(time).timeIntervalSince1970)):\(style)>"
+                case .weekday(let day, let style): weekday(date(DemoTime(day: day, 12, 0)), style: style)
                 }
             }
         }.joined()
