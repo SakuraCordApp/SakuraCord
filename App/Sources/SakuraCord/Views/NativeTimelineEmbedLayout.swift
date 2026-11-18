@@ -594,13 +594,11 @@ enum NativeTimelineEmbedLayout {
                     max(idealWidth(row[0].name), idealWidth(row[0].value))
                 )
             } else {
-                let fieldsWidth = row.reduce(CGFloat.zero) {
-                    $0 + max(Metrics.fieldMinimumWidth, idealWidth($1.name), idealWidth($1.value))
-                }
-                width = max(
-                    width,
-                    fieldsWidth + CGFloat(max(0, row.count - 1)) * Metrics.fieldSpacing
-                )
+                // Inline fields share equal columns, as Discord's grid gives
+                // them, so each column fits the row's widest field.
+                let widest = row.map { max(idealWidth($0.name), idealWidth($0.value)) }.max() ?? 0
+                let columns = CGFloat(row.count)
+                width = max(width, columns * max(Metrics.fieldMinimumWidth, widest) + (columns - 1) * Metrics.fieldSpacing)
             }
         }
         return width
