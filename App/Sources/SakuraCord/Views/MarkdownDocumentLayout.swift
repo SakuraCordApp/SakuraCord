@@ -501,21 +501,24 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             let runGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             enumerateLineFragments(forGlyphRange: runGlyphs) { _, line, container, lineGlyphs, _ in
                 var glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
+                guard glyphs.length > 0 else { return }
                 // A line break's glyph spans the rest of its line; the box
                 // ends at the line's last character, as Discord's does.
-                if glyphs.length > 0,
-                   (textStorage.string as NSString).character(at: self.characterIndexForGlyph(at: NSMaxRange(glyphs) - 1)) == 0x0A {
+                if (textStorage.string as NSString).character(at: self.characterIndexForGlyph(at: NSMaxRange(glyphs) - 1)) == 0x0A {
                     glyphs.length -= 1
                 }
-                guard glyphs.length > 0 else { return }
-                let bounds = self.boundingRect(forGlyphRange: glyphs, in: container)
+                // Code that opens with a line break still shows its opening
+                // edge on that line, as Discord's does; later empty lines show none.
+                let isOpeningEdge = glyphs.length == 0
+                guard !isOpeningEdge || (glyphs.location == runGlyphs.location && padding > 0) else { return }
+                let bounds = self.boundingRect(forGlyphRange: NSRange(location: glyphs.location, length: max(glyphs.length, 1)), in: container)
                 let start = self.characterIndexForGlyph(at: glyphs.location)
                 let isWrapped = glyphs.location == lineGlyphs.location
                     && (textStorage.string as NSString).paragraphRange(for: NSRange(location: start, length: 0)).location != start
                 let leading = isWrapped ? 0 : padding
                 // The timeline's text rect for the line, half a point beyond
                 // its bounds, inset by its inline code's point.
-                rects.append(NSRect(x: bounds.minX - leading, y: line.minY - 0.5, width: bounds.width + leading, height: line.height + 1)
+                rects.append(NSRect(x: bounds.minX - leading, y: line.minY - 0.5, width: (isOpeningEdge ? 0 : bounds.width) + leading, height: line.height + 1)
                     .insetBy(dx: 0, dy: InterfaceScale.metric(1)))
             }
         }
