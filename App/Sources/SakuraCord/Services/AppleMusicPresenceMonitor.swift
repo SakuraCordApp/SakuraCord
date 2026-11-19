@@ -261,6 +261,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
     private static let artworkLock = NSLock()
     nonisolated(unsafe) private static var _cachedArtworkData: Data?
+    nonisolated(unsafe) private static var _cachedArtworkImage: NSImage?
     nonisolated(unsafe) private static var _cachedArtworkTrackKey: String?
 
     public static func trackSignature(title: String, artist: String?, album: String?) -> String {
@@ -270,9 +271,25 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     public static func setCachedArtworkData(_ data: Data?, for trackKey: String?) {
         artworkLock.lock()
         _cachedArtworkData = data
+        if let data {
+            _cachedArtworkImage = NSImage(data: data)
+        } else {
+            _cachedArtworkImage = nil
+        }
         _cachedArtworkTrackKey = trackKey
         artworkLock.unlock()
         NotificationCenter.default.post(name: artworkDidChangeNotification, object: nil)
+    }
+
+    public static func currentArtworkImage(for title: String, artist: String? = nil, album: String? = nil) -> NSImage? {
+        artworkLock.lock()
+        defer { artworkLock.unlock() }
+        guard let img = _cachedArtworkImage else { return nil }
+        guard let cachedKey = _cachedArtworkTrackKey else { return img }
+        let currentKey = trackSignature(title: title, artist: artist, album: album)
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cachedKey == currentKey || cachedKey.contains(trimmedTitle) else { return nil }
+        return img
     }
 
     public static func currentArtworkData(for title: String, artist: String? = nil, album: String? = nil) -> Data? {
@@ -295,6 +312,11 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         set {
             artworkLock.lock()
             _cachedArtworkData = newValue
+            if let newValue {
+                _cachedArtworkImage = NSImage(data: newValue)
+            } else {
+                _cachedArtworkImage = nil
+            }
             artworkLock.unlock()
             NotificationCenter.default.post(name: artworkDidChangeNotification, object: nil)
         }
@@ -417,12 +439,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             end tell
             """
         }
-        var errorInfo: NSDictionary?
-        guard let script = NSAppleScript(source: scriptSource) else { return nil }
-        let descriptor = script.executeAndReturnError(&errorInfo)
-        if errorInfo != nil { return nil }
-        let val = descriptor.doubleValue
-        return val >= 0 ? val : nil
+        return autoreleasepool {
+            var errorInfo: NSDictionary?
+            guard let script = NSAppleScript(source: scriptSource) else { return nil }
+            let descriptor = script.executeAndReturnError(&errorInfo)
+            if errorInfo != nil { return nil }
+            let val = descriptor.doubleValue
+            return val >= 0 ? val : nil
+        }
         #else
         return nil
         #endif
@@ -491,6 +515,36 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         await handleTrackInfo(updated)
     }
 
+    private static func downsampleArtworkImage(_ image: NSImage, maxDimension: CGFloat) -> Data? {
+        let size = image.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        let scale = min(maxDimension / size.width, maxDimension / size.height)
+        let targetWidth = max(1, Int(size.width * scale))
+        let targetHeight = max(1, Int(size.height * scale))
+        let targetSize = NSSize(width: targetWidth, height: targetHeight)
+
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: targetWidth,
+            pixelsHigh: targetHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+
+        rep.size = targetSize
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.current = context
+        image.draw(in: NSRect(origin: .zero, size: targetSize), from: NSRect(origin: .zero, size: size), operation: .copy, fraction: 1.0)
+        return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85])
+    }
+
     public static func fetchCurrentArtworkData(matchingTitle: String? = nil) -> Data? {
         #if os(macOS)
         guard NSClassFromString("XCTest") == nil else { return nil }
@@ -524,12 +578,19 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             end timeout
         end tell
         """
-        var errorInfo: NSDictionary?
-        guard let script = NSAppleScript(source: scriptSource) else { return nil }
-        let descriptor = script.executeAndReturnError(&errorInfo)
-        let data = descriptor.data
-        guard !data.isEmpty, NSImage(data: data) != nil else { return nil }
-        return data
+        return autoreleasepool {
+            var errorInfo: NSDictionary?
+            guard let script = NSAppleScript(source: scriptSource) else { return nil }
+            let descriptor = script.executeAndReturnError(&errorInfo)
+            let data = descriptor.data
+            guard !data.isEmpty, let img = NSImage(data: data) else { return nil }
+            if img.size.width > 512 || img.size.height > 512 {
+                if let compressed = downsampleArtworkImage(img, maxDimension: 512) {
+                    return compressed
+                }
+            }
+            return data
+        }
         #else
         return nil
         #endif
@@ -606,28 +667,30 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             end tell
             """
         }
-        var errorInfo: NSDictionary?
-        guard let script = NSAppleScript(source: scriptSource) else { return (false, nil) }
-        let descriptor = script.executeAndReturnError(&errorInfo)
-        if errorInfo != nil { return (false, nil) }
-        guard let result = descriptor.stringValue else { return (false, nil) }
-        if result == "stopped" { return (true, nil) }
-        guard !result.isEmpty, result != "unknown" else { return (false, nil) }
-        let parts = result.components(separatedBy: "|||")
-        guard parts.count >= 6 else { return (false, nil) }
-        let trackID = parts.count >= 7 && !parts[6].isEmpty ? parts[6] : nil
-        let rawState = parts[0]
-        let normalizedState = (rawState.caseInsensitiveCompare("playing") == .orderedSame || rawState.contains("kPSP")) ? "Playing" : rawState
-        return (false, AppleMusicTrackInfo(
-            playerState: normalizedState,
-            name: parts[1],
-            artist: parts[2],
-            album: parts[3],
-            currentPositionSeconds: Double(parts[4]),
-            totalTimeMilliseconds: Double(parts[5]),
-            trackID: trackID,
-            appName: isSpotify ? "Spotify" : "Apple Music"
-        ))
+        return autoreleasepool {
+            var errorInfo: NSDictionary?
+            guard let script = NSAppleScript(source: scriptSource) else { return (false, nil) }
+            let descriptor = script.executeAndReturnError(&errorInfo)
+            if errorInfo != nil { return (false, nil) }
+            guard let result = descriptor.stringValue else { return (false, nil) }
+            if result == "stopped" { return (true, nil) }
+            guard !result.isEmpty, result != "unknown" else { return (false, nil) }
+            let parts = result.components(separatedBy: "|||")
+            guard parts.count >= 6 else { return (false, nil) }
+            let trackID = parts.count >= 7 && !parts[6].isEmpty ? parts[6] : nil
+            let rawState = parts[0]
+            let normalizedState = (rawState.caseInsensitiveCompare("playing") == .orderedSame || rawState.contains("kPSP")) ? "Playing" : rawState
+            return (false, AppleMusicTrackInfo(
+                playerState: normalizedState,
+                name: parts[1],
+                artist: parts[2],
+                album: parts[3],
+                currentPositionSeconds: Double(parts[4]),
+                totalTimeMilliseconds: Double(parts[5]),
+                trackID: trackID,
+                appName: isSpotify ? "Spotify" : "Apple Music"
+            ))
+        }
         #else
         return (false, nil)
         #endif

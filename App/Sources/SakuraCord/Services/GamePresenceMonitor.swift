@@ -11,6 +11,8 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
     private var terminateObserver: (any NSObjectProtocol)?
     private var periodicTimer: (any DispatchSourceTimer)?
     private var isMonitoring = false
+    private var lastRobloxPID: pid_t?
+    private var lastAthasPID: pid_t?
     private let logger = Logger(subsystem: "dev.sakuracord", category: "GamePresenceMonitor")
 
     public static let robloxAppID = "363445589247131668"
@@ -20,6 +22,7 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
     private static let iconLock = NSLock()
     nonisolated(unsafe) private static var _cachedRobloxIconData: Data?
     nonisolated(unsafe) private static var _cachedAthasIconData: Data?
+    nonisolated(unsafe) private static var _cachedAthasIconImage: NSImage?
 
     public static var currentRobloxIconData: Data? {
         get {
@@ -43,8 +46,19 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         set {
             iconLock.lock()
             _cachedAthasIconData = newValue
+            if let newValue {
+                _cachedAthasIconImage = NSImage(data: newValue)
+            } else {
+                _cachedAthasIconImage = nil
+            }
             iconLock.unlock()
         }
+    }
+
+    public static var currentAthasIconImage: NSImage? {
+        iconLock.lock()
+        defer { iconLock.unlock() }
+        return _cachedAthasIconImage
     }
 
     public static func isRobloxApp(_ app: NSRunningApplication) -> Bool {
@@ -152,6 +166,8 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             }
             #endif
 
+            lastRobloxPID = nil
+            lastAthasPID = nil
             Self.currentRobloxIconData = nil
             Self.currentAthasIconData = nil
             Task { [coordinator] in
@@ -175,23 +191,37 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
     public func checkRunningGames() {
         #if os(macOS)
-        let running = NSWorkspace.shared.runningApplications
+        autoreleasepool {
+            let running = NSWorkspace.shared.runningApplications
 
-        if let roblox = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) }) {
-            publishRobloxActivity(app: roblox)
-        } else {
-            Self.currentRobloxIconData = nil
-            Task { [coordinator] in
-                await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
+            if let roblox = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) }) {
+                if lastRobloxPID != roblox.processIdentifier {
+                    lastRobloxPID = roblox.processIdentifier
+                    publishRobloxActivity(app: roblox)
+                }
+            } else {
+                if lastRobloxPID != nil {
+                    lastRobloxPID = nil
+                    Self.currentRobloxIconData = nil
+                    Task { [coordinator] in
+                        await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
+                    }
+                }
             }
-        }
 
-        if let athas = running.first(where: { !$0.isTerminated && Self.isAthasApp($0) }) {
-            publishAthasActivity(app: athas)
-        } else {
-            Self.currentAthasIconData = nil
-            Task { [coordinator] in
-                await coordinator.clearActivity(for: .custom(sourceID: "app:athas"))
+            if let athas = running.first(where: { !$0.isTerminated && Self.isAthasApp($0) }) {
+                if lastAthasPID != athas.processIdentifier {
+                    lastAthasPID = athas.processIdentifier
+                    publishAthasActivity(app: athas)
+                }
+            } else {
+                if lastAthasPID != nil {
+                    lastAthasPID = nil
+                    Self.currentAthasIconData = nil
+                    Task { [coordinator] in
+                        await coordinator.clearActivity(for: .custom(sourceID: "app:athas"))
+                    }
+                }
             }
         }
         #endif
@@ -199,9 +229,6 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
     private func publishRobloxActivity(app: NSRunningApplication? = nil) {
         let startTimeMs = Int64((app?.launchDate ?? Date()).timeIntervalSince1970 * 1000)
-        if let icon = app?.icon, let tiff = icon.tiffRepresentation {
-            Self.currentRobloxIconData = tiff
-        }
         let payload = OutgoingActivityPayload(
             name: "Roblox",
             type: .playing,
@@ -220,8 +247,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
     private func publishAthasActivity(app: NSRunningApplication? = nil) {
         let startTimeMs = Int64((app?.launchDate ?? Date()).timeIntervalSince1970 * 1000)
-        if let icon = app?.icon, let tiff = icon.tiffRepresentation {
-            Self.currentAthasIconData = tiff
+        autoreleasepool {
+            if let icon = app?.icon, let tiff = icon.tiffRepresentation {
+                Self.currentAthasIconData = tiff
+            }
         }
         let payload = OutgoingActivityPayload(
             name: "Athas",

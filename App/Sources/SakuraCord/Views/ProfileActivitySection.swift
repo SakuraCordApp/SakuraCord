@@ -332,17 +332,17 @@ struct ProfileActivitySection: View {
             }
         }
         if isMusic, isCurrentUser {
-            if let data = AppleMusicPresenceMonitor.currentArtworkData(
+            if let img = AppleMusicPresenceMonitor.currentArtworkImage(
                 for: primaryText,
                 artist: effectiveActivity?.state,
                 album: effectiveActivity?.largeText
-            ), let img = NSImage(data: data) {
+            ) {
                 return img
             }
         }
         let lowerName = (effectiveActivity?.name ?? "").lowercased()
         if lowerName.contains("athas") {
-            if let data = GamePresenceMonitor.currentAthasIconData, let img = NSImage(data: data) {
+            if let img = GamePresenceMonitor.currentAthasIconImage {
                 return img
             }
         }
@@ -664,7 +664,8 @@ struct ProfileActivitySection: View {
     @ViewBuilder
     private func artworkView(size: CGFloat) -> some View {
         let cornerRadius = InterfaceScale.metric(14)
-        if isMusic, isCurrentUser, let local = dynamicArtwork ?? resolvedArtworkImage {
+        let localArt = dynamicArtwork ?? resolvedArtworkImage
+        if isMusic, isCurrentUser, let local = localArt {
             Image(nsImage: local)
                 .resizable()
                 .scaledToFill()
@@ -678,7 +679,7 @@ struct ProfileActivitySection: View {
                         .resizable()
                         .scaledToFill()
                 default:
-                    if let local = dynamicArtwork ?? resolvedArtworkImage {
+                    if let local = localArt {
                         Image(nsImage: local)
                             .resizable()
                             .scaledToFill()
@@ -689,7 +690,7 @@ struct ProfileActivitySection: View {
             }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        } else if let image = dynamicArtwork ?? resolvedArtworkImage {
+        } else if let image = localArt {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()

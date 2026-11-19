@@ -210,7 +210,10 @@ public actor ActivityCoordinator {
             await self.performSynchronize(generation: generation)
         }
         syncTask = task
-        await task.value
+        _ = await task.value
+        if syncTask == task {
+            syncTask = nil
+        }
     }
 
     private func performSynchronize(generation: UInt64) async {

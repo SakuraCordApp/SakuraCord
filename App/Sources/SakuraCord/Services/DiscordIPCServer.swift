@@ -40,6 +40,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                   let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                DiscordIPCServer.notifyAppInfoListeners(for: clientID)
                 return
             }
             let name = json["name"] as? String
@@ -59,7 +60,8 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private let onClose: @Sendable (UUID) -> Void
     private let logger = Logger(subsystem: "dev.sakuracord", category: "DiscordIPCClientSession")
     private let operationLock = NSLock()
-    private var lastOperationTask: Task<Void, Never>?
+    private let operationStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
+    private var workerTask: Task<Void, Never>?
     private var isStopped = false
     private var lastActivityDict: [String: Any]?
 
@@ -90,12 +92,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
             operationLock.unlock()
             return
         }
-        let previous = lastOperationTask
-        let task = Task {
-            _ = await previous?.value
-            await operation()
-        }
-        lastOperationTask = task
+        operationStreamContinuation.yield(operation)
         operationLock.unlock()
     }
 
@@ -109,6 +106,17 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
         self.coordinator = coordinator
         self.queue = queue
         self.onClose = onClose
+
+        var continuation: AsyncStream<@Sendable () async -> Void>.Continuation!
+        let stream = AsyncStream<@Sendable () async -> Void> { cont in
+            continuation = cont
+        }
+        self.operationStreamContinuation = continuation
+        self.workerTask = Task {
+            for await op in stream {
+                await op()
+            }
+        }
     }
 
     deinit {
@@ -143,12 +151,10 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
             clientID: clientID ?? "unknown",
             processID: processID
         )
-        let previous = lastOperationTask
-        let task = Task {
-            _ = await previous?.value
+        operationStreamContinuation.yield { [coordinator] in
             await coordinator.clearActivity(for: source)
         }
-        lastOperationTask = task
+        operationStreamContinuation.finish()
         operationLock.unlock()
         onClose(id)
     }
@@ -604,7 +610,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         appInfoListeners[clientID, default: []].append(listener)
     }
 
-    private static func notifyAppInfoListeners(for clientID: String) {
+    static func notifyAppInfoListeners(for clientID: String) {
         listenersLock.lock()
         let listeners = appInfoListeners[clientID] ?? []
         appInfoListeners.removeValue(forKey: clientID)
