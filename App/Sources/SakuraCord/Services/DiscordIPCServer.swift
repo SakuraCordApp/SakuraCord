@@ -107,10 +107,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
         self.queue = queue
         self.onClose = onClose
 
-        var continuation: AsyncStream<@Sendable () async -> Void>.Continuation!
-        let stream = AsyncStream<@Sendable () async -> Void> { cont in
-            continuation = cont
-        }
+        let (stream, continuation) = AsyncStream<@Sendable () async -> Void>.makeStream()
         self.operationStreamContinuation = continuation
         self.workerTask = Task {
             for await op in stream {

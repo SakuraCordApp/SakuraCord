@@ -7,6 +7,7 @@ import Foundation
 import SakuraCordModels
 import Testing
 
+@Suite("DiscordIPCServerTests", .serialized)
 struct DiscordIPCServerTests {
     private func makeTestSocketPath() -> String {
         "/tmp/sakuracord-ipc-test-\(UUID().uuidString).sock"

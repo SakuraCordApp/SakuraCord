@@ -5,7 +5,7 @@ import SakuraCordModels
 @testable import SakuraCord
 import Testing
 
-@Suite("AppleMusicPresenceMonitorTests")
+@Suite("AppleMusicPresenceMonitorTests", .serialized)
 struct AppleMusicPresenceMonitorTests {
     private final class TimeBox: @unchecked Sendable {
         var date: Date
@@ -484,6 +484,8 @@ struct AppleMusicPresenceMonitorTests {
                 "Artist": "Some Artist"
             ])
         }
+
+        try? await Task.sleep(nanoseconds: 50_000_000)
 
         let pauseTask = Task {
             await monitor.handlePlayerInfo([

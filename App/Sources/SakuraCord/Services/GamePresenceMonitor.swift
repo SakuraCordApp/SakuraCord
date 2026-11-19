@@ -11,6 +11,7 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
     private var terminateObserver: (any NSObjectProtocol)?
     private var periodicTimer: (any DispatchSourceTimer)?
     private var isMonitoring = false
+    private let stateLock = NSLock()
     private var lastRobloxPID: pid_t?
     private var lastAthasPID: pid_t?
     private let logger = Logger(subsystem: "dev.sakuracord", category: "GamePresenceMonitor")
@@ -166,8 +167,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             }
             #endif
 
+            stateLock.lock()
             lastRobloxPID = nil
             lastAthasPID = nil
+            stateLock.unlock()
             Self.currentRobloxIconData = nil
             Self.currentAthasIconData = nil
             Task { [coordinator] in
@@ -194,14 +197,52 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         autoreleasepool {
             let running = NSWorkspace.shared.runningApplications
 
-            if let roblox = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) }) {
-                if lastRobloxPID != roblox.processIdentifier {
+            let robloxApp = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) })
+            let athasApp = running.first(where: { !$0.isTerminated && Self.isAthasApp($0) })
+
+            stateLock.lock()
+            let prevRobloxPID = lastRobloxPID
+            let prevAthasPID = lastAthasPID
+
+            let robloxChanged: Bool
+            if let roblox = robloxApp {
+                if prevRobloxPID != roblox.processIdentifier {
                     lastRobloxPID = roblox.processIdentifier
-                    publishRobloxActivity(app: roblox)
+                    robloxChanged = true
+                } else {
+                    robloxChanged = false
                 }
             } else {
-                if lastRobloxPID != nil {
+                if prevRobloxPID != nil {
                     lastRobloxPID = nil
+                    robloxChanged = true
+                } else {
+                    robloxChanged = false
+                }
+            }
+
+            let athasChanged: Bool
+            if let athas = athasApp {
+                if prevAthasPID != athas.processIdentifier {
+                    lastAthasPID = athas.processIdentifier
+                    athasChanged = true
+                } else {
+                    athasChanged = false
+                }
+            } else {
+                if prevAthasPID != nil {
+                    lastAthasPID = nil
+                    athasChanged = true
+                } else {
+                    athasChanged = false
+                }
+            }
+            stateLock.unlock()
+
+            if robloxChanged {
+                if let roblox = robloxApp {
+                    publishRobloxActivity(app: roblox)
+                } else {
                     Self.currentRobloxIconData = nil
                     Task { [coordinator] in
                         await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
@@ -209,14 +250,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
                 }
             }
 
-            if let athas = running.first(where: { !$0.isTerminated && Self.isAthasApp($0) }) {
-                if lastAthasPID != athas.processIdentifier {
-                    lastAthasPID = athas.processIdentifier
+            if athasChanged {
+                if let athas = athasApp {
                     publishAthasActivity(app: athas)
-                }
-            } else {
-                if lastAthasPID != nil {
-                    lastAthasPID = nil
+                } else {
                     Self.currentAthasIconData = nil
                     Task { [coordinator] in
                         await coordinator.clearActivity(for: .custom(sourceID: "app:athas"))

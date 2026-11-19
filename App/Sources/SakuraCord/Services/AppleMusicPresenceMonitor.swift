@@ -409,9 +409,21 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }
     }
 
+    private static var isRunningInTestEnvironment: Bool {
+        #if DEBUG
+        if NSClassFromString("XCTest") != nil ||
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+            ProcessInfo.processInfo.environment["SWIFT_TESTING"] != nil ||
+            ProcessInfo.processInfo.arguments.contains(where: { $0.contains("test") || $0.contains("swiftpm-testing-helper") }) {
+            return true
+        }
+        #endif
+        return false
+    }
+
     public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
         #if os(macOS)
-        guard NSClassFromString("XCTest") == nil else { return nil }
+        guard !isRunningInTestEnvironment else { return nil }
         let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
         let bundleID = isSpotify ? "com.spotify.client" : "com.apple.Music"
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return nil }
@@ -547,7 +559,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
     public static func fetchCurrentArtworkData(matchingTitle: String? = nil) -> Data? {
         #if os(macOS)
-        guard NSClassFromString("XCTest") == nil else { return nil }
+        guard !isRunningInTestEnvironment else { return nil }
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return nil }
         let titleCondition: String
         if let matchingTitle, !matchingTitle.isEmpty {
@@ -698,7 +710,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
     public func checkCurrentTrack() {
         #if os(macOS)
-        guard NSClassFromString("XCTest") == nil else { return }
+        guard !Self.isRunningInTestEnvironment else { return }
         let isMusicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
         let isSpotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty
         guard isMusicRunning || isSpotifyRunning else { return }
