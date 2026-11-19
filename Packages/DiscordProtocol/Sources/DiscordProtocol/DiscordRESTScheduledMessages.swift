@@ -23,9 +23,7 @@ public extension DiscordRESTProvider {
                 "channel_id": .string(draft.channelID.description),
                 "message_id": .string(replyTo.description),
             ]
-            if let guildID = cachedChannel(draft.channelID)?.guildID
-                ?? cachedJoinedThreads[draft.channelID]?.guildID
-            {
+            if let guildID = cachedGuildID(ofChannel: draft.channelID) {
                 reference["guild_id"] = .string(guildID.description)
             }
             body["message_reference"] = .object(reference)

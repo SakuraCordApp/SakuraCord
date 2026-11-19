@@ -90,7 +90,7 @@ public extension DiscordRESTProvider {
             body: body,
             headers: ["X-Context-Properties": DiscordClientMetadata.forwardingContextHeader]
         )
-        var message = try dto.domain()
+        var message = try domainMessage(dto)
         message.nonce = draft.nonce
         cachedMessages[message.id] = message
         continuation?.yield(.messageCreated(message))
@@ -131,7 +131,7 @@ public extension DiscordRESTProvider {
         let dto: MessageDTO = try await request(
             "/channels/\(message.channelID)/messages/\(message.id)", method: "PATCH", body: body
         )
-        let updated = try dto.domain()
+        let updated = try domainMessage(dto)
         cachedMessages[updated.id] = updated
         continuation?.yield(.messageUpdated(updated))
         return updated
