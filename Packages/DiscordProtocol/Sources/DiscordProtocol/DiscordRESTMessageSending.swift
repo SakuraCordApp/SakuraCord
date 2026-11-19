@@ -96,7 +96,7 @@ extension DiscordRESTProvider {
                 ChatProviderError.autoModerationBlocked(explanation: rejection?.message), with: response
             )
         }
-        var message = try restMessage(dto)
+        var message = try domainMessage(dto)
         message.nonce = draft.nonce
         if draft.poll != nil, let current = cachedMessages[message.id]?.poll, current.results != nil {
             message.poll = current

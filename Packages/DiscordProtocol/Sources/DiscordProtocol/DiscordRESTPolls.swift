@@ -35,7 +35,7 @@ public extension DiscordRESTProvider {
             }
         }
         let dto: MessageDTO = try await request("/channels/\(channelID)/polls/\(messageID)/expire", method: "POST")
-        var message = try restMessage(dto)
+        var message = try domainMessage(dto)
         // A final Gateway tally can arrive while the expire response is being decoded.
         if let cached = cachedMessages[messageID]?.poll, cached.results?.isFinalized == true {
             message.poll = cached

@@ -14,10 +14,11 @@ extension DiscordRESTProvider {
             ?? cachedChannel(id)?.guildID
     }
 
-    /// A message from a REST response. Those omit `guild_id`, which role
-    /// mentions and member styling resolve against; a Gateway copy of the
-    /// message, or its channel, supplies it.
-    func restMessage(_ dto: MessageDTO) throws -> Message {
+    /// A message placed in its guild. REST responses and ephemeral Gateway
+    /// messages omit `guild_id`, which role mentions, member styling and
+    /// component actions resolve against; a cached copy of the message, or
+    /// its channel, supplies it.
+    func domainMessage(_ dto: MessageDTO) throws -> Message {
         var message = try dto.domain()
         message.guildID = message.guildID
             ?? cachedMessages[message.id]?.guildID
