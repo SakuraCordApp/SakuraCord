@@ -770,8 +770,7 @@ struct ProfileStatusBubble: View {
             source: text,
             font: .interfaceSystemFont(ofSize: fontSize),
             color: .labelColor,
-            emojiImages: [:],
-            stylesLinks: false
+            emojiImages: [:]
         )
         return ceil(attributedText.size().width) + 2
     }
@@ -1198,7 +1197,7 @@ private struct ProfileAboutSection: View {
 
     var body: some View {
         if let bio, !bio.isEmpty {
-            ProfileRichTextView(source: bio)
+            ProfileBioText(source: bio)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

@@ -37,6 +37,8 @@ public struct DiscordTimestampToken: Hashable, Sendable {
 
     public var rawToken: String { "<t:\(seconds):\(style.rawValue)>" }
     public var date: Date { Date(timeIntervalSince1970: TimeInterval(seconds)) }
+    /// The full date and time a hovered timestamp shows, as Discord's tooltip does.
+    public var hoverTitle: String { date.formatted(date: .complete, time: .shortened) }
 
     public func formatted(
         locale: Locale = .autoupdatingCurrent,

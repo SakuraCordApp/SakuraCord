@@ -43,7 +43,7 @@ public extension DiscordRESTProvider {
         )
         var items = payload.items.elements.compactMap { dto -> PinnedMessage? in
             guard let pinnedAt = DiscordDate.parse(dto.pinnedAt),
-                  var message = try? dto.message.domain()
+                  var message = try? domainMessage(dto.message)
             else { return nil }
             message.isPinned = true
             if let existing = cachedMessages[message.id] {

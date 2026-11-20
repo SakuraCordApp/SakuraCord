@@ -89,3 +89,22 @@ PY
     }
   echo "Launch verified: credential mode $credential_mode; signing identity $SAKURACORD_RESOLVED_CODE_SIGN_IDENTITY"
 }
+
+# Records on a debug bundle the Discord simulator port it is launched with, and
+# removes the record for every other launch, so launching the bundle later by
+# path alone (LaunchServices, Computer Use) keeps it on the simulator instead
+# of the real account. An extended attribute leaves the signature intact.
+SAKURACORD_SIMULATOR_LAUNCH_ATTRIBUTE=dev.sakuracord.DiscordSimulatorPort
+sakuracord_record_simulator_launch() {
+  local bundle="$1" port="${2:-}" attribute="$SAKURACORD_SIMULATOR_LAUNCH_ATTRIBUTE" executable
+  if [[ -z "$port" ]]; then
+    xattr -d "$attribute" "$bundle" 2>/dev/null || true
+    return
+  fi
+  executable="$(plutil -extract CFBundleExecutable raw -o - "$bundle/Contents/Info.plist")" || return
+  if ! grep -qaF "$attribute" "$bundle/Contents/MacOS/$executable"; then
+    echo "Refusing a simulator launch: $bundle cannot read launch records, so reopening it by path would reach the real account. Rebuild it from current sources." >&2
+    return 2
+  fi
+  xattr -w "$attribute" "$port" "$bundle"
+}

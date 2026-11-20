@@ -4,8 +4,11 @@ import CoreText
 /// Discord's code, quote and list-marker chrome, which the timeline, the
 /// composer and Markdown documents draw alike.
 enum MarkdownBlockChrome {
-    /// Discord's code chrome, which inline code and code blocks share.
+    /// Discord's code chrome, which inline code and code blocks share. A
+    /// rect too small to outline, such as a wrapped zero-width joiner's, has
+    /// no border path to draw.
     static func drawCode(in rect: CGRect) {
+        guard rect.width > 1, rect.height > 1 else { return }
         let radius = NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
         codeBackgroundColor.setFill()
         NSBezierPath(concentricRoundedRect: rect, cornerRadius: radius).fill()
@@ -19,6 +22,17 @@ enum MarkdownBlockChrome {
     static func drawQuoteBar(in bar: CGRect) {
         NSColor.tertiaryLabelColor.setFill()
         NSBezierPath(roundedRect: bar, xRadius: bar.width / 2, yRadius: bar.width / 2).fill()
+    }
+
+    /// Discord's list marker beside a marker's `frame`: its 5.5 px disc
+    /// centred 12 px before the item text, which starts one 16 px gutter
+    /// after the marker, and dimmed in a quote.
+    nonisolated static func drawListMarker(beside frame: CGRect, em: CGFloat, isQuoted: Bool, isNested: Bool) {
+        let diameter = 5.5 * em
+        drawListMarker(
+            in: CGRect(x: frame.minX + 4 * em - diameter / 2, y: frame.midY - diameter / 2, width: diameter, height: diameter),
+            color: isQuoted ? .secondaryLabelColor : .labelColor, isHollow: isNested
+        )
     }
 
     /// Discord's list marker: a disc, or a 1 px ring once nested.

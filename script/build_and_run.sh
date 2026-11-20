@@ -197,6 +197,9 @@ BIN_DIR="$(swift build \
   ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --show-bin-path)"
 
+# Repackaging keeps a simulator launch record, so the rebuilt bundle still
+# reopens on the simulator by path (see sakuracord_record_simulator_launch).
+SIMULATOR_LAUNCH_RECORD="$(xattr -p "$SAKURACORD_SIMULATOR_LAUNCH_ATTRIBUTE" "$APP_BUNDLE" 2>/dev/null || true)"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$MACOS" "$FRAMEWORKS" "$RESOURCES"
 cp "$BIN_DIR/$PRODUCT_NAME" "$MACOS/$APP_NAME"
@@ -344,6 +347,8 @@ codesign --force --sign "$CODE_SIGN_IDENTITY" \
   --entitlements "$ENTITLEMENTS_STAGING" "$APP_BUNDLE" >/dev/null
 if [[ "$BUILD_CONFIGURATION" == release ]]; then
   "$ROOT_DIR/script/check_release_redirect.sh" "$APP_BUNDLE"
+elif [[ -n "$SIMULATOR_LAUNCH_RECORD" ]]; then
+  xattr -w "$SAKURACORD_SIMULATOR_LAUNCH_ATTRIBUTE" "$SIMULATOR_LAUNCH_RECORD" "$APP_BUNDLE"
 fi
 
 # Starts the Discord simulator with the options before `--` and launches the
@@ -371,6 +376,7 @@ case "$MODE" in
   --debug)
     sakuracord_verify_development_launch
     sakuracord_stop_scoped_app
+    sakuracord_record_simulator_launch "$APP_BUNDLE"
     lldb -- "$MACOS/$APP_NAME"
     ;;
   --logs)

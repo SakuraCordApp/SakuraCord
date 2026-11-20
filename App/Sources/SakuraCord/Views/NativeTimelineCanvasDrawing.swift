@@ -5,6 +5,9 @@ import SwiftUI
 
 extension NativeTimelineCanvasView {
     static let bitmapTileHeight: CGFloat = 128
+    /// How far a tile's picture reaches into the next, at least one backing
+    /// pixel at any scale, so a join inside a pixel still has a tile under it.
+    static let bitmapTileOverlap: CGFloat = 1
     /// Taller rows are rasterized in tiles, only where exposed.
     static let wholeRowBitmapMaximumHeight: CGFloat = 256
 
@@ -939,24 +942,36 @@ extension NativeTimelineCanvasView {
         // reveal must not synchronously draw an entire attachment gallery.
         if rowFrame.height > Self.wholeRowBitmapMaximumHeight {
             let exposed = rowFrame.intersection(dirtyRect)
-            guard !exposed.isEmpty else { return }
-            let firstTile = max(0, Int(floor((exposed.minY - rowFrame.minY) / Self.bitmapTileHeight)))
+            guard !exposed.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
+            let firstTile = max(0, Int(floor(
+                (exposed.minY - Self.bitmapTileOverlap - rowFrame.minY) / Self.bitmapTileHeight
+            )))
             let lastTile = max(firstTile, Int(ceil((exposed.maxY - rowFrame.minY) / Self.bitmapTileHeight)) - 1)
             for tileIndex in firstTile ... lastTile {
-                let offset = CGFloat(tileIndex) * Self.bitmapTileHeight
-                let tileFrame = CGRect(
-                    x: rowFrame.minX, y: rowFrame.minY + offset,
-                    width: rowFrame.width, height: min(Self.bitmapTileHeight, rowFrame.height - offset)
-                )
                 let image = cachedBitmap(for: item, width: rowFrame.width, tileIndex: tileIndex)
                     ?? bitmap(
                         for: item, at: index, layout: layouts[index], width: rowFrame.width,
                         preparedMediaKeys: preparedMediaKeys, tileIndex: tileIndex
                     )
+                let tileFrame = CGRect(
+                    origin: CGPoint(x: rowFrame.minX, y: rowFrame.minY + CGFloat(tileIndex) * Self.bitmapTileHeight),
+                    size: image.size
+                )
+                // Each backing pixel comes from exactly one tile, as if the
+                // row were one picture. Where a join falls inside a pixel, two
+                // partly covering tiles would leave it translucent, a line.
+                // Only joins are clipped; the 1 pt margins elsewhere mean no clip.
+                let top = tileIndex == 0 ? tileFrame.minY - 1 : context.backingPixelEdge(atOrAfter: tileFrame.minY)
+                let bottom = tileFrame.height > Self.bitmapTileHeight
+                    ? context.backingPixelEdge(atOrAfter: tileFrame.minY + Self.bitmapTileHeight)
+                    : tileFrame.maxY + 1
+                context.saveGState()
+                context.clip(to: CGRect(x: tileFrame.minX - 1, y: top, width: tileFrame.width + 2, height: bottom - top))
                 image.draw(
                     in: tileFrame, from: .zero, operation: .sourceOver,
                     fraction: 1, respectFlipped: true, hints: nil
                 )
+                context.restoreGState()
             }
             return
         }
@@ -1266,7 +1281,9 @@ extension NativeTimelineCanvasView {
         let tileOrigin = tileIndex < 0 ? 0 : CGFloat(tileIndex) * Self.bitmapTileHeight
         let size = NSSize(
             width: width,
-            height: tileIndex < 0 ? layout.height : min(Self.bitmapTileHeight, layout.height - tileOrigin)
+            height: tileIndex < 0
+                ? layout.height
+                : min(Self.bitmapTileHeight + Self.bitmapTileOverlap, layout.height - tileOrigin)
         )
         let scale = max(1, rowBitmapScale)
         let pixelWidth = max(1, Int(ceil(width * scale)))
@@ -1448,5 +1465,16 @@ extension NativeTimelineCanvasView {
     func invalidateVisibleMessageRow(messageID: MessageID) {
         guard let index = visibleMessageRowIndex(for: messageID) else { return }
         setNeedsDisplay(rowFrame(at: index))
+    }
+}
+
+private extension CGContext {
+    /// The nearest backing-pixel boundary at or after `userY`, in user space.
+    func backingPixelEdge(atOrAfter userY: CGFloat) -> CGFloat {
+        let device = convertToDeviceSpace(CGPoint(x: 0, y: userY)).y
+        return max(
+            convertToUserSpace(CGPoint(x: 0, y: device.rounded(.down))).y,
+            convertToUserSpace(CGPoint(x: 0, y: device.rounded(.up))).y
+        )
     }
 }

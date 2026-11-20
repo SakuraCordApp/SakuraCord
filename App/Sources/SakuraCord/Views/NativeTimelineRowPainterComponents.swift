@@ -67,7 +67,8 @@ extension NativeTimelineRowPainter {
                 discordCard(
                     container.frame,
                     cornerRadius: container.cornerRadius,
-                    accent: NSColor(discordColor: container.accentColor)
+                    accent: NSColor(discordColor: container.accentColor),
+                    accentWidth: DiscordRichMessageMetrics.accentBarWidth
                 )
             }
             if isHidden {

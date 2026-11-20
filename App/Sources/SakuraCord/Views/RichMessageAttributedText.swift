@@ -15,9 +15,14 @@ nonisolated enum RichMessageTextMeasurement {
 }
 
 nonisolated enum RichMessageAttributedText {
+    private struct PreparedKey: Hashable, Sendable {
+        let source: String
+        let rules: DiscordMarkdown.Rules
+    }
+
     private struct PreparedCacheState: Sendable {
-        var values: [String: Prepared] = [:]
-        var insertionOrder: [String] = []
+        var values: [PreparedKey: Prepared] = [:]
+        var insertionOrder: [PreparedKey] = []
         var evictionIndex = 0
     }
 
@@ -35,8 +40,9 @@ nonisolated enum RichMessageAttributedText {
         let isEmojiOnly: Bool
     }
 
-    nonisolated static func prepare(source: String) -> Prepared {
-        if let cached = preparedCache.withLock({ $0.values[source] }) {
+    nonisolated static func prepare(source: String, rules: DiscordMarkdown.Rules = .message) -> Prepared {
+        let key = PreparedKey(source: source, rules: rules)
+        if let cached = preparedCache.withLock({ $0.values[key] }) {
             return cached
         }
         let signpost = AppPerformanceSignposts.signposter.beginInterval(
@@ -46,7 +52,7 @@ nonisolated enum RichMessageAttributedText {
         defer {
             AppPerformanceSignposts.signposter.endInterval("RichTextParse", signpost)
         }
-        let document = MessageDocument(source: source)
+        let document = MessageDocument(source: source, rules: rules)
         var transformed = ""
         var tokens: [InlineToken] = []
 
@@ -63,16 +69,17 @@ nonisolated enum RichMessageAttributedText {
             }
         }
         let prepared = Prepared(
-            markdownPlan: DiscordMarkdown.appKitPlan(transformed),
+            markdownPlan: DiscordMarkdown.appKitPlan(transformed, rules: rules),
             tokens: tokens,
-            isEmojiOnly: document.isEmojiOnly
+            // Embed emoji keep one size, never jumbo.
+            isEmojiOnly: !rules.contains(.title) && document.isEmojiOnly
         )
         return preparedCache.withLock { state in
-            if let existing = state.values[source] {
+            if let existing = state.values[key] {
                 return existing
             }
-            state.values[source] = prepared
-            state.insertionOrder.append(source)
+            state.values[key] = prepared
+            state.insertionOrder.append(key)
             while state.values.count > maximumPreparedCacheEntries,
                   state.evictionIndex < state.insertionOrder.count
             {
@@ -93,12 +100,13 @@ nonisolated enum RichMessageAttributedText {
     @MainActor
     static func make(
         source: String,
+        rules: DiscordMarkdown.Rules = .message,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
         mentionPresentations: [String: MentionPresentation]
     ) -> NSAttributedString {
         make(
-            prepared: prepare(source: source),
+            prepared: prepare(source: source, rules: rules),
             emojiSize: emojiSize,
             baseFontSize: baseFontSize,
             mentionPresentations: mentionPresentations
