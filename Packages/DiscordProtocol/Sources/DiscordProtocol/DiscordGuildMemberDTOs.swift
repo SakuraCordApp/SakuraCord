@@ -78,11 +78,13 @@ struct GuildActivityDTO: Decodable {
     var assets: GuildActivityAssetsDTO?
     var applicationId: String?
     var syncId: String?
+    var platform: String?
 
     enum CodingKeys: String, CodingKey {
         case name, type, url, details, state, emoji, timestamps, assets
         case applicationId = "application_id"
         case syncId = "sync_id"
+        case platform
     }
 
     var asRichActivity: MemberRichActivity? {
@@ -99,7 +101,8 @@ struct GuildActivityDTO: Decodable {
             smallImage: assets?.smallImage,
             smallText: assets?.smallText,
             applicationID: applicationId,
-            url: url
+            url: url,
+            platform: platform
         )
     }
 

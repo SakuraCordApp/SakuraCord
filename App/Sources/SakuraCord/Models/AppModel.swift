@@ -793,7 +793,8 @@ final class AppModel {
             smallImage: current.assets?.smallImage,
             smallText: current.assets?.smallText,
             applicationID: current.applicationId,
-            url: current.url
+            url: current.url,
+            platform: current.platform
         )
     }
 

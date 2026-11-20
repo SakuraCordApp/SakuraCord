@@ -171,9 +171,10 @@ public struct OutgoingActivityPayload: Codable, Hashable, Sendable {
     public var flags: Int?
     public var buttons: [ActivityButton]?
     public var applicationId: String?
+    public var platform: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, type, url, details, state, timestamps, assets, party, secrets, instance, flags, buttons
+        case name, type, url, details, state, timestamps, assets, party, secrets, instance, flags, buttons, platform
         case applicationId = "application_id"
     }
 
@@ -190,7 +191,8 @@ public struct OutgoingActivityPayload: Codable, Hashable, Sendable {
         instance: Bool? = nil,
         flags: Int? = nil,
         buttons: [ActivityButton]? = nil,
-        applicationId: String? = nil
+        applicationId: String? = nil,
+        platform: String? = nil
     ) {
         self.name = name
         self.type = type
@@ -205,6 +207,7 @@ public struct OutgoingActivityPayload: Codable, Hashable, Sendable {
         self.flags = flags
         self.buttons = buttons
         self.applicationId = applicationId
+        self.platform = platform
     }
 
     public func priorityRank(using categoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder) -> Int {
@@ -269,6 +272,9 @@ public struct OutgoingActivityPayload: Codable, Hashable, Sendable {
         }
         if let applicationId, !applicationId.isEmpty {
             dict["application_id"] = applicationId
+        }
+        if let platform, !platform.isEmpty {
+            dict["platform"] = platform
         }
         return dict
     }

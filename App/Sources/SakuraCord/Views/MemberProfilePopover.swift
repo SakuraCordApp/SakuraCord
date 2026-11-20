@@ -360,20 +360,8 @@ struct MemberProfilePopover<Footer: View>: View {
                     }
                 }
 
-                if hasActiveActivity, editor == nil {
-                    ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
-                        .padding(.horizontal, InterfaceScale.metric(16))
-                        .transition(
-                            .asymmetric(
-                                insertion: .opacity
-                                    .combined(with: .scale(scale: 0.96, anchor: .top))
-                                    .combined(with: .offset(y: -4)),
-                                removal: .opacity
-                                    .combined(with: .scale(scale: 0.98, anchor: .top))
-                                    .combined(with: .offset(y: -2))
-                            )
-                        )
-                        .clipped()
+                if profile == nil || !showsDetails {
+                    activitySectionView
                 }
 
                 if isLoading {
@@ -421,6 +409,25 @@ struct MemberProfilePopover<Footer: View>: View {
     }
 
     @ViewBuilder
+    private var activitySectionView: some View {
+        if hasActiveActivity, editor == nil {
+            ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
+                .padding(.horizontal, InterfaceScale.metric(16))
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity
+                            .combined(with: .scale(scale: 0.96, anchor: .top))
+                            .combined(with: .offset(y: -4)),
+                        removal: .opacity
+                            .combined(with: .scale(scale: 0.98, anchor: .top))
+                            .combined(with: .offset(y: -2))
+                    )
+                )
+                .clipped()
+        }
+    }
+
+    @ViewBuilder
     private func profileDetailsSections(_ profile: UserProfile) -> some View {
         if let editor, editor.scope == .main || editor.isNitro {
             ProfileInlineBioEditor(value: Binding(get: { editor.bio }, set: { editor.bio = $0 }), displayValue: profile.bio, model: editor.model)
@@ -435,6 +442,7 @@ struct MemberProfilePopover<Footer: View>: View {
             CompactProfileWidgets(widgets: widgets, resources: profile.widgetResources, animates: animatesRemoteMedia, open: expandProfile)
                 .padding(.horizontal, InterfaceScale.metric(16))
         }
+        activitySectionView
         ProfileMembershipSection(createdAt: profile.id.createdAt, guild: guild, guildJoinedAt: member.joinedAt)
         if showsRoles, !profile.roles.isEmpty {
             ProfileRolesSection(roles: profile.roles, keepsExpanded: layout == .expanded)
