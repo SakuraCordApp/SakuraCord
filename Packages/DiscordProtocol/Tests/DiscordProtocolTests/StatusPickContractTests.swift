@@ -565,7 +565,7 @@ extension DirectMessageProviderContractTests {
         return try #require(DiscordSettingsProto.statusSettings(in: body))
     }
 
-    private func readyStatusPickProvider(
+    func readyStatusPickProvider(
         settings: Data, accountID: String = "status-pick-\(UUID().uuidString)", restoresPendingEdit: Bool = false
     ) async throws -> StatusPickSession {
         let socket = ReadyGatewaySocket()

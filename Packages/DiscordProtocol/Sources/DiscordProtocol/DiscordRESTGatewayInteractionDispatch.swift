@@ -57,6 +57,7 @@ extension DiscordRESTProvider {
         failGatewayRequests(rateLimited: rateLimit)
         if rateLimit.opcode == 3 {
             lastSentPresenceStatus = nil
+            lastSentActivities = nil
             await sendPresenceIfChanged()
         }
     }

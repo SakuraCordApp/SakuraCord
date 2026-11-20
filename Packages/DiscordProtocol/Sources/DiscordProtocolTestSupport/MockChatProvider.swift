@@ -37,6 +37,16 @@ public actor MockChatProvider: ChatProvider {
     public internal(set) var categoryNotificationRequests: [CategoryNotificationRequest] = []
     public internal(set) var threadNotificationRequests: [ThreadNotificationRequest] = []
     public internal(set) var groupLeaveRequests: [(channelID: ChannelID, silently: Bool)] = []
+    var relationshipPresences: [UserID: UserPresence]?
+    var presenceChurnTask: Task<Void, Never>?
+    public var activeActivities: [String: OutgoingActivityPayload] = [:]
+    public var activityCategoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder
+#if SAKURACORD_MOTION_BENCHMARK
+    /// Threads seeded for the side-chat animation benchmark, and the latency
+    /// simulated before their history is served.
+    var motionThreadIDs: Set<ChannelID> = []
+    var motionThreadHistoryDelay: Duration = .zero
+#endif
 
     public init(
         timelineMessageCount: Int? = nil,
@@ -185,7 +195,8 @@ public actor MockChatProvider: ChatProvider {
                     status: $0.id == currentUser.id ? .online : reference?.status ?? .offline,
                     activityText: reference?.activityText,
                     customStatus: reference?.customStatus,
-                    isListeningToMusic: reference?.isListeningToMusic ?? false
+                    isListeningToMusic: reference?.isListeningToMusic ?? false,
+                    richActivity: reference?.richActivity
                 )
                 if let nickname = snapshot.relationshipNicknamesByUserID[$0.id] {
                     member.globalDisplayName = $0.displayName
@@ -233,6 +244,30 @@ public actor MockChatProvider: ChatProvider {
 
     public func currentStatus() async -> PresenceStatus {
         .online
+    }
+
+    public func currentActivities() async -> [String: OutgoingActivityPayload] {
+        activeActivities
+    }
+
+    public func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws {
+        if let activity {
+            activeActivities[sourceID] = activity
+        } else {
+            activeActivities.removeValue(forKey: sourceID)
+        }
+    }
+
+    public func clearActivities(sourceID: String? = nil) async throws {
+        if let sourceID {
+            activeActivities.removeValue(forKey: sourceID)
+        } else {
+            activeActivities.removeAll()
+        }
+    }
+
+    public func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws {
+        activityCategoryOrder = ActivityCategory.normalizedOrder(order)
     }
 
     public func updateStatus(_ status: PresenceStatus) async throws {

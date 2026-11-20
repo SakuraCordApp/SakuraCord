@@ -89,19 +89,22 @@ public struct UserPresence: Codable, Hashable, Sendable {
     public var activityText: String?
     public var isListeningToMusic: Bool
     public var isMobileOnly: Bool
+    public var richActivity: MemberRichActivity?
 
     public init(
         status: PresenceStatus,
         customStatus: String? = nil,
         activityText: String? = nil,
         isListeningToMusic: Bool = false,
-        isMobileOnly: Bool = false
+        isMobileOnly: Bool = false,
+        richActivity: MemberRichActivity? = nil
     ) {
         self.status = status
         self.customStatus = customStatus
         self.activityText = activityText
         self.isListeningToMusic = isListeningToMusic
         self.isMobileOnly = isMobileOnly
+        self.richActivity = richActivity
     }
 
     public var showsMobileIndicator: Bool {

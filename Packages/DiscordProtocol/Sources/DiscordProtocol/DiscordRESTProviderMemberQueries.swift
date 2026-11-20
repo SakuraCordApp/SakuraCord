@@ -161,7 +161,7 @@ public extension DiscordRESTProvider {
             uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) })
         let missing = requestedIDs.filter { cachedByID[$0] == nil }
         if !missing.isEmpty {
-            try await requestMembersByID(missing, guildID: guildID)
+            try await requestMembersByID(missing, guildID: guildID, presences: false)
         }
         let resolvedByID = Dictionary(
             uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) })

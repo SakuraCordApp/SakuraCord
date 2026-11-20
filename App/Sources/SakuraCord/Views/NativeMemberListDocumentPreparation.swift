@@ -624,7 +624,7 @@ extension NativeMemberListCanvasView {
                     text,
                     font: activityFont,
                     color: activityColor,
-                    showsMusicIcon: member.isListeningToMusic,
+                    showsMusicIcon: false,
                     showsActivitySeparator: activityContent.separatesMusicIcon,
                     trailingEmoji: activityContent.trailingEmoji
                 )
@@ -651,7 +651,8 @@ extension NativeMemberListCanvasView {
                 activityWidth: activity.map {
                     CGFloat(CTLineGetTypographicBounds($0, nil, nil, nil))
                 } ?? 0,
-                serverTag: member.user.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) }
+                serverTag: member.user.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) },
+                activityIconType: member.memberListActivityIconType
             )
         }
         return preparedText

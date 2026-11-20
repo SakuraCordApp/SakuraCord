@@ -1,3 +1,4 @@
+import DiscordProtocol
 import AppKit
 import Foundation
 
@@ -63,6 +64,10 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
     var sendsTypingIndicators: Bool
     var externalLinkConfirmationPolicy: ExternalLinkConfirmationPolicy
     var trustedDomains: [String]
+    var sharesActivity: Bool = false
+    var sharesAppleMusicActivity: Bool = false
+    var allowsLocalRPC: Bool = false
+    var activityStackOrder: [ActivityCategory] = ActivityCategory.defaultOrder
 }
 
 nonisolated extension PrivacySafetySettingsSnapshot {
@@ -72,6 +77,11 @@ nonisolated extension PrivacySafetySettingsSnapshot {
         sendsTypingIndicators = value(.privacyTypingIndicators).boolValue
         externalLinkConfirmationPolicy = value(.externalLinkProtection).rawValue()
         trustedDomains = ExternalLinkTrustedDomain.normalizedList(value(.trustedDomains).stringsValue)
+        sharesActivity = value(.activitySharing).boolValue
+        sharesAppleMusicActivity = value(.appleMusicPresence).boolValue
+        allowsLocalRPC = value(.localDiscordRPC).boolValue
+        let categories = value(.activityStackOrder).stringsValue.compactMap(ActivityCategory.init(rawValue:))
+        activityStackOrder = ActivityCategory.normalizedOrder(categories)
     }
 }
 
@@ -91,6 +101,13 @@ final class PrivacySafetySettingsStore {
     }
 
     func save(_ value: PrivacySafetySettingsSnapshot) {
+        preferences.set(.bool(value.sharesActivity), for: .activitySharing)
+        preferences.set(.bool(value.sharesAppleMusicActivity), for: .appleMusicPresence)
+        preferences.set(.bool(value.allowsLocalRPC), for: .localDiscordRPC)
+        preferences.set(
+            .strings(value.activityStackOrder.map(\.rawValue)),
+            for: .activityStackOrder
+        )
         preferences.set(.bool(value.removesMediaMetadata), for: .removeMediaMetadata)
         preferences.set(.bool(value.anonymisesFileNames), for: .anonymiseFileNames)
         preferences.set(.bool(value.sendsTypingIndicators), for: .privacyTypingIndicators)
@@ -337,6 +354,37 @@ extension AppModel {
         privacySafetySettings = value
         if wasSendingTypingIndicators, !value.sendsTypingIndicators {
             stopLocalTyping(clearThrottle: false)
+        }
+        if !isEphemeral {
+            if !value.sharesActivity || !value.sharesAppleMusicActivity {
+                appleMusicMonitor.stop()
+            }
+            if !value.sharesActivity || !value.allowsLocalRPC {
+                ipcServer.stop()
+                gameMonitor.stop()
+            }
+        }
+        Task {
+            await activityCoordinator.updatePreferences(
+                ActivityCoordinatorPreferences(
+                    isActivitySharingEnabled: value.sharesActivity,
+                    isAppleMusicPresenceEnabled: value.sharesAppleMusicActivity,
+                    isLocalRPCEnabled: value.allowsLocalRPC,
+                    activityCategoryOrder: value.activityStackOrder
+                )
+            )
+            if !isEphemeral {
+                guard privacySafetySettings == value else { return }
+                if value.sharesActivity, value.sharesAppleMusicActivity {
+                    appleMusicMonitor.start()
+                }
+                if value.sharesActivity, value.allowsLocalRPC, !ipcServer.isServerRunning {
+                    try? ipcServer.start()
+                }
+                if value.sharesActivity, value.allowsLocalRPC {
+                    gameMonitor.start()
+                }
+            }
         }
     }
 }

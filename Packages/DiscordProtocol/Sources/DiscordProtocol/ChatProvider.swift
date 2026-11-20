@@ -58,6 +58,8 @@ public protocol ChatProvider: Sendable {
         visibleRange: ClosedRange<Int>
     ) async throws
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member]
+    @discardableResult
+    func requestMembersByID(_ userIDs: [UserID], guildID: GuildID, presences: Bool) async throws -> [Member]
     /// Members the provider already holds for these users, without a request.
     func knownMembers(in guildID: GuildID, userIDs: [UserID]) async -> [Member]
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member]
@@ -128,6 +130,10 @@ public protocol ChatProvider: Sendable {
     func sendSoundboardSound(_ sound: SoundboardSound, in channelID: ChannelID) async throws
     func currentStatus() async -> PresenceStatus
     func updateStatus(_ status: PresenceStatus) async throws
+    func currentActivities() async -> [String: OutgoingActivityPayload]
+    func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws
+    func clearActivities(sourceID: String?) async throws
+    func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws
     func updateProfileCustomStatus(_ status: ProfileCustomStatus?) async throws -> ProfileCustomStatus?
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
     func messages(
@@ -461,6 +467,15 @@ public extension ChatProvider {
     func leaveGuild(_ guildID: GuildID) async throws {
         throw ServerInviteError.unsupported("Leaving servers is unavailable for this session.")
     }
+
+    func currentActivities() async -> [String: OutgoingActivityPayload] { [:] }
+    func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws {
+        throw ChatProviderError.unauthenticated
+    }
+    func clearActivities(sourceID: String?) async throws {
+        throw ChatProviderError.unauthenticated
+    }
+    func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws {}
 
     func guildJoinApplicationForm(_ guildID: GuildID, inviteCode: String?) async throws -> GuildJoinApplicationForm {
         throw ServerInviteError.unsupported("Server applications are unavailable for this session.")
@@ -813,6 +828,11 @@ public extension ChatProvider {
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
         let requested = Set(userIDs.prefix(100))
         return try await members(in: guildID).filter { requested.contains($0.id) }
+    }
+
+    @discardableResult
+    func requestMembersByID(_ userIDs: [UserID], guildID: GuildID, presences: Bool = false) async throws -> [Member] {
+        []
     }
 
     /// Providers without a member cache know no one; falling back to
