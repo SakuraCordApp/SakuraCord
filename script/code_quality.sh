@@ -17,6 +17,14 @@ SWIFTLINT_DIR="$TOOLS_DIR/swiftlint-$SWIFTLINT_VERSION"
 SWIFTFORMAT_BIN="$SWIFTFORMAT_DIR/swiftformat"
 SWIFTLINT_BIN="$SWIFTLINT_DIR/swiftlint"
 
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  DEVELOPER_DIR="$(xcode-select -p 2>/dev/null || true)"
+  COMMAND_LINE_TOOLS_LIB="$DEVELOPER_DIR/usr/lib"
+  if [[ -d "$COMMAND_LINE_TOOLS_LIB/sourcekitdInProc.framework" ]]; then
+    export DYLD_FRAMEWORK_PATH="$COMMAND_LINE_TOOLS_LIB${DYLD_FRAMEWORK_PATH:+:$DYLD_FRAMEWORK_PATH}"
+  fi
+fi
+
 usage() {
   cat >&2 <<'EOF'
 usage:

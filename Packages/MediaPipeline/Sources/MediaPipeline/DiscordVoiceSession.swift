@@ -567,6 +567,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             participants[userID] = nil
             lastRemoteAudioActivity[userID] = nil
             ssrcToUserID = ssrcToUserID.filter { $0.value != userID }
+            await audioEngine?.removeParticipant(userID: userID)
             eventContinuation.yield(.participantLeft(userID: userID))
         case let .video(video):
             await handleVideoState(video)

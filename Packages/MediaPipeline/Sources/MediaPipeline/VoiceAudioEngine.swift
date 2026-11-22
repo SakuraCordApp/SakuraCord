@@ -75,6 +75,7 @@ public final class VoiceAudioEngine {
     private let codec: OpusCodec
     private let captureEncoder: OpusSampleBufferEncoder
     private var players: [String: AVAudioPlayerNode] = [:]
+    private var participantDecoders: [String: OpusCodec] = [:]
     private var localSoundboardPlayers: [UUID: LocalSoundboardPlayback] = [:]
     private var participantVolumes: [String: Float] = [:]
     private var captureSessionObservers: [NSObjectProtocol] = []
@@ -545,6 +546,7 @@ public final class VoiceAudioEngine {
         playbackEngine.stop()
         playbackEngine.reset()
         players.removeAll()
+        participantDecoders.removeAll()
         localSoundboardPlayers.removeAll()
     }
 
@@ -663,13 +665,30 @@ public final class VoiceAudioEngine {
         players[userID]?.volume = volume
     }
 
+    public func removeParticipant(userID: String) {
+        participantDecoders[userID] = nil
+        participantVolumes[userID] = nil
+        if let player = players.removeValue(forKey: userID) {
+            player.stop()
+            playbackEngine.disconnectNodeOutput(player)
+            playbackEngine.detach(player)
+        }
+    }
+
     public func play(opusPacket: Data, from userID: String) throws {
         guard !isDeafened, !isChangingPlaybackRoute else { return }
         if !playbackEngine.isRunning {
             schedulePlaybackRecovery()
             return
         }
-        let buffer = try codec.decode(opusPacket)
+        let decoder: OpusCodec
+        if let existingDecoder = participantDecoders[userID] {
+            decoder = existingDecoder
+        } else {
+            decoder = try OpusCodec()
+            participantDecoders[userID] = decoder
+        }
+        let buffer = try decoder.decode(opusPacket)
         let player = try player(for: userID)
         // The engine can stop during the decode and node setup above; scheduling or
         // playing on a stopped engine raises an ObjC exception.
