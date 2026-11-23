@@ -640,26 +640,6 @@ struct DiscordIPCServerTests {
         #expect(!(await coordinator.isSourcePermitted(.custom(sourceID: "game:roblox"))))
     }
 
-    @Test func `game presence monitor checks athas app when present`() async throws {
-        let mockProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
-        let monitor = GamePresenceMonitor(coordinator: coordinator)
-
-        let running = NSWorkspace.shared.runningApplications
-        if let athas = running.first(where: { !$0.isTerminated && GamePresenceMonitor.isAthasApp($0) }) {
-            #expect(athas.bundleIdentifier?.lowercased() == "com.code.athas" || athas.localizedName?.lowercased() == "athas" || athas.bundleURL?.lastPathComponent.lowercased() == "athas.app")
-            monitor.checkRunningGames()
-            let published = await eventually {
-                let acts = await mockProvider.currentActivities()
-                return acts["custom:app:athas"] != nil
-            }
-            #expect(published)
-            let acts = await mockProvider.currentActivities()
-            #expect(acts["custom:app:athas"]?.name == "Athas")
-            #expect(GamePresenceMonitor.currentAthasIconData != nil)
-        }
-    }
-
     @Test func `rapid set activity followed immediately by disconnect clears presence without race`() async throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()

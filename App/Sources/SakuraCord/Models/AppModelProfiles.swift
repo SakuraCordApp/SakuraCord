@@ -396,40 +396,28 @@ extension AppModel {
     private func applyResolvedProfileMember(
         _ resolvedMember: Member?,
         memberID: UserID,
-        guildID: GuildID?,
+        guildID: GuildID,
         destination: ProfilePresentationDestination
     ) {
         guard var value = profilePresentation(for: destination) else { return }
         if let resolvedMember {
             var memberToStore = resolvedMember
-            if let guildID, var existing = membersByGuildID[guildID]?[resolvedMember.id] {
-                applyPresence(from: resolvedMember, to: &existing)
-                memberToStore = existing
-            } else if guildID == nil, var existing = membersByID[resolvedMember.id] {
+            if var existing = membersByGuildID[guildID]?[resolvedMember.id] {
                 applyPresence(from: resolvedMember, to: &existing)
                 memberToStore = existing
             }
-            if let guildID {
-                membersByGuildID[guildID, default: [:]][resolvedMember.id] = memberToStore
-                if selectedGuildID == guildID {
-                    membersByID[resolvedMember.id] = memberToStore
-                    if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
-                        members[index] = memberToStore
-                    }
+            membersByGuildID[guildID, default: [:]][resolvedMember.id] = memberToStore
+            if selectedGuildID == guildID {
+                membersByID[resolvedMember.id] = memberToStore
+                if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
+                    members[index] = memberToStore
                 }
             }
-            if selectedGuildID == nil {
-                if guildID == nil {
-                    membersByID[resolvedMember.id] = memberToStore
-                    if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
-                        members[index] = memberToStore
-                    }
-                } else if var dmMember = membersByID[resolvedMember.id] {
-                    applyPresence(from: resolvedMember, to: &dmMember)
-                    membersByID[resolvedMember.id] = dmMember
-                    if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
-                        members[index] = dmMember
-                    }
+            if selectedGuildID == nil, var dmMember = membersByID[resolvedMember.id] {
+                applyPresence(from: resolvedMember, to: &dmMember)
+                membersByID[resolvedMember.id] = dmMember
+                if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
+                    members[index] = dmMember
                 }
             }
             if value.guildID == nil {
