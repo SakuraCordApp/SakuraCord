@@ -382,6 +382,17 @@ extension AppModel {
         }
     }
 
+    private func applyPresence(from source: Member, to target: inout Member) {
+        target.status = source.status
+        target.richActivity = source.richActivity
+        target.activityText = source.activityText
+        target.isListeningToMusic = source.isListeningToMusic
+        target.isMobileOnly = source.isMobileOnly
+        if let custom = source.customStatus {
+            target.customStatus = custom
+        }
+    }
+
     private func applyResolvedProfileMember(
         _ resolvedMember: Member?,
         memberID: UserID,
@@ -391,17 +402,12 @@ extension AppModel {
         guard var value = profilePresentation(for: destination) else { return }
         if let resolvedMember {
             var memberToStore = resolvedMember
-            if let existing = (guildID.flatMap { membersByGuildID[$0]?[resolvedMember.id] }) ?? membersByID[resolvedMember.id] {
-                var updated = existing
-                updated.status = resolvedMember.status
-                updated.richActivity = resolvedMember.richActivity
-                updated.activityText = resolvedMember.activityText
-                updated.isListeningToMusic = resolvedMember.isListeningToMusic
-                updated.isMobileOnly = resolvedMember.isMobileOnly
-                if let custom = resolvedMember.customStatus {
-                    updated.customStatus = custom
-                }
-                memberToStore = updated
+            if let guildID, var existing = membersByGuildID[guildID]?[resolvedMember.id] {
+                applyPresence(from: resolvedMember, to: &existing)
+                memberToStore = existing
+            } else if guildID == nil, var existing = membersByID[resolvedMember.id] {
+                applyPresence(from: resolvedMember, to: &existing)
+                memberToStore = existing
             }
             if let guildID {
                 membersByGuildID[guildID, default: [:]][resolvedMember.id] = memberToStore
@@ -413,13 +419,25 @@ extension AppModel {
                 }
             }
             if selectedGuildID == nil {
-                membersByID[resolvedMember.id] = memberToStore
-                if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
-                    members[index] = memberToStore
+                if guildID == nil {
+                    membersByID[resolvedMember.id] = memberToStore
+                    if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
+                        members[index] = memberToStore
+                    }
+                } else if var dmMember = membersByID[resolvedMember.id] {
+                    applyPresence(from: resolvedMember, to: &dmMember)
+                    membersByID[resolvedMember.id] = dmMember
+                    if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
+                        members[index] = dmMember
+                    }
                 }
             }
-            value.member = memberToStore
-        } else if let live = profileMember(memberID, in: guildID) {
+            if value.guildID == nil {
+                applyPresence(from: resolvedMember, to: &value.member)
+            } else {
+                value.member = memberToStore
+            }
+        } else if let live = profileMember(memberID, in: value.guildID ?? guildID) {
             value.member = live
         }
         if let livePresence = friends.presences[memberID] {
