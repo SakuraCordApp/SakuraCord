@@ -1,3 +1,4 @@
+import DiscordProtocol
 import SwiftUI
 
 struct PrivacySafetySettingsPage: View {
@@ -10,7 +11,7 @@ struct PrivacySafetySettingsPage: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             SettingsPageForm(page: .privacySafety, state: state) {
-                PrivacyDiscordActivitySection(
+                PrivacyMediaMetadataSection(
                     value: $value,
                     state: state
                 )
@@ -310,7 +311,7 @@ private struct TrustedDomainRow: View {
     }
 }
 
-private struct PrivacyDiscordActivitySection: View {
+private struct PrivacyMediaMetadataSection: View {
     @Binding var value: PrivacySafetySettingsSnapshot
     let state: SettingsViewState
 
@@ -323,7 +324,7 @@ private struct PrivacyDiscordActivitySection: View {
             Toggle("Send typing indicators", isOn: $value.sendsTypingIndicators)
                 .settingsControlAnchor(.privacyTypingIndicators, state: state)
         } header: {
-            Text("Discord Activity", bundle: #bundle)
+            Text("Media & Privacy", bundle: #bundle)
         }
     }
 }

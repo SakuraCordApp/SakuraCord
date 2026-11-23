@@ -6,6 +6,38 @@ public extension DiscordRESTProvider {
         presenceStatus
     }
 
+    func currentActivities() async -> [String: OutgoingActivityPayload] {
+        activeActivities
+    }
+
+    func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws {
+        presenceGeneration &+= 1
+        if let activity {
+            activeActivities[sourceID] = activity
+        } else {
+            activeActivities.removeValue(forKey: sourceID)
+        }
+        await sendPresenceIfChanged()
+    }
+
+    func clearActivities(sourceID: String? = nil) async throws {
+        presenceGeneration &+= 1
+        if let sourceID {
+            activeActivities.removeValue(forKey: sourceID)
+        } else {
+            activeActivities.removeAll()
+        }
+        await sendPresenceIfChanged()
+    }
+
+    func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws {
+        let normalized = ActivityCategory.normalizedOrder(order)
+        guard activityCategoryOrder != normalized else { return }
+        presenceGeneration &+= 1
+        activityCategoryOrder = normalized
+        await sendPresenceIfChanged()
+    }
+
     // Official stable622805 module827827 and module594061 `markDirty`.
     /// Applies a pick at once and saves it; only this first save reports a failure.
     func updateStatus(_ status: PresenceStatus) async throws {
@@ -62,8 +94,20 @@ extension DiscordRESTProvider {
 
     func setPresenceStatus(_ status: PresenceStatus) {
         guard presenceStatus != status else { return }
+        presenceGeneration &+= 1
         presenceStatus = status
         continuation?.yield(.currentUserStatusChanged(status))
+    }
+
+    func activeActivitiesList() -> [OutgoingActivityPayload] {
+        activeActivities.values.sorted { lhs, rhs in
+            let lRank = lhs.priorityRank(using: activityCategoryOrder)
+            let rRank = rhs.priorityRank(using: activityCategoryOrder)
+            if lRank != rRank {
+                return lRank < rRank
+            }
+            return lhs.name < rhs.name
+        }
     }
 
     // Official stable622805 PresenceUpdater.
@@ -71,7 +115,10 @@ extension DiscordRESTProvider {
     func sendPresenceIfChanged() async {
         deferredPresenceTask?.cancel()
         deferredPresenceTask = nil
-        guard gatewayReady, presenceStatus != lastSentPresenceStatus else { return }
+        let activities = activeActivitiesList()
+        let statusChanged = presenceStatus != lastSentPresenceStatus
+        let activitiesChanged = activities != lastSentActivities
+        guard gatewayReady, statusChanged || activitiesChanged else { return }
         let now = Date.now
         presenceSendWindowEnds.removeAll { $0 <= now }
         let budgetReopens = presenceSendWindowEnds.count >= 5 ? presenceSendWindowEnds.first ?? now : now
@@ -97,18 +144,166 @@ extension DiscordRESTProvider {
         await sendPresenceIfChanged()
     }
 
+    private struct ExternalAssetDTO: Decodable {
+        let url: String
+        let externalAssetPath: String
+
+        enum CodingKeys: String, CodingKey {
+            case url
+            case externalAssetPath = "external_asset_path"
+        }
+    }
+
+    private func resolveExternalAsset(url: String, applicationID: String) async -> String? {
+        if url.hasPrefix("https://i.scdn.co/image/") {
+            let hash = String(url.dropFirst("https://i.scdn.co/image/".count))
+            return "spotify:\(hash)"
+        }
+        if let cached = externalAssetCache[url] {
+            return cached
+        }
+        let targetAppID = applicationID.allSatisfy(\.isNumber) && !applicationID.isEmpty
+            ? applicationID
+            : "1247654840780460125"
+        do {
+            let body: [String: JSONValue] = [
+                "urls": .array([.string(url)])
+            ]
+            let dtos: [ExternalAssetDTO] = try await request(
+                "/applications/\(targetAppID)/external-assets",
+                method: "POST",
+                body: body
+            )
+            if let first = dtos.first {
+                let rawPath = first.externalAssetPath
+                let path: String = if rawPath.hasPrefix("mp:") {
+                    rawPath
+                } else if rawPath.hasPrefix("/") {
+                    "mp:\(rawPath.dropFirst())"
+                } else {
+                    "mp:\(rawPath)"
+                }
+                if externalAssetCache[url] == nil {
+                    if externalAssetCacheKeys.count >= 128 {
+                        let oldest = externalAssetCacheKeys.removeFirst()
+                        externalAssetCache.removeValue(forKey: oldest)
+                    }
+                    externalAssetCacheKeys.append(url)
+                }
+                externalAssetCache[url] = path
+                return path
+            }
+        } catch {
+            gatewayLogger.debug("External asset resolution for \(url) failed: \(error.localizedDescription)")
+        }
+        return nil
+    }
+
+    private struct ApplicationAssetDTO: Decodable {
+        let id: String
+        let name: String
+    }
+
+    private func resolveApplicationAssetID(applicationID: String, assetName: String) async -> String? {
+        guard !applicationID.isEmpty, applicationID.allSatisfy(\.isNumber) else { return nil }
+        let now = Date()
+        if let cached = applicationAssetCatalogs[applicationID], cached.expiresAt > now {
+            return cached.assets[assetName]
+        }
+        do {
+            let assets: [ApplicationAssetDTO] = try await request("/oauth2/applications/\(applicationID)/assets")
+            var assetMap: [String: String] = [:]
+            for asset in assets {
+                assetMap[asset.name] = asset.id
+            }
+            applicationAssetCatalogs[applicationID] = (assets: assetMap, expiresAt: now.addingTimeInterval(3600))
+            return assetMap[assetName]
+        } catch {
+            gatewayLogger.debug("Asset resolution for \(assetName) in application \(applicationID) failed: \(error.localizedDescription)")
+            applicationAssetCatalogs[applicationID] = (assets: [:], expiresAt: now.addingTimeInterval(60))
+            return nil
+        }
+    }
+
+    private func buildGatewayActivityDictionaries(
+        activities: [OutgoingActivityPayload]
+    ) async -> [[String: Any]] {
+        var activityDictionaries: [[String: Any]] = []
+        for activity in activities {
+            var dict = activity.gatewayDictionary
+            let appID = activity.applicationId ?? ""
+            if var ast = dict["assets"] as? [String: Any] {
+                if let largeImage = ast["large_image"] as? String {
+                    if largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
+                        if let proxied = await resolveExternalAsset(url: largeImage, applicationID: appID) {
+                            ast["large_image"] = proxied
+                        }
+                    } else if !largeImage.allSatisfy(\.isNumber), !largeImage.hasPrefix("spotify:"), !largeImage.hasPrefix("mp:"), !appID.isEmpty {
+                        if let assetID = await resolveApplicationAssetID(applicationID: appID, assetName: largeImage) {
+                            ast["large_image"] = assetID
+                        }
+                    }
+                }
+                if let smallImage = ast["small_image"] as? String {
+                    if smallImage.hasPrefix("http://") || smallImage.hasPrefix("https://") {
+                        if let proxied = await resolveExternalAsset(url: smallImage, applicationID: appID) {
+                            ast["small_image"] = proxied
+                        }
+                    } else if !smallImage.allSatisfy(\.isNumber), !smallImage.hasPrefix("spotify:"), !smallImage.hasPrefix("mp:"), !appID.isEmpty {
+                        if let assetID = await resolveApplicationAssetID(applicationID: appID, assetName: smallImage) {
+                            ast["small_image"] = assetID
+                        }
+                    }
+                }
+                dict["assets"] = ast
+            }
+            activityDictionaries.append(dict)
+        }
+        return activityDictionaries
+    }
+
     func sendPresence() async throws {
+        let currentGeneration = presenceGeneration
         let status = presenceStatus
-        presenceSendWindowEnds.append(Date.now.addingTimeInterval(20))
+        let activities = activeActivitiesList()
+
+        let activityDictionaries = await buildGatewayActivityDictionaries(activities: activities)
+
+        guard currentGeneration == presenceGeneration else { return }
+        let statusChanged = status != lastSentPresenceStatus
+        let activitiesChanged = activities != lastSentActivities
+        guard statusChanged || activitiesChanged else { return }
+
+        let now = Date.now
+        presenceSendWindowEnds.removeAll { $0 <= now }
+        let budgetReopens = presenceSendWindowEnds.count >= 5 ? presenceSendWindowEnds.first ?? now : now
+        let reopens = max(budgetReopens, gatewayOpcodeRateLimitDates[3] ?? now)
+        if reopens > now {
+            deferredPresenceTask?.cancel()
+            deferredPresenceTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(reopens.timeIntervalSince(now)))
+                guard !Task.isCancelled else { return }
+                await self?.sendDeferredPresence()
+            }
+            return
+        }
+
+        presenceSendWindowEnds.append(now.addingTimeInterval(20))
         lastSentPresenceStatus = status
+        lastSentActivities = activities
         do {
             try await sendGateway([
                 "op": 3,
-                "d": ["since": 0, "activities": [], "status": status.rawValue, "afk": false]
-                    as [String: Any],
+                "d": [
+                    "since": 0,
+                    "activities": activityDictionaries,
+                    "status": status.rawValue,
+                    "afk": false,
+                ] as [String: Any],
             ])
         } catch {
             if lastSentPresenceStatus == status { lastSentPresenceStatus = nil }
+            if lastSentActivities == activities { lastSentActivities = nil }
             throw error
         }
     }

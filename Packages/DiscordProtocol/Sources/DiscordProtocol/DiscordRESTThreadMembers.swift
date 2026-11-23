@@ -121,6 +121,7 @@ extension DiscordRESTProvider {
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: members
         )
+        cachedMembersByID.removeValue(forKey: guildID)
         publishCurrentMemberTimeoutChange(previousMembers: previousMembers, guildID: guildID)
     }
 

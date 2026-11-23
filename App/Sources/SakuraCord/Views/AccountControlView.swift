@@ -1,4 +1,5 @@
 import AppKit
+import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
 
@@ -84,7 +85,7 @@ struct AccountControlView: View {
 
     private var accountSubtitle: String {
         if user != nil {
-            return currentStatus.label
+            return voiceModel.currentUserAccountSubtitle(currentStatus: currentStatus)
         }
         return isAuthenticated ? connectionState.rawValue : "Sign in to Discord"
     }
@@ -138,15 +139,48 @@ private struct CurrentUserCapsule: View {
                                 weight: .semibold
                             ))
                             .lineLimit(1)
-                        Text(subtitle)
-                            .font(.interfaceSystem(
-                                size: max(
-                                    10,
-                                    InterfaceTypographyMetrics.interfaceTextSize - 2
-                                )
-                            ))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        HStack(spacing: InterfaceScale.metric(4)) {
+                            let customStatus = (user != nil ? model.profileCustomStatus?.displayText : nil)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let hasCustomStatus = customStatus != nil && !(customStatus?.isEmpty ?? true)
+                            let activity = user != nil ? model.currentUserActivity : nil
+
+                            if let activity {
+                                let category = ActivityCategory.category(for: activity.type)
+                                HStack(spacing: InterfaceScale.metric(2)) {
+                                    Image(systemName: category.iconName)
+                                        .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .semibold))
+                                        .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
+
+                                    if hasCustomStatus, model.currentUserPermittedActivitiesCount >= 2 {
+                                        Text("+\(model.currentUserPermittedActivitiesCount - 1)")
+                                            .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .bold))
+                                            .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
+                                    }
+                                }
+                                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+
+                                if hasCustomStatus {
+                                    Text("•")
+                                        .font(.interfaceSystem(size: max(10, InterfaceTypographyMetrics.interfaceTextSize - 2)))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            Text(subtitle)
+                                .font(.interfaceSystem(
+                                    size: max(
+                                        10,
+                                        InterfaceTypographyMetrics.interfaceTextSize - 2
+                                    )
+                                ))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .id(subtitle)
+                                .transition(.opacity)
+                        }
+                        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: model.currentUserActivity?.type)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: model.currentUserPermittedActivitiesCount)
+                        .animation(.easeInOut(duration: 0.2), value: subtitle)
                     }
 
                     Spacer(minLength: InterfaceScale.metric(4))
@@ -486,17 +520,5 @@ private struct AccountSelectionPopover: View {
         .disabled(switchingAccountID != nil)
         .authenticationLoading(switchingAccountID == account.accountID, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(8)))
         .accessibilityValue(switchingAccountID == account.accountID ? "Switching account" : "")
-    }
-}
-
-private extension PresenceStatus {
-    var label: String {
-        switch self {
-        case .online: "Online"
-        case .idle: "Idle"
-        case .dnd: "Do Not Disturb"
-        case .invisible: "Invisible"
-        case .offline: "Offline"
-        }
     }
 }

@@ -1,4 +1,5 @@
 @testable import SakuraCord
+import DiscordProtocol
 import Foundation
 @testable import DiscordProtocolTestSupport
 import MessageRendering
@@ -72,12 +73,20 @@ import Testing
     value.anonymisesFileNames = true
     value.externalLinkConfirmationPolicy = .allLinks
     value.trustedDomains = ["Example.COM", "sub.example.com", "example.com"]
+    value.sharesActivity = true
+    value.sharesAppleMusicActivity = true
+    value.allowsLocalRPC = true
+    value.activityStackOrder = [.music, .games, .streaming, .other]
     store.save(value)
     let reloaded = store.load()
     #expect(!reloaded.removesMediaMetadata)
     #expect(reloaded.anonymisesFileNames)
     #expect(reloaded.externalLinkConfirmationPolicy == .allLinks)
     #expect(reloaded.trustedDomains == ["example.com", "sub.example.com"])
+    #expect(reloaded.sharesActivity)
+    #expect(reloaded.sharesAppleMusicActivity)
+    #expect(reloaded.allowsLocalRPC)
+    #expect(reloaded.activityStackOrder == [.music, .games, .streaming, .other])
 
     let export = preferences.export(page: .privacySafety)
     #expect(export == [
@@ -86,9 +95,15 @@ import Testing
         SettingsControlID.privacyTypingIndicators.rawValue: .bool(true),
         SettingsControlID.externalLinkProtection.rawValue: .string("allLinks"),
     ])
+    let featuresExport = preferences.export(page: .features)
+    #expect(featuresExport[SettingsControlID.activitySharing.rawValue] == .bool(true))
+    #expect(featuresExport[SettingsControlID.appleMusicPresence.rawValue] == .bool(true))
+    #expect(featuresExport[SettingsControlID.localDiscordRPC.rawValue] == .bool(true))
+    #expect(featuresExport[SettingsControlID.activityStackOrder.rawValue] == .strings(["music", "games", "streaming", "other"]))
     #expect(!String(describing: export).contains("credential-secret"))
 
     preferences.reset(page: .privacySafety)
+    preferences.reset(page: .features)
     #expect(store.load() == .defaults)
     #expect(defaults.string(forKey: "unregistered.credential") == "credential-secret")
 }
@@ -309,4 +324,33 @@ import Testing
     #expect(assessment.warnings.contains {
         $0.contains("discord.com") && $0.contains("cdn.discordapp.com")
     })
+}
+
+@MainActor
+@Test func `AppModel applying privacy safety settings synchronizes activity coordinator`() async {
+    let defaults = InMemoryPreferences()
+    let preferences = SettingsPreferenceStore(defaults: defaults)
+    let privacyStore = PrivacySafetySettingsStore(preferences: preferences)
+    let provider = MockChatProvider()
+    let model = AppModel(
+        isEphemeral: true,
+        provider: provider,
+        privacySafetySettingsStore: privacyStore
+    )
+    await model.start()
+
+    var settings = model.privacySafetySettings
+    #expect(!settings.sharesActivity)
+    #expect(!settings.sharesAppleMusicActivity)
+    #expect(!settings.allowsLocalRPC)
+
+    settings.sharesActivity = true
+    settings.sharesAppleMusicActivity = true
+    model.applyPrivacySafetySettings(settings)
+
+    let updated = await eventually {
+        let prefs = await model.activityCoordinator.currentPreferences()
+        return prefs.isAppleMusicPresenceEnabled && prefs.isActivitySharingEnabled && !prefs.isLocalRPCEnabled
+    }
+    #expect(updated)
 }

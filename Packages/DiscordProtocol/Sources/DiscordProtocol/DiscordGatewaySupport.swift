@@ -51,13 +51,13 @@ enum DiscordGatewayPayloadFactory {
         ]
     }
 
-    static func requestMembers(guildID: GuildID, userIDs: [UserID]) -> [String: Any] {
+    static func requestMembers(guildID: GuildID, userIDs: [UserID], presences: Bool = false) -> [String: Any] {
         [
             "op": 8,
             "d": [
                 "guild_id": guildID.description,
                 "user_ids": userIDs.map(\.description),
-                "presences": false
+                "presences": presences
             ] as [String: Any]
         ]
     }

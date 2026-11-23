@@ -4,6 +4,8 @@ struct FeaturesSettingsPage: View {
     let model: AppModel
     let state: SettingsViewState
 
+    @State private var activityValue = PrivacySafetySettingsSnapshot.defaults
+
     var body: some View {
         let value = Binding(
             get: { model.featuresSettings },
@@ -30,6 +32,7 @@ struct FeaturesSettingsPage: View {
             } header: {
                 Text("Channels", bundle: #bundle)
             }
+            FeaturesActivitySettingsSection(value: $activityValue, state: state)
             FakeNitroSettingsSection(value: value, state: state)
             Section {
                 Toggle("Message hover actions", isOn: value.messageHoverActions)
@@ -56,6 +59,41 @@ struct FeaturesSettingsPage: View {
                 state: state
             )
             TranslationSettingsSection(model: model, state: state)
+        }
+        .task {
+            activityValue = model.privacySafetySettings
+        }
+        .onChange(of: activityValue) { _, newValue in
+            model.applyPrivacySafetySettings(newValue)
+        }
+    }
+}
+
+private struct FeaturesActivitySettingsSection: View {
+    @Binding var value: PrivacySafetySettingsSnapshot
+    let state: SettingsViewState
+
+    var body: some View {
+        Section {
+            Toggle("Share activity status", isOn: $value.sharesActivity)
+                .tint(SakuraCordAccentColor.color)
+                .settingsControlAnchor(.activitySharing, state: state)
+            Toggle("Display Apple Music & Spotify as activity", isOn: $value.sharesAppleMusicActivity)
+                .tint(SakuraCordAccentColor.color)
+                .disabled(!value.sharesActivity)
+                .settingsControlAnchor(.appleMusicPresence, state: state)
+            Toggle("Allow local apps & games to share activity (Discord RPC, Roblox detection without IPC)", isOn: $value.allowsLocalRPC)
+                .tint(SakuraCordAccentColor.color)
+                .disabled(!value.sharesActivity)
+                .settingsControlAnchor(.localDiscordRPC, state: state)
+            if value.sharesActivity {
+                ActivityStackPriorityCard(
+                    activityStackOrder: $value.activityStackOrder,
+                    state: state
+                )
+            }
+        } header: {
+            Text("Discord Activity & Presence", bundle: #bundle)
         }
     }
 }

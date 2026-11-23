@@ -443,12 +443,13 @@ struct UserProfileDTO: Decodable {
     var premiumSince: String?
     var premiumGuildSince: String?
     var legacyUsername: String?
+    var activities: [GuildActivityDTO]?
     var frameSKUID: String? {
         guildMemberProfile?.collectibles?.first(where: { $0.type == 3 })?.skuID
             ?? userProfile?.collectibles?.first(where: { $0.type == 3 })?.skuID
     }
     enum CodingKeys: String, CodingKey {
-        case user, widgets
+        case user, widgets, activities
         case isPrivate = "private"
         case premiumType = "premium_type"
         case userProfile = "user_profile"
@@ -549,6 +550,7 @@ struct UserProfileDTO: Decodable {
             premiumSince: premiumSince.flatMap(DiscordDate.parse),
             premiumGuildSince: premiumGuildSince.flatMap(DiscordDate.parse),
             legacyUsername: legacyUsername,
+            richActivity: activities?.memberListActivity?.asRichActivity,
             guildJoinedAt: guildMember?.joinedAt.flatMap(DiscordDate.parse)
         )
     }
