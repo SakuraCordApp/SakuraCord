@@ -1147,7 +1147,6 @@ extension AppModel {
     }
 
     static func makeActivityServices(
-        isEphemeral: Bool = false,
         privacyStore: PrivacySafetySettingsStore,
         provider: any ChatProvider,
         coordinator: ActivityCoordinator?,

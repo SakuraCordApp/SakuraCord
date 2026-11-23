@@ -1140,7 +1140,6 @@ final class AppModel {
         let resolvedPrivacyStore = privacySafetySettingsStore ?? .shared
         self.privacySafetySettingsStore = resolvedPrivacyStore
         let activityServices = Self.makeActivityServices(
-            isEphemeral: isEphemeral,
             privacyStore: resolvedPrivacyStore,
             provider: resolvedProvider,
             coordinator: activityCoordinator,

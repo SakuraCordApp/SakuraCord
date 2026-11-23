@@ -391,13 +391,17 @@ extension AppModel {
         guard var value = profilePresentation(for: destination) else { return }
         if let resolvedMember {
             var memberToStore = resolvedMember
-            if let guildID, let existing = membersByGuildID[guildID]?[resolvedMember.id] {
-                if memberToStore.roles.isEmpty, !existing.roles.isEmpty {
-                    memberToStore.roles = existing.roles
+            if let existing = (guildID.flatMap { membersByGuildID[$0]?[resolvedMember.id] }) ?? membersByID[resolvedMember.id] {
+                var updated = existing
+                updated.status = resolvedMember.status
+                updated.richActivity = resolvedMember.richActivity
+                updated.activityText = resolvedMember.activityText
+                updated.isListeningToMusic = resolvedMember.isListeningToMusic
+                updated.isMobileOnly = resolvedMember.isMobileOnly
+                if let custom = resolvedMember.customStatus {
+                    updated.customStatus = custom
                 }
-                if memberToStore.communicationDisabledUntil == nil {
-                    memberToStore.communicationDisabledUntil = existing.communicationDisabledUntil
-                }
+                memberToStore = updated
             }
             if let guildID {
                 membersByGuildID[guildID, default: [:]][resolvedMember.id] = memberToStore
