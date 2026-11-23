@@ -827,10 +827,10 @@ final class AppModel {
     var currentUserShortActivityText: String? {
         guard let activity = currentUserActivity else { return nil }
         if activity.type == .listening {
-            let state = activity.state?.trimmingCharacters(in: .whitespacesAndNewlines)
             let details = activity.details?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let value = (state?.isEmpty == false ? state : nil)
-                ?? (details?.isEmpty == false ? details : nil)
+            let state = activity.state?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = (details?.isEmpty == false ? details : nil)
+                ?? (state?.isEmpty == false ? state : nil)
                 ?? activity.name
             if value.lowercased().hasPrefix("listening to ") {
                 return String(value.dropFirst("listening to ".count)).trimmingCharacters(in: .whitespaces)

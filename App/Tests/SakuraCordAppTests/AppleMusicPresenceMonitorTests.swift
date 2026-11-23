@@ -405,7 +405,7 @@ struct AppleMusicPresenceMonitorTests {
 
         model.currentUserPermittedActivitiesCount = 1
 
-        // 4. Listening activity -> prioritizes artist / state then details
+        // 4. Listening activity -> prioritizes song title / details then artist / state
         let spotify = OutgoingActivityPayload(
             name: "Spotify",
             type: .listening,
@@ -413,8 +413,8 @@ struct AppleMusicPresenceMonitorTests {
             state: "Xizt, TRUE ADAM"
         )
         model.applyCurrentUserActivity(spotify)
-        #expect(model.currentUserShortActivityText == "Xizt, TRUE ADAM")
-        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "Xizt, TRUE ADAM")
+        #expect(model.currentUserShortActivityText == "TRUE ADVENTURE")
+        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "TRUE ADVENTURE")
 
         // 5. Custom status takes precedence over activity text
         model.profileCustomStatus = ProfileCustomStatus(text: "Chilling")
@@ -422,7 +422,7 @@ struct AppleMusicPresenceMonitorTests {
 
         // 6. Custom status cleared -> returns to activity
         model.profileCustomStatus = nil
-        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "Xizt, TRUE ADAM")
+        #expect(model.currentUserAccountSubtitle(currentStatus: .online) == "TRUE ADVENTURE")
     }
 
     @Test("Extreme or non-finite duration does not cause integer overflow or crash")
