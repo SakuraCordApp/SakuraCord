@@ -359,7 +359,7 @@ extension AppModel {
         if let cachedProfile {
             if !isCurrent, isOffline || member.richActivity == nil, let targetGuildID = guildID ?? cachedProfile.mutualGuilds.first?.id {
                 refreshCachedProfilePresence(
-                    memberID: memberID, targetGuildID: targetGuildID, guildID: guildID,
+                    memberID: memberID, targetGuildID: targetGuildID,
                     requestID: requestID, destination: destination, session: session
                 )
             }
@@ -368,7 +368,7 @@ extension AppModel {
 
         loadProfilePresentation(
             memberID: memberID, guildID: guildID, requestID: requestID,
-            destination: destination, isCurrent: isCurrent, isOffline: isOffline, session: session
+            destination: destination, isCurrent: isCurrent, session: session
         )
         return requestID
     }
@@ -390,22 +390,31 @@ extension AppModel {
     ) {
         guard var value = profilePresentation(for: destination) else { return }
         if let resolvedMember {
+            var memberToStore = resolvedMember
+            if let guildID, let existing = membersByGuildID[guildID]?[resolvedMember.id] {
+                if memberToStore.roles.isEmpty, !existing.roles.isEmpty {
+                    memberToStore.roles = existing.roles
+                }
+                if memberToStore.communicationDisabledUntil == nil {
+                    memberToStore.communicationDisabledUntil = existing.communicationDisabledUntil
+                }
+            }
             if let guildID {
-                membersByGuildID[guildID, default: [:]][resolvedMember.id] = resolvedMember
+                membersByGuildID[guildID, default: [:]][resolvedMember.id] = memberToStore
                 if selectedGuildID == guildID {
-                    membersByID[resolvedMember.id] = resolvedMember
+                    membersByID[resolvedMember.id] = memberToStore
                     if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
-                        members[index] = resolvedMember
+                        members[index] = memberToStore
                     }
                 }
             }
             if selectedGuildID == nil {
-                membersByID[resolvedMember.id] = resolvedMember
+                membersByID[resolvedMember.id] = memberToStore
                 if let index = members.firstIndex(where: { $0.id == resolvedMember.id }) {
-                    members[index] = resolvedMember
+                    members[index] = memberToStore
                 }
             }
-            value.member = resolvedMember
+            value.member = memberToStore
         } else if let live = profileMember(memberID, in: guildID) {
             value.member = live
         }
@@ -418,7 +427,6 @@ extension AppModel {
     private func refreshCachedProfilePresence(
         memberID: UserID,
         targetGuildID: GuildID,
-        guildID: GuildID?,
         requestID: UUID,
         destination: ProfilePresentationDestination,
         session: AppModelAccountSession
@@ -446,27 +454,15 @@ extension AppModel {
         requestID: UUID,
         destination: ProfilePresentationDestination,
         isCurrent: Bool,
-        isOffline: Bool,
         session: AppModelAccountSession
     ) {
         let task = Task { [weak self] in
             guard let self else { return }
             do {
-                async let profileFetch = session.provider.profile(
+                let loaded = try await session.provider.profile(
                     for: memberID,
                     in: guildID
                 )
-                var resolvedMembers: [Member]?
-                if let guildID, !isCurrent {
-                    resolvedMembers = try? await session.provider.requestMembersByID([memberID], guildID: guildID, presences: true)
-                } else {
-                    resolvedMembers = nil
-                }
-                let loaded = try await profileFetch
-                let targetGuildID = guildID ?? loaded.mutualGuilds.first?.id
-                if guildID == nil, !isCurrent, let targetGuildID {
-                    resolvedMembers = try? await session.provider.requestMembersByID([memberID], guildID: targetGuildID, presences: true)
-                }
                 guard !Task.isCancelled,
                       isCurrentAccountSession(session),
                       profilePresentation(for: destination)?.requestID == requestID
@@ -477,13 +473,24 @@ extension AppModel {
                 value?.profile = profile
                 value?.isLoading = false
                 value?.errorMessage = nil
+                if let live = profileMember(memberID, in: guildID) {
+                    value?.member = live
+                }
+                if let livePresence = friends.presences[memberID], value != nil {
+                    applyPresenceIfBetter(to: &value!.member, from: livePresence)
+                }
                 setProfilePresentation(value, for: destination)
-                applyResolvedProfileMember(
-                    resolvedMembers?.first(where: { $0.id == memberID }),
-                    memberID: memberID,
-                    guildID: targetGuildID ?? guildID,
-                    destination: destination
-                )
+
+                let targetGuildID = guildID ?? loaded.mutualGuilds.first?.id
+                if let targetGuildID, !isCurrent {
+                    refreshCachedProfilePresence(
+                        memberID: memberID,
+                        targetGuildID: targetGuildID,
+                        requestID: requestID,
+                        destination: destination,
+                        session: session
+                    )
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -688,18 +695,7 @@ extension AppModel {
         guard var presentation = profilePresentation(for: destination) else { return nil }
         guard !presentation.isLocalIdentity else { return presentation }
         if let liveMember = profileMember(presentation.member.id, in: presentation.guildID) {
-            var updated = liveMember
-            if updated.richActivity == nil, let existing = presentation.member.richActivity {
-                updated.richActivity = existing
-            }
-            if updated.activityText == nil, let existing = presentation.member.activityText {
-                updated.activityText = existing
-                updated.isListeningToMusic = presentation.member.isListeningToMusic
-            }
-            if !updated.status.isVisibleOnline, presentation.member.status.isVisibleOnline {
-                updated.status = presentation.member.status
-            }
-            presentation.member = updated
+            presentation.member = liveMember
             applyPresenceIfBetter(to: &presentation.member, from: friends.presences[presentation.member.id])
         } else if let presence = friends.presences[presentation.member.id] {
             // Live relationship presence applies when no member cache holds this user.

@@ -79,7 +79,7 @@ import Testing
 }
 
 @MainActor
-@Test func `liveProfilePresentation preserves existing rich activity across live member updates without rich activity`() async throws {
+@Test func `liveProfilePresentation updates to reflect cleared rich activity when member presence ends`() async throws {
     let model = AppModel(isEphemeral: true, provider: MockChatProvider())
     await model.start()
 
@@ -99,12 +99,12 @@ import Testing
 
     #expect(model.contextualProfilePresentation?.member.richActivity?.name == "Spotify")
 
-    // Simulate member store being updated by an event that lacks richActivity (e.g. offline or partial member sync)
+    // When presence update clears the activity in the member store, live presentation clears it
     member.richActivity = nil
+    member.activityText = nil
     model.membersByGuildID[guildID] = [user.id: member]
 
-    // liveProfilePresentation must preserve the active richActivity
     let live = try #require(model.liveProfilePresentation(for: .contextual))
-    #expect(live.member.richActivity?.name == "Spotify")
-    #expect(live.member.richActivity?.details == "Track A")
+    #expect(live.member.richActivity == nil)
+    #expect(live.member.activityText == nil)
 }

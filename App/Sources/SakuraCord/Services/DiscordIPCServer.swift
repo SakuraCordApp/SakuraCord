@@ -143,6 +143,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
         readBuffer.removeAll()
         readSource?.cancel()
         readSource = nil
+        DiscordIPCServer.unregisterAppInfoListeners(sessionID: id)
         let source = ActivitySource.localRPC(
             sourceID: id.uuidString,
             clientID: clientID ?? "unknown",
@@ -211,6 +212,10 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private func handleFrame(opcode: UInt32, payloadData: Data) {
         switch opcode {
         case 0: // HANDSHAKE
+            guard self.clientID == nil else {
+                stop()
+                return
+            }
             guard let json = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
                 stop()
                 return
@@ -225,10 +230,12 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                 return
             }
             self.clientID = clientID
-            DiscordIPCServer.registerAppInfoListener(for: clientID) { [weak self] in
-                self?.reapplyLastActivity()
+            if clientID.allSatisfy(\.isNumber), !clientID.isEmpty {
+                DiscordIPCServer.registerAppInfoListener(for: clientID, sessionID: id) { [weak self] in
+                    self?.reapplyLastActivity()
+                }
+                Self.resolveApplicationInfo(for: clientID)
             }
-            Self.resolveApplicationInfo(for: clientID)
             sendReadyEvent()
 
         case 1: // FRAME
@@ -599,17 +606,29 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
     }
 
     private static let listenersLock = NSLock()
-    nonisolated(unsafe) private static var appInfoListeners: [String: [@Sendable () -> Void]] = [:]
+    nonisolated(unsafe) private static var appInfoListeners: [String: [UUID: @Sendable () -> Void]] = [:]
 
-    static func registerAppInfoListener(for clientID: String, listener: @escaping @Sendable () -> Void) {
+    static func registerAppInfoListener(for clientID: String, sessionID: UUID, listener: @escaping @Sendable () -> Void) {
         listenersLock.lock()
         defer { listenersLock.unlock() }
-        appInfoListeners[clientID, default: []].append(listener)
+        appInfoListeners[clientID, default: [:]][sessionID] = listener
+    }
+
+    static func unregisterAppInfoListeners(sessionID: UUID) {
+        listenersLock.lock()
+        defer { listenersLock.unlock() }
+        for (clientID, var map) in appInfoListeners where map.removeValue(forKey: sessionID) != nil {
+            if map.isEmpty {
+                appInfoListeners.removeValue(forKey: clientID)
+            } else {
+                appInfoListeners[clientID] = map
+            }
+        }
     }
 
     static func notifyAppInfoListeners(for clientID: String) {
         listenersLock.lock()
-        let listeners = appInfoListeners[clientID] ?? []
+        let listeners = Array((appInfoListeners[clientID] ?? [:]).values)
         appInfoListeners.removeValue(forKey: clientID)
         listenersLock.unlock()
         for listener in listeners {
@@ -982,7 +1001,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             return nil
         }
 
-        chmod(path, 0o777)
+        chmod(path, 0o700)
         return fd
     }
     private func acceptConnection() {
@@ -995,6 +1014,14 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             }
         }
         guard clientFD >= 0 else { return }
+
+        var peerUID: uid_t = 0
+        var peerGID: gid_t = 0
+        if getpeereid(clientFD, &peerUID, &peerGID) != 0 || peerUID != geteuid() {
+            logger.warning("Rejecting connection from unauthorized peer UID \(peerUID)")
+            close(clientFD)
+            return
+        }
 
         var noSigpipe: Int32 = 1
         _ = setsockopt(clientFD, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, socklen_t(MemoryLayout<Int32>.size))

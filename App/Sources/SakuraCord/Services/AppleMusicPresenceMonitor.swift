@@ -619,7 +619,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         setCachedArtworkData(nil, for: nil)
     }
 
-    private static func queryTrack(for appName: String, bundleID: String, durationMultiplier: Double) -> (isStopped: Bool, track: AppleMusicTrackInfo?) {
+    private static func queryTrack(for appName: String, bundleID: String) -> (isStopped: Bool, track: AppleMusicTrackInfo?) {
         #if os(macOS)
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return (false, nil) }
         let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
@@ -726,7 +726,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             #endif
 
             if isMusicRunning {
-                let musicResult = Self.queryTrack(for: "Music", bundleID: "com.apple.Music", durationMultiplier: 1000)
+                let musicResult = Self.queryTrack(for: "Music", bundleID: "com.apple.Music")
                 if let track = musicResult.track {
                     await self?.handleTrackInfo(track)
                     return
@@ -734,7 +734,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             }
 
             if isSpotifyRunning {
-                let spotifyResult = Self.queryTrack(for: "Spotify", bundleID: "com.spotify.client", durationMultiplier: 1)
+                let spotifyResult = Self.queryTrack(for: "Spotify", bundleID: "com.spotify.client")
                 if let track = spotifyResult.track {
                     await self?.handleTrackInfo(track)
                     return

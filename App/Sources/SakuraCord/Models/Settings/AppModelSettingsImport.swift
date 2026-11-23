@@ -31,8 +31,8 @@ extension AppModel {
             refreshDockBadge()
         }
         if pages.contains(.keyboardShortcuts) { KeyboardShortcutSettingsStore.shared.reload() }
-        if pages.contains(.privacySafety), !privacySafetySettings.sendsTypingIndicators {
-            stopLocalTyping(clearThrottle: false)
+        if pages.contains(.features) || pages.contains(.privacySafety) {
+            applyPrivacySafetySettings(privacySafetySettingsStore.load())
         }
         if pages.contains(.diagnostics) { DiagnosticsPreferences.restore() }
         if pages.contains(.storageDownloads) { await applyConfiguredLocalStorageLimit() }
