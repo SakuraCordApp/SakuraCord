@@ -159,13 +159,6 @@ public actor ActivityCoordinator {
         await synchronizeProvider()
     }
 
-    public func clearAllActivities() async {
-        registeredActivities.removeAll()
-        sourceGenerations.removeAll()
-        syncGeneration &+= 1
-        await synchronizeProvider()
-    }
-
     public func resendActivities() async {
         publishedSourceIDs.removeAll()
         inFlightSourceIDs.removeAll()

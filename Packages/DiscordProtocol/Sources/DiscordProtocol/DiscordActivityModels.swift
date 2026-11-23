@@ -223,10 +223,6 @@ public struct OutgoingActivityPayload: Codable, Hashable, Sendable {
         return categoryRank * 10 + subRank
     }
 
-    public var priorityRank: Int {
-        priorityRank(using: ActivityCategory.defaultOrder)
-    }
-
     public var gatewayDictionary: [String: Any] {
         var dict: [String: Any] = [
             "name": name,

@@ -21,22 +21,8 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
     public static let robloxIconURL = "https://cdn.discordapp.com/app-icons/\(robloxAppID)/\(robloxIconAsset).png"
 
     private static let iconLock = NSLock()
-    nonisolated(unsafe) private static var _cachedRobloxIconData: Data?
     nonisolated(unsafe) private static var _cachedAthasIconData: Data?
     nonisolated(unsafe) private static var _cachedAthasIconImage: NSImage?
-
-    public static var currentRobloxIconData: Data? {
-        get {
-            iconLock.lock()
-            defer { iconLock.unlock() }
-            return _cachedRobloxIconData
-        }
-        set {
-            iconLock.lock()
-            _cachedRobloxIconData = newValue
-            iconLock.unlock()
-        }
-    }
 
     public static var currentAthasIconData: Data? {
         get {
@@ -171,7 +157,6 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             lastRobloxPID = nil
             lastAthasPID = nil
             stateLock.unlock()
-            Self.currentRobloxIconData = nil
             Self.currentAthasIconData = nil
             Task { [coordinator] in
                 await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
@@ -243,7 +228,6 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
                 if let roblox = robloxApp {
                     publishRobloxActivity(app: roblox)
                 } else {
-                    Self.currentRobloxIconData = nil
                     Task { [coordinator] in
                         await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
                     }
